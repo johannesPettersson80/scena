@@ -305,6 +305,13 @@ impl<F> Assets<F> {
         handle
     }
 
+    pub fn create_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
+        let mut storage = self.storage();
+        let handle = storage.environments.insert(environment);
+        storage.user_created_environments.insert(handle);
+        handle
+    }
+
     pub fn create_static_batch(
         &self,
         source: &GeometryDesc,

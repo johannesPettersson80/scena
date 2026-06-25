@@ -2,10 +2,7 @@ use crate::app::prelude::*;
 
 const DEMO_HDR_PATH: &str = "demo/samples/environment/white_studio_03_1k.hdr";
 const DEMO_HDR_SIDECAR_PATH: &str = "demo/samples/environment/white_studio_03_1k.hdr.prefilter.bin";
-const STUDIO_HDR_PATH: &str = "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
-const STUDIO_HDR_SIDECAR_PATH: &str =
-    "tests/assets/environment/polyhaven/studio_small_03_1k.hdr.prefilter.bin";
-const STUDIO_HDR_SIDECAR_RESOLUTION: u32 = 512;
+const SHOWCASE_IMAGE_QUALITY_RULE: &str = "PUBLIC-SHOWCASE-CARD-IMAGE-QUALITY";
 const PUBLIC_SHOWCASE_WASM_PATH: &str = "demo/pkg/scena_bg.wasm";
 const PROOF_HARNESS_WASM_PATH: &str = "demo/proof/pkg/scena_bg.wasm";
 const PUBLIC_SHOWCASE_WASM_BASELINE_RAW_BYTES: u64 = 4_318_556;
@@ -27,8 +24,26 @@ const fn ten_percent_growth_budget(baseline: u64) -> u64 {
 
 pub(super) fn check_showcase_performance_contracts(root: &Path, findings: &mut Vec<Finding>) {
     check_demo_hdr_sidecar_current(root, findings);
-    check_studio_hdr_sidecar_current(root, findings);
+    check_showcase_card_image_quality(root, findings);
     check_wasm_size_budget(root, findings);
+    require_contains(
+        root,
+        findings,
+        SHOWCASE_IMAGE_QUALITY_RULE,
+        "examples/easy_scene_showcase.rs",
+        &[
+            "REFLECTIVE_SHOWCASE_ENV_CUBEMAP_RESOLUTION: u32 = 512",
+            "REFLECTIVE_SHOWCASE_CHROME_CUBEMAP_RESOLUTION: u32 = 1024",
+            "REFLECTIVE_SHOWCASE_SUPERSAMPLE_FACTOR: u32 = 4",
+            "load_reflective_showcase_studio_environment",
+            "load_reflective_showcase_studio_environment_with_resolution",
+            "configure_reflective_showcase_renderer",
+            "smooth_showcase_studio_equirectangular",
+            "from_equirectangular_radiance",
+            "with_cubemap_resolution(cubemap_resolution)",
+            "create_environment",
+        ],
+    );
     require_contains(
         root,
         findings,
@@ -118,17 +133,6 @@ fn check_demo_hdr_sidecar_current(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
-fn check_studio_hdr_sidecar_current(root: &Path, findings: &mut Vec<Finding>) {
-    check_hdr_sidecar_current(
-        root,
-        findings,
-        "STUDIO-HDR-SIDECAR-CURRENT",
-        STUDIO_HDR_PATH,
-        STUDIO_HDR_SIDECAR_PATH,
-        Some(STUDIO_HDR_SIDECAR_RESOLUTION),
-    );
-}
-
 fn check_hdr_sidecar_current(
     root: &Path,
     findings: &mut Vec<Finding>,
@@ -205,6 +209,212 @@ fn check_hdr_sidecar_current(
             ),
         ));
     }
+}
+
+#[derive(Clone, Copy)]
+struct ShowcaseCardSpec {
+    path: &'static str,
+    width: u32,
+    height: u32,
+    tile_width: Option<u32>,
+    min_luma_stddev: f32,
+    min_edge_mean: f32,
+    max_low_clip_fraction: f32,
+    max_high_clip_fraction: f32,
+}
+
+#[derive(Clone, Copy)]
+struct ImageQualityMetrics {
+    luma_stddev: f32,
+    edge_mean: f32,
+    low_clip_fraction: f32,
+    high_clip_fraction: f32,
+}
+
+const SHOWCASE_CARD_SPECS: &[ShowcaseCardSpec] = &[
+    ShowcaseCardSpec {
+        path: "docs/assets/easy-scene-showcase/lens-presets.jpg",
+        width: 1_920,
+        height: 480,
+        tile_width: Some(480),
+        min_luma_stddev: 0.06,
+        min_edge_mean: 0.002,
+        max_low_clip_fraction: 0.36,
+        max_high_clip_fraction: 0.05,
+    },
+    ShowcaseCardSpec {
+        path: "docs/assets/easy-scene-showcase/auto-exposure-presets.jpg",
+        width: 1_920,
+        height: 480,
+        tile_width: Some(480),
+        min_luma_stddev: 0.08,
+        min_edge_mean: 0.0025,
+        max_low_clip_fraction: 0.48,
+        max_high_clip_fraction: 0.06,
+    },
+    ShowcaseCardSpec {
+        path: "docs/assets/easy-scene-showcase/environment-presets.jpg",
+        width: 960,
+        height: 480,
+        tile_width: Some(480),
+        min_luma_stddev: 0.10,
+        min_edge_mean: 0.0015,
+        max_low_clip_fraction: 0.42,
+        max_high_clip_fraction: 0.06,
+    },
+    ShowcaseCardSpec {
+        path: "docs/assets/easy-scene-showcase/material-chrome.png",
+        width: 640,
+        height: 640,
+        tile_width: None,
+        min_luma_stddev: 0.20,
+        min_edge_mean: 0.004,
+        max_low_clip_fraction: 0.34,
+        max_high_clip_fraction: 0.06,
+    },
+];
+
+fn check_showcase_card_image_quality(root: &Path, findings: &mut Vec<Finding>) {
+    for spec in SHOWCASE_CARD_SPECS {
+        let path = root.join(spec.path);
+        let image = match image::open(&path) {
+            Ok(image) => image.into_rgba8(),
+            Err(error) => {
+                findings.push(Finding::new(
+                    SHOWCASE_IMAGE_QUALITY_RULE,
+                    format!("could not decode {}: {error}", spec.path),
+                ));
+                continue;
+            }
+        };
+        if image.width() != spec.width || image.height() != spec.height {
+            findings.push(Finding::new(
+                SHOWCASE_IMAGE_QUALITY_RULE,
+                format!(
+                    "{} must be {}x{}, got {}x{}",
+                    spec.path,
+                    spec.width,
+                    spec.height,
+                    image.width(),
+                    image.height()
+                ),
+            ));
+            continue;
+        }
+        check_metrics(
+            spec.path,
+            "whole image",
+            image_metrics(&image, 0, spec.width),
+            spec,
+            findings,
+        );
+        if let Some(tile_width) = spec.tile_width {
+            for tile in 0..(spec.width / tile_width) {
+                let label = format!("tile {tile}");
+                check_metrics(
+                    spec.path,
+                    &label,
+                    image_metrics(&image, tile * tile_width, tile_width),
+                    spec,
+                    findings,
+                );
+            }
+        }
+    }
+}
+
+fn check_metrics(
+    path: &str,
+    label: &str,
+    metrics: ImageQualityMetrics,
+    spec: &ShowcaseCardSpec,
+    findings: &mut Vec<Finding>,
+) {
+    if metrics.luma_stddev < spec.min_luma_stddev {
+        findings.push(Finding::new(
+            SHOWCASE_IMAGE_QUALITY_RULE,
+            format!(
+                "{path} {label} is too flat: luma stddev {:.3} < {:.3}",
+                metrics.luma_stddev, spec.min_luma_stddev
+            ),
+        ));
+    }
+    if metrics.edge_mean < spec.min_edge_mean {
+        findings.push(Finding::new(
+            SHOWCASE_IMAGE_QUALITY_RULE,
+            format!(
+                "{path} {label} has insufficient visible detail: edge mean {:.4} < {:.4}",
+                metrics.edge_mean, spec.min_edge_mean
+            ),
+        ));
+    }
+    if metrics.low_clip_fraction > spec.max_low_clip_fraction {
+        findings.push(Finding::new(
+            SHOWCASE_IMAGE_QUALITY_RULE,
+            format!(
+                "{path} {label} is black-crushed: low-luma fraction {:.3} > {:.3}",
+                metrics.low_clip_fraction, spec.max_low_clip_fraction
+            ),
+        ));
+    }
+    if metrics.high_clip_fraction > spec.max_high_clip_fraction {
+        findings.push(Finding::new(
+            SHOWCASE_IMAGE_QUALITY_RULE,
+            format!(
+                "{path} {label} is blown out: high-luma fraction {:.3} > {:.3}",
+                metrics.high_clip_fraction, spec.max_high_clip_fraction
+            ),
+        ));
+    }
+}
+
+fn image_metrics(image: &image::RgbaImage, start_x: u32, width: u32) -> ImageQualityMetrics {
+    let height = image.height();
+    let mut count = 0_u64;
+    let mut sum = 0.0_f64;
+    let mut sum_sq = 0.0_f64;
+    let mut low = 0_u64;
+    let mut high = 0_u64;
+    let mut edge_sum = 0.0_f64;
+    for y in 0..height {
+        for x in start_x..start_x + width {
+            let luma = luma_from_pixel(image.get_pixel(x, y)) as f64;
+            count += 1;
+            sum += luma;
+            sum_sq += luma * luma;
+            if luma < 0.04 {
+                low += 1;
+            }
+            if luma > 0.95 {
+                high += 1;
+            }
+            let dx = if x + 1 < start_x + width {
+                (luma_from_pixel(image.get_pixel(x + 1, y)) as f64 - luma).abs()
+            } else {
+                0.0
+            };
+            let dy = if y + 1 < height {
+                (luma_from_pixel(image.get_pixel(x, y + 1)) as f64 - luma).abs()
+            } else {
+                0.0
+            };
+            edge_sum += (dx * dx + dy * dy).sqrt();
+        }
+    }
+    let count_f = count as f64;
+    let mean = sum / count_f;
+    let variance = (sum_sq / count_f - mean * mean).max(0.0);
+    ImageQualityMetrics {
+        luma_stddev: variance.sqrt() as f32,
+        edge_mean: (edge_sum / count_f) as f32,
+        low_clip_fraction: low as f32 / count as f32,
+        high_clip_fraction: high as f32 / count as f32,
+    }
+}
+
+fn luma_from_pixel(pixel: &image::Rgba<u8>) -> f32 {
+    let [r, g, b, _] = pixel.0;
+    (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0
 }
 
 fn check_wasm_size_budget(root: &Path, findings: &mut Vec<Finding>) {

@@ -236,6 +236,68 @@ impl EnvironmentDesc {
     }
 
     #[doc(hidden)]
+    pub fn from_equirectangular_radiance(
+        path: impl Into<AssetPath>,
+        width: u32,
+        height: u32,
+        pixels: Vec<[f32; 3]>,
+    ) -> Result<Self, AssetError> {
+        let path = path.into();
+        let expected_len =
+            (width as u64)
+                .checked_mul(height as u64)
+                .ok_or_else(|| AssetError::Parse {
+                    path: path.as_str().to_string(),
+                    reason: "equirectangular radiance dimensions overflow".to_string(),
+                })?;
+        if width == 0 || height == 0 || pixels.len() as u64 != expected_len {
+            return Err(AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: format!(
+                    "equirectangular radiance must contain width*height pixels, got {} for {width}x{height}",
+                    pixels.len()
+                ),
+            });
+        }
+        let mut preview_irradiance_rgb = [0.0_f32; 3];
+        for pixel in &pixels {
+            if !pixel
+                .iter()
+                .all(|channel| channel.is_finite() && *channel >= 0.0)
+            {
+                return Err(AssetError::Parse {
+                    path: path.as_str().to_string(),
+                    reason: "equirectangular radiance pixels must be finite and non-negative"
+                        .to_string(),
+                });
+            }
+            preview_irradiance_rgb[0] += pixel[0];
+            preview_irradiance_rgb[1] += pixel[1];
+            preview_irradiance_rgb[2] += pixel[2];
+        }
+        let inverse_count = (pixels.len() as f32).recip();
+        preview_irradiance_rgb = preview_irradiance_rgb.map(|channel| channel * inverse_count);
+        Ok(Self {
+            name: environment_name_from_path(&path).to_string(),
+            provenance: AssetProvenance::new(path.clone()),
+            source_kind: EnvironmentSourceKind::EquirectangularHdr,
+            source_dimensions: Some((width, height)),
+            preview_irradiance_rgb: Some(preview_irradiance_rgb),
+            cubemap_resolution: DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION,
+            brdf_lut_size: DEFAULT_ENVIRONMENT_BRDF_LUT_SIZE,
+            wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
+            derivatives: Vec::new(),
+            prefilter_sidecar: None,
+            equirectangular_pixels: Some(std::sync::Arc::new(DecodedEquirectangular {
+                width,
+                height,
+                pixels,
+            })),
+            lazy_equirectangular_source: None,
+        })
+    }
+
+    #[doc(hidden)]
     pub fn with_cubemap_resolution(mut self, cubemap_resolution: u32) -> Self {
         self.cubemap_resolution = cubemap_resolution.max(1);
         self

@@ -19,10 +19,11 @@ use std::path::{Path, PathBuf};
 
 use scena::{
     AlphaMode, AnimationLoopMode, AntiAliasing, Assets, AutoExposureConfig, Background, Color,
-    ConnectOptions, CursorPosition, DirectionalLight, EnvironmentPreset, FramingOptions,
-    GeometryDesc, GridFloorOptions, MaterialDesc, OrderIndependentTransparencyConfig,
-    PerspectiveCamera, PointLight, PostBloomConfig, Renderer, Scene,
-    ScreenSpaceAmbientOcclusionConfig, Transform, Vec3, Viewport, headless_gltf_viewer,
+    ConnectOptions, CursorPosition, DirectionalLight, EnvironmentDesc, EnvironmentPreset,
+    FramingOptions, GeometryDesc, GridFloorOptions, MaterialDesc,
+    OrderIndependentTransparencyConfig, PerspectiveCamera, PointLight, PostBloomConfig,
+    ReconstructionFilter, Renderer, Scene, ScreenSpaceAmbientOcclusionConfig, Transform, Vec3,
+    Viewport, headless_gltf_viewer,
 };
 
 const HERO_W: u32 = 1920;
@@ -31,6 +32,9 @@ const PANEL_W: u32 = 480;
 const PANEL_H: u32 = 480;
 const WIDE_W: u32 = 480;
 const WIDE_H: u32 = 320;
+const REFLECTIVE_SHOWCASE_ENV_CUBEMAP_RESOLUTION: u32 = 512;
+const REFLECTIVE_SHOWCASE_CHROME_CUBEMAP_RESOLUTION: u32 = 1024;
+const REFLECTIVE_SHOWCASE_SUPERSAMPLE_FACTOR: u32 = 4;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let out = PathBuf::from("target/easy-scene-showcase");
@@ -247,11 +251,10 @@ fn render_subject_with_lens(
     let metal_sphere = assets.create_geometry(GeometryDesc::sphere(0.45, 96, 64));
     let plinth = assets.create_geometry(GeometryDesc::box_xyz(2.0, 0.06, 2.0));
     let cylinder = assets.create_geometry(GeometryDesc::cylinder(0.18, 0.6, 48));
-    let metal = assets.create_material(MaterialDesc::chrome());
+    let metal = assets.create_material(showcase_mirror_chrome());
     let plastic = assets.create_material(MaterialDesc::plastic(Color::ORANGE));
     let dark = assets.create_material(MaterialDesc::plastic(Color::CHARCOAL));
-    let environment =
-        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?;
+    let environment = load_reflective_showcase_studio_environment(&assets)?;
 
     let mut scene = Scene::new();
     scene
@@ -449,7 +452,7 @@ fn render_material_chrome_card(out: &Path) -> Result<(), Box<dyn Error>> {
     // Dedicated reflective chrome hero for the `material-chrome` showcase card
     // (studio HDR IBL specular) — a first-party render in place of the former
     // browser-captured demo screenshot.
-    let pixels = render_material_sphere(MaterialDesc::chrome(), 640, 640)?;
+    let pixels = render_material_sphere_showcase(showcase_mirror_chrome(), 640, 640)?;
     write_png(&pixels, 640, 640, &out.join("material-chrome.png"))?;
     Ok(())
 }
@@ -459,11 +462,38 @@ fn render_material_sphere(
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
+    render_material_sphere_inner(material, width, height, false)
+}
+
+fn render_material_sphere_showcase(
+    material: MaterialDesc,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    render_material_sphere_inner(material, width, height, true)
+}
+
+fn render_material_sphere_inner(
+    material: MaterialDesc,
+    width: u32,
+    height: u32,
+    showcase_quality: bool,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
-    let sphere = assets.create_geometry(GeometryDesc::sphere(0.38, 128, 96));
+    let sphere = if showcase_quality {
+        assets.create_geometry(GeometryDesc::sphere(0.38, 384, 256))
+    } else {
+        assets.create_geometry(GeometryDesc::sphere(0.38, 128, 96))
+    };
     let material = assets.create_material(material);
-    let environment =
-        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?;
+    let environment = if showcase_quality {
+        load_reflective_showcase_studio_environment_with_resolution(
+            &assets,
+            REFLECTIVE_SHOWCASE_CHROME_CUBEMAP_RESOLUTION,
+        )?
+    } else {
+        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?
+    };
 
     let mut scene = Scene::new();
     scene.mesh(sphere, material).add()?;
@@ -478,9 +508,16 @@ fn render_material_sphere(
     scene.set_active_camera(camera)?;
 
     let mut renderer = Renderer::headless(width, height)?;
+    if showcase_quality {
+        configure_reflective_showcase_renderer(&mut renderer)?;
+    }
     renderer.set_environment(environment);
     renderer.set_background(Background::DarkStudio);
-    renderer.set_exposure_ev(0.5);
+    if showcase_quality {
+        renderer.set_auto_exposure(AutoExposureConfig::product_studio());
+    } else {
+        renderer.set_exposure_ev(0.5);
+    }
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;
     Ok(renderer.frame_rgba8().to_vec())
@@ -586,10 +623,9 @@ fn render_subject_with_exposure(
     height: u32,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
-    let sphere = assets.create_geometry(GeometryDesc::sphere(0.5, 96, 64));
-    let material = assets.create_material(MaterialDesc::chrome());
-    let environment =
-        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?;
+    let sphere = assets.create_geometry(GeometryDesc::sphere(0.42, 192, 128));
+    let material = assets.create_material(showcase_mirror_chrome());
+    let environment = load_reflective_showcase_studio_environment(&assets)?;
 
     let mut scene = Scene::new();
     scene.mesh(sphere, material).add()?;
@@ -597,11 +633,12 @@ fn render_subject_with_exposure(
     let camera = scene.add_perspective_camera(
         scene.root(),
         PerspectiveCamera::portrait(),
-        Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        Transform::at(Vec3::new(0.0, 0.0, 3.2)),
     )?;
     scene.set_active_camera(camera)?;
 
     let mut renderer = Renderer::headless(width, height)?;
+    configure_reflective_showcase_renderer(&mut renderer)?;
     renderer.set_environment(environment);
     renderer.set_background(Background::DarkStudio);
     renderer.set_auto_exposure(config);
@@ -634,26 +671,166 @@ fn render_subject_with_environment(
     height: u32,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
-    let sphere = assets.create_geometry(GeometryDesc::sphere(0.5, 96, 64));
-    let material = assets.create_material(MaterialDesc::chrome());
-    let environment = pollster::block_on(assets.load_environment_preset(preset))?;
+    let sphere = assets.create_geometry(GeometryDesc::sphere(0.42, 192, 128));
+    let material = assets.create_material(showcase_mirror_chrome());
+    let environment = if preset == EnvironmentPreset::Studio {
+        load_reflective_showcase_studio_environment(&assets)?
+    } else {
+        pollster::block_on(assets.load_environment_preset(preset))?
+    };
 
     let mut scene = Scene::new();
     scene.mesh(sphere, material).add()?;
     let camera = scene.add_perspective_camera(
         scene.root(),
         PerspectiveCamera::portrait(),
-        Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        Transform::at(Vec3::new(0.0, 0.0, 3.2)),
     )?;
     scene.set_active_camera(camera)?;
 
     let mut renderer = Renderer::headless(width, height)?;
+    configure_reflective_showcase_renderer(&mut renderer)?;
     renderer.set_environment(environment);
     renderer.set_background(Background::DarkStudio);
     renderer.set_auto_exposure(AutoExposureConfig::product_studio());
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;
     Ok(renderer.frame_rgba8().to_vec())
+}
+
+fn load_reflective_showcase_studio_environment(
+    assets: &Assets,
+) -> Result<scena::EnvironmentHandle, Box<dyn Error>> {
+    load_reflective_showcase_studio_environment_with_resolution(
+        assets,
+        REFLECTIVE_SHOWCASE_ENV_CUBEMAP_RESOLUTION,
+    )
+}
+
+fn load_reflective_showcase_studio_environment_with_resolution(
+    assets: &Assets,
+    cubemap_resolution: u32,
+) -> Result<scena::EnvironmentHandle, Box<dyn Error>> {
+    let source_width = cubemap_resolution.saturating_mul(2).max(2);
+    let source_height = cubemap_resolution.max(1);
+    let pixels = smooth_showcase_studio_equirectangular(source_width, source_height);
+    let environment = EnvironmentDesc::from_equirectangular_radiance(
+        "scena://showcase/smooth-studio-generated.hdr",
+        source_width,
+        source_height,
+        pixels,
+    )?
+    .with_cubemap_resolution(cubemap_resolution);
+    Ok(assets.create_environment(environment))
+}
+
+fn configure_reflective_showcase_renderer(renderer: &mut Renderer) -> Result<(), Box<dyn Error>> {
+    renderer.set_supersample_factor(REFLECTIVE_SHOWCASE_SUPERSAMPLE_FACTOR)?;
+    renderer.set_reconstruction_filter(ReconstructionFilter::Tent);
+    Ok(())
+}
+
+fn smooth_showcase_studio_equirectangular(width: u32, height: u32) -> Vec<[f32; 3]> {
+    let mut pixels = Vec::with_capacity((width * height) as usize);
+    for y in 0..height {
+        let v = (y as f32 + 0.5) / height as f32;
+        for x in 0..width {
+            let u = (x as f32 + 0.5) / width as f32;
+            let ceiling = (1.0 - v).clamp(0.0, 1.0);
+            let mut radiance = [
+                0.018 + 0.10 * ceiling,
+                0.022 + 0.12 * ceiling,
+                0.032 + 0.16 * ceiling,
+            ];
+            add_soft_panel(
+                &mut radiance,
+                u,
+                v,
+                SoftPanel::new(0.50, 0.16, 0.26, 0.024, 0.018, [2.0, 2.18, 2.45]),
+            );
+            add_soft_panel(
+                &mut radiance,
+                u,
+                v,
+                SoftPanel::new(0.46, 0.31, 0.075, 0.065, 0.022, [10.0, 10.4, 11.0]),
+            );
+            add_soft_panel(
+                &mut radiance,
+                u,
+                v,
+                SoftPanel::new(0.30, 0.44, 0.032, 0.115, 0.026, [5.0, 5.35, 5.85]),
+            );
+            add_soft_panel(
+                &mut radiance,
+                u,
+                v,
+                SoftPanel::new(0.70, 0.42, 0.038, 0.105, 0.026, [4.0, 4.35, 5.0]),
+            );
+            add_soft_panel(
+                &mut radiance,
+                u,
+                v,
+                SoftPanel::new(0.58, 0.64, 0.16, 0.038, 0.040, [0.55, 0.75, 1.10]),
+            );
+            pixels.push(radiance);
+        }
+    }
+    pixels
+}
+
+#[derive(Clone, Copy)]
+struct SoftPanel {
+    center_u: f32,
+    center_v: f32,
+    half_u: f32,
+    half_v: f32,
+    feather: f32,
+    radiance: [f32; 3],
+}
+
+impl SoftPanel {
+    const fn new(
+        center_u: f32,
+        center_v: f32,
+        half_u: f32,
+        half_v: f32,
+        feather: f32,
+        radiance: [f32; 3],
+    ) -> Self {
+        Self {
+            center_u,
+            center_v,
+            half_u,
+            half_v,
+            feather,
+            radiance,
+        }
+    }
+}
+
+fn add_soft_panel(radiance: &mut [f32; 3], u: f32, v: f32, panel: SoftPanel) {
+    let du = wrapped_distance(u, panel.center_u);
+    let dv = (v - panel.center_v).abs();
+    let x = 1.0 - smoothstep(panel.half_u, panel.half_u + panel.feather, du);
+    let y = 1.0 - smoothstep(panel.half_v, panel.half_v + panel.feather, dv);
+    let weight = (x * y).clamp(0.0, 1.0);
+    radiance[0] += panel.radiance[0] * weight;
+    radiance[1] += panel.radiance[1] * weight;
+    radiance[2] += panel.radiance[2] * weight;
+}
+
+fn wrapped_distance(a: f32, b: f32) -> f32 {
+    let delta = (a - b).abs();
+    delta.min(1.0 - delta)
+}
+
+fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
+    let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn showcase_mirror_chrome() -> MaterialDesc {
+    MaterialDesc::chrome().with_roughness_factor(0.0)
 }
 
 // ===========================================================================

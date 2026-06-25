@@ -95,7 +95,7 @@ renderer.set_auto_exposure(AutoExposureConfig::outdoor());
 renderer.set_auto_exposure(AutoExposureConfig::mixed());
 ```
 
-![Same metal sphere rendered under product_studio, indoor, outdoor, and mixed exposure scenarios](../assets/easy-scene-showcase/auto-exposure-presets.jpg)
+![Same chrome sphere rendered under product_studio, indoor, outdoor, and mixed exposure scenarios](../assets/easy-scene-showcase/auto-exposure-presets.jpg)
 
 Auto exposure prevents globally too-dark or too-bright frames. It does not
 change light direction, material albedo, roughness, dynamic range, or
@@ -459,10 +459,10 @@ let environment = assets
 renderer.set_environment(environment);
 ```
 
-![Same metal sphere lit by NeutralStudio (left, no IBL specular) versus Studio HDR (right, visible mirror reflection)](../assets/easy-scene-showcase/environment-presets.jpg)
+![Same chrome sphere lit by NeutralStudio (left, subdued low-detail reflections) versus Studio HDR (right, visible mirror reflection)](../assets/easy-scene-showcase/environment-presets.jpg)
 
-The metal sphere on the right reflects the studio HDR; on the left the
-neutral fixture gives no directional reflection. That contrast is the
+The chrome sphere on the right reflects the studio HDR; on the left the
+neutral fixture keeps reflections subdued and low-detail. That contrast is the
 quickest way to verify the environment is actually bound to the
 renderer.
 
