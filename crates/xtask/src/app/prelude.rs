@@ -70,15 +70,15 @@ pub(crate) use crate::app::doctor_render::{
 };
 pub(crate) use crate::app::doctor_scene_platform::{
     REQUIRED_EXAMPLES, REQUIRED_M5_GATE_ARTIFACTS, check_agent_validation,
-    check_backend_vocabulary, check_camera_depth_contracts, check_clipping_contracts,
-    check_depth_prepass_contracts, check_direct_light_shading_contracts,
-    check_directional_shadow_contracts, check_environment_ibl_prepare_contracts,
-    check_environment_lifecycle_contracts, check_equirectangular_hdr_environment_contracts,
-    check_m2_leak_stats_contracts, check_m3a_scene_import_contracts, check_m3b_animation_contracts,
-    check_m4_platform_contracts, check_m5_release_contracts, check_material_desc_fields_private,
-    check_origin_shift_contracts, check_reversed_z_contracts, check_scene_light_contracts,
-    check_shadow_map_contracts, check_unit_test_first_governance, check_webgl2_depth_contracts,
-    contains_scope_term,
+    check_backend_vocabulary, check_calibration_oracles_pair_parity_sweeps,
+    check_camera_depth_contracts, check_clipping_contracts, check_depth_prepass_contracts,
+    check_direct_light_shading_contracts, check_directional_shadow_contracts,
+    check_environment_ibl_prepare_contracts, check_environment_lifecycle_contracts,
+    check_equirectangular_hdr_environment_contracts, check_m2_leak_stats_contracts,
+    check_m3a_scene_import_contracts, check_m3b_animation_contracts, check_m4_platform_contracts,
+    check_m5_release_contracts, check_material_desc_fields_private, check_origin_shift_contracts,
+    check_reversed_z_contracts, check_scene_light_contracts, check_shadow_map_contracts,
+    check_unit_test_first_governance, check_webgl2_depth_contracts, contains_scope_term,
 };
 pub(crate) use crate::app::doctor_visual_release::{
     check_default_environment_derivative_payload, check_default_environment_manifest,

@@ -99,6 +99,7 @@ pub(crate) fn finding_reference(rule: &str) -> &'static str {
         || rule == "ARCH-RENDER-WORLD-BAKE"
         || rule == "STUDIO-HDR-SIDECAR-CURRENT"
         || rule == "BINARY-ASSET-TRUTH-P9"
+        || rule == "ARCH-CALIBRATION-ORACLE"
     {
         "docs/rendering.md"
     } else if rule.contains("M8")

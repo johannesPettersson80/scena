@@ -71,6 +71,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_environment_lifecycle_contracts(root, findings);
     check_equirectangular_hdr_environment_contracts(root, findings);
     check_environment_ibl_prepare_contracts(root, findings);
+    check_calibration_oracles_pair_parity_sweeps(root, findings);
     check_scene_light_contracts(root, findings);
     check_direct_light_shading_contracts(root, findings);
     check_directional_shadow_contracts(root, findings);

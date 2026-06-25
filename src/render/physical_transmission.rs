@@ -197,6 +197,70 @@ mod tests {
         assert_eq!(tint.z, 1.0);
     }
 
+    // ---- External ground-truth oracles (closed-form analytic results, not CPU↔GPU
+    // parity and not scena's own rendered output). ----
+
+    #[test]
+    fn volume_transmittance_satisfies_beer_lambert_closed_form() {
+        // KHR_materials_volume: T = attenuation_color^(thickness/attenuation_distance).
+        let color = Vec3::new(0.35, 0.58, 0.9);
+        let distance = 0.8_f32;
+        // No thickness -> no attenuation.
+        assert_eq!(
+            volume_transmittance(0.0, color, distance),
+            Vec3::new(1.0, 1.0, 1.0)
+        );
+        // Exactly one attenuation-distance of travel -> the attenuation color.
+        let at_distance = volume_transmittance(distance, color, distance);
+        assert!((at_distance.x - color.x).abs() <= 1.0e-6);
+        assert!((at_distance.y - color.y).abs() <= 1.0e-6);
+        assert!((at_distance.z - color.z).abs() <= 1.0e-6);
+        // General closed form + strictly decreasing with thickness.
+        let mut previous = 1.0_f32;
+        for &thickness in &[0.2_f32, 0.5, 1.0, 2.0] {
+            let t = volume_transmittance(thickness, color, distance);
+            let expected = color.x.powf(thickness / distance);
+            assert!(
+                (t.x - expected).abs() <= 1.0e-6,
+                "Beer-Lambert closed form at thickness {thickness}"
+            );
+            assert!(
+                t.x < previous,
+                "transmittance must strictly decrease with thickness"
+            );
+            previous = t.x;
+        }
+    }
+
+    #[test]
+    fn refract_vec3_matches_snells_law() {
+        let normal = Vec3::new(0.0, 0.0, 1.0);
+        // Normal incidence (air->glass): the ray passes straight through, unbent.
+        let straight = refract_vec3(Vec3::new(0.0, 0.0, -1.0), normal, 1.0 / 1.5);
+        assert!(straight.x.abs() <= 1.0e-6 && straight.y.abs() <= 1.0e-6);
+        assert!(
+            (straight.z + 1.0).abs() <= 1.0e-6,
+            "normal incidence is unbent"
+        );
+        // Oblique air->glass: compare against the independently computed Snell
+        // refraction direction, sin(theta_t) = eta * sin(theta_i).
+        let eta = 1.0 / 1.5;
+        for &theta_i in &[0.3_f32, 0.6, 1.0] {
+            let incident = Vec3::new(theta_i.sin(), 0.0, -theta_i.cos());
+            let r = refract_vec3(incident, normal, eta);
+            let sin_t = eta * theta_i.sin();
+            let cos_t = (1.0 - sin_t * sin_t).sqrt();
+            assert!(
+                (r.x - sin_t).abs() <= 1.0e-5 && (r.z + cos_t).abs() <= 1.0e-5,
+                "Snell refraction direction at theta_i={theta_i}"
+            );
+        }
+        // Total internal reflection (glass->air past the critical angle) -> no ray.
+        let theta = 60.0_f32.to_radians();
+        let tir = refract_vec3(Vec3::new(theta.sin(), 0.0, -theta.cos()), normal, 1.5);
+        assert_eq!(tir, Vec3::ZERO, "TIR returns zero (no transmitted ray)");
+    }
+
     #[test]
     fn scene_color_transmission_uses_refraction_volume_and_reflection_terms() {
         let material = PreparedPhysicalTransmission::new(PreparedPhysicalTransmissionInput {

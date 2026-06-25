@@ -177,6 +177,95 @@ mod tests {
         assert_close(high.1, 0.0013968, 0.00001, "high roughness bias");
     }
 
+    // ---- External ground-truth oracles (analytic / numeric, not CPU↔GPU
+    // parity and not scena's own rendered output). These calibrate the BRDF
+    // against closed-form analytic results rather than proving backends agree. --
+
+    #[test]
+    fn fresnel_f0_is_dielectric_ior_exact_and_metal_keeps_base() {
+        // Closed form: a dielectric's normal-incidence reflectance is
+        // ((n-1)/(n+1))^2. DIELECTRIC_F0 = 0.04 is exactly the IOR≈1.5 dielectric;
+        // a full metal reflects its own base color (no dielectric mix).
+        let ior = 1.5_f32;
+        let analytic = ((ior - 1.0) / (ior + 1.0)).powi(2);
+        assert_close(DIELECTRIC_F0, analytic, 0.0006, "dielectric F0 vs IOR 1.5");
+        let base = Vec3::new(0.95, 0.64, 0.54); // copper-ish
+        assert_vec3_close(
+            f0_metallic_roughness(base, 0.0),
+            Vec3::new(DIELECTRIC_F0, DIELECTRIC_F0, DIELECTRIC_F0),
+            0.00001,
+            "metallic=0 -> dielectric 0.04",
+        );
+        assert_vec3_close(
+            f0_metallic_roughness(base, 1.0),
+            base,
+            0.00001,
+            "metallic=1 -> base color",
+        );
+    }
+
+    #[test]
+    fn fresnel_schlick_endpoints_are_analytic_exact() {
+        // Schlick endpoints are exact: normal incidence (v·h=1) returns F0,
+        // grazing (v·h=0) returns full reflectance 1.0 for any F0.
+        let f0 = Vec3::new(0.04, 0.10, 0.95);
+        assert_vec3_close(
+            fresnel_schlick(f0, 1.0),
+            f0,
+            0.00001,
+            "normal incidence = F0",
+        );
+        assert_vec3_close(
+            fresnel_schlick(f0, 0.0),
+            Vec3::new(1.0, 1.0, 1.0),
+            0.00001,
+            "grazing = total reflectance",
+        );
+    }
+
+    #[test]
+    fn specular_ggx_conserves_energy_under_white_furnace() {
+        // Closed-form energy conservation: the directional albedo
+        //   R(V) = integral of D*Vis*F*(N·L) dωL   (white furnace: F=1, Li=1)
+        // must be <= 1 — a passive surface cannot reflect more than it receives.
+        // GGX-NDF importance sampling over a deterministic (u1,u2) grid; the
+        // single-scatter GGX/correlated-Smith term loses (never gains) energy.
+        let grid = 96u32;
+        for &roughness in &[0.1_f32, 0.3, 0.5, 0.7, 1.0] {
+            let alpha = alpha_roughness(roughness);
+            for &n_dot_v in &[0.2_f32, 0.5, 0.9] {
+                let v = Vec3::new((1.0 - n_dot_v * n_dot_v).max(0.0).sqrt(), 0.0, n_dot_v);
+                let mut sum = 0.0_f64;
+                for i in 0..grid {
+                    for j in 0..grid {
+                        let u1 = (i as f32 + 0.5) / grid as f32;
+                        let u2 = (j as f32 + 0.5) / grid as f32;
+                        let phi = 2.0 * PI * u2;
+                        let cos_h = ((1.0 - u1) / (1.0 + (alpha * alpha - 1.0) * u1)).sqrt();
+                        let sin_h = (1.0 - cos_h * cos_h).max(0.0).sqrt();
+                        let h = Vec3::new(sin_h * phi.cos(), sin_h * phi.sin(), cos_h);
+                        let v_dot_h = (v.x * h.x + v.y * h.y + v.z * h.z).max(0.0);
+                        // L = reflect(-V, H) = 2 (V·H) H − V
+                        let n_dot_l = 2.0 * v_dot_h * h.z - v.z;
+                        let n_dot_h = cos_h;
+                        if n_dot_l <= 0.0 || n_dot_h <= 0.0 {
+                            continue;
+                        }
+                        let vis = ggx_visibility_correlated(n_dot_l, n_dot_v, alpha);
+                        // F=1: contribution = Vis * (N·L) * 4 (V·H) / (N·H)
+                        sum += f64::from(vis * n_dot_l * 4.0 * v_dot_h / n_dot_h);
+                    }
+                }
+                let albedo = (sum / (f64::from(grid) * f64::from(grid))) as f32;
+                assert!(
+                    albedo > 0.0 && albedo <= 1.02,
+                    "white-furnace directional albedo must be in (0, 1] (energy \
+                     conservation): roughness={roughness}, n_dot_v={n_dot_v}, albedo={albedo}"
+                );
+            }
+        }
+    }
+
     fn assert_close(actual: f32, expected: f32, tolerance: f32, label: &str) {
         assert!(
             (actual - expected).abs() <= tolerance,
