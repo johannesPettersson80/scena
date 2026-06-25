@@ -37,6 +37,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(&out)?;
     eprintln!("rendering easy scene showcase into {}", out.display());
 
+    if std::env::var("SCENA_EASY_SCENE_SHOWCASE_ONLY").as_deref() == Ok("reflective-cards") {
+        render_lens_presets(&out)?;
+        render_auto_exposure_presets(&out)?;
+        render_environment_presets(&out)?;
+        render_material_chrome_card(&out)?;
+        eprintln!("done — rendered reflective comparison cards only");
+        return Ok(());
+    }
+
     render_hero_connector(&out)?;
     render_color_constants(&out)?;
     render_lens_presets(&out)?;
@@ -238,7 +247,7 @@ fn render_subject_with_lens(
     let metal_sphere = assets.create_geometry(GeometryDesc::sphere(0.45, 96, 64));
     let plinth = assets.create_geometry(GeometryDesc::box_xyz(2.0, 0.06, 2.0));
     let cylinder = assets.create_geometry(GeometryDesc::cylinder(0.18, 0.6, 48));
-    let metal = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+    let metal = assets.create_material(MaterialDesc::chrome());
     let plastic = assets.create_material(MaterialDesc::plastic(Color::ORANGE));
     let dark = assets.create_material(MaterialDesc::plastic(Color::CHARCOAL));
     let environment =
@@ -436,6 +445,15 @@ fn render_material_presets(out: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn render_material_chrome_card(out: &Path) -> Result<(), Box<dyn Error>> {
+    // Dedicated reflective chrome hero for the `material-chrome` showcase card
+    // (studio HDR IBL specular) — a first-party render in place of the former
+    // browser-captured demo screenshot.
+    let pixels = render_material_sphere(MaterialDesc::chrome(), 640, 640)?;
+    write_png(&pixels, 640, 640, &out.join("material-chrome.png"))?;
+    Ok(())
+}
+
 fn render_material_sphere(
     material: MaterialDesc,
     width: u32,
@@ -569,7 +587,7 @@ fn render_subject_with_exposure(
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
     let sphere = assets.create_geometry(GeometryDesc::sphere(0.5, 96, 64));
-    let material = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+    let material = assets.create_material(MaterialDesc::chrome());
     let environment =
         pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?;
 
@@ -617,7 +635,7 @@ fn render_subject_with_environment(
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
     let sphere = assets.create_geometry(GeometryDesc::sphere(0.5, 96, 64));
-    let material = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+    let material = assets.create_material(MaterialDesc::chrome());
     let environment = pollster::block_on(assets.load_environment_preset(preset))?;
 
     let mut scene = Scene::new();

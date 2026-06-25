@@ -63,7 +63,7 @@ const easy = [
   ["docs/assets/easy-scene-showcase/environment-presets.jpg", "environment-studio.png"],
   ["docs/assets/easy-scene-showcase/background-presets.jpg", "background-dark-studio.png"],
   ["docs/assets/easy-scene-showcase/auto-exposure-presets.jpg", "auto-exposure-product.png"],
-  ["tests/visual/references/round_e/chrome.png", "material-chrome.png"],
+  ["docs/assets/easy-scene-showcase/material-chrome.png", "material-chrome.png"],
 ];
 
 for (const [source, output] of easy) {
