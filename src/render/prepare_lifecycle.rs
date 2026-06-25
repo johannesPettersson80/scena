@@ -119,8 +119,10 @@ impl Renderer {
             }
             None => None,
         };
-        let environment_prepare_stats =
-            prepare::collect_environment_prepare_stats(environment_desc.as_ref());
+        let environment_prepare_stats = prepare::collect_environment_prepare_stats(
+            environment_desc.as_ref(),
+            self.target.backend,
+        );
         let environment_count = u64::from(environment_desc.is_some());
         let active_camera_projection = scene
             .active_camera()

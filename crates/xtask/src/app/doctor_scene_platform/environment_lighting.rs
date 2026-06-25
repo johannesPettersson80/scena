@@ -157,9 +157,9 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         &[
             "pub(in crate::render) struct PreparedEnvironmentStats",
             "cubemaps: 1",
-            "prefilter_passes: u64::from(environment.prefilter_sidecar_identity().is_none())",
+            "!environment.has_prefilter_sidecar_profile(sidecar_profile)",
             "brdf_luts: 1",
-            "environment.cubemap_faces().is_some()",
+            "environment.has_cubemap_face_source()",
         ],
     );
     require_contains(
@@ -168,7 +168,8 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         "ARCH-ENV-IBL-PREP",
         "src/render/prepare_lifecycle.rs",
         &[
-            "prepare::collect_environment_prepare_stats(environment_desc.as_ref())",
+            "prepare::collect_environment_prepare_stats(",
+            "self.target.backend",
             "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
             "self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes",
             "self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts",
@@ -201,6 +202,8 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
             // switches to a real `texture_cube<f32>` mip-roughness sample
             // composed with `prefiltered * (F0 * lut.x + lut.y)`.
             "environment.cubemap_faces()",
+            "warn_environment_sidecar_profile_mismatch",
+            "profile_mismatched_sidecar_preserves_specular_reflection_contrast",
             "environment.preview_irradiance_rgb()",
             "build_face_pixels_rgba32f",
             "PreparedEnvironmentCubemap",
@@ -213,6 +216,17 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
             "gpu_specular_intensity",
             "pbr_contribution",
             "collect_environment_lighting",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "tests/m8_hdr_rle.rs",
+        &[
+            "profile_mismatched_sidecar_renders_structured_chrome_not_flat",
+            "environment_prefilter_passes",
+            "range >= 80.0 && gradient >= 0.8",
         ],
     );
     require_contains(

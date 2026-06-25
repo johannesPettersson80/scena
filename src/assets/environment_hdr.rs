@@ -15,6 +15,34 @@ pub(super) fn parse_equirectangular_hdr_dimensions(path: &AssetPath) -> Option<(
     (width > 0 && height > 0).then_some((width, height))
 }
 
+/// Reads the equirectangular dimensions straight from a Radiance HDR header
+/// without decoding the RGBE scanlines. The resolution line (`-Y <h> +X <w>`)
+/// precedes the binary pixel data, so a sidecar-backed environment can record
+/// real source dimensions cheaply even when the filename lacks a `_WxH` tag.
+pub(super) fn radiance_hdr_dimensions(source_bytes: &[u8]) -> Option<(u32, u32)> {
+    let mut offset = 0;
+    for _ in 0..64 {
+        let rest = source_bytes.get(offset..)?;
+        let newline = rest.iter().position(|&b| b == b'\n')?;
+        let raw = &rest[..newline];
+        offset += newline + 1;
+        let Ok(line) = std::str::from_utf8(raw) else {
+            break;
+        };
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        if tokens.len() == 4
+            && matches!(tokens[0], "-Y" | "+Y")
+            && matches!(tokens[2], "-X" | "+X")
+            && let (Ok(height), Ok(width)) = (tokens[1].parse::<u32>(), tokens[3].parse::<u32>())
+            && width > 0
+            && height > 0
+        {
+            return Some((width, height));
+        }
+    }
+    None
+}
+
 /// Decoded equirectangular HDR pixel grid. Stored as row-major linear RGB
 /// floats so the cubemap projection pass can sample by longitude and latitude.
 /// Built by the `radiant` crate, which handles both uncompressed RGBE and the

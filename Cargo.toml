@@ -19,6 +19,7 @@ include = [
     "/tests/assets/environment/neutral-studio.fixture.txt",
     "/tests/assets/environment/generated/**",
     "/tests/assets/environment/polyhaven/**",
+    "!/tests/assets/environment/polyhaven/*.prefilter.bin",
     "/examples/**",
     "!/examples/furuta_render.rs",
     "/docs/**/*.md",

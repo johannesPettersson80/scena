@@ -28,6 +28,28 @@ fn log_environment_step(label: &str, start_ms: f64) -> f64 {
     now
 }
 
+fn warn_environment_sidecar_profile_mismatch(
+    environment: &EnvironmentDesc,
+    requested: EnvironmentSidecarProfile,
+    actual: EnvironmentSidecarProfile,
+) {
+    let message = format!(
+        "scena environment warning: sidecar '{}' has profile {}, but this backend requested {}; \
+         ignoring the sidecar and baking IBL from the HDR source instead",
+        environment.source_path().as_str(),
+        actual.name(),
+        requested.name()
+    );
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&message));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        eprintln!("{message}");
+    }
+}
+
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
 /// integrate the GGX kernel at roughness values from the shared
@@ -153,6 +175,11 @@ impl PreparedEnvironmentLighting {
 
         let sidecar_profile = profile.sidecar_profile();
         let sidecar = environment.prefilter_sidecar(sidecar_profile);
+        if sidecar.is_none()
+            && let Some(actual_profile) = environment.prefilter_sidecar_profile()
+        {
+            warn_environment_sidecar_profile_mismatch(environment, sidecar_profile, actual_profile);
+        }
         let cubemap_faces = if sidecar.is_some() {
             None
         } else {
@@ -513,6 +540,96 @@ mod tests {
         assert_vec4_close(lighting.gpu_specular_intensity(), [1.0, 1.0, 1.0, 1.0]);
     }
 
+    #[test]
+    fn profile_mismatched_sidecar_does_not_silently_kill_ibl() {
+        // A render that requests a profile the attached sidecar does not provide
+        // (native `Reference` vs an `InteractiveWebGl2`-only prerendered sidecar)
+        // must still be able to bake IBL specular from the retained equirect
+        // source. Regression guard: a missing-profile sidecar previously zeroed
+        // the prepared cubemap, flattening every chrome/metal reflection on
+        // native renders (the "flat pale chrome" showcase bug).
+        let path = "memory://uniform-studio.hdr";
+        let bytes = rle_radiance_hdr_uniform(8, 1, [64, 32, 16, 129]);
+        let plain = EnvironmentDesc::from_equirectangular_hdr_bytes(path, &bytes)
+            .expect("uniform HDR fixture decodes")
+            .with_cubemap_resolution(8);
+        let sidecar =
+            precompute_environment_sidecar(&plain, EnvironmentSidecarProfile::InteractiveWebGl2)
+                .expect("interactive sidecar precomputes");
+        let desc = EnvironmentDesc::from_equirectangular_hdr_sidecar_bytes(path, &bytes, sidecar)
+            .expect("sidecar env constructs")
+            .expect("sidecar sha matches source");
+
+        assert!(
+            desc.prefilter_sidecar(EnvironmentSidecarProfile::Reference)
+                .is_none(),
+            "precondition: a WebGl2 sidecar must not satisfy a Reference request"
+        );
+        assert!(
+            desc.cubemap_faces().is_some(),
+            "profile-mismatched sidecar must retain a bakeable equirect cubemap \
+             source so native IBL specular does not silently go flat"
+        );
+    }
+
+    #[test]
+    fn profile_mismatched_sidecar_preserves_specular_reflection_contrast() {
+        let path = "memory://striped-studio.hdr";
+        let bytes = rle_radiance_hdr_vertical_stripes(16, 8, [8, 8, 8, 128], [255, 255, 255, 131]);
+        let plain = EnvironmentDesc::from_equirectangular_hdr_bytes(path, &bytes)
+            .expect("striped HDR fixture decodes")
+            .with_cubemap_resolution(16);
+        let sidecar =
+            precompute_environment_sidecar(&plain, EnvironmentSidecarProfile::InteractiveWebGl2)
+                .expect("interactive sidecar precomputes");
+        let desc = EnvironmentDesc::from_equirectangular_hdr_sidecar_bytes(path, &bytes, sidecar)
+            .expect("sidecar env constructs")
+            .expect("sidecar sha matches source")
+            .with_cubemap_resolution(16);
+
+        let lighting = PreparedEnvironmentLighting::from_environment_with_profile(
+            Some(&desc),
+            EnvironmentLightingProfile::Reference,
+        );
+        let cubemap = lighting
+            .cubemap()
+            .expect("profile mismatch must bake a Reference cubemap from the HDR source");
+        let directions = [
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, -1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.707, 0.0, 0.707),
+            Vec3::new(-0.707, 0.0, 0.707),
+            Vec3::new(0.707, 0.0, -0.707),
+            Vec3::new(-0.707, 0.0, -0.707),
+        ];
+        let luminance_values = directions
+            .into_iter()
+            .map(|direction| luminance(sample_prefiltered_specular(cubemap, direction, 0.02)))
+            .collect::<Vec<_>>();
+        let min = luminance_values
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min);
+        let max = luminance_values
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(
+            max > min + 0.2,
+            "profile-mismatched sidecar fallback must preserve angular reflection contrast; \
+             a constant specular fallback makes chrome flat. samples={luminance_values:?}"
+        );
+    }
+
+    fn luminance(value: Vec3) -> f32 {
+        value.x * 0.2126 + value.y * 0.7152 + value.z * 0.0722
+    }
+
     fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {
         assert!(width >= 8);
         assert!(width <= 127);
@@ -526,6 +643,36 @@ mod tests {
             for channel in &rgbe {
                 bytes.push(0x80 + width as u8);
                 bytes.push(*channel);
+            }
+        }
+        bytes
+    }
+
+    fn rle_radiance_hdr_vertical_stripes(
+        width: u32,
+        height: u32,
+        dark: [u8; 4],
+        bright: [u8; 4],
+    ) -> Vec<u8> {
+        assert!(width >= 8);
+        assert!(width <= 127);
+        let mut bytes =
+            format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
+        for _ in 0..height {
+            bytes.push(0x02);
+            bytes.push(0x02);
+            bytes.push((width >> 8) as u8);
+            bytes.push((width & 0xff) as u8);
+            for channel in 0..4 {
+                bytes.push(width as u8);
+                for x in 0..width {
+                    let source = if x < width / 4 || x >= width * 3 / 4 {
+                        bright
+                    } else {
+                        dark
+                    };
+                    bytes.push(source[channel]);
+                }
             }
         }
         bytes

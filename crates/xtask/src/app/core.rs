@@ -8,7 +8,9 @@ pub(crate) fn run() {
         Ok(Command::ClaimAudit) => run_claim_audit(),
         Ok(Command::ReleaseLaneArtifact(lane)) => run_release_lane_artifact(&lane),
         Ok(Command::ReleaseReadiness) => run_release_readiness(),
-        Ok(Command::PrerenderEnvironment { input }) => run_prerender_environment(&input),
+        Ok(Command::PrerenderEnvironment { input, resolution }) => {
+            run_prerender_environment(&input, resolution)
+        }
         Ok(Command::StageReleaseArtifacts { input, output }) => {
             run_stage_release_artifacts(&input, &output)
         }
@@ -45,13 +47,21 @@ pub(crate) enum DoctorMode {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Doctor(DoctorMode),
-    AssetDoctor { input: String },
+    AssetDoctor {
+        input: String,
+    },
     ArchitectureMap,
     ClaimAudit,
     ReleaseLaneArtifact(String),
     ReleaseReadiness,
-    PrerenderEnvironment { input: String },
-    StageReleaseArtifacts { input: String, output: String },
+    PrerenderEnvironment {
+        input: String,
+        resolution: Option<u32>,
+    },
+    StageReleaseArtifacts {
+        input: String,
+        output: String,
+    },
     VisualProof(VisualProofCommand),
     Help,
 }
@@ -87,6 +97,7 @@ pub(crate) fn finding_reference(rule: &str) -> &'static str {
         || rule == "ARCH-RENDER-TRUTH"
         || rule == "ARCH-RENDER-STANDARD-MATH"
         || rule == "ARCH-RENDER-WORLD-BAKE"
+        || rule == "STUDIO-HDR-SIDECAR-CURRENT"
         || rule == "BINARY-ASSET-TRUTH-P9"
     {
         "docs/rendering.md"
@@ -171,9 +182,26 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
         if args.len() == 2 {
             return Ok(Command::PrerenderEnvironment {
                 input: args[1].clone(),
+                resolution: None,
             });
         }
-        return Err("prerender-environment expects exactly one HDR input path".to_string());
+        if args.len() == 4 && args[2] == "--resolution" {
+            let resolution = args[3].parse::<u32>().map_err(|_| {
+                "prerender-environment --resolution expects a positive integer".to_string()
+            })?;
+            if resolution == 0 {
+                return Err(
+                    "prerender-environment --resolution expects a positive integer".to_string(),
+                );
+            }
+            return Ok(Command::PrerenderEnvironment {
+                input: args[1].clone(),
+                resolution: Some(resolution),
+            });
+        }
+        return Err(
+            "prerender-environment expects <input.hdr> [--resolution <face_px>]".to_string(),
+        );
     }
 
     if args.first().map(String::as_str) == Some("stage-release-artifacts") {
@@ -231,6 +259,6 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 pub(crate) fn print_usage() {
     println!(
-        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- prerender-environment <input.hdr>\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
+        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- prerender-environment <input.hdr> [--resolution <face_px>]\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
     );
 }

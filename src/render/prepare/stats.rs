@@ -3,7 +3,7 @@ use crate::diagnostics::{Backend, Capabilities, CapabilityStatus, PrepareError};
 use crate::scene::{Light, Scene, Vec3};
 
 use super::{
-    PreparedPrimitive,
+    EnvironmentLightingProfile, PreparedPrimitive,
     lighting::{MAX_GPU_AREA_LIGHTS, PreparedLights},
 };
 
@@ -131,6 +131,7 @@ const fn depth_prepass_backend_supported(backend: Backend) -> bool {
 
 pub(in crate::render) fn collect_environment_prepare_stats(
     environment: Option<&EnvironmentDesc>,
+    backend: Backend,
 ) -> PreparedEnvironmentStats {
     // Report the prefilter pipeline counters for every environment that
     // produces a cubemap (bundled preview fixture) OR is declared as an
@@ -139,11 +140,15 @@ pub(in crate::render) fn collect_environment_prepare_stats(
     // mip chain + BRDF LUT downstream.
     match environment {
         Some(environment)
-            if environment.cubemap_faces().is_some() || environment.is_equirectangular_hdr() =>
+            if environment.has_cubemap_face_source() || environment.is_equirectangular_hdr() =>
         {
+            let sidecar_profile =
+                EnvironmentLightingProfile::for_backend(backend).sidecar_profile();
             PreparedEnvironmentStats {
                 cubemaps: 1,
-                prefilter_passes: u64::from(environment.prefilter_sidecar_identity().is_none()),
+                prefilter_passes: u64::from(
+                    !environment.has_prefilter_sidecar_profile(sidecar_profile),
+                ),
                 brdf_luts: 1,
             }
         }
@@ -154,8 +159,10 @@ pub(in crate::render) fn collect_environment_prepare_stats(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assets::{EnvironmentDesc, EnvironmentSidecarProfile};
     use crate::geometry::Primitive;
     use crate::material::Color;
+    use crate::render::precompute_environment_sidecar;
 
     #[test]
     fn single_primitive_scene_still_runs_depth_prepass_on_gpu_backends() {
@@ -204,7 +211,52 @@ mod tests {
         assert_eq!(stats.draws, 0);
     }
 
+    #[test]
+    fn environment_prefilter_stats_count_profile_mismatched_sidecar_as_fresh_bake() {
+        let path = "memory://stats-studio.hdr";
+        let bytes = rle_radiance_hdr_uniform(8, 1, [64, 32, 16, 129]);
+        let plain = EnvironmentDesc::from_equirectangular_hdr_bytes(path, &bytes)
+            .expect("uniform HDR fixture decodes")
+            .with_cubemap_resolution(8);
+        let sidecar =
+            precompute_environment_sidecar(&plain, EnvironmentSidecarProfile::InteractiveWebGl2)
+                .expect("interactive sidecar precomputes");
+        let environment =
+            EnvironmentDesc::from_equirectangular_hdr_sidecar_bytes(path, &bytes, sidecar)
+                .expect("sidecar env constructs")
+                .expect("sidecar sha matches source")
+                .with_cubemap_resolution(8);
+
+        let webgl2_stats = collect_environment_prepare_stats(Some(&environment), Backend::WebGl2);
+        let native_stats = collect_environment_prepare_stats(Some(&environment), Backend::Headless);
+
+        assert_eq!(webgl2_stats.prefilter_passes, 0);
+        assert_eq!(
+            native_stats.prefilter_passes, 1,
+            "native Reference prepares must report a fresh prefilter pass when only an \
+             InteractiveWebGl2 sidecar is attached"
+        );
+    }
+
     fn prepared(primitive: Primitive) -> PreparedPrimitive {
         PreparedPrimitive::new(primitive, None, Color::WHITE)
+    }
+
+    fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {
+        assert!(width >= 8);
+        assert!(width <= 127);
+        let mut bytes =
+            format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
+        for _ in 0..height {
+            bytes.push(0x02);
+            bytes.push(0x02);
+            bytes.push((width >> 8) as u8);
+            bytes.push((width & 0xff) as u8);
+            for channel in &rgbe {
+                bytes.push(0x80 + width as u8);
+                bytes.push(*channel);
+            }
+        }
+        bytes
     }
 }

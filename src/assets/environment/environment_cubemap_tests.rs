@@ -1,4 +1,6 @@
+use super::cubemap_faces::cube_face_direction;
 use super::*;
+use crate::scene::Vec3;
 
 const NEUTRAL_STUDIO_FIXTURE: &str =
     include_str!("../../../tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml");
