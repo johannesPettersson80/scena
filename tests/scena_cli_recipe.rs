@@ -10469,6 +10469,9 @@ fn system_test_font_path() -> PathBuf {
     let candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Helvetica.ttf",
+        "/Library/Fonts/Arial.ttf",
     ];
     candidates
         .iter()
