@@ -42,8 +42,13 @@ async fn m6_webgl2_attached_canvas_is_not_hard_disabled() {
 
     assert_eq!(outcome.draw_calls, 1);
     assert_eq!(renderer.stats().gpu_submissions, 1);
+    let readback = renderer
+        .browser_probe_readback_rgba8()
+        .await
+        .expect("WebGL2 browser proof readback maps")
+        .expect("WebGL2 browser proof readback resources exist");
     assert!(
-        nonblack_pixel_count(renderer.frame_rgba8()) > 0,
+        nonblack_pixel_count(readback.rgba8()) > 0,
         "WebGL2 proof must include rendered pixels, not only draw counters"
     );
     assert!(
@@ -84,8 +89,13 @@ async fn m6_webgl2_surface_lifecycle_requires_prepare_and_retained_assets() {
     renderer
         .render(&scene, camera)
         .expect("WebGL2 lifecycle scene renders");
+    let readback = renderer
+        .browser_probe_readback_rgba8()
+        .await
+        .expect("WebGL2 lifecycle proof readback maps")
+        .expect("WebGL2 lifecycle proof readback resources exist");
     assert!(
-        nonblack_pixel_count(renderer.frame_rgba8()) > 0,
+        nonblack_pixel_count(readback.rgba8()) > 0,
         "WebGL2 lifecycle proof must start from visible rendered pixels"
     );
 
