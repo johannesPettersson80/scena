@@ -79,8 +79,8 @@ pub(super) fn authored_geometry(
                 "sphere".to_owned(),
                 GeometryDesc::sphere(
                     radius as f32,
-                    primitive.segments.unwrap_or(32),
-                    primitive.rings.unwrap_or(16),
+                    primitive.segments.unwrap_or(64),
+                    primitive.rings.unwrap_or(48),
                 ),
             ))
         }

@@ -45,8 +45,8 @@ fn projected_primitive_counts(
             indices: 6,
         },
         "sphere" => {
-            let segments = u64::from(primitive.segments.unwrap_or(32).max(3));
-            let rings = u64::from(primitive.rings.unwrap_or(16).max(2));
+            let segments = u64::from(primitive.segments.unwrap_or(64).max(3));
+            let rings = u64::from(primitive.rings.unwrap_or(48).max(2));
             ProjectedGeometryCounts {
                 vertices: checked_mul(segments + 1, rings + 1, "sphere vertices")?,
                 indices: checked_mul(

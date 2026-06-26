@@ -1346,7 +1346,9 @@ The current v1 recipe slice supports:
   `expect_quality.reflection.target` checks the projected region for a specific
   node. Use `max_firefly_fraction` when polished/metallic IBL reflections must
   reject isolated bright HDR specks separately from missing reflection
-  structure. `expect_quality.area_light` checks the projected target receiver for
+  structure. Use `min_bright_fraction` and `min_dark_fraction` when a chrome or
+  mirror-metal subject must show white-card highlights plus dark edge
+  definition; failures emit `reflection_chrome_read_missing`. `expect_quality.area_light` checks the projected target receiver for
   measurable finite-emitter soft-shadow structure and emits
   `area_light_soft_shadow_checked` or
   `area_light_soft_shadow_insufficient` with observed penumbra width, luminance

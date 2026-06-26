@@ -135,6 +135,33 @@
       "fix_hint": "increase IBL prefilter quality or use source-mip importance sampling so tiny HDR emitters blur into reflection mips instead of isolated bright specks"
     },
     {
+      "id": "reflection-chrome-fixture",
+      "code": "reflection_chrome_read_missing",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "reflection_target",
+        "handle": 4294967302,
+        "rect_css_px": {
+          "min_x": 42.0,
+          "min_y": 28.0,
+          "max_x": 118.0,
+          "max_y": 104.0,
+          "width": 76.0,
+          "height": 76.0
+        }
+      },
+      "observed": {
+        "bright_fraction": 0.02,
+        "dark_fraction": 0.0
+      },
+      "threshold": {
+        "min_bright_fraction": 0.08,
+        "min_dark_fraction": 0.03
+      },
+      "fix_hint": "use a studio HDR environment (environment.preset:\"studio\") and a high-tessellation sphere (segments>=256, rings>=192) so a mirror subject shows structured reflections"
+    },
+    {
       "id": "area-light-fixture",
       "code": "area_light_soft_shadow_insufficient",
       "status": "failed",

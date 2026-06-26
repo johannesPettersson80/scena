@@ -203,7 +203,11 @@ they apply the matching background, bundled environment, grid/floor defaults,
 SSAO, and auto-exposure scenario instead of duplicating setup logic in the
 recipe layer. `scene.environment:{ "preset":"studio" }` and
 `"neutral_studio"` route through `Assets::load_environment_preset` after
-`RecipeBuildPolicy` checks the preset asset path.
+`RecipeBuildPolicy` checks the preset asset path. Use
+`scene.environment:{ "preset":"studio" }` for low-roughness chrome product
+stills; mirror metal mostly reflects its environment, so the real studio HDR
+gives structured softbox reflections — pair it with a high-tessellation sphere
+(segments>=256, rings>=192) so the mirror does not reveal facets.
 
 Use `Scene::add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))`
 when a model needs a matte reference floor. The floor helper derives size from
@@ -225,7 +229,10 @@ sample visible scene colour in screen space. Material reflections are
 roughness-aware and fade back to the environment-lit material at screen edges or
 where no screen-space sample exists. Use `expect_quality.reflection` for
 floor/reflection-surface checks, or `expect_quality.reflection.target` for a
-specific chrome/mirror subject.
+specific chrome/mirror subject. Chrome-specific gates can add
+`min_bright_fraction` and `min_dark_fraction`; failures emit
+`reflection_chrome_read_missing` when a mirror subject is flat gray or black
+instead of showing white-card highlights and dark edge definition.
 
 ## Shadows
 

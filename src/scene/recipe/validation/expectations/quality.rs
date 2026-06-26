@@ -35,6 +35,8 @@ const QUALITY_REFLECTION_FIELDS: &[&str] = &[
     "min_sobel_energy",
     "min_chroma_range",
     "max_firefly_fraction",
+    "min_bright_fraction",
+    "min_dark_fraction",
 ];
 const QUALITY_AREA_LIGHT_FIELDS: &[&str] = &[
     "target",
@@ -57,6 +59,8 @@ const QUALITY_REFLECTION_THRESHOLD_FIELDS: &[&str] = &[
     "min_sobel_energy",
     "min_chroma_range",
     "max_firefly_fraction",
+    "min_bright_fraction",
+    "min_dark_fraction",
 ];
 pub(super) const REFERENCE_FIELDS: &[&str] = &["id", "image", "metric", "mean_max", "min_ssim"];
 

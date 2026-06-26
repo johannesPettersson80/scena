@@ -262,7 +262,9 @@
         "profile": "documentation",
         "reflection": {
           "max_firefly_fraction": 0.01,
+          "min_bright_fraction": 0.08,
           "min_chroma_range": 0.04,
+          "min_dark_fraction": 0.03,
           "min_luminance_range": 0.12,
           "min_sobel_energy": 0.02,
           "target": {

@@ -265,6 +265,10 @@ pub struct SceneRecipeQualityReflectionV1 {
     pub min_chroma_range: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_firefly_fraction: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_bright_fraction: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_dark_fraction: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

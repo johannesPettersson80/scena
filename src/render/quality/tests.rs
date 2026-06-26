@@ -166,6 +166,16 @@ fn firefly_reflection_fixture(width: u32, height: u32) -> Vec<u8> {
     rgba
 }
 
+fn flat_dark_chrome_fixture(width: u32, height: u32) -> Vec<u8> {
+    let mut rgba = solid_frame(width, height, [34, 38, 44, 255]);
+    for y in height / 3..(height / 3 + 4).min(height) {
+        for x in width / 5..(width * 4 / 5).min(width) {
+            set_rgb(&mut rgba, width, x, y, [238, 242, 248]);
+        }
+    }
+    rgba
+}
+
 fn black_frame(width: u32, height: u32) -> Vec<u8> {
     solid_frame(width, height, [0, 0, 0, 255])
 }

@@ -10,7 +10,8 @@ applications can replace any part.
 The image above is one render produced by following the steps on this page.
 Every image embedded below comes from
 [`examples/easy_scene_showcase.rs`](../../examples/easy_scene_showcase.rs); run it with
-`cargo run --example easy_scene_showcase --release` to regenerate them.
+headless GPU enabled to regenerate them. On lavapipe:
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json cargo run --example easy_scene_showcase --release`.
 
 ## Minimal model viewer
 
@@ -464,7 +465,11 @@ renderer.set_environment(environment);
 The chrome sphere on the right reflects the studio HDR; on the left the
 neutral fixture keeps reflections subdued and low-detail. That contrast is the
 quickest way to verify the environment is actually bound to the
-renderer.
+renderer. For a bright product-photography chrome read, use
+`EnvironmentPreset::Studio` (the real studio HDR) with a high-tessellation sphere
+(segments>=256, rings>=192); the studio softboxes give structured reflections
+and the dense sphere keeps the mirror from showing facets, so mirror-metal
+subjects do not collapse to a smooth gray or black blob.
 
 Use `EnvironmentPreset::ALL` when compatibility proof should render every
 checked preset. KTX2 cubemap presets are still future work; the shipped catalog

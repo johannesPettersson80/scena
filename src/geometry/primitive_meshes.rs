@@ -83,6 +83,16 @@ impl GeometryDesc {
         new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
     }
 
+    /// A UV sphere of `radius` with `segments` longitudinal and `rings`
+    /// latitudinal subdivisions.
+    ///
+    /// Tessellation and reflections: a near-mirror material (e.g. `chrome` or
+    /// any low-roughness metal) reflects the environment sharply and therefore
+    /// reveals the sphere's polygon facets. Reflective spheres need a high
+    /// subdivision count — use `segments >= 256` and `rings >= 192` (the
+    /// showcase chrome hero uses `384, 256`). A coarse sphere (~`96, 64`) looks
+    /// smooth under matte/rough materials but blocky/faceted once the surface
+    /// becomes a sharp mirror.
     pub fn sphere(radius: f32, segments: u32, rings: u32) -> Self {
         let radius = radius.abs();
         let segments = segments.max(3);

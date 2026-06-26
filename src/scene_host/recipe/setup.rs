@@ -162,6 +162,7 @@ async fn apply_scene_preset(
             policy,
             host,
             recipe_path,
+            "$.scene.preset",
             preset.environment(),
             texture_budget,
             diagnostics,
@@ -335,11 +336,16 @@ async fn apply_environment(
 ) {
     if let Some(preset) = environment.preset.as_deref() {
         let Some(preset) = EnvironmentPreset::from_recipe_name(preset) else {
+            let names = EnvironmentPreset::ALL
+                .iter()
+                .map(|preset| preset.recipe_name())
+                .collect::<Vec<_>>()
+                .join(", ");
             diagnostics.push(error_diagnostic(
                 "$.scene.environment.preset",
                 "invalid_environment",
                 "unsupported environment preset",
-                "use studio or neutral_studio",
+                format!("use one of: {names}"),
             ));
             return;
         };
@@ -347,6 +353,7 @@ async fn apply_environment(
             policy,
             host,
             recipe_path,
+            "$.scene.environment.preset",
             preset,
             texture_budget,
             diagnostics,
@@ -418,6 +425,7 @@ async fn apply_environment_preset(
     policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     recipe_path: &str,
+    diagnostic_path: &'static str,
     preset: EnvironmentPreset,
     texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
@@ -425,7 +433,7 @@ async fn apply_environment_preset(
     let metadata = preset.metadata();
     let uri = metadata.source_path();
     let _resolved =
-        match texture_budget.reserve_environment_uri(policy, recipe_path, uri, "$.scene.preset") {
+        match texture_budget.reserve_environment_uri(policy, recipe_path, uri, diagnostic_path) {
             Ok(uri) => uri,
             Err(diagnostic) => {
                 diagnostics.push(*diagnostic);
@@ -442,7 +450,7 @@ async fn apply_environment_preset(
     {
         Ok(handle) => host.renderer.set_environment(handle),
         Err(error) => diagnostics.push(error_diagnostic(
-            "$.scene.preset",
+            diagnostic_path,
             "environment_load_failed",
             format!(
                 "scene preset environment '{}' could not be loaded from '{uri}': {error}",

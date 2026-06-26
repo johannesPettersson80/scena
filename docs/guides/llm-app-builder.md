@@ -140,13 +140,27 @@ Prefer `material.preset` (`chrome`, `metal`, `rough_metal`,
 `brushed_steel`, `plastic`, `clearcoat_plastic`, `satin`, `leather`,
 `rubber`, `matte`, `clear_glass`, `frosted_glass`) before raw PBR fields.
 Use `base_color` as an optional tint and scalar overrides such as `roughness`
-only where needed. Prefer `camera.lens` and `camera.framing` over manual
+only where needed.
+
+Mirror materials need a dense sphere. A low-roughness subject (`chrome`, a
+polished `metal`) reflects the environment sharply and therefore reveals the
+mesh facets, so reflective spheres must use a high subdivision count:
+`"primitive":{"kind":"sphere","radius":0.5,"segments":256,"rings":192}` (the
+showcase chrome hero uses `384, 256`). The sphere `segments`/`rings` default is
+only `64, 48` — fine for matte/rough materials, but it renders chrome as a
+blocky, faceted ball. Raise `segments`/`rings` whenever the material is a near
+mirror.
+
+Prefer `camera.lens` and `camera.framing` over manual
 camera distances. Prefer named color constants (`orange`, `gray`,
 `light_gray`, `dark_gray`, `charcoal`, `studio_backdrop`, `warm_white`,
 `cool_white`) when they fit. Use
 `scene.environment:{ "preset":"studio" }` or `"neutral_studio"` for bundled
 HDRI IBL, and leave `scene.grid.under_bounds` at its default `true` for
-auto-sized floors.
+auto-sized floors. Use `studio` (a real Poly Haven studio HDR with softboxes)
+when a low-roughness `material.preset:"chrome"` subject must read as product
+chrome; mirror materials show the environment, so the studio HDR gives
+structured reflections where a smooth/flat environment makes chrome look black.
 
 Use `studio` or `neutral_gray` for model/product inspection, `dark_studio` for
 dashboards and twin state views, `white` or `transparent` for documentation
@@ -168,7 +182,14 @@ verified structured floor reflection preset without requiring material SSR. If
 the reflection is load-bearing, add
 `expect_quality.reflection` so a flat matte floor fails with
 `reflection_structure_missing`.
-For hero product/studio reflections, use
+For hero chrome product stills, prefer
+`scene.environment:{ "preset":"studio" }` with a high-tessellation sphere
+(segments>=256, rings>=192) before changing the material. Add
+`expect_quality.reflection.target` with `min_bright_fraction` and
+`min_dark_fraction` when the subject must visibly read as chrome; a flat
+dark/gray mirror fails with
+`reflection_chrome_read_missing`. For hero product/studio reflections that must
+mirror neighboring scene geometry, use
 `render.screen_space_reflections:{strength,roughness,horizon_fraction,fade}`.
 It reflects rendered scene content in screen space for the floor band and
 high-metallic/low-roughness materials such as chrome. Screen-edge and occluded

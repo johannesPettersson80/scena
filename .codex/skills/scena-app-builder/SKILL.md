@@ -135,6 +135,10 @@ Use `base_color` as an optional preset tint, then add scalar overrides such as
 Prefer `camera.lens` and `camera.framing` over manual camera distances.
 `scene.environment:{ "preset":"studio" }` or `"neutral_studio"` uses the
 bundled HDRI presets through the same asset policy as other recipe assets.
+Use `"studio"` (the real Poly Haven studio HDR) when a low-roughness
+`material.preset:"chrome"` subject must read as product chrome; chrome is
+mirror-like, so the environment must provide structured softbox reflections and
+the subject sphere must be densely tessellated (segments>=256, rings>=192).
 `scene.grid.under_bounds` defaults to `true`; leave it on for auto-sized floors.
 
 Use `studio` or `neutral_gray` for product/model inspection, `dark_studio` for
@@ -155,7 +159,14 @@ For product-style floor reflections, enable `scene.grid.reflection`; it is a
 verified structured floor-reflection preset that does not require material SSR.
 If it matters, add `expect_quality.reflection` and treat
 `reflection_structure_missing` as a real render-quality failure.
-For hero product/studio reflections, add
+For hero chrome product stills, prefer
+`scene.environment:{ "preset":"studio" }` with a high-tessellation sphere (segments>=256, rings>=192) before tuning the material.
+Do not expect a chrome material to look silver in an empty or smooth dark
+environment. Add `expect_quality.reflection.target` with
+`min_bright_fraction` and `min_dark_fraction` so flat-black or flat-gray chrome
+fails with `reflection_chrome_read_missing`.
+For hero product/studio reflections that must mirror neighboring scene
+geometry, add
 `render.screen_space_reflections:{strength,roughness,horizon_fraction,fade}`.
 It mirrors rendered scene content in screen space for the floor band and
 high-metallic/low-roughness materials such as chrome. Screen-edge and occluded

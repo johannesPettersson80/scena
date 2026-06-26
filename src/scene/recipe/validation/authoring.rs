@@ -6,6 +6,7 @@ use super::diagnostic;
 
 mod animations;
 mod ids;
+mod reflective_tessellation;
 mod resources;
 mod targets;
 
@@ -51,6 +52,7 @@ pub(super) fn validate_authoring_sections(
     morph_target_counts.extend(skin_info.target_counts.clone());
     resources::validate_materials(object.get("materials"), &color_ids, diagnostics);
     let material_ids = ids::id_set_from_array(object.get("materials"));
+    reflective_tessellation::validate_reflective_sphere_tessellation(object, diagnostics);
     resources::validate_fonts(object.get("fonts"), diagnostics);
     let font_ids = ids::id_set_from_array(object.get("fonts"));
     let import_ids = ids::id_set_from_array(object.get("imports"));

@@ -62,6 +62,10 @@ Rules:
 - add a `studio_rig` light or a key/fill/rim directional light rig and an HDRI
   environment for user-facing renders unless the task is deliberately flat or
   unlit;
+- use `scene.environment:{ "preset":"studio" }` with a high-tessellation sphere
+  (segments>=256, rings>=192) when `material.preset:"chrome"` must read as product chrome;
+  mirror metal reflects the environment and a coarse sphere shows facets, so a
+  flat environment or low-poly sphere yields a black/gray or blocky sphere;
 - use an area `softbox` light only when a finite-emitter highlight or partial
   penumbra is load-bearing, and pair it with `expect_quality.area_light`;
 - use `studio`, `neutral_gray`, or `dark_studio` backgrounds by default and

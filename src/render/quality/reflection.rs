@@ -20,6 +20,7 @@ pub fn evaluate_reflection_region_quality(
     let max_firefly_fraction = expectation.max_firefly_fraction.unwrap_or(0.01) as f32;
     let chroma_range = reflection_chroma_range(rgba8, width, height, region);
     let firefly_fraction = reflection_firefly_fraction(rgba8, width, height, region);
+    let chrome_read = reflection_chrome_read_metrics(rgba8, width, height, region);
     let mut checks = Vec::new();
     if metrics.luminance_range < min_luminance_range
         || metrics.sobel_energy < min_sobel_energy
@@ -62,7 +63,75 @@ pub fn evaluate_reflection_region_quality(
             fix_hint: "increase IBL prefilter quality or use source-mip importance sampling so tiny HDR emitters blur into reflection mips instead of isolated bright specks".to_owned(),
         });
     }
+    let min_bright_fraction = expectation.min_bright_fraction.map(|value| value as f32);
+    let min_dark_fraction = expectation.min_dark_fraction.map(|value| value as f32);
+    if min_bright_fraction.is_some_and(|threshold| chrome_read.bright_fraction < threshold)
+        || min_dark_fraction.is_some_and(|threshold| chrome_read.dark_fraction < threshold)
+    {
+        let mut threshold = BTreeMap::new();
+        if let Some(value) = min_bright_fraction {
+            threshold.insert("min_bright_fraction".to_owned(), value);
+        }
+        if let Some(value) = min_dark_fraction {
+            threshold.insert("min_dark_fraction".to_owned(), value);
+        }
+        checks.push(RenderQualityCheckV1 {
+            id: id.to_owned(),
+            code: "reflection_chrome_read_missing".to_owned(),
+            status: RenderQualityStatusV1::Failed,
+            severity: "error".to_owned(),
+            region: region.to_report(),
+            observed: BTreeMap::from([
+                (
+                    "bright_fraction".to_owned(),
+                    types::round3(chrome_read.bright_fraction),
+                ),
+                (
+                    "dark_fraction".to_owned(),
+                    types::round3(chrome_read.dark_fraction),
+                ),
+            ]),
+            threshold,
+            fix_hint: "use a studio HDR environment (environment.preset:\"studio\") and a high-tessellation sphere (segments>=256, rings>=192) so a mirror subject shows structured reflections".to_owned(),
+        });
+    }
     checks
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReflectionChromeReadMetrics {
+    bright_fraction: f32,
+    dark_fraction: f32,
+}
+
+fn reflection_chrome_read_metrics(
+    rgba8: &[u8],
+    width: u32,
+    height: u32,
+    region: RenderQualityRegion,
+) -> ReflectionChromeReadMetrics {
+    let max_x = region.x.saturating_add(region.width).min(width);
+    let max_y = region.y.saturating_add(region.height).min(height);
+    let mut bright = 0usize;
+    let mut dark = 0usize;
+    let mut count = 0usize;
+    for y in region.y..max_y {
+        for x in region.x..max_x {
+            let luma = pixel_luminance(rgba8, width, x, y);
+            if luma >= 0.68 {
+                bright += 1;
+            }
+            if luma <= 0.18 {
+                dark += 1;
+            }
+            count += 1;
+        }
+    }
+    let count = count.max(1) as f32;
+    ReflectionChromeReadMetrics {
+        bright_fraction: bright as f32 / count,
+        dark_fraction: dark as f32 / count,
+    }
 }
 
 fn reflection_chroma_range(

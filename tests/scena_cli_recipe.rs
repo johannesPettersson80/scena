@@ -1841,6 +1841,55 @@ fn write_ergonomic_product_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) 
 }
 
 #[cfg(feature = "scene-host")]
+fn write_chrome_read_failure_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "near_black": "#010101"
+            },
+            "geometries": [
+                { "id": "chrome_geo", "primitive": { "kind": "box", "size": [0.70, 0.70, 0.08] } }
+            ],
+            "materials": [
+                { "id": "chrome_mat", "preset": "chrome", "base_color": "near_black", "roughness": 0.0 }
+            ],
+            "nodes": [
+                { "id": "chrome", "geometry": "chrome_geo", "material": "chrome_mat" }
+            ],
+            "scene": {
+                "background": { "kind": "black" },
+                "environment": { "kind": "none" }
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 32.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.4], "target": [0.0, 0.0, 0.0] }
+            }],
+            "capture": { "width": 96, "height": 96 },
+            "expect": {
+                "expect_quality": {
+                    "profile": "product",
+                    "reflection": {
+                        "target": { "kind": "node", "id": "chrome" },
+                        "min_bright_fraction": 0.20,
+                        "min_dark_fraction": 0.05
+                    }
+                }
+            }
+        }))
+        .expect("chrome read failure recipe serializes"),
+    )
+    .expect("chrome read failure recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
 fn write_chrome_ibl_firefly_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
     write_chrome_ibl_recipe(dir, name, 0.05)
 }
@@ -3810,6 +3859,43 @@ fn scena_recipe_render_verify_material_reflection_changes_target_pixels_on_cpu_a
         format_material_reflection_metrics(&all_results),
     )
     .expect("material reflection delta metrics write");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_missing_chrome_read_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-chrome-read-missing");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_chrome_read_failure_recipe(&dir, &format!("chrome-read-missing-{backend}"));
+        let report = run_recipe_render_verify_expect_failure(&recipe_path, &png_path, use_gpu);
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        let chrome_read_check = checks
+            .iter()
+            .find(|check| {
+                check["code"] == "reflection_chrome_read_missing"
+                    && check["status"] == "failed"
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "chrome-read failure must emit exact reflection_chrome_read_missing on {backend}: {report:#}"
+                )
+            });
+        assert!(
+            chrome_read_check["threshold"]["min_bright_fraction"].is_number(),
+            "chrome-read failure must report min_bright_fraction on {backend}: {report:#}"
+        );
+        assert!(
+            chrome_read_check["threshold"]["min_dark_fraction"].is_number(),
+            "chrome-read failure must report min_dark_fraction on {backend}: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "chrome-read failure render writes the PNG on {backend}"
+        );
+    }
 }
 
 #[cfg(feature = "scene-host")]
