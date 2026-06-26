@@ -131,7 +131,7 @@ async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFracti
       foregroundRect,
     };
   });
-  await canvas.screenshot({ path: file });
+  await canvas.screenshot({ path: file, timeout: 30000 });
   if (stats.mean < 0.003 || stats.deviation < 0.002) {
     throw new Error(`${scene} canvas looks blank: ${JSON.stringify(stats)}`);
   }

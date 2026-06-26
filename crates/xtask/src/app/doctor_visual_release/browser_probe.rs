@@ -456,7 +456,11 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         findings,
         "VISUAL-BROWSER-M6",
         "tests/m6_browser_renderer_parity.rs",
-        &["nonblack_pixel_count(renderer.frame_rgba8()) > 0"],
+        &[
+            "browser_canvas_rgba8(&canvas).expect(\"WebGL2 canvas readback exists\")",
+            "readPixels",
+            "WebGL2 proof must include rendered pixels",
+        ],
     );
     require_contains(
         root,
