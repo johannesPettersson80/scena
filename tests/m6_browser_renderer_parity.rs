@@ -13,7 +13,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 #[wasm_bindgen_test(async)]
 async fn m6_webgl2_attached_canvas_is_not_hard_disabled() {
     let canvas = browser_canvas(32, 32);
-    let surface = PlatformSurface::browser_webgl2_canvas_element(canvas, 32, 32);
+    let surface = PlatformSurface::browser_webgl2_canvas_element(canvas.clone(), 32, 32);
     let mut renderer = match Renderer::from_surface_async(surface).await {
         Ok(renderer) => renderer,
         Err(BuildError::CreateSurface { backend })
@@ -42,13 +42,10 @@ async fn m6_webgl2_attached_canvas_is_not_hard_disabled() {
 
     assert_eq!(outcome.draw_calls, 1);
     assert_eq!(renderer.stats().gpu_submissions, 1);
-    let readback = renderer
-        .browser_probe_readback_rgba8()
-        .await
-        .expect("WebGL2 browser proof readback maps")
-        .expect("WebGL2 browser proof readback resources exist");
     assert!(
-        nonblack_pixel_count(readback.rgba8()) > 0,
+        nonblack_pixel_count(
+            &browser_canvas_rgba8(&canvas).expect("WebGL2 canvas readback exists")
+        ) > 0,
         "WebGL2 proof must include rendered pixels, not only draw counters"
     );
     assert!(
@@ -89,13 +86,10 @@ async fn m6_webgl2_surface_lifecycle_requires_prepare_and_retained_assets() {
     renderer
         .render(&scene, camera)
         .expect("WebGL2 lifecycle scene renders");
-    let readback = renderer
-        .browser_probe_readback_rgba8()
-        .await
-        .expect("WebGL2 lifecycle proof readback maps")
-        .expect("WebGL2 lifecycle proof readback resources exist");
     assert!(
-        nonblack_pixel_count(readback.rgba8()) > 0,
+        nonblack_pixel_count(
+            &browser_canvas_rgba8(&canvas).expect("WebGL2 lifecycle canvas readback exists"),
+        ) > 0,
         "WebGL2 lifecycle proof must start from visible rendered pixels"
     );
 
@@ -206,6 +200,67 @@ fn browser_canvas(width: u32, height: u32) -> HtmlCanvasElement {
         .append_child(&canvas)
         .expect("canvas appends to document");
     canvas
+}
+
+fn browser_canvas_rgba8(canvas: &HtmlCanvasElement) -> Option<Vec<u8>> {
+    let width = canvas.width();
+    let height = canvas.height();
+    let len = width.checked_mul(height)?.checked_mul(4)?;
+    if len == 0 {
+        return None;
+    }
+
+    let get_context = js_sys::Reflect::get(
+        canvas.as_ref(),
+        &wasm_bindgen::JsValue::from_str("getContext"),
+    )
+    .expect("canvas exposes getContext")
+    .dyn_into::<js_sys::Function>()
+    .expect("getContext is callable");
+    let options = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &options,
+        &wasm_bindgen::JsValue::from_str("preserveDrawingBuffer"),
+        &wasm_bindgen::JsValue::TRUE,
+    )
+    .expect("preserveDrawingBuffer option can be set");
+    let context = get_context
+        .call2(
+            canvas.as_ref(),
+            &wasm_bindgen::JsValue::from_str("webgl2"),
+            options.as_ref(),
+        )
+        .expect("webgl2 context lookup succeeds");
+    if context.is_null() || context.is_undefined() {
+        return None;
+    }
+
+    let rgba = js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("RGBA"))
+        .expect("WebGL2 RGBA enum exists");
+    let unsigned_byte =
+        js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("UNSIGNED_BYTE"))
+            .expect("WebGL2 UNSIGNED_BYTE enum exists");
+    let read_pixels =
+        js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("readPixels"))
+            .expect("WebGL2 readPixels exists")
+            .dyn_into::<js_sys::Function>()
+            .expect("readPixels is callable");
+    let bytes = js_sys::Uint8Array::new_with_length(len);
+    let args = js_sys::Array::new();
+    args.push(&wasm_bindgen::JsValue::from_f64(0.0));
+    args.push(&wasm_bindgen::JsValue::from_f64(0.0));
+    args.push(&wasm_bindgen::JsValue::from_f64(f64::from(width)));
+    args.push(&wasm_bindgen::JsValue::from_f64(f64::from(height)));
+    args.push(&rgba);
+    args.push(&unsigned_byte);
+    args.push(bytes.as_ref());
+    read_pixels
+        .apply(&context, &args)
+        .expect("WebGL2 readPixels succeeds");
+
+    let mut rgba8 = vec![0; len as usize];
+    bytes.copy_to(rgba8.as_mut_slice());
+    Some(rgba8)
 }
 
 fn scene_with_white_triangle() -> (Scene, scena::CameraKey) {
