@@ -22,6 +22,7 @@ const ARTIFACT_DIR = path.join(
 const SCREENSHOT_PATH = path.join(ARTIFACT_DIR, "scene-host-browser-proof.png");
 const ARTIFACT_PATH = path.join(ARTIFACT_DIR, "scene-host-browser-proof.json");
 const PKG_DIR = path.join(process.cwd(), "target", "scene-host-browser-pkg");
+const REQUIRE_V3D_HARDWARE = process.env.SCENA_BROWSER_REQUIRE_V3D === "1";
 const REQUIRED_BINDINGS = [
   ["static", "newWebgl2"],
   ["prototype", "resize"],
@@ -257,12 +258,20 @@ function chromiumLaunchArgs() {
 }
 
 function assertHardwareRenderer(renderer) {
+  if (!REQUIRE_V3D_HARDWARE) {
+    return;
+  }
   if (!/V3D/i.test(renderer)) {
     throw new Error(`WebGL2 renderer is not V3D hardware: ${renderer}`);
   }
   if (/SwiftShader|llvmpipe/i.test(renderer)) {
     throw new Error(`WebGL2 renderer is software-backed: ${renderer}`);
   }
+}
+
+function sceneHostProofCommand() {
+  const v3dPrefix = REQUIRE_V3D_HARDWARE ? "SCENA_BROWSER_REQUIRE_V3D=1 " : "";
+  return `${v3dPrefix}SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof`;
 }
 
 function revisionsEqual(a, b) {
@@ -1944,11 +1953,21 @@ function assertProof(pageProof, screenshot) {
 
   const missingBindings = pageProof.wasm_bindings.filter((binding) => !binding.present);
   check("wasm_scene_host_bindings_exported", missingBindings.length === 0, missingBindings);
-  check("hardware_renderer_is_v3d", /V3D/i.test(pageProof.webgl.renderer), pageProof.webgl);
+  check(
+    "hardware_renderer_is_v3d",
+    !REQUIRE_V3D_HARDWARE || /V3D/i.test(pageProof.webgl.renderer),
+    {
+      required: REQUIRE_V3D_HARDWARE,
+      ...pageProof.webgl,
+    },
+  );
   check(
     "hardware_renderer_is_not_software",
-    !/SwiftShader|llvmpipe/i.test(pageProof.webgl.renderer),
-    pageProof.webgl,
+    !REQUIRE_V3D_HARDWARE || !/SwiftShader|llvmpipe/i.test(pageProof.webgl.renderer),
+    {
+      required: REQUIRE_V3D_HARDWARE,
+      ...pageProof.webgl,
+    },
   );
   assertHardwareRenderer(pageProof.webgl.renderer);
 
@@ -3103,8 +3122,9 @@ async function main() {
     build,
     harness: {
       entrypoint: "tests/browser/scene_host_browser_proof.js",
-      command: "SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof",
+      command: sceneHostProofCommand(),
       server_url: url,
+      require_v3d_hardware: REQUIRE_V3D_HARDWARE,
     },
     browser: {
       engine: "chromium",
@@ -3156,7 +3176,9 @@ async function main() {
     console: consoleMessages,
     notes: {
       host_render_cadence: "push-driven prepare/render; no requestAnimationFrame loop",
-      proof_scope: "SceneHost browser contracts and rendered output on Pi V3D hardware",
+      proof_scope: REQUIRE_V3D_HARDWARE
+        ? "SceneHost browser contracts and rendered output on Pi V3D hardware"
+        : "SceneHost browser contracts and rendered output on the active WebGL2 browser lane; V3D hardware guard not required",
       forward_pbr_status: pageProof.capability_report.capabilities.forward_pbr,
       forward_pbr_degraded_expected_on_low_tier:
         pageProof.capability_report.capabilities.hardware_tier === "low" &&

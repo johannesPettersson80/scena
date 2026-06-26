@@ -195,7 +195,7 @@ proof plan and output artifacts are tracked in
 [`scene-host-browser-gpu-proof.md`](checklists/scene-host-browser-gpu-proof.md).
 The WebGL2 CI/release lane runs `npm run browser:scene-host-proof`; the same
 command can be run on Raspberry Pi V3D hardware with
-`SCENA_BROWSER_BACKENDS=webgl2`. The proof records
+`SCENA_BROWSER_REQUIRE_V3D=1 SCENA_BROWSER_BACKENDS=webgl2`. The proof records
 `scena.scene_host_browser_proof.v1` under
 `target/gate-artifacts/scene-host-browser-proof/`. That proof exercises
 `SceneHost.capture()`, `inspectJson()`, `annotationProjectionsJson()`,

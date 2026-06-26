@@ -71,7 +71,7 @@ follow-up work.
 Run on Raspberry Pi 5 hardware using system Chromium and ANGLE/GLES:
 
 ```bash
-SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof
+SCENA_BROWSER_REQUIRE_V3D=1 SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof
 ```
 
 The harness builds the SceneHost package with the configured Rust toolchain:
@@ -91,9 +91,10 @@ Recorded renderer:
 ANGLE (Broadcom, V3D 7.1.10.2, OpenGL ES 3.1 Mesa 25.0.7-2+rpt4)
 ```
 
-The hardware guard asserts the renderer contains `V3D` and does not contain
-`SwiftShader` or `llvmpipe`. The run recorded `hardware_tier: "low"` and
-`forward_pbr: "supported"`; the harness also accepts low-tier
+With `SCENA_BROWSER_REQUIRE_V3D=1`, the hardware guard asserts the renderer
+contains `V3D` and does not contain `SwiftShader` or `llvmpipe`. The run
+recorded `hardware_tier: "low"` and `forward_pbr: "supported"`; the harness
+also accepts low-tier
 `forward_pbr: "degraded"` as expected-on-tier for this proof. This gate proves
 SceneHost browser construction, render, inspection, annotation projection,
 CSS-pixel picking, and capture contracts. It does not close the dense PBR or

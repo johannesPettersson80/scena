@@ -82,6 +82,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "ambient_occlusion_passes === 1",
             "bloom_passes === 0",
             "fxaa_passes === 0",
+            "SCENA_BROWSER_REQUIRE_V3D",
+            "REQUIRE_V3D_HARDWARE",
         ],
     );
     check_raw_webgl2_renderer_removed(root, findings);
