@@ -215,7 +215,9 @@ function renderedPixelMotion(before, after) {
 async function assertConnectorRenderedPixelsMoveDuringReplay(page) {
   const before = await sampleSceneCanvasPixels(page, "connector");
   const replayButton = page.locator(".stage[data-scene='connector'] .replay");
-  await replayButton.click();
+  await replayButton.evaluate((button) => button.click(), undefined, {
+    timeout: CANVAS_OPERATION_TIMEOUT_MS,
+  });
   await page.waitForTimeout(350);
   const mid = await sampleSceneCanvasPixels(page, "connector");
   await page.waitForTimeout(350);
