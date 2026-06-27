@@ -249,7 +249,7 @@ jobs:
           fi
           git diff --exit-code
       - name: Clean publish dry run
-        run: cargo publish --dry-run
+        run: cargo publish --dry-run --locked
       - name: Publish crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -276,7 +276,7 @@ jobs:
               echo "scena ${version} already exists on crates.io; skipping cargo publish"
               ;;
             404)
-              cargo publish
+              cargo publish --locked
               ;;
             *)
               echo "Unexpected crates.io status ${status} while checking scena ${version}" >&2
