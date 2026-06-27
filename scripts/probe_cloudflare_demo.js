@@ -322,8 +322,6 @@ async function assertDeploymentBundleConsistency(pageUrl) {
 async function assertImagesLoad(page) {
   const imageCount = await page.locator("img").count();
   for (let index = 0; index < imageCount; index += 1) {
-    const image = page.locator("img").nth(index);
-    await image.scrollIntoViewIfNeeded();
     await page.waitForFunction(
       (i) => {
         const image = document.images[i];
