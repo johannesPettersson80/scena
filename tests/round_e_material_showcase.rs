@@ -185,6 +185,7 @@ fn round_e_ibl_extension_gates_are_value_bounded_browser_metrics() {
         .expect("Round E material proof script is readable");
     for required in [
         "anisotropy_aspect_ratio_ibl",
+        "ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON",
         "passed_anisotropy_aspect_ratio_ibl",
         "brushed_steel anisotropy aspect ratio",
         "clearcoat_lobe_delta",

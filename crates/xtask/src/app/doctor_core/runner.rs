@@ -253,6 +253,8 @@ pub(crate) fn check_m8_real_asset_dual_lane(root: &Path, findings: &mut Vec<Find
         "Renderer::headless_gpu",
         "Renderer::headless(",
         "build_waterbottle_scene",
+        "Microsoft Basic Render Driver",
+        "software-dx12",
     ];
     for needle in required {
         if !text.contains(needle) {

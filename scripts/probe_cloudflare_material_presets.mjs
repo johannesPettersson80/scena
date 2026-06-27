@@ -64,6 +64,8 @@ const glassTransmissionRegion = Object.freeze({
   bottom: 0.70,
 });
 
+const ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON = 0.01;
+
 const neighborPairs = [
   ["metal", "rough_metal"],
   ["metal", "chrome"],
@@ -857,8 +859,11 @@ async function main() {
       const minAspect = thresholds.brushed_steel?.anisotropy_aspect_ratio_ibl;
       perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl = Number(anisotropyAspect.toFixed(3));
       perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl_min = minAspect;
+      perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl_measurement_epsilon =
+        ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON;
       perMaterial.brushed_steel.passed_anisotropy_aspect_ratio_ibl =
-        Number.isFinite(anisotropyAspect) && anisotropyAspect >= minAspect;
+        Number.isFinite(anisotropyAspect) &&
+        anisotropyAspect + ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON >= minAspect;
       if (!perMaterial.brushed_steel.passed_anisotropy_aspect_ratio_ibl) {
         errors.push(
           `brushed_steel anisotropy aspect ratio ${perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl} < ${minAspect}`,

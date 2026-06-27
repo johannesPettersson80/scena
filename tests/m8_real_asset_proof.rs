@@ -366,6 +366,15 @@ fn m8_real_asset_waterbottle_gpu_headline() {
         None => String::from("unknown"),
     };
     eprintln!("scena: rendering WaterBottle via GPU: {gpu_adapter_label}");
+    let software_dx12 = gpu_adapter_label.contains("Microsoft Basic Render Driver")
+        && gpu_adapter_label.contains("Dx12");
+    if software_dx12 {
+        write_gpu_fail_closed_artifact(
+            "Microsoft Basic Render Driver (Dx12) is a software adapter and is not approved release GPU evidence for the WaterBottle reference-diff lane",
+            "software-dx12",
+        );
+        return;
+    }
 
     renderer.set_background_color(Color::from_srgb_u8(216, 196, 170));
     renderer.set_tonemapper(Tonemapper::PbrNeutral);
@@ -423,26 +432,8 @@ fn m8_real_asset_waterbottle_gpu_headline() {
     // Phase 2 region asserts. The GPU lane is the canonical scena-gold
     // regression baseline; the CPU lane below carries its own measured
     // release-quality tolerance envelope instead of a loose smoke test.
-    let software_dx12 = gpu_adapter_label.contains("Microsoft Basic Render Driver")
-        && gpu_adapter_label.contains("Dx12");
-    let body_olive_tolerance = if software_dx12 {
-        // GitHub's Windows software DX12 adapter renders the olive body slightly
-        // darker than hardware lanes. Keep the normal GPU tolerance tight, but
-        // accept the measured software-adapter envelope while the colour-family
-        // histogram below still proves the body stays olive/yellow.
-        50
-    } else {
-        25
-    };
-    let muted_olive_min = if software_dx12 {
-        // The same darker software-DX12 output shifts part of the body out of
-        // the muted-olive bucket, while the yellow-olive bucket remains above
-        // its normal floor. This lane still rejects missing/wrong-colour body
-        // output without requiring software raster parity with hardware GPU.
-        7_000
-    } else {
-        10_000
-    };
+    let body_olive_tolerance = 25;
+    let muted_olive_min = 10_000;
     let regions: &[(&str, usize, usize, [u8; 3], u8)] = &[
         // (name, x, y, expected RGB, tolerance in chebyshev distance)
         ("cap_dome", 250, 70, [76, 27, 12], 25),
