@@ -1,0 +1,48 @@
+{
+  "schema": "scena.recipe_render_result.v1",
+  "ok": false,
+  "build": {
+    "schema": "scena.scene_recipe_build.v1",
+    "ok": false,
+    "imports": [],
+    "nodes": [],
+    "cameras": [],
+    "lights": [],
+    "geometries": [],
+    "materials": [],
+    "diagnostics": [
+      {
+        "code": "missing_schema",
+        "severity": "error",
+        "path": "$.schema",
+        "message": "recipe must declare schema scena.scene_recipe.v1",
+        "help": "add \"schema\":\"scena.scene_recipe.v1\"",
+        "auto_fixable": true
+      }
+    ],
+    "skipped": []
+  },
+  "capture": null,
+  "introspection": null,
+  "verification": {
+    "ok": false,
+    "summary": {
+      "render_checks": 0,
+      "appearance_targets": 0,
+      "interaction_steps": 0,
+      "composition_checks": 0,
+      "quality_checks": 0,
+      "errors": 1,
+      "warnings": 0
+    },
+    "reasons": [
+      {
+        "code": "build_failed",
+        "severity": "error",
+        "source": "build",
+        "affected_handles": [],
+        "message": "recipe build failed before render verification could run"
+      }
+    ]
+  }
+}

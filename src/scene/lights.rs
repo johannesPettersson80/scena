@@ -8,6 +8,7 @@ pub enum Light {
     Directional(DirectionalLight),
     Point(PointLight),
     Spot(SpotLight),
+    Area(AreaLight),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,8 +34,23 @@ pub struct SpotLight {
     outer_cone_angle: Angle,
 }
 
-/// Builder returned by [`Scene::directional_light`], [`Scene::point_light`], and
-/// [`Scene::spot_light`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AreaLightShape {
+    Rect { width: f32, height: f32 },
+    Disc { radius: f32 },
+    Sphere { radius: f32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AreaLight {
+    color: Color,
+    luminous_flux_lumens: f32,
+    range: Option<f32>,
+    shape: AreaLightShape,
+}
+
+/// Builder returned by [`Scene::directional_light`], [`Scene::point_light`],
+/// [`Scene::spot_light`], and [`Scene::area_light`].
 #[must_use = "light builders do nothing until add() is called"]
 pub struct LightBuilder<'scene> {
     scene: &'scene mut Scene,
@@ -94,6 +110,10 @@ impl Scene {
 
     pub fn spot_light(&mut self, light: SpotLight) -> LightBuilder<'_> {
         self.light_builder(Light::Spot(light))
+    }
+
+    pub fn area_light(&mut self, light: AreaLight) -> LightBuilder<'_> {
+        self.light_builder(Light::Area(light))
     }
 
     fn light_builder(&mut self, light: Light) -> LightBuilder<'_> {
@@ -371,6 +391,99 @@ impl Default for SpotLight {
     }
 }
 
+impl Default for AreaLightShape {
+    fn default() -> Self {
+        Self::Rect {
+            width: 1.0,
+            height: 1.0,
+        }
+    }
+}
+
+impl AreaLightShape {
+    pub const fn rect(width: f32, height: f32) -> Self {
+        Self::Rect {
+            width: positive_or(width, 1.0),
+            height: positive_or(height, 1.0),
+        }
+    }
+
+    pub const fn disc(radius: f32) -> Self {
+        Self::Disc {
+            radius: positive_or(radius, 0.5),
+        }
+    }
+
+    pub const fn sphere(radius: f32) -> Self {
+        Self::Sphere {
+            radius: positive_or(radius, 0.5),
+        }
+    }
+}
+
+impl Default for AreaLight {
+    fn default() -> Self {
+        Self {
+            color: Color::WHITE,
+            luminous_flux_lumens: 1_000.0,
+            range: None,
+            shape: AreaLightShape::default(),
+        }
+    }
+}
+
+impl AreaLight {
+    /// Rectangular studio softbox preset for product-style lighting.
+    ///
+    /// The current renderer evaluates area lights by deterministic emitter
+    /// samples in the prepare step so the same authored shape affects the CPU
+    /// and GPU paths. Dedicated soft-shadow maps remain a later rendering
+    /// slice and are not exposed as a shadow knob here.
+    pub fn softbox() -> Self {
+        Self::default()
+            .with_color(Color::from_kelvin(5600.0))
+            .with_luminous_flux_lumens(3_600.0)
+            .with_range(5.0)
+            .with_shape(AreaLightShape::rect(1.2, 0.6))
+    }
+
+    pub const fn color(self) -> Color {
+        self.color
+    }
+
+    pub const fn luminous_flux_lumens(self) -> f32 {
+        self.luminous_flux_lumens
+    }
+
+    pub const fn range(self) -> Option<f32> {
+        self.range
+    }
+
+    pub const fn shape(self) -> AreaLightShape {
+        self.shape
+    }
+
+    pub const fn with_color(mut self, color: Color) -> Self {
+        self.color = color;
+        self
+    }
+
+    pub const fn with_luminous_flux_lumens(mut self, luminous_flux_lumens: f32) -> Self {
+        self.luminous_flux_lumens = non_negative_or(luminous_flux_lumens, 1_000.0);
+        self
+    }
+
+    pub const fn with_range(mut self, range: f32) -> Self {
+        self.range = positive_range(range);
+        self
+    }
+
+    pub const fn with_shape(mut self, shape: AreaLightShape) -> Self {
+        self.shape = shape;
+        self
+    }
+}
+
 impl SpotLight {
     pub const fn color(self) -> Color {
         self.color
@@ -434,6 +547,14 @@ const fn positive_range(value: f32) -> Option<f32> {
         Some(value)
     } else {
         None
+    }
+}
+
+const fn positive_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        fallback
     }
 }
 
@@ -532,5 +653,19 @@ mod tests {
             !casts_shadows(&scene, handles.rim),
             "studio rim light must not cast a second directional shadow"
         );
+    }
+
+    #[test]
+    fn area_light_softbox_uses_real_area_shape() {
+        let light = AreaLight::softbox();
+        assert_eq!(
+            light.shape(),
+            AreaLightShape::Rect {
+                width: 1.2,
+                height: 0.6
+            }
+        );
+        assert_eq!(light.luminous_flux_lumens(), 3_600.0);
+        assert_eq!(light.range(), Some(5.0));
     }
 }

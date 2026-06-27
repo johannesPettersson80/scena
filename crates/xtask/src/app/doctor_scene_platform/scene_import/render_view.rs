@@ -7,10 +7,11 @@ pub(crate) fn check_m3a_render_view_contracts(root: &Path, findings: &mut Vec<Fi
         "ARCH-M3A-SCENE-IMPORT",
         "src/render/prepare/labels.rs",
         &[
-            "pub(super) fn append_label_primitives",
+            "pub(super) fn prepare_label_atlas",
             "scene.label_nodes()",
             "LabelBillboard::ScreenAligned",
-            "Primitive::triangle",
+            "PreparedLabelAtlas",
+            "PreparedLabelQuad",
         ],
     );
     require_contains(
@@ -18,11 +19,7 @@ pub(crate) fn check_m3a_render_view_contracts(root: &Path, findings: &mut Vec<Fi
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "src/render.rs",
-        &[
-            "mod offscreen;",
-            "hover_style: InteractionStyle",
-            "selection_style: InteractionStyle",
-        ],
+        &["mod offscreen;", "pub struct Renderer"],
     );
     require_contains(
         root,
@@ -36,13 +33,6 @@ pub(crate) fn check_m3a_render_view_contracts(root: &Path, findings: &mut Vec<Fi
             "pub fn read_pixels",
             "pub fn into_rgba8",
         ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-M3A-SCENE-IMPORT",
-        "src/render/settings.rs",
-        &["pub fn set_hover_style", "pub fn set_selection_style"],
     );
     require_contains(
         root,

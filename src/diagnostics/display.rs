@@ -6,6 +6,9 @@ use super::{
     NotPreparedReason, PrepareError, RenderError,
 };
 
+#[path = "display/asset.rs"]
+mod asset;
+
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -52,83 +55,6 @@ impl fmt::Display for BuildError {
                 write!(
                     formatter,
                     "backend {backend:?} is not supported on this target"
-                )
-            }
-        }
-    }
-}
-
-impl fmt::Display for AssetError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotFound { path } => write!(formatter, "asset was not found: {path}"),
-            Self::Io { path, reason } => {
-                write!(formatter, "failed to read asset {path}: {reason}")
-            }
-            Self::Parse { path, reason } => {
-                write!(formatter, "failed to parse asset {path}: {reason}")
-            }
-            Self::UnsupportedRequiredExtension { path, extension } => write!(
-                formatter,
-                "asset {path} requires unsupported extension {extension}"
-            ),
-            Self::UnsupportedOptionalExtensionUsed {
-                path,
-                extension,
-                help,
-            } => write!(
-                formatter,
-                "asset {path} uses unsupported optional extension {extension}: {help}"
-            ),
-            Self::MissingTexture {
-                path,
-                material_slot,
-                texture_index,
-                help,
-            } => write!(
-                formatter,
-                "asset {path} references missing texture index {texture_index} in material slot {material_slot}: {help}"
-            ),
-            Self::UnsupportedTextureFormat { path, help } => {
-                write!(
-                    formatter,
-                    "texture {path} uses an unsupported format: {help}"
-                )
-            }
-            Self::Cancelled { path, help } => {
-                write!(formatter, "asset load for {path} was cancelled: {help}")
-            }
-            Self::UnsupportedEnvironmentFormat { path, help } => {
-                write!(
-                    formatter,
-                    "environment {path} uses an unsupported format: {help}"
-                )
-            }
-            Self::ReloadRequiresRetain { path, help } => {
-                write!(formatter, "asset {path} cannot be reloaded: {help}")
-            }
-            Self::GeometryHandleNotFound { geometry } => {
-                write!(
-                    formatter,
-                    "geometry handle {geometry:?} was not found in Assets"
-                )
-            }
-            Self::MaterialHandleNotFound { material } => {
-                write!(
-                    formatter,
-                    "material handle {material:?} was not found in Assets"
-                )
-            }
-            Self::TextureHandleNotFound { texture } => {
-                write!(
-                    formatter,
-                    "texture handle {texture:?} was not found in Assets"
-                )
-            }
-            Self::EnvironmentHandleNotFound { environment } => {
-                write!(
-                    formatter,
-                    "environment handle {environment:?} was not found in Assets"
                 )
             }
         }
@@ -318,6 +244,30 @@ impl fmt::Display for RenderError {
             Self::GpuResourcesNotPrepared { backend } => {
                 write!(formatter, "GPU resources for {backend:?} were not prepared")
             }
+            Self::UnsupportedSampleCount {
+                backend,
+                requested,
+                maximum,
+            } => {
+                write!(
+                    formatter,
+                    "backend {backend:?} does not support MSAA sample count {requested}; maximum supported sample count is {maximum}"
+                )
+            }
+            Self::UnsupportedSupersampleFactor {
+                factor,
+                width,
+                height,
+                scaled_width,
+                scaled_height,
+                maximum_dimension,
+                maximum_pixels,
+            } => {
+                write!(
+                    formatter,
+                    "supersample factor {factor} for {width}x{height} would render {scaled_width}x{scaled_height}, exceeding the maximum internal target {maximum_dimension}px per axis or {maximum_pixels} pixels"
+                )
+            }
             Self::GpuReadback { backend } => {
                 write!(formatter, "failed to read rendered output for {backend:?}")
             }
@@ -350,14 +300,6 @@ impl fmt::Display for NotPreparedReason {
             } => write!(
                 formatter,
                 "render target changed after prepare ({prepared_revision} -> {current_revision}, {change:?})"
-            ),
-            Self::RendererChanged {
-                prepared_revision,
-                current_revision,
-                change,
-            } => write!(
-                formatter,
-                "renderer setting changed after prepare ({prepared_revision} -> {current_revision}, {change:?}); call prepare again"
             ),
         }
     }
@@ -403,6 +345,11 @@ impl fmt::Display for LookupError {
             Self::VariantNotFound { name } => write!(
                 formatter,
                 "imported scene has no KHR_materials_variants variant named '{name}'"
+            ),
+            Self::AmbiguousVariantName { name, matches } => write!(
+                formatter,
+                "imported scene KHR_materials_variants name '{name}' is ambiguous across {} variants",
+                matches.len()
             ),
             Self::AmbiguousClipName { name, matches } => write!(
                 formatter,
@@ -455,12 +402,22 @@ impl fmt::Display for LookupError {
                     "geometry for mesh node {node:?} was not found in Assets"
                 )
             }
+            Self::InvalidSkinBinding {
+                joint_count,
+                inverse_bind_count,
+            } => write!(
+                formatter,
+                "skin binding has {joint_count} joints but {inverse_bind_count} inverse bind matrices"
+            ),
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")
             }
             Self::InstanceSetNotFound(_) => {
                 write!(formatter, "instance set key does not exist in the scene")
+            }
+            Self::ParticleSetNotFound(_) => {
+                write!(formatter, "particle set key does not exist in the scene")
             }
             Self::InstanceNotFound {
                 instance_set,
@@ -470,25 +427,25 @@ impl fmt::Display for LookupError {
                 "instance {:?} does not exist in instance set {:?}",
                 instance, instance_set
             ),
+            Self::InvalidInstanceTint {
+                instance_set,
+                instance,
+                reason,
+            } => write!(
+                formatter,
+                "instance {:?} in instance set {:?} has invalid tint: {reason}",
+                instance, instance_set
+            ),
             Self::LabelNotFound(_) => write!(formatter, "label key does not exist in the scene"),
-        }
-    }
-}
-
-impl fmt::Display for AnimationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ClipNotFound { name } => {
+            Self::UnsupportedLabelText { reason, .. } => {
                 write!(
                     formatter,
-                    "imported scene has no animation clip named '{name}'"
+                    "label text is not supported by its font: {reason}"
                 )
             }
-            Self::MixerNotFound(_) => write!(formatter, "animation mixer key does not exist"),
-            Self::StaleMixer(_) => write!(
-                formatter,
-                "animation mixer is stale because its source import was replaced"
-            ),
+            Self::InvalidLabelStyle { field, reason } => {
+                write!(formatter, "{field} is not supported: {reason}")
+            }
         }
     }
 }

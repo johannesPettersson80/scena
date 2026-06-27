@@ -126,7 +126,7 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-PREPARE-ASSETS",
-        "src/scene.rs",
+        "src/scene/render_nodes.rs",
         &["pub(crate) fn mesh_nodes", "pub(crate) fn model_nodes"],
     );
     require_contains(
@@ -149,7 +149,266 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-PREPARE-ASSETS",
+        "src/geometry/primitive_meshes/tests.rs",
+        &["built_in_triangle_primitives_are_wound_against_vertex_normals"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/scene_host/recipe/authoring/geometry/projection.rs",
+        &["projected_geometry_counts_match_authored_primitive_builders"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "tests/scene_recipe_contracts.rs",
+        &["scene_recipe_build_policy_rejects_arrow_projection_underestimate"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/scene_host/recipe.rs",
+        &["recipe_primitives_render_lit_single_sided_pixels_on_headless_gpu"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
         "docs/specs/public-api.md",
         &["pub fn prepare_with_assets<F>"],
     );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/prepare/stats.rs",
+        &[
+            "validate_gpu_light_capacity",
+            "gpu_light_uniform_capacity",
+            "PreparedLights::from_scene",
+            "MAX_GPU_AREA_LIGHTS",
+            "tiled light assignment",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/prepare/lighting.rs",
+        &[
+            "collect_gpu_tiled_light_assignment",
+            "AREA_LIGHT_SAMPLE_COUNT",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/prepare/lighting/tests.rs",
+        &[
+            "gpu_lighting_stats_accept_many_point_lights_for_tiled_assignment",
+            "area_lights_use_separate_gpu_capacity_from_point_lights",
+            "area_light_shape_encodes_gpu_visible_area_lane",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/gpu/output_shader.wgsl",
+        &[
+            "light_tile_indices",
+            "tiled_light_records",
+            "tiled_lighting_active",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/prepare/shadows.rs",
+        &["area_shadow_visibility_uses_dense_emitter_samples"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/gpu/output.rs",
+        &[
+            "triangle_shader_multiplies_area_lights_by_prepared_area_shadow_visibility",
+            "include_str!(\"../area_ltc_tables.wgsl\")",
+            "include_str!(\"../area_ltc.wgsl\")",
+            "triangle_shader_contains_ltc_area_light_specular_path_for_both_texture_layouts",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/area_ltc.rs",
+        &[
+            "selfshadow/ltc_code",
+            "sample_ltc_tables",
+            "clip_quad_to_horizon",
+            "ltc_lookup_matches_reference_derived_compact_table_probes",
+            "ltc_rect_probe_matches_selfshadow_reference_irradiance",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/area_ltc_tables.rs",
+        &[
+            "90c2ae903e5e460c03f28bc14d0391dba9578e71",
+            "pub(super) const LTC_1",
+            "pub(super) const LTC_2",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "tests/scena_cli_recipe.rs",
+        &[
+            "scena_recipe_render_gpu_many_lights_use_tiled_assignment_before_truncation",
+            "scena_recipe_render_gpu_tiled_many_point_lights_use_late_light",
+            "tiled-many-point-light-blue-delta.json",
+        ],
+    );
+    check_area_light_acceptance_honesty(root, findings);
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/prepare/lighting.rs",
+        &["fifth directional light is intentionally capped"],
+    );
+}
+
+pub(crate) fn check_area_light_acceptance_honesty(root: &Path, findings: &mut Vec<Finding>) {
+    let checklist_rel = "docs/checklists/stunning-renders-and-performance.md";
+    let checklist_path = root.join(checklist_rel);
+    let Ok(checklist) = fs::read_to_string(&checklist_path) else {
+        findings.push(Finding::new(
+            "ARCH-PREPARE-AREA-LIGHT-HONESTY",
+            format!("could not read {checklist_rel}"),
+        ));
+        return;
+    };
+
+    let render_source = render_source_text(root);
+    let render_source_lower = render_source.to_ascii_lowercase();
+    if checklist_claims_ltc_shipped(&checklist) && !render_source_contains_ltc(&render_source_lower)
+    {
+        findings.push(Finding::new(
+            "ARCH-PREPARE-AREA-LIGHT-HONESTY",
+            "A3 cannot be marked shipped or its LTC checkbox checked until src/render contains the shared fitted-table linearly-transformed-cosine implementation and CPU/GPU shader route",
+        ));
+    }
+    if checklist_claims_clustered_light_culling_shipped(&checklist)
+        && !render_source_contains_clustered_light_assignment(&render_source)
+    {
+        findings.push(Finding::new(
+            "ARCH-PREPARE-AREA-LIGHT-HONESTY",
+            "B2 cannot be marked shipped until src/render contains a clustered/tiled light-assignment implementation marker such as clustered_light_grid, light_tile_indices, or assign_lights_to_tiles",
+        ));
+    }
+}
+
+fn checklist_claims_ltc_shipped(checklist: &str) -> bool {
+    checklist.lines().any(|line| {
+        (line.contains("A3") && line.contains("Soft area lights") && line.contains("[shipped]"))
+            || (line.contains("[x]")
+                && line.contains("LTC")
+                && line.contains("linearly-transformed cosines"))
+    })
+}
+
+fn checklist_claims_clustered_light_culling_shipped(checklist: &str) -> bool {
+    checklist.lines().any(|line| {
+        (line.contains("B2")
+            && line.contains("Clustered / tiled light culling")
+            && line.contains("[shipped]"))
+            || (line.contains("[x]") && line.contains("Cluster/tile light assignment"))
+    })
+}
+
+fn render_source_text(root: &Path) -> String {
+    let mut text = String::new();
+    for rel in source_files(root) {
+        if !rel.starts_with("src/render") {
+            continue;
+        }
+        let Ok(source) = fs::read_to_string(root.join(&rel)) else {
+            continue;
+        };
+        text.push_str(&source);
+        text.push('\n');
+    }
+    text
+}
+
+fn render_source_contains_ltc(render_source_lower: &str) -> bool {
+    [
+        "selfshadow/ltc_code",
+        "sample_ltc_tables",
+        "ltc_1",
+        "ltc_2",
+        "evaluate_specular_polygon",
+        "clip_quad_to_horizon",
+    ]
+    .iter()
+    .all(|marker| render_source_lower.contains(marker))
+}
+
+fn render_source_contains_clustered_light_assignment(render_source: &str) -> bool {
+    [
+        "clustered_light_grid",
+        "light_tile_indices",
+        "light_cluster_indices",
+        "assign_lights_to_tiles",
+        "assign_lights_to_clusters",
+        "lights_per_tile",
+        "lights_per_cluster",
+        "LightCluster",
+        "TiledLightAssignment",
+    ]
+    .iter()
+    .any(|marker| render_source.contains(marker))
+}
+
+pub(crate) fn check_particle_prepare_allocation_contract(root: &Path, findings: &mut Vec<Finding>) {
+    let rel = "src/render/prepare/particles.rs";
+    let path = root.join(rel);
+    let Ok(source) = fs::read_to_string(&path) else {
+        findings.push(Finding::new(
+            "ARCH-PREPARE-PARTICLES",
+            format!("could not read {rel}"),
+        ));
+        return;
+    };
+    for forbidden in [".collect::<Vec", ".collect()"] {
+        if source.contains(forbidden) {
+            findings.push(Finding::new(
+                "ARCH-PREPARE-PARTICLES",
+                format!(
+                    "{rel} must not collect particle iterators into an intermediate Vec before CPU-baked billboard emission; found `{forbidden}`"
+                ),
+            ));
+        }
+    }
+    for required in ["particle_primitive_count", "primitives.reserve"] {
+        if !source.contains(required) {
+            findings.push(Finding::new(
+                "ARCH-PREPARE-PARTICLES",
+                format!(
+                    "{rel} must pre-count particle primitives and reserve output capacity before appending; missing `{required}`"
+                ),
+            ));
+        }
+    }
 }

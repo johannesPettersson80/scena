@@ -1,0 +1,17 @@
+{
+  "schema": "scena.scene_host_visual_states.v1",
+  "states": [
+    {
+      "name": "assembled",
+      "metadata": {
+        "label": "Assembled"
+      }
+    },
+    {
+      "name": "service_view",
+      "metadata": {
+        "label": "Service view"
+      }
+    }
+  ]
+}

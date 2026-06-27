@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::reporting::{SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1};
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
@@ -41,15 +41,31 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn subtree_nodes_json(&mut self, root: u64) -> Result<String, SceneHostError> {
         let root = self.resolve_node(root)?;
         let nodes = self.scene.subtree_nodes(root)?;
+        let node_set = nodes.iter().copied().collect::<BTreeSet<_>>();
+        let mut handles = BTreeMap::new();
+        for node in &nodes {
+            handles.insert(*node, self.register_node(*node));
+        }
         let mut report_nodes = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let handle = self.register_node(node);
+            let handle = handles[&node];
             let node = self
                 .scene
                 .node(node)
                 .ok_or(LookupError::NodeNotFound(node))?;
+            let parent = node
+                .parent()
+                .filter(|parent| node_set.contains(parent))
+                .and_then(|parent| handles.get(&parent).copied());
+            let children = node
+                .children()
+                .iter()
+                .filter_map(|child| node_set.contains(child).then_some(handles[child]))
+                .collect();
             report_nodes.push(SceneHostSubtreeNodeV1 {
                 handle,
+                parent,
+                children,
                 name: None,
                 tags: node.tags().map(str::to_owned).collect(),
             });

@@ -7,11 +7,6 @@ use super::{InstanceSetKey, NodeKey, NodeKind, Scene, Transform};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstanceId(u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstanceCullingPolicy {
-    CpuBoundingBoxFallback,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Instance {
     id: InstanceId,
@@ -26,7 +21,6 @@ pub struct InstanceSet {
     material: MaterialHandle,
     instances: Vec<Instance>,
     next_id: u64,
-    culling_policy: InstanceCullingPolicy,
 }
 
 impl Scene {
@@ -119,6 +113,7 @@ impl Scene {
         instance: InstanceId,
         tint: Option<Color>,
     ) -> Result<(), LookupError> {
+        validate_instance_tint(instance_set, instance, tint)?;
         if self
             .instance_set_mut(instance_set)?
             .set_tint(instance_set, instance, tint)?
@@ -158,6 +153,30 @@ impl Scene {
     }
 }
 
+fn validate_instance_tint(
+    instance_set: InstanceSetKey,
+    instance: InstanceId,
+    tint: Option<Color>,
+) -> Result<(), LookupError> {
+    let Some(tint) = tint else {
+        return Ok(());
+    };
+    if tint.r.is_finite()
+        && tint.g.is_finite()
+        && tint.b.is_finite()
+        && tint.a.is_finite()
+        && tint.a == 1.0
+    {
+        Ok(())
+    } else {
+        Err(LookupError::InvalidInstanceTint {
+            instance_set,
+            instance,
+            reason: "instanced scene roots only accept opaque per-instance tint until a transparent instancing path exists",
+        })
+    }
+}
+
 impl InstanceId {
     pub const fn as_u64(self) -> u64 {
         self.0
@@ -189,7 +208,6 @@ impl InstanceSet {
             material,
             instances: Vec::new(),
             next_id: 1,
-            culling_policy: InstanceCullingPolicy::CpuBoundingBoxFallback,
         }
     }
 
@@ -199,10 +217,6 @@ impl InstanceSet {
 
     pub const fn material(&self) -> MaterialHandle {
         self.material
-    }
-
-    pub const fn culling_policy(&self) -> InstanceCullingPolicy {
-        self.culling_policy
     }
 
     pub fn len(&self) -> usize {
@@ -307,5 +321,48 @@ impl InstanceSet {
                 instance_set,
                 instance,
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Assets, GeometryDesc, MaterialDesc};
+
+    #[test]
+    fn scene_set_instance_tint_rejects_non_opaque_tint_before_backend_divergence() {
+        let assets = Assets::new();
+        let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.1, 0.1, 0.1));
+        let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+        let mut scene = Scene::new();
+        let instance_set = scene
+            .add_instance_set(scene.root(), geometry, material, Transform::IDENTITY)
+            .expect("instance set inserts");
+        let instance = scene
+            .push_instance(instance_set, Transform::IDENTITY)
+            .expect("instance inserts");
+
+        let error = scene
+            .set_instance_tint(
+                instance_set,
+                instance,
+                Some(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5)),
+            )
+            .expect_err("non-opaque instance tint must fail closed");
+
+        assert!(
+            error.to_string().contains("opaque"),
+            "error should explain the opaque-tint invariant: {error}"
+        );
+        assert_eq!(
+            scene
+                .instance_set(instance_set)
+                .expect("instance set exists")
+                .instances()
+                .find(|candidate| candidate.id() == instance)
+                .expect("instance exists")
+                .tint(),
+            None
+        );
     }
 }

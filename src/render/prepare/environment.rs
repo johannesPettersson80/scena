@@ -5,9 +5,10 @@ use crate::diagnostics::AssetError;
 use crate::diagnostics::Backend;
 use crate::scene::Vec3;
 
-use super::environment_prefilter::{
-    EnvironmentPrefilterQuality, build_brdf_lut_with_sample_count,
-    prefilter_specular_cubemap_mips_with_quality,
+use super::super::pbr_brdf;
+use super::environment_baker::{
+    EnvironmentIblBakeQuality, EnvironmentIblBakeRequest, bake_environment_ibl,
+    prefilter_lod_for_roughness, sample_prefiltered_cubemap_lod,
 };
 use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
 
@@ -27,18 +28,39 @@ fn log_environment_step(label: &str, start_ms: f64) -> f64 {
     now
 }
 
+fn warn_environment_sidecar_profile_mismatch(
+    environment: &EnvironmentDesc,
+    requested: EnvironmentSidecarProfile,
+    actual: EnvironmentSidecarProfile,
+) {
+    let message = format!(
+        "scena environment warning: sidecar '{}' has profile {}, but this backend requested {}; \
+         ignoring the sidecar and baking IBL from the HDR source instead",
+        environment.source_path().as_str(),
+        actual.name(),
+        requested.name()
+    );
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&message));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        eprintln!("{message}");
+    }
+}
+
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
-/// integrate the GGX kernel at increasing roughness so the WGSL
-/// specular path can sample roughness via `prefilter_mip = roughness *
-/// (mip_count - 1)`.
+/// integrate the GGX kernel at roughness values from the shared
+/// low-roughness-concentrated prefilter mapping.
 pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// 2D BRDF LUT resolution. The split-sum approximation indexes the LUT
 /// by `(N·V, roughness)`; 64×64 is enough resolution for visually
 /// smooth specular without blowing the GPU upload budget.
 pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
-const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 0.8;
-const HDR_IBL_INTENSITY_SCALE: f32 = 0.75;
+const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 1.0;
+const HDR_IBL_INTENSITY_SCALE: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(in crate::render) enum EnvironmentLightingProfile {
@@ -58,10 +80,10 @@ impl EnvironmentLightingProfile {
         }
     }
 
-    fn prefilter_quality(self) -> EnvironmentPrefilterQuality {
+    fn prefilter_quality(self) -> EnvironmentIblBakeQuality {
         match self {
-            Self::Reference => EnvironmentPrefilterQuality::Reference,
-            Self::InteractiveWebGl2 => EnvironmentPrefilterQuality::InteractiveWebGl2,
+            Self::Reference => EnvironmentIblBakeQuality::Reference,
+            Self::InteractiveWebGl2 => EnvironmentIblBakeQuality::InteractiveWebGl2,
         }
     }
 
@@ -153,6 +175,11 @@ impl PreparedEnvironmentLighting {
 
         let sidecar_profile = profile.sidecar_profile();
         let sidecar = environment.prefilter_sidecar(sidecar_profile);
+        if sidecar.is_none()
+            && let Some(actual_profile) = environment.prefilter_sidecar_profile()
+        {
+            warn_environment_sidecar_profile_mismatch(environment, sidecar_profile, actual_profile);
+        }
         let cubemap_faces = if sidecar.is_some() {
             None
         } else {
@@ -179,31 +206,28 @@ impl PreparedEnvironmentLighting {
                 let resolution = faces.resolution();
                 let source_pixels = faces.build_face_pixels_rgba32f();
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-                let prefilter_start =
+                let bake_start =
                     log_environment_step("build_face_pixels_rgba32f", environment_step_start);
-                let mips = prefilter_specular_cubemap_mips_with_quality(
+                let baked = bake_environment_ibl(
                     &source_pixels,
-                    resolution,
-                    PREFILTER_MIP_COUNT,
-                    profile.prefilter_quality(),
-                );
-                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-                let brdf_start =
-                    log_environment_step("prefilter_specular_cubemap_mips", prefilter_start);
-                let brdf_lut = build_brdf_lut_with_sample_count(
-                    profile.brdf_lut_size(),
-                    profile.brdf_sample_count(),
+                    EnvironmentIblBakeRequest {
+                        source_resolution: resolution,
+                        mip_count: PREFILTER_MIP_COUNT,
+                        quality: profile.prefilter_quality(),
+                        brdf_lut_size: profile.brdf_lut_size(),
+                        brdf_sample_count: profile.brdf_sample_count(),
+                    },
                 );
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {
-                    log_environment_step("build_brdf_lut", brdf_start);
+                    log_environment_step("bake_environment_ibl", bake_start);
                 }
                 Arc::new(PreparedEnvironmentCubemap {
                     resolution,
-                    mips,
-                    mip_count: PREFILTER_MIP_COUNT,
-                    brdf_lut,
-                    brdf_lut_size: profile.brdf_lut_size(),
+                    mips: baked.mips,
+                    mip_count: baked.mip_count,
+                    brdf_lut: baked.brdf_lut,
+                    brdf_lut_size: baked.brdf_lut_size,
                 })
             })
         };
@@ -322,11 +346,11 @@ impl PreparedEnvironmentLighting {
             .as_deref()
             .map(|cubemap| sample_prefiltered_specular(cubemap, reflection, material.roughness))
             .unwrap_or(self.specular_rgb);
-        let brdf = self
-            .cubemap
-            .as_deref()
-            .map(|cubemap| sample_brdf_lut(cubemap, dot_vec3(normal, view), material.roughness))
-            .unwrap_or((1.0, 0.0));
+        let brdf = if self.cubemap.is_some() {
+            pbr_brdf::split_sum_brdf_approx(dot_vec3(normal, view), material.roughness)
+        } else {
+            (1.0, 0.0)
+        };
         scale_vec3(
             environment_split_sum_contribution(material, normal, view, diffuse, prefiltered, brdf),
             self.intensity,
@@ -361,15 +385,15 @@ pub fn precompute_environment_sidecar(
         })?;
     let resolution = faces.resolution();
     let source_pixels = faces.build_face_pixels_rgba32f();
-    let mips = prefilter_specular_cubemap_mips_with_quality(
+    let baked = bake_environment_ibl(
         &source_pixels,
-        resolution,
-        PREFILTER_MIP_COUNT,
-        render_profile.prefilter_quality(),
-    );
-    let brdf_lut = build_brdf_lut_with_sample_count(
-        render_profile.brdf_lut_size(),
-        render_profile.brdf_sample_count(),
+        EnvironmentIblBakeRequest {
+            source_resolution: resolution,
+            mip_count: PREFILTER_MIP_COUNT,
+            quality: render_profile.prefilter_quality(),
+            brdf_lut_size: render_profile.brdf_lut_size(),
+            brdf_sample_count: render_profile.brdf_sample_count(),
+        },
     );
     let diffuse_rgb = environment
         .preview_irradiance_rgb()
@@ -378,9 +402,9 @@ pub fn precompute_environment_sidecar(
         profile,
         source_sha,
         resolution,
-        mips,
-        brdf_lut,
-        render_profile.brdf_lut_size(),
+        baked.mips,
+        baked.brdf_lut,
+        baked.brdf_lut_size,
         diffuse_rgb,
     )
 }
@@ -438,67 +462,8 @@ fn sample_prefiltered_specular(
     direction: Vec3,
     roughness: f32,
 ) -> Vec3 {
-    let max_mip = cubemap.mip_count.saturating_sub(1);
-    let mip = (roughness.clamp(0.0, 1.0) * max_mip as f32).round() as u32;
-    sample_cubemap_mip(cubemap, mip, direction)
-}
-
-fn sample_cubemap_mip(cubemap: &PreparedEnvironmentCubemap, mip: u32, direction: Vec3) -> Vec3 {
-    let Some(faces) = cubemap.mips.get(mip as usize) else {
-        return Vec3::ZERO;
-    };
-    let resolution = (cubemap.resolution >> mip).max(1);
-    let (face_index, u, v) = cubemap_face_uv(direction);
-    let x = (u.clamp(0.0, 1.0) * (resolution - 1) as f32).round() as u32;
-    let y = (v.clamp(0.0, 1.0) * (resolution - 1) as f32).round() as u32;
-    let pixel = ((y * resolution + x) * 4) as usize;
-    let face = &faces[face_index];
-    if pixel + 2 >= face.len() {
-        return Vec3::ZERO;
-    }
-    Vec3::new(face[pixel], face[pixel + 1], face[pixel + 2])
-}
-
-fn cubemap_face_uv(direction: Vec3) -> (usize, f32, f32) {
-    let ax = direction.x.abs();
-    let ay = direction.y.abs();
-    let az = direction.z.abs();
-    let (face, sc, tc, major) = if ax >= ay && ax >= az {
-        if direction.x >= 0.0 {
-            (0, -direction.z, -direction.y, ax)
-        } else {
-            (1, direction.z, -direction.y, ax)
-        }
-    } else if ay >= ax && ay >= az {
-        if direction.y >= 0.0 {
-            (2, direction.x, direction.z, ay)
-        } else {
-            (3, direction.x, -direction.z, ay)
-        }
-    } else if direction.z >= 0.0 {
-        (4, direction.x, -direction.y, az)
-    } else {
-        (5, -direction.x, -direction.y, az)
-    };
-    if major <= f32::EPSILON || !major.is_finite() {
-        return (4, 0.5, 0.5);
-    }
-    (face, 0.5 * (sc / major + 1.0), 0.5 * (tc / major + 1.0))
-}
-
-fn sample_brdf_lut(
-    cubemap: &PreparedEnvironmentCubemap,
-    n_dot_v: f32,
-    roughness: f32,
-) -> (f32, f32) {
-    let size = cubemap.brdf_lut_size.max(1);
-    let x = (n_dot_v.clamp(0.0, 1.0) * (size - 1) as f32).round() as u32;
-    let y = (roughness.clamp(0.0, 1.0) * (size - 1) as f32).round() as u32;
-    let index = ((y * size + x) * 2) as usize;
-    if index + 1 >= cubemap.brdf_lut.len() {
-        return (1.0, 0.0);
-    }
-    (cubemap.brdf_lut[index], cubemap.brdf_lut[index + 1])
+    let lod = prefilter_lod_for_roughness(roughness, cubemap.mip_count);
+    sample_prefiltered_cubemap_lod(&cubemap.mips, direction, lod)
 }
 
 fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
@@ -570,9 +535,99 @@ mod tests {
 
         assert_vec4_close(
             lighting.gpu_diffuse_intensity(),
-            [0.401_568_65, 0.200_784_33, 0.100_392_16, 0.75],
+            [0.501_960_8, 0.250_980_4, 0.125_490_2, 1.0],
         );
-        assert_vec4_close(lighting.gpu_specular_intensity(), [1.0, 1.0, 1.0, 0.75]);
+        assert_vec4_close(lighting.gpu_specular_intensity(), [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn profile_mismatched_sidecar_does_not_silently_kill_ibl() {
+        // A render that requests a profile the attached sidecar does not provide
+        // (native `Reference` vs an `InteractiveWebGl2`-only prerendered sidecar)
+        // must still be able to bake IBL specular from the retained equirect
+        // source. Regression guard: a missing-profile sidecar previously zeroed
+        // the prepared cubemap, flattening every chrome/metal reflection on
+        // native renders (the "flat pale chrome" showcase bug).
+        let path = "memory://uniform-studio.hdr";
+        let bytes = rle_radiance_hdr_uniform(8, 1, [64, 32, 16, 129]);
+        let plain = EnvironmentDesc::from_equirectangular_hdr_bytes(path, &bytes)
+            .expect("uniform HDR fixture decodes")
+            .with_cubemap_resolution(8);
+        let sidecar =
+            precompute_environment_sidecar(&plain, EnvironmentSidecarProfile::InteractiveWebGl2)
+                .expect("interactive sidecar precomputes");
+        let desc = EnvironmentDesc::from_equirectangular_hdr_sidecar_bytes(path, &bytes, sidecar)
+            .expect("sidecar env constructs")
+            .expect("sidecar sha matches source");
+
+        assert!(
+            desc.prefilter_sidecar(EnvironmentSidecarProfile::Reference)
+                .is_none(),
+            "precondition: a WebGl2 sidecar must not satisfy a Reference request"
+        );
+        assert!(
+            desc.cubemap_faces().is_some(),
+            "profile-mismatched sidecar must retain a bakeable equirect cubemap \
+             source so native IBL specular does not silently go flat"
+        );
+    }
+
+    #[test]
+    fn profile_mismatched_sidecar_preserves_specular_reflection_contrast() {
+        let path = "memory://striped-studio.hdr";
+        let bytes = rle_radiance_hdr_vertical_stripes(16, 8, [8, 8, 8, 128], [255, 255, 255, 131]);
+        let plain = EnvironmentDesc::from_equirectangular_hdr_bytes(path, &bytes)
+            .expect("striped HDR fixture decodes")
+            .with_cubemap_resolution(16);
+        let sidecar =
+            precompute_environment_sidecar(&plain, EnvironmentSidecarProfile::InteractiveWebGl2)
+                .expect("interactive sidecar precomputes");
+        let desc = EnvironmentDesc::from_equirectangular_hdr_sidecar_bytes(path, &bytes, sidecar)
+            .expect("sidecar env constructs")
+            .expect("sidecar sha matches source")
+            .with_cubemap_resolution(16);
+
+        let lighting = PreparedEnvironmentLighting::from_environment_with_profile(
+            Some(&desc),
+            EnvironmentLightingProfile::Reference,
+        );
+        let cubemap = lighting
+            .cubemap()
+            .expect("profile mismatch must bake a Reference cubemap from the HDR source");
+        let directions = [
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, -1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.707, 0.0, 0.707),
+            Vec3::new(-0.707, 0.0, 0.707),
+            Vec3::new(0.707, 0.0, -0.707),
+            Vec3::new(-0.707, 0.0, -0.707),
+        ];
+        let luminance_values = directions
+            .into_iter()
+            .map(|direction| luminance(sample_prefiltered_specular(cubemap, direction, 0.02)))
+            .collect::<Vec<_>>();
+        let min = luminance_values
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min);
+        let max = luminance_values
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(
+            max > min + 0.2,
+            "profile-mismatched sidecar fallback must preserve angular reflection contrast; \
+             a constant specular fallback makes chrome flat. samples={luminance_values:?}"
+        );
+    }
+
+    fn luminance(value: Vec3) -> f32 {
+        value.x * 0.2126 + value.y * 0.7152 + value.z * 0.0722
     }
 
     fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {
@@ -588,6 +643,36 @@ mod tests {
             for channel in &rgbe {
                 bytes.push(0x80 + width as u8);
                 bytes.push(*channel);
+            }
+        }
+        bytes
+    }
+
+    fn rle_radiance_hdr_vertical_stripes(
+        width: u32,
+        height: u32,
+        dark: [u8; 4],
+        bright: [u8; 4],
+    ) -> Vec<u8> {
+        assert!(width >= 8);
+        assert!(width <= 127);
+        let mut bytes =
+            format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
+        for _ in 0..height {
+            bytes.push(0x02);
+            bytes.push(0x02);
+            bytes.push((width >> 8) as u8);
+            bytes.push((width & 0xff) as u8);
+            for channel in 0..4 {
+                bytes.push(width as u8);
+                for x in 0..width {
+                    let source = if x < width / 4 || x >= width * 3 / 4 {
+                        bright
+                    } else {
+                        dark
+                    };
+                    bytes.push(source[channel]);
+                }
             }
         }
         bytes

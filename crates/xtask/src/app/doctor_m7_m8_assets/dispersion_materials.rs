@@ -64,7 +64,7 @@ pub(super) fn check_dispersion_material_contracts(root: &Path, findings: &mut Ve
         "ASSETS-M8",
         "src/render/gpu/material_uniform.rs",
         &[
-            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 208",
+            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 224",
             "dispersion_factors",
             "material.dispersion_factor()",
         ],

@@ -1,8 +1,9 @@
 use crate::assets::{Assets, MaterialHandle, TextureHandle};
-use crate::geometry::{GeometryDesc, Primitive, SkinningMatrix};
+use crate::geometry::{GeometryDesc, Primitive, PrimitiveVertexAttributes, SkinningMatrix};
 use crate::material::{Color, MaterialDesc};
 use crate::scene::{InstanceId, InstanceSetKey, NodeKey, Transform, Vec3};
 
+use super::super::physical_transmission::PreparedPhysicalTransmission as PhysicalTransmission;
 use super::super::{RasterTarget, camera::CameraProjection};
 use super::environment::PreparedEnvironmentLighting;
 use super::lighting::PreparedLights;
@@ -31,6 +32,7 @@ pub(super) struct GeometryPrimitiveSource<'a, F> {
 pub(in crate::render) struct PreparedScene {
     pub(in crate::render) primitives: Vec<PreparedPrimitive>,
     pub(in crate::render) strokes: Vec<PreparedStrokeSegment>,
+    pub(in crate::render) labels: PreparedLabelAtlas,
     pub(in crate::render) instances: Vec<PreparedInstanceSet>,
     pub(in crate::render) light_from_world: [f32; 16],
 }
@@ -42,6 +44,9 @@ pub(in crate::render) struct PreparedPrimitive {
     original_vertex_offset: u32,
     tint: Color,
     gpu_triangle_path: bool,
+    double_sided: bool,
+    material_reflection: Option<PreparedMaterialReflection>,
+    material_transmission: Option<PhysicalTransmission>,
 }
 
 impl PreparedPrimitive {
@@ -56,6 +61,9 @@ impl PreparedPrimitive {
             original_vertex_offset: 0,
             tint,
             gpu_triangle_path: true,
+            double_sided: false,
+            material_reflection: None,
+            material_transmission: None,
         }
     }
 
@@ -74,6 +82,27 @@ impl PreparedPrimitive {
 
     pub(in crate::render) const fn without_gpu_triangle_path(mut self) -> Self {
         self.gpu_triangle_path = false;
+        self
+    }
+
+    pub(in crate::render) const fn with_double_sided(mut self, double_sided: bool) -> Self {
+        self.double_sided = double_sided;
+        self
+    }
+
+    pub(in crate::render) const fn with_material_reflection(
+        mut self,
+        reflection: Option<PreparedMaterialReflection>,
+    ) -> Self {
+        self.material_reflection = reflection;
+        self
+    }
+
+    pub(in crate::render) const fn with_material_transmission(
+        mut self,
+        transmission: Option<PhysicalTransmission>,
+    ) -> Self {
+        self.material_transmission = transmission;
         self
     }
 
@@ -97,8 +126,23 @@ impl PreparedPrimitive {
         self.tint = tint;
     }
 
+    pub(in crate::render) fn set_world_from_model(
+        &mut self,
+        world_from_model: [f32; 16],
+        normal_from_model: [f32; 16],
+    ) {
+        self.primitive = self
+            .primitive
+            .clone()
+            .with_world_from_model(world_from_model, normal_from_model);
+    }
+
     pub(in crate::render) fn vertices(&self) -> &[crate::geometry::Vertex; 3] {
         self.primitive.vertices()
+    }
+
+    pub(in crate::render) fn vertex_attributes(&self) -> &[PrimitiveVertexAttributes; 3] {
+        self.primitive.vertex_attributes()
     }
 
     pub(in crate::render) fn render_material_slot(&self) -> u32 {
@@ -109,8 +153,32 @@ impl PreparedPrimitive {
         self.primitive.depth_prepass_eligible()
     }
 
+    pub(in crate::render) fn occlusion_culling_eligible(&self) -> bool {
+        self.depth_prepass_eligible()
+            && self.tint.a >= 1.0 - f32::EPSILON
+            && self
+                .primitive
+                .vertices()
+                .iter()
+                .all(|vertex| vertex.color.a >= 1.0 - f32::EPSILON)
+    }
+
     pub(in crate::render) const fn gpu_triangle_path(&self) -> bool {
         self.gpu_triangle_path
+    }
+
+    pub(in crate::render) const fn double_sided(&self) -> bool {
+        self.double_sided
+    }
+
+    pub(in crate::render) const fn material_reflection(
+        &self,
+    ) -> Option<PreparedMaterialReflection> {
+        self.material_reflection
+    }
+
+    pub(in crate::render) const fn material_transmission(&self) -> Option<PhysicalTransmission> {
+        self.material_transmission
     }
 
     pub(in crate::render) fn world_from_model(&self) -> [f32; 16] {
@@ -122,10 +190,36 @@ impl PreparedPrimitive {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::render) struct PreparedMaterialReflection {
+    metallic: f32,
+    roughness: f32,
+}
+
+impl PreparedMaterialReflection {
+    pub(in crate::render) fn new(metallic: f32, roughness: f32) -> Option<Self> {
+        if !metallic.is_finite() || !roughness.is_finite() || metallic < 0.5 {
+            return None;
+        }
+        Some(Self {
+            metallic: metallic.clamp(0.0, 1.0),
+            roughness: roughness.clamp(0.0, 1.0),
+        })
+    }
+
+    pub(in crate::render) const fn metallic(self) -> f32 {
+        self.metallic
+    }
+
+    pub(in crate::render) const fn roughness(self) -> f32 {
+        self.roughness
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedInstanceSet {
     source_node: NodeKey,
-    source_set: InstanceSetKey,
+    source_set: Option<InstanceSetKey>,
     primitives: Vec<PreparedPrimitive>,
     instances: Vec<PreparedInstanceRecord>,
 }
@@ -139,7 +233,20 @@ impl PreparedInstanceSet {
     ) -> Self {
         Self {
             source_node,
-            source_set,
+            source_set: Some(source_set),
+            primitives,
+            instances,
+        }
+    }
+
+    pub(in crate::render) fn new_auto_batched(
+        source_node: NodeKey,
+        primitives: Vec<PreparedPrimitive>,
+        instances: Vec<PreparedInstanceRecord>,
+    ) -> Self {
+        Self {
+            source_node,
+            source_set: None,
             primitives,
             instances,
         }
@@ -149,7 +256,7 @@ impl PreparedInstanceSet {
         self.source_node
     }
 
-    pub(in crate::render) const fn source_set(&self) -> InstanceSetKey {
+    pub(in crate::render) const fn source_set(&self) -> Option<InstanceSetKey> {
         self.source_set
     }
 
@@ -172,7 +279,7 @@ impl PreparedInstanceSet {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::render) struct PreparedInstanceRecord {
-    source_instance: InstanceId,
+    source_instance: Option<InstanceId>,
     world_from_model: [f32; 16],
     normal_from_model: [f32; 16],
     tint: Color,
@@ -186,7 +293,20 @@ impl PreparedInstanceRecord {
         tint: Color,
     ) -> Self {
         Self {
-            source_instance,
+            source_instance: Some(source_instance),
+            world_from_model,
+            normal_from_model,
+            tint,
+        }
+    }
+
+    pub(in crate::render) const fn auto_batched(
+        world_from_model: [f32; 16],
+        normal_from_model: [f32; 16],
+        tint: Color,
+    ) -> Self {
+        Self {
+            source_instance: None,
             world_from_model,
             normal_from_model,
             tint,
@@ -203,6 +323,11 @@ impl PreparedInstanceRecord {
 
     pub(in crate::render) const fn tint(self) -> Color {
         self.tint
+    }
+
+    #[cfg(test)]
+    pub(in crate::render) const fn source_instance(self) -> Option<InstanceId> {
+        self.source_instance
     }
 }
 
@@ -283,11 +408,170 @@ impl PreparedStrokeSegment {
     pub(in crate::render) fn set_tint(&mut self, tint: Color) {
         self.tint = tint;
     }
+
+    pub(in crate::render) fn set_world_from_model(&mut self, world_from_model: [f32; 16]) {
+        self.world_from_model = world_from_model;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(in crate::render) struct PreparedLabelAtlas {
+    width: u32,
+    height: u32,
+    rgba8: Vec<u8>,
+    quads: Vec<PreparedLabelQuad>,
+}
+
+impl PreparedLabelAtlas {
+    pub(in crate::render) fn new(
+        width: u32,
+        height: u32,
+        rgba8: Vec<u8>,
+        quads: Vec<PreparedLabelQuad>,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            rgba8,
+            quads,
+        }
+    }
+
+    pub(in crate::render) const fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub(in crate::render) const fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub(in crate::render) fn rgba8(&self) -> &[u8] {
+        &self.rgba8
+    }
+
+    pub(in crate::render) fn quads(&self) -> &[PreparedLabelQuad] {
+        &self.quads
+    }
+
+    pub(in crate::render) fn quads_mut(&mut self) -> &mut [PreparedLabelQuad] {
+        &mut self.quads
+    }
+
+    pub(in crate::render) fn set_quads(&mut self, quads: Vec<PreparedLabelQuad>) {
+        self.quads = quads;
+    }
+
+    pub(in crate::render) fn is_empty(&self) -> bool {
+        self.quads.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::render) struct PreparedLabelQuad {
+    source_node: Option<NodeKey>,
+    anchor: Vec3,
+    right: Vec3,
+    up: Vec3,
+    world_units_per_px: f32,
+    rect_px: [f32; 4],
+    uv_rect: [f32; 4],
+    color: Color,
+    tint: Color,
+    solid_coverage: bool,
+    original_quad_index: u32,
+}
+
+impl PreparedLabelQuad {
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::render) const fn new(
+        source_node: Option<NodeKey>,
+        anchor: Vec3,
+        right: Vec3,
+        up: Vec3,
+        world_units_per_px: f32,
+        rect_px: [f32; 4],
+        uv_rect: [f32; 4],
+        color: Color,
+        tint: Color,
+    ) -> Self {
+        Self {
+            source_node,
+            anchor,
+            right,
+            up,
+            world_units_per_px,
+            rect_px,
+            uv_rect,
+            color,
+            tint,
+            solid_coverage: false,
+            original_quad_index: 0,
+        }
+    }
+
+    pub(in crate::render) const fn with_solid_coverage(mut self) -> Self {
+        self.solid_coverage = true;
+        self
+    }
+
+    pub(in crate::render) const fn with_original_quad_index(
+        mut self,
+        original_quad_index: u32,
+    ) -> Self {
+        self.original_quad_index = original_quad_index;
+        self
+    }
+
+    pub(in crate::render) const fn source_node(&self) -> Option<NodeKey> {
+        self.source_node
+    }
+
+    pub(in crate::render) const fn anchor(&self) -> Vec3 {
+        self.anchor
+    }
+
+    pub(in crate::render) const fn right(&self) -> Vec3 {
+        self.right
+    }
+
+    pub(in crate::render) const fn up(&self) -> Vec3 {
+        self.up
+    }
+
+    pub(in crate::render) const fn world_units_per_px(&self) -> f32 {
+        self.world_units_per_px
+    }
+
+    pub(in crate::render) const fn rect_px(&self) -> [f32; 4] {
+        self.rect_px
+    }
+
+    pub(in crate::render) const fn uv_rect(&self) -> [f32; 4] {
+        self.uv_rect
+    }
+
+    pub(in crate::render) const fn solid_coverage(&self) -> bool {
+        self.solid_coverage
+    }
+
+    pub(in crate::render) fn set_tint(&mut self, tint: Color) {
+        self.tint = tint;
+    }
+
+    pub(in crate::render) fn final_color(&self) -> Color {
+        Color::from_linear_rgba(
+            self.color.r * self.tint.r,
+            self.color.g * self.tint.g,
+            self.color.b * self.tint.b,
+            self.color.a * self.tint.a,
+        )
+    }
 }
 
 #[derive(Clone)]
 pub(super) struct PrimitiveBakeParams<'lights> {
     pub(super) target: RasterTarget,
+    pub(super) screen_space_scale: f32,
     pub(super) transform: Transform,
     pub(super) origin_shift: Vec3,
     pub(super) lights: &'lights PreparedLights,

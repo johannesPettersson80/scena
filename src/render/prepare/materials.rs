@@ -24,11 +24,20 @@ pub(super) fn material_pass(
         }
     }
 
+    if material_requires_scene_color_transmission(material) {
+        return Ok(MaterialPass::Blend);
+    }
+
     match material.alpha_mode() {
         AlphaMode::Opaque => Ok(MaterialPass::Opaque),
         AlphaMode::Blend => Ok(MaterialPass::Blend),
         AlphaMode::Mask { cutoff } => Ok(MaterialPass::Mask { cutoff }),
     }
+}
+
+fn material_requires_scene_color_transmission(material: &MaterialDesc) -> bool {
+    matches!(material.kind(), MaterialKind::PbrMetallicRoughness)
+        && material.transmission_factor() > 0.0
 }
 
 pub(super) fn validate_material_texture_handles(
@@ -430,5 +439,16 @@ mod tests {
 
         assert_ne!(baked, Color::WHITE);
         assert_eq!(backend_sampled, Color::WHITE);
+    }
+
+    #[test]
+    fn opaque_alpha_transmission_uses_scene_color_pass() {
+        let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.1)
+            .with_transmission_factor(1.0);
+
+        assert!(matches!(
+            material_pass(NodeKey::default(), &material),
+            Ok(MaterialPass::Blend)
+        ));
     }
 }

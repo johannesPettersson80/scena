@@ -52,7 +52,9 @@ gh run list --limit 10
 1. Fetch the live issue or PR before accepting its summary.
 2. Verify the claim in the current checkout before patching.
 3. Keep unrelated dirty files untouched.
-4. Run the required cargo/doctor gates on `scena-builder` and any feature-specific proof.
+4. Use `scena-remote-builder` to run the validation ladder on `scena-builder`: focused
+   proof first, scoped cargo/doctor gates for the touched surface, and full release gates
+   only when the task is release-ready or explicitly asks for them.
 5. If asked to push or merge, verify the remote branch and monitor GitHub checks until the
    deciding run has completed.
 6. If asked to close an issue, leave a concise comment with the fix commit, version or
@@ -68,6 +70,9 @@ ssh scena-builder 'git -C "$HOME/projects/scena" log --oneline --decorate -1'
 ```
 
 Do not confuse the remote builder checkout with GitHub branch state or the local checkout.
+For commit-only requests after a multi-step cleanup, do not invent new full-suite runs just
+to make the commit feel safer. Report the focused/scoped evidence already collected for the
+diff, and run only missing gates that match files changed since that evidence.
 
 ## Release Follow-Through
 

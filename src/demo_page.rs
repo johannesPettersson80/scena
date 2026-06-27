@@ -30,7 +30,9 @@ use replay::{lerp_transform, smoothstep};
 
 const CONNECTOR_REPLAY_SECONDS: f64 = 1.8;
 const DEMO_HDR_ENVIRONMENT: &str = "samples/environment/white_studio_03_1k.hdr";
-const CONNECTOR_SOLVE_SEED_OFFSET: Vec3 = Vec3::new(-0.62, 0.11, 0.0);
+// The hidden solve pose must stay within authored snap tolerance; the visible
+// before-state separation is applied after the mated pose is computed.
+const CONNECTOR_SOLVE_SEED_OFFSET: Vec3 = Vec3::new(-0.62, 0.0, 0.0);
 const CONNECTOR_REPLAY_SEPARATION_X: f32 = 0.48;
 const DEMO_BACKGROUND: Color = Color::CHARCOAL;
 
@@ -193,7 +195,7 @@ pub async fn load_connector_snap_from_bytes(
                 .viewport(viewport_width.max(1), viewport_height.max(1)),
         )
         .map_err(|err| JsValue::from_str(&format!("connector frame_bounds failed: {err:?}")))?;
-    let controls = OrbitControls::from_framing(framing).cinematic();
+    let controls = OrbitControls::from_framing(framing);
     controls.apply_to_scene(&mut scene, camera).map_err(|err| {
         JsValue::from_str(&format!("apply initial connector camera failed: {err:?}"))
     })?;

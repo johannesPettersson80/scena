@@ -1,5 +1,6 @@
 mod anisotropy_materials;
 mod asset_instancing;
+mod asset_load_reports;
 mod asset_matrix;
 mod assets_materials;
 mod clearcoat_materials;

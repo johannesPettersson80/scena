@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 
 use crate::diagnostics::{ImportDiagnosticOverlay, LookupError};
@@ -79,6 +80,39 @@ impl SceneImport {
 
     pub fn roots(&self) -> &[NodeKey] {
         &self.roots
+    }
+
+    pub fn addressable_node_paths(&self) -> BTreeMap<String, NodeKey> {
+        if !self.is_live() {
+            return BTreeMap::new();
+        }
+
+        let mut paths = BTreeMap::new();
+        if let Some(root) = self.roots.first().copied() {
+            paths.insert("/".to_owned(), root);
+        }
+
+        let mut children_by_parent: BTreeMap<Option<NodeKey>, Vec<(String, NodeKey)>> =
+            BTreeMap::new();
+        for record in &self.records {
+            let Some(name) = record.name.as_deref().filter(|name| !name.is_empty()) else {
+                continue;
+            };
+            children_by_parent
+                .entry(record.parent)
+                .or_default()
+                .push((escape_path_segment(name), record.node));
+        }
+        for children in children_by_parent.values_mut() {
+            children.sort_by(|(left_name, left_node), (right_name, right_node)| {
+                left_name
+                    .cmp(right_name)
+                    .then_with(|| left_node.cmp(right_node))
+            });
+        }
+
+        append_addressable_paths(None, "", &children_by_parent, &mut paths);
+        paths
     }
 
     pub const fn source_units(&self) -> SourceUnits {
@@ -322,4 +356,35 @@ fn path_segments(path: &str) -> Option<Vec<String>> {
     }
     segments.push(current);
     Some(segments)
+}
+
+fn append_addressable_paths(
+    parent: Option<NodeKey>,
+    prefix: &str,
+    children_by_parent: &BTreeMap<Option<NodeKey>, Vec<(String, NodeKey)>>,
+    paths: &mut BTreeMap<String, NodeKey>,
+) {
+    let Some(children) = children_by_parent.get(&parent) else {
+        return;
+    };
+    for (name, node) in children {
+        let path = if prefix.is_empty() {
+            format!("/{name}")
+        } else {
+            format!("{prefix}/{name}")
+        };
+        paths.insert(path.clone(), *node);
+        append_addressable_paths(Some(*node), &path, children_by_parent, paths);
+    }
+}
+
+fn escape_path_segment(segment: &str) -> String {
+    let mut escaped = String::with_capacity(segment.len());
+    for character in segment.chars() {
+        if character == '/' || character == '\\' {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
 }

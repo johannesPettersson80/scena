@@ -6,9 +6,14 @@ mod ergonomics;
 mod pbr;
 
 use crate::{
-    AnimationPlaybackState, Assets, Color, CursorPosition, GeometryDesc, HitTarget, LabelDesc,
-    MaterialDesc, PerspectiveCamera, Primitive, Scene, Transform, Vec3, Vertex, Viewport,
+    AnimationPlaybackState, AssetCatalogAssetV1, AssetCatalogV1, Assets, Color, CursorPosition,
+    GeometryDesc, HitTarget, LabelDesc, MaterialDesc, PerspectiveCamera, Primitive, Scene,
+    Transform, Vec3, Vertex, Viewport,
 };
+
+const ASSET_CATALOG_FIXTURE: &str =
+    include_str!("../../tests/assets/catalog/readiness_catalog.v1.json");
+const ASSET_CATALOG_PREVIEW_ASSET_ID: &str = "variant-triangle";
 
 pub(super) struct WorkflowScene {
     pub(super) assets: Assets,
@@ -35,6 +40,7 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
         "pbr-material-presets" => pbr::material_presets_scene().await,
         "compressed-assets" => compressed::compressed_assets_scene().await,
         "source-gltf-materials" => ergonomics::build_ergonomics_scene(workflow).await,
+        "asset-catalog-preview" => asset_catalog_preview_scene().await,
         other => ergonomics::build_ergonomics_scene(other).await,
     }
 }
@@ -66,6 +72,107 @@ async fn model_viewer_scene() -> Result<WorkflowScene, JsValue> {
             "proof_class": "camera-framed-non-ndc",
         }),
     })
+}
+
+async fn asset_catalog_preview_scene() -> Result<WorkflowScene, JsValue> {
+    let catalog: AssetCatalogV1 = serde_json::from_str(ASSET_CATALOG_FIXTURE)
+        .map_err(|error| JsValue::from_str(&format!("asset catalog parse failed: {error}")))?;
+    let asset = catalog
+        .assets
+        .iter()
+        .find(|asset| asset.id == ASSET_CATALOG_PREVIEW_ASSET_ID)
+        .ok_or_else(|| {
+            JsValue::from_str(&format!(
+                "asset catalog fixture missing {ASSET_CATALOG_PREVIEW_ASSET_ID}"
+            ))
+        })?;
+    let preview = asset.preview.as_ref().ok_or_else(|| {
+        JsValue::from_str(&format!(
+            "asset catalog entry {} has no preview metadata",
+            asset.id
+        ))
+    })?;
+    if preview.kind != "generated" {
+        return Err(JsValue::from_str(&format!(
+            "asset catalog preview proof requires generated preview metadata, got {}",
+            preview.kind
+        )));
+    }
+
+    let source = browser_fixture_source(asset)?;
+    let assets = Assets::new();
+    let scene_asset = assets.load_scene(source.as_str()).await.map_err(|error| {
+        JsValue::from_str(&format!(
+            "asset catalog preview load failed for {source}: {error:?}"
+        ))
+    })?;
+    let mut scene = Scene::new();
+    let import = scene.instantiate(&scene_asset).map_err(|error| {
+        JsValue::from_str(&format!(
+            "asset catalog preview instantiate failed for {source}: {error:?}"
+        ))
+    })?;
+    let selected_variant = asset
+        .material_requirements
+        .required_variants
+        .first()
+        .cloned();
+    if let Some(name) = selected_variant.as_deref() {
+        scene
+            .set_active_variant(&import, Some(name))
+            .map_err(|error| {
+                JsValue::from_str(&format!(
+                    "asset catalog preview variant {name} failed: {error:?}"
+                ))
+            })?;
+    }
+    let camera = add_default_camera(&mut scene)?;
+    let framed = if let Some(bounds) = import.bounds_world(&scene) {
+        scene.frame(camera, bounds).map_err(|error| {
+            JsValue::from_str(&format!(
+                "asset catalog preview frame failed for {source}: {error:?}"
+            ))
+        })?;
+        true
+    } else {
+        false
+    };
+
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "proof_class": "asset-catalog-preview",
+            "catalog_schema": catalog.schema,
+            "asset_id": asset.id,
+            "display_name": asset.display_name,
+            "catalog_source": asset.source,
+            "source": source,
+            "preview_kind": preview.kind,
+            "preview_width": preview.width,
+            "preview_height": preview.height,
+            "preview_background": preview.background,
+            "required_variants": asset.material_requirements.required_variants,
+            "selected_variant": selected_variant,
+            "active_variant": import.active_variant(),
+            "roots": import.roots().len(),
+            "framed": framed,
+        }),
+    })
+}
+
+fn browser_fixture_source(asset: &AssetCatalogAssetV1) -> Result<String, JsValue> {
+    asset
+        .source
+        .strip_prefix("tests/assets/")
+        .map(|path| format!("/fixtures/{path}"))
+        .ok_or_else(|| {
+            JsValue::from_str(&format!(
+                "asset catalog preview source must be under tests/assets for browser proof: {}",
+                asset.source
+            ))
+        })
 }
 
 fn instancing_scene() -> WorkflowScene {
@@ -196,24 +303,39 @@ fn labels_helpers_scene() -> Result<WorkflowScene, JsValue> {
         .mesh(axes, material)
         .add()
         .map_err(|error| JsValue::from_str(&format!("axes helper insert failed: {error:?}")))?;
-    scene
-        .add_label(
-            scene.root(),
-            LabelDesc::msdf("origin")
-                .with_color(Color::WHITE)
-                .with_size(14.0),
-            Transform {
-                translation: Vec3::new(0.0, 0.15, 0.0),
-                ..Transform::default()
-            },
-        )
-        .map_err(|error| JsValue::from_str(&format!("label insert failed: {error:?}")))?;
+    for index in 0..12 {
+        let col = index % 4;
+        let row = index / 4;
+        let label = if index % 2 == 0 {
+            LabelDesc::new(format!("S{index:02}"))
+        } else {
+            LabelDesc::new(format!("M{index:02}"))
+        }
+        .with_color(Color::from_srgb_u8(245, 250, 255))
+        .with_size(13.0)
+        .with_background(Color::from_srgb_u8(5, 12, 22));
+        scene
+            .add_label(
+                scene.root(),
+                label,
+                Transform {
+                    translation: Vec3::new(-0.45 + col as f32 * 0.3, 0.35 - row as f32 * 0.25, 0.0),
+                    ..Transform::default()
+                },
+            )
+            .map_err(|error| JsValue::from_str(&format!("label insert failed: {error:?}")))?;
+    }
     let camera = add_default_camera(&mut scene)?;
     Ok(WorkflowScene {
         assets,
         scene,
         camera,
-        metadata: json!({ "helpers": ["axes"], "labels": 1 }),
+        metadata: json!({
+            "helpers": ["axes"],
+            "labels": 12,
+            "proof_class": "browser-truetype-labels",
+            "rasterization": "truetype-atlas-aa",
+        }),
     })
 }
 

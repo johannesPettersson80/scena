@@ -138,6 +138,7 @@ impl Scene {
                 | NodeKind::Mesh(_)
                 | NodeKind::Model(_)
                 | NodeKind::InstanceSet(_)
+                | NodeKind::ParticleSet(_)
                 | NodeKind::Label(_)
                 | NodeKind::Camera(_)
                 | NodeKind::Light(_) => None,

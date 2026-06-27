@@ -1,0 +1,25 @@
+{
+  "schema": "scena.asset_doctor.v1",
+  "ok": false,
+  "status": "failed",
+  "asset": "tests/assets/gltf/unsupported_required_extension.gltf",
+  "summary": {
+    "error_count": 1,
+    "warning_count": 0,
+    "info_count": 0
+  },
+  "asset_load_report": null,
+  "findings": [
+    {
+      "severity": "error",
+      "code": "unsupported_required_extension",
+      "path": "tests/assets/gltf/unsupported_required_extension.gltf",
+      "field": "extensionsRequired",
+      "extension": "KHR_materials_clearcoat",
+      "message": "asset tests/assets/gltf/unsupported_required_extension.gltf requires unsupported extension KHR_materials_clearcoat",
+      "help": "remove the required extension, export with a supported profile, or enable a decoder feature when one exists",
+      "suggested_fix": "Remove the required extension, make it optional with a visual fallback, export a fallback material/path, or enable the matching decoder feature when one exists.",
+      "source": "scena_asset_doctor"
+    }
+  ]
+}

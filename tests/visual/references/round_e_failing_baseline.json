@@ -3,51 +3,53 @@
   "source_image": "tests/visual/references/round_e_failing_baseline_glossy_grid.png",
   "source_sha256": "32d99960699b6b05fb3888e9d8fd57af3d07a27cacb5a94214d0b0b9f0ba589c",
   "source_description": "Archived v1.4 single-shape glossy material grid; preserved to prove the old demo cannot satisfy Round E material identity gates.",
-  "metric": "mean foreground CIEDE2000 versus the external-anchor Round E reference PNG after normalized foreground crop",
-  "threshold_delta_e2000_max": 4.0,
-  "minimum_failed_presets": 3,
+  "metric": "mean foreground CIEDE2000 versus the external-anchor Round E reference PNG after normalized foreground crop; compared against tests/visual/references/round_e_material_thresholds.toml per-preset budgets",
+  "threshold_source": "tests/visual/references/round_e_material_thresholds.toml",
+  "minimum_failed_presets": 5,
   "minimum_failure_margin_delta_e2000": 1.0,
   "generator": "one-shot Playwright canvas decoder using scripts/probe_cloudflare_material_presets.mjs CIEDE2000 formula and 4x3 legacy grid crop windows",
   "failed_presets": [
     {
       "preset": "chrome",
       "delta_e2000_vs_reference": 38.604,
-      "failure_margin_delta_e2000": 34.604
+      "threshold_delta_e2000_max": 20.0,
+      "failure_margin_delta_e2000": 18.604
     },
     {
       "preset": "brushed_steel",
       "delta_e2000_vs_reference": 33.485,
-      "failure_margin_delta_e2000": 29.485
+      "threshold_delta_e2000_max": 15.0,
+      "failure_margin_delta_e2000": 18.485
     },
     {
       "preset": "clear_glass",
       "delta_e2000_vs_reference": 33.766,
-      "failure_margin_delta_e2000": 29.766
+      "threshold_delta_e2000_max": 32.0,
+      "failure_margin_delta_e2000": 1.766
     },
     {
       "preset": "leather",
       "delta_e2000_vs_reference": 33.603,
-      "failure_margin_delta_e2000": 29.603
-    },
-    {
-      "preset": "rubber",
-      "delta_e2000_vs_reference": 19.461,
-      "failure_margin_delta_e2000": 15.461
+      "threshold_delta_e2000_max": 7.0,
+      "failure_margin_delta_e2000": 26.603
     },
     {
       "preset": "satin",
       "delta_e2000_vs_reference": 23.306,
-      "failure_margin_delta_e2000": 19.306
+      "threshold_delta_e2000_max": 6.0,
+      "failure_margin_delta_e2000": 17.306
     },
     {
       "preset": "clearcoat_plastic",
       "delta_e2000_vs_reference": 26.896,
-      "failure_margin_delta_e2000": 22.896
+      "threshold_delta_e2000_max": 18.0,
+      "failure_margin_delta_e2000": 8.896
     },
     {
       "preset": "frosted_glass",
       "delta_e2000_vs_reference": 37.921,
-      "failure_margin_delta_e2000": 33.921
+      "threshold_delta_e2000_max": 28.0,
+      "failure_margin_delta_e2000": 9.921
     }
   ]
 }

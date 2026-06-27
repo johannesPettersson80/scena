@@ -51,13 +51,11 @@ async fn request_device_with_downlevel_fallback(
     adapter: &wgpu::Adapter,
     backend: Backend,
 ) -> Result<(wgpu::Device, wgpu::Queue), BuildError> {
-    if let Ok(pair) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
-        .await
-    {
+    if let Ok(pair) = adapter.request_device(&device_descriptor(adapter)).await {
         return Ok(pair);
     }
     let downlevel = wgpu::DeviceDescriptor {
+        required_features: adapter_features(adapter),
         required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
         ..wgpu::DeviceDescriptor::default()
     };
@@ -65,6 +63,24 @@ async fn request_device_with_downlevel_fallback(
         .request_device(&downlevel)
         .await
         .map_err(|_| BuildError::RequestDevice { backend })
+}
+
+fn device_descriptor(adapter: &wgpu::Adapter) -> wgpu::DeviceDescriptor<'static> {
+    wgpu::DeviceDescriptor {
+        required_features: adapter_features(adapter),
+        ..wgpu::DeviceDescriptor::default()
+    }
+}
+
+fn adapter_features(adapter: &wgpu::Adapter) -> wgpu::Features {
+    let mut features = wgpu::Features::empty();
+    if adapter
+        .features()
+        .contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES)
+    {
+        features |= wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
+    }
+    features
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -411,5 +427,16 @@ mod tests {
         info.name = String::from("V3D 7.1.10.2");
         info.backend = wgpu::Backend::Gl;
         assert!(!super::is_unstable_v3d_headless_adapter(&info));
+    }
+
+    #[test]
+    fn device_request_includes_adapter_specific_format_feature_when_available() {
+        let source = include_str!("build.rs");
+        assert!(
+            source.contains("TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES")
+                && source.contains("required_features: adapter_features(adapter)"),
+            "native GPU device requests must opt into adapter-specific texture format features so \
+             supported MSAA8 pipelines can be prepared instead of failing after adapter probing"
+        );
     }
 }

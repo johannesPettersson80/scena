@@ -5,6 +5,7 @@ impl AssetError {
         match self {
             Self::NotFound { .. } => "check the asset path and the configured AssetFetcher",
             Self::Io { .. } => "check filesystem or network access in the host application",
+            Self::PolicyViolation { help, .. } => help,
             Self::Parse { .. } => "validate the asset with the source tool or glTF validator",
             Self::UnsupportedRequiredExtension { .. } => {
                 "remove the required extension, export with a supported profile, or enable a decoder feature when one exists"
@@ -95,6 +96,12 @@ impl RenderError {
                 "call recover_context with retained assets, then prepare again"
             }
             Self::GpuResourcesNotPrepared { .. } => "call Renderer::prepare before rendering",
+            Self::UnsupportedSampleCount { .. } => {
+                "choose an anti_aliasing sample count supported by the active GPU adapter, such as msaa4"
+            }
+            Self::UnsupportedSupersampleFactor { .. } => {
+                "lower render.supersample or reduce capture width/height; full-frame supersampling costs N^2 pixels"
+            }
             Self::GpuReadback { .. } => {
                 "retry after device polling or choose a supported readback path"
             }
@@ -130,6 +137,9 @@ impl LookupError {
             Self::VariantNotFound { .. } => {
                 "call SceneImport::material_variants to inspect declared KHR_materials_variants names"
             }
+            Self::AmbiguousVariantName { .. } => {
+                "rename duplicate KHR_materials_variants entries or address the asset authoring issue before selecting a variant"
+            }
             Self::PathNotFound { .. } => {
                 "use SceneImport::path_segments when names contain slashes"
             }
@@ -156,13 +166,26 @@ impl LookupError {
             Self::GeometryNotFound { .. } => {
                 "call asset-aware helpers with the same Assets store that created or loaded the geometry"
             }
+            Self::InvalidSkinBinding { .. } => {
+                "provide exactly one inverse bind matrix for each joint in the skin binding"
+            }
             Self::CameraNotFound(_) => "use a CameraKey created by this Scene",
             Self::ClippingPlaneNotFound(_) => "use a ClippingPlaneKey created by this Scene",
             Self::InstanceSetNotFound(_) => "use an InstanceSetKey created by this Scene",
+            Self::ParticleSetNotFound(_) => "use a ParticleSetKey created by this Scene",
             Self::InstanceNotFound { .. } => {
                 "use an InstanceId that is still present in the requested InstanceSet"
             }
+            Self::InvalidInstanceTint { .. } => {
+                "use finite opaque per-instance tints; transparent instance tinting requires a transparent instancing path"
+            }
             Self::LabelNotFound(_) => "use a LabelKey created by this Scene",
+            Self::UnsupportedLabelText { .. } => {
+                "use basic Latin text for TrueType labels or render complex-script text in the host"
+            }
+            Self::InvalidLabelStyle { .. } => {
+                "use opaque label colors or omit the optional background/halo until transparent labels are implemented"
+            }
         }
     }
 }

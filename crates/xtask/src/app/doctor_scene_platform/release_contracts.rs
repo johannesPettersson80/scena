@@ -33,9 +33,6 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "src/diagnostics.rs",
         &[
-            "pub enum DebugOverlay",
-            "RendererChanged",
-            "DebugOverlay",
             "pub use stats::RendererStats",
             "pub enum BuildError",
             "pub enum AssetError",
@@ -51,24 +48,8 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         root,
         findings,
         "ARCH-M5-RELEASE",
-        "src/render/settings.rs",
-        &[
-            "pub fn debug_overlay",
-            "pub fn set_debug",
-            "pub fn set_debug_overlay",
-            "debug_revision",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-M5-RELEASE",
         "src/render.rs",
-        &[
-            "debug_revision",
-            "NotPreparedReason::RendererChanged",
-            "ChangeKind::DebugOverlay",
-        ],
+        &["NotPreparedReason::TargetChanged"],
     );
     require_contains(
         root,
@@ -91,13 +72,10 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         &[
             "Renderer::prepare",
             "Renderer::render",
-            "Renderer::set_debug",
-            "Renderer::set_debug_overlay",
             "Renderer::capability_report",
             "Renderer::gpu_adapter_report",
             "CapabilityReport",
             "AssetLoadOptions",
-            "DebugOverlay",
             "RendererStats",
             "GpuAdapterReport",
             "AdapterLimitsReport",
@@ -152,7 +130,6 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "tests/m5_release.rs",
         &[
-            "m5_debug_overlay_api_is_public_and_requires_prepare_after_change",
             "m5_public_api_baseline_names_frozen_contracts",
             "m5_benchmark_report_writes_required_scene_rows",
             "scena_convert_cli_reports_fbx_to_gltf_plan",

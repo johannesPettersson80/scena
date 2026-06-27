@@ -1,6 +1,54 @@
 use crate::diagnostics::LookupError;
+use crate::{GeometryHandle, MaterialHandle, ModelHandle};
 
-use super::{MeshBuilder, MeshNode, ModelBuilder, ModelNode, NodeKey, NodeKind, Transform};
+use super::{MeshNode, ModelNode, NodeKey, NodeKind, Scene, Transform};
+
+/// Builder returned by [`Scene::mesh`].
+#[must_use = "mesh builders do nothing until add() is called"]
+pub struct MeshBuilder<'scene> {
+    scene: &'scene mut Scene,
+    parent: NodeKey,
+    transform: Transform,
+    geometry: GeometryHandle,
+    material: MaterialHandle,
+}
+
+/// Builder returned by [`Scene::model`].
+#[must_use = "model builders do nothing until add() is called"]
+pub struct ModelBuilder<'scene> {
+    scene: &'scene mut Scene,
+    parent: NodeKey,
+    transform: Transform,
+    model: ModelHandle,
+}
+
+impl<'scene> MeshBuilder<'scene> {
+    pub(super) fn new(
+        scene: &'scene mut Scene,
+        parent: NodeKey,
+        geometry: GeometryHandle,
+        material: MaterialHandle,
+    ) -> Self {
+        Self {
+            scene,
+            parent,
+            transform: Transform::default(),
+            geometry,
+            material,
+        }
+    }
+}
+
+impl<'scene> ModelBuilder<'scene> {
+    pub(super) fn new(scene: &'scene mut Scene, parent: NodeKey, model: ModelHandle) -> Self {
+        Self {
+            scene,
+            parent,
+            transform: Transform::default(),
+            model,
+        }
+    }
+}
 
 impl MeshBuilder<'_> {
     /// Overrides the parent node. The parent is validated when [`Self::add`] is called.

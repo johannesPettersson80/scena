@@ -1,20 +1,29 @@
 //! High-level viewer helpers built from `Scene`, `Assets`, and `Renderer`.
 
 mod animation;
+mod asset_catalog_preview;
 mod capture;
 mod interaction;
 mod load_progress;
 mod material_variants;
+mod profile;
 
+pub use asset_catalog_preview::{
+    AssetCatalogPreviewError, AssetCatalogPreviewPng, render_asset_catalog_preview_png,
+};
 pub use capture::{ViewerCaptureError, ViewerPngError};
+pub use profile::{VIEWER_PROFILE_NAMES, ViewerProfile, ViewerProfileLighting};
 
 use crate::assets::{AssetLoadProgress, AssetPath, Assets};
-use crate::controls::{OrbitControlAction, OrbitControls, PointerEvent, TouchEvent};
+use crate::controls::{
+    CameraBookmark, OrbitControlAction, OrbitControls, PointerEvent, TouchEvent,
+};
 use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
+use crate::material::Color;
 use crate::picking::Hit;
 use crate::platform::{PlatformSurface, SurfaceEvent};
-use crate::render::{Profile, Quality, RenderMode, Renderer, RendererOptions};
-use crate::scene::{CameraKey, Scene, SceneImport, Vec3};
+use crate::render::{Background, Profile, Quality, RenderMode, Renderer, RendererOptions};
+use crate::scene::{CameraKey, Scene, SceneImport, Transform, Vec3};
 
 type ViewerPickCallback = Box<dyn FnMut(std::result::Result<Option<Hit>, LookupError>) + 'static>;
 
@@ -28,6 +37,7 @@ pub struct FirstRender {
     outcome: RenderOutcome,
     diagnostics: Vec<Diagnostic>,
     load_progress_events: Vec<AssetLoadProgress>,
+    camera_bookmarks: Vec<CameraBookmark>,
 }
 
 /// Prepared owned state for a headless glTF viewer loop.
@@ -38,6 +48,7 @@ pub struct HeadlessGltfViewer {
     renderer: Renderer,
     import: SceneImport,
     load_progress_events: Vec<AssetLoadProgress>,
+    camera_bookmarks: Vec<CameraBookmark>,
 }
 
 /// Builder for the first headless glTF render.
@@ -46,26 +57,35 @@ pub struct HeadlessGltfViewerBuilder {
     path: AssetPath,
     width: u32,
     height: u32,
+    prefer_gpu: bool,
     common: ViewerCommonOptions,
 }
 
 #[derive(Debug, Clone)]
 struct ViewerCommonOptions {
     frame_import: bool,
-    default_light: bool,
+    lighting: ViewerProfileLighting,
     default_environment: bool,
     environment_path: Option<AssetPath>,
     renderer_options: RendererOptions,
+    import_transform: Option<Transform>,
+    background: Option<Background>,
+    camera_bookmarks: Vec<CameraBookmark>,
+    grid_floor: bool,
 }
 
 impl ViewerCommonOptions {
     fn new() -> Self {
         Self {
             frame_import: true,
-            default_light: false,
+            lighting: ViewerProfileLighting::None,
             default_environment: false,
             environment_path: None,
             renderer_options: RendererOptions::default(),
+            import_transform: None,
+            background: None,
+            camera_bookmarks: Vec::new(),
+            grid_floor: false,
         }
     }
 
@@ -73,6 +93,18 @@ impl ViewerCommonOptions {
         self.environment_path = Some(path.into());
         self.default_environment = false;
         self
+    }
+
+    fn apply_viewer_profile(&mut self, profile: ViewerProfile) {
+        self.renderer_options = self
+            .renderer_options
+            .with_profile(profile.renderer_profile())
+            .with_render_mode(profile.render_mode());
+        self.default_environment = profile.default_environment();
+        self.environment_path = None;
+        self.lighting = profile.lighting();
+        self.grid_floor = profile.grid();
+        self.background = profile.background();
     }
 }
 
@@ -82,6 +114,7 @@ pub fn headless_gltf_viewer(path: impl Into<AssetPath>) -> HeadlessGltfViewerBui
         path: path.into(),
         width: 800,
         height: 600,
+        prefer_gpu: false,
         common: ViewerCommonOptions::new(),
     }
 }
@@ -110,6 +143,10 @@ impl FirstRender {
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
+
+    pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
+        &self.camera_bookmarks
+    }
 }
 
 impl HeadlessGltfViewerBuilder {
@@ -122,7 +159,7 @@ impl HeadlessGltfViewerBuilder {
 
     /// Adds a neutral directional light before the first prepare/render.
     pub const fn with_default_light(mut self) -> Self {
-        self.common.default_light = true;
+        self.common.lighting = ViewerProfileLighting::Directional;
         self
     }
 
@@ -148,6 +185,16 @@ impl HeadlessGltfViewerBuilder {
         self
     }
 
+    /// Applies a named viewer profile as composable defaults for lighting,
+    /// background, renderer profile, render mode, grid, and interaction styles.
+    ///
+    /// This remains a builder preset: it does not load assets, prepare, or
+    /// render until the caller invokes [`Self::build`] or [`Self::render`].
+    pub fn with_viewer_profile(mut self, profile: ViewerProfile) -> Self {
+        self.common.apply_viewer_profile(profile);
+        self
+    }
+
     /// Uses a renderer quality level when the headless renderer is created.
     pub const fn with_quality(mut self, quality: Quality) -> Self {
         self.common.renderer_options = self.common.renderer_options.with_quality(quality);
@@ -160,6 +207,28 @@ impl HeadlessGltfViewerBuilder {
         self
     }
 
+    /// Requests the native headless GPU renderer for the first render. When no
+    /// compatible GPU adapter is available, the builder falls back to the CPU
+    /// headless renderer; inspect [`FirstRender::renderer`] capabilities to see
+    /// which backend was actually used.
+    pub const fn with_headless_gpu(mut self) -> Self {
+        self.prefer_gpu = true;
+        self
+    }
+
+    /// Applies a transform to the imported glTF roots immediately after
+    /// instantiation and before optional framing, lighting, prepare, or render.
+    pub const fn with_import_transform(mut self, transform: Transform) -> Self {
+        self.common.import_transform = Some(transform);
+        self
+    }
+
+    /// Sets the renderer clear color before the first prepare/render.
+    pub const fn with_background_color(mut self, color: Color) -> Self {
+        self.common.background = Some(Background::Custom(color));
+        self
+    }
+
     /// Configures the viewer for render-on-change loops.
     pub const fn on_change(self) -> Self {
         self.with_render_mode(RenderMode::OnChange)
@@ -168,6 +237,19 @@ impl HeadlessGltfViewerBuilder {
     /// Leaves the imported asset's camera framing unchanged.
     pub const fn without_framing(mut self) -> Self {
         self.common.frame_import = false;
+        self
+    }
+
+    pub fn with_camera_bookmark(mut self, bookmark: CameraBookmark) -> Self {
+        self.common.camera_bookmarks.push(bookmark);
+        self
+    }
+
+    pub fn with_camera_bookmarks(
+        mut self,
+        bookmarks: impl IntoIterator<Item = CameraBookmark>,
+    ) -> Self {
+        self.common.camera_bookmarks.extend(bookmarks);
         self
     }
 
@@ -232,6 +314,10 @@ impl HeadlessGltfViewer {
     pub fn capabilities(&self) -> &crate::Capabilities {
         self.renderer.capabilities()
     }
+
+    pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
+        &self.camera_bookmarks
+    }
 }
 
 /// Owned interactive viewer state returned by [`InteractiveGltfViewerBuilder::build`].
@@ -250,6 +336,7 @@ pub struct InteractiveGltfViewer {
     import: SceneImport,
     camera: CameraKey,
     load_progress_events: Vec<AssetLoadProgress>,
+    camera_bookmarks: Vec<CameraBookmark>,
     /// Phase 5B step 2: optional orbit-camera controller. Populated when
     /// the builder was configured with `with_orbit_controls()`. Pointer +
     /// touch events route through `handle_pointer_event` /
@@ -270,6 +357,7 @@ impl std::fmt::Debug for InteractiveGltfViewer {
             .field("import", &self.import)
             .field("camera", &self.camera)
             .field("load_progress_events", &self.load_progress_events)
+            .field("camera_bookmarks", &self.camera_bookmarks)
             .field("orbit_controls", &self.orbit_controls)
             .field("click_callback_registered", &self.click_callback.is_some())
             .field("hover_callback_registered", &self.hover_callback.is_some())
@@ -308,7 +396,7 @@ pub fn interactive_gltf_viewer(
 impl InteractiveGltfViewerBuilder {
     /// Adds a neutral directional light before the first prepare/render.
     pub const fn with_default_light(mut self) -> Self {
-        self.common.default_light = true;
+        self.common.lighting = ViewerProfileLighting::Directional;
         self
     }
 
@@ -342,6 +430,19 @@ impl InteractiveGltfViewerBuilder {
         self
     }
 
+    /// Applies a named viewer profile as composable defaults for lighting,
+    /// background, renderer profile, render mode, grid, interaction styles, and
+    /// optional orbit controls.
+    ///
+    /// The profile does not own the host event loop. Pointer and touch input
+    /// still flow through [`InteractiveGltfViewer::handle_pointer_event`] and
+    /// [`InteractiveGltfViewer::handle_touch_event`].
+    pub fn with_viewer_profile(mut self, profile: ViewerProfile) -> Self {
+        self.orbit_controls = self.orbit_controls || profile.orbit_controls();
+        self.common.apply_viewer_profile(profile);
+        self
+    }
+
     /// Uses a renderer quality level when the renderer is created.
     pub const fn with_quality(mut self, quality: Quality) -> Self {
         self.common.renderer_options = self.common.renderer_options.with_quality(quality);
@@ -354,6 +455,19 @@ impl InteractiveGltfViewerBuilder {
         self
     }
 
+    /// Applies a transform to the imported glTF roots immediately after
+    /// instantiation and before optional framing, lighting, prepare, or render.
+    pub const fn with_import_transform(mut self, transform: Transform) -> Self {
+        self.common.import_transform = Some(transform);
+        self
+    }
+
+    /// Sets the renderer clear color before the first prepare/render.
+    pub const fn with_background_color(mut self, color: Color) -> Self {
+        self.common.background = Some(Background::Custom(color));
+        self
+    }
+
     /// Configures the viewer for render-on-change loops.
     pub const fn on_change(self) -> Self {
         self.with_render_mode(RenderMode::OnChange)
@@ -362,6 +476,19 @@ impl InteractiveGltfViewerBuilder {
     /// Leaves the imported asset's camera framing unchanged.
     pub const fn without_framing(mut self) -> Self {
         self.common.frame_import = false;
+        self
+    }
+
+    pub fn with_camera_bookmark(mut self, bookmark: CameraBookmark) -> Self {
+        self.common.camera_bookmarks.push(bookmark);
+        self
+    }
+
+    pub fn with_camera_bookmarks(
+        mut self,
+        bookmarks: impl IntoIterator<Item = CameraBookmark>,
+    ) -> Self {
+        self.common.camera_bookmarks.extend(bookmarks);
         self
     }
 
@@ -480,6 +607,10 @@ impl InteractiveGltfViewer {
     /// `viewer.renderer().capabilities()`.
     pub fn capabilities(&self) -> &crate::Capabilities {
         self.renderer.capabilities()
+    }
+
+    pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
+        &self.camera_bookmarks
     }
 
     /// Phase 5B step 2: routes a pointer event through the attached

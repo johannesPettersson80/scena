@@ -66,6 +66,16 @@ jobs:
           wasm-pack test --headless --chrome --test m6_browser_renderer_parity
           bash scripts/release_lane_command.sh linux-webgl2-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:m6
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:scene-host-proof
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run demo:build
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run proof:build
+          python3 -m http.server 18104 --directory demo > target/gate-artifacts/cloudflare-demo-server.log 2>&1 &
+          demo_server_pid=$!
+          trap 'kill "$demo_server_pid" 2>/dev/null || true' EXIT
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run cloudflare:demo -- http://127.0.0.1:18104/index.html
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets
+          kill "$demo_server_pid" 2>/dev/null || true
+          trap - EXIT
           cargo run -p xtask -- release-lane-artifact linux-webgl2-chromium
       - uses: actions/upload-artifact@v4
         if: always()
@@ -143,6 +153,7 @@ jobs:
         run: |
           cargo test --all-targets
           bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
+          SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- release-lane-artifact macos-metal
       - uses: actions/upload-artifact@v4
@@ -164,7 +175,6 @@ jobs:
         run: |
           cargo test --all-targets
           bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
-          SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
           cargo run -p xtask -- release-lane-artifact windows-dx12
       - uses: actions/upload-artifact@v4

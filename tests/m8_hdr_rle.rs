@@ -7,7 +7,12 @@
 use std::collections::BTreeMap;
 use std::future::{Ready, ready};
 
-use scena::{AssetError, AssetFetcher, AssetPath, Assets};
+use scena::render::precompute_environment_sidecar;
+use scena::{
+    AssetError, AssetFetcher, AssetPath, Assets, Background, EnvironmentDesc,
+    EnvironmentSidecarProfile, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer,
+    SIDECAR_FILE_SUFFIX, Scene, Transform, Vec3,
+};
 
 #[derive(Clone)]
 struct MemoryFetcher {
@@ -69,6 +74,36 @@ fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {
     bytes
 }
 
+fn rle_radiance_hdr_vertical_bars(
+    width: u32,
+    height: u32,
+    dark: [u8; 4],
+    bright: [u8; 4],
+) -> Vec<u8> {
+    assert!(width >= 8);
+    assert!(width <= 127);
+    let mut bytes =
+        format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
+    for _ in 0..height {
+        bytes.push(0x02);
+        bytes.push(0x02);
+        bytes.push((width >> 8) as u8);
+        bytes.push((width & 0xff) as u8);
+        for channel in 0..4 {
+            bytes.push(width as u8);
+            for x in 0..width {
+                let source = if (x / 2).is_multiple_of(2) {
+                    bright
+                } else {
+                    dark
+                };
+                bytes.push(source[channel]);
+            }
+        }
+    }
+    bytes
+}
+
 #[test]
 fn rle_compressed_radiance_hdr_decodes_into_environment_irradiance() {
     // Hand-encoded 8×1 RLE HDR with every pixel = RGBE(64, 32, 16, 129).
@@ -97,6 +132,104 @@ fn rle_compressed_radiance_hdr_decodes_into_environment_irradiance() {
         );
     }
     assert_eq!(desc.source_dimensions(), Some((8, 1)));
+}
+
+#[test]
+fn profile_mismatched_sidecar_renders_structured_chrome_not_flat() {
+    let path = AssetPath::from("memory://profile-mismatch-striped-studio.hdr");
+    let bytes = rle_radiance_hdr_vertical_bars(32, 16, [6, 6, 6, 128], [255, 255, 255, 131]);
+    let plain = EnvironmentDesc::from_equirectangular_hdr_bytes(path.as_str(), &bytes)
+        .expect("striped HDR decodes")
+        .with_cubemap_resolution(16);
+    let sidecar =
+        precompute_environment_sidecar(&plain, EnvironmentSidecarProfile::InteractiveWebGl2)
+            .expect("interactive sidecar bakes")
+            .to_bytes();
+    let sidecar_path = AssetPath::from(format!("{}{}", path.as_str(), SIDECAR_FILE_SUFFIX));
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (path.clone(), bytes),
+        (sidecar_path, sidecar),
+    ]));
+    let environment = pollster::block_on(assets.load_environment(path.as_str()))
+        .expect("environment loads from HDR plus sidecar");
+
+    let geometry = assets.create_geometry(GeometryDesc::sphere(0.95, 40, 20));
+    let material = assets.create_material(MaterialDesc::chrome());
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("chrome sphere inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let width = 96;
+    let height = 96;
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_background(Background::Black);
+    renderer.set_environment(environment);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("profile-mismatched sidecar falls back to a fresh native bake");
+    assert_eq!(
+        renderer.stats().environment_prefilter_passes,
+        1,
+        "native Reference prepares must report a fresh bake when only a WebGl2 sidecar exists"
+    );
+    renderer
+        .render_active(&scene)
+        .expect("chrome sphere renders with IBL");
+
+    let (range, gradient) = crop_luma_range_and_gradient(renderer.frame_rgba8(), width, 30, 30, 36);
+    assert!(
+        range >= 80.0 && gradient >= 0.8,
+        "chrome under a structured HDR must retain visible reflection contrast when the \
+         attached sidecar profile is mismatched; old behavior fell back to flat constant \
+         specular. observed range={range:.2}, gradient={gradient:.2}"
+    );
+}
+
+fn crop_luma_range_and_gradient(
+    rgba: &[u8],
+    width: u32,
+    x0: u32,
+    y0: u32,
+    size: u32,
+) -> (f32, f32) {
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    let mut gradient_sum = 0.0_f32;
+    let mut gradient_count = 0_u32;
+    for y in y0..y0 + size {
+        for x in x0..x0 + size {
+            let luma = pixel_luma(rgba, width, x, y);
+            min = min.min(luma);
+            max = max.max(luma);
+            if x + 1 < x0 + size {
+                gradient_sum += (luma - pixel_luma(rgba, width, x + 1, y)).abs();
+                gradient_count += 1;
+            }
+            if y + 1 < y0 + size {
+                gradient_sum += (luma - pixel_luma(rgba, width, x, y + 1)).abs();
+                gradient_count += 1;
+            }
+        }
+    }
+    (max - min, gradient_sum / gradient_count.max(1) as f32)
+}
+
+fn pixel_luma(rgba: &[u8], width: u32, x: u32, y: u32) -> f32 {
+    let offset = ((y * width + x) * 4) as usize;
+    let r = rgba[offset] as f32;
+    let g = rgba[offset + 1] as f32;
+    let b = rgba[offset + 2] as f32;
+    r * 0.2126 + g * 0.7152 + b * 0.0722
 }
 
 /// Verifies that loading an HDR file populates the cubemap path with

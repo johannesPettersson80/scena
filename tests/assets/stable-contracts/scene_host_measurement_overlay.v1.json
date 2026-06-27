@@ -1,0 +1,14 @@
+{
+  "schema": "scena.scene_host_measurement_overlay.v1",
+  "id": "browser-gap",
+  "kind": "distance",
+  "value": 0.333,
+  "formatted_value": "0.333 m",
+  "line_node": 42,
+  "label_text": "gap: 0.333 m",
+  "label_projection": {
+    "x_css_px": 70.928,
+    "y_css_px": 48.0,
+    "visible": true
+  }
+}

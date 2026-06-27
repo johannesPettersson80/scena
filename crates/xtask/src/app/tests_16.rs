@@ -1,6 +1,14 @@
 use crate::app::prelude::*;
 use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
 
+fn write_or_extend_fixture(path: &Path, text: &str) {
+    let contents = match fs::read_to_string(path) {
+        Ok(existing) if !existing.trim().is_empty() => format!("{existing} {text}"),
+        _ => text.to_owned(),
+    };
+    fs::write(path, contents).expect("viewer element fixture");
+}
+
 pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path) {
     fs::write(
         fixture_root.join("Cargo.toml"),
@@ -25,11 +33,16 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     .expect("lib viewer-element fixture");
     fs::write(
         fixture_root.join("src/viewer_element.rs"),
-        r#"mod annotations; mod inspector; mod model; pub use annotations:: pub use inspector:: pub use model:: pub const SCENA_VIEWER_TAG defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered dragover drop _handleDrop _isSupportedAssetFile scena-viewer-file-drop scena-viewer-drop-error setMaterialVariants variantPicker.part = "variant-picker" scena-viewer-variant-change scena-viewer-variants-ready tabIndex = 0 aria-roledescription _handleKeydown _keyboardAction scena-viewer-key-control pointerdown _handlePointerDown pointermove _handlePointerMove _handleWheel scena-viewer-gesture-control pinch-zoom setInspectorSnapshot setInspectorDiagnostics clearInspectorSnapshot inspector.part = "inspector" inspector-status inspector-list scena-viewer-inspector-rendered annotationSlot.name = "annotation" annotationAnchors requestAnnotationProjections setAnnotationProjections data-position data-normal data-surface scena-viewer-annotations-request scena-viewer-annotations-rendered"#,
+        r#"mod annotation_layout; mod annotations; mod inspector; mod model; pub use annotation_layout:: pub use annotations:: pub use inspector:: pub use model:: pub const SCENA_VIEWER_TAG defineScenaViewerElement /src/viewer_element/element.js"#,
     )
     .expect("viewer element fixture");
     fs::create_dir_all(fixture_root.join("src/viewer_element"))
         .expect("viewer element model fixture dir");
+    fs::write(
+        fixture_root.join("src/viewer_element/element.js"),
+        r#"defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered dragover drop _handleDrop _isSupportedAssetFile scena-viewer-file-drop scena-viewer-drop-error setMaterialVariants variantPicker.part = "variant-picker" scena-viewer-variant-change scena-viewer-variants-ready tabIndex = 0 aria-roledescription _handleKeydown _keyboardAction scena-viewer-key-control pointerdown _handlePointerDown pointermove _handlePointerMove _handleWheel scena-viewer-gesture-control pinch-zoom setInspectorSnapshot setInspectorDiagnostics clearInspectorSnapshot inspector.part = "inspector" inspector-status inspector-list scena-viewer-inspector-rendered annotationSlot.name = "annotation" annotationAnchors requestAnnotationProjections setAnnotationProjections data-position data-normal data-surface scena-viewer-annotations-request scena-viewer-annotations-rendered"#,
+    )
+    .expect("viewer element JS fixture");
     fs::write(
         fixture_root.join("src/viewer_element/model.rs"),
         "pub struct ScenaViewerAccessibilityDefaults host_role host_label canvas_label touch_action host_is_keyboard_focusable pub enum ScenaViewerKeyboardAction from_key event_action pub enum ScenaViewerGestureAction pub struct ScenaViewerAttributes from_pairs pub enum ScenaViewerDropKind pub struct ScenaViewerDroppedFile pub struct ScenaViewerDropDecision from_file_names status_text pub enum ScenaViewerProgressPhase pub struct ScenaViewerProgress from_asset_event aria_text pub struct ScenaViewerVariantOption pub struct ScenaViewerVariantSelection with_active",
@@ -52,19 +65,17 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     .expect("viewer element test fixture");
     fs::create_dir_all(fixture_root.join("tests/browser")).expect("viewer browser fixture dir");
     fs::create_dir_all(fixture_root.join("tests/assets/viewer")).expect("viewer fixture asset dir");
-    fs::write(
-        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
+    write_or_extend_fixture(
+        &fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
         "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png assertScenaViewerParityProof runScenaViewerParityProof scena-viewer-model-viewer-parity-browser-proof.png assertScenaViewerMobileA11yProof runScenaViewerMobileA11yProof scena-viewer-mobile-a11y-browser-proof.png assertCameraControlKitProof runCameraControlKitProof camera-control-kit-browser-proof.png @google/model-viewer model-viewer.min.js SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_model_viewer_parity_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 three_asset_side_by_side side-by-side-screenshot progress_sequence drop_render_status drop_render_auto_frame_status viewer-level-auto-framing scena-viewer-drop-render variant_render_status scena-viewer-material-variant-render annotation_tracking_sequence annotation_update_visible inspector_fixture_schema scena.scena_viewer_inspector_snapshot.v1",
-    )
-    .expect("viewer element browser runner fixture");
-    fs::write(
-        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
+    );
+    write_or_extend_fixture(
+        &fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
         "defineScenaViewer m6CameraControlKitProbe m6RenderDroppedFileProbe m6RenderMaterialVariantProbe scenaViewerElementProbe scenaViewerModelViewerParityProbe scenaViewerMobileA11yProbe scenaCameraControlKitProbe SCENA_VIEWER_PARITY_ASSETS scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_model_viewer_parity_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 /model-viewer/model-viewer.min.js model-viewer source-gltf-materials AnimatedMorphCube.gltf WaterBottle.gltf three_asset_side_by_side side-by-side-screenshot model_viewer_loaded scena_pixels_nonblack loadInspectorSnapshot /fixtures/viewer/inspector_snapshot.json scena.scena_viewer_inspector_snapshot.v1 scena-viewer-progress-rendered progress_sequence scena-viewer-file-drop scena-viewer-drop-error renderDroppedFileIntoViewer drop_render_pixels_nonblack drop_render_auto_frame_status viewer-level-auto-framing renderSelectedVariantIntoViewer variant_render_green_dominant scena-viewer-material-variant-render scena-viewer-variant-change scena-viewer-annotations-rendered annotation_tracking_sequence annotation_update_visible scena-viewer-inspector-rendered scena-viewer-key-control scena-viewer-gesture-control pinch-zoom",
-    )
-    .expect("viewer element browser page fixture");
+    );
     fs::write(
         fixture_root.join("tests/assets/viewer/inspector_snapshot.json"),
-        r#"{"schema":"scena.scena_viewer_inspector_snapshot.v1","source":"scena-viewer-inspector-fixture","overlay": "Diagnostics","diagnostics":[{"code":"FrameBounds"}],"stats":{"drawCalls":2}}"#,
+        r#"{"schema":"scena.scena_viewer_inspector_snapshot.v1","source":"scena-viewer-inspector-fixture","diagnostics":[{"code":"FrameBounds"}],"stats":{"drawCalls":2}}"#,
     )
     .expect("viewer inspector JSON fixture");
     fs::write(
@@ -122,7 +133,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_progress_ui
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
     );
     fs::write(
-        fixture_root.join("src/viewer_element.rs"),
+        fixture_root.join("src/viewer_element/element.js"),
         "pub const SCENA_VIEWER_TAG pub struct ScenaViewerAttributes from_pairs defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready",
     )
     .expect("viewer element fixture without progress ui");
@@ -177,7 +188,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_drag_drop_s
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
     );
     fs::write(
-        fixture_root.join("src/viewer_element.rs"),
+        fixture_root.join("src/viewer_element/element.js"),
         r#"pub const SCENA_VIEWER_TAG pub struct ScenaViewerAttributes from_pairs pub enum ScenaViewerProgressPhase pub struct ScenaViewerProgress from_asset_event aria_text defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered"#,
     )
     .expect("viewer element fixture without drag-drop");
@@ -205,7 +216,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_variant_pic
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
     );
     fs::write(
-        fixture_root.join("src/viewer_element.rs"),
+        fixture_root.join("src/viewer_element/element.js"),
         r#"pub const SCENA_VIEWER_TAG pub struct ScenaViewerAttributes from_pairs pub enum ScenaViewerDropKind pub struct ScenaViewerDroppedFile pub struct ScenaViewerDropDecision from_file_names status_text pub enum ScenaViewerProgressPhase pub struct ScenaViewerProgress from_asset_event aria_text defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered dragover drop _handleDrop _isSupportedAssetFile scena-viewer-file-drop scena-viewer-drop-error"#,
     )
     .expect("viewer element fixture without variant picker");
@@ -232,7 +243,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_a11y_defaul
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
     );
     fs::write(
-        fixture_root.join("src/viewer_element.rs"),
+        fixture_root.join("src/viewer_element/element.js"),
         r#"mod model; pub use model:: pub const SCENA_VIEWER_TAG defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered dragover drop _handleDrop _isSupportedAssetFile scena-viewer-file-drop scena-viewer-drop-error setMaterialVariants variantPicker.part = "variant-picker" scena-viewer-variant-change scena-viewer-variants-ready"#,
     )
     .expect("viewer element fixture without a11y defaults");
@@ -288,7 +299,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_inspector_o
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
     );
     fs::write(
-        fixture_root.join("src/viewer_element.rs"),
+        fixture_root.join("src/viewer_element/element.js"),
         r#"mod model; pub use model:: pub const SCENA_VIEWER_TAG defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered dragover drop _handleDrop _isSupportedAssetFile scena-viewer-file-drop scena-viewer-drop-error setMaterialVariants variantPicker.part = "variant-picker" scena-viewer-variant-change scena-viewer-variants-ready tabIndex = 0 aria-roledescription _handleKeydown _keyboardAction scena-viewer-key-control"#,
     )
     .expect("viewer element fixture without inspector overlay");
@@ -340,7 +351,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_annotation_
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
     );
     fs::write(
-        fixture_root.join("src/viewer_element.rs"),
+        fixture_root.join("src/viewer_element/element.js"),
         r#"mod inspector; mod model; pub use inspector:: pub use model:: pub const SCENA_VIEWER_TAG defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered dragover drop _handleDrop _isSupportedAssetFile scena-viewer-file-drop scena-viewer-drop-error setMaterialVariants variantPicker.part = "variant-picker" scena-viewer-variant-change scena-viewer-variants-ready tabIndex = 0 aria-roledescription _handleKeydown _keyboardAction scena-viewer-key-control setInspectorSnapshot setInspectorDiagnostics clearInspectorSnapshot inspector.part = "inspector" inspector-status inspector-list scena-viewer-inspector-rendered"#,
     )
     .expect("viewer element fixture without annotation overlay");

@@ -1,8 +1,7 @@
-use crate::diagnostics::{DebugOverlay, Diagnostic, DiagnosticSeverity, RendererStats};
+use crate::diagnostics::{Diagnostic, DiagnosticSeverity, RendererStats};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenaViewerInspectorSnapshot {
-    overlay: DebugOverlay,
     diagnostics: Vec<ScenaViewerInspectorDiagnostic>,
     draw_calls: u64,
     triangles: u64,
@@ -19,13 +18,8 @@ pub struct ScenaViewerInspectorDiagnostic {
 }
 
 impl ScenaViewerInspectorSnapshot {
-    pub fn from_renderer_state(
-        overlay: DebugOverlay,
-        diagnostics: &[Diagnostic],
-        stats: RendererStats,
-    ) -> Self {
+    pub fn from_renderer_state(diagnostics: &[Diagnostic], stats: RendererStats) -> Self {
         Self {
-            overlay,
             diagnostics: diagnostics
                 .iter()
                 .map(ScenaViewerInspectorDiagnostic::from_diagnostic)
@@ -35,10 +29,6 @@ impl ScenaViewerInspectorSnapshot {
             target_width: stats.target_width,
             target_height: stats.target_height,
         }
-    }
-
-    pub const fn overlay(&self) -> DebugOverlay {
-        self.overlay
     }
 
     pub fn diagnostics(&self) -> &[ScenaViewerInspectorDiagnostic] {
@@ -81,8 +71,7 @@ impl ScenaViewerInspectorSnapshot {
 
     pub fn status_text(&self) -> String {
         format!(
-            "{} overlay; {}, {}; {} draws; {} triangles at {}x{}",
-            Self::overlay_label(self.overlay),
+            "{}, {}; {} draws; {} triangles at {}x{}",
             count_label(self.error_count(), "error"),
             count_label(self.warning_count(), "warning"),
             self.draw_calls,
@@ -90,17 +79,6 @@ impl ScenaViewerInspectorSnapshot {
             self.target_width,
             self.target_height,
         )
-    }
-
-    fn overlay_label(overlay: DebugOverlay) -> &'static str {
-        match overlay {
-            DebugOverlay::None => "None",
-            DebugOverlay::Wireframe => "Wireframe",
-            DebugOverlay::Normals => "Normals",
-            DebugOverlay::BoundingBoxes => "BoundingBoxes",
-            DebugOverlay::ShadowMap => "ShadowMap",
-            DebugOverlay::LightCount => "LightCount",
-        }
     }
 }
 

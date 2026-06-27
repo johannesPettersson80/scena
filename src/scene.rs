@@ -17,24 +17,33 @@ use crate::picking::InteractionContext;
 mod anchors;
 mod annotations;
 mod builders;
+mod callouts;
 mod camera;
 mod camera_controls;
 mod clipping;
 mod connectors;
+mod default;
 mod dirty;
+mod exploded;
 mod framing;
 mod import;
 #[cfg(feature = "inspection")]
 mod inspection;
+mod inspection_tools;
 mod instances;
 mod labels;
 mod lights;
+mod lod;
 mod materials;
 mod math;
+mod measurements;
 mod mixers;
 mod morphs;
 mod origin;
+mod particles;
 mod picking;
+mod placement;
+pub mod recipe;
 mod removal;
 mod render_nodes;
 mod skinning;
@@ -47,8 +56,10 @@ pub use annotations::{
     AnnotationAnchor, AnnotationAnchorTarget, AnnotationProjectionReportV1, AnnotationProjectionV1,
     SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
 };
+pub use builders::{MeshBuilder, ModelBuilder};
+pub use callouts::{Callout, CalloutAnchor, CalloutAnchorKind, CalloutReport};
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
-pub use clipping::{ClippingPlane, ClippingPlaneSet};
+pub use clipping::{ClippingPlane, ClippingPlaneSet, SectionBox};
 pub use connectors::{
     ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionLineOverlay,
     ConnectionMagnetPreview, ConnectionMagnetVisualCue, ConnectionParenting, ConnectionPreview,
@@ -56,6 +67,7 @@ pub use connectors::{
     ConnectorPolarity, ConnectorRollPolicy,
 };
 pub use dirty::SceneDirtyState;
+pub use exploded::{ExplodedTransformUpdate, ExplodedView, ExplodedViewPlan};
 pub use framing::{
     FramingOptions, FramingOutcome, GridFloorHandles, GridFloorOptions, ProjectedPoint, ScreenRect,
 };
@@ -67,17 +79,36 @@ pub use import::{
 pub use inspection::{
     SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspection, SceneCameraFrustumInspectionV1,
     SceneDrawInspection, SceneDrawInspectionV1, SceneHostInstanceEntryInspectionV1,
-    SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1, SceneInspectionReport,
-    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspection,
-    SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
-    SceneTextureInspection,
+    SceneHostInstanceSetInspectionV1, SceneImportInspectionV1, SceneInspectionCountsV1,
+    SceneInspectionReport, SceneInspectionReportV1, SceneInspectionRevisionsV1,
+    SceneMaterialInspection, SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1,
+    SceneMaterialSourceInspectionV1, SceneNodeInspection, SceneNodeInspectionV1,
+    SceneNormalInspection, SceneNormalInspectionV1, SceneTextureInspection,
 };
-pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
-pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
+use inspection_tools::InspectionToolkitState;
+pub use inspection_tools::{
+    InspectionHelperKind, InspectionHelperReport, InspectionToolkitReport, SceneTintSnapshot,
+    SceneTintSnapshotEntry, SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry,
+};
+pub use instances::{Instance, InstanceId, InstanceSet};
+pub use labels::{LabelBillboard, LabelDesc, LabelFontError, LabelFontFace, LabelMetrics};
 pub use lights::{
-    DirectionalLight, Light, LightBuilder, PointLight, SpotLight, StudioLightingHandles,
+    AreaLight, AreaLightShape, DirectionalLight, Light, LightBuilder, PointLight, SpotLight,
+    StudioLightingHandles,
 };
+pub use lod::MeshLodLevel;
 pub use math::{Angle, Quat, Transform, Vec3};
+pub use measurements::{
+    MeasurementAxis, MeasurementKind, MeasurementOverlay, MeasurementOverlayReport,
+    MeasurementReport, UnitFormat,
+};
+pub use particles::{Particle, ParticleSet, ParticleSetError};
+pub use placement::{
+    SCENE_PLACEMENT_RESULT_SCHEMA_V1, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
+    placement_align_to_feature_transform, placement_center_transform,
+    placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
+    placement_place_on_feature_transform,
+};
 pub use skinning::SceneSkinBinding;
 
 new_key_type! {
@@ -86,6 +117,7 @@ new_key_type! {
     pub struct LightKey;
     pub struct ClippingPlaneKey;
     pub struct InstanceSetKey;
+    pub struct ParticleSetKey;
     pub struct LabelKey;
     pub struct AnchorKey;
     pub struct ConnectorKey;
@@ -98,13 +130,18 @@ pub struct Scene {
     cameras: SlotMap<CameraKey, Camera>,
     lights: SlotMap<LightKey, Light>,
     instance_sets: SlotMap<InstanceSetKey, InstanceSet>,
+    particle_sets: SlotMap<ParticleSetKey, ParticleSet>,
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
     anchors: SlotMap<AnchorKey, AnchorFrame>,
     annotations: BTreeMap<String, AnnotationAnchor>,
+    callouts: BTreeMap<String, callouts::SceneCalloutState>,
+    measurements: BTreeMap<String, measurements::SceneMeasurementOverlayState>,
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
+    section_box: Option<clipping::SceneSectionBoxState>,
+    mesh_lods: BTreeMap<NodeKey, Vec<MeshLodLevel>>,
     morph_weights: BTreeMap<NodeKey, Vec<f32>>,
     skin_bindings: BTreeMap<NodeKey, SceneSkinBinding>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
@@ -114,6 +151,7 @@ pub struct Scene {
     active_camera: Option<CameraKey>,
     camera_layer_masks: BTreeMap<CameraKey, u64>,
     interaction: InteractionContext,
+    inspection_toolkit: InspectionToolkitState,
     structure_revision: u64,
     transform_revision: u64,
     appearance_revision: u64,
@@ -142,6 +180,7 @@ pub enum NodeKind {
     Mesh(MeshNode),
     Model(ModelNode),
     InstanceSet(InstanceSetKey),
+    ParticleSet(ParticleSetKey),
     Label(LabelKey),
     Camera(CameraKey),
     Light(LightKey),
@@ -163,25 +202,6 @@ pub struct ModelNode {
     model: ModelHandle,
 }
 
-/// Builder returned by [`Scene::mesh`].
-#[must_use = "mesh builders do nothing until add() is called"]
-pub struct MeshBuilder<'scene> {
-    scene: &'scene mut Scene,
-    parent: NodeKey,
-    transform: Transform,
-    geometry: GeometryHandle,
-    material: MaterialHandle,
-}
-
-/// Builder returned by [`Scene::model`].
-#[must_use = "model builders do nothing until add() is called"]
-pub struct ModelBuilder<'scene> {
-    scene: &'scene mut Scene,
-    parent: NodeKey,
-    transform: Transform,
-    model: ModelHandle,
-}
-
 impl Scene {
     pub fn new() -> Self {
         let mut nodes = SlotMap::with_key();
@@ -192,13 +212,18 @@ impl Scene {
             cameras: SlotMap::with_key(),
             lights: SlotMap::with_key(),
             instance_sets: SlotMap::with_key(),
+            particle_sets: SlotMap::with_key(),
             animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
             anchors: SlotMap::with_key(),
             annotations: BTreeMap::new(),
+            callouts: BTreeMap::new(),
+            measurements: BTreeMap::new(),
             connectors: SlotMap::with_key(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),
+            section_box: None,
+            mesh_lods: BTreeMap::new(),
             morph_weights: BTreeMap::new(),
             skin_bindings: BTreeMap::new(),
             clipping_planes: SlotMap::with_key(),
@@ -208,6 +233,7 @@ impl Scene {
             active_camera: None,
             camera_layer_masks: BTreeMap::new(),
             interaction: InteractionContext::default(),
+            inspection_toolkit: InspectionToolkitState::default(),
             structure_revision: 0,
             transform_revision: 0,
             appearance_revision: 0,
@@ -276,13 +302,7 @@ impl Scene {
     /// ```
     pub fn mesh(&mut self, geometry: GeometryHandle, material: MaterialHandle) -> MeshBuilder<'_> {
         let parent = self.root;
-        MeshBuilder {
-            scene: self,
-            parent,
-            transform: Transform::default(),
-            geometry,
-            material,
-        }
+        MeshBuilder::new(self, parent, geometry, material)
     }
 
     /// Starts a model-node builder under the scene root.
@@ -291,12 +311,7 @@ impl Scene {
     /// root parent and identity transform, then call [`ModelBuilder::add`] to insert the node.
     pub fn model(&mut self, model: ModelHandle) -> ModelBuilder<'_> {
         let parent = self.root;
-        ModelBuilder {
-            scene: self,
-            parent,
-            transform: Transform::default(),
-            model,
-        }
+        ModelBuilder::new(self, parent, model)
     }
 
     pub fn add_perspective_camera(
@@ -336,111 +351,6 @@ impl Scene {
 
     pub(crate) const fn visibility_revision(&self) -> u64 {
         self.visibility_revision
-    }
-
-    pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Mesh(mesh) if self.visible_for_active_camera(key) => self
-                .world_transform(key)
-                .map(|transform| (key, mesh, transform)),
-            NodeKind::Empty
-            | NodeKind::Renderable(_)
-            | NodeKind::Mesh(_)
-            | NodeKind::Model(_)
-            | NodeKind::InstanceSet(_)
-            | NodeKind::Label(_)
-            | NodeKind::Camera(_)
-            | NodeKind::Light(_) => None,
-        })
-    }
-
-    pub(crate) fn instance_set_nodes(
-        &self,
-    ) -> impl Iterator<Item = (NodeKey, &InstanceSet, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::InstanceSet(instance_set) = node.kind else {
-                return None;
-            };
-            if !self.visible_for_active_camera(node_key) {
-                return None;
-            }
-            self.instance_sets
-                .get(instance_set)
-                .and_then(|instance_set| {
-                    self.world_transform(node_key)
-                        .map(|transform| (node_key, instance_set, transform))
-                })
-        })
-    }
-
-    pub(crate) fn model_nodes(&self) -> impl Iterator<Item = NodeKey> + '_ {
-        self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Model(_) if self.visible_for_active_camera(key) => Some(key),
-            NodeKind::Empty
-            | NodeKind::Renderable(_)
-            | NodeKind::Mesh(_)
-            | NodeKind::Model(_)
-            | NodeKind::InstanceSet(_)
-            | NodeKind::Label(_)
-            | NodeKind::Camera(_)
-            | NodeKind::Light(_) => None,
-        })
-    }
-
-    pub(crate) fn label_nodes(
-        &self,
-    ) -> impl Iterator<Item = (NodeKey, LabelKey, &LabelDesc, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::Label(label) = node.kind else {
-                return None;
-            };
-            if !self.visible_for_active_camera(node_key) {
-                return None;
-            }
-            self.labels.get(label).and_then(|label_desc| {
-                self.world_transform(node_key)
-                    .map(|transform| (node_key, label, label_desc, transform))
-            })
-        })
-    }
-
-    pub(crate) fn light_nodes(
-        &self,
-    ) -> impl Iterator<Item = (NodeKey, LightKey, Light, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::Light(light_key) = node.kind else {
-                return None;
-            };
-            if !self.visible_for_active_camera(node_key) {
-                return None;
-            }
-            self.lights.get(light_key).copied().and_then(|light| {
-                self.world_transform(node_key)
-                    .map(|transform| (node_key, light_key, light, transform))
-            })
-        })
-    }
-
-    pub(crate) fn node_transforms(&self) -> impl Iterator<Item = (NodeKey, Transform)> + '_ {
-        self.nodes.iter().map(|(key, node)| (key, node.transform))
-    }
-
-    pub(crate) fn mesh_bounds_nodes(&self) -> impl Iterator<Item = (NodeKey, Aabb)> + '_ {
-        self.node_bounds
-            .iter()
-            .filter(|(node, _)| self.visible_for_active_camera(**node))
-            .map(|(node, bounds)| (*node, *bounds))
-    }
-
-    pub(crate) fn camera_nodes(&self) -> impl Iterator<Item = (NodeKey, CameraKey, &Camera)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::Camera(camera_key) = node.kind else {
-                return None;
-            };
-            self.cameras
-                .get(camera_key)
-                .map(|camera| (node_key, camera_key, camera))
-        })
     }
 
     fn insert_camera(
@@ -483,12 +393,6 @@ impl Scene {
         self.nodes[parent].children.push(node);
         self.structure_revision = self.structure_revision.saturating_add(1);
         Ok(node)
-    }
-}
-
-impl Default for Scene {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

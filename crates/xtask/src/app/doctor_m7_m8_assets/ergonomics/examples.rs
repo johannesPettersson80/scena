@@ -62,7 +62,7 @@ pub(crate) fn check_m7_example_contracts(root: &Path, findings: &mut Vec<Finding
         "examples/orbit_controls.rs",
         &[
             "OrbitControls",
-            "with_damping",
+            "handle_touch",
             "apply_to_scene",
             "TouchEvent",
         ],

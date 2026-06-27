@@ -12,18 +12,25 @@ struct StrokeInstance {
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) distance_px: f32,
+    @location(2) half_width_px: f32,
 };
 
 struct LightingUniform {
-    directional_light_direction_intensity: vec4<f32>,
-    directional_light_color_count: vec4<f32>,
-    directional_shadow_control: vec4<f32>,
-    point_light_position_intensity: vec4<f32>,
-    point_light_color_range: vec4<f32>,
-    spot_light_position_intensity: vec4<f32>,
-    spot_light_direction_cones: vec4<f32>,
-    spot_light_cone_range: vec4<f32>,
-    spot_light_color_range: vec4<f32>,
+    directional_light_direction_intensity: array<vec4<f32>, 16>,
+    directional_light_color: array<vec4<f32>, 16>,
+    directional_shadow_control: array<vec4<f32>, 16>,
+    point_light_position_intensity: array<vec4<f32>, 16>,
+    point_light_color_range: array<vec4<f32>, 16>,
+    spot_light_position_intensity: array<vec4<f32>, 16>,
+    spot_light_direction_cones: array<vec4<f32>, 16>,
+    spot_light_cone_range: array<vec4<f32>, 16>,
+    spot_light_color_range: array<vec4<f32>, 16>,
+    area_light_position_flux: array<vec4<f32>, 2>,
+    area_light_axis_x_shape: array<vec4<f32>, 2>,
+    area_light_axis_y_range: array<vec4<f32>, 2>,
+    area_light_color: array<vec4<f32>, 2>,
+    light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
 };
@@ -51,6 +58,8 @@ struct ClippedSegment {
     visible: f32,
 };
 
+const STROKE_AA_RADIUS_PX: f32 = 3.25;
+
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
@@ -72,7 +81,9 @@ fn vs_main(quad: QuadVertex, segment: StrokeInstance) -> VertexOut {
     let direction = select(vec2<f32>(1.0, 0.0), normalize(delta), length_px > 0.001);
     let normal = vec2<f32>(-direction.y, direction.x);
     let half_width = max(segment.width_px, 0.001) * 0.5;
-    let offset_ndc = normal * quad.side_along.x * half_width * vec2<f32>(
+    let aa_radius = STROKE_AA_RADIUS_PX;
+    let expanded_half_width = half_width + aa_radius;
+    let offset_ndc = normal * quad.side_along.x * expanded_half_width * vec2<f32>(
         2.0 / max(camera.viewport_near_far.x, 1.0),
         2.0 / max(camera.viewport_near_far.y, 1.0),
     );
@@ -85,14 +96,26 @@ fn vs_main(quad: QuadVertex, segment: StrokeInstance) -> VertexOut {
     var out: VertexOut;
     out.position = position;
     out.color = segment.color * draw.tint;
+    out.distance_px = quad.side_along.x * expanded_half_width;
+    out.half_width_px = half_width;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    let color_management_mode = camera.color_management.x;
-    let rgb = apply_tonemapper(in.color.rgb * camera.camera_position_exposure.w, color_management_mode);
-    return vec4<f32>(encode_post_target_rgb(rgb), in.color.a);
+    let coverage = stroke_coverage(abs(in.distance_px), in.half_width_px);
+    if coverage <= 0.0 {
+        discard;
+    }
+    return vec4<f32>(clamp(in.color.rgb, vec3<f32>(0.0), vec3<f32>(1.0)), in.color.a * coverage);
+}
+
+fn stroke_coverage(distance_px: f32, half_width_px: f32) -> f32 {
+    if distance_px <= half_width_px {
+        return 1.0;
+    }
+    let t = clamp((distance_px - half_width_px) / STROKE_AA_RADIUS_PX, 0.0, 1.0);
+    return 1.0 - t * t * (3.0 - 2.0 * t);
 }
 
 fn clip_segment_to_near(start: vec4<f32>, end: vec4<f32>) -> ClippedSegment {
@@ -110,39 +133,4 @@ fn clip_segment_to_near(start: vec4<f32>, end: vec4<f32>) -> ClippedSegment {
         b = mix(b, a, t);
     }
     return ClippedSegment(a, b, 1.0);
-}
-
-fn apply_tonemapper(color: vec3<f32>, color_management_mode: f32) -> vec3<f32> {
-    if color_management_mode < 0.5 {
-        return clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
-    }
-    return aces_tonemap(color);
-}
-
-fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    return clamp((color * (a * color + vec3<f32>(b))) / (color * (c * color + vec3<f32>(d)) + vec3<f32>(e)), vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-fn encode_post_target_rgb(color: vec3<f32>) -> vec3<f32> {
-    if camera.color_management.y <= 0.5 {
-        return color;
-    }
-    return vec3<f32>(
-        linear_to_srgb_channel(color.r),
-        linear_to_srgb_channel(color.g),
-        linear_to_srgb_channel(color.b),
-    );
-}
-
-fn linear_to_srgb_channel(channel: f32) -> f32 {
-    let value = clamp(channel, 0.0, 1.0);
-    if value <= 0.0031308 {
-        return value * 12.92;
-    }
-    return 1.055 * pow(value, 1.0 / 2.4) - 0.055;
 }

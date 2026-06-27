@@ -26,7 +26,7 @@ pub(super) fn create_shadow_sampler(device: &wgpu::Device) -> wgpu::Sampler {
 /// shadow-casting directional light is in the scene, a 1×1 placeholder is
 /// returned so the fragment shader's depth-comparison sampler binding is
 /// always valid. The shader checks
-/// `directional_light_direction_intensity.w > 0.0` before sampling, so
+/// `light_counts.x > 0.0` before sampling, so
 /// the placeholder is never read in practice.
 pub(super) fn create_shadow_texture(
     device: &wgpu::Device,
@@ -186,16 +186,32 @@ pub(super) fn create_shadow_caster_resources(
         ],
         immediate_size: 0,
     });
+    let pipeline = create_shadow_pipeline(device, &pipeline_layout, &shader);
+    ShadowCasterResources {
+        texture,
+        view,
+        pipeline,
+        active: resolution.is_some(),
+        camera_bind_group,
+        dummy_material_group,
+    }
+}
+
+fn create_shadow_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+) -> wgpu::RenderPipeline {
     let vertex_buffer = wgpu::VertexBufferLayout {
         array_stride: VERTEX_BYTE_LEN as u64,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &VERTEX_ATTRIBUTES,
     };
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("scena.m2.shadow_caster_pipeline"),
-        layout: Some(&pipeline_layout),
+        layout: Some(pipeline_layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[
@@ -207,6 +223,9 @@ pub(super) fn create_shadow_caster_resources(
                 },
             ],
         },
+        // Shadow occluders match the CPU shadow path, which treats authored
+        // triangles as occluders from either side. Visible mesh sidedness is
+        // still enforced by the color/depth pipelines.
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
@@ -215,7 +234,7 @@ pub(super) fn create_shadow_caster_resources(
             stencil: wgpu::StencilState::default(),
             // Constant + slope depth bias to combat shadow acne on grazing
             // angles. Values match a standard ortho shadow map at
-            // 1024–2048 resolution; tuning lives next to the shader.
+            // 1024-2048 resolution; tuning lives next to the shader.
             bias: wgpu::DepthBiasState {
                 constant: 2,
                 slope_scale: 1.5,
@@ -226,15 +245,7 @@ pub(super) fn create_shadow_caster_resources(
         fragment: None,
         multiview_mask: None,
         cache: None,
-    });
-    ShadowCasterResources {
-        texture,
-        view,
-        pipeline,
-        active: resolution.is_some(),
-        camera_bind_group,
-        dummy_material_group,
-    }
+    })
 }
 
 pub(super) fn encode_shadow_caster_pass(
@@ -261,7 +272,6 @@ pub(super) fn encode_shadow_caster_pass(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    pass.set_pipeline(&resources.pipeline);
     // Bind the caster-private camera bind group at @group(0) so the
     // render-pass usage scope never references the shadow_map texture.
     // The output bind group (which references the shadow_map) only enters
@@ -274,6 +284,7 @@ pub(super) fn encode_shadow_caster_pass(
     let identity_instance_offset =
         u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
     pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
+    pass.set_pipeline(&resources.pipeline);
     for batch in inputs.draw_batches {
         let draw_offset =
             (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;

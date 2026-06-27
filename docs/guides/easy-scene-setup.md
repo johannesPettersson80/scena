@@ -10,7 +10,8 @@ applications can replace any part.
 The image above is one render produced by following the steps on this page.
 Every image embedded below comes from
 [`examples/easy_scene_showcase.rs`](../../examples/easy_scene_showcase.rs); run it with
-`cargo run --example easy_scene_showcase --release` to regenerate them.
+headless GPU enabled to regenerate them. On lavapipe:
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json cargo run --example easy_scene_showcase --release`.
 
 ## Minimal model viewer
 
@@ -45,6 +46,24 @@ lights/floor/camera, prepare, render. `add_perspective_camera_default_for()`
 uses `frame_bounds()` internally to mutate camera state and mark the scene
 dirty, but it does not fetch assets, prepare GPU resources, or render.
 
+For common viewer applications, `ViewerProfile` applies those same primitives
+as a builder preset without adding an application model:
+
+```rust
+use scena::{ViewerProfile, headless_gltf_viewer};
+
+let mut viewer = headless_gltf_viewer("machine.glb")
+    .with_viewer_profile(ViewerProfile::cad_inspection())
+    .build()
+    .await?;
+
+viewer.render_next_frame()?;
+```
+
+Profiles are composable defaults. Callers can still override background,
+environment, renderer profile, import transform, bookmarks, or render cadence
+with the existing builder methods.
+
 ## Good defaults
 
 Use `Scene::add_studio_lighting()` when the asset does not author lights. It is
@@ -77,7 +96,7 @@ renderer.set_auto_exposure(AutoExposureConfig::outdoor());
 renderer.set_auto_exposure(AutoExposureConfig::mixed());
 ```
 
-![Same metal sphere rendered under product_studio, indoor, outdoor, and mixed exposure scenarios](../assets/easy-scene-showcase/auto-exposure-presets.jpg)
+![Same chrome sphere rendered under product_studio, indoor, outdoor, and mixed exposure scenarios](../assets/easy-scene-showcase/auto-exposure-presets.jpg)
 
 Auto exposure prevents globally too-dark or too-bright frames. It does not
 change light direction, material albedo, roughness, dynamic range, or
@@ -121,9 +140,12 @@ let rubber_foot = assets.create_material(MaterialDesc::rubber());
 
 The first-path presets now cover matte, plastic, polished and rough metal,
 chrome, brushed steel, clearcoat plastic, satin, smooth leather-like sheen,
-transparent/frosted glass previews, and rubber. `clear_glass` and
-`frosted_glass` are blend-mode transmission/IOR/volume presets for browser
-preview; they do not claim full physical refraction or caustics.
+transparent/frosted glass, and rubber. On attached GPU backends whose
+capability report has `physical_glass_transmission=supported`, `clear_glass`
+and `frosted_glass` use scene-color transmission with IOR/thickness
+refraction and roughness-driven blur. CPU/reference and unattached factory
+capability rows remain degraded for physical glass, and the presets do not
+claim caustics.
 
 For colours, name the constant the design calls for instead of writing
 RGB literals — `Color::CHARCOAL`, `Color::WARM_WHITE`, `Color::ORANGE`,
@@ -195,7 +217,7 @@ drag orbits around the framed object:
 
 ```rust
 let framing = scene.frame_bounds(camera, bounds, FramingOptions::new().viewport(width, height))?;
-let controls = scena::OrbitControls::from_framing(framing).cinematic();
+let controls = scena::OrbitControls::from_framing(framing);
 ```
 
 Clamp wheel and pinch zoom relative to that framed distance when a viewer
@@ -203,7 +225,6 @@ should stay near the inspected object:
 
 ```rust
 let controls = scena::OrbitControls::from_framing(framing)
-    .cinematic()
     .zoom_limits_bounds_relative(0.5, 4.0);
 ```
 
@@ -220,14 +241,12 @@ if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
 
 Host adapters can then apply the controls to the scene camera each frame.
 
-![Damped orbit motion — the cube rotates and decelerates with each frame](../assets/easy-scene-showcase/animated-orbit-damping.gif)
+![Turntable orbit motion — the cube rotates at the configured presentation rate](../assets/easy-scene-showcase/animated-orbit-damping.gif)
 
-The cube above starts at full angular velocity and decays under
-`cinematic()` damping; user-driven orbit input would feel the same way.
+The cube above advances through the host-ticked `presentation()` path.
 
 ```rust
 let controls = OrbitControls::from_framing(framing)
-    .cinematic()
     .zoom_limits_bounds_relative(0.5, 4.0);
 ```
 
@@ -284,14 +303,6 @@ viewer.on_hover({
 
 viewer.hover_at(pointer_x, pointer_y)?;
 viewer.click_at(pointer_x, pointer_y)?;
-```
-
-Set hover and selection outlines on the renderer when the interaction state
-should be visible in screenshots or demos:
-
-```rust
-renderer.set_hover_style(InteractionStyle::outline(Color::from_hex("#ffd240")?, 2.0));
-renderer.set_selection_style(InteractionStyle::outline(Color::from_hex("#40a0ff")?, 3.0));
 ```
 
 ![Pickable sphere + cube on a plinth ready for hover / select interaction](../assets/easy-scene-showcase/picking-outline-hover.jpg)
@@ -449,12 +460,16 @@ let environment = assets
 renderer.set_environment(environment);
 ```
 
-![Same metal sphere lit by NeutralStudio (left, no IBL specular) versus Studio HDR (right, visible mirror reflection)](../assets/easy-scene-showcase/environment-presets.jpg)
+![Same chrome sphere lit by NeutralStudio (left, subdued low-detail reflections) versus Studio HDR (right, visible mirror reflection)](../assets/easy-scene-showcase/environment-presets.jpg)
 
-The metal sphere on the right reflects the studio HDR; on the left the
-neutral fixture gives no directional reflection. That contrast is the
+The chrome sphere on the right reflects the studio HDR; on the left the
+neutral fixture keeps reflections subdued and low-detail. That contrast is the
 quickest way to verify the environment is actually bound to the
-renderer.
+renderer. For a bright product-photography chrome read, use
+`EnvironmentPreset::Studio` (the real studio HDR) with a high-tessellation sphere
+(segments>=256, rings>=192); the studio softboxes give structured reflections
+and the dense sphere keeps the mirror from showing facets, so mirror-metal
+subjects do not collapse to a smooth gray or black blob.
 
 Use `EnvironmentPreset::ALL` when compatibility proof should render every
 checked preset. KTX2 cubemap presets are still future work; the shipped catalog
@@ -558,10 +573,12 @@ opt-in through a typed config on the renderer.
 ```rust
 use scena::{
     AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig,
-    ScreenSpaceAmbientOcclusionConfig,
+    ReconstructionFilter, ScreenSpaceAmbientOcclusionConfig,
 };
 
-renderer.set_anti_aliasing(AntiAliasing::Fxaa); // default; AntiAliasing::None for crisp diff lanes
+renderer.set_anti_aliasing(AntiAliasing::Msaa4); // high-quality sample AA; AntiAliasing::None for exact diff lanes
+renderer.set_supersample_factor(2)?; // optional hero-shot tier; cost grows with N^2
+renderer.set_reconstruction_filter(ReconstructionFilter::Tent); // optional hero-still resolve, line-safe; not the default
 renderer.set_bloom(Some(PostBloomConfig::subtle()));
 renderer.set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
 renderer.set_order_independent_transparency(Some(OrderIndependentTransparencyConfig::weighted_blended()));
@@ -612,6 +629,13 @@ the `pbr-material-extensions` workflow and
 `browser-pbr-material-extension-composite` proof class), which is
 recorded against real-GPU CI runners.
 
+The same browser proof includes a dense source-material lane under
+`source-gltf-materials`: it loads the Khronos WaterBottle with strict texture
+loading, records base-color, normal, metallic-roughness, occlusion, and
+emissive source texture roles, frames the imported geometry with
+`Scene::frame`, lights it with a real `DirectionalLight`, and renders
+generated-unlit, source-glTF-material, and generated-PBR comparison lanes.
+
 ## Browser viewer surfaces
 
 The browser side ships through `<scena-viewer>`, a custom element with
@@ -620,6 +644,12 @@ inspector overlay, mobile gestures). The Playwright lane in
 `tests/browser/m6_rust_wasm_renderer_probe.js` regenerates the proof
 artifacts on every release run, and the host-wirable event surface is
 documented under [`docs/browser.md`](../browser.md).
+
+For applications that already own a browser `SceneHost`, the element can bind
+to that host instead of creating a separate JavaScript scene model: visual
+patches go through `host.applyPatch()`, host events are re-emitted as DOM
+events, and capture/download, picking, hover, selection, framing, camera, and
+studio-lighting helpers delegate to the same Rust/WASM host methods.
 
 ![scena-viewer vs model-viewer three-asset parity — left column model-viewer reference, right column scena-viewer output for the same assets](../assets/easy-scene-showcase/browser/scena-viewer-model-viewer-parity-browser-proof.jpg)
 

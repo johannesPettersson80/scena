@@ -10,13 +10,18 @@ use ::gltf::texture::Info;
 use crate::diagnostics::AssetError;
 use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, TextureTransform};
 
-use super::super::{AssetPath, AssetStorage, MaterialHandle};
+use super::super::{
+    AssetMaterialFallback, AssetMaterialSource, AssetPath, AssetStorage, MaterialHandle,
+};
 use super::material_extensions::{
     anisotropy_extension, clearcoat_extension, dispersion_extension, extension_texture_transform,
     ior_extension, iridescence_extension, sheen_extension, transmission_extension,
     validate_material_texture_indices, volume_extension,
 };
-use super::textures::{GltfTexture, texture_slot};
+use super::material_fallbacks::{
+    MaterialFallbackSinks, TextureSlotFallbackRequest, texture_slot_with_fallback,
+};
+use super::textures::GltfTexture;
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn material_now_ms() -> f64 {
@@ -39,6 +44,7 @@ pub(super) fn parse_materials(
     document: &Document,
     storage: &mut AssetStorage,
     textures: &[GltfTexture],
+    material_fallbacks: &mut Vec<AssetMaterialFallback>,
 ) -> Result<Vec<MaterialHandle>, AssetError> {
     // Stage C2: pre-validate texture references in the raw JSON
     // before we hand them to the gltf crate's typed accessors —
@@ -54,6 +60,11 @@ pub(super) fn parse_materials(
         .map(|(material_index, material)| {
             #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
             let material_start = material_now_ms();
+            let mut source_fallbacks = Vec::new();
+            let mut fallback_sinks = MaterialFallbackSinks {
+                all: material_fallbacks,
+                source: &mut source_fallbacks,
+            };
             let pbr = material.pbr_metallic_roughness();
             let base_color = pbr.base_color_factor();
             let base_color =
@@ -68,13 +79,17 @@ pub(super) fn parse_materials(
             if let Some(info) = pbr.base_color_texture() {
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 let slot_start = material_now_ms();
-                let texture = texture_slot(
-                    path,
-                    "baseColorTexture",
-                    info.texture().index(),
+                let texture = texture_slot_with_fallback(
+                    TextureSlotFallbackRequest::new(
+                        path,
+                        "baseColorTexture",
+                        material_index,
+                        info.texture().index(),
+                        TextureColorSpace::Srgb,
+                    ),
                     textures,
                     storage,
-                    TextureColorSpace::Srgb,
+                    &mut fallback_sinks,
                 )?;
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {
@@ -88,13 +103,17 @@ pub(super) fn parse_materials(
             if let Some(info) = pbr.metallic_roughness_texture() {
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 let slot_start = material_now_ms();
-                let texture = texture_slot(
-                    path,
-                    "metallicRoughnessTexture",
-                    info.texture().index(),
+                let texture = texture_slot_with_fallback(
+                    TextureSlotFallbackRequest::new(
+                        path,
+                        "metallicRoughnessTexture",
+                        material_index,
+                        info.texture().index(),
+                        TextureColorSpace::Linear,
+                    ),
                     textures,
                     storage,
-                    TextureColorSpace::Linear,
+                    &mut fallback_sinks,
                 )?;
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {
@@ -108,13 +127,17 @@ pub(super) fn parse_materials(
             if let Some(normal) = material.normal_texture() {
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 let slot_start = material_now_ms();
-                let texture = texture_slot(
-                    path,
-                    "normalTexture",
-                    normal.texture().index(),
+                let texture = texture_slot_with_fallback(
+                    TextureSlotFallbackRequest::new(
+                        path,
+                        "normalTexture",
+                        material_index,
+                        normal.texture().index(),
+                        TextureColorSpace::Linear,
+                    ),
                     textures,
                     storage,
-                    TextureColorSpace::Linear,
+                    &mut fallback_sinks,
                 )?;
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {
@@ -134,13 +157,17 @@ pub(super) fn parse_materials(
             if let Some(occlusion) = material.occlusion_texture() {
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 let slot_start = material_now_ms();
-                let texture = texture_slot(
-                    path,
-                    "occlusionTexture",
-                    occlusion.texture().index(),
+                let texture = texture_slot_with_fallback(
+                    TextureSlotFallbackRequest::new(
+                        path,
+                        "occlusionTexture",
+                        material_index,
+                        occlusion.texture().index(),
+                        TextureColorSpace::Linear,
+                    ),
                     textures,
                     storage,
-                    TextureColorSpace::Linear,
+                    &mut fallback_sinks,
                 )?;
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {
@@ -157,13 +184,17 @@ pub(super) fn parse_materials(
             if let Some(info) = material.emissive_texture() {
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 let slot_start = material_now_ms();
-                let texture = texture_slot(
-                    path,
-                    "emissiveTexture",
-                    info.texture().index(),
+                let texture = texture_slot_with_fallback(
+                    TextureSlotFallbackRequest::new(
+                        path,
+                        "emissiveTexture",
+                        material_index,
+                        info.texture().index(),
+                        TextureColorSpace::Srgb,
+                    ),
                     textures,
                     storage,
-                    TextureColorSpace::Srgb,
+                    &mut fallback_sinks,
                 )?;
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {
@@ -190,13 +221,17 @@ pub(super) fn parse_materials(
                     .with_clearcoat_factor(clearcoat.factor)
                     .with_clearcoat_roughness_factor(clearcoat.roughness_factor);
                 if let Some(info) = clearcoat.texture {
-                    let texture = texture_slot(
-                        path,
-                        "clearcoatTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "clearcoatTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_clearcoat_texture(texture);
                     if let Some(transform) = info.transform {
@@ -204,13 +239,17 @@ pub(super) fn parse_materials(
                     }
                 }
                 if let Some(info) = clearcoat.roughness_texture {
-                    let texture = texture_slot(
-                        path,
-                        "clearcoatRoughnessTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "clearcoatRoughnessTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_clearcoat_roughness_texture(texture);
                     if let Some(transform) = info.transform {
@@ -218,13 +257,17 @@ pub(super) fn parse_materials(
                     }
                 }
                 if let Some(info) = clearcoat.normal_texture {
-                    let texture = texture_slot(
-                        path,
-                        "clearcoatNormalTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "clearcoatNormalTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc
                         .with_clearcoat_normal_texture(texture)
@@ -239,13 +282,17 @@ pub(super) fn parse_materials(
                     .with_sheen_color_factor(sheen.color_factor)
                     .with_sheen_roughness_factor(sheen.roughness_factor);
                 if let Some(info) = sheen.color_texture {
-                    let texture = texture_slot(
-                        path,
-                        "sheenColorTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "sheenColorTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Srgb,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Srgb,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_sheen_color_texture(texture);
                     if let Some(transform) = info.transform {
@@ -253,13 +300,17 @@ pub(super) fn parse_materials(
                     }
                 }
                 if let Some(info) = sheen.roughness_texture {
-                    let texture = texture_slot(
-                        path,
-                        "sheenRoughnessTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "sheenRoughnessTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_sheen_roughness_texture(texture);
                     if let Some(transform) = info.transform {
@@ -272,13 +323,17 @@ pub(super) fn parse_materials(
                     .with_anisotropy_strength_factor(anisotropy.strength)
                     .with_anisotropy_rotation_radians(anisotropy.rotation);
                 if let Some(info) = anisotropy.texture {
-                    let texture = texture_slot(
-                        path,
-                        "anisotropyTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "anisotropyTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_anisotropy_texture(texture);
                     if let Some(transform) = info.transform {
@@ -295,13 +350,17 @@ pub(super) fn parse_materials(
                         iridescence.thickness_maximum,
                     );
                 if let Some(info) = iridescence.texture {
-                    let texture = texture_slot(
-                        path,
-                        "iridescenceTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "iridescenceTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_iridescence_texture(texture);
                     if let Some(transform) = info.transform {
@@ -309,13 +368,17 @@ pub(super) fn parse_materials(
                     }
                 }
                 if let Some(info) = iridescence.thickness_texture {
-                    let texture = texture_slot(
-                        path,
-                        "iridescenceThicknessTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "iridescenceThicknessTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_iridescence_thickness_texture(texture);
                     if let Some(transform) = info.transform {
@@ -329,13 +392,17 @@ pub(super) fn parse_materials(
             if let Some(transmission) = transmission_extension(document, material_index) {
                 desc = desc.with_transmission_factor(transmission.factor);
                 if let Some(info) = transmission.texture {
-                    let texture = texture_slot(
-                        path,
-                        "transmissionTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "transmissionTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_transmission_texture(texture);
                     if let Some(transform) = info.transform {
@@ -352,13 +419,17 @@ pub(super) fn parse_materials(
                     .with_attenuation_distance(volume.attenuation_distance)
                     .with_attenuation_color(volume.attenuation_color);
                 if let Some(info) = volume.thickness_texture {
-                    let texture = texture_slot(
-                        path,
-                        "thicknessTexture",
-                        info.index,
+                    let texture = texture_slot_with_fallback(
+                        TextureSlotFallbackRequest::new(
+                            path,
+                            "thicknessTexture",
+                            material_index,
+                            info.index,
+                            TextureColorSpace::Linear,
+                        ),
                         textures,
                         storage,
-                        TextureColorSpace::Linear,
+                        &mut fallback_sinks,
                     )?;
                     desc = desc.with_thickness_texture(texture);
                     if let Some(transform) = info.transform {
@@ -380,7 +451,16 @@ pub(super) fn parse_materials(
             {
                 log_material_step("material total", material_start);
             }
-            Ok(storage.materials.insert(desc))
+            let handle = storage.materials.insert(desc);
+            storage.material_sources.insert(
+                handle,
+                AssetMaterialSource::source_material(
+                    path.clone(),
+                    material_index,
+                    source_fallbacks,
+                ),
+            );
+            Ok(handle)
         })
         .collect();
     #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -392,12 +472,7 @@ pub(super) fn parse_materials(
 
 fn texture_transform(info: &Info<'_>) -> Option<TextureTransform> {
     info.texture_transform().map(|transform| {
-        TextureTransform::new(
-            transform.offset(),
-            transform.rotation(),
-            transform.scale(),
-            transform.tex_coord(),
-        )
+        TextureTransform::new(transform.offset(), transform.rotation(), transform.scale())
     })
 }
 

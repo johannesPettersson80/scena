@@ -1,0 +1,163 @@
+{
+  "schema": "scena.animation_introspection.v1",
+  "ok": true,
+  "clip": {
+    "name": "MoveTriangle",
+    "duration_seconds": 1.0,
+    "channel_count": 1
+  },
+  "summary": {
+    "sample_count": 3,
+    "changed_channel_count": 1,
+    "unchanged_channel_count": 0,
+    "invalid_channel_count": 0,
+    "visible_change": true,
+    "capture_changes": 2,
+    "rendered_movement": true,
+    "rendered_movement_delta_px": 32.0
+  },
+  "samples": [
+    {
+      "time_seconds": 0.0,
+      "transform_revision": 4,
+      "appearance_revision": 1,
+      "payload_fnv1a64": "1111111111111111",
+      "moving_node_count": 0,
+      "invalid_node_count": 0,
+      "observed_values": [
+        {
+          "id": "selected-transform",
+          "node": 2,
+          "kind": "transform",
+          "rendered_centroid_css_px": [
+            32.0,
+            36.0
+          ],
+          "rendered_coverage_px": 240,
+          "transform": {
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "expected_translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "within_tolerance": true
+        }
+      ]
+    },
+    {
+      "time_seconds": 0.5,
+      "transform_revision": 5,
+      "appearance_revision": 1,
+      "payload_fnv1a64": "2222222222222222",
+      "moving_node_count": 1,
+      "invalid_node_count": 0,
+      "observed_values": [
+        {
+          "id": "selected-transform",
+          "node": 2,
+          "kind": "transform",
+          "rendered_centroid_css_px": [
+            48.0,
+            36.0
+          ],
+          "rendered_coverage_px": 241,
+          "transform": {
+            "translation": [
+              0.25,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "expected_translation": [
+            0.25,
+            0.0,
+            0.0
+          ],
+          "within_tolerance": true
+        }
+      ]
+    },
+    {
+      "time_seconds": 1.0,
+      "transform_revision": 6,
+      "appearance_revision": 1,
+      "payload_fnv1a64": "3333333333333333",
+      "moving_node_count": 1,
+      "invalid_node_count": 0,
+      "observed_values": [
+        {
+          "id": "selected-transform",
+          "node": 2,
+          "kind": "transform",
+          "rendered_centroid_css_px": [
+            64.0,
+            36.0
+          ],
+          "rendered_coverage_px": 240,
+          "transform": {
+            "translation": [
+              0.5,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "expected_translation": [
+            0.5,
+            0.0,
+            0.0
+          ],
+          "within_tolerance": true
+        }
+      ]
+    }
+  ],
+  "reasons": [],
+  "fixes": [],
+  "artifacts": {
+    "sampled_times": [
+      0.0,
+      0.5,
+      1.0
+    ],
+    "host_tick": "seek_animation"
+  }
+}

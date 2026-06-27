@@ -36,7 +36,8 @@ pub(crate) use crate::app::doctor_core::{
     ALLOWED_CONTEXT_TYPES, CATCH_ALL_TYPE_NAMES, CATCH_ALL_TYPE_SUFFIXES,
     MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE, MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE, REQUIRED_DOCS,
     REQUIRED_SOURCE_MODULES, SOURCE_SCOPE_TERMS, STALE_DOC_TERMS, check_cpu_ibl_gap_documented,
-    check_m8_real_asset_dual_lane, check_no_ignored_release_tests,
+    check_feature_gated_contract_tests_documented, check_m8_real_asset_dual_lane,
+    check_no_ignored_release_tests, check_recipe_build_policy_boundary,
     check_tests_env_flags_documented, check_waterbottle_third_party_reference, find_env_var_names,
     repo_root, require_files, run_architecture_doctor, run_docs_doctor, run_doctor,
 };
@@ -58,23 +59,26 @@ pub(crate) use crate::app::doctor_m7_m8_assets::{
     u32_manifest_assignment,
 };
 pub(crate) use crate::app::doctor_render::{
-    check_asset_api_contracts, check_diagnostics_contracts, check_fxaa_output_contracts,
-    check_headless_gpu_test_guard_contracts, check_output_stage_contracts,
-    check_prepare_asset_contracts, check_render_alpha_contracts, check_render_world_bake_contracts,
+    check_area_light_acceptance_honesty, check_asset_api_contracts, check_diagnostics_contracts,
+    check_fxaa_output_contracts, check_headless_gpu_test_guard_contracts,
+    check_material_reflection_quality_contracts, check_output_stage_contracts,
+    check_particle_prepare_allocation_contract, check_prepare_asset_contracts,
+    check_render_alpha_contracts, check_render_movement_contracts, check_render_quality_contracts,
+    check_render_quality_reflection_contracts, check_render_world_bake_contracts,
     check_renderer_standard_math_contracts, check_renderer_stats_contracts,
     check_renderer_truth_contracts,
 };
 pub(crate) use crate::app::doctor_scene_platform::{
     REQUIRED_EXAMPLES, REQUIRED_M5_GATE_ARTIFACTS, check_agent_validation,
-    check_backend_vocabulary, check_camera_depth_contracts, check_clipping_contracts,
-    check_depth_prepass_contracts, check_direct_light_shading_contracts,
-    check_directional_shadow_contracts, check_environment_ibl_prepare_contracts,
-    check_environment_lifecycle_contracts, check_equirectangular_hdr_environment_contracts,
-    check_m2_leak_stats_contracts, check_m3a_scene_import_contracts, check_m3b_animation_contracts,
-    check_m4_platform_contracts, check_m5_release_contracts, check_material_desc_fields_private,
-    check_origin_shift_contracts, check_reversed_z_contracts, check_scene_light_contracts,
-    check_shadow_map_contracts, check_unit_test_first_governance, check_webgl2_depth_contracts,
-    contains_scope_term,
+    check_backend_vocabulary, check_calibration_oracles_pair_parity_sweeps,
+    check_camera_depth_contracts, check_clipping_contracts, check_depth_prepass_contracts,
+    check_direct_light_shading_contracts, check_directional_shadow_contracts,
+    check_environment_ibl_prepare_contracts, check_environment_lifecycle_contracts,
+    check_equirectangular_hdr_environment_contracts, check_m2_leak_stats_contracts,
+    check_m3a_scene_import_contracts, check_m3b_animation_contracts, check_m4_platform_contracts,
+    check_m5_release_contracts, check_material_desc_fields_private, check_origin_shift_contracts,
+    check_reversed_z_contracts, check_scene_light_contracts, check_shadow_map_contracts,
+    check_unit_test_first_governance, check_webgl2_depth_contracts, contains_scope_term,
 };
 pub(crate) use crate::app::doctor_visual_release::{
     check_default_environment_derivative_payload, check_default_environment_manifest,

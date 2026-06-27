@@ -29,6 +29,26 @@ impl SceneHost {
         self.core.set_visible(node, visible).map_err(js_error)
     }
 
+    #[wasm_bindgen(js_name = showOnly)]
+    pub fn show_only(&mut self, nodes: js_sys::BigUint64Array) -> Result<(), JsValue> {
+        self.core.show_only(&nodes.to_vec()).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = isolate)]
+    pub fn isolate(&mut self, nodes: js_sys::BigUint64Array) -> Result<(), JsValue> {
+        self.core.isolate(&nodes.to_vec()).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = ghost)]
+    pub fn ghost(&mut self, node: u64, alpha: f32) -> Result<(), JsValue> {
+        self.core.ghost(node, alpha).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = fitSelection)]
+    pub fn fit_selection(&mut self, nodes: js_sys::BigUint64Array) -> Result<(), JsValue> {
+        self.core.fit_selection(&nodes.to_vec()).map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = subtreeNodesJson)]
     pub fn subtree_nodes_json(&mut self, root: u64) -> Result<String, JsValue> {
         self.core.subtree_nodes_json(root).map_err(js_error)

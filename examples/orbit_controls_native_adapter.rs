@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     scene.mesh(geometry, material).add()?;
     let camera = scene.add_default_camera()?;
 
-    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0).with_damping(0.15);
+    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0);
     controls.handle_pointer(native_press(NativeMouseButton::Left, 160.0, 120.0));
     controls.handle_pointer(native_drag(172.0, 112.0, 12.0, -8.0));
     controls.handle_pointer(PointerEvent::released(172.0, 112.0));

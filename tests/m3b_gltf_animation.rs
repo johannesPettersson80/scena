@@ -369,6 +369,33 @@ fn morph_target_weights_channel_updates_scene_morph_weights() {
 }
 
 #[test]
+fn gltf_morph_target_normal_deltas_deform_vertex_normals() {
+    let assets = Assets::with_fetcher(MultiMemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://models/morph-normal.gltf"),
+            morph_normal_gltf().into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://models/morph-normal.bin"),
+            morph_normal_buffer(),
+        ),
+    ]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://models/morph-normal.gltf"))
+        .expect("morph-normal glTF loads");
+    let mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("morph-normal fixture has mesh");
+    let geometry = assets
+        .geometry(mesh.geometry())
+        .expect("morph-normal geometry resolves");
+    let morphed = geometry
+        .morphed_vertices(&[1.0])
+        .expect("morph target applies");
+
+    assert_vec3_near(morphed[0].normal, Vec3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
 fn morph_target_weights_channel_preserves_each_target_weight_per_keyframe() {
     // Regression: parse_output for AnimationTarget::Weights previously collapsed
     // (keyframes * morph_target_count) scalars into output_count length-1 vectors.
@@ -859,6 +886,67 @@ fn morph_weight_buffer() -> Vec<u8> {
         0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, // morph deltas
         0.0, 1.0, // input times
         0.0, 1.0, // output weights
+    ] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+fn morph_normal_gltf() -> String {
+    r#"{
+        "asset": { "version": "2.0" },
+        "nodes": [
+            { "name": "MorphNormal", "mesh": 0 }
+        ],
+        "meshes": [
+            {
+                "weights": [1.0],
+                "primitives": [
+                    {
+                        "attributes": { "POSITION": 0, "NORMAL": 1 },
+                        "indices": 2,
+                        "targets": [
+                            { "POSITION": 3, "NORMAL": 4 }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "buffers": [
+            { "byteLength": 150, "uri": "morph-normal.bin" }
+        ],
+        "bufferViews": [
+            { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 36, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 72, "byteLength": 6 },
+            { "buffer": 0, "byteOffset": 78, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 114, "byteLength": 36 }
+        ],
+        "accessors": [
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" },
+            { "bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 4, "componentType": 5126, "count": 3, "type": "VEC3" }
+        ]
+    }"#
+    .to_string()
+}
+
+fn morph_normal_buffer() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for value in [
+        -0.5_f32, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0, // positions
+        0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, // normals
+    ] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [
+        0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // position deltas
+        0.0, 1.0, -1.0, 0.0, 1.0, -1.0, 0.0, 1.0, -1.0, // normal deltas
     ] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }

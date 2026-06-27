@@ -1,0 +1,106 @@
+{
+  "schema": "scena.appearance_introspection.v1",
+  "ok": false,
+  "active_variant": "noon",
+  "available_variants": [
+    "midnight",
+    "noon"
+  ],
+  "summary": {
+    "targets": 1,
+    "matched": 1,
+    "errors": 1,
+    "warnings": 0,
+    "sampled_pixels": 1536,
+    "luminance_mean": 0.640999972820282
+  },
+  "targets": [
+    {
+      "id": "primary-finish",
+      "matched": true,
+      "node": 7,
+      "material": {
+        "kind": "unlit",
+        "source": {
+          "kind": "generated_default",
+          "asset_path": "tests/assets/gltf/no-material.gltf",
+          "material_index": null,
+          "reason": "primitive omitted a material index"
+        },
+        "base_color": {
+          "r": 0.0,
+          "g": 1.0,
+          "b": 0.0,
+          "a": 1.0
+        },
+        "alpha_mode": "opaque",
+        "textures": [],
+        "fallbacks": []
+      },
+      "sampled_region": {
+        "kind": "frame_content",
+        "sampled_pixels": 1536,
+        "bbox_css_px": {
+          "min_x": 24.0,
+          "min_y": 12.0,
+          "max_x": 71.0,
+          "max_y": 43.0,
+          "width": 48.0,
+          "height": 32.0
+        }
+      },
+      "sampled_color_srgb8": [
+        34,
+        220,
+        42,
+        255
+      ],
+      "sampled_color_family": "green",
+      "swatch_distance": 0.14399999380111694,
+      "alpha": {
+        "mode": "opaque",
+        "base_color_alpha": 1.0,
+        "hidden": false
+      },
+      "expected": {
+        "id": "primary-finish",
+        "variant": "noon",
+        "color_family": "green",
+        "swatch_srgb8": [
+          0,
+          255,
+          0
+        ],
+        "alpha_mode": "opaque",
+        "require_source_material": true
+      }
+    }
+  ],
+  "reasons": [
+    {
+      "code": "generated_fallback",
+      "severity": "error",
+      "target_id": "primary-finish",
+      "affected_handles": [
+        7
+      ],
+      "message": "target material uses generated fallback provenance where source material was required"
+    }
+  ],
+  "fixes": [
+    {
+      "action": "inspect_material_assignment",
+      "target_id": "primary-finish",
+      "target_handle": 7,
+      "help": "inspect the source glTF primitive material assignment and reload the source material"
+    }
+  ],
+  "artifacts": {
+    "capture": {
+      "schema": "scena.capture.v1",
+      "width": 96,
+      "height": 72,
+      "payload_fnv1a64": "8c3b2a1704d5e6f0"
+    }
+  }
+}

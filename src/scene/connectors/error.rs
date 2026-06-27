@@ -70,6 +70,10 @@ pub enum ConnectionError {
         source: NodeKey,
         parent: NodeKey,
     },
+    SnapToleranceExceeded {
+        distance: f32,
+        tolerance: f32,
+    },
     ConnectorHostNotPrepared {
         node: NodeKey,
         connector: Option<String>,
@@ -181,6 +185,13 @@ impl fmt::Display for ConnectionError {
             Self::ConnectionWouldCreateCycle { source, parent } => write!(
                 formatter,
                 "connection would reparent node {source:?} under descendant {parent:?}"
+            ),
+            Self::SnapToleranceExceeded {
+                distance,
+                tolerance,
+            } => write!(
+                formatter,
+                "connector distance {distance:.3} exceeds snap tolerance {tolerance:.3}"
             ),
             Self::ConnectorHostNotPrepared { node, connector } => write!(
                 formatter,

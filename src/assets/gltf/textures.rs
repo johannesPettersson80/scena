@@ -26,6 +26,13 @@ pub(in crate::assets::gltf) struct GltfTexture {
     sampler: TextureSamplerDesc,
     uses_basisu: bool,
     source_bytes: Option<Vec<u8>>,
+    basisu_fallback: Option<GltfTextureBasisuFallback>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::assets::gltf) struct GltfTextureBasisuFallback {
+    pub source_path: AssetPath,
+    pub fallback_path: AssetPath,
 }
 
 pub(in crate::assets::gltf) fn parse_textures(
@@ -45,18 +52,24 @@ pub(in crate::assets::gltf) fn parse_textures(
                 .and_then(|value| usize::try_from(value).ok())
                 .and_then(|index| document.images().nth(index));
             let fallback_image = texture_source_image(document, &texture);
-            let (image, uses_basisu) = if cfg!(feature = "ktx2") {
+            let (image, uses_basisu, basisu_fallback_source) = if cfg!(feature = "ktx2") {
                 if let Some(image) = basisu_image {
-                    (image, true)
+                    (image, true, None)
                 } else if let Some(image) = fallback_image {
-                    (image, false)
+                    (image, false, None)
                 } else {
                     return None;
                 }
             } else if let Some(image) = fallback_image {
-                (image, false)
+                (
+                    image,
+                    false,
+                    basisu_image
+                        .as_ref()
+                        .and_then(|image| image_path(path, image)),
+                )
             } else if let Some(image) = basisu_image {
-                (image, true)
+                (image, true, None)
             } else {
                 return None;
             };
@@ -81,6 +94,12 @@ pub(in crate::assets::gltf) fn parse_textures(
                 }
             };
             Some(GltfTexture {
+                basisu_fallback: basisu_fallback_source.map(|source_path| {
+                    GltfTextureBasisuFallback {
+                        source_path,
+                        fallback_path: image_path.clone(),
+                    }
+                }),
                 path: image_path,
                 sampler: from_gltf_sampler(texture.sampler()),
                 uses_basisu,
@@ -88,6 +107,39 @@ pub(in crate::assets::gltf) fn parse_textures(
             })
         })
         .collect()
+}
+
+impl GltfTexture {
+    pub(in crate::assets::gltf) fn basisu_fallback(&self) -> Option<&GltfTextureBasisuFallback> {
+        self.basisu_fallback.as_ref()
+    }
+
+    pub(in crate::assets::gltf) fn path(&self) -> &AssetPath {
+        &self.path
+    }
+
+    pub(in crate::assets::gltf) const fn source_bytes_missing(&self) -> bool {
+        self.source_bytes.is_none()
+    }
+}
+
+fn image_path(path: &AssetPath, image: &Image<'_>) -> Option<AssetPath> {
+    match image.source() {
+        ImageSource::Uri { uri, .. } => {
+            if uri.starts_with("data:") {
+                Some(AssetPath::from(uri))
+            } else {
+                Some(resolve_relative_path(path, uri))
+            }
+        }
+        ImageSource::View { mime_type, .. } => {
+            let extension = extension_for_mime(Some(mime_type)).unwrap_or("png");
+            Some(AssetPath::from(format!(
+                "memory:image-{}.{extension}",
+                image.index()
+            )))
+        }
+    }
 }
 
 fn texture_source_image<'a>(document: &'a Document, texture: &Texture<'a>) -> Option<Image<'a>> {

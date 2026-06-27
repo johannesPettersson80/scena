@@ -40,6 +40,7 @@ and deterministic headless rendering.
 - [Eliminate hand-written rendering checklist](checklists/eliminate-handmade-rendering.md)
 - [WASM scene host and stable contract checklist](checklists/wasm-scene-host-and-stable-contracts.md)
 - [Browser renderer-fidelity dependency checklist](checklists/renderer-fidelity-dependencies.md)
+- [Application builder roadmap](checklists/application-builder-roadmap.md)
 
 ## Guides
 

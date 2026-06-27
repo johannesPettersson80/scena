@@ -19,10 +19,10 @@ pub(crate) fn check_m7_foundation_contracts(root: &Path, findings: &mut Vec<Find
         "ERGONOMICS-M7",
         "src/controls.rs",
         &[
-            "with_damping",
             "focus",
             "apply_to_scene",
-            "damping_factor",
+            "with_distance_limits",
+            "zoom_limits_bounds_relative",
             "TouchEvent",
             "pub const fn wheel",
         ],

@@ -1,0 +1,441 @@
+#![cfg(feature = "scene-host")]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const TEMPLATE_NAMES: &[&str] = &[
+    "product-configurator",
+    "live-state-viewer",
+    "web-viewer",
+    "data-visualization",
+    "animated-viewer",
+    "interaction-proof",
+    "cad-inspection",
+    "documentation-renderer",
+];
+
+const STARTER_SNIPPET_NAMES: &[&str] = &[
+    "primitive_scene",
+    "cad_plate",
+    "dashboard_bars",
+    "machine_state_viewer",
+    "product_configurator",
+];
+
+#[test]
+fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
+    let root = artifact_dir("agent-templates");
+
+    for name in TEMPLATE_NAMES {
+        let output_dir = root.join(name);
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args(["examples", "agent", name, "--out", path_str(&output_dir)])
+            .output()
+            .expect("scena examples agent command runs");
+
+        assert!(
+            output.status.success(),
+            "template {name} failed, stderr={}",
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "template manifest stays machine-readable on stdout, stderr={}",
+            stderr(&output)
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("template emits JSON");
+        assert_eq!(manifest["schema"], "scena.agent_smoke_template.v1");
+        assert_eq!(manifest["name"], *name);
+        assert_eq!(manifest["status"], "ready");
+        assert!(
+            manifest["files"]
+                .as_array()
+                .expect("files array")
+                .iter()
+                .all(|file| Path::new(file["path"].as_str().expect("file path")).exists()),
+            "template files should exist: {manifest:#}"
+        );
+        assert_template_recipe_has_beauty_defaults(&output_dir.join("recipe.json"), name);
+
+        for command in manifest["commands"].as_array().expect("commands array") {
+            let argv = command["argv"]
+                .as_array()
+                .expect("argv array")
+                .iter()
+                .map(|value| value.as_str().expect("argv string").to_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(argv.first().map(String::as_str), Some("scena"));
+            if command["name"] == "render_introspect" {
+                assert_eq!(
+                    argv.get(1).map(String::as_str),
+                    Some("recipe"),
+                    "agent templates should use canonical recipe render command: {manifest:#}"
+                );
+                assert_eq!(
+                    argv.get(2).map(String::as_str),
+                    Some("render"),
+                    "agent templates should use canonical recipe render command: {manifest:#}"
+                );
+            }
+            let command_output = Command::new(env!("CARGO_BIN_EXE_scena"))
+                .args(&argv[1..])
+                .output()
+                .unwrap_or_else(|error| panic!("template {name} command {argv:?} runs: {error}"));
+            assert!(
+                command_output.status.success(),
+                "template {name} command {argv:?} failed, stderr={}",
+                stderr(&command_output)
+            );
+            assert!(
+                command_output.stderr.is_empty(),
+                "template {name} command {argv:?} keeps JSON on stdout, stderr={}",
+                stderr(&command_output)
+            );
+            let report: serde_json::Value =
+                serde_json::from_slice(&command_output.stdout).expect("command emits JSON");
+            assert_eq!(report["schema"], command["expected_schema"]);
+            assert_eq!(report["ok"], command["expected_ok"]);
+            for artifact in command["artifacts"].as_array().expect("artifacts array") {
+                assert!(
+                    Path::new(artifact.as_str().expect("artifact path")).exists(),
+                    "template {name} command {argv:?} missing artifact {artifact:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn scena_examples_agent_cli_stdout_matches_golden_fixture() {
+    let root = PathBuf::from("target")
+        .join("gate-artifacts")
+        .join("scena-cli-agent-template-golden");
+    let output_dir = root.join("product-configurator");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("golden template root creates");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "examples",
+            "agent",
+            "product-configurator",
+            "--out",
+            path_str(&output_dir),
+        ])
+        .output()
+        .expect("scena examples agent golden command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "examples agent golden command keeps stderr empty, stderr={}",
+        stderr(&output)
+    );
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("examples agent emits JSON");
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/cli-golden/examples_agent_product_configurator_stdout.json"
+    ))
+    .expect("golden examples agent fixture parses");
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overlay_notes() {
+    let root = artifact_dir("agent-templates-phase2");
+
+    for name in ["cad-inspection", "documentation-renderer"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args([
+                "examples",
+                "agent",
+                name,
+                "--out",
+                path_str(&root.join(name)),
+            ])
+            .output()
+            .expect("scena examples agent phase2 command runs");
+
+        assert!(output.status.success(), "stderr={}", stderr(&output));
+        assert!(output.stderr.is_empty(), "stderr={}", stderr(&output));
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("template emits JSON");
+        assert_eq!(manifest["schema"], "scena.agent_smoke_template.v1");
+        assert_eq!(manifest["name"], name);
+        assert_eq!(manifest["status"], "ready");
+        assert!(
+            manifest["commands"]
+                .as_array()
+                .expect("commands array")
+                .len()
+                >= 3,
+            "CAD/docs template must include runnable CLI smoke commands: {manifest:#}"
+        );
+        assert!(
+            manifest["notes"]
+                .as_array()
+                .expect("notes array")
+                .iter()
+                .all(|note| !note
+                    .as_str()
+                    .is_some_and(|text| text.contains("native SceneHost APIs"))),
+            "template should no longer defer overlay authoring to native-only APIs: {manifest:#}"
+        );
+        assert!(
+            manifest["files"]
+                .as_array()
+                .expect("files array")
+                .iter()
+                .any(|file| file["kind"] == "recipe" && file["schema"] == "scena.scene_recipe.v1"),
+            "template should include a recipe file: {manifest:#}"
+        );
+        let render_command = manifest["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["name"] == "render_introspect")
+            .expect("render command exists");
+        let argv = render_command["argv"]
+            .as_array()
+            .expect("argv array")
+            .iter()
+            .map(|value| value.as_str().expect("argv string").to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            argv.get(1).map(String::as_str),
+            Some("recipe"),
+            "CAD/docs template should use canonical recipe render command: {manifest:#}"
+        );
+        assert_eq!(
+            argv.get(2).map(String::as_str),
+            Some("render"),
+            "CAD/docs template should use canonical recipe render command: {manifest:#}"
+        );
+        let render_output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args(&argv[1..])
+            .output()
+            .expect("template render command runs");
+        assert!(
+            render_output.status.success(),
+            "stderr={}",
+            stderr(&render_output)
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&render_output.stdout).expect("render emits JSON");
+        assert_eq!(report["schema"], "scena.render_introspection.v1");
+        assert_eq!(report["ok"], true);
+
+        let inspect_output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args(["inspect", path_str(&root.join(name).join("recipe.json"))])
+            .output()
+            .expect("template recipe inspects");
+        assert!(
+            inspect_output.status.success(),
+            "stderr={}",
+            stderr(&inspect_output)
+        );
+        let inspection: serde_json::Value =
+            serde_json::from_slice(&inspect_output.stdout).expect("inspect emits JSON");
+        let draw_list = inspection["draw_list"].as_array().expect("draw list array");
+        assert!(
+            draw_list
+                .iter()
+                .any(|draw| draw["material"]["kind"] == "line")
+                && inspection["nodes"]
+                    .as_array()
+                    .expect("nodes array")
+                    .iter()
+                    .any(|node| node["kind"] == "Label"),
+            "overlay recipe should produce line geometry and labels: {inspection:#}"
+        );
+    }
+}
+
+#[test]
+fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
+    let root = artifact_dir("agent-starter-snippets");
+
+    for name in STARTER_SNIPPET_NAMES {
+        let output_dir = root.join(name);
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args([
+                "examples",
+                "agent",
+                "get",
+                name,
+                "--out",
+                path_str(&output_dir),
+            ])
+            .output()
+            .expect("scena examples agent get command runs");
+
+        assert!(
+            output.status.success(),
+            "starter snippet {name} failed, stderr={}",
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "starter snippet {name} keeps JSON on stdout, stderr={}",
+            stderr(&output)
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("starter snippet emits JSON");
+        assert_eq!(manifest["schema"], "scena.agent_smoke_template.v1");
+        assert_eq!(manifest["name"], *name);
+        assert_eq!(manifest["status"], "ready");
+
+        let recipe_path = output_dir.join("recipe.json");
+        let recipe: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&recipe_path).expect("starter snippet recipe exists"),
+        )
+        .expect("starter snippet recipe parses");
+        assert_eq!(recipe["schema"], "scena.scene_recipe.v1");
+        assert!(
+            recipe["imports"]
+                .as_array()
+                .is_none_or(|imports| imports.is_empty()),
+            "starter snippet should be authored from scratch, not import-only: {recipe:#}"
+        );
+        assert!(
+            recipe["geometries"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+                && recipe["materials"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty())
+                && recipe["nodes"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty()),
+            "starter snippet should contain authored geometry/material/node content: {recipe:#}"
+        );
+        assert_template_recipe_has_beauty_defaults(&recipe_path, name);
+
+        for command in manifest["commands"].as_array().expect("commands array") {
+            if command["name"] != "validate_recipe" && command["name"] != "render_introspect" {
+                continue;
+            }
+            let argv = command["argv"]
+                .as_array()
+                .expect("argv array")
+                .iter()
+                .map(|value| value.as_str().expect("argv string").to_owned())
+                .collect::<Vec<_>>();
+            if command["name"] == "render_introspect" {
+                assert_eq!(
+                    argv.get(1).map(String::as_str),
+                    Some("recipe"),
+                    "starter snippet should use canonical recipe render command: {manifest:#}"
+                );
+                assert_eq!(
+                    argv.get(2).map(String::as_str),
+                    Some("render"),
+                    "starter snippet should use canonical recipe render command: {manifest:#}"
+                );
+            }
+            let command_output = Command::new(env!("CARGO_BIN_EXE_scena"))
+                .args(&argv[1..])
+                .output()
+                .unwrap_or_else(|error| {
+                    panic!("starter snippet {name} command {argv:?} runs: {error}")
+                });
+            assert!(
+                command_output.status.success(),
+                "starter snippet {name} command {argv:?} failed, stderr={}",
+                stderr(&command_output)
+            );
+            assert!(
+                command_output.stderr.is_empty(),
+                "starter snippet {name} command {argv:?} keeps JSON on stdout, stderr={}",
+                stderr(&command_output)
+            );
+            let report: serde_json::Value =
+                serde_json::from_slice(&command_output.stdout).expect("command emits JSON");
+            assert_eq!(report["schema"], command["expected_schema"]);
+            assert_eq!(report["ok"], command["expected_ok"]);
+        }
+    }
+}
+
+fn artifact_dir(name: &str) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
+    fs::create_dir_all(&dir).expect("artifact dir exists");
+    dir
+}
+
+fn path_str(path: &Path) -> &str {
+    path.to_str().expect("test path is UTF-8")
+}
+
+fn stderr(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn assert_template_recipe_has_beauty_defaults(recipe_path: &Path, name: &str) {
+    let recipe: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(recipe_path).expect("template recipe exists"))
+            .expect("template recipe parses");
+    let Some(lights) = recipe["lights"].as_array() else {
+        panic!("template {name} should include a visible light rig: {recipe:#}");
+    };
+    assert!(
+        lights.len() >= 3,
+        "template {name} should include a visible light rig: {recipe:#}"
+    );
+    for preset in ["key", "fill", "rim"] {
+        assert!(
+            lights
+                .iter()
+                .any(|light| light["kind"] == "directional" && light["preset"] == preset),
+            "template {name} should include directional {preset} light: {recipe:#}"
+        );
+    }
+    assert_eq!(
+        recipe["scene"]["environment"]["kind"], "uri",
+        "template {name} should use a bundled HDRI environment: {recipe:#}"
+    );
+    assert!(
+        recipe["scene"]["environment"]["uri"]
+            .as_str()
+            .is_some_and(|uri| uri.ends_with("studio_small_03_1k.hdr")),
+        "template {name} should point at the bundled studio HDRI: {recipe:#}"
+    );
+    assert!(
+        matches!(
+            recipe["scene"]["background"]["kind"].as_str(),
+            Some("studio" | "dark_studio" | "neutral_gray")
+        ),
+        "template {name} should choose a presentable background: {recipe:#}"
+    );
+    assert!(
+        recipe["capture"]["width"]
+            .as_u64()
+            .is_some_and(|width| width >= 512)
+            && recipe["capture"]["height"]
+                .as_u64()
+                .is_some_and(|height| height >= 384),
+        "template {name} should render high enough resolution for visual review: {recipe:#}"
+    );
+    assert_eq!(
+        recipe["render"]["anti_aliasing"], "msaa4",
+        "template {name} should use sample AA for native-resolution review, not FXAA-only: {recipe:#}"
+    );
+    assert_eq!(
+        recipe["render"]["supersample"], 2,
+        "template {name} should opt into the proven hero supersample tier: {recipe:#}"
+    );
+    assert_eq!(
+        recipe["render"]["reconstruction"], "tent",
+        "template {name} should use the line-safe reconstruction filter for starter output: {recipe:#}"
+    );
+    if recipe["scene"]["grid"].is_object() {
+        assert!(
+            recipe["scene"]["grid"]["line_width_px"]
+                .as_f64()
+                .is_some_and(|width| width >= 3.6),
+            "template {name} with a grid should set a visible grid line width instead of relying on thin defaults: {recipe:#}"
+        );
+    }
+}

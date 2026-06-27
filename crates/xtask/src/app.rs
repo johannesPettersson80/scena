@@ -48,6 +48,8 @@ mod tests_15;
 mod tests_16;
 #[cfg(test)]
 mod tests_17;
+#[cfg(test)]
+mod tests_18;
 mod util;
 mod visual_artifacts;
 mod visual_proof;

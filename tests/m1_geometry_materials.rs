@@ -28,6 +28,10 @@ fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
         .expect("pixel slice has four channels")
 }
 
+fn max_rgb(pixel: [u8; 4]) -> u8 {
+    pixel[0].max(pixel[1]).max(pixel[2])
+}
+
 fn unstable_headless_gpu_release_tests_enabled() -> bool {
     std::env::var_os("SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS").is_some()
 }
@@ -1160,9 +1164,19 @@ fn prepare_with_assets_renders_line_material_as_screen_space_stroke() {
         .expect("line material prepares");
     renderer.render(&scene, camera).expect("line renders");
 
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 3), [80, 80, 80, 255]);
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 2), [80, 80, 80, 255]);
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [80, 80, 80, 255]);
+    let luminance: Vec<u8> = renderer
+        .frame_rgba8()
+        .chunks_exact(4)
+        .map(|pixel| pixel[0].max(pixel[1]).max(pixel[2]))
+        .collect();
+    assert!(
+        luminance.iter().any(|value| *value >= 200),
+        "screen-space stroke should render a bright core: {luminance:?}"
+    );
+    assert!(
+        luminance.iter().any(|value| (1..254).contains(value)),
+        "screen-space stroke should include antialiased edge coverage, not a hard 1px line: {luminance:?}"
+    );
 }
 
 #[test]
@@ -1182,13 +1196,21 @@ fn prepare_with_assets_renders_wireframe_material_triangle_edges() {
         .expect("wireframe material prepares");
     renderer.render(&scene, camera).expect("wireframe renders");
 
-    assert_eq!(
-        pixel_at(renderer.frame_rgba8(), 16, 8, 13),
-        [80, 80, 80, 255]
+    assert!(
+        max_rgb(pixel_at(renderer.frame_rgba8(), 16, 8, 13)) >= 220,
+        "wireframe border should render as a bright antialiased stroke"
     );
-    assert_eq!(
-        pixel_at(renderer.frame_rgba8(), 16, 7, 7),
-        [80, 80, 80, 255]
+    assert!(
+        max_rgb(pixel_at(renderer.frame_rgba8(), 16, 7, 7)) >= 220,
+        "wireframe diagonal should render as a bright antialiased stroke"
+    );
+    assert!(
+        renderer
+            .frame_rgba8()
+            .chunks_exact(4)
+            .map(|pixel| pixel[0].max(pixel[1]).max(pixel[2]))
+            .any(|value| (1..220).contains(&value)),
+        "wireframe should include antialiased edge coverage, not only hard pixels"
     );
 }
 
@@ -1211,11 +1233,22 @@ fn prepare_with_assets_renders_edge_material_without_coplanar_internal_edges() {
         .render(&scene, camera)
         .expect("edge material renders");
 
-    assert_eq!(
-        pixel_at(renderer.frame_rgba8(), 16, 8, 13),
-        [80, 80, 80, 255]
+    assert!(
+        max_rgb(pixel_at(renderer.frame_rgba8(), 16, 8, 13)) >= 220,
+        "edge border should render as a bright antialiased stroke"
     );
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 7, 7), [0, 0, 0, 255]);
+    assert!(
+        max_rgb(pixel_at(renderer.frame_rgba8(), 16, 7, 7)) <= 30,
+        "edge material should suppress the coplanar internal diagonal"
+    );
+    assert!(
+        renderer
+            .frame_rgba8()
+            .chunks_exact(4)
+            .map(|pixel| pixel[0].max(pixel[1]).max(pixel[2]))
+            .any(|value| (1..220).contains(&value)),
+        "edge material should include antialiased edge coverage, not only hard pixels"
+    );
 }
 
 #[test]

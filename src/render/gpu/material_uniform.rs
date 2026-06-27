@@ -5,7 +5,7 @@ use crate::material::{AlphaMode, MaterialDesc, MaterialKind, TextureTransform};
 /// correct layer when a `texture_2d_array<f32>` collapses N per-material bind
 /// groups into one shared bind group with dynamic-offset uniform. Per-material
 /// fall-back still allocates a 1-layer array and writes layer index 0.
-pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 208;
+pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 224;
 
 /// `min_uniform_buffer_offset_alignment` floor across every wgpu adapter we
 /// target. The shared per-batch material uniform buffer pads each entry up to
@@ -57,6 +57,10 @@ pub(super) struct MaterialUniformUpload {
     /// .z = KHR_materials_volume.thicknessFactor
     /// .w = attenuation distance
     pub(super) transmission_factors: [f32; 4],
+    /// KHR_materials_volume attenuation color.
+    /// .rgb = attenuationColor
+    /// .a = reserved
+    pub(super) attenuation_color: [f32; 4],
 }
 
 impl MaterialUniformUpload {
@@ -138,6 +142,12 @@ impl MaterialUniformUpload {
                 material.thickness_factor(),
                 material.attenuation_distance(),
             ],
+            attenuation_color: [
+                material.attenuation_color().r,
+                material.attenuation_color().g,
+                material.attenuation_color().b,
+                0.0,
+            ],
         }
     }
 
@@ -182,6 +192,7 @@ impl MaterialUniformUpload {
             iridescence_factors: [0.0, 1.3, 100.0, 400.0],
             dispersion_factors: [0.0, 1.5, 0.0, 0.0],
             transmission_factors: [0.0, 1.5, 0.0, f32::INFINITY],
+            attenuation_color: [1.0, 1.0, 1.0, 0.0],
         }
     }
 
@@ -238,6 +249,11 @@ impl MaterialUniformUpload {
             let byte_offset = 192 + index * 4;
             bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
         }
+        // attenuation_color follows at offset 208.
+        for (index, value) in self.attenuation_color.into_iter().enumerate() {
+            let byte_offset = 208 + index * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+        }
         bytes
     }
 }
@@ -249,7 +265,7 @@ mod tests {
 
     #[test]
     fn material_uniform_upload_encodes_base_color_texture_transform() {
-        let transform = TextureTransform::new([0.25, 0.5], 0.5, [0.75, 0.5], None);
+        let transform = TextureTransform::new([0.25, 0.5], 0.5, [0.75, 0.5]);
         let upload = MaterialUniformUpload::from_transform(Some(transform));
 
         assert_eq!(upload.offset_scale, [0.25, 0.5, 0.75, 0.5]);
@@ -282,6 +298,7 @@ mod tests {
         .with_transmission_factor(0.66)
         .with_thickness_factor(0.21)
         .with_attenuation_distance(3.5)
+        .with_attenuation_color(Color::from_linear_rgb(0.2, 0.5, 0.9))
         .with_alpha_mode(AlphaMode::Mask { cutoff: 0.45 });
 
         let upload = MaterialUniformUpload::from_material(Some(&material), None);
@@ -295,13 +312,14 @@ mod tests {
         assert_eq!(upload.iridescence_factors, [0.65, 1.42, 120.0, 520.0]);
         assert_eq!(upload.dispersion_factors, [0.36, 1.7, 0.0, 0.0]);
         assert_eq!(upload.transmission_factors, [0.66, 1.7, 0.21, 3.5]);
+        assert_eq!(upload.attenuation_color, [0.2, 0.5, 0.9, 0.0]);
         assert_eq!(
             upload.encode().len(),
             MATERIAL_UNIFORM_BYTE_LEN as usize,
             "material uniform must reserve transform, base color, emissive, metallic, \
              roughness, alpha-mask, material_layer_index, texture_strengths, and \
              clearcoat/sheen/anisotropy/iridescence/dispersion/transmission factor lanes \
-             (12 vec4<f32> + 1 vec4<u32> = 208 bytes)"
+             plus attenuation color (13 vec4<f32> + 1 vec4<u32> = 224 bytes)"
         );
     }
 

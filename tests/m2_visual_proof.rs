@@ -235,9 +235,10 @@ fn render_shadowed_directional_light() -> VisualProof {
 
 fn render_ibl_environment() -> VisualProof {
     let assets = Assets::new();
-    let environment =
-        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
-            .expect("equirectangular HDR environment loads");
+    let environment = pollster::block_on(
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_03_1k.hdr"),
+    )
+    .expect("equirectangular HDR environment loads");
     let geometry = assets.create_geometry(fullscreen_triangle_geometry());
     let material =
         assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
@@ -295,7 +296,16 @@ fn render_fxaa_edge() -> VisualProof {
             Transform::default(),
         )
         .expect("FXAA fixture primitives insert");
-    render_scene(scene)
+    let mut renderer = Renderer::headless(16, 16).expect("headless renderer builds");
+    renderer.set_anti_aliasing(AntiAliasing::Fxaa);
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("scene renders through active camera");
+    VisualProof {
+        frame: renderer.frame_rgba8().to_vec(),
+        stats: renderer.stats(),
+    }
 }
 
 fn render_anti_aliasing_on_off() -> VisualProof {
@@ -465,8 +475,9 @@ fn render_ssao_contact_on_off() -> VisualProof {
 
     let mut on_scene = depth_contact_scene();
     let mut on_renderer = Renderer::headless(16, 16).expect("SSAO-on renderer builds");
-    on_renderer
-        .set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
+    on_renderer.set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::new(
+        4, 0.8, 0.0,
+    )));
     on_renderer
         .prepare(&mut on_scene)
         .expect("SSAO-on scene prepares");
@@ -774,14 +785,29 @@ fn validate_bloom_on_off(proof: &VisualProof) {
 
 fn validate_ssao_contact_on_off(proof: &VisualProof) {
     assert_eq!(proof.stats.ambient_occlusion_passes, 1);
-    let off_contact = pixel_at(&proof.frame, 32, 6, 8);
-    let on_contact = pixel_at(&proof.frame, 32, 22, 8);
+    let mut strongest_drop = 0_i16;
+    let mut strongest_sample = ([0_u8; 4], [0_u8; 4], 0_u32, 0_u32);
+    for y in 0..16 {
+        for x in 0..16 {
+            let off_contact = pixel_at(&proof.frame, 32, x, y);
+            let on_contact = pixel_at(&proof.frame, 32, x + 16, y);
+            let off_luma =
+                (i16::from(off_contact[0]) + i16::from(off_contact[1]) + i16::from(off_contact[2]))
+                    / 3;
+            let on_luma =
+                (i16::from(on_contact[0]) + i16::from(on_contact[1]) + i16::from(on_contact[2]))
+                    / 3;
+            let drop = off_luma - on_luma;
+            if drop > strongest_drop {
+                strongest_drop = drop;
+                strongest_sample = (off_contact, on_contact, x, y);
+            }
+        }
+    }
     assert!(
-        on_contact[0] + 12 < off_contact[0]
-            && on_contact[1] + 12 < off_contact[1]
-            && on_contact[2] + 12 < off_contact[2],
+        strongest_drop > 12,
         "right-side SSAO proof must darken the depth contact compared with the off render; \
-         off={off_contact:?} on={on_contact:?}",
+         strongest_drop={strongest_drop} sample={strongest_sample:?}",
     );
 }
 

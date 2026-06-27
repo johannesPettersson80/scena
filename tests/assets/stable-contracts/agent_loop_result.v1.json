@@ -1,0 +1,25 @@
+{
+  "schema": "scena.agent_loop_result.v1",
+  "status": "irreducible",
+  "ok": false,
+  "iterations_used": 3,
+  "iteration_budget": 3,
+  "auto_fixable": false,
+  "requires_host_input": true,
+  "confidence": "high",
+  "reason": "repair did not converge within the iteration budget or has no safe automatic fix",
+  "plan_status": "irreducible",
+  "remaining_reasons": [
+    {
+      "code": "stale_handle",
+      "source": "visibility_diagnosis",
+      "severity": "error",
+      "auto_fixable": false,
+      "affected_handles": [
+        999
+      ],
+      "message": "target handle is not present in the inspection report"
+    }
+  ],
+  "skipped_actions": []
+}

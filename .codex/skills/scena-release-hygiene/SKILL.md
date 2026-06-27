@@ -37,7 +37,10 @@ docs, and migration notes when users can reasonably have adopted the previous AP
 
 ## Required Remote Gates
 
-Run on `scena-builder` before release-ready handoff:
+Run on `scena-builder` before release-ready handoff. These are release-checkpoint gates, not
+the default inner loop for every small fix. During implementation, use the
+`scena-remote-builder` validation ladder: focused proof first, scoped gates second, full
+release gates once before the release-ready claim.
 
 ```bash
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
@@ -56,3 +59,12 @@ ssh scena-builder 'cd "$HOME/projects/scena" && cargo publish --dry-run'
 An unrun required gate is not a pass. Record the exact blocker when a gate cannot run.
 Use `scena-remote-builder` to sync local uncommitted work to the builder before running
 these gates.
+
+If the work is not release-ready yet, do not imply these gates are required after every
+increment. Report the focused/scoped proof actually run and the reason release gates are
+being deferred until the checkpoint.
+
+For a backlog or checklist that contains many fixes, release hygiene is satisfied by one
+full release-gate run at the final integration checkpoint, plus focused/scoped evidence for
+each logical fix. Do not re-run publish/doc/browser gates after each small patch unless that
+patch specifically changes the release artifact surface.

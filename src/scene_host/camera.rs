@@ -1,53 +1,14 @@
-use serde::{Deserialize, Serialize};
-
-use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
+use super::visual_patch::{VisualPatchCameraEasedV1, VisualPatchResultV1, VisualPatchV1};
+use super::{
+    SceneHostCameraState, SceneHostCore, SceneHostEasing, SceneHostError, SceneHostErrorCode,
+};
 #[cfg(target_arch = "wasm32")]
 use crate::OrbitControlAction;
 use crate::{
-    AssetFetcher, CameraKey, FramingOptions, LookupError,
+    AssetFetcher, CameraBookmark, CameraKey, FramingOptions, LookupError,
     OrbitControlAction as HostOrbitControlAction, OrbitControls, PointerButton, PointerEvent,
     PointerEventKind, Scene, Vec3,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct SceneHostCameraState {
-    pub target: Vec3,
-    pub distance: f32,
-    pub yaw_radians: f32,
-    pub pitch_radians: f32,
-}
-
-impl SceneHostCameraState {
-    pub(crate) fn from_controls(controls: &OrbitControls) -> Self {
-        Self {
-            target: controls.target(),
-            distance: controls.distance(),
-            yaw_radians: controls.yaw_radians(),
-            pitch_radians: controls.pitch_radians(),
-        }
-    }
-
-    pub(crate) fn validate(self) -> Result<(), &'static str> {
-        if !self.target.to_array().into_iter().all(f32::is_finite) {
-            return Err("camera target must contain finite values");
-        }
-        if !self.distance.is_finite() || self.distance <= 0.0 {
-            return Err("camera distance must be finite and greater than zero");
-        }
-        if !self.yaw_radians.is_finite() {
-            return Err("camera yaw must be finite");
-        }
-        if !self.pitch_radians.is_finite() {
-            return Err("camera pitch must be finite");
-        }
-        Ok(())
-    }
-
-    pub(crate) fn into_controls(self) -> OrbitControls {
-        OrbitControls::new(self.target, self.distance)
-            .with_angles(self.yaw_radians, self.pitch_radians)
-    }
-}
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) const fn orbit_action_name(action: OrbitControlAction) -> &'static str {
@@ -80,6 +41,14 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn set_camera(&mut self, state: SceneHostCameraState) -> Result<(), SceneHostError> {
+        self.cancel_camera_transition();
+        self.apply_camera_state(state)
+    }
+
+    pub(super) fn apply_camera_state(
+        &mut self,
+        state: SceneHostCameraState,
+    ) -> Result<(), SceneHostError> {
         state.validate().map_err(|message| {
             SceneHostError::new(SceneHostErrorCode::InvalidInput, message.to_owned())
         })?;
@@ -97,6 +66,52 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             )
         })?;
         self.set_camera(state)
+    }
+
+    pub fn set_camera_bookmark(
+        &mut self,
+        bookmark: &CameraBookmark,
+        duration_seconds: f64,
+        easing: SceneHostEasing,
+    ) -> Result<VisualPatchResultV1, SceneHostError> {
+        self.apply_camera_eased_patch(bookmark.state(), duration_seconds, easing)
+    }
+
+    pub fn set_camera_bookmark_json(
+        &mut self,
+        json: &str,
+        duration_seconds: f64,
+        easing: SceneHostEasing,
+    ) -> Result<String, SceneHostError> {
+        let bookmark: CameraBookmark = serde_json::from_str(json).map_err(|error| {
+            SceneHostError::new(
+                SceneHostErrorCode::InvalidInput,
+                format!("invalid camera bookmark JSON: {error}"),
+            )
+        })?;
+        let result = self.set_camera_bookmark(&bookmark, duration_seconds, easing)?;
+        serde_json::to_string(&result).map_err(|error| {
+            SceneHostError::new(
+                SceneHostErrorCode::Inspect,
+                format!("camera bookmark result serialization failed: {error}"),
+            )
+        })
+    }
+
+    pub(super) fn apply_camera_eased_patch(
+        &mut self,
+        camera: SceneHostCameraState,
+        duration_seconds: f64,
+        easing: SceneHostEasing,
+    ) -> Result<VisualPatchResultV1, SceneHostError> {
+        self.apply_patch(&VisualPatchV1 {
+            camera_eased: Some(VisualPatchCameraEasedV1 {
+                camera,
+                duration_seconds,
+                easing,
+            }),
+            ..VisualPatchV1::default()
+        })
     }
 
     pub fn camera_pointer_down(
@@ -142,11 +157,13 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn frame_node(&mut self, node: u64) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
         let node = self.resolve_node(node)?;
         let bounds = self
             .scene
             .node_world_bounds(node, &self.assets)?
             .ok_or(LookupError::ImportHasNoBounds)?;
+        self.cancel_camera_transition();
         self.scene.frame(self.active_camera, bounds)?;
         self.camera_controls =
             controls_from_scene_camera(&self.scene, self.active_camera, bounds.center())?;
@@ -162,6 +179,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         node: u64,
         preset: &str,
     ) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
         let node = self.resolve_node(node)?;
         let bounds = self
             .scene
@@ -188,18 +206,33 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             bounds,
             options.fill(fill).margin_px(48.0).viewport(width, height),
         )?;
+        self.cancel_camera_transition();
         self.camera_controls = OrbitControls::from_framing(framing);
         Ok(())
     }
 
     pub fn frame_all(&mut self) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
         let bounds = self
             .scene
             .node_world_bounds(self.scene.root(), &self.assets)?
             .ok_or(LookupError::ImportHasNoBounds)?;
+        self.cancel_camera_transition();
         self.scene.frame(self.active_camera, bounds)?;
         self.camera_controls =
             controls_from_scene_camera(&self.scene, self.active_camera, bounds.center())?;
+        Ok(())
+    }
+
+    pub fn frame_all_with_overlays(&mut self) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
+        let width = self.viewport.logical_width().round().max(1.0) as u32;
+        let height = self.viewport.logical_height().round().max(1.0) as u32;
+        let framing =
+            self.scene
+                .frame_all_with_overlays(self.active_camera, &self.assets, width, height)?;
+        self.cancel_camera_transition();
+        self.camera_controls = OrbitControls::from_framing(framing);
         Ok(())
     }
 
@@ -214,6 +247,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 | HostOrbitControlAction::Pan
                 | HostOrbitControlAction::Zoom
         ) {
+            self.cancel_camera_transition();
             self.camera_controls
                 .apply_to_scene(&mut self.scene, self.active_camera)?;
         }

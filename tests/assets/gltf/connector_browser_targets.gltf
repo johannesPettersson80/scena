@@ -1,0 +1,53 @@
+{
+  "asset": { "version": "2.0" },
+  "nodes": [
+    {
+      "name": "AssemblyTargets",
+      "children": [1, 2]
+    },
+    {
+      "name": "Socket",
+      "extras": {
+        "scena": {
+          "connectors": [
+            {
+              "name": "socket",
+              "kind": "socket",
+              "translation": [0.0, 0.1, 0.0],
+              "allowedMates": ["mount"],
+              "tags": ["assembly", "front"],
+              "snapTolerance": 0.05,
+              "clearanceHint": 0.01,
+              "rollPolicy": "chooseNearest",
+              "polarity": "socket",
+              "metadata": {
+                "author": "fixture",
+                "side": "front"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Cable",
+      "translation": [0.4, 0.0, 0.0],
+      "extras": {
+        "scena": {
+          "connectors": [
+            {
+              "name": "cable",
+              "kind": "cable",
+              "translation": [0.0, 0.0, 0.0],
+              "allowedMates": ["wire"],
+              "tags": ["service"],
+              "snapTolerance": 0.02,
+              "rollPolicy": "preserve",
+              "polarity": "plug"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

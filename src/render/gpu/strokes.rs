@@ -3,7 +3,12 @@ use crate::render::prepare::PreparedStrokeSegment;
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::vertices::DrawUniformValue;
 
-const SHADER: &str = include_str!("strokes.wgsl");
+const FINAL_SHADER: &str = include_str!("strokes.wgsl");
+const ENCODED_SHADER: &str = concat!(
+    include_str!("strokes_encoded.wgsl"),
+    "\n",
+    include_str!("../color_contract.wgsl")
+);
 const QUAD_VERTEX_BYTE_LEN: usize = 2 * std::mem::size_of::<f32>();
 const INSTANCE_BYTE_LEN: usize = 11 * std::mem::size_of::<f32>();
 const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -50,8 +55,12 @@ pub(super) struct StrokeResources {
     #[allow(dead_code)]
     instance_capacity: usize,
     pipeline: wgpu::RenderPipeline,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    flat_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
     surface_pipeline: Option<wgpu::RenderPipeline>,
+    surface_flat_pipeline: Option<wgpu::RenderPipeline>,
+    #[allow(dead_code)]
     post_pipeline: wgpu::RenderPipeline,
     pub(super) batches: Vec<StrokeDrawBatch>,
 }
@@ -114,7 +123,17 @@ pub(super) fn create_resources(
         descriptor.output_bind_group_layout,
         descriptor.draw_bind_group_layout,
         descriptor.depth_compare,
+        shader_for_format(descriptor.target_format),
         "scena.gpu_strokes.pipeline",
+    );
+    let flat_pipeline = create_pipeline(
+        device,
+        descriptor.target_format,
+        descriptor.output_bind_group_layout,
+        descriptor.draw_bind_group_layout,
+        None,
+        shader_for_format(descriptor.target_format),
+        "scena.gpu_strokes.flat_pipeline",
     );
     let surface_pipeline = descriptor.surface_format.map(|format| {
         create_pipeline(
@@ -123,7 +142,19 @@ pub(super) fn create_resources(
             descriptor.output_bind_group_layout,
             descriptor.draw_bind_group_layout,
             descriptor.depth_compare,
+            shader_for_format(format),
             "scena.gpu_strokes.surface_pipeline",
+        )
+    });
+    let surface_flat_pipeline = descriptor.surface_format.map(|format| {
+        create_pipeline(
+            device,
+            format,
+            descriptor.output_bind_group_layout,
+            descriptor.draw_bind_group_layout,
+            None,
+            shader_for_format(format),
+            "scena.gpu_strokes.surface_flat_pipeline",
         )
     });
     let post_pipeline = create_pipeline(
@@ -131,7 +162,8 @@ pub(super) fn create_resources(
         POST_COLOR_FORMAT,
         descriptor.output_bind_group_layout,
         descriptor.draw_bind_group_layout,
-        descriptor.depth_compare,
+        None,
+        ENCODED_SHADER,
         "scena.gpu_strokes.post_pipeline",
     );
 
@@ -140,7 +172,9 @@ pub(super) fn create_resources(
         instance_buffer,
         instance_capacity,
         pipeline,
+        flat_pipeline,
         surface_pipeline,
+        surface_flat_pipeline,
         post_pipeline,
         batches: descriptor.batches,
     }
@@ -222,11 +256,22 @@ pub(super) const fn pipeline(resources: &StrokeResources) -> &wgpu::RenderPipeli
     &resources.pipeline
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub(super) const fn flat_pipeline(resources: &StrokeResources) -> &wgpu::RenderPipeline {
+    &resources.flat_pipeline
+}
+
 #[allow(dead_code)]
 pub(super) fn surface_pipeline(resources: &StrokeResources) -> Option<&wgpu::RenderPipeline> {
     resources.surface_pipeline.as_ref()
 }
 
+#[allow(dead_code)]
+pub(super) fn surface_flat_pipeline(resources: &StrokeResources) -> Option<&wgpu::RenderPipeline> {
+    resources.surface_flat_pipeline.as_ref()
+}
+
+#[allow(dead_code)]
 pub(super) const fn post_pipeline(resources: &StrokeResources) -> &wgpu::RenderPipeline {
     &resources.post_pipeline
 }
@@ -237,11 +282,12 @@ fn create_pipeline(
     output_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
+    shader_source: &'static str,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("scena.gpu_strokes.shader"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
     });
     let dummy_material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.gpu_strokes.material_dummy"),
@@ -300,6 +346,13 @@ fn create_pipeline(
         multiview_mask: None,
         cache: None,
     })
+}
+
+const fn shader_for_format(format: wgpu::TextureFormat) -> &'static str {
+    match format {
+        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => FINAL_SHADER,
+        _ => ENCODED_SHADER,
+    }
 }
 
 fn draw_uniform_index(

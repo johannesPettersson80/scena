@@ -66,7 +66,7 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::sdf(preset.label)
+                LabelDesc::new(preset.label)
                     .with_color(Color::from_srgb_u8(225, 230, 238))
                     .with_size(12.0),
                 Transform::at(preset.label_position()),
@@ -105,6 +105,32 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
                 .viewport(96, 96),
         )
         .map_err(|error| JsValue::from_str(&format!("material-preset frame failed: {error:?}")))?;
+    let mut glass_pixel_probes = Vec::new();
+    for preset in material_preset_showcase() {
+        let Some(target_position) = preset.background_target_position() else {
+            continue;
+        };
+        for (bar_index, bar) in glass_background_target_bars().iter().enumerate() {
+            let Some(projected) = scene
+                .project_world_point(camera, target_position + bar.offset, 96, 96)
+                .map_err(|error| {
+                    JsValue::from_str(&format!(
+                        "material-preset {} glass probe projection failed: {error:?}",
+                        preset.id
+                    ))
+                })?
+            else {
+                continue;
+            };
+            glass_pixel_probes.push(json!({
+                "preset": preset.id,
+                "bar_index": bar_index,
+                "expected": if bar.color == Color::WHITE { "bright" } else { "dark" },
+                "x_norm": round3(projected.x / 96.0),
+                "y_norm": round3(projected.y / 96.0),
+            }));
+        }
+    }
     let preset_names = material_preset_showcase()
         .iter()
         .map(|preset| preset.id)
@@ -129,7 +155,13 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
             "source_surfaces": source_surfaces,
             "webgl2_smooth_metal_sample_floor": 96,
             "glass_contract": "scene-color-ior-thickness-rough-blur-sorted-transparency",
+            "glass_pixel_probes": glass_pixel_probes,
+            "glass_pixel_probe_viewport": [96, 96],
             "environment_path": "/demo/samples/environment/white_studio_03_1k.hdr",
         }),
     })
+}
+
+fn round3(value: f32) -> f32 {
+    (value * 1000.0).round() / 1000.0
 }

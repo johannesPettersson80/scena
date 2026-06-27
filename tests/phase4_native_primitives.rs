@@ -63,7 +63,7 @@ fn scene_remove_node_recursively_deletes_subtree_and_owned_resources() {
         .add()
         .expect("mesh inserts");
     let label = scene
-        .add_label(parent, LabelDesc::sdf("part label"), Transform::IDENTITY)
+        .add_label(parent, LabelDesc::new("part label"), Transform::IDENTITY)
         .expect("label inserts");
     let instance_set = scene
         .add_instance_set(parent, geometry, material, Transform::IDENTITY)

@@ -8,6 +8,8 @@ use super::lighting::PreparedLights;
 use super::materials::render_material_slot;
 use super::transforms::{compose_transform, transform_position, transform_primitive};
 
+const SHADOW_OCCLUDED_VISIBILITY: f32 = 0.18;
+
 #[derive(Clone, Copy)]
 pub(super) struct ShadowOccluder {
     a: Vec3,
@@ -180,9 +182,45 @@ pub(super) fn directional_shadow_factor(
         .iter()
         .any(|occluder| ray_intersects_triangle(origin, ray_direction, *occluder))
     {
-        0.18
+        SHADOW_OCCLUDED_VISIBILITY
     } else {
         1.0
+    }
+}
+
+pub(super) fn area_shadow_factor(
+    position: Vec3,
+    lights: &PreparedLights,
+    occluders: &[ShadowOccluder],
+) -> f32 {
+    if occluders.is_empty() || !lights.has_area_lights() {
+        return 1.0;
+    }
+    let mut sample_count = 0usize;
+    let mut visibility_sum = 0.0f32;
+    for sample_position in lights.area_shadow_sample_positions() {
+        let to_light = subtract_vec3(sample_position, position);
+        let distance = dot_vec3(to_light, to_light).sqrt();
+        if distance <= 0.02 || !distance.is_finite() {
+            continue;
+        }
+        let direction = scale_vec3(to_light, distance.recip());
+        let origin = add_vec3(position, scale_vec3(direction, 0.01));
+        let max_distance = (distance - 0.02).max(0.0);
+        let occluded = occluders.iter().any(|occluder| {
+            ray_intersects_triangle_before(origin, direction, max_distance, *occluder)
+        });
+        visibility_sum += if occluded {
+            SHADOW_OCCLUDED_VISIBILITY
+        } else {
+            1.0
+        };
+        sample_count += 1;
+    }
+    if sample_count == 0 {
+        1.0
+    } else {
+        visibility_sum / sample_count as f32
     }
 }
 
@@ -428,6 +466,15 @@ const fn identity_matrix4() -> [f32; 16] {
 }
 
 fn ray_intersects_triangle(origin: Vec3, direction: Vec3, triangle: ShadowOccluder) -> bool {
+    ray_intersects_triangle_before(origin, direction, f32::INFINITY, triangle)
+}
+
+fn ray_intersects_triangle_before(
+    origin: Vec3,
+    direction: Vec3,
+    max_distance: f32,
+    triangle: ShadowOccluder,
+) -> bool {
     let edge1 = subtract_vec3(triangle.b, triangle.a);
     let edge2 = subtract_vec3(triangle.c, triangle.a);
     let h = cross_vec3(direction, edge2);
@@ -447,7 +494,7 @@ fn ray_intersects_triangle(origin: Vec3, direction: Vec3, triangle: ShadowOcclud
         return false;
     }
     let t = inverse_determinant * dot_vec3(edge2, q);
-    t > 0.001
+    t > 0.001 && t < max_distance
 }
 
 fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
@@ -477,6 +524,8 @@ fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::material::Color;
+    use crate::scene::{AreaLight, AreaLightShape, Scene, Transform, Vec3};
 
     #[test]
     fn shadow_projection_from_points_matches_triangle_vertices() {
@@ -509,5 +558,67 @@ mod tests {
         for (left, right) in from_points.iter().zip(from_triangles.iter()) {
             assert!((left - right).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn area_shadow_visibility_is_partial_when_occluder_covers_part_of_emitter() {
+        let mut scene = Scene::new();
+        scene
+            .area_light(
+                AreaLight::default()
+                    .with_color(Color::WHITE)
+                    .with_luminous_flux_lumens(800.0)
+                    .with_shape(AreaLightShape::rect(2.0, 2.0)),
+            )
+            .transform(Transform {
+                translation: Vec3::new(0.0, 0.0, 2.0),
+                ..Transform::default()
+            })
+            .add()
+            .expect("area light inserts");
+        let lights = PreparedLights::from_scene(&scene, Vec3::ZERO);
+        let occluders = [
+            ShadowOccluder {
+                a: Vec3::new(-10.0, -10.0, 1.0),
+                b: Vec3::new(0.0, -10.0, 1.0),
+                c: Vec3::new(-10.0, 10.0, 1.0),
+            },
+            ShadowOccluder {
+                a: Vec3::new(0.0, -10.0, 1.0),
+                b: Vec3::new(0.0, 10.0, 1.0),
+                c: Vec3::new(-10.0, 10.0, 1.0),
+            },
+        ];
+
+        let visibility = area_shadow_factor(Vec3::ZERO, &lights, &occluders);
+
+        assert!(
+            visibility > 0.4 && visibility < 0.8,
+            "half-occluded area light should produce a soft partial shadow, got {visibility}"
+        );
+    }
+
+    #[test]
+    fn area_shadow_visibility_uses_dense_emitter_samples() {
+        let mut scene = Scene::new();
+        scene
+            .area_light(
+                AreaLight::default()
+                    .with_color(Color::WHITE)
+                    .with_luminous_flux_lumens(800.0)
+                    .with_shape(AreaLightShape::rect(2.0, 2.0)),
+            )
+            .transform(Transform {
+                translation: Vec3::new(0.0, 0.0, 2.0),
+                ..Transform::default()
+            })
+            .add()
+            .expect("area light inserts");
+        let lights = PreparedLights::from_scene(&scene, Vec3::ZERO);
+
+        assert!(
+            lights.area_shadow_sample_positions().count() >= 16,
+            "finite area-light shadows need a dense emitter sample set so penumbrae are not limited to four hard visibility bands"
+        );
     }
 }

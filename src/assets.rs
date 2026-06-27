@@ -11,6 +11,8 @@ use crate::geometry::{GeometryDesc, StaticBatchReport};
 use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
+mod catalog;
+mod doctor;
 mod environment;
 mod environment_hdr;
 mod environment_loading;
@@ -18,6 +20,7 @@ mod environment_preset;
 mod environment_projection;
 #[doc(hidden)]
 pub mod environment_sidecar;
+mod external_resources;
 mod fetch;
 mod gc;
 mod gltf;
@@ -27,11 +30,24 @@ mod hot_reload;
 mod khronos;
 mod load;
 mod material_presets;
+mod material_source;
 #[cfg(feature = "obj")]
 mod obj;
 mod provenance;
+mod recipe_validation;
 mod scene_loading;
 mod texture;
+pub use catalog::{
+    ASSET_CATALOG_SCHEMA_V1, ASSET_READINESS_REPORT_SCHEMA_V1, AssetCatalogAssetV1,
+    AssetCatalogExpectedBoundsV1, AssetCatalogFeatureRequirementV1,
+    AssetCatalogMaterialRequirementsV1, AssetCatalogPreviewV1, AssetCatalogV1,
+    AssetReadinessAssetReportV1, AssetReadinessFindingV1, AssetReadinessPreviewV1,
+    AssetReadinessReportV1, AssetReadinessSeverityV1, AssetReadinessSummaryV1,
+};
+pub use doctor::{
+    ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetDoctorFindingV1, AssetDoctorReportV1,
+    AssetDoctorSeverityV1, AssetDoctorSummaryV1,
+};
 pub use environment::{
     DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION, ENVIRONMENT_CUBEMAP_FACE_NORMALS,
     EnvironmentCubemapFaces, EnvironmentDerivative, EnvironmentDesc, EnvironmentSourceKind,
@@ -58,13 +74,19 @@ pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};
 #[cfg(feature = "khronos-samples")]
 pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use load::{
-    ASSET_LOAD_REPORT_SCHEMA_V1, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
-    AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
+    ASSET_LOAD_REPORT_SCHEMA_V1, AssetExternalResource, AssetExternalResourceKind,
+    AssetExternalResourceStatus, AssetExternalResourceV1, AssetLoadControl, AssetLoadOptions,
+    AssetLoadProgress, AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning,
+    AssetLoadWarningV1, AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1,
 };
 pub use material_presets::{
     MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
 };
+pub use material_source::{AssetMaterialSource, AssetMaterialSourceKind};
 pub use provenance::{AssetDerivative, AssetProvenance};
+pub use recipe_validation::{
+    validate_scene_recipe_json_with_assets, validate_scene_recipe_json_with_assets_and_policy,
+};
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub(crate) use texture::BROWSER_TEXTURE_MAX_DIMENSION_2D;
 pub use texture::{
@@ -145,6 +167,7 @@ pub struct Assets<F = DefaultAssetFetcher> {
 struct AssetStorage {
     geometries: SlotMap<GeometryHandle, GeometryDesc>,
     materials: SlotMap<MaterialHandle, MaterialDesc>,
+    material_sources: BTreeMap<MaterialHandle, AssetMaterialSource>,
     textures: SlotMap<TextureHandle, TextureDesc>,
     environments: SlotMap<EnvironmentHandle, EnvironmentDesc>,
     scene_lookup: BTreeMap<AssetPath, SceneAsset>,
@@ -181,6 +204,7 @@ impl<F> Assets<F> {
             storage: Arc::new(Mutex::new(AssetStorage {
                 geometries: SlotMap::with_key(),
                 materials: SlotMap::with_key(),
+                material_sources: BTreeMap::new(),
                 textures: SlotMap::with_key(),
                 environments: SlotMap::with_key(),
                 scene_lookup: BTreeMap::new(),
@@ -247,6 +271,9 @@ impl<F> Assets<F> {
     pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle {
         let mut storage = self.storage();
         let handle = storage.materials.insert(material.into());
+        storage
+            .material_sources
+            .insert(handle, AssetMaterialSource::user_created());
         storage.user_created_materials.insert(handle);
         handle
     }
@@ -275,6 +302,13 @@ impl<F> Assets<F> {
         let mut storage = self.storage();
         let handle = storage.geometries.insert(geometry);
         storage.user_created_geometries.insert(handle);
+        handle
+    }
+
+    pub fn create_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
+        let mut storage = self.storage();
+        let handle = storage.environments.insert(environment);
+        storage.user_created_environments.insert(handle);
         handle
     }
 
@@ -307,6 +341,10 @@ impl<F> Assets<F> {
     /// ```
     pub fn material(&self, handle: MaterialHandle) -> Option<MaterialDesc> {
         self.storage().materials.get(handle).cloned()
+    }
+
+    pub fn material_source(&self, handle: MaterialHandle) -> Option<AssetMaterialSource> {
+        self.storage().material_sources.get(&handle).cloned()
     }
 
     pub fn try_material(&self, handle: MaterialHandle) -> Result<MaterialDesc, AssetError> {

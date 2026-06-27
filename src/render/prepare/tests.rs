@@ -40,6 +40,7 @@ fn asset_mesh_primitives_keep_model_draw_transform_for_gpu_templates() {
             height: 64,
             backend: Backend::HeadlessGpu,
         },
+        1.0,
         &scene,
         Some(&assets),
         None,
@@ -77,6 +78,7 @@ fn blended_material_primitives_skip_gpu_depth_prepass() {
             height: 64,
             backend: Backend::WebGl2,
         },
+        1.0,
         &scene,
         Some(&assets),
         None,
@@ -146,6 +148,7 @@ fn opaque_node_tint_is_retained_per_primitive_not_baked_into_vertex_colors() {
             height: 64,
             backend: Backend::Headless,
         },
+        1.0,
         &scene,
         Some(&assets),
         None,
@@ -174,5 +177,151 @@ fn opaque_node_tint_is_retained_per_primitive_not_baked_into_vertex_colors() {
                     .all(|vertex| vertex.color == Color::WHITE)
         }),
         "instance-set tint should be retained as draw tint without rewriting vertex colors"
+    );
+}
+
+#[test]
+fn hidden_instances_are_filtered_from_gpu_instance_records() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    let instance_set = scene
+        .add_instance_set(scene.root(), geometry, material, Transform::IDENTITY)
+        .expect("instance set inserts");
+    let visible = scene
+        .push_instance(instance_set, Transform::at(Vec3::new(-1.0, 0.0, 0.0)))
+        .expect("visible instance inserts");
+    let hidden = scene
+        .push_instance(instance_set, Transform::at(Vec3::new(1.0, 0.0, 0.0)))
+        .expect("hidden instance inserts");
+    scene
+        .set_instance_visible(instance_set, hidden, false)
+        .expect("hidden instance visibility sets");
+
+    let prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::HeadlessGpu,
+        },
+        1.0,
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &[],
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("scene prepares");
+
+    assert_eq!(prepared.instances.len(), 1);
+    let records = prepared.instances[0].instances();
+    assert_eq!(
+        records.len(),
+        1,
+        "hidden instances must not be retained for GPU instanced draws"
+    );
+    assert_eq!(records[0].source_instance(), Some(visible));
+}
+
+#[test]
+fn repeated_mesh_nodes_auto_instance_on_gpu_prepare_path() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    for x in [-1.5, -0.5, 0.5, 1.5] {
+        scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::new(x, 0.0, 0.0)))
+            .add()
+            .expect("mesh inserts");
+    }
+
+    let prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::HeadlessGpu,
+        },
+        1.0,
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &[],
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("scene prepares");
+
+    assert_eq!(
+        prepared.instances.len(),
+        1,
+        "larger repeated ordinary mesh groups with the same geometry/material should auto-instance on the GPU path"
+    );
+    assert_eq!(
+        prepared.instances[0].instances().len(),
+        4,
+        "the auto-instance batch must preserve every repeated node transform as an instance record"
+    );
+    assert!(
+        prepared.primitives.is_empty(),
+        "auto-instanced repeated mesh nodes should not also emit duplicate ordinary primitives"
+    );
+
+    let cpu_prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::Headless,
+        },
+        1.0,
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &[],
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("cpu scene prepares");
+    assert!(
+        cpu_prepared.instances.is_empty(),
+        "CPU reference rendering stays on ordinary primitives; auto-instancing is a GPU draw-call optimization"
+    );
+}
+
+#[test]
+fn screen_space_strokes_scale_to_full_frame_supersample_pixels() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::line(
+        Vec3::new(-0.5, 0.0, 0.0),
+        Vec3::new(0.5, 0.0, 0.0),
+    ));
+    let material = assets.create_material(MaterialDesc::line(Color::WHITE, 2.0));
+    let mut scene = Scene::new();
+    scene.mesh(geometry, material).add().expect("line inserts");
+
+    let prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 128,
+            height: 128,
+            backend: Backend::HeadlessGpu,
+        },
+        2.0,
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &[],
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("line scene prepares");
+
+    assert_eq!(prepared.strokes.len(), 1);
+    assert_eq!(
+        prepared.strokes[0].width_px(),
+        4.0,
+        "screen-space stroke widths are authored in final-frame pixels and must be expanded when drawing into a supersampled internal target"
     );
 }

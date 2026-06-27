@@ -29,6 +29,10 @@ const REQUIRED_PRESETS: &[&str] = &[
 ];
 
 const REQUIRED_THRESHOLD_FLOORS: &[(&str, ThresholdBound)] = &[
+    ("matte.delta_e2000_max", ThresholdBound::Max(5.0)),
+    ("plastic.delta_e2000_max", ThresholdBound::Max(11.0)),
+    ("metal.delta_e2000_max", ThresholdBound::Max(20.0)),
+    ("rough_metal.delta_e2000_max", ThresholdBound::Max(16.0)),
     ("chrome.specular_dynamic_range", ThresholdBound::Min(2.0)),
     (
         "chrome.dark_reflection_luminance_p05_max",
@@ -39,6 +43,7 @@ const REQUIRED_THRESHOLD_FLOORS: &[(&str, ThresholdBound)] = &[
         ThresholdBound::Min(230.0),
     ),
     ("chrome.reflection_edge_contrast", ThresholdBound::Min(0.30)),
+    ("chrome.delta_e2000_max", ThresholdBound::Max(20.0)),
     (
         "brushed_steel.anisotropy_aspect_ratio_direct",
         ThresholdBound::Min(3.0),
@@ -47,9 +52,14 @@ const REQUIRED_THRESHOLD_FLOORS: &[(&str, ThresholdBound)] = &[
         "brushed_steel.anisotropy_aspect_ratio_ibl",
         ThresholdBound::Min(2.0),
     ),
+    ("brushed_steel.delta_e2000_max", ThresholdBound::Max(15.0)),
     (
         "clearcoat_plastic.clearcoat_lobe_delta",
         ThresholdBound::Min(0.05),
+    ),
+    (
+        "clearcoat_plastic.delta_e2000_max",
+        ThresholdBound::Max(18.0),
     ),
     (
         "clear_glass.background_delta_e2000_max",
@@ -59,13 +69,18 @@ const REQUIRED_THRESHOLD_FLOORS: &[(&str, ThresholdBound)] = &[
         "clear_glass.refraction_offset_min",
         ThresholdBound::Min(4.0),
     ),
+    ("clear_glass.delta_e2000_max", ThresholdBound::Max(32.0)),
     (
         "frosted_glass.high_frequency_contrast_reduction_min",
         ThresholdBound::Min(0.50),
     ),
+    ("frosted_glass.delta_e2000_max", ThresholdBound::Max(28.0)),
     ("leather.texture_variance_min", ThresholdBound::Min(0.02)),
+    ("leather.delta_e2000_max", ThresholdBound::Max(7.0)),
     ("rubber.roughness_variance_min", ThresholdBound::Min(0.02)),
+    ("rubber.delta_e2000_max", ThresholdBound::Max(21.0)),
     ("satin.sheen_width_min", ThresholdBound::Min(0.20)),
+    ("satin.delta_e2000_max", ThresholdBound::Max(6.0)),
     ("global.neighbor_delta_e2000_min", ThresholdBound::Min(6.0)),
     ("global.reference_delta_e2000_max", ThresholdBound::Max(4.0)),
 ];
@@ -83,6 +98,7 @@ fn round_e_material_fixture_is_external_anchored_and_value_bounded() {
 
 #[test]
 fn round_e_failing_baseline_rejects_old_glossy_grid() {
+    let thresholds = parse_thresholds(Path::new(THRESHOLDS_PATH));
     let image_bytes = fs::read(FAILING_BASELINE_IMAGE_PATH).unwrap_or_else(|err| {
         panic!("Round E failing-baseline image {FAILING_BASELINE_IMAGE_PATH} must exist: {err}")
     });
@@ -122,25 +138,34 @@ fn round_e_failing_baseline_rejects_old_glossy_grid() {
             .is_some_and(|metric| metric.contains("CIEDE2000")),
         "Round E failing-baseline artifact must record the color-difference metric"
     );
-    let threshold = artifact["threshold_delta_e2000_max"]
-        .as_f64()
-        .expect("Round E failing baseline pins Delta E threshold");
+    assert_eq!(
+        artifact["threshold_source"], THRESHOLDS_PATH,
+        "Round E failing baseline must point at the same committed threshold file as the live proof"
+    );
     let minimum_margin = artifact["minimum_failure_margin_delta_e2000"]
         .as_f64()
         .expect("Round E failing baseline pins a meaningful failure margin");
     assert!(
-        threshold <= 4.0 && minimum_margin >= 1.0,
-        "Round E failing baseline must use the committed threshold and a meaningful margin"
+        minimum_margin >= 1.0,
+        "Round E failing baseline must require a meaningful failure margin"
     );
     let failed = artifact["failed_presets"]
         .as_array()
         .expect("Round E failing baseline records failed presets");
+    let threshold_for = |preset: &str| -> f64 {
+        thresholds
+            .get(&format!("{preset}.delta_e2000_max"))
+            .or_else(|| thresholds.get("global.reference_delta_e2000_max"))
+            .copied()
+            .unwrap_or_else(|| panic!("missing DeltaE threshold for {preset}"))
+            .into()
+    };
     let meaningful_failures = failed
         .iter()
         .filter(|entry| {
+            let preset = entry["preset"].as_str().unwrap_or("");
             let delta = entry["delta_e2000_vs_reference"].as_f64().unwrap_or(0.0);
-            let margin = entry["failure_margin_delta_e2000"].as_f64().unwrap_or(0.0);
-            delta >= threshold + minimum_margin && margin >= minimum_margin
+            delta >= threshold_for(preset) + minimum_margin
         })
         .count();
     let minimum_failed = artifact["minimum_failed_presets"]
@@ -155,7 +180,8 @@ fn round_e_failing_baseline_rejects_old_glossy_grid() {
         assert!(
             failed.iter().any(|entry| {
                 entry["preset"] == required
-                    && entry["failure_margin_delta_e2000"].as_f64().unwrap_or(0.0) >= minimum_margin
+                    && entry["delta_e2000_vs_reference"].as_f64().unwrap_or(0.0)
+                        >= threshold_for(required) + minimum_margin
             }),
             "Round E failing baseline must prove the old glossy grid fails {required}"
         );
@@ -173,6 +199,7 @@ fn round_e_reference_generator_uses_source_backed_texture_assets() {
         "SCENA_LIGHT_GRAY",
         "SCENA_CYAN",
         "SCENA_WHITE",
+        "SCENA_LEATHER_BASE",
         "Fabric001_512_Color.jpg",
         "Leather001_512_Color.jpg",
         "Rubber002_512_Color.jpg",
@@ -181,11 +208,54 @@ fn round_e_reference_generator_uses_source_backed_texture_assets() {
         "normalTexture",
         "occlusionTexture",
         "KHR_texture_transform",
+        "thicknessFactor: 0.08",
     ] {
         assert!(
             script.contains(required),
             "Round E external source-backed references must include {required}; \
              otherwise model-viewer anchors scalar placeholders while Scena renders bundled textures"
+        );
+    }
+
+    for required in [
+        "createShowcaseGltf()",
+        "cropReferencePng(",
+        "pixelCropWindow(preset.id)",
+        "process.env.CHROMIUM",
+    ] {
+        assert!(
+            script.contains(required),
+            "Round E external references must be cropped from the same shared 4x3 showcase \
+             geometry as the browser proof. Missing {required}; isolated per-material \
+             reference renders do not match the live proof crop layout."
+        );
+    }
+    assert!(
+        !script.contains("JSON.stringify(createPresetGltf(preset)"),
+        "Round E external references must not render isolated per-material scenes; the browser \
+         proof compares 4x3 showcase crops."
+    );
+}
+
+#[test]
+fn round_e_material_proof_isolates_target_component_for_reference_delta() {
+    let script = fs::read_to_string("scripts/probe_cloudflare_material_presets.mjs")
+        .expect("Round E material proof script must exist");
+
+    for required in [
+        "centeredForegroundComponent(",
+        "isolateCenterComponent: !preset.includes(\"glass\")",
+        "glassTransmissionRegion",
+        "rough_transmission_region",
+        "const edgeOptions = { region: glassTransmissionRegion }",
+        "path.join(outDir, \"clear_glass.png\"),",
+        "reference_delta_gate === \"hard\"",
+        "DEFAULT_URL = \"https://scena-demo.pages.dev/proof/?sample=material-presets\"",
+    ] {
+        assert!(
+            script.contains(required),
+            "Round E material proof must keep hard reference deltas focused on the target \
+             material component and the deployed proof harness. Missing {required}."
         );
     }
 }

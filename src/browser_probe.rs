@@ -6,6 +6,7 @@ mod probes;
 mod report;
 mod workflows;
 
+use base64::Engine;
 use report::{capabilities_json, diagnostics_json, stats_json};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -13,10 +14,10 @@ use web_sys::HtmlCanvasElement;
 use workflows::{build_workflow_scene, scene_with_triangle};
 
 use crate::{
-    AssetFetcher, Assets, Backend, CameraKey, EnvironmentHandle, FlyControls, FollowControls,
-    OrbitControlAction, OrbitControls, OutputColorSpace, PerspectiveCamera, PixelReadback,
-    PlatformSurface, PointerEvent, Renderer, RendererOptions, Scene, Transform, Vec3, fnv1a64_hex,
-    sample_rgba8,
+    ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetFetcher, Assets, Backend, CameraKey, EnvironmentHandle,
+    FlyControls, FollowControls, OrbitControlAction, OrbitControls, OutputColorSpace,
+    PerspectiveCamera, PixelReadback, PlatformSurface, PointerEvent, Renderer, RendererOptions,
+    Scene, Transform, Vec3, fnv1a64_hex, sample_rgba8,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -37,6 +38,27 @@ pub async fn m6_render_workflow_probe(
 ) -> Result<String, JsValue> {
     let backend = parse_browser_backend(&backend)?;
     render_workflow_probe(canvas, backend, &workflow).await
+}
+
+#[wasm_bindgen(js_name = m6AssetDoctorBrowserProbe)]
+pub async fn m6_asset_doctor_browser_probe(url: String) -> Result<String, JsValue> {
+    let report = Assets::new().doctor_asset_path(url.as_str()).await;
+    let has_required_extension_finding = report
+        .findings
+        .iter()
+        .any(|finding| finding.code == "unsupported_required_extension");
+    Ok(json!({
+        "schema": "scena.m6.asset_doctor_browser_proof.v1",
+        "status": if report.schema == ASSET_DOCTOR_REPORT_SCHEMA_V1 && !report.ok && has_required_extension_finding {
+            "passed"
+        } else {
+            "failed"
+        },
+        "proof_class": "asset-doctor-browser",
+        "source": url,
+        "doctor": report,
+    })
+    .to_string())
 }
 
 #[wasm_bindgen(js_name = m6RenderDisplayP3Probe)]
@@ -318,10 +340,6 @@ async fn render_scene_with_options<F: AssetFetcher>(
         "schema": "scena.m6.browser_renderer_probe.v1",
         "status": "rendered",
         "workflow": workflow,
-        "scene_api": "Scene",
-        "assets_api": "Assets",
-        "prepare_api": "Renderer::prepare_with_assets",
-        "render_api": "Renderer::render",
         "metadata": metadata,
         "capabilities": capabilities_json(*capabilities),
         "diagnostics": diagnostics_json(renderer.diagnostics()),
@@ -374,6 +392,7 @@ pub(super) fn renderer_readback_json(readback: &PixelReadback) -> serde_json::Va
         "width": readback.width(),
         "height": readback.height(),
         "rgba8_fnv1a64": fnv1a64_hex(readback.rgba8()),
+        "rgba8_base64": base64::engine::general_purpose::STANDARD.encode(readback.rgba8()),
         "pixel_statistics": summarize_pixel_readback(readback),
     })
 }

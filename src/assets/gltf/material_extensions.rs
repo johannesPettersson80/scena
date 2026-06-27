@@ -253,6 +253,7 @@ pub(super) fn validate_material_texture_indices(
 ) -> Result<(), AssetError> {
     let raw = document.as_json();
     for (material_index, material) in raw.materials.iter().enumerate() {
+        validate_texture_transform_tex_coords(path, material_index, material)?;
         let pbr = &material.pbr_metallic_roughness;
         validate_texture_info(
             path,
@@ -296,6 +297,67 @@ pub(super) fn validate_material_texture_indices(
             validate_texture_info(path, slot, index, texture_count)?;
         }
         validate_extension_texture_slots(path, material_index, material, texture_count)?;
+    }
+    Ok(())
+}
+
+fn validate_texture_transform_tex_coords(
+    path: &AssetPath,
+    material_index: usize,
+    material: &::gltf::json::material::Material,
+) -> Result<(), AssetError> {
+    let value = serde_json::to_value(material).map_err(|error| AssetError::Parse {
+        path: path.as_str().to_string(),
+        reason: format!(
+            "material {material_index} could not be inspected for texture transforms: {error}"
+        ),
+    })?;
+    validate_texture_transform_tex_coords_value(path, material_index, "$", &value)
+}
+
+fn validate_texture_transform_tex_coords_value(
+    path: &AssetPath,
+    material_index: usize,
+    json_path: &str,
+    value: &serde_json::Value,
+) -> Result<(), AssetError> {
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(transform) = object.get("KHR_texture_transform")
+                && let Some(tex_coord) = transform
+                    .get("texCoord")
+                    .and_then(serde_json::Value::as_u64)
+                && tex_coord != 0
+            {
+                return Err(AssetError::Parse {
+                    path: path.as_str().to_string(),
+                    reason: format!(
+                        "material {material_index} uses KHR_texture_transform texCoord {tex_coord} at {json_path}; scena supports only TEXCOORD_0"
+                    ),
+                });
+            }
+            for (key, child) in object {
+                let child_path = format!("{json_path}.{key}");
+                validate_texture_transform_tex_coords_value(
+                    path,
+                    material_index,
+                    &child_path,
+                    child,
+                )?;
+            }
+        }
+        serde_json::Value::Array(array) => {
+            for (index, child) in array.iter().enumerate() {
+                let child_path = format!("{json_path}[{index}]");
+                validate_texture_transform_tex_coords_value(
+                    path,
+                    material_index,
+                    &child_path,
+                    child,
+                )?;
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -398,11 +460,7 @@ pub(super) fn extension_texture_transform(
         .map(|value| value as f32)
         .unwrap_or(0.0);
     let scale = read_vec2(value, "scale").unwrap_or([1.0, 1.0]);
-    let tex_coord = value
-        .get("texCoord")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok());
-    Some(TextureTransform::new(offset, rotation, scale, tex_coord))
+    Some(TextureTransform::new(offset, rotation, scale))
 }
 
 fn read_vec2(value: &serde_json::Value, key: &str) -> Option<[f32; 2]> {

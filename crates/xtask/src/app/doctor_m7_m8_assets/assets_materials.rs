@@ -1,5 +1,6 @@
 use super::anisotropy_materials::check_anisotropy_material_contracts;
 use super::asset_instancing::check_m8_instancing_contracts;
+use super::asset_load_reports::check_asset_load_report_contracts;
 use super::clearcoat_materials::check_clearcoat_material_contracts;
 use super::compressed_asset_proof::check_compressed_asset_proof_contracts;
 use super::dispersion_materials::check_dispersion_material_contracts;
@@ -17,6 +18,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
     check_dispersion_material_contracts(root, findings);
     check_m8_visual_material_contracts(root, findings);
     check_compressed_asset_proof_contracts(root, findings);
+    check_asset_load_report_contracts(root, findings);
     require_contains(
         root,
         findings,
@@ -63,13 +65,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         root,
         findings,
         "ASSETS-M8",
-        "src/assets/scene_loading.rs",
-        &["load_scene_with_progress"],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
         "src/assets/texture.rs",
         &[
             "validate_texture_source_format",
@@ -78,37 +73,18 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "source_format",
             "TextureSourceFormat::Jpeg",
             "decode_jpeg_rgba8",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/texture_image_decode.rs",
+        &[
+            "decode_png_rgba8",
+            "decode_jpeg_rgba8",
+            "image::ImageFormat::Png",
             "image::ImageFormat::Jpeg",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/load.rs",
-        &[
-            "pub struct AssetLoadControl",
-            "pub struct AssetLoadOptions",
-            "pub struct AssetLoadReport",
-            "pub enum AssetLoadProgress",
-            "strict_textures",
-            "with_strict_textures",
-            "progress_events",
-            "emit_progress",
-            "AssetError::Cancelled",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/scene_loading.rs",
-        &[
-            "load_scene_with_report",
-            "load_scene_with_options",
-            "load_scene_with_report_options",
-            "load_scene_controlled",
-            "warn_external_image_missing",
         ],
     );
     require_contains(
@@ -175,6 +151,8 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_direct_load_texture_decodes_jpeg_for_cpu_preview_pixels",
             "m8_missing_external_image_records_load_warning",
             "m8_strict_scene_load_promotes_missing_external_image_to_error",
+            "m8_scene_inspection_reports_material_fallback_and_source_provenance",
+            "m8_scene_inspection_reports_generated_default_materials",
             "m8_prepare_reports_material_texture_handles_without_decoded_pixels",
             "m8_checked_asset_lookups_report_typed_missing_handles",
             "m8_prepare_rejects_material_texture_handles_from_wrong_assets",
@@ -274,8 +252,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "wrap_texture_coordinate",
             "TextureWrap::ClampToEdge",
             "TextureWrap::MirroredRepeat",
-            "image::ImageFormat::Png",
-            "image::ImageFormat::Jpeg",
             "decoded_mip_metadata",
         ],
     );

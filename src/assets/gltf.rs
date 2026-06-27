@@ -63,6 +63,7 @@ mod external;
 mod instancing;
 mod lights;
 mod material_extensions;
+mod material_fallbacks;
 mod material_variants;
 mod materials;
 mod meshes;
@@ -105,7 +106,7 @@ impl SceneAsset {
             step_start = log_gltf_step("open_gltf_with_massage", step_start);
         }
         let blob = gltf.blob.clone();
-        let provenance = AssetProvenance::from_source_bytes(path.clone(), bytes);
+        let provenance = gltf_asset_provenance(path.clone(), bytes, &gltf);
         let scene = Self::from_gltf_document(
             &path,
             &gltf,
@@ -197,7 +198,14 @@ impl SceneAsset {
         {
             step_start = log_gltf_step("parse_textures", step_start);
         }
-        let materials = parse_materials(path, &gltf.document, storage, &textures)?;
+        let mut material_fallbacks = Vec::new();
+        let materials = parse_materials(
+            path,
+            &gltf.document,
+            storage,
+            &textures,
+            &mut material_fallbacks,
+        )?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("parse_materials", step_start);
@@ -238,11 +246,32 @@ impl SceneAsset {
                 extensions_required,
                 extension_diagnostics,
                 material_variants,
+                material_fallbacks,
                 provenance,
                 retained_source_bytes: None,
             }),
         })
     }
+}
+
+fn gltf_asset_provenance(path: AssetPath, bytes: &[u8], gltf: &Gltf) -> AssetProvenance {
+    let asset = &gltf.document.as_json().asset;
+    let mut provenance = AssetProvenance::from_source_bytes(path, bytes);
+    if let Some(generator) = asset
+        .generator
+        .as_deref()
+        .filter(|generator| !generator.trim().is_empty())
+    {
+        provenance = provenance.with_generator(generator.to_owned());
+    }
+    if let Some(copyright) = asset
+        .copyright
+        .as_deref()
+        .filter(|copyright| !copyright.trim().is_empty())
+    {
+        provenance = provenance.with_license(copyright.to_owned());
+    }
+    provenance
 }
 
 fn validate_gltf_version(path: &AssetPath, gltf: &Gltf) -> Result<(), AssetError> {

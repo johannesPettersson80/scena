@@ -74,6 +74,9 @@ Frame operations use one host handle namespace:
 
 - `setTransform`
 - `setTransforms` with a JSON array of `{ node, translation, rotation, scale }`
+- `applyGizmoDragJson(node, requestJson)` with
+  `scena.scene_host_gizmo_drag.v1`, returning `scena.visual_patch.v1` result
+  JSON
 - `setCamera(target, yawRadians, pitchRadians, distance)`
 - `setCameraJson(json)` and `getCameraJson()`
 - `cameraPointerDown(x, y, "primary" | "secondary" | "auxiliary")`
@@ -93,14 +96,25 @@ Frame operations use one host handle namespace:
 - `nodeWorldBoundsJson`
 - `pick(x, y)`
 - `inspectJson`
+- `renderIntrospectionJson(detail)`
 - `annotationProjectionsJson`
 - `capture()` and `captureJson()`
+- `handleSurfaceContextLost(recoverable)` and
+  `handleSurfaceContextRestored()`
+- `setCameraEased(target, yawRadians, pitchRadians, distance,
+  durationSeconds, easing)`
+- `setCameraBookmarkJson(bookmarkJson, durationSeconds, easing)`
 
 Camera input calls route through Rust `OrbitControls`: primary pointer drag
 orbits, secondary pointer drag pans, and wheel input dollies. They update the
 scene camera and return an action string such as `orbit`, `pan`, or `zoom`.
 The browser page still owns cadence: after a non-`none` action, call
 `prepare()` and `render()` when the embedding application is ready.
+
+Camera easing and bookmark calls schedule the same host-ticked `camera_eased`
+visual patch channel used by native `SceneHostCore`. They do not start a hidden
+browser animation loop; advance them with `advance(deltaSeconds)`, then
+`prepare()` and `render()` on the host's cadence.
 
 `pick(x, y)` receives CSS pixels. `SceneHost` stores the current DPR and target
 size, applies DPR internally, and returns the same node handle namespace that
@@ -143,30 +157,53 @@ the host asset store.
 return schema `scena.scene_host_asset_import.v1`: the new import handle plus
 the nested `scena.asset_load_report.v1` report. That report includes
 node/mesh/primitive counts, asset bounds, fetched byte counts, cache-hit state,
-external resource counts, progress events, and typed missing-resource warnings.
-Cache-hit reports preserve warnings from the original load.
+external resource counts, progress events, external buffer/image status rows,
+typed missing-resource warnings, and material fallback provenance. Cache-hit
+reports preserve warnings and resource-status rows from the original load.
 
 `capture()` returns a JS object with `descriptorJson` and an `rgba8`
-`Uint8Array`. `captureJson()` returns only the descriptor JSON. The descriptor
-uses schema `scena.capture.v1` and records dimensions, payload length/hash,
-rendered scene revision counters, active camera transform/projection,
-viewport/DPR, backend capabilities, auto-frame metadata when available, and
-pixel summary. If the embedder mutates scene state after `render()` and before
-`capture()`, the host returns a structured capture error instead of serializing
-stale proof metadata. CPU-headless captures are deterministic for the same
-scene state. Browser GPU captures bind pixels to revision counters and
-backend/capability metadata; they do not claim cross-machine byte identity.
+`Uint8Array`. `capturePng()` returns `descriptorJson` plus a PNG `Uint8Array`
+encoded from the same descriptor-bound capture, without relying on canvas
+`toDataURL` as the only path. `captureJson()` returns only the descriptor JSON.
+The descriptor uses schema `scena.capture.v1` and records dimensions, payload
+length/hash, rendered scene revision counters, active camera
+transform/projection, viewport/DPR, backend capabilities, auto-frame metadata
+when available, and pixel summary. If the embedder mutates scene state after
+`render()` and before `capture()`, the host returns a structured capture error
+instead of serializing stale proof metadata. CPU-headless captures are
+deterministic for the same scene state. Browser GPU captures bind pixels to
+revision counters and backend/capability metadata; they do not claim
+cross-machine byte identity.
+
+`renderIntrospectionJson(detail)` captures the current browser canvas pixels
+and returns `scena.render_introspection.v1` JSON through the same
+capture-bound renderer report used natively. Pass `false` for summary mode or
+`true` for node detail. The report fails closed for empty, offscreen, culled,
+and other error-severity visibility failures while warning-only framing
+reasons remain advisory.
+
+When the embedding page receives browser context lifecycle signals, forward
+recoverable WebGL/WebGPU context loss and restoration through
+`handleSurfaceContextLost(recoverable)` and
+`handleSurfaceContextRestored()`. These methods emit the same
+`scena.host_event.v1` `context_lost`, `context_restored`, and
+`capability_changed` events as native `SurfaceEvent` handling; they do not
+start a hidden recovery loop.
 
 Real browser/GPU proof is separate from CPU builder validation. The required
 proof plan and output artifacts are tracked in
 [`scene-host-browser-gpu-proof.md`](checklists/scene-host-browser-gpu-proof.md).
-The Raspberry Pi V3D run uses
-`SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` and records
+The WebGL2 CI/release lane runs `npm run browser:scene-host-proof`; the same
+command can be run on Raspberry Pi V3D hardware with
+`SCENA_BROWSER_REQUIRE_V3D=1 SCENA_BROWSER_BACKENDS=webgl2`. The proof records
 `scena.scene_host_browser_proof.v1` under
 `target/gate-artifacts/scene-host-browser-proof/`. That proof exercises
 `SceneHost.capture()`, `inspectJson()`, `annotationProjectionsJson()`,
-CSS-pixel picking at DPR values other than 1, and URL asset loading in a real
+CSS-pixel picking at DPR values other than 1, URL asset loading, and
+`WEBGL_lose_context`-driven context lost/restored host events in a real
 browser. Renderer-fidelity epics remain separate and require a non-Pi GPU lane.
+The SceneHost proof is CI/release-enforced for WebGL2; the V3D run remains
+additional hardware evidence.
 
 ## Output Color Space
 
@@ -195,6 +232,7 @@ drop-in element surface:
 <scena-viewer
   src="machine.glb"
   environment="studio"
+  profile="product"
   tone-mapping="neutral"
   camera-controls
   auto-rotate>
@@ -220,6 +258,11 @@ captures a three-asset side-by-side screenshot of `<model-viewer>` reference
 panes next to renderer-backed `<scena-viewer>` panes for the same glTF / GLB
 assets.
 
+The optional `profile` attribute accepts the same names as native
+`ViewerProfile`: `model_viewer`, `cad_inspection`, `product`, `industrial`,
+and `documentation`. Unknown profile names are ignored by the attribute parser
+instead of creating a separate browser-only profile vocabulary.
+
 The element also owns a shadow DOM progressbar. Hosts can
 dispatch a `scena-viewer-progress` event or call `setLoadProgress(detail)` with
 `phase`, `ariaText`, and optional `value` / `ratio` / `percent`; the element
@@ -228,6 +271,24 @@ updates the visible status text, ARIA progress state, and emits
 records a `progress_sequence` by dispatching `loading` and `fetching` phases
 and asserting that the ARIA value and progressbar transform update between
 events.
+
+The element can be bound to a browser `SceneHost` without creating a separate
+JavaScript scene model. Call `viewer.bindHost(host)` with an object exposing the
+documented `SceneHost` method names. `viewer.applyPatch(patch)` and
+`viewer.applyVisualPatch(patch)` pass `scena.visual_patch.v1` JSON through
+`host.applyPatch()`, then drain `host.drainEventsJson()` and dispatch each
+`scena.host_event.v1` entry as `scena-viewer-host-event` plus a specific DOM
+event such as `scena-viewer-pick`, `scena-viewer-hover`,
+`scena-viewer-selection-changed`, or `scena-viewer-capture-ready`. The
+element-level helpers `pickAt(x, y)`, `hoverAt(x, y)`, `selectAt(x, y)`,
+`frameAll()`, `frameNode(handle, preset)`, `setCamera(cameraState)`,
+`applyLightingPreset("studio", { background })`, `capturePng()`, and
+`downloadPng(filename)` are thin delegates over the same host methods:
+`pick`, `hover`, `select`, `frameAll`, `frameNode` /
+`frameNodeWithPreset`, `setCameraJson`, `applyProductStudioVisuals`, and
+`capturePng`. This keeps lighting, framing, capture, picking, hover,
+selection, and visual state on the Rust-owned `SceneHost` side while the custom
+element owns only browser DOM adaptation.
 
 The element handles browser drag-and-drop ingestion for `.glb` and `.gltf`
 files. Valid drops emit `scena-viewer-file-drop` with the accepted `File`
@@ -265,10 +326,10 @@ default, keyboard reset, and touch pinch/orbit gestures in
 `scena.scena_viewer_mobile_a11y_browser_proof.v1`.
 
 The inspector/dev overlay is host-fed and renderer-neutral. Call
-`setInspectorSnapshot({ overlay, diagnostics, stats })` or
-`setInspectorDiagnostics(diagnostics, overlay, stats)` to render a shadow-DOM
-overlay with the active debug overlay, diagnostic severities, render counters,
-and the `scena-viewer-inspector-rendered` event for browser tests. The M6
+`setInspectorSnapshot({ diagnostics, stats })` or
+`setInspectorDiagnostics(diagnostics, stats)` to render a shadow-DOM overlay
+with diagnostic severities, render counters, and the
+`scena-viewer-inspector-rendered` event for browser tests. The M6
 custom-element proof loads
 `/fixtures/viewer/inspector_snapshot.json`, asserts
 `scena.scena_viewer_inspector_snapshot.v1`, feeds that JSON through the live
@@ -276,13 +337,17 @@ overlay, and captures it in
 `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 
 The annotation overlay uses slotted HTML with `slot="annotation"` and
-`data-position`, optional `data-normal`, and optional `data-surface`
-attributes. The element emits `scena-viewer-annotations-request` with parsed
-anchors and accepts `setAnnotationProjections([{ id, x, y, visible }])`,
-then emits `scena-viewer-annotations-rendered` after applying the screen-space
-positions. The browser proof records an `annotation_tracking_sequence` by
-applying two projection updates to the same slotted label and asserting that
-the CSS transform changes while the annotation remains visible.
+`data-position`, optional `data-normal`, optional `data-surface`, and optional
+`data-priority` attributes. The element emits
+`scena-viewer-annotations-request` with parsed anchors and accepts
+`setAnnotationProjections([{ id, x, y, visible, behind_camera, occluded }])`.
+It clamps visible annotations into the viewport, hides behind-camera or
+occluded annotations, resolves overlaps deterministically by priority and ID,
+and emits `scena-viewer-annotations-rendered` with a `layout_report` containing
+the original and adjusted CSS-pixel positions plus each annotation's
+visibility and `hidden_reason`. The browser proof records crowded labels,
+including a clamped label and a lower-priority overlapped label, then applies a
+second projection update to prove the surviving annotation continues tracking.
 
 The same M6 browser probe also records camera-control-kit proof for the shared
 Rust control APIs. `scena.m6.camera_control_kit_browser_proof.v1` runs browser

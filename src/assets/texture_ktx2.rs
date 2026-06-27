@@ -87,6 +87,32 @@ fn decode_ktx2_basisu_rgba8_with_parser(
                 .to_string(),
         });
     }
+    if header.pixel_width > super::texture_limits::IMAGE_DECODE_MAX_DIMENSION
+        || header.pixel_height > super::texture_limits::IMAGE_DECODE_MAX_DIMENSION
+    {
+        return Err(AssetError::PolicyViolation {
+            path: path.as_str().to_string(),
+            reason: format!(
+                "KTX2/Basis dimensions {}x{} exceed texture decode max dimension {}",
+                header.pixel_width,
+                header.pixel_height,
+                super::texture_limits::IMAGE_DECODE_MAX_DIMENSION
+            ),
+            help: "use a smaller texture or split the asset before loading",
+        });
+    }
+    let declared_rgba8_len =
+        checked_rgba8_len(path, header.pixel_width.max(1), header.pixel_height.max(1))?;
+    if declared_rgba8_len as u64 > super::texture_limits::IMAGE_DECODE_MAX_ALLOC_BYTES {
+        return Err(AssetError::PolicyViolation {
+            path: path.as_str().to_string(),
+            reason: format!(
+                "KTX2/Basis base level would decode to {declared_rgba8_len} bytes, exceeding texture decode allocation budget {}",
+                super::texture_limits::IMAGE_DECODE_MAX_ALLOC_BYTES
+            ),
+            help: "use a smaller texture or split the asset before loading",
+        });
+    }
 
     use basisu_c_sys::TranscodeTargetFormat;
     use basisu_c_sys::extra::{

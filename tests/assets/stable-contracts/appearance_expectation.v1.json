@@ -1,0 +1,17 @@
+{
+  "schema": "scena.appearance_expectation.v1",
+  "targets": [
+    {
+      "id": "primary-finish",
+      "variant": "noon",
+      "color_family": "green",
+      "swatch_srgb8": [
+        0,
+        255,
+        0
+      ],
+      "alpha_mode": "opaque",
+      "require_source_material": true
+    }
+  ]
+}

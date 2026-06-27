@@ -1,0 +1,58 @@
+{
+  "schema": "scena.visual_repair_plan.v1",
+  "status": "repairable",
+  "auto_fixable": true,
+  "confidence": "high",
+  "risk": "content",
+  "root_cause": "node_hidden",
+  "visual_patch": {
+    "schema": "scena.visual_patch.v1",
+    "visibility": [
+      {
+        "node": 42,
+        "visible": true
+      }
+    ]
+  },
+  "applied_actions": [
+    {
+      "action": "set_visible",
+      "source": "visibility_diagnosis",
+      "risk": "content",
+      "confidence": "high",
+      "root_cause": "node_hidden",
+      "auto_fixable": true,
+      "reversible": true,
+      "target_handle": 42,
+      "before": {
+        "visibility": [
+          {
+            "node": 42,
+            "visible": false
+          }
+        ]
+      },
+      "after": {
+        "visibility": [
+          {
+            "node": 42,
+            "visible": true
+          }
+        ]
+      },
+      "patch": {
+        "visibility": [
+          {
+            "node": 42,
+            "visible": true
+          }
+        ]
+      },
+      "help": "set the target node visible, then render and diagnose again"
+    }
+  ],
+  "skipped_actions": [],
+  "remaining_reasons": [],
+  "requires_host_input": false,
+  "rerender_required": true
+}

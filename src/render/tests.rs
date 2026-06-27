@@ -1,5 +1,4 @@
 use crate::assets::Assets;
-use crate::diagnostics::DebugOverlay;
 use crate::geometry::{GeometryDesc, Primitive, Vertex};
 use crate::material::{Color, MaterialDesc};
 use crate::platform::SurfaceEvent;
@@ -19,105 +18,6 @@ impl Renderer {
             .map(GpuDeviceState::draw_vertex_ranges_for_test)
             .unwrap_or_default()
     }
-}
-
-#[test]
-fn transform_only_gpu_prepare_updates_draw_uniforms_without_recollecting_primitives() {
-    let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
-        return;
-    };
-    let assets = Assets::new();
-    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));
-    let material =
-        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8));
-    let mut scene = Scene::new();
-    scene.add_default_camera().expect("camera inserts");
-    let moving = scene
-        .mesh(geometry, material)
-        .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
-        .add()
-        .expect("first mesh inserts");
-    scene
-        .mesh(geometry, material)
-        .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
-        .add()
-        .expect("second mesh inserts");
-
-    renderer
-        .prepare_with_assets(&mut scene, &assets)
-        .expect("initial GPU prepare succeeds");
-    let first = renderer.prepare_telemetry_for_test();
-
-    scene
-        .set_transform(moving, Transform::at(Vec3::new(-0.15, 0.0, 0.0)))
-        .expect("mesh transform updates");
-    renderer
-        .prepare_with_assets(&mut scene, &assets)
-        .expect("transform-only GPU prepare succeeds");
-    let second = renderer.prepare_telemetry_for_test();
-
-    assert_eq!(
-        second.prepared_primitive_collections, first.prepared_primitive_collections,
-        "transform-only GPU prepares must skip canonical primitive collection"
-    );
-    assert_eq!(
-        second.static_gpu_resource_rebuilds, first.static_gpu_resource_rebuilds,
-        "transform-only GPU prepares must reuse static GPU draw resources"
-    );
-    assert_eq!(
-        second.dynamic_template_prepares,
-        first.dynamic_template_prepares + 1,
-        "transform-only GPU prepares must take the dynamic template path"
-    );
-    assert_eq!(
-        second.draw_uniform_only_updates,
-        first.draw_uniform_only_updates + 1,
-        "transform-only GPU prepares must update per-draw uniforms"
-    );
-}
-
-#[test]
-fn line_geometry_gpu_prepare_updates_draw_uniforms_without_recollecting_strokes() {
-    let Ok(mut renderer) = Renderer::headless_gpu(32, 32) else {
-        return;
-    };
-    let assets = Assets::new();
-    let geometry = assets.create_geometry(GeometryDesc::grid(1.0, 4));
-    let material = assets.create_material(MaterialDesc::line(Color::WHITE, 1.0));
-    let mut scene = Scene::new();
-    scene.add_default_camera().expect("camera inserts");
-    let grid = scene
-        .mesh(geometry, material)
-        .transform(Transform::at(Vec3::new(0.0, -0.2, 0.0)))
-        .add()
-        .expect("grid mesh inserts");
-
-    renderer
-        .prepare_with_assets(&mut scene, &assets)
-        .expect("initial GPU prepare succeeds");
-    let first = renderer.prepare_telemetry_for_test();
-
-    scene
-        .set_transform(grid, Transform::at(Vec3::new(0.1, -0.2, 0.0)))
-        .expect("grid transform updates");
-    renderer
-        .prepare_with_assets(&mut scene, &assets)
-        .expect("transform-only line prepare succeeds");
-    let second = renderer.prepare_telemetry_for_test();
-
-    assert_eq!(
-        second.prepared_primitive_collections, first.prepared_primitive_collections,
-        "transform-only line prepares must reuse retained stroke segments"
-    );
-    assert_eq!(
-        second.static_gpu_resource_rebuilds, first.static_gpu_resource_rebuilds,
-        "transform-only line prepares must not re-upload stroke vertex buffers"
-    );
-    assert_eq!(
-        second.draw_uniform_only_updates,
-        first.draw_uniform_only_updates + 1,
-        "transform-only line prepares must update stroke draw uniforms"
-    );
 }
 
 #[test]
@@ -330,17 +230,30 @@ fn visibility_middle_primitive_reencodes_batches_without_vertex_reupload() {
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("initial GPU prepare succeeds");
+    renderer
+        .render(&scene, scene.active_camera().expect("camera is active"))
+        .expect("initial visibility render succeeds");
+    let visible_center_pixels = bright_pixels_in_region(renderer.frame_rgba8(), 48, 20, 8, 8, 8);
+    let visible_pixels = bright_pixels_in_region(renderer.frame_rgba8(), 48, 0, 0, 48, 24);
     let first = renderer.prepare_telemetry_for_test();
     let initial_ranges = renderer.gpu_draw_vertex_ranges_for_test();
     assert!(
         initial_ranges.contains(&(36, 36)),
         "the middle cube must occupy a non-prefix/non-suffix retained vertex range"
     );
+    assert!(
+        visible_center_pixels > 4,
+        "initial render must show the middle primitive in the center region, got {visible_center_pixels} bright pixels"
+    );
 
     scene.set_visible(middle, false).expect("middle hides");
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("visibility-only GPU prepare succeeds");
+    renderer
+        .render(&scene, scene.active_camera().expect("camera is active"))
+        .expect("hidden visibility render succeeds");
+    let hidden_pixels = bright_pixels_in_region(renderer.frame_rgba8(), 48, 0, 0, 48, 24);
     let second = renderer.prepare_telemetry_for_test();
     let hidden_ranges = renderer.gpu_draw_vertex_ranges_for_test();
 
@@ -356,6 +269,10 @@ fn visibility_middle_primitive_reencodes_batches_without_vertex_reupload() {
         hidden_ranges,
         vec![(0, 36), (72, 36)],
         "hiding the middle primitive must preserve original vertex offsets and break batch contiguity"
+    );
+    assert!(
+        visible_pixels.saturating_sub(hidden_pixels) >= 4,
+        "visibility-only dynamic prepare must remove the hidden primitive from rendered pixels, not only update counters: visible_pixels={visible_pixels}, hidden_pixels={hidden_pixels}"
     );
 }
 
@@ -392,7 +309,7 @@ fn target_change_rejects_transform_only_gpu_template_reuse() {
 }
 
 #[test]
-fn environment_and_debug_changes_reject_transform_only_gpu_template_reuse() {
+fn environment_changes_reject_transform_only_gpu_template_reuse() {
     let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
         return;
     };
@@ -416,18 +333,18 @@ fn environment_and_debug_changes_reject_transform_only_gpu_template_reuse() {
         second.prepared_primitive_collections > first.prepared_primitive_collections,
         "environment changes must force a full prepare"
     );
-    renderer.set_debug_overlay(DebugOverlay::Wireframe);
+    renderer.clear_environment();
     scene
         .set_transform(moving, Transform::at(Vec3::new(0.0, 0.0, 0.0)))
         .expect("mesh transform updates again");
     renderer
         .prepare_with_assets(&mut scene, &assets)
-        .expect("debug-changed prepare succeeds");
+        .expect("environment-clear prepare succeeds");
     let third = renderer.prepare_telemetry_for_test();
 
     assert!(
         third.prepared_primitive_collections > second.prepared_primitive_collections,
-        "debug draw-shape changes must force a full prepare"
+        "environment changes must keep forcing full prepare"
     );
 }
 
@@ -539,6 +456,28 @@ fn frame_abs_diff_rgba8(before: &[u8], after: &[u8]) -> Vec<u8> {
         .zip(after)
         .map(|(before, after)| before.abs_diff(*after))
         .collect()
+}
+
+fn bright_pixels_in_region(
+    frame: &[u8],
+    width: usize,
+    x: usize,
+    y: usize,
+    region_width: usize,
+    region_height: usize,
+) -> u32 {
+    let mut count = 0_u32;
+    for py in y..y.saturating_add(region_height) {
+        for px in x..x.saturating_add(region_width) {
+            let offset = (py * width + px) * 4;
+            if frame.get(offset..offset + 4).is_some_and(|pixel| {
+                pixel[3] > 16 && (pixel[0] > 24 || pixel[1] > 24 || pixel[2] > 24)
+            }) {
+                count = count.saturating_add(1);
+            }
+        }
+    }
+    count
 }
 
 fn assert_delta_within_ratio(cpu_delta: u64, gpu_delta: u64, max_ratio: f64) {

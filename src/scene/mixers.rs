@@ -1,3 +1,5 @@
+use std::sync::{Arc, atomic::AtomicBool};
+
 use crate::animation::{
     AnimationChannel, AnimationLoopMode, AnimationMixer, AnimationMixerKey, AnimationPlaybackState,
     AnimationTarget,
@@ -67,6 +69,32 @@ impl Scene {
         clip_name: &str,
     ) -> Result<AnimationMixerKey, AnimationError> {
         let mixer = self.create_animation_mixer(import, clip_name)?;
+        self.play_animation(mixer)?;
+        Ok(mixer)
+    }
+
+    /// Creates a paused mixer for a caller-authored animation clip.
+    ///
+    /// Authored clips are not tied to a glTF import lifecycle, so the mixer is
+    /// not invalidated by import replacement. The host still owns ticking by
+    /// calling [`Self::update_animation`] or explicit sampling with
+    /// [`Self::seek_animation`].
+    pub fn create_authored_animation_mixer(
+        &mut self,
+        clip: crate::animation::AnimationClip,
+    ) -> Result<AnimationMixerKey, AnimationError> {
+        validate_authored_clip(&clip)?;
+        Ok(self
+            .animation_mixers
+            .insert(AnimationMixer::new(clip, Arc::new(AtomicBool::new(true)))))
+    }
+
+    /// Creates and starts a mixer for a caller-authored animation clip.
+    pub fn play_authored_animation(
+        &mut self,
+        clip: crate::animation::AnimationClip,
+    ) -> Result<AnimationMixerKey, AnimationError> {
+        let mixer = self.create_authored_animation_mixer(clip)?;
         self.play_animation(mixer)?;
         Ok(mixer)
     }
@@ -235,14 +263,26 @@ impl Scene {
     }
 }
 
+fn validate_authored_clip(clip: &crate::animation::AnimationClip) -> Result<(), AnimationError> {
+    if !clip.duration_seconds().is_finite() || clip.duration_seconds() <= 0.0 {
+        return Err(AnimationError::InvalidClip {
+            reason: "duration_seconds must be finite and positive".to_owned(),
+        });
+    }
+    if clip.channels().is_empty() {
+        return Err(AnimationError::InvalidClip {
+            reason: "clip must contain at least one channel".to_owned(),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 impl Scene {
     pub(crate) fn insert_animation_mixer_for_test(
         &mut self,
         clip: crate::animation::AnimationClip,
     ) -> AnimationMixerKey {
-        use std::sync::{Arc, atomic::AtomicBool};
-
         self.animation_mixers
             .insert(AnimationMixer::new(clip, Arc::new(AtomicBool::new(true))))
     }
@@ -332,6 +372,7 @@ mod tests {
             )],
             1.0,
         )
+        .expect("test translation clip is valid")
     }
 
     fn weight_clip(node: crate::scene::NodeKey) -> AnimationClip {
@@ -347,5 +388,6 @@ mod tests {
             )],
             1.0,
         )
+        .expect("test weight clip is valid")
     }
 }

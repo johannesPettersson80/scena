@@ -2,11 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::assets::{AssetMaterialFallbackV1, AssetProvenance};
 use crate::geometry::{Aabb, GeometryTopology};
 use crate::material::Color;
 
 use super::super::{CameraKey, InstanceId, NodeKey, Transform, Vec3};
 use super::SceneInspectionReport;
+
+mod material;
 
 pub const SCENE_INSPECTION_SCHEMA_V1: &str = "scena.scene_inspection.v1";
 
@@ -19,6 +22,8 @@ pub struct SceneInspectionReportV1 {
     pub normal_overlays: Vec<SceneNormalInspectionV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_sets: Option<Vec<SceneHostInstanceSetInspectionV1>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imports: Option<Vec<SceneImportInspectionV1>>,
     pub active_camera: Option<u64>,
     pub counts: SceneInspectionCountsV1,
     pub revisions: SceneInspectionRevisionsV1,
@@ -38,6 +43,17 @@ pub struct SceneHostInstanceEntryInspectionV1 {
     pub set_node: Option<u64>,
     pub instance_id: u64,
     pub local_transform: Transform,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneImportInspectionV1 {
+    pub handle: u64,
+    #[serde(default)]
+    pub root_handles: Vec<u64>,
+    #[serde(default)]
+    pub material_variants: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_variant: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,20 +91,59 @@ pub struct SceneNodeInspectionV1 {
     pub helper_on_top: bool,
     #[serde(default)]
     pub tint: Option<Color>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<SceneMaterialInspectionV1>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneDrawInspectionV1 {
     pub node: u64,
     #[serde(default)]
     pub instance: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<SceneMaterialInspectionV1>,
     pub topology: GeometryTopology,
     pub primitive_count: usize,
     pub vertex_count: usize,
     pub index_count: usize,
     pub local_bounds: Aabb,
     pub world_transform: Transform,
-    pub visible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneMaterialInspectionV1 {
+    pub kind: String,
+    pub source: SceneMaterialSourceInspectionV1,
+    pub base_color: Color,
+    pub alpha_mode: String,
+    pub textures: Vec<SceneMaterialSlotInspectionV1>,
+    #[serde(default)]
+    pub fallbacks: Vec<AssetMaterialFallbackV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneMaterialSourceInspectionV1 {
+    pub kind: String,
+    #[serde(default)]
+    pub asset_path: Option<String>,
+    #[serde(default)]
+    pub material_index: Option<usize>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneMaterialSlotInspectionV1 {
+    pub slot: String,
+    pub source_path: String,
+    pub source_format: String,
+    pub color_space: String,
+    #[serde(default)]
+    pub decoded_dimensions: Option<[u32; 2]>,
+    pub has_decoded_pixels: bool,
+    pub provenance: AssetProvenance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<AssetMaterialFallbackV1>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -145,6 +200,10 @@ impl SceneInspectionReport {
                         render_group: source.render_group,
                         helper_on_top: source.helper_on_top,
                         tint: source.tint,
+                        material: source
+                            .material_preview
+                            .as_ref()
+                            .map(material::material_inspection_v1),
                     })
                 })
                 .collect(),
@@ -155,13 +214,16 @@ impl SceneInspectionReport {
                     Some(SceneDrawInspectionV1 {
                         node: *node_handles.get(&draw.node)?,
                         instance: draw.instance.map(InstanceId::as_u64),
+                        material: draw
+                            .material_preview
+                            .as_ref()
+                            .map(material::material_inspection_v1),
                         topology: draw.topology,
                         primitive_count: draw.primitive_count,
                         vertex_count: draw.vertex_count,
                         index_count: draw.index_count,
                         local_bounds: draw.local_bounds,
                         world_transform: draw.world_transform,
-                        visible: draw.visible,
                     })
                 })
                 .collect(),
@@ -190,6 +252,7 @@ impl SceneInspectionReport {
                 })
                 .collect(),
             instance_sets: None,
+            imports: None,
             active_camera,
             counts: SceneInspectionCountsV1 {
                 visible_drawable: self.visible_drawable_count,

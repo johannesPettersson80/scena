@@ -1,0 +1,51 @@
+{
+  "schema": "scena.scene_host_gizmo_drag.v1",
+  "mode": "translate",
+  "space": "world",
+  "constraint": {
+    "kind": "axis",
+    "axis": "x"
+  },
+  "start_transform": {
+    "translation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "start_ray": {
+    "origin": [
+      1.0,
+      0.0,
+      5.0
+    ],
+    "direction": [
+      0.0,
+      0.0,
+      -1.0
+    ]
+  },
+  "current_ray": {
+    "origin": [
+      3.0,
+      0.0,
+      5.0
+    ],
+    "direction": [
+      0.0,
+      0.0,
+      -1.0
+    ]
+  }
+}

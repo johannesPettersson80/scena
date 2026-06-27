@@ -1,0 +1,16 @@
+{
+  "schema": "scena.appearance_expectation.v1",
+  "targets": [
+    {
+      "id": "wrong-noon",
+      "variant": "noon",
+      "color_family": "blue",
+      "swatch_srgb8": [
+        0,
+        0,
+        255
+      ],
+      "require_source_material": true
+    }
+  ]
+}

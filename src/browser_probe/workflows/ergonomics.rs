@@ -290,19 +290,9 @@ async fn material_textures_scene() -> Result<WorkflowScene, JsValue> {
     let material = assets.create_material(
         MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(170, 210, 255), 0.2, 0.65)
             .with_base_color_texture(base)
-            .with_base_color_texture_transform(TextureTransform::new(
-                [0.25, 0.5],
-                0.0,
-                [1.0, 1.0],
-                None,
-            ))
+            .with_base_color_texture_transform(TextureTransform::new([0.25, 0.5], 0.0, [1.0, 1.0]))
             .with_normal_texture(normal)
-            .with_normal_texture_transform(TextureTransform::new(
-                [0.0, 0.0],
-                0.0,
-                [1.0, 1.0],
-                Some(1),
-            ))
+            .with_normal_texture_transform(TextureTransform::new([0.0, 0.0], 0.0, [1.0, 1.0]))
             .with_metallic_roughness_texture(metallic_roughness)
             .with_occlusion_texture(occlusion)
             .with_emissive_texture(emissive)

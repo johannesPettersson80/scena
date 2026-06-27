@@ -9,10 +9,19 @@ pub(crate) fn check_material_texture_diagnostic_contracts(
         findings,
         "ASSETS-M8",
         "src/assets/scene_loading.rs",
+        &["external_image_paths"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/external_resources.rs",
         &[
-            "external_image_paths",
             "AssetLoadWarning::ExternalImageMissing",
-            "options.strict_textures()",
+            "AssetExternalResource::missing_image",
+            "AssetLoadProgress::ExternalImageFetched",
+            "strict_textures()",
+            "warn_external_image_missing",
         ],
     );
     require_contains(
@@ -26,6 +35,19 @@ pub(crate) fn check_material_texture_diagnostic_contracts(
             "AssetLoadWarning",
             "ExternalImageMissing",
             "warnings",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/material_source.rs",
+        &[
+            "pub struct AssetMaterialSource",
+            "pub enum AssetMaterialSourceKind",
+            "SourceMaterial",
+            "GeneratedDefault",
+            "fallbacks",
         ],
     );
     require_contains(

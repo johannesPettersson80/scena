@@ -232,6 +232,11 @@ impl MaterialDesc {
         self.base_color
     }
 
+    pub const fn with_base_color(mut self, base_color: Color) -> Self {
+        self.base_color = base_color;
+        self
+    }
+
     pub const fn base_color_texture(&self) -> Option<TextureHandle> {
         self.base_color_texture
     }
@@ -288,8 +293,18 @@ impl MaterialDesc {
         self.metallic_factor
     }
 
+    pub const fn with_metallic_factor(mut self, metallic_factor: f32) -> Self {
+        self.metallic_factor = clamp_unit_or(metallic_factor, 0.0);
+        self
+    }
+
     pub const fn roughness_factor(&self) -> f32 {
         self.roughness_factor
+    }
+
+    pub const fn with_roughness_factor(mut self, roughness_factor: f32) -> Self {
+        self.roughness_factor = clamp_unit_or(roughness_factor, 1.0);
+        self
     }
 
     pub const fn double_sided(&self) -> bool {

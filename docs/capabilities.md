@@ -35,11 +35,17 @@ This lets applications present clear UI instead of failing silently.
 - WebGPU versus WebGL2.
 - Native GPU versus headless software rendering.
 - Texture arrays and texture limits.
-- Shadow support.
+- Shadow support. Directional shadows are supported only on GPU-device backends
+  with visible receiver-darkening proof; CPU/reference and unattached factory
+  capability rows report degraded.
 - Environment lighting support.
 - Material feature support such as clearcoat, sheen, anisotropy, iridescence,
   and dispersion factor handling or texture sampling in CPU/reference and GPU
   shader paths versus backend-gated release proof.
+- Physical glass transmission. Attached GPU-device native/WebGPU/WebGL2 rows
+  can report `supported` after scene-color transmission, IOR/thickness
+  refraction, roughness-blur, and transparency-ordering proof; CPU/reference
+  and unattached factory rows report `degraded`.
 - Postprocessing support such as subtle bloom, headless CPU SSAO, and
   headless CPU weighted blended OIT.
 - Wide-gamut output, which is only claimed when a browser canvas color-space

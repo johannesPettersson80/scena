@@ -1,0 +1,25 @@
+{
+  "schema": "scena.placement_result.v1",
+  "ok": true,
+  "verb": "look_at",
+  "import_id": "part",
+  "transform": {
+    "translation": [
+      1.235,
+      -2.346,
+      3.457
+    ],
+    "rotation": [
+      0.123,
+      -0.235,
+      0.346,
+      0.901
+    ],
+    "scale": [
+      0.333,
+      1.667,
+      2.556
+    ]
+  },
+  "diagnostics": []
+}

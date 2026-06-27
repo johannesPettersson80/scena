@@ -4,6 +4,7 @@ use crate::material::Color;
 use crate::scene::{NodeKey, Scene, Vec3};
 
 use super::{PreparedSceneState, prepare};
+use prepare::transforms::{normal_from_model_matrix, world_from_model_matrix};
 
 pub(super) fn assign_original_vertex_offsets(
     primitives: Vec<prepare::PreparedPrimitive>,
@@ -39,6 +40,15 @@ pub(super) fn assign_original_stroke_indices(
         .collect()
 }
 
+pub(super) fn assign_original_label_quad_indices(
+    mut labels: prepare::PreparedLabelAtlas,
+) -> prepare::PreparedLabelAtlas {
+    for (index, quad) in labels.quads_mut().iter_mut().enumerate() {
+        *quad = quad.with_original_quad_index(index as u32);
+    }
+    labels
+}
+
 pub(super) fn assign_original_instance_vertex_offsets(
     mut instances: Vec<prepare::PreparedInstanceSet>,
     mut next_vertex_offset: u32,
@@ -67,6 +77,11 @@ pub(super) fn filter_retained_primitives_for_scene(
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
+            let transform = scene.world_transform(node)?;
+            primitive.set_world_from_model(
+                world_from_model_matrix(transform, scene.origin_shift()),
+                normal_from_model_matrix(transform),
+            );
             primitive.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }
         visible.push(primitive);
@@ -84,7 +99,7 @@ pub(super) fn filter_retained_instances_for_scene(
         if !scene.visible_for_active_camera(set.source_node()) {
             continue;
         }
-        let live = scene.instance_set(set.source_set())?;
+        let live = scene.instance_set(set.source_set()?)?;
         let node_tint = scene.node_tint(set.source_node()).ok()?;
         let records = live
             .instances()
@@ -117,6 +132,8 @@ pub(super) fn filter_retained_strokes_for_scene(
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
+            let transform = scene.world_transform(node)?;
+            stroke.set_world_from_model(world_from_model_matrix(transform, scene.origin_shift()));
             stroke.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }
         visible.push(stroke);
@@ -124,10 +141,32 @@ pub(super) fn filter_retained_strokes_for_scene(
     Some(visible)
 }
 
+pub(super) fn filter_retained_labels_for_scene(
+    scene: &Scene,
+    retained: &prepare::PreparedLabelAtlas,
+) -> Option<prepare::PreparedLabelAtlas> {
+    let mut labels = retained.clone();
+    let mut visible = Vec::with_capacity(labels.quads().len());
+    for quad in labels.quads().iter().copied() {
+        let mut quad = quad;
+        if let Some(node) = quad.source_node() {
+            scene.node(node)?;
+            if !scene.visible_for_active_camera(node) {
+                continue;
+            }
+            quad.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
+        }
+        visible.push(quad);
+    }
+    labels.set_quads(visible);
+    Some(labels)
+}
+
 pub(super) fn retained_template_covers_visible_sources(
     scene: &Scene,
     retained: &[prepare::PreparedPrimitive],
     retained_strokes: &[prepare::PreparedStrokeSegment],
+    retained_labels: &prepare::PreparedLabelAtlas,
     retained_instances: &[prepare::PreparedInstanceSet],
 ) -> bool {
     let mut retained_sources = retained
@@ -138,6 +177,12 @@ pub(super) fn retained_template_covers_visible_sources(
         retained_strokes
             .iter()
             .filter_map(prepare::PreparedStrokeSegment::source_node),
+    );
+    retained_sources.extend(
+        retained_labels
+            .quads()
+            .iter()
+            .filter_map(prepare::PreparedLabelQuad::source_node),
     );
     retained_sources.extend(
         retained_instances

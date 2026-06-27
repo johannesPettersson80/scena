@@ -67,9 +67,11 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_render_singleton_contracts(root, findings);
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
+    check_particle_prepare_allocation_contract(root, findings);
     check_environment_lifecycle_contracts(root, findings);
     check_equirectangular_hdr_environment_contracts(root, findings);
     check_environment_ibl_prepare_contracts(root, findings);
+    check_calibration_oracles_pair_parity_sweeps(root, findings);
     check_scene_light_contracts(root, findings);
     check_direct_light_shading_contracts(root, findings);
     check_directional_shadow_contracts(root, findings);
@@ -96,12 +98,18 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_diagnostics_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
     check_renderer_truth_contracts(root, findings);
+    check_render_movement_contracts(root, findings);
+    check_render_quality_contracts(root, findings);
+    check_render_quality_reflection_contracts(root, findings);
+    check_material_reflection_quality_contracts(root, findings);
     check_render_world_bake_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
     check_unit_test_first_governance(root, findings);
     check_agent_validation(root, findings);
+    check_recipe_build_policy_boundary(root, findings);
     check_tests_env_flags_documented(root, findings);
+    check_feature_gated_contract_tests_documented(root, findings);
     check_no_ignored_release_tests(root, findings);
     check_m8_real_asset_dual_lane(root, findings);
     check_cpu_ibl_gap_documented(root, findings);
@@ -245,6 +253,9 @@ pub(crate) fn check_m8_real_asset_dual_lane(root: &Path, findings: &mut Vec<Find
         "Renderer::headless_gpu",
         "Renderer::headless(",
         "build_waterbottle_scene",
+        "Microsoft Basic Render Driver",
+        "software-dx12",
+        "SCENA_REFERENCE_DIFF",
     ];
     for needle in required {
         if !text.contains(needle) {

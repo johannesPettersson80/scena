@@ -50,6 +50,47 @@ fn headless_gltf_viewer_builder_loads_frames_lights_and_renders() {
     );
 }
 
+#[cfg(feature = "inspection")]
+#[test]
+fn headless_gltf_viewer_reports_render_introspection() {
+    let first = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf")
+            .size(80, 48)
+            .with_viewer_profile(scena::ViewerProfile::model_viewer())
+            .render(),
+    )
+    .expect("builder renders the first glTF frame");
+
+    let first_report = first
+        .render_introspection(scena::RenderIntrospectionOptions::summary())
+        .expect("first render exposes render introspection");
+    assert_eq!(first_report.schema, scena::RENDER_INTROSPECTION_SCHEMA_V1);
+    assert!(first_report.ok, "{first_report:#?}");
+    assert!(
+        first_report.visible_pixel_fraction > 0.0,
+        "{first_report:#?}"
+    );
+
+    let mut viewer = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf")
+            .size(80, 48)
+            .with_viewer_profile(scena::ViewerProfile::model_viewer())
+            .build(),
+    )
+    .expect("builder creates a reusable viewer");
+    viewer
+        .render_next_frame()
+        .expect("viewer loop renders a frame");
+    let viewer_report = viewer
+        .render_introspection(scena::RenderIntrospectionOptions::summary())
+        .expect("viewer loop exposes render introspection");
+    assert_eq!(
+        viewer_report.capabilities.backend,
+        first_report.capabilities.backend
+    );
+    assert!(viewer_report.ok, "{viewer_report:#?}");
+}
+
 #[test]
 fn headless_gltf_viewer_builder_can_attach_environment_and_report_diagnostics() {
     let first = pollster::block_on(

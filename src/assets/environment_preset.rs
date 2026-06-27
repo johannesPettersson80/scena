@@ -19,7 +19,7 @@
 
 use crate::diagnostics::AssetError;
 
-use super::{AssetFetcher, Assets, EnvironmentHandle};
+use super::{AssetFetcher, AssetLoadOptions, Assets, EnvironmentHandle};
 
 const NEUTRAL_STUDIO_SOURCE_PATH: &str = "tests/assets/environment/neutral-studio.fixture.txt";
 const NEUTRAL_STUDIO_SOURCE_SHA256: &str =
@@ -70,6 +70,20 @@ pub struct EnvironmentPresetMetadata {
 impl EnvironmentPreset {
     /// Every preset in the checked catalog.
     pub const ALL: &'static [Self] = &[Self::NeutralStudio, Self::Studio];
+
+    pub const fn recipe_name(self) -> &'static str {
+        match self {
+            Self::NeutralStudio => "neutral_studio",
+            Self::Studio => "studio",
+        }
+    }
+
+    pub fn from_recipe_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|preset| preset.recipe_name() == name)
+    }
 
     /// The currently checked environment preset source files must stay small
     /// enough for crate packaging. This budget covers the neutral preview
@@ -162,6 +176,20 @@ impl<F: AssetFetcher> Assets<F> {
         &self,
         preset: EnvironmentPreset,
     ) -> Result<EnvironmentHandle, AssetError> {
-        self.load_environment(preset.metadata().source_path()).await
+        self.load_environment_preset_with_options(preset, AssetLoadOptions::default())
+            .await
+    }
+
+    /// Loads a bundled [`EnvironmentPreset`] with explicit asset-load policy.
+    ///
+    /// Recipe execution uses this path so the preset source and optional
+    /// sidecar files obey the same fetch-byte budget as imported assets.
+    pub async fn load_environment_preset_with_options(
+        &self,
+        preset: EnvironmentPreset,
+        options: AssetLoadOptions,
+    ) -> Result<EnvironmentHandle, AssetError> {
+        self.load_environment_with_options(preset.metadata().source_path(), options)
+            .await
     }
 }

@@ -199,11 +199,14 @@ pub(crate) fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Findi
         findings,
         "ARCH-RENDER-ALPHA",
         "src/render.rs",
-        &[
-            "linear_frame: Option<Vec<Color>>",
-            "cpu::clear_cpu",
-            "cpu::draw_primitive_cpu",
-        ],
+        &["linear_frame: Option<Vec<Color>>"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/render/cpu_render.rs",
+        &["cpu::clear_cpu", "cpu::draw_primitive_cpu"],
     );
     require_contains(
         root,
@@ -245,6 +248,31 @@ pub(crate) fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Findi
             "AlphaPipelineStatus::LinearSourceOver",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/scene/instances.rs",
+        &[
+            "fn validate_instance_tint",
+            "InvalidInstanceTint",
+            "instanced scene roots only accept opaque per-instance tint",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/diagnostics.rs",
+        &["InvalidInstanceTint"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/scene/instances.rs",
+        &["scene_set_instance_tint_rejects_non_opaque_tint_before_backend_divergence"],
+    );
 }
 
 pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Finding>) {
@@ -272,6 +300,26 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
             "ACES_OUTPUT_MATRIX",
             "pub(super) fn pbr_neutral_tonemap",
             "Srgb::from_linear",
+            "wgsl_color_contract_pins_same_reference_formulas",
+            "include_str!(\"color_contract.wgsl\")",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/color_contract.wgsl",
+        &[
+            "scena.color_contract.wgsl",
+            "SCENA_PBR_NEUTRAL_START_COMPRESSION",
+            "SCENA_PBR_NEUTRAL_DESATURATION",
+            "fn apply_tonemapper",
+            "fn encode_post_target_rgb",
+            "fn linear_to_srgb_channel",
+            "fn srgb_to_linear_channel",
+            "fn pbr_neutral_tonemap",
+            "fn aces_tonemap",
+            "fn rrt_and_odt_fit",
         ],
     );
     require_contains(
@@ -280,8 +328,11 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
         "ARCH-OUTPUT-STAGE",
         "src/render/gpu/output.rs",
         &[
-            "fn aces_tonemap(color: vec3<f32>) -> vec3<f32>",
-            "fn rrt_and_odt_fit(value: f32) -> f32",
+            "GPU_COLOR_CONTRACT_WGSL",
+            "include_str!(\"../color_contract.wgsl\")",
+            "include_str!(\"output_shader.wgsl\")",
+            "GPU_TRIANGLE_SHADER_TEXTURE_2D",
+            "include_str!(\"output_shader_texture_2d.wgsl\")",
             "camera_position_exposure: vec4<f32>",
             "viewport_near_far: vec4<f32>",
             "color_management: vec4<f32>",
@@ -296,6 +347,57 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
         &[
             "GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb",
             "pass.set_bind_group(0, inputs.output_bind_group, &[])",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/gpu/labels.rs",
+        &[
+            "include_str!(\"../color_contract.wgsl\")",
+            "labels_encoded.wgsl",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/gpu/strokes.rs",
+        &[
+            "include_str!(\"../color_contract.wgsl\")",
+            "strokes_encoded.wgsl",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/gpu/post/blit.rs",
+        &[
+            "include_str!(\"../../color_contract.wgsl\")",
+            "blit_srgb.wgsl",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "tests/scena_cli_recipe.rs",
+        &[
+            "scena_recipe_render_tonemap_color_contract_matches_oracle_on_cpu_and_gpu",
+            "scena.tonemap_color_parity_sweep.v1",
+            "standard-gray-ev-minus2",
+            "standard-gray-ev2",
+            "standard-color-ev0",
+            "pbr-neutral-gray-ev-minus1",
+            "pbr-neutral-color",
+            "pbr-neutral-bright-ev1",
+            "aces-gray-ev-minus2",
+            "aces-color",
+            "aces-gray-ev2",
+            "tonemap-color-parity.json",
+            "assert_rgb8_close",
         ],
     );
     require_contains(
@@ -329,6 +431,7 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "src/diagnostics/stats.rs",
         &[
             "pub ambient_occlusion_passes: u64",
+            "pub screen_space_reflection_passes: u64",
             "pub order_independent_transparency_passes: u64",
             "pub bloom_passes: u64",
             "pub fxaa_passes: u64",
@@ -346,13 +449,30 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "oit_scratch: Vec<cpu::OitAccumPixel>",
             "order_independent_transparency: Option<OrderIndependentTransparencyConfig>",
             "screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>",
+            "screen_space_reflections: Option<ScreenSpaceReflectionConfig>",
+            "self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion",
+            "self.stats.screen_space_reflection_passes",
+            "self.stats.bloom_passes = gpu_result.post_counts.bloom",
+            "self.stats.fxaa_passes = gpu_result.post_counts.fxaa",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render/cpu_render.rs",
+        &[
             "cpu::draw_order_independent_transparency_cpu(",
             "cpu::resolve_order_independent_transparency_cpu(",
+            "screen_space_reflections::apply_rgba8(",
             "output::apply_screen_space_ambient_occlusion_rgba8(",
             "output::apply_bloom_rgba8(",
-            "AntiAliasing::None => 0",
+            "AntiAliasing::None | AntiAliasing::Msaa4 | AntiAliasing::Msaa8 => 0",
             "AntiAliasing::Fxaa =>",
             "output::apply_fxaa_rgba8(",
+            "self.supersample_factor > 1",
+            "cpu_resolve::downsample_cpu_supersample(",
+            "self.stats.screen_space_reflection_passes",
             "self.stats.ambient_occlusion_passes",
             "self.stats.order_independent_transparency_passes",
             "self.stats.bloom_passes",
@@ -366,6 +486,10 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "src/render/output.rs",
         &[
             "pub enum AntiAliasing",
+            "Msaa4",
+            "Msaa8",
+            "gpu_sample_count",
+            "cpu_supersample_scale",
             "pub struct OrderIndependentTransparencyConfig",
             "pub struct PostBloomConfig",
             "pub struct ScreenSpaceAmbientOcclusionConfig",
@@ -375,6 +499,28 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "luma_from_srgb8",
             "FXAA_LUMA_THRESHOLD",
             "pbr_neutral_tonemap",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render/screen_space_reflections.rs",
+        &[
+            "pub struct ScreenSpaceReflectionConfig",
+            "pub(super) fn apply_rgba8",
+            "blurred_reflection_sample",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render/cpu_resolve.rs",
+        &[
+            "downsample_cpu_supersample",
+            "downsample_rgba8_box_filter",
+            "downsample_rgba8_reconstruction_filter",
         ],
     );
     require_contains(
@@ -391,7 +537,8 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "AntiAliasing::None",
             "AntiAliasing::Fxaa",
             "screen_space_ambient_occlusion_darkens_depth_contact_edges",
-            "ScreenSpaceAmbientOcclusionConfig::subtle()",
+            "ScreenSpaceAmbientOcclusionConfig::new(",
+            "4, 0.8, 0.0",
             "stats().ambient_occlusion_passes",
             "PostBloomConfig::subtle()",
             "stats().bloom_passes",
@@ -418,7 +565,8 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "validate_ssao_contact_on_off",
             "render_bloom_on_off",
             "validate_bloom_on_off",
-            "ScreenSpaceAmbientOcclusionConfig::subtle()",
+            "ScreenSpaceAmbientOcclusionConfig::new(",
+            "4, 0.8, 0.0",
             "PostBloomConfig::subtle()",
         ],
     );
@@ -426,8 +574,13 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         root,
         findings,
         "ARCH-FXAA-OUTPUT",
-        "docs/specs/public-api.md",
-        &["pub fxaa_passes: u64", "tonemapper again"],
+        "docs/rendering.md",
+        &[
+            "Medium quality uses FXAA by default",
+            "High quality uses sample-based edge AA",
+            "Renderer::set_supersample_factor(2)",
+            "guarded `8`",
+        ],
     );
     require_contains(
         root,

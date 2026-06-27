@@ -1,0 +1,145 @@
+{
+  "artifacts": {
+    "host_tick": "seek_animation",
+    "sampled_times": [
+      0.0,
+      0.5,
+      1.0
+    ]
+  },
+  "clip": {
+    "channel_count": 1,
+    "duration_seconds": 1.0,
+    "name": "MoveTriangle"
+  },
+  "fixes": [],
+  "ok": true,
+  "reasons": [],
+  "samples": [
+    {
+      "appearance_revision": 0,
+      "invalid_node_count": 0,
+      "moving_node_count": 0,
+      "observed_values": [
+        {
+          "id": "selected-transform",
+          "kind": "transform",
+          "node": 2,
+          "rendered_centroid_css_px": [
+            31.5,
+            28.322
+          ],
+          "rendered_coverage_px": 421,
+          "transform": {
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ],
+      "payload_fnv1a64": "4ce35e7a1f1d7113",
+      "time_seconds": 0.0,
+      "transform_revision": 1
+    },
+    {
+      "appearance_revision": 0,
+      "invalid_node_count": 0,
+      "moving_node_count": 1,
+      "observed_values": [
+        {
+          "id": "selected-transform",
+          "kind": "transform",
+          "node": 2,
+          "rendered_centroid_css_px": [
+            42.0,
+            28.333
+          ],
+          "rendered_coverage_px": 420,
+          "transform": {
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "translation": [
+              0.25,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ],
+      "payload_fnv1a64": "ad22ecc7eb5bbe75",
+      "time_seconds": 0.5,
+      "transform_revision": 2
+    },
+    {
+      "appearance_revision": 0,
+      "invalid_node_count": 0,
+      "moving_node_count": 1,
+      "observed_values": [
+        {
+          "id": "selected-transform",
+          "kind": "transform",
+          "node": 2,
+          "rendered_centroid_css_px": [
+            51.988,
+            28.337
+          ],
+          "rendered_coverage_px": 416,
+          "transform": {
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "translation": [
+              0.5,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ],
+      "payload_fnv1a64": "25262569f956ed4d",
+      "time_seconds": 1.0,
+      "transform_revision": 3
+    }
+  ],
+  "schema": "scena.animation_introspection.v1",
+  "summary": {
+    "capture_changes": 2,
+    "changed_channel_count": 1,
+    "invalid_channel_count": 0,
+    "rendered_movement": true,
+    "rendered_movement_delta_px": 20.488,
+    "sample_count": 3,
+    "unchanged_channel_count": 0,
+    "visible_change": true
+  }
+}

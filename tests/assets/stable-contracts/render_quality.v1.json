@@ -1,0 +1,264 @@
+{
+  "schema": "scena.render_quality.v1",
+  "ok": false,
+  "profile": "documentation",
+  "summary": {
+    "checks": 8,
+    "errors": 7,
+    "warnings": 0
+  },
+  "checks": [
+    {
+      "id": "label-fixture",
+      "code": "label_ink_isolation",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "label",
+        "handle": 4294967299,
+        "rect_css_px": {
+          "min_x": 12.0,
+          "min_y": 20.0,
+          "max_x": 148.0,
+          "max_y": 48.0,
+          "width": 136.0,
+          "height": 28.0
+        }
+      },
+      "observed": {
+        "ink_isolation": 0.036
+      },
+      "threshold": {
+        "max_ink_isolation": 0.01
+      },
+      "fix_hint": "use the TrueType coverage path and render labels at native resolution; increase label size if strokes are fragmented"
+    },
+    {
+      "id": "line-fixture",
+      "code": "line_missing_antialiasing",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "line",
+        "handle": 4294967300,
+        "rect_css_px": {
+          "min_x": 20.0,
+          "min_y": 36.0,
+          "max_x": 156.0,
+          "max_y": 52.0,
+          "width": 136.0,
+          "height": 16.0
+        }
+      },
+      "observed": {
+        "intermediate_edge_fraction": 0.0
+      },
+      "threshold": {
+        "min_intermediate_edge_fraction": 0.02
+      },
+      "fix_hint": "render dimension and leader lines through the antialiased stroke pass instead of hard 1px geometry"
+    },
+    {
+      "id": "geometry-fixture",
+      "code": "geometry_missing_antialiasing",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "subject",
+        "rect_css_px": {
+          "min_x": 24.0,
+          "min_y": 24.0,
+          "max_x": 152.0,
+          "max_y": 96.0,
+          "width": 128.0,
+          "height": 72.0
+        }
+      },
+      "observed": {
+        "intermediate_edge_fraction": 0.0
+      },
+      "threshold": {
+        "min_intermediate_edge_fraction": 0.02
+      },
+      "fix_hint": "enable msaa4 or msaa8 for GPU renders, or CPU sample AA, so geometry silhouettes have intermediate edge coverage"
+    },
+    {
+      "id": "reflection-fixture",
+      "code": "reflection_structure_missing",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "reflection_surface",
+        "rect_css_px": {
+          "min_x": 0.0,
+          "min_y": 120.0,
+          "max_x": 160.0,
+          "max_y": 160.0,
+          "width": 160.0,
+          "height": 40.0
+        }
+      },
+      "observed": {
+        "chroma_range": 0.0,
+        "luminance_range": 0.02,
+        "sobel_energy": 0.004
+      },
+      "threshold": {
+        "min_chroma_range": 0.08,
+        "min_luminance_range": 0.16,
+        "min_sobel_energy": 0.03
+      },
+      "fix_hint": "enable a reflective floor or SSR/IBL reflection path that shows structured subject or environment detail on the reflective surface"
+    },
+    {
+      "id": "reflection-firefly-fixture",
+      "code": "reflection_firefly_outliers",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "reflection_surface",
+        "rect_css_px": {
+          "min_x": 0.0,
+          "min_y": 120.0,
+          "max_x": 160.0,
+          "max_y": 160.0,
+          "width": 160.0,
+          "height": 40.0
+        }
+      },
+      "observed": {
+        "firefly_fraction": 0.023
+      },
+      "threshold": {
+        "max_firefly_fraction": 0.01
+      },
+      "fix_hint": "increase IBL prefilter quality or use source-mip importance sampling so tiny HDR emitters blur into reflection mips instead of isolated bright specks"
+    },
+    {
+      "id": "reflection-chrome-fixture",
+      "code": "reflection_chrome_read_missing",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "reflection_target",
+        "handle": 4294967302,
+        "rect_css_px": {
+          "min_x": 42.0,
+          "min_y": 28.0,
+          "max_x": 118.0,
+          "max_y": 104.0,
+          "width": 76.0,
+          "height": 76.0
+        }
+      },
+      "observed": {
+        "bright_fraction": 0.02,
+        "dark_fraction": 0.0
+      },
+      "threshold": {
+        "min_bright_fraction": 0.08,
+        "min_dark_fraction": 0.03
+      },
+      "fix_hint": "use a studio HDR environment (environment.preset:\"studio\") and a high-tessellation sphere (segments>=256, rings>=192) so a mirror subject shows structured reflections"
+    },
+    {
+      "id": "area-light-fixture",
+      "code": "area_light_soft_shadow_insufficient",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "area_light_shadow_target",
+        "handle": 4294967301,
+        "rect_css_px": {
+          "min_x": 32.0,
+          "min_y": 64.0,
+          "max_x": 144.0,
+          "max_y": 132.0,
+          "width": 112.0,
+          "height": 68.0
+        }
+      },
+      "observed": {
+        "penumbra_luma_levels": 8.0,
+        "penumbra_width_px": 0.5,
+        "shadow_contrast": 0.012,
+        "soft_emitter_extent_meters": 0.04
+      },
+      "threshold": {
+        "min_emitter_extent_meters": 0.5,
+        "min_penumbra_luma_levels": 18.0,
+        "min_penumbra_width_px": 1.5,
+        "min_shadow_contrast": 0.025
+      },
+      "fix_hint": "use a finite area light with enough emitter extent, a visible occluder, and a receiver region that shows measurable soft-shadow penumbra instead of a hard point-like shadow"
+    },
+    {
+      "id": "grounding-fixture",
+      "code": "contact_shadow_missing",
+      "status": "failed",
+      "severity": "error",
+      "region": {
+        "kind": "contact_shadow_target",
+        "handle": 4294967302,
+        "rect_css_px": {
+          "min_x": 58.0,
+          "min_y": 44.0,
+          "max_x": 102.0,
+          "max_y": 88.0,
+          "width": 44.0,
+          "height": 44.0
+        }
+      },
+      "observed": {
+        "contact_luminance": 0.86,
+        "contact_pixels": 96.0,
+        "contact_shadow_delta": 0.004,
+        "reference_luminance": 0.864,
+        "reference_pixels": 96.0
+      },
+      "threshold": {
+        "min_contact_shadow_delta": 0.018
+      },
+      "fix_hint": "enable SSAO/contact shadows, add a shadow-casting light/floor setup, or adjust the camera so the target's contact region is visible"
+    },
+    {
+      "id": "dof-fixture",
+      "code": "depth_of_field_checked",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "dof_background",
+        "rect_css_px": {
+          "min_x": 104.0,
+          "min_y": 24.0,
+          "max_x": 152.0,
+          "max_y": 136.0,
+          "width": 48.0,
+          "height": 112.0
+        }
+      },
+      "observed": {
+        "background_sobel_drop": 0.468,
+        "background_sobel_drop_fraction": 0.427,
+        "focal_mean_delta": 0.028,
+        "focused_background_sobel": 0.628,
+        "source_background_sobel": 1.096
+      },
+      "threshold": {
+        "max_focal_mean_delta": 0.08,
+        "min_background_sobel_drop": 0.015,
+        "min_background_sobel_drop_fraction": 0.18,
+        "min_source_background_sobel": 0.04
+      },
+      "fix_hint": "no action needed"
+    }
+  ],
+  "capabilities": {
+    "backend": "headless",
+    "gpu_device": false,
+    "surface_attached": false,
+    "hardware_tier": "low",
+    "forward_pbr": "error_if_required",
+    "readback_headless_screenshots": "supported"
+  }
+}

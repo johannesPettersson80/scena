@@ -152,9 +152,7 @@ fn validate_connector_extras(connector: &JsonValue) -> Option<String> {
         .is_some()
         && parse_roll_policy(connector).is_none()
     {
-        return Some(
-            "connector rollPolicy must be preserve, chooseNearest, or explicitAngle".to_string(),
-        );
+        return Some("connector rollPolicy must be preserve or chooseNearest".to_string());
     }
     if connector.get("polarity").is_some() && parse_polarity(connector).is_none() {
         return Some("connector polarity must be plug, socket, or neutral".to_string());
@@ -234,9 +232,6 @@ fn parse_roll_policy(connector: &JsonValue) -> Option<ConnectorRollPolicy> {
         "preserve" => Some(ConnectorRollPolicy::Preserve),
         "chooseNearest" | "choose_nearest" | "choose-nearest" => {
             Some(ConnectorRollPolicy::ChooseNearest)
-        }
-        "explicitAngle" | "explicit_angle" | "explicit-angle" => {
-            Some(ConnectorRollPolicy::ExplicitAngle)
         }
         _ => None,
     }

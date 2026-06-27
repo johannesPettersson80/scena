@@ -9,7 +9,7 @@ pub(crate) fn release_readiness_accepts_benchmark_artifact_with_passed_baseline_
             "status": "passed",
             "baseline_path": "docs/benchmarks/m9-baselines.json",
             "baseline_sha256": "fnv1a64:0000000000000001",
-            "metric": "p95_frame_ms"
+            "metrics": ["p95_frame_ms", "max_allocations_per_frame"]
         },
         "rows": [
             {
@@ -17,11 +17,16 @@ pub(crate) fn release_readiness_accepts_benchmark_artifact_with_passed_baseline_
                 "backend": "Headless",
                 "sample_count": 100,
                 "p95_frame_ms": 10.2,
+                "max_allocations_per_frame": 2,
                 "baseline_comparison": {
                     "status": "passed",
+                    "frame_time_status": "passed",
+                    "allocation_status": "passed",
                     "baseline_p95_frame_ms": 10.0,
                     "allowed_regression_percent": 5.0,
-                    "regression_percent": 2.0
+                    "regression_percent": 2.0,
+                    "max_allocations_per_frame": 2,
+                    "allowed_max_allocations_per_frame": 4
                 }
             },
             {
@@ -402,6 +407,11 @@ pub(crate) fn release_lane_artifact_supports_separate_headless_cpu_proof_lane() 
     }
     let platform_dir = fixture_root.join("target/gate-artifacts/m9-platform");
     fs::write(platform_dir.join("m9-benchmarks.json"), b"{}").expect("benchmarks");
+    fs::write(
+        platform_dir.join("m9-benchmarks-feature-matrix.json"),
+        b"{}",
+    )
+    .expect("feature matrix benchmarks");
 
     let artifact = release_lane_artifact(&fixture_root, "headless-cpu")
         .expect("headless release lane artifact builds");

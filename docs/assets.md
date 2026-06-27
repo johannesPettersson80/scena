@@ -53,13 +53,21 @@ files from paths that the browser can fetch.
 `scena.asset_load_report.v1` JSON view through
 `AssetLoadReport<SceneAsset>::to_schema_json()`. The report includes fetched
 bytes, cache-hit state, external buffer/image counts, geometry summary,
-progress events, and typed missing-resource warnings:
-`external_buffer_missing` and `external_image_missing`.
+progress events, external buffer/image status rows, typed missing-resource
+warnings (`external_buffer_missing` and `external_image_missing`), and material
+fallback provenance such as optional compressed texture sources that used an
+authored fallback image or missing material texture bytes that bind the generated
+renderer fallback texture.
 
 Use `AssetLoadOptions::with_strict_external_resources(true)` when missing
-external buffers or images should fail loading instead of producing warnings.
-Cache-hit reports retain the original warning and external-resource evidence
-while reporting `fetched_bytes = 0` for the cache-hit call itself.
+external buffers should fail loading instead of producing warnings, and
+`AssetLoadOptions::with_strict_textures(true)` when missing external images
+should fail instead of producing texture warnings. Cache-hit reports retain the
+original warning, external-resource status, and material-fallback evidence while
+reporting `fetched_bytes = 0` for the cache-hit call itself.
+Asset-aware `scena.scene_inspection.v1` reports reuse the same material source
+evidence for rendered nodes and draw rows, including source material index,
+generated-default reason, texture provenance, and matching fallback rows.
 
 Loaded scene assets, textures, and environments expose generic
 `AssetProvenance` metadata with source path, optional source SHA-256, optional
@@ -132,6 +140,14 @@ See:
 KTX2/Basis and meshopt support are available through feature flags. See
 [Feature flags](feature-flags.md).
 
+Draco mesh compression is intentionally not decoder-backed yet. On native and
+browser targets, optional `KHR_draco_mesh_compression` reports structured
+degradation metadata and required Draco usage fails with
+`AssetError::UnsupportedRequiredExtension`. Re-export Draco assets uncompressed
+or with `EXT_meshopt_compression` until a real user asset requires selecting a
+maintained Draco decoder and carrying it through feature, license, browser,
+and native proof.
+
 ## Unsupported or unavailable features
 
 Unsupported required glTF extensions fail explicitly with structured asset
@@ -154,19 +170,37 @@ third-party glTF/GLB is ready for scena:
 
 ```bash
 cargo run -p xtask -- asset-doctor path/to/model.glb
+scena doctor path/to/model.glb
 ```
 
-The command first runs the official Khronos glTF Validator CLI in stdout mode
+The xtask command first runs the official Khronos glTF Validator CLI in stdout mode
 (`gltf_validator -o <asset>`). Set `SCENA_GLTF_VALIDATOR` when the executable
 has a different path. The official validator owns glTF specification
 compliance; scena does not reimplement that subset.
 
-After the official validator runs, the command emits scena-specific renderer
-guidance as `scena.asset_doctor.v1` JSON. Each guidance entry includes a
-severity, status, message, and `fix` string for issues such as required
-clearcoat, sheen, anisotropy, iridescence, or dispersion materials, Draco
-compression, feature-gated KTX2/meshopt assets, or deferred WebP texture-source
-rebinding.
+The runtime API emits the same renderer-owned finding shape without depending
+on the external validator: `Assets::doctor_asset_path()` diagnoses a path,
+`Assets::doctor_loaded_asset()` diagnoses an already loaded `SceneAsset`,
+`SceneHostCore::asset_doctor_json()` returns the same JSON for native hosts,
+and browser hosts can call `SceneHost.assetDoctorJson(url)`. The `scena doctor`
+CLI prints the runtime `scena.asset_doctor.v1` report to stdout and exits
+non-zero when any error finding is present. Runtime `ok=true` means no
+error-severity finding was produced; warning-severity findings such as missing
+external images, missing optional buffers, or material fallbacks still require
+review when the host needs complete authored assets.
+
+Every finding includes `severity`, stable `code`, `path`, `message`, `help`,
+and `suggested_fix`. CLI and library diagnostics share codes where checks
+overlap, including `unsupported_required_extension`, `extension_supported`,
+`extension_degraded`, `external_buffer_missing`, `external_image_missing`, and
+`material_fallback_used`.
+
+After the official validator runs, the xtask command also emits
+scena-specific renderer guidance as `scena.asset_doctor.v1` JSON. Each guidance
+entry includes the normalized fields above plus the historical `fix` string for
+issues such as required clearcoat, sheen, anisotropy, iridescence, or
+dispersion materials, Draco compression, feature-gated KTX2/meshopt assets, or
+deferred WebP texture-source rebinding.
 
 For example, optional `KHR_materials_clearcoat` factors and texture slots are
 preserved and the CPU/reference plus GPU shader/material paths sample
@@ -188,3 +222,11 @@ Optional `KHR_materials_dispersion` factors are preserved and sampled through a
 CPU/reference plus GPU shader/material channel-spread path; a required
 dispersion asset keeps the same release-proof guard until approved backend
 evidence and full transmission/volume glass behavior exist.
+Optional `KHR_materials_transmission`, `KHR_materials_ior`, and
+`KHR_materials_volume` values are parsed and sampled through CPU/reference
+transmission-volume shading, and attached GPU backends can claim physical
+glass when the target capability report has
+`physical_glass_transmission=supported`. Required assets that depend on those
+extensions should stay optional, ship a fallback material, or be deployed only
+to lanes whose capability report carries that supported state; CPU/reference
+and unattached factory lanes remain degraded.

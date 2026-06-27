@@ -127,6 +127,30 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .map_err(map_animation_error)
     }
 
+    pub fn animation_clip_for_handle(
+        &self,
+        handle: u64,
+    ) -> Result<&crate::animation::AnimationClip, SceneHostError> {
+        let mixer = self.resolve_animation_handle(handle)?;
+        Ok(self
+            .scene
+            .animation_mixer(mixer)
+            .map_err(map_animation_error)?
+            .clip())
+    }
+
+    pub(super) fn advance_animation(
+        &mut self,
+        handle: u64,
+        delta_seconds: f64,
+    ) -> Result<(), SceneHostError> {
+        let delta_seconds = validate_time_seconds("animation_time seconds", delta_seconds)?;
+        let mixer = self.resolve_animation_handle(handle)?;
+        self.scene
+            .update_animation(mixer, delta_seconds)
+            .map_err(map_animation_error)
+    }
+
     pub fn advance(&mut self, delta_seconds: f64) -> Result<(), SceneHostError> {
         let delta_seconds = validate_time_seconds("advance delta_seconds", delta_seconds)?;
         let mixers = self.animation_handles.values().copied().collect::<Vec<_>>();
@@ -184,6 +208,10 @@ fn map_animation_error(error: AnimationError) -> SceneHostError {
         AnimationError::ClipNotFound { name } => SceneHostError::new(
             SceneHostErrorCode::AnimationClipNotFound,
             format!("animation clip {name} was not found"),
+        ),
+        AnimationError::InvalidClip { reason } => SceneHostError::new(
+            SceneHostErrorCode::InvalidInput,
+            format!("animation clip is invalid: {reason}"),
         ),
         AnimationError::MixerNotFound(mixer) => SceneHostError::new(
             SceneHostErrorCode::AnimationHandleNotFound,

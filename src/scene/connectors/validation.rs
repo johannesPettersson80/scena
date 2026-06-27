@@ -1,5 +1,7 @@
 use super::super::transforms::rotate_vec3;
-use super::super::{ConnectorKey, NodeKey, NodeKind, Quat, Transform, Vec3};
+use super::super::{
+    ConnectorKey, NodeKey, NodeKind, Quat, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
+};
 use super::{ConnectOptions, ConnectionError, ConnectorFrame};
 
 pub(super) fn validate_connector_live(
@@ -38,25 +40,37 @@ pub(super) fn validate_connector_source_metadata(
     source: &ConnectorFrame,
     target: &ConnectorFrame,
 ) -> Result<(), ConnectionError> {
-    if source.import_live.is_none()
-        && target.import_live.is_none()
-        && source.source_units() != target.source_units()
-    {
+    let source_is_default_host =
+        source.import_live.is_none() && has_default_source_metadata(source);
+    let target_is_default_host =
+        target.import_live.is_none() && has_default_source_metadata(target);
+    if source.import_live.is_some() && target_is_default_host {
+        return Ok(());
+    }
+    if target.import_live.is_some() && source_is_default_host {
+        return Ok(());
+    }
+    if source_is_default_host && target_is_default_host {
+        return Ok(());
+    }
+    if source.source_units() != target.source_units() {
         return Err(ConnectionError::UnitMismatch {
             source_units: source.source_units(),
             target_units: target.source_units(),
         });
     }
-    if source.import_live.is_none()
-        && target.import_live.is_none()
-        && source.source_coordinate_system() != target.source_coordinate_system()
-    {
+    if source.source_coordinate_system() != target.source_coordinate_system() {
         return Err(ConnectionError::CoordinateSystemMismatch {
             source_coordinate_system: source.source_coordinate_system(),
             target_coordinate_system: target.source_coordinate_system(),
         });
     }
     Ok(())
+}
+
+fn has_default_source_metadata(connector: &ConnectorFrame) -> bool {
+    connector.source_units() == SourceUnits::Meters
+        && connector.source_coordinate_system() == SourceCoordinateSystem::GltfYUpRightHanded
 }
 
 fn connectors_explicitly_allow_mate(

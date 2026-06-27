@@ -1,6 +1,11 @@
 {
   "schema": "scena.scene_host_asset_import.v1",
   "import": 7,
+  "material_variants": [
+    "midnight",
+    "noon"
+  ],
+  "active_variant": "noon",
   "asset_load_report": {
     "schema": "scena.asset_load_report.v1",
     "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
@@ -41,6 +46,8 @@
         "kind": "cached",
         "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
       }
-    ]
+    ],
+    "external_resources": [],
+    "material_fallbacks": []
   }
 }

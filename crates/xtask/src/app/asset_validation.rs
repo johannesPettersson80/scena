@@ -88,12 +88,33 @@ fn asset_doctor_report(path: &Path) -> AssetDoctorReport {
         failure_parts.join("; ")
     };
     let guidance_json: Vec<Value> = guidance.iter().map(asset_guidance_json).collect();
+    let findings_json: Vec<Value> = guidance.iter().map(asset_guidance_finding_json).collect();
+    let error_count = guidance
+        .iter()
+        .filter(|finding| finding.severity == AssetGuidanceSeverity::Error)
+        .count();
+    let warning_count = guidance
+        .iter()
+        .filter(|finding| finding.severity == AssetGuidanceSeverity::Warning)
+        .count();
+    let info_count = guidance
+        .iter()
+        .filter(|finding| finding.severity == AssetGuidanceSeverity::Info)
+        .count();
 
     AssetDoctorReport {
         json: json!({
             "schema": "scena.asset_doctor.v1",
+            "ok": passed,
             "status": status,
             "asset": path.to_string_lossy(),
+            "summary": {
+                "error_count": error_count,
+                "warning_count": warning_count,
+                "info_count": info_count,
+            },
+            "asset_load_report": null,
+            "findings": findings_json,
             "official_validator": official.json,
             "scena_guidance": guidance_json,
             "scena_native_error": native_error,
@@ -300,10 +321,10 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
             },
             status: "degraded",
             message: format!(
-                "{extension} factors and texture slots are CPU/reference-supported for transmission and volume shading, but required usage can still depend on approved GPU/browser rendered-output proof that is not release-proven."
+                "{extension} factors and texture slots are CPU/reference-supported for transmission and volume shading; attached GPU backends can claim physical glass only when their capability report has physical_glass_transmission=supported, while CPU/reference and unattached factory lanes remain degraded."
             ),
             fix: format!(
-                "If the look depends on backend parity for {extension}, export a fallback material without {extension} or keep the extension optional until approved backend screenshots or readback proof cover the target lane."
+                "For required {extension} assets, gate deployment on a target capability report with physical_glass_transmission=supported, or export a fallback material without {extension} for lanes where that proof is unavailable."
             ),
         }),
         "KHR_materials_specular" => Some(AssetGuidanceFinding {
@@ -351,13 +372,45 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
 
 fn asset_guidance_json(finding: &AssetGuidanceFinding) -> Value {
     json!({
+        "code": asset_guidance_code(finding),
+        "path": null,
+        "field": if finding.required { "extensionsRequired" } else { "extensionsUsed" },
         "extension": finding.extension,
         "required": finding.required,
         "severity": finding.severity.as_str(),
         "status": finding.status,
         "message": finding.message,
+        "help": finding.message,
+        "suggested_fix": finding.fix,
         "fix": finding.fix,
     })
+}
+
+fn asset_guidance_finding_json(finding: &AssetGuidanceFinding) -> Value {
+    json!({
+        "severity": finding.severity.as_str(),
+        "code": asset_guidance_code(finding),
+        "path": null,
+        "field": if finding.required { "extensionsRequired" } else { "extensionsUsed" },
+        "extension": finding.extension,
+        "message": finding.message,
+        "help": finding.message,
+        "suggested_fix": finding.fix,
+        "source": "xtask_asset_doctor",
+    })
+}
+
+fn asset_guidance_code(finding: &AssetGuidanceFinding) -> &'static str {
+    match (finding.required, finding.status) {
+        (true, "degraded" | "unsupported" | "feature-gated" | "deferred" | "unknown") => {
+            "unsupported_required_extension"
+        }
+        (_, "supported") => "extension_supported",
+        (_, "degraded" | "deferred" | "unknown") => "extension_degraded",
+        (_, "feature-gated") => "extension_feature_gated",
+        (_, "unsupported") => "extension_unsupported",
+        _ => "extension_guidance",
+    }
 }
 
 impl AssetGuidanceSeverity {

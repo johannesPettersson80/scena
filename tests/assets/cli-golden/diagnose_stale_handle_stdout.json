@@ -1,0 +1,29 @@
+{
+  "evidence": [],
+  "fixes": [],
+  "ok": false,
+  "reasons": [
+    {
+      "affected_handles": [
+        999999
+      ],
+      "auto_fixable": false,
+      "code": "stale_handle",
+      "confidence": "high",
+      "message": "target handle is not present in the inspection report",
+      "severity": "error"
+    }
+  ],
+  "schema": "scena.visibility_diagnosis.v1",
+  "summary": {
+    "culled_objects": 0,
+    "hidden_nodes": 0,
+    "not_prepared": false,
+    "visible_drawables": 1,
+    "visible_nodes": 4
+  },
+  "target": {
+    "handle": 999999,
+    "kind": "node"
+  }
+}

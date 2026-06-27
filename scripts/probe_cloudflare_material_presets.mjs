@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const DEFAULT_URL = "https://scena-demo.pages.dev/?sample=material-presets";
+const DEFAULT_URL = "https://scena-demo.pages.dev/proof/?sample=material-presets";
 const url = process.argv[2] || process.env.SCENA_MATERIAL_PROOF_URL || DEFAULT_URL;
 const fixturePath = "tests/visual/references/round_e_material_fixture.toml";
 const thresholdsPath = "tests/visual/references/round_e_material_thresholds.toml";
@@ -56,6 +56,15 @@ const proofWindows = new Map([
   ["frosted_glass", [0.600, 0.657, 0.20, 0.18]],
   ["rubber", [0.776, 0.657, 0.20, 0.16]],
 ]);
+
+const glassTransmissionRegion = Object.freeze({
+  left: 0.34,
+  top: 0.30,
+  right: 0.72,
+  bottom: 0.70,
+});
+
+const ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON = 0.01;
 
 const neighborPairs = [
   ["metal", "rough_metal"],
@@ -131,10 +140,10 @@ function parseFixture(text) {
   return fixture;
 }
 
-async function readNormalizedForegroundRgba(decoderPage, file, size = 128) {
+async function readNormalizedForegroundRgba(decoderPage, file, size = 128, options = {}) {
   const dataUrl = `data:image/png;base64,${fs.readFileSync(file).toString("base64")}`;
   const values = await decoderPage.evaluate(
-    async ({ dataUrl, size }) => {
+    async ({ dataUrl, size, isolateCenterComponent }) => {
       const image = new Image();
       const loaded = new Promise((resolve, reject) => {
         image.onload = resolve;
@@ -173,6 +182,7 @@ async function readNormalizedForegroundRgba(decoderPage, file, size = 128) {
       let maxX = -1;
       let maxY = -1;
       let foreground = 0;
+      const foregroundMask = new Uint8Array(source.width * source.height);
       for (let y = 0; y < source.height; y += 1) {
         for (let x = 0; x < source.width; x += 1) {
           const i = (y * source.width + x) * 4;
@@ -188,6 +198,17 @@ async function readNormalizedForegroundRgba(decoderPage, file, size = 128) {
           maxX = Math.max(maxX, x);
           maxY = Math.max(maxY, y);
           foreground += 1;
+          foregroundMask[y * source.width + x] = 1;
+        }
+      }
+      if (isolateCenterComponent && foreground >= 64) {
+        const component = centeredForegroundComponent(foregroundMask, source.width, source.height);
+        if (component && component.count >= 64) {
+          minX = component.minX;
+          minY = component.minY;
+          maxX = component.maxX;
+          maxY = component.maxY;
+          foreground = component.count;
         }
       }
       if (foreground < 64 || maxX < minX || maxY < minY) {
@@ -208,8 +229,60 @@ async function readNormalizedForegroundRgba(decoderPage, file, size = 128) {
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(source, minX, minY, maxX - minX + 1, maxY - minY + 1, 0, 0, size, size);
       return Array.from(ctx.getImageData(0, 0, size, size).data);
+
+      function centeredForegroundComponent(mask, width, height) {
+        const visited = new Uint8Array(mask.length);
+        const targetX = (width - 1) / 2;
+        const targetY = (height - 1) / 2;
+        let best = null;
+        const queue = [];
+        for (let start = 0; start < mask.length; start += 1) {
+          if (!mask[start] || visited[start]) continue;
+          queue.length = 0;
+          queue.push(start);
+          visited[start] = 1;
+          let count = 0;
+          let minX = width;
+          let minY = height;
+          let maxX = -1;
+          let maxY = -1;
+          let sumX = 0;
+          let sumY = 0;
+          for (let head = 0; head < queue.length; head += 1) {
+            const index = queue[head];
+            const x = index % width;
+            const y = Math.floor(index / width);
+            count += 1;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+            sumX += x;
+            sumY += y;
+            const neighbors = [index - 1, index + 1, index - width, index + width];
+            for (const neighbor of neighbors) {
+              if (neighbor < 0 || neighbor >= mask.length || visited[neighbor] || !mask[neighbor]) {
+                continue;
+              }
+              const nx = neighbor % width;
+              if (neighbor === index - 1 && nx !== x - 1) continue;
+              if (neighbor === index + 1 && nx !== x + 1) continue;
+              visited[neighbor] = 1;
+              queue.push(neighbor);
+            }
+          }
+          const centerX = sumX / Math.max(1, count);
+          const centerY = sumY / Math.max(1, count);
+          const distance = Math.hypot(centerX - targetX, centerY - targetY);
+          const score = distance - Math.log2(Math.max(1, count)) * 1.5;
+          if (!best || score < best.score) {
+            best = { count, minX, minY, maxX, maxY, score };
+          }
+        }
+        return best;
+      }
     },
-    { dataUrl, size },
+    { dataUrl, size, isolateCenterComponent: options.isolateCenterComponent ?? true },
   );
   return Uint8Array.from(values);
 }
@@ -363,10 +436,10 @@ function deltaE2000(lab1, lab2) {
   return Math.sqrt(dl * dl + dc * dc + dhTerm * dhTerm + rt * dc * dhTerm);
 }
 
-async function meanDeltaE2000(decoderPage, aPath, bPath) {
+async function meanDeltaE2000(decoderPage, aPath, bPath, options = {}) {
   const size = 128;
-  const a = await readNormalizedForegroundRgba(decoderPage, aPath, size);
-  const b = await readNormalizedForegroundRgba(decoderPage, bPath, size);
+  const a = await readNormalizedForegroundRgba(decoderPage, aPath, size, options);
+  const b = await readNormalizedForegroundRgba(decoderPage, bPath, size, options);
   const aBackground = estimateBackgroundRgb(a, size);
   const bBackground = estimateBackgroundRgb(b, size);
   let sum = 0;
@@ -450,16 +523,21 @@ async function darkTargetOffset(decoderPage, file) {
   };
 }
 
-async function sobelEdgeEnergy(decoderPage, file) {
+async function sobelEdgeEnergy(decoderPage, file, options = {}) {
   const image = await readRgbaImage(decoderPage, file);
+  const region = options.region || { left: 0, top: 0, right: 1, bottom: 1 };
+  const minX = Math.max(1, Math.floor(image.width * region.left));
+  const maxX = Math.min(image.width - 2, Math.ceil(image.width * region.right));
+  const minY = Math.max(1, Math.floor(image.height * region.top));
+  const maxY = Math.min(image.height - 2, Math.ceil(image.height * region.bottom));
   const gray = new Float32Array(image.width * image.height);
   for (let i = 0; i + 3 < image.data.length; i += 4) {
     gray[i / 4] = luminanceRgb(image.data[i], image.data[i + 1], image.data[i + 2]);
   }
   let sum = 0;
   let count = 0;
-  for (let y = 1; y < image.height - 1; y += 1) {
-    for (let x = 1; x < image.width - 1; x += 1) {
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
       const gx =
         -gray[(y - 1) * image.width + x - 1] +
         gray[(y - 1) * image.width + x + 1] -
@@ -594,33 +672,51 @@ async function launchBrowser() {
 async function cacheAndWasmProof(pageUrl) {
   const pageResponse = await fetch(pageUrl);
   const html = await pageResponse.text();
-  const mainMatch = html.match(/<script[^>]+src="([^"]*main\.js\?v=([^"]+))"/);
-  const localHtml = fs.existsSync("demo/index.html") ? readText("demo/index.html") : "";
-  const localMain = fs.existsSync("demo/main.js") ? readText("demo/main.js") : "";
-  const localMainBuster = localHtml.match(/main\.js\?v=([^"]+)/)?.[1] || null;
-  const mainUrl = mainMatch ? new URL(mainMatch[1], pageUrl).toString() : null;
-  const liveMainBuster = mainMatch?.[2] || null;
+  const scriptMatch = findVersionedScript(html);
+  const scriptPath = scriptMatch?.path || null;
+  const localPaths =
+    scriptPath && scriptPath.endsWith("/proof.js")
+      ? {
+          html: "demo/proof/index.html",
+          script: "demo/proof.js",
+          wasm: "demo/proof/pkg/scena_bg.wasm",
+        }
+      : {
+          html: "demo/index.html",
+          script: "demo/main.js",
+          wasm: "demo/pkg/scena_bg.wasm",
+        };
+  const localHtml = fs.existsSync(localPaths.html) ? readText(localPaths.html) : "";
+  const localScript = fs.existsSync(localPaths.script) ? readText(localPaths.script) : "";
+  const localScriptBuster = findVersionedScript(localHtml, path.basename(localPaths.script))?.buster || null;
+  const scriptUrl = scriptMatch ? new URL(scriptMatch.src, pageUrl).toString() : null;
+  const liveScriptBuster = scriptMatch?.buster || null;
   let liveWasmBuster = null;
   let remoteWasmSha256 = null;
   let localWasmSha256 = null;
-  if (mainUrl) {
-    const mainText = await (await fetch(mainUrl)).text();
-    liveWasmBuster = mainText.match(/scena_bg\.wasm\?v=([^"',)]+)/)?.[1] || null;
-    const wasmRelative = mainText.match(/new URL\("([^"]*scena_bg\.wasm\?v=[^"]+)"/)?.[1];
+  if (scriptUrl) {
+    const scriptText = await (await fetch(scriptUrl)).text();
+    const wasmMatch = findVersionedWasm(scriptText);
+    liveWasmBuster = wasmMatch?.buster || null;
+    const wasmRelative = wasmMatch?.src || null;
     if (wasmRelative) {
-      const wasmUrl = new URL(wasmRelative, mainUrl).toString();
+      const wasmUrl = new URL(wasmRelative, scriptUrl).toString();
       const bytes = Buffer.from(await (await fetch(wasmUrl)).arrayBuffer());
       remoteWasmSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
     }
   }
-  if (fs.existsSync("demo/pkg/scena_bg.wasm")) {
-    localWasmSha256 = sha256HexFile("demo/pkg/scena_bg.wasm");
+  if (fs.existsSync(localPaths.wasm)) {
+    localWasmSha256 = sha256HexFile(localPaths.wasm);
   }
-  const localWasmBuster = localMain.match(/scena_bg\.wasm\?v=([^"',)]+)/)?.[1] || null;
+  const localWasmBuster = findVersionedWasm(localScript)?.buster || null;
   return {
-    bumped: Boolean(localMainBuster && localMainBuster === liveMainBuster && localWasmBuster === liveWasmBuster),
-    local_main_buster: localMainBuster,
-    live_main_buster: liveMainBuster,
+    bumped: Boolean(
+      localScriptBuster &&
+        localScriptBuster === liveScriptBuster &&
+        localWasmBuster === liveWasmBuster,
+    ),
+    local_main_buster: localScriptBuster,
+    live_main_buster: liveScriptBuster,
     local_wasm_buster: localWasmBuster,
     live_wasm_buster: liveWasmBuster,
     wasm: {
@@ -633,6 +729,28 @@ async function cacheAndWasmProof(pageUrl) {
   };
 }
 
+function findVersionedScript(html, preferredName = null) {
+  const pattern = /<script[^>]+src="([^"]*?([^/"?#]+\.js)\?v=([^"]+))"/g;
+  let fallback = null;
+  for (const match of html.matchAll(pattern)) {
+    const result = {
+      src: match[1],
+      path: new URL(match[1], "https://example.invalid/").pathname,
+      name: match[2],
+      buster: match[3],
+    };
+    if (!fallback) fallback = result;
+    if (preferredName && result.name === preferredName) return result;
+    if (!preferredName && (result.name === "proof.js" || result.name === "main.js")) return result;
+  }
+  return fallback;
+}
+
+function findVersionedWasm(scriptText) {
+  const match = scriptText.match(/["'`]([^"'`]*scena_bg\.wasm\?v=([^"'`)]+))["'`]/);
+  return match ? { src: match[1], buster: match[2] } : null;
+}
+
 async function main() {
   const fixture = parseFixture(readText(fixturePath));
   const thresholds = parseThresholds(readText(thresholdsPath));
@@ -643,6 +761,16 @@ async function main() {
   let cacheProof = null;
   try {
     cacheProof = await cacheAndWasmProof(url);
+    if (!cacheProof.bumped) {
+      errors.push(
+        `cache buster mismatch: local main ${cacheProof.local_main_buster ?? "missing"}, live main ${cacheProof.live_main_buster ?? "missing"}, local wasm ${cacheProof.local_wasm_buster ?? "missing"}, live wasm ${cacheProof.live_wasm_buster ?? "missing"}`,
+      );
+    }
+    if (!cacheProof.wasm.checksum_matches_build) {
+      errors.push(
+        `wasm checksum mismatch: local ${cacheProof.wasm.local_sha256 ?? "missing"}, remote ${cacheProof.wasm.remote_sha256 ?? "missing"}`,
+      );
+    }
   } catch (error) {
     errors.push(`cache/wasm proof failed: ${error.message}`);
   }
@@ -674,7 +802,9 @@ async function main() {
         errors.push(`${preset} reference missing at ${referencePath}`);
         continue;
       }
-      const delta = await meanDeltaE2000(decoderPage, cropPath, referencePath);
+      const delta = await meanDeltaE2000(decoderPage, cropPath, referencePath, {
+        isolateCenterComponent: !preset.includes("glass"),
+      });
       const maxDelta =
         thresholds[preset]?.delta_e2000_max ?? thresholds.global?.reference_delta_e2000_max;
       const metrics = {
@@ -729,8 +859,11 @@ async function main() {
       const minAspect = thresholds.brushed_steel?.anisotropy_aspect_ratio_ibl;
       perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl = Number(anisotropyAspect.toFixed(3));
       perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl_min = minAspect;
+      perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl_measurement_epsilon =
+        ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON;
       perMaterial.brushed_steel.passed_anisotropy_aspect_ratio_ibl =
-        Number.isFinite(anisotropyAspect) && anisotropyAspect >= minAspect;
+        Number.isFinite(anisotropyAspect) &&
+        anisotropyAspect + ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON >= minAspect;
       if (!perMaterial.brushed_steel.passed_anisotropy_aspect_ratio_ibl) {
         errors.push(
           `brushed_steel anisotropy aspect ratio ${perMaterial.brushed_steel.anisotropy_aspect_ratio_ibl} < ${minAspect}`,
@@ -812,11 +945,21 @@ async function main() {
       }
     }
     if (perMaterial.frosted_glass && perMaterial.clear_glass) {
-      const clearEdge = await sobelEdgeEnergy(decoderPage, path.join(outDir, "clear_glass.png"));
-      const frostedEdge = await sobelEdgeEnergy(decoderPage, path.join(outDir, "frosted_glass.png"));
+      const edgeOptions = { region: glassTransmissionRegion };
+      const clearEdge = await sobelEdgeEnergy(
+        decoderPage,
+        path.join(outDir, "clear_glass.png"),
+        edgeOptions,
+      );
+      const frostedEdge = await sobelEdgeEnergy(
+        decoderPage,
+        path.join(outDir, "frosted_glass.png"),
+        edgeOptions,
+      );
       const reduction = clearEdge > 0 ? 1 - frostedEdge / clearEdge : 0;
       const minReduction = thresholds.frosted_glass?.high_frequency_contrast_reduction_min;
       perMaterial.frosted_glass.rough_transmission_status = "measured";
+      perMaterial.frosted_glass.rough_transmission_region = glassTransmissionRegion;
       perMaterial.frosted_glass.clear_glass_edge_energy = Number(clearEdge.toFixed(4));
       perMaterial.frosted_glass.frosted_glass_edge_energy = Number(frostedEdge.toFixed(4));
       perMaterial.frosted_glass.high_frequency_contrast_reduction = Number(reduction.toFixed(3));

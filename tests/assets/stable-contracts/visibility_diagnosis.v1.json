@@ -1,0 +1,42 @@
+{
+  "schema": "scena.visibility_diagnosis.v1",
+  "ok": false,
+  "target": {
+    "kind": "node",
+    "handle": 7
+  },
+  "reasons": [
+    {
+      "code": "node_hidden",
+      "severity": "error",
+      "confidence": "high",
+      "auto_fixable": true,
+      "affected_handles": [7],
+      "message": "target node is hidden"
+    }
+  ],
+  "fixes": [
+    {
+      "action": "set_visible",
+      "target_handle": 7,
+      "patch": {
+        "visibility": [
+          {
+            "node": 7,
+            "visible": true
+          }
+        ]
+      },
+      "risk": "content",
+      "help": "set the target node visible, then render and diagnose again"
+    }
+  ],
+  "summary": {
+    "visible_nodes": 1,
+    "hidden_nodes": 1,
+    "visible_drawables": 0,
+    "culled_objects": 0,
+    "not_prepared": false
+  },
+  "evidence": []
+}

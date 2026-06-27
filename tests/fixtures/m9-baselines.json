@@ -8,6 +8,7 @@
       "backend": "Headless",
       "p95_frame_ms": 50.0,
       "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 8,
       "minimum_sample_count": 100,
       "note": "Debug-profile software-renderer baseline. Public release lanes must refresh this with optimized lane-specific values before claiming performance."
     },
@@ -16,6 +17,7 @@
       "backend": "Headless",
       "p95_frame_ms": 50.0,
       "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 8,
       "minimum_sample_count": 100,
       "note": "Debug-profile software-renderer baseline for camera-framed non-NDC glTF proof."
     },
@@ -24,6 +26,7 @@
       "backend": "Headless",
       "p95_frame_ms": 250.0,
       "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 8,
       "minimum_sample_count": 100,
       "note": "Debug-profile software-renderer baseline for the BrainStem stress fixture."
     },
@@ -32,6 +35,7 @@
       "backend": "Headless",
       "p95_frame_ms": 75.0,
       "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 8,
       "minimum_sample_count": 100,
       "note": "Debug-profile software-renderer baseline for 128 asset-backed instances."
     },
@@ -40,6 +44,7 @@
       "backend": "Headless",
       "p95_frame_ms": 2.0,
       "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 0,
       "minimum_sample_count": 100,
       "note": "Render-on-change idle calls should stay near-zero; the allowance is intentionally tolerant for noisy shared runners."
     },
@@ -48,8 +53,117 @@
       "backend": "Headless",
       "p95_frame_ms": 2500.0,
       "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 8,
       "minimum_sample_count": 100,
       "note": "Dedicated release-profile 3840x2160 software-renderer lane baseline. Public release lanes must refresh this with optimized hardware-specific values before making performance claims."
+    },
+    {
+      "scene": "headless-feature-matrix-1080p-aa-off",
+      "backend": "Headless",
+      "p95_frame_ms": 1500.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 1080p AA-off baseline; release lanes must refresh with optimized values before making performance claims."
+    },
+    {
+      "scene": "headless-feature-matrix-1080p-msaa4",
+      "backend": "Headless",
+      "p95_frame_ms": 3000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 1080p CPU supersample analogue for MSAA4."
+    },
+    {
+      "scene": "headless-feature-matrix-1080p-ssaa2",
+      "backend": "Headless",
+      "p95_frame_ms": 3000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 1080p SSAA2 baseline."
+    },
+    {
+      "scene": "headless-feature-matrix-1080p-ssr-on",
+      "backend": "Headless",
+      "p95_frame_ms": 2000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 1080p screen-space reflection baseline."
+    },
+    {
+      "scene": "headless-feature-matrix-1080p-area-lights",
+      "backend": "Headless",
+      "p95_frame_ms": 2500.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 1080p area-light baseline."
+    },
+    {
+      "scene": "headless-feature-matrix-1080p-dof-on",
+      "backend": "Headless",
+      "p95_frame_ms": 2500.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 1080p depth-of-field baseline."
+    },
+    {
+      "scene": "headless-feature-matrix-4k-aa-off",
+      "backend": "Headless",
+      "p95_frame_ms": 6000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 4K AA-off baseline; release lanes must refresh with optimized values before making performance claims."
+    },
+    {
+      "scene": "headless-feature-matrix-4k-msaa4",
+      "backend": "Headless",
+      "p95_frame_ms": 12000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 4K CPU supersample analogue for MSAA4."
+    },
+    {
+      "scene": "headless-feature-matrix-4k-ssaa2",
+      "backend": "Headless",
+      "p95_frame_ms": 12000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 4K SSAA2 baseline."
+    },
+    {
+      "scene": "headless-feature-matrix-4k-ssr-on",
+      "backend": "Headless",
+      "p95_frame_ms": 8000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 4K screen-space reflection baseline."
+    },
+    {
+      "scene": "headless-feature-matrix-4k-area-lights",
+      "backend": "Headless",
+      "p95_frame_ms": 10000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 4K area-light baseline."
+    },
+    {
+      "scene": "headless-feature-matrix-4k-dof-on",
+      "backend": "Headless",
+      "p95_frame_ms": 10000.0,
+      "allowed_regression_percent": 100.0,
+      "max_allocations_per_frame": 16,
+      "minimum_sample_count": 100,
+      "note": "Dedicated feature-matrix debug-profile 4K depth-of-field baseline."
     }
   ]
 }

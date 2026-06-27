@@ -5,8 +5,6 @@ pub enum ConnectionAlignment {
     #[default]
     ForwardToForward,
     ForwardToBack,
-    NormalToNormal,
-    NormalToOpposite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -135,12 +133,8 @@ impl ConnectOptions {
 
     pub(crate) fn alignment_transform(self) -> Transform {
         match self.alignment {
-            ConnectionAlignment::ForwardToForward | ConnectionAlignment::NormalToNormal => {
-                Transform::IDENTITY
-            }
-            ConnectionAlignment::ForwardToBack | ConnectionAlignment::NormalToOpposite => {
-                Transform::IDENTITY.rotate_y_deg(180.0)
-            }
+            ConnectionAlignment::ForwardToForward => Transform::IDENTITY,
+            ConnectionAlignment::ForwardToBack => Transform::IDENTITY.rotate_y_deg(180.0),
         }
     }
 }

@@ -2,35 +2,61 @@
 
 use std::{cell::Cell, marker::PhantomData};
 
+#[cfg(feature = "inspection")]
+pub mod animation_introspection;
+#[cfg(feature = "inspection")]
+pub mod appearance;
+mod area_ltc;
 mod background;
 mod build;
 mod camera;
 mod color_contract;
 mod cpu;
+mod cpu_labels;
+mod cpu_overlay;
+mod cpu_reflections;
+mod cpu_render;
+mod cpu_resolve;
+mod cpu_strokes;
+mod cpu_transmission;
 mod culling;
+#[cfg(test)]
+mod depth_prepass_tests;
 mod environment_cache;
 mod exposure;
 mod gpu;
+#[cfg(feature = "inspection")]
+pub mod introspection;
 mod offscreen;
 mod output;
+mod pbr_brdf;
+mod physical_transmission;
 mod prepare;
 mod prepare_lifecycle;
 mod prepare_retained;
+#[cfg(feature = "inspection")]
+pub mod quality;
 mod reporting;
+#[cfg(feature = "inspection")]
+mod screen_bounds;
+mod screen_space_reflections;
 mod settings;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
 mod state;
 mod surface;
+mod target;
+#[cfg(feature = "inspection")]
+pub mod visibility_diagnosis;
+#[cfg(feature = "inspection")]
+pub mod visual_repair;
 
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
-    Backend, Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, GpuAdapterReport,
-    NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome, RendererStats,
+    Capabilities, ChangeKind, DevicePoll, Diagnostic, GpuAdapterReport, NotPreparedReason,
+    OutputColorSpace, RenderError, RenderOutcome, RendererStats,
 };
 use crate::material::Color;
-use crate::picking::InteractionStyle;
-use crate::platform::SurfaceKind;
-use crate::scene::{CameraKey, Scene};
+use crate::scene::{CameraKey, ClippingPlane, Scene, SectionBox};
 
 pub use self::background::Background;
 pub use self::exposure::{
@@ -41,13 +67,15 @@ use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::{
-    AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig,
-    ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    AntiAliasing, DepthOfFieldConfig, OrderIndependentTransparencyConfig, PostBloomConfig,
+    ReconstructionFilter, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 #[doc(hidden)]
 pub use self::prepare::precompute_environment_sidecar;
+pub use self::screen_space_reflections::ScreenSpaceReflectionConfig;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 use self::state::{PreparedSceneState, RenderedFrameState};
+use self::target::{RasterTarget, backend_for_attached_surface, validate_target_size};
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -57,19 +85,27 @@ pub struct Renderer {
     fxaa_scratch: Vec<u8>,
     bloom_scratch: Vec<u8>,
     oit_scratch: Vec<cpu::OitAccumPixel>,
+    cpu_supersample_frame: Vec<u8>,
+    cpu_supersample_oit_scratch: Vec<cpu::OitAccumPixel>,
     // CPU-only linear scene-referred straight-alpha accumulator. Stores the source of truth
     // before every pixel is ACES+sRGB encoded into `frame`.
     linear_frame: Option<Vec<Color>>,
     // CPU-only camera-space depth buffer. Lower positive values are closer to the active camera.
     depth_frame: Option<Vec<f32>>,
+    cpu_supersample_linear_frame: Vec<Color>,
+    cpu_supersample_depth_frame: Vec<f32>,
     stats: RendererStats,
     diagnostics: Vec<Diagnostic>,
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
     anti_aliasing: AntiAliasing,
+    supersample_factor: u32,
+    reconstruction_filter: ReconstructionFilter,
     order_independent_transparency: Option<OrderIndependentTransparencyConfig>,
     screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
+    screen_space_reflections: Option<ScreenSpaceReflectionConfig>,
+    depth_of_field: Option<DepthOfFieldConfig>,
     bloom: Option<PostBloomConfig>,
     profile: Profile,
     quality: Quality,
@@ -78,13 +114,9 @@ pub struct Renderer {
     render_generation: u64,
     last_rendered_generation: Option<u64>,
     last_rendered_frame: Option<RenderedFrameState>,
-    debug_overlay: DebugOverlay,
-    debug_revision: u64,
     surface_lost: Option<bool>,
     context_lost: Option<bool>,
     device_lost: Option<bool>,
-    hover_style: InteractionStyle,
-    selection_style: InteractionStyle,
     environment: Option<EnvironmentHandle>,
     environment_lighting_cache: environment_cache::EnvironmentLightingCache,
     background_color: Color,
@@ -93,6 +125,8 @@ pub struct Renderer {
     environment_revision: u64,
     target_revision: u64,
     prepare_telemetry: PrepareTelemetry,
+    #[cfg(test)]
+    depth_prepass_enabled_for_test: bool,
     #[cfg(not(target_arch = "wasm32"))]
     _headless_gpu_test_guard: Option<build::HeadlessGpuTestSupportGuard>,
     not_sync: PhantomData<Cell<()>>,
@@ -105,14 +139,6 @@ struct PrepareTelemetry {
     static_gpu_resource_rebuilds: u64,
     dynamic_template_prepares: u64,
     draw_uniform_only_updates: u64,
-}
-
-/// Row-major render target dimensions used for CPU frame and accumulator indexing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RasterTarget {
-    width: u32,
-    height: u32,
-    backend: Backend,
 }
 
 impl Renderer {
@@ -144,114 +170,40 @@ impl Renderer {
             });
         }
 
-        let camera_projection = camera::CameraProjection::from_scene(scene, camera, self.target)?;
+        let gpu_target = if self.gpu.is_some() {
+            Some(self.gpu_render_target()?)
+        } else {
+            None
+        };
+        let camera_projection =
+            camera::CameraProjection::from_scene(scene, camera, gpu_target.unwrap_or(self.target))?;
         let primitive_count = prepared_triangle_alias_count(self.prepared_state(scene)?);
         let mut auto_exposure_attempted = false;
         let mut gpu_draw_submissions = 0;
         loop {
-            let gpu_post_counts = if self.gpu.is_some() {
-                let gpu_result = self.draw_gpu(&camera_projection)?;
+            if self.gpu.is_some() {
+                let (clipping_planes, section_box) = {
+                    let prepared = self.prepared_state(scene)?;
+                    (prepared.clipping_planes.clone(), prepared.section_box)
+                };
+                let gpu_result = self.draw_gpu(
+                    gpu_target.expect("GPU render target exists when GPU is active"),
+                    &camera_projection,
+                    &clipping_planes,
+                    section_box,
+                )?;
                 gpu_draw_submissions = gpu_result.draw_submissions;
                 self.stats.order_independent_transparency_passes = 0;
-                Some(gpu_result.post_counts)
+                self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion;
+                self.stats.screen_space_reflection_passes =
+                    gpu_result.post_counts.screen_space_reflections;
+                self.stats.bloom_passes = gpu_result.post_counts.bloom;
+                self.stats.depth_of_field_passes = gpu_result.post_counts.depth_of_field;
+                self.stats.fxaa_passes = gpu_result.post_counts.fxaa;
             } else {
-                let (primitives, clipping_planes) = {
-                    let prepared = self.prepared_state(scene)?;
-                    (
-                        prepared.primitives.clone(),
-                        prepared.clipping_planes.clone(),
-                    )
-                };
-                let linear_frame = self
-                    .linear_frame
-                    .as_mut()
-                    .expect("CPU renderer owns a linear accumulator");
-                let depth_frame = self
-                    .depth_frame
-                    .as_mut()
-                    .expect("CPU renderer owns a depth buffer");
-                let mut cpu_frame = cpu::CpuFrame::new(
-                    self.target,
-                    self.output,
-                    linear_frame,
-                    depth_frame,
-                    &mut self.frame,
-                );
-                cpu::clear_cpu(&mut cpu_frame, self.background_color);
-                self.stats.order_independent_transparency_passes =
-                    if let Some(config) = self.order_independent_transparency {
-                        cpu::clear_order_independent_transparency(&mut self.oit_scratch);
-                        for primitive in &primitives {
-                            if cpu::primitive_needs_order_independent_transparency(primitive) {
-                                cpu::draw_order_independent_transparency_cpu(
-                                    &mut cpu_frame,
-                                    primitive,
-                                    &clipping_planes,
-                                    &camera_projection,
-                                    &mut self.oit_scratch,
-                                    config,
-                                );
-                            } else {
-                                cpu::draw_primitive_cpu(
-                                    &mut cpu_frame,
-                                    primitive,
-                                    &clipping_planes,
-                                    &camera_projection,
-                                );
-                            }
-                        }
-                        cpu::resolve_order_independent_transparency_cpu(
-                            &mut cpu_frame,
-                            &self.oit_scratch,
-                        )
-                    } else {
-                        for primitive in &primitives {
-                            cpu::draw_primitive_cpu(
-                                &mut cpu_frame,
-                                primitive,
-                                &clipping_planes,
-                                &camera_projection,
-                            );
-                        }
-                        0
-                    };
-                None
-            };
-            if let Some(post_counts) = gpu_post_counts {
-                self.stats.ambient_occlusion_passes = post_counts.ambient_occlusion;
-                self.stats.bloom_passes = post_counts.bloom;
-                self.stats.fxaa_passes = post_counts.fxaa;
-            } else {
-                self.stats.ambient_occlusion_passes = match (
-                    self.screen_space_ambient_occlusion,
-                    self.depth_frame.as_ref(),
-                ) {
-                    (Some(config), Some(depth_frame)) => {
-                        output::apply_screen_space_ambient_occlusion_rgba8(
-                            self.target,
-                            &mut self.frame,
-                            depth_frame,
-                            config,
-                        )
-                    }
-                    _ => 0,
-                };
-                self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
-                    output::apply_bloom_rgba8(
-                        self.target,
-                        &mut self.frame,
-                        &mut self.bloom_scratch,
-                        bloom,
-                    )
-                });
-                self.stats.fxaa_passes = match self.anti_aliasing {
-                    AntiAliasing::None => 0,
-                    AntiAliasing::Fxaa => output::apply_fxaa_rgba8(
-                        self.target,
-                        &mut self.frame,
-                        &mut self.fxaa_scratch,
-                    ),
-                };
+                let cpu_projection =
+                    camera::CameraProjection::from_scene(scene, camera, self.target)?;
+                self.draw_cpu(scene, camera, &cpu_projection)?;
             }
             if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
                 break;
@@ -344,12 +296,17 @@ impl Renderer {
 
     fn draw_gpu(
         &mut self,
+        target: RasterTarget,
         camera_projection: &camera::CameraProjection,
+        clipping_planes: &[ClippingPlane],
+        section_box: Option<SectionBox>,
     ) -> Result<gpu::GpuRenderResult, RenderError> {
         let post_settings = gpu::GpuPostSettings::new(
             self.anti_aliasing,
             self.bloom,
             self.screen_space_ambient_occlusion,
+            self.screen_space_reflections,
+            depth_of_field_post_config(self.depth_of_field, camera_projection),
         );
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -357,15 +314,38 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
+            let scale = if target == self.target {
+                1
+            } else {
+                self.supersample_factor
+            };
+            let mut supersample_frame = Vec::new();
+            let frame = if scale > 1 {
+                &mut supersample_frame
+            } else {
+                &mut self.frame
+            };
             let result = gpu.render_to_frame(
-                self.target,
+                target,
                 self.output.exposure_ev(),
                 self.output.color_management_uniform(),
                 self.background_color,
                 camera_projection,
-                &mut self.frame,
+                clipping_planes,
+                section_box,
+                frame,
                 post_settings,
             )?;
+            if scale > 1 {
+                cpu_resolve::downsample_rgba8_reconstruction_filter(
+                    target,
+                    scale,
+                    supersample_frame.as_slice(),
+                    self.target,
+                    &mut self.frame,
+                    self.reconstruction_filter,
+                );
+            }
             if result.submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
@@ -378,6 +358,7 @@ impl Renderer {
 
         #[cfg(target_arch = "wasm32")]
         {
+            let _ = target;
             let gpu = self
                 .gpu
                 .as_mut()
@@ -388,6 +369,8 @@ impl Renderer {
                 self.output.color_management_uniform(),
                 self.background_color,
                 camera_projection,
+                clipping_planes,
+                section_box,
                 post_settings,
             )?;
             if result.submitted {
@@ -395,6 +378,15 @@ impl Renderer {
             }
             Ok(result)
         }
+    }
+
+    fn gpu_render_target(&self) -> Result<RasterTarget, RenderError> {
+        let scale = if self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
+            self.supersample_factor
+        } else {
+            1
+        };
+        self::target::validate_supersample_target(self.target, scale)
     }
 
     fn prepared_state(&self, scene: &Scene) -> Result<&PreparedSceneState, RenderError> {
@@ -472,18 +464,22 @@ impl Renderer {
             });
         }
 
-        if prepared.debug_revision != self.debug_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::RendererChanged {
-                    prepared_revision: prepared.debug_revision,
-                    current_revision: self.debug_revision,
-                    change: ChangeKind::DebugOverlay,
-                },
-            });
-        }
-
         Ok(prepared)
     }
+}
+
+fn depth_of_field_post_config(
+    config: Option<DepthOfFieldConfig>,
+    camera_projection: &camera::CameraProjection,
+) -> Option<output::DepthOfFieldPostConfig> {
+    let config = config?;
+    let focus_depth =
+        camera_projection.depth_buffer_for_camera_distance(config.focus_distance())?;
+    Some(output::DepthOfFieldPostConfig::new(
+        focus_depth,
+        config.aperture_f_stop(),
+        config.radius_px(),
+    ))
 }
 
 fn prepared_triangle_alias_count(prepared: &PreparedSceneState) -> u64 {
@@ -496,6 +492,8 @@ fn prepared_triangle_alias_count(prepared: &PreparedSceneState) -> u64 {
     primitive_triangles.saturating_add(instance_triangles)
 }
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod movement_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod phase4_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -513,35 +511,5 @@ impl Drop for Renderer {
             gpu.release_prepared_resources();
             let _ = gpu.poll_device();
         }
-    }
-}
-
-impl RasterTarget {
-    fn pixel_len(self) -> usize {
-        (self.width as usize) * (self.height as usize)
-    }
-
-    fn byte_len(self) -> usize {
-        self.pixel_len() * 4
-    }
-
-    fn pixel_index(self, x: u32, y: u32) -> usize {
-        (y as usize) * (self.width as usize) + (x as usize)
-    }
-}
-
-pub(super) fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {
-    match kind {
-        SurfaceKind::NativeWindow => Backend::NativeSurface,
-        SurfaceKind::BrowserWebGpuCanvas => Backend::WebGpu,
-        SurfaceKind::BrowserWebGl2Canvas => Backend::WebGl2,
-    }
-}
-
-pub(super) fn validate_target_size(width: u32, height: u32) -> Result<(), ()> {
-    if width == 0 || height == 0 {
-        Err(())
-    } else {
-        Ok(())
     }
 }

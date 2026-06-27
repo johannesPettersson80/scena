@@ -278,7 +278,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_headless_png_one_liner()
     );
 }
 
-pub(crate) const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) FollowControls::behind_and_above FlyControls::new move_local with_yaw_pitch_degrees viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( InteractionStyle::outline renderer.set_hover_style renderer.set_selection_style viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
+pub(crate) const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) FollowControls::behind_and_above FlyControls::new move_local with_yaw_pitch_degrees viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( InteractionStyle::outline renderer.set_hover_style renderer.set_selection_style selection or hover state updates viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
 
 pub(crate) fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -295,6 +295,7 @@ pub(crate) fn write_easy_scene_fixture(
         "docs/checklists",
         "src",
         "src/assets",
+        "src/capture",
         "src/viewer",
         "src/material",
         "src/render",
@@ -306,6 +307,7 @@ pub(crate) fn write_easy_scene_fixture(
     ] {
         fs::create_dir_all(fixture_root.join(dir)).expect("fixture dir");
     }
+    crate::app::tests_17::write_shared_capture_fixture(fixture_root);
     fs::write(fixture_root.join("docs/guides/easy-scene-setup.md"), guide).expect("guide fixture");
     fs::write(
         fixture_root.join("Cargo.toml"),
@@ -319,7 +321,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("feature flags fixture");
     fs::write(
         fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md"),
-        "Production-grade asset pipeline complete and production-profile ready Status: **[shipped]** for the production profile tests/m8_compressed_asset_release_proof.rs target/gate-artifacts/m8-compressed-assets CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION Follow/Fly library primitives **[shipped]** tests/camera_control_kit.rs CAMERA-CONTROL-KIT Picking + outline + hover Status: **[shipped]** PICKING-OUTLINE-HOVER examples_visual_picking_selection_hover_renders_styled_pick_to_ppm",
+        "Production-grade asset pipeline complete and production-profile ready Status: **[shipped]** for the production profile tests/m8_compressed_asset_release_proof.rs target/gate-artifacts/m8-compressed-assets CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION Follow/Fly library primitives **[shipped]** tests/camera_control_kit.rs CAMERA-CONTROL-KIT Picking + hover + selection Status: **[shipped]** PICKING-OUTLINE-HOVER examples_visual_picking_selection_hover_renders_pick_state_to_ppm",
     )
     .expect("next release checklist fixture");
     crate::app::tests_15::write_asset_validation_easy_scene_fixture(fixture_root);
@@ -356,7 +358,7 @@ pub(crate) fn write_easy_scene_fixture(
     fs::write(fixture_root.join("src/demo_page.rs"), demo_rs).expect("demo fixture");
     fs::write(
         fixture_root.join("src/controls.rs"),
-        "mod camera_kit; mod url_state; pub use camera_kit::{FlyControls, FollowControls}; CameraOrbitUrlState CameraOrbitUrlStateError pub fn cinematic() {} pub fn snappy() {} pub fn presentation() {} pub fn turntable() {} pub fn advance() {} pub const fn auto_rotate_rpm() {} pub fn auto_rotate_radians_per_second() {} pub fn zoom_limits_bounds_relative() {} pub fn with_distance_limits() {} pub const fn min_distance() {} pub const fn max_distance() {} fn clamp_distance() {}",
+        "mod camera_kit; mod url_state; pub use camera_kit::{FlyControls, FollowControls}; CameraOrbitUrlState CameraOrbitUrlStateError pub fn cinematic() {} pub fn snappy() {} pub fn presentation() {} pub fn turntable() {} pub fn focus() {} pub fn advance() {} pub const fn auto_rotate_rpm() {} pub fn auto_rotate_radians_per_second() {} pub fn zoom_limits_bounds_relative() {} pub fn with_distance_limits() {} pub const fn min_distance() {} pub const fn max_distance() {} fn clamp_distance() {}",
     )
     .expect("controls fixture");
     fs::create_dir_all(fixture_root.join("src/controls")).expect("controls module dir");
@@ -407,7 +409,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("viewer material variants fixture");
     fs::write(
         fixture_root.join("src/viewer/capture.rs"),
-        "pub enum ViewerCaptureError {} pub enum ViewerPngError {} CPU headless renderer does not request a GPU adapter pub fn capture_png_bytes() { png::Encoder::new(); png::ColorType::Rgba; png::BitDepth::Eight; } pub fn capture_png() {} pub async fn render_png_bytes() {} pub async fn render_png() {}",
+        "pub enum ViewerCaptureError { Capture(CaptureError) } pub enum ViewerPngError {} CPU headless renderer does not request a GPU adapter pub fn capture_png_bytes() { self.capture()? .to_png_bytes() } pub fn capture_png(path) { self.capture()? .write_png(path) } pub async fn render_png_bytes() {} pub async fn render_png() {}",
     )
     .expect("viewer capture fixture");
     fs::write(
@@ -452,7 +454,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("animation example fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image round_c_animation_playback_reference_animated_docs_image round-c-animation-playback-reference-animated-docs-image round_d_orbit_zoom_limit_animated_docs_image round-d-orbit-zoom-limit-animated-docs-image round_d_viewer_pointer_callback_animated_docs_image round-d-viewer-pointer-callback-animated-docs-image examples_visual_picking_selection_hover_renders_styled_pick_to_ppm picking_selection_hover InteractionStyle::outline viewer_material_variant_reference_docs_image viewer-material-variant-reference-docs-image reference-image+docs-image animated-proof+docs-image",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image round_c_animation_playback_reference_animated_docs_image round-c-animation-playback-reference-animated-docs-image round_d_orbit_zoom_limit_animated_docs_image round-d-orbit-zoom-limit-animated-docs-image round_d_viewer_pointer_callback_animated_docs_image round-d-viewer-pointer-callback-animated-docs-image examples_visual_picking_selection_hover_renders_pick_state_to_ppm picking_selection_hover pick_and_select_with_assets InteractionStyle::outline viewer_material_variant_reference_docs_image viewer-material-variant-reference-docs-image reference-image+docs-image animated-proof+docs-image",
     )
     .expect("visual proof fixture");
     let color_fixture = "pub const TRANSPARENT: Color = Color; pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}";
@@ -476,7 +478,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("render settings fixture");
     fs::write(
         fixture_root.join("src/picking.rs"),
-        "pub struct InteractionStyle; pub const fn outline() {} pub fn set_hover() {} pub fn set_primary_selection() {}",
+        "pub struct InteractionContext; pub struct InteractionStyle; pub const fn outline() {} pub fn set_hover() {} pub fn set_primary_selection() {}",
     )
     .expect("picking fixture");
     fs::write(
@@ -531,7 +533,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("background preset test fixture");
     fs::write(
         fixture_root.join("tests/round_b_orbit_controls_presets.rs"),
-        "named_orbit_damping_presets_are_public_and_ordered turntable_presets_expose_explicit_frame_advance_semantics presentation_combines_medium_damping_with_slow_turntable_motion",
+        "named_orbit_damping_presets_are_public_and_ordered turntable_presets_expose_explicit_frame_advance_semantics presentation_sets_slow_turntable_motion",
     )
     .expect("orbit preset test fixture");
     fs::write(
@@ -561,7 +563,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("viewer pointer callback test fixture");
     fs::write(
         fixture_root.join("tests/round_d_viewer_capture_png.rs"),
-        "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup .render_png_bytes() .render_png( visible CPU-rendered pixels viewer-capture-png-reference.png",
+        "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact viewer_capture_png_uses_shared_capture_stale_frame_guard headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup .render_png_bytes() .render_png( visible CPU-rendered pixels viewer-capture-png-reference.png",
     )
     .expect("viewer PNG capture test fixture");
     fs::write(

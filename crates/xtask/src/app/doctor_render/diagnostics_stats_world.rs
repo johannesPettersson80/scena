@@ -12,6 +12,11 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
             "pub severity: DiagnosticSeverity",
             "pub message: String",
             "pub help: Option<String>",
+            "pub struct DiagnosticContext",
+            "#[serde(skip)]",
+            "pub fn node(&self) -> Option<NodeKey>",
+            "pub(crate) fn warning_for_node",
+            "pub(crate) fn error_for_node",
             "pub enum DiagnosticCode",
             "InvalidCameraProjection",
             "ObjectsBehindCamera",
@@ -28,7 +33,9 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
         findings,
         "ARCH-DIAGNOSTICS",
         "src/diagnostics.rs",
-        &["pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity}"],
+        &[
+            "pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticSeverity}",
+        ],
     );
     require_contains(
         root,
@@ -51,7 +58,8 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
         "src/render/prepare_lifecycle.rs",
         &[
             "self.diagnostics.clear()",
-            "prepare::collect_precision_diagnostics(scene, self.target.backend)",
+            ".prepare_target()",
+            "prepare::collect_precision_diagnostics(scene, target.backend)",
             "prepare::collect_camera_visibility_diagnostics",
         ],
     );
@@ -82,16 +90,25 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
             "DiagnosticCode::InvalidCameraProjection",
             "DiagnosticCode::LargeScenePrecisionRisk",
             "DiagnosticCode::DepthPrecisionRisk",
+            "Diagnostic::warning_for_node",
+            "Diagnostic::error_for_node",
             "DiagnosticCode::WebGl2DepthCompatibility",
             "scene.mesh_bounds_nodes()",
             "mesh bounds",
         ],
     );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/render/prepare/diagnostics.rs",
+        &["node {node:?}", "camera node {node:?}"],
+    );
     require_contains(
         root,
         findings,
         "ARCH-DIAGNOSTICS",
-        "src/scene.rs",
+        "src/scene/render_nodes.rs",
         &[
             "pub(crate) fn node_transforms",
             "pub(crate) fn camera_nodes",
@@ -108,6 +125,8 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
             "DiagnosticCode::DepthPrecisionRisk",
             "DiagnosticCode::LargeScenePrecisionRisk",
             "DiagnosticSeverity::Warning",
+            "diagnostic.node()",
+            "!diagnostic.message().contains(\"NodeKey(\")",
         ],
     );
     require_contains(
@@ -400,20 +419,33 @@ pub(crate) fn check_headless_gpu_test_guard_contracts(root: &Path, findings: &mu
     let Ok(text) = fs::read_to_string(&render_build) else {
         return;
     };
-    let Some(body) = braced_body_after(&text, "pub fn headless_gpu") else {
+    let Some(headless_body) = braced_body_after(&text, "pub fn headless_gpu") else {
         findings.push(Finding::new(
             "ARCH-HEADLESS-GPU-TEST-GUARD",
             "src/render/build.rs is missing native Renderer::headless_gpu",
         ));
         return;
     };
-    let guard_index = body.find("HeadlessGpuTestSupportGuard::acquire()");
-    let request_index = body.find("gpu::request_headless_gpu");
+    if !headless_body.contains("Self::headless_gpu_with_options") {
+        findings.push(Finding::new(
+            "ARCH-HEADLESS-GPU-TEST-GUARD",
+            "Renderer::headless_gpu must delegate to the guarded options-aware constructor",
+        ));
+    }
+    let Some(options_body) = braced_body_after(&text, "pub fn headless_gpu_with_options") else {
+        findings.push(Finding::new(
+            "ARCH-HEADLESS-GPU-TEST-GUARD",
+            "src/render/build.rs is missing native Renderer::headless_gpu_with_options",
+        ));
+        return;
+    };
+    let guard_index = options_body.find("HeadlessGpuTestSupportGuard::acquire()");
+    let request_index = options_body.find("gpu::request_headless_gpu");
     match (guard_index, request_index) {
         (Some(guard_index), Some(request_index)) if guard_index < request_index => {}
         _ => findings.push(Finding::new(
             "ARCH-HEADLESS-GPU-TEST-GUARD",
-            "Renderer::headless_gpu must acquire the shared headless GPU test-support guard before device creation",
+            "Renderer::headless_gpu_with_options must acquire the shared headless GPU test-support guard before device creation",
         )),
     }
 }

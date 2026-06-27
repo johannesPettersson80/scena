@@ -120,7 +120,9 @@ fn select_stage_source(files: &[PathBuf], suffix: &str) -> Option<PathBuf> {
 
 fn stage_source_rank(path: &Path, suffix: &str) -> (usize, usize, String) {
     let text = path.to_string_lossy().replace('\\', "/");
-    let preferred = if suffix.contains("headless-cpu") || suffix == "m9-platform/m9-benchmarks.json"
+    let preferred = if suffix.contains("headless-cpu")
+        || suffix == "m9-platform/m9-benchmarks.json"
+        || suffix == "m9-platform/m9-benchmarks-feature-matrix.json"
     {
         text.contains("release-linux-native-vulkan") as usize
     } else if suffix.contains("macos-metal") {

@@ -44,7 +44,7 @@ Call `prepare()` again after:
 - loading or reloading assets,
 - changing render target size,
 - receiving surface resize or context-loss events,
-- changing debug overlays or relevant renderer settings.
+- changing relevant renderer settings.
 
 ## Why this design matters
 
@@ -86,6 +86,10 @@ with viewport/DPR, backend capabilities, and pixel statistics into
 `scena.capture.v1`. If the scene or active camera changes after render and
 before capture, capture fails closed with `CaptureError::StaleRender` instead
 of binding new metadata to old pixels.
+Use `CaptureRgba8::to_png_bytes`, `Renderer::capture_png_bytes`,
+SceneHost `capture_png_bytes`, or browser `capturePng()` when the proof
+artifact should be PNG bytes; these helpers all delegate to the same
+descriptor-bound capture object.
 
 ## Minimal pattern
 

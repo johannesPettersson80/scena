@@ -3,7 +3,8 @@ use wasm_bindgen::prelude::JsValue;
 
 use super::super::{WorkflowScene, add_default_camera};
 use crate::{
-    Aabb, AssetLoadOptions, Assets, Color, DirectionalLight, MaterialDesc, Scene, Transform, Vec3,
+    Aabb, AssetLoadOptions, Assets, Color, DirectionalLight, Light, MaterialDesc, Scene, Transform,
+    Vec3,
 };
 
 pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsValue> {
@@ -36,19 +37,23 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
         .base_color_texture()
         .and_then(|texture| assets.texture(texture))
         .is_some_and(|texture| texture.has_decoded_pixels());
-    let source_texture_bindings = [
-        material.base_color_texture(),
-        material.normal_texture(),
-        material.metallic_roughness_texture(),
-        material.occlusion_texture(),
-        material.emissive_texture(),
-        material.clearcoat_texture(),
-        material.clearcoat_roughness_texture(),
-        material.clearcoat_normal_texture(),
+    let source_texture_roles = [
+        ("base_color", material.base_color_texture()),
+        ("normal", material.normal_texture()),
+        ("metallic_roughness", material.metallic_roughness_texture()),
+        ("occlusion", material.occlusion_texture()),
+        ("emissive", material.emissive_texture()),
+        ("clearcoat", material.clearcoat_texture()),
+        (
+            "clearcoat_roughness",
+            material.clearcoat_roughness_texture(),
+        ),
+        ("clearcoat_normal", material.clearcoat_normal_texture()),
     ]
     .into_iter()
-    .flatten()
-    .count();
+    .filter_map(|(role, texture)| texture.map(|_| role))
+    .collect::<Vec<_>>();
+    let source_texture_bindings = source_texture_roles.len();
 
     let unlit_material = assets.create_material(
         MaterialDesc::unlit(Color::from_srgb_u8(80, 185, 255)).with_double_sided(true),
@@ -79,12 +84,31 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
         .add()
         .map_err(|error| JsValue::from_str(&format!("source material light failed: {error:?}")))?;
     let camera = add_default_camera(&mut scene)?;
+    let frame_bounds = Aabb::new(Vec3::new(-1.0, -0.65, -0.3), Vec3::new(1.0, 0.65, 0.3));
     scene
-        .frame(
-            camera,
-            Aabb::new(Vec3::new(-1.0, -0.65, -0.3), Vec3::new(1.0, 0.65, 0.3)),
-        )
+        .frame(camera, frame_bounds)
         .map_err(|error| JsValue::from_str(&format!("source material frame failed: {error:?}")))?;
+    let lights = scene
+        .light_nodes()
+        .map(|(_, _, light, _)| match light {
+            Light::Directional(light) => json!({
+                "kind": "directional",
+                "illuminance_lux": light.illuminance_lux(),
+            }),
+            Light::Point(light) => json!({
+                "kind": "point",
+                "intensity_candela": light.intensity_candela(),
+            }),
+            Light::Spot(light) => json!({
+                "kind": "spot",
+                "intensity_candela": light.intensity_candela(),
+            }),
+            Light::Area(light) => json!({
+                "kind": "area",
+                "luminous_flux_lumens": light.luminous_flux_lumens(),
+            }),
+        })
+        .collect::<Vec<_>>();
 
     Ok(WorkflowScene {
         assets,
@@ -97,6 +121,12 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
             "source_material_kind": format!("{:?}", material.kind()),
             "source_base_color_decoded": source_base_color_decoded,
             "source_texture_bindings": source_texture_bindings,
+            "source_texture_roles": source_texture_roles,
+            "frame_bounds": {
+                "min": [frame_bounds.min.x, frame_bounds.min.y, frame_bounds.min.z],
+                "max": [frame_bounds.max.x, frame_bounds.max.y, frame_bounds.max.z],
+            },
+            "lights": lights,
             "load_warnings": report.warnings().len(),
             "comparison_lanes": ["generated-unlit", "source-gltf-material", "generated-pbr"],
         }),

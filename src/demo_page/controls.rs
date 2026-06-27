@@ -120,12 +120,14 @@ pub fn set_fixed_exposure_ev(app: &mut DemoApp, ev: f32) -> Result<(), JsValue> 
 
 /// Switch the renderer's anti-aliasing mode.
 ///
-/// Accepted mode keys: `fxaa` (the default), `none`.
+/// Accepted mode keys: `fxaa` (the default), `msaa4`, `msaa8`, `none`.
 #[wasm_bindgen]
 #[cfg(feature = "proof-harness")]
 pub fn set_anti_aliasing_mode(app: &mut DemoApp, mode: &str) -> Result<(), JsValue> {
     let setting = match mode.to_ascii_lowercase().as_str() {
         "fxaa" | "on" | "true" => AntiAliasing::Fxaa,
+        "msaa4" => AntiAliasing::Msaa4,
+        "msaa8" => AntiAliasing::Msaa8,
         "none" | "off" | "false" => AntiAliasing::None,
         other => {
             return Err(JsValue::from_str(&format!(

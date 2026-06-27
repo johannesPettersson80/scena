@@ -8,8 +8,8 @@ use scena::{
     Assets, Backend, CameraKey, CapabilityStatus, Color, DiagnosticCode, DiagnosticSeverity,
     GeometryDesc, GeometryTopology, GeometryVertex, HardwareTier, MaterialDesc, OrbitControlAction,
     OrbitControls, OutputColorSpace, PlatformSurface, PointerButton, PointerEvent,
-    PointerEventKind, Profile, Quality, RenderError, RenderMode, Renderer, RendererOptions, Scene,
-    SurfaceEvent, Transform, Vec3,
+    PointerEventKind, Primitive, Profile, Quality, RenderError, RenderMode, Renderer,
+    RendererOptions, Scene, SurfaceEvent, Transform, Vec3, Vertex,
 };
 
 #[global_allocator]
@@ -96,6 +96,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "CPU headless SSAO has depth-aware visual proof; GPU/browser lanes remain separate"
     );
     assert_eq!(
+        headless.directional_shadows,
+        CapabilityStatus::Degraded,
+        "CPU/reference lanes do not claim the GPU shadow-map receiver path"
+    );
+    assert_eq!(
         headless.order_independent_transparency,
         CapabilityStatus::Supported,
         "CPU headless OIT has overlap order-invariance proof; GPU/browser lanes remain separate"
@@ -128,7 +133,7 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
 
     let webgl2 = scena::Capabilities::for_backend(Backend::WebGl2);
     assert_eq!(webgl2.hardware_tier, HardwareTier::Low);
-    assert_eq!(webgl2.max_clipping_planes, 8);
+    assert_eq!(webgl2.max_clipping_planes, 16);
     assert_eq!(webgl2.default_clipping_planes, 4);
     assert_eq!(webgl2.ibl_cubemap_default_size, 128);
     assert_eq!(
@@ -167,6 +172,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "factory WebGL2 capabilities without an attached GPU device must stay degraded"
     );
     assert_eq!(
+        webgl2.directional_shadows,
+        CapabilityStatus::Degraded,
+        "factory WebGL2 capabilities without an attached GPU device must not claim shadow receiver proof"
+    );
+    assert_eq!(
         webgl2.physical_glass_transmission,
         CapabilityStatus::Degraded,
         "factory WebGL2 capabilities without an attached GPU device must not claim physical glass"
@@ -176,6 +186,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         attached_webgl2.forward_pbr,
         CapabilityStatus::Supported,
         "attached WebGL2 now owns the shared GPU PBR path and must not keep the stale degraded claim"
+    );
+    assert_eq!(
+        attached_webgl2.directional_shadows,
+        CapabilityStatus::Supported,
+        "attached WebGL2 has browser receiver-darkening proof for directional shadows"
     );
     assert_eq!(
         attached_webgl2.physical_glass_transmission,
@@ -191,6 +206,7 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     let webgpu = scena::Capabilities::for_attached_gpu_backend(Backend::WebGpu);
     assert_eq!(webgpu.hardware_tier, HardwareTier::Medium);
     assert_eq!(webgpu.forward_pbr, CapabilityStatus::Supported);
+    assert_eq!(webgpu.directional_shadows, CapabilityStatus::Supported);
     assert_eq!(
         webgpu.gpu_frustum_culling,
         CapabilityStatus::FeatureDisabled
@@ -228,10 +244,12 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
             .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::MaterialPresetFallback),
         "supported GPU PBR lanes must not tell users material presets are fallback-only: {diagnostics:?}",
     );
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == scena::DiagnosticCode::DirectionalShadowsDegraded
-            && diagnostic.message.contains("Directional shadows")
-    }));
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::DirectionalShadowsDegraded),
+        "supported GPU directional-shadow lanes must not emit the stale degraded diagnostic: {diagnostics:?}",
+    );
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::PointShadowsDisabled
             && diagnostic.message.contains("Point shadows")
@@ -526,6 +544,121 @@ fn per_instance_cpu_culling_keeps_visible_instances_and_counts_culled_ones() {
 }
 
 #[test]
+fn cpu_occlusion_culling_drops_fully_hidden_opaque_triangle() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            scena::PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.6, -0.6, 0.0),
+                    Vec3::new(0.6, -0.6, 0.0),
+                    Vec3::new(0.0, 0.6, 0.0),
+                ],
+                Color::WHITE,
+            )],
+            Transform::default(),
+        )
+        .expect("front triangle inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.2, -0.2, -0.2),
+                    Vec3::new(0.2, -0.2, -0.2),
+                    Vec3::new(0.0, 0.2, -0.2),
+                ],
+                Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
+            )],
+            Transform::default(),
+        )
+        .expect("hidden back triangle inserts");
+    let mut renderer = Renderer::headless(96, 96).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+    let outcome = renderer.render(&scene, camera).expect("render succeeds");
+
+    assert_eq!(
+        outcome.draw_calls, 1,
+        "fully hidden back triangle should be removed before draw"
+    );
+    assert_eq!(renderer.stats().culled_objects, 1);
+    assert_eq!(
+        count_red_pixels(renderer.frame_rgba8()),
+        0,
+        "hidden red triangle must not leak into the frame"
+    );
+}
+
+#[test]
+fn cpu_occlusion_culling_keeps_partially_visible_triangle() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            scena::PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.35, -0.35, 0.0),
+                    Vec3::new(0.35, -0.35, 0.0),
+                    Vec3::new(0.0, 0.35, 0.0),
+                ],
+                Color::WHITE,
+            )],
+            Transform::default(),
+        )
+        .expect("front triangle inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.2, -0.2, -0.2),
+                    Vec3::new(0.7, -0.2, -0.2),
+                    Vec3::new(0.25, 0.7, -0.2),
+                ],
+                Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
+            )],
+            Transform::default(),
+        )
+        .expect("partially visible back triangle inserts");
+    let mut renderer = Renderer::headless(96, 96).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+    let outcome = renderer.render(&scene, camera).expect("render succeeds");
+
+    assert_eq!(
+        outcome.draw_calls, 2,
+        "partially visible triangle must not be occlusion-culled"
+    );
+    assert_eq!(renderer.stats().culled_objects, 0);
+    assert!(
+        count_red_pixels(renderer.frame_rgba8()) > 20,
+        "visible red pixels should remain outside the front occluder"
+    );
+}
+
+#[test]
 fn gpu_capable_renderer_records_compute_culling_dispatch_when_available() {
     match Renderer::headless_gpu(32, 32) {
         Ok(mut renderer) => {
@@ -599,6 +732,17 @@ fn fullscreen_triangle_geometry() -> GeometryDesc {
         vec![0, 1, 2],
     )
     .expect("triangle geometry is valid")
+}
+
+fn colored_triangle(points: [Vec3; 3], color: Color) -> Primitive {
+    Primitive::triangle(points.map(|position| Vertex { position, color }))
+}
+
+fn count_red_pixels(frame: &[u8]) -> usize {
+    frame
+        .chunks_exact(4)
+        .filter(|pixel| pixel[0] > 120 && pixel[1] < 60 && pixel[2] < 60)
+        .count()
 }
 
 #[test]

@@ -35,6 +35,7 @@ pub(super) struct PreparedResourceEstimateInput {
     pub(super) depth_prepass_passes: u64,
     pub(super) material_texture_count: u64,
     pub(super) material_texture_bytes: u64,
+    pub(super) light_assignment_bytes: u64,
     /// Plan line 778 commit 2: distinct material bind groups in the
     /// prepared resource set. The estimator records this so the
     /// observable `RendererStats::material_bind_groups` reflects the
@@ -66,6 +67,7 @@ pub(super) fn estimate_prepared_resource_stats(
         depth_prepass_passes,
         material_texture_count,
         material_texture_bytes,
+        light_assignment_bytes,
         material_bind_groups,
     } = input;
 
@@ -86,9 +88,21 @@ pub(super) fn estimate_prepared_resource_stats(
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
     let transmission_textures = 2;
     let transmission_render_targets = 1;
-    let transmission_pipelines = 1;
+    let mesh_pipeline_sets = 1 + u64::from(has_surface_pipeline);
+    let mesh_pipelines = mesh_pipeline_sets * 2;
+    let transmission_pipelines = 2;
+    let shadow_caster_pipelines = 1;
+    let depth_prepass_pipelines = depth_prepass_passes.saturating_mul(2);
     let pipelines =
-        1 + u64::from(has_surface_pipeline) + depth_prepass_passes + transmission_pipelines;
+        mesh_pipelines + transmission_pipelines + shadow_caster_pipelines + depth_prepass_pipelines;
+    let mesh_shader_modules = mesh_pipelines;
+    let transmission_shader_modules = transmission_pipelines;
+    let shadow_caster_shader_modules = 1;
+    let depth_prepass_shader_modules = u64::from(depth_prepass_passes > 0);
+    let shader_modules = mesh_shader_modules
+        + transmission_shader_modules
+        + shadow_caster_shader_modules
+        + depth_prepass_shader_modules;
     #[cfg(not(target_arch = "wasm32"))]
     let shadow_map_bytes = shadow_map_resolution
         .map(|resolution| {
@@ -115,9 +129,9 @@ pub(super) fn estimate_prepared_resource_stats(
 
     GpuResourceStats {
         #[cfg(not(target_arch = "wasm32"))]
-        buffers: 4,
+        buffers: 7,
         #[cfg(target_arch = "wasm32")]
-        buffers: 3,
+        buffers: 6,
         // textures: 1 + material_texture_count + shadow_maps + depth_prepass_passes + transmission_textures
         #[cfg(not(target_arch = "wasm32"))]
         textures: 1
@@ -138,7 +152,7 @@ pub(super) fn estimate_prepared_resource_stats(
         // Adding `material_bind_groups` keeps the resource estimate
         // consistent with the actual GPU shape.
         bind_groups: 2 + u64::from(material_bind_groups),
-        shader_modules: pipelines,
+        shader_modules,
         material_bind_groups,
         #[cfg(not(target_arch = "wasm32"))]
         approximate_gpu_memory_bytes: texture_bytes
@@ -146,6 +160,7 @@ pub(super) fn estimate_prepared_resource_stats(
             + vertex_bytes
             + instance_bytes
             + uniform_bytes
+            + light_assignment_bytes
             + material_texture_bytes
             + shadow_map_bytes
             + depth_prepass_bytes
@@ -154,6 +169,7 @@ pub(super) fn estimate_prepared_resource_stats(
         approximate_gpu_memory_bytes: vertex_bytes
             + instance_bytes
             + uniform_bytes
+            + light_assignment_bytes
             + material_texture_bytes
             + shadow_map_bytes
             + depth_prepass_bytes,
@@ -180,13 +196,13 @@ mod tests {
 
         let stats = estimate_prepared_resource_stats(estimate_input(target, 3));
 
-        assert_eq!(stats.buffers, 4);
+        assert_eq!(stats.buffers, 7);
         assert_eq!(stats.textures, 4);
         assert_eq!(stats.render_targets, 2);
-        assert_eq!(stats.pipelines, 2);
+        assert_eq!(stats.pipelines, 5);
         assert_eq!(stats.bind_groups, 3);
-        assert_eq!(stats.shader_modules, 2);
-        assert_eq!(stats.destruction_records(), 17);
+        assert_eq!(stats.shader_modules, 5);
+        assert_eq!(stats.destruction_records(), 26);
         assert!(stats.approximate_gpu_memory_bytes > 0);
     }
 
@@ -220,7 +236,7 @@ mod tests {
 
         assert_eq!(stats.textures, 5);
         assert_eq!(stats.render_targets, 3);
-        assert_eq!(stats.destruction_records(), 19);
+        assert_eq!(stats.destruction_records(), 28);
         assert!(stats.approximate_gpu_memory_bytes >= 2048 * 2048 * 4);
     }
 
@@ -239,9 +255,9 @@ mod tests {
 
         assert_eq!(stats.textures, 5);
         assert_eq!(stats.render_targets, 3);
-        assert_eq!(stats.pipelines, 3);
-        assert_eq!(stats.shader_modules, 3);
-        assert_eq!(stats.destruction_records(), 21);
+        assert_eq!(stats.pipelines, 7);
+        assert_eq!(stats.shader_modules, 6);
+        assert_eq!(stats.destruction_records(), 31);
         assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
     }
 
@@ -256,6 +272,7 @@ mod tests {
             depth_prepass_passes: 0,
             material_texture_count: 1,
             material_texture_bytes: 4,
+            light_assignment_bytes: 84,
             material_bind_groups: 1,
         }
     }

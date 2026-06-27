@@ -1,11 +1,20 @@
 use serde::{Deserialize, Serialize};
 
+use crate::scene::NodeKey;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub code: DiagnosticCode,
     pub severity: DiagnosticSeverity,
     pub message: String,
     pub help: Option<String>,
+    #[serde(skip)]
+    context: DiagnosticContext,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiagnosticContext {
+    node: Option<NodeKey>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,12 +73,21 @@ impl Diagnostic {
         self.help()
     }
 
+    pub fn context(&self) -> DiagnosticContext {
+        self.context
+    }
+
+    pub fn node(&self) -> Option<NodeKey> {
+        self.context.node()
+    }
+
     pub fn info(code: DiagnosticCode, message: impl Into<String>, help: impl Into<String>) -> Self {
         Self {
             code,
             severity: DiagnosticSeverity::Info,
             message: message.into(),
             help: Some(help.into()),
+            context: DiagnosticContext::default(),
         }
     }
 
@@ -83,6 +101,7 @@ impl Diagnostic {
             severity: DiagnosticSeverity::Warning,
             message: message.into(),
             help: Some(help.into()),
+            context: DiagnosticContext::default(),
         }
     }
 
@@ -96,6 +115,36 @@ impl Diagnostic {
             severity: DiagnosticSeverity::Error,
             message: message.into(),
             help: Some(help.into()),
+            context: DiagnosticContext::default(),
         }
+    }
+
+    pub(crate) fn warning_for_node(
+        code: DiagnosticCode,
+        node: NodeKey,
+        message: impl Into<String>,
+        help: impl Into<String>,
+    ) -> Self {
+        Self::warning(code, message, help).with_node(node)
+    }
+
+    pub(crate) fn error_for_node(
+        code: DiagnosticCode,
+        node: NodeKey,
+        message: impl Into<String>,
+        help: impl Into<String>,
+    ) -> Self {
+        Self::error(code, message, help).with_node(node)
+    }
+
+    fn with_node(mut self, node: NodeKey) -> Self {
+        self.context = DiagnosticContext { node: Some(node) };
+        self
+    }
+}
+
+impl DiagnosticContext {
+    pub const fn node(self) -> Option<NodeKey> {
+        self.node
     }
 }

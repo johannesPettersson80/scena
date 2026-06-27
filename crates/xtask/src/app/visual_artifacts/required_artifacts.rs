@@ -318,9 +318,12 @@ pub(crate) fn require_benchmark_baseline_comparison(
         .get("baseline_sha256")
         .and_then(serde_json::Value::as_str)
         .is_some_and(|hash| !hash.is_empty());
-    let metric_is_p95 =
-        summary.get("metric").and_then(serde_json::Value::as_str) == Some("p95_frame_ms");
-    if status != "passed" || !baseline_path_present || !baseline_hash_present || !metric_is_p95 {
+    let metrics_cover_required_budgets = benchmark_summary_metrics_cover_required_budgets(summary);
+    if status != "passed"
+        || !baseline_path_present
+        || !baseline_hash_present
+        || !metrics_cover_required_budgets
+    {
         findings.push(Finding::new(
             "RELEASE-READY-ARTIFACTS",
             format!(
@@ -385,14 +388,42 @@ pub(crate) fn require_benchmark_baseline_comparison(
             continue;
         };
         if comparison.get("status").and_then(serde_json::Value::as_str) != Some("passed") {
+            let frame_failed = comparison
+                .get("frame_time_status")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(|status| status != "passed");
+            let allocation_failed = comparison
+                .get("allocation_status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| status != "passed");
+            let metric = match (frame_failed, allocation_failed) {
+                (true, true) => "p95_frame_ms and max_allocations_per_frame",
+                (true, false) => "p95_frame_ms",
+                (false, true) => "max_allocations_per_frame",
+                (false, false) => "stored baseline",
+            };
             findings.push(Finding::new(
                 "RELEASE-READY-ARTIFACTS",
                 format!(
-                    "benchmark regression for row {row_name} in {suffix}; p95_frame_ms exceeds the stored baseline allowance"
+                    "benchmark regression for row {row_name} in {suffix}; {metric} exceeds the stored baseline allowance"
                 ),
             ));
         }
     }
+}
+
+fn benchmark_summary_metrics_cover_required_budgets(summary: &serde_json::Value) -> bool {
+    summary
+        .get("metrics")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|metrics| {
+            metrics
+                .iter()
+                .any(|metric| metric.as_str() == Some("p95_frame_ms"))
+                && metrics
+                    .iter()
+                    .any(|metric| metric.as_str() == Some("max_allocations_per_frame"))
+        })
 }
 
 pub(crate) fn require_rendered_output_screenshot_metadata_file(

@@ -7,6 +7,9 @@ use crate::diagnostics::AssetError;
 
 use super::{AssetPath, AssetProvenance, SceneAsset, SceneAssetGeometrySummary};
 
+mod fallback;
+pub use fallback::{AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1};
+
 pub const ASSET_LOAD_REPORT_SCHEMA_V1: &str = "scena.asset_load_report.v1";
 
 #[derive(Debug, Clone)]
@@ -22,6 +25,7 @@ pub struct AssetLoadReport<T> {
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
     pub(super) external_images: usize,
+    pub(super) external_resources: Vec<AssetExternalResource>,
     pub(super) warnings: Vec<AssetLoadWarning>,
     pub(super) progress_events: Vec<AssetLoadProgress>,
 }
@@ -30,6 +34,7 @@ pub struct AssetLoadReport<T> {
 pub struct AssetLoadOptions {
     strict_textures: bool,
     strict_external_resources: bool,
+    fetch_byte_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +69,10 @@ pub enum AssetLoadProgress {
         index: usize,
         bytes: usize,
     },
+    ExternalImageFetched {
+        path: AssetPath,
+        bytes: usize,
+    },
     Parsed {
         path: AssetPath,
         nodes: usize,
@@ -79,6 +88,7 @@ pub(super) struct AssetLoadTelemetry {
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
     pub(super) external_images: usize,
+    pub(super) external_resources: Vec<AssetExternalResource>,
     pub(super) warnings: Vec<AssetLoadWarning>,
 }
 
@@ -94,6 +104,10 @@ pub struct AssetLoadReportV1 {
     pub geometry: SceneAssetGeometrySummary,
     pub warnings: Vec<AssetLoadWarningV1>,
     pub progress_events: Vec<AssetLoadProgressV1>,
+    #[serde(default)]
+    pub external_resources: Vec<AssetExternalResourceV1>,
+    #[serde(default)]
+    pub material_fallbacks: Vec<AssetMaterialFallbackV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +142,10 @@ pub enum AssetLoadProgressV1 {
         index: usize,
         bytes: usize,
     },
+    ExternalImageFetched {
+        path: String,
+        bytes: usize,
+    },
     Parsed {
         path: String,
         nodes: usize,
@@ -136,6 +154,44 @@ pub enum AssetLoadProgressV1 {
     Cached {
         path: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetExternalResource {
+    pub kind: AssetExternalResourceKind,
+    pub path: AssetPath,
+    pub index: Option<usize>,
+    pub status: AssetExternalResourceStatus,
+    pub bytes: Option<usize>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetExternalResourceKind {
+    Buffer,
+    Image,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetExternalResourceStatus {
+    Fetched,
+    Missing,
+    SkippedUnsupportedFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetExternalResourceV1 {
+    pub kind: AssetExternalResourceKind,
+    pub path: String,
+    #[serde(default)]
+    pub index: Option<usize>,
+    pub status: AssetExternalResourceStatus,
+    #[serde(default)]
+    pub bytes: Option<usize>,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 impl Default for AssetLoadControl {
@@ -195,6 +251,10 @@ impl<T> AssetLoadReport<T> {
         self.external_images
     }
 
+    pub fn external_resources(&self) -> &[AssetExternalResource] {
+        &self.external_resources
+    }
+
     pub fn warnings(&self) -> &[AssetLoadWarning] {
         &self.warnings
     }
@@ -209,6 +269,7 @@ impl AssetLoadOptions {
         Self {
             strict_textures: false,
             strict_external_resources: false,
+            fetch_byte_limit: None,
         }
     }
 
@@ -229,6 +290,15 @@ impl AssetLoadOptions {
     pub const fn strict_external_resources(&self) -> bool {
         self.strict_external_resources
     }
+
+    pub const fn with_fetch_byte_limit(mut self, fetch_byte_limit: usize) -> Self {
+        self.fetch_byte_limit = Some(fetch_byte_limit);
+        self
+    }
+
+    pub const fn fetch_byte_limit(&self) -> Option<usize> {
+        self.fetch_byte_limit
+    }
 }
 
 impl AssetLoadReport<SceneAsset> {
@@ -247,6 +317,17 @@ impl AssetLoadReport<SceneAsset> {
                 .progress_events
                 .iter()
                 .map(AssetLoadProgressV1::from)
+                .collect(),
+            external_resources: self
+                .external_resources
+                .iter()
+                .map(AssetExternalResourceV1::from)
+                .collect(),
+            material_fallbacks: self
+                .asset
+                .material_fallbacks()
+                .iter()
+                .map(AssetMaterialFallbackV1::from)
                 .collect(),
         }
     }
@@ -297,6 +378,10 @@ impl From<&AssetLoadProgress> for AssetLoadProgressV1 {
                     bytes: *bytes,
                 }
             }
+            AssetLoadProgress::ExternalImageFetched { path, bytes } => Self::ExternalImageFetched {
+                path: path.as_str().to_owned(),
+                bytes: *bytes,
+            },
             AssetLoadProgress::Parsed {
                 path,
                 nodes,
@@ -309,6 +394,76 @@ impl From<&AssetLoadProgress> for AssetLoadProgressV1 {
             AssetLoadProgress::Cached { path } => Self::Cached {
                 path: path.as_str().to_owned(),
             },
+        }
+    }
+}
+
+impl AssetExternalResource {
+    pub fn fetched_buffer(path: AssetPath, index: usize, bytes: usize) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Buffer,
+            path,
+            index: Some(index),
+            status: AssetExternalResourceStatus::Fetched,
+            bytes: Some(bytes),
+            reason: None,
+        }
+    }
+
+    pub fn missing_buffer(path: AssetPath, index: usize, reason: impl Into<String>) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Buffer,
+            path,
+            index: Some(index),
+            status: AssetExternalResourceStatus::Missing,
+            bytes: None,
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn fetched_image(path: AssetPath, bytes: usize) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Image,
+            path,
+            index: None,
+            status: AssetExternalResourceStatus::Fetched,
+            bytes: Some(bytes),
+            reason: None,
+        }
+    }
+
+    pub fn missing_image(path: AssetPath, reason: impl Into<String>) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Image,
+            path,
+            index: None,
+            status: AssetExternalResourceStatus::Missing,
+            bytes: None,
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn skipped_unsupported_image(path: AssetPath, reason: impl Into<String>) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Image,
+            path,
+            index: None,
+            status: AssetExternalResourceStatus::SkippedUnsupportedFormat,
+            bytes: None,
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+impl From<&AssetExternalResource> for AssetExternalResourceV1 {
+    fn from(resource: &AssetExternalResource) -> Self {
+        Self {
+            kind: resource.kind,
+            path: resource.path.as_str().to_owned(),
+            index: resource.index,
+            status: resource.status,
+            bytes: resource.bytes,
+            reason: resource.reason.clone(),
         }
     }
 }

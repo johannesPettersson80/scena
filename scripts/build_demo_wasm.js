@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
+const crypto = require("crypto");
 const zlib = require("zlib");
 
 const HEARTBEAT_MS = Number(process.env.SCENA_BUILD_HEARTBEAT_MS || 20_000);
@@ -132,6 +133,7 @@ function writeSizeManifest() {
   const wasmPath = path.join(bundle.outDir, "scena_bg.wasm");
   const manifestPath = `${wasmPath}.size.json`;
   const bytes = fs.readFileSync(wasmPath);
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
   const brotli = zlib.brotliCompressSync(bytes, {
     params: {
       [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
@@ -144,12 +146,78 @@ function writeSizeManifest() {
     raw_bytes: bytes.length,
     brotli_quality: 11,
     brotli_bytes: brotli.length,
+    sha256,
   };
   fs.writeFileSync(`${manifestPath}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`);
   fs.renameSync(`${manifestPath}.tmp`, manifestPath);
   console.log(
     `[${bundle.label}] size raw=${manifest.raw_bytes} brotli=${manifest.brotli_bytes} manifest=${manifestPath}`,
   );
+  return manifest;
+}
+
+function crateVersion() {
+  const cargoToml = fs.readFileSync("Cargo.toml", "utf8");
+  return cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || "dev";
+}
+
+function replaceInFile(file, replacements) {
+  let text = fs.readFileSync(file, "utf8");
+  for (const [pattern, replacement] of replacements) {
+    text = text.replace(pattern, replacement);
+  }
+  fs.writeFileSync(`${file}.tmp`, text);
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+function normalizedCacheBusterInput(file) {
+  if (!fs.existsSync(file)) {
+    return "";
+  }
+  return fs
+    .readFileSync(file, "utf8")
+    .replace(/\?v=[^"'`)]+/g, "?v=<cache-buster>");
+}
+
+function cacheBusterForManifest(manifest) {
+  const hash = crypto.createHash("sha256");
+  hash.update(`crate=${crateVersion()}\n`);
+  hash.update(`bundle=${bundle.name}\n`);
+  hash.update(`wasm=${manifest.sha256}\n`);
+  hash.update(normalizedCacheBusterInput(path.join(bundle.outDir, "scena.js")));
+  if (bundle.name === "proof") {
+    hash.update(normalizedCacheBusterInput("demo/proof/index.html"));
+    hash.update(normalizedCacheBusterInput("demo/proof.js"));
+  } else {
+    hash.update(normalizedCacheBusterInput("demo/index.html"));
+    hash.update(normalizedCacheBusterInput("demo/main.js"));
+  }
+  return `${crateVersion()}-${bundle.name}-${hash.digest("hex").slice(0, 12)}`;
+}
+
+function stampCacheBusters(manifest) {
+  const buster = cacheBusterForManifest(manifest);
+  if (bundle.name === "proof") {
+    replaceInFile("demo/proof/index.html", [
+      [/\/proof\.js\?v=[^"]+/g, `/proof.js?v=${buster}`],
+    ]);
+    replaceInFile("demo/proof.js", [
+      [/\.\/proof\/pkg\/scena\.js\?v=[^"']+/g, `./proof/pkg/scena.js?v=${buster}`],
+      [/\.\/proof\/pkg\/scena_bg\.wasm\?v=[^"']+/g, `./proof/pkg/scena_bg.wasm?v=${buster}`],
+    ]);
+  } else {
+    replaceInFile("demo/index.html", [
+      [/\/main\.js\?v=[^"]+/g, `/main.js?v=${buster}`],
+      [/\/pkg\/scena\.js\?v=[^"]+/g, `/pkg/scena.js?v=${buster}`],
+      [/\/pkg\/scena_bg\.wasm\?v=[^"]+/g, `/pkg/scena_bg.wasm?v=${buster}`],
+      [/\.\/main\.js\?v=[^"]+/g, `./main.js?v=${buster}`],
+    ]);
+    replaceInFile("demo/main.js", [
+      [/\.\/pkg\/scena\.js\?v=[^"']+/g, `./pkg/scena.js?v=${buster}`],
+      [/\.\/pkg\/scena_bg\.wasm\?v=[^"']+/g, `./pkg/scena_bg.wasm?v=${buster}`],
+    ]);
+  }
+  console.log(`[${bundle.label}] cache buster ${buster}`);
 }
 
 process.on("SIGINT", () => forwardSignal("SIGINT"));
@@ -169,6 +237,6 @@ child.on("close", (code, signal) => {
   if (!runWasmOpt()) {
     process.exit(1);
   }
-  writeSizeManifest();
+  stampCacheBusters(writeSizeManifest());
   process.exit(0);
 });

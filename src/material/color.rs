@@ -81,6 +81,32 @@ impl Color {
     /// Saturated magenta.
     pub const MAGENTA: Self = Self::from_linear_rgba(0.520_995_56, 0.102_241_73, 0.887_923_1, 1.0);
 
+    pub const NAMED_CONSTANTS: &'static [(&'static str, Self)] = &[
+        ("transparent", Self::TRANSPARENT),
+        ("black", Self::BLACK),
+        ("white", Self::WHITE),
+        ("gray", Self::GRAY),
+        ("light_gray", Self::LIGHT_GRAY),
+        ("dark_gray", Self::DARK_GRAY),
+        ("charcoal", Self::CHARCOAL),
+        ("studio_backdrop", Self::STUDIO_BACKDROP),
+        ("warm_white", Self::WARM_WHITE),
+        ("cool_white", Self::COOL_WHITE),
+        ("red", Self::RED),
+        ("green", Self::GREEN),
+        ("blue", Self::BLUE),
+        ("orange", Self::ORANGE),
+        ("yellow", Self::YELLOW),
+        ("cyan", Self::CYAN),
+        ("magenta", Self::MAGENTA),
+    ];
+
+    pub fn from_named_constant(name: &str) -> Option<Self> {
+        Self::NAMED_CONSTANTS
+            .iter()
+            .find_map(|(candidate, color)| (*candidate == name).then_some(*color))
+    }
+
     /// Constructs a fully opaque color from linear RGB channels in `[0.0, 1.0]`.
     ///
     /// Inputs are stored as-is; no sRGB conversion is performed. Reach for

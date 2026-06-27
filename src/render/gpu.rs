@@ -10,6 +10,8 @@ mod depth;
 #[cfg(not(target_arch = "wasm32"))]
 mod draw;
 mod draw_common;
+#[cfg(not(target_arch = "wasm32"))]
+mod draw_overlays;
 #[cfg(target_arch = "wasm32")]
 mod draw_surface;
 #[cfg(target_arch = "wasm32")]
@@ -18,17 +20,27 @@ mod draw_uniform;
 mod dynamic_draw_state;
 mod environment;
 mod instancing;
+mod labels;
 mod lifecycle;
+mod light_assignment;
 mod material_batched;
 mod material_bindings;
 mod material_mips;
+mod material_support;
 mod material_uniform;
 mod material_upload;
 mod materials;
+mod msaa;
 mod output;
+mod overlays;
 mod pipeline;
 mod post;
+#[cfg(not(target_arch = "wasm32"))]
 mod prepare_resources;
+#[cfg(target_arch = "wasm32")]
+mod prepare_resources_wasm;
+#[cfg(not(target_arch = "wasm32"))]
+mod readback;
 mod resource_encoding;
 mod scene_color;
 mod shadow;
@@ -46,7 +58,10 @@ use crate::platform::SurfaceSize;
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
 use self::instancing::InstanceDrawBatch;
+use self::labels::LabelResources;
+use self::light_assignment::LightAssignmentResources;
 use self::material_bindings::MaterialTextureBindingMode;
+use self::pipeline::MeshPipelineSet;
 pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
 use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
@@ -120,6 +135,8 @@ struct GpuPreparedResources {
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
+    #[allow(dead_code)]
+    light_assignment: LightAssignmentResources,
     /// Phase 1B: directional-light view-projection. See `prepare/shadows.rs`.
     light_from_world: [f32; 16],
     material_resources: materials::MaterialResources,
@@ -136,7 +153,9 @@ struct GpuPreparedResources {
     brdf_lut_texture: wgpu::Texture,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
+    overlay_depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
+    labels: Option<LabelResources>,
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
@@ -158,11 +177,25 @@ struct GpuPreparedResources {
     texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
     post: Option<post::PostResources>,
-    offscreen_pipeline: wgpu::RenderPipeline,
-    surface_pipeline: Option<wgpu::RenderPipeline>,
+    offscreen_pipelines: MeshPipelineSet,
+    offscreen_msaa4_pipelines: MeshPipelineSet,
+    offscreen_msaa8_pipelines: Option<MeshPipelineSet>,
+    msaa_color: Option<MsaaColorResources>,
+    surface_pipeline: Option<MeshPipelineSet>,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
     stats: GpuResourceStats,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+struct MsaaColorResources {
+    target: RasterTarget,
+    format: wgpu::TextureFormat,
+    sample_count: u32,
+    #[allow(dead_code)]
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -176,6 +209,8 @@ struct GpuPreparedResources {
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
+    #[allow(dead_code)]
+    light_assignment: LightAssignmentResources,
     /// Phase 1B: directional-light view-projection matrix; mirrors the
     /// native variant. Uploaded into the camera uniform's light_from_world
     /// slot.
@@ -195,7 +230,8 @@ struct GpuPreparedResources {
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
-    surface_pipeline: wgpu::RenderPipeline,
+    labels: Option<LabelResources>,
+    surface_pipeline: MeshPipelineSet,
     readback: Option<BrowserReadbackResources>,
     #[allow(dead_code)]
     vertex_count: u32,

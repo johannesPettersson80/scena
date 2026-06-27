@@ -16,6 +16,7 @@ pub(super) struct ProjectedVertex {
     pub(super) ndc_x: f32,
     pub(super) ndc_y: f32,
     pub(super) depth: f32,
+    pub(super) view_depth: f32,
 }
 
 impl CameraProjection {
@@ -61,7 +62,8 @@ impl CameraProjection {
                 Some(ProjectedVertex {
                     ndc_x: (view.x * focal / aspect) / depth,
                     ndc_y: (view.y * focal) / depth,
-                    depth,
+                    depth: perspective_depth_buffer_value(depth, camera.near, camera.far)?,
+                    view_depth: depth,
                 })
             }
             Camera::Orthographic(camera) => {
@@ -77,7 +79,8 @@ impl CameraProjection {
                 Some(ProjectedVertex {
                     ndc_x: (view.x - camera.left) / width * 2.0 - 1.0,
                     ndc_y: (view.y - camera.bottom) / height * 2.0 - 1.0,
-                    depth,
+                    depth: orthographic_depth_buffer_value(depth, camera.near, camera.far)?,
+                    view_depth: depth,
                 })
             }
         }
@@ -91,10 +94,67 @@ impl CameraProjection {
         self.world_from_camera.translation
     }
 
+    pub(super) fn billboard_axes(&self) -> (Vec3, Vec3) {
+        let rotation = self.world_from_camera.rotation;
+        let rotation =
+            if rotation.length_squared().is_finite() && rotation.length_squared() > f32::EPSILON {
+                rotation.normalize()
+            } else {
+                Quat::IDENTITY
+            };
+        (rotation * Vec3::X, rotation * Vec3::Y)
+    }
+
+    pub(super) fn world_units_per_pixel_at(&self, world_position: Vec3) -> Option<f32> {
+        let target_height = self.target.height.max(1) as f32;
+        match self.camera {
+            Camera::Perspective(camera) => {
+                let depth = self.camera_depth(world_position)?;
+                let half_fov = camera.vertical_fov.radians() * 0.5;
+                let world_height = 2.0 * depth * half_fov.tan();
+                finite_positive(world_height / target_height)
+            }
+            Camera::Orthographic(camera) => {
+                let world_height = camera.top - camera.bottom;
+                finite_positive(world_height.abs() / target_height)
+            }
+        }
+    }
+
     pub(super) const fn near_far(&self) -> [f32; 2] {
         match self.camera {
             Camera::Perspective(camera) => [camera.near, camera.far],
             Camera::Orthographic(camera) => [camera.near, camera.far],
+        }
+    }
+
+    pub(super) fn depth_buffer_for_camera_distance(&self, depth: f32) -> Option<f32> {
+        if !depth.is_finite() {
+            return None;
+        }
+        match self.camera {
+            Camera::Perspective(camera) => {
+                if depth < camera.near || depth > camera.far {
+                    return None;
+                }
+                let normalized = perspective_depth_buffer_value(depth, camera.near, camera.far)?;
+                Some(if self.uses_reversed_z() {
+                    1.0 - normalized
+                } else {
+                    normalized
+                })
+            }
+            Camera::Orthographic(camera) => {
+                if depth < camera.near || depth > camera.far {
+                    return None;
+                }
+                let normalized = orthographic_depth_buffer_value(depth, camera.near, camera.far)?;
+                Some(if self.uses_reversed_z() {
+                    1.0 - normalized
+                } else {
+                    normalized
+                })
+            }
         }
     }
 
@@ -348,6 +408,30 @@ fn orthographic_depth_terms(near: f32, far: f32, reversed_z: bool) -> (f32, f32)
     }
 }
 
+fn perspective_depth_buffer_value(depth: f32, near: f32, far: f32) -> Option<f32> {
+    if !depth.is_finite() || near <= 0.0 || far <= near {
+        return None;
+    }
+    let normalized = far / (far - near) * (1.0 - near / depth);
+    if normalized.is_finite() {
+        Some(normalized.clamp(0.0, 1.0))
+    } else {
+        None
+    }
+}
+
+fn orthographic_depth_buffer_value(depth: f32, near: f32, far: f32) -> Option<f32> {
+    if !depth.is_finite() || far <= near {
+        return None;
+    }
+    let normalized = (depth - near) / (far - near);
+    if normalized.is_finite() {
+        Some(normalized.clamp(0.0, 1.0))
+    } else {
+        None
+    }
+}
+
 fn multiply_matrices(left: [f32; 16], right: [f32; 16]) -> [f32; 16] {
     let mut output = [0.0; 16];
     for column in 0..4 {
@@ -373,6 +457,14 @@ fn positive_or(value: f32, fallback: f32) -> f32 {
         value
     } else {
         fallback
+    }
+}
+
+fn finite_positive(value: f32) -> Option<f32> {
+    if value.is_finite() && value > 0.0 {
+        Some(value)
+    } else {
+        None
     }
 }
 

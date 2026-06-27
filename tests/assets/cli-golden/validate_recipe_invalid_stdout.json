@@ -1,0 +1,23 @@
+{
+  "schema": "scena.scene_recipe_validation.v1",
+  "ok": false,
+  "diagnostics": [
+    {
+      "code": "unknown_field",
+      "severity": "error",
+      "path": "$.importe",
+      "message": "recipe field 'importe' is not part of scena.scene_recipe.v1",
+      "help": "remove the field or use metadata for caller-owned opaque data",
+      "suggestion": "imports",
+      "auto_fixable": false
+    },
+    {
+      "code": "missing_imports",
+      "severity": "error",
+      "path": "$.imports",
+      "message": "recipe must contain at least one import or authored renderable node",
+      "help": "add imports:[{id, uri}] or author a node with geometry and material",
+      "auto_fixable": false
+    }
+  ]
+}

@@ -173,36 +173,7 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
             "MaterialDesc::rubber()",
         ],
     );
-    require_contains(
-        root,
-        findings,
-        "HONEST-MATERIAL-PRESETS",
-        "src/browser_probe/workflows/pbr/material_presets.rs",
-        &[
-            "material_presets_scene",
-            "material_preset_showcase",
-            "browser-pbr-material-preset-expanded-set",
-            "webgl2_smooth_metal_sample_floor",
-            "scene-color-ior-thickness-rough-blur-sorted-transparency",
-            "/demo/samples/environment/white_studio_03_1k.hdr",
-            "showcase_geometry",
-            "source_surfaces",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "HONEST-MATERIAL-PRESETS",
-        "tests/browser/m6_rust_wasm_renderer_probe.js",
-        &[
-            "assertMaterialPresetProof",
-            "pbr-material-presets",
-            "webgl2_smooth_metal_sample_floor < 96",
-            "/demo/samples/environment/white_studio_03_1k.hdr",
-            "single-shape grid",
-            "Assets::material_presets()",
-        ],
-    );
+    super::material_presets_browser::check_browser_material_preset_proof(root, findings);
     require_contains(
         root,
         findings,
@@ -210,7 +181,7 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
         "scripts/probe_cloudflare_material_presets.mjs",
         &[
             "round-e-cloudflare-material-proof",
-            "https://scena-demo.pages.dev/?sample=material-presets",
+            "https://scena-demo.pages.dev/proof/?sample=material-presets",
             "delta_e2000_vs_reference",
             "reference_delta_gate",
             "Public material approval must fail closed",
@@ -251,9 +222,9 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "WEBGL2-IBL-SMOOTH-METAL",
-        "src/render/prepare/environment_prefilter.rs",
+        "src/render/prepare/environment_baker.rs",
         &[
-            "sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2)",
+            "sample_count_for_roughness(0.28, EnvironmentIblBakeQuality::InteractiveWebGl2)",
             "2 => 96",
             "_ => 192",
         ],

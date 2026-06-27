@@ -1,0 +1,590 @@
+{
+  "schema": "scena.scene_composition.v1",
+  "ok": false,
+  "summary": {
+    "checks": 24,
+    "checked": 23,
+    "failed": 1,
+    "skipped": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "errors": 1,
+    "warnings": 0
+  },
+  "checks": [
+    {
+      "id": "node.pump.presence",
+      "category": "completeness",
+      "code": "node_visible",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 10.0,
+          "min_y": 12.0,
+          "max_x": 42.0,
+          "max_y": 36.0,
+          "width": 32.0,
+          "height": 24.0
+        }
+      },
+      "target_id": "pump",
+      "affected_handles": [7],
+      "observed": {
+        "draw_count": 1,
+        "visible": true
+      },
+      "message": "declared node is visible and contributes owned output",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "node.panel.presence",
+      "category": "completeness",
+      "code": "declared_node_not_drawn",
+      "status": "failed",
+      "severity": "error",
+      "target_id": "panel",
+      "affected_handles": [9],
+      "observed": {
+        "draw_count": 0,
+        "visible": false
+      },
+      "message": "declared recipe node did not produce visible draw output",
+      "fix_hint": "make the node visible, move it into frame, or remove it from the declared recipe"
+    },
+    {
+      "id": "node.pump.visible_coverage",
+      "category": "occlusion_depth",
+      "code": "visible_pixel_coverage_available",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 10.0,
+          "min_y": 12.0,
+          "max_x": 42.0,
+          "max_y": 36.0,
+          "width": 32.0,
+          "height": 24.0
+        }
+      },
+      "target_id": "pump",
+      "affected_handles": [7],
+      "observed": {
+        "foreground_fraction": 0.75,
+        "foreground_pixels": 576,
+        "region_pixels": 768
+      },
+      "message": "declared node has measured non-background pixels in its projected screen region",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "node.pump.pixel_exposure",
+      "category": "lighting_material",
+      "code": "subject_exposure_sane",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 10.0,
+          "min_y": 12.0,
+          "max_x": 42.0,
+          "max_y": 36.0,
+          "width": 32.0,
+          "height": 24.0
+        }
+      },
+      "target_id": "pump",
+      "affected_handles": [7],
+      "observed": {
+        "foreground_pixels": 576,
+        "high_clip_fraction": 0.0,
+        "low_clip_fraction": 0.0,
+        "max_background_delta": 0.62,
+        "mean_background_delta": 0.41,
+        "mean_luminance": 0.48,
+        "profile": "product",
+        "region_pixels": 768
+      },
+      "threshold": {
+        "max_high_clip_fraction": 0.65,
+        "max_low_clip_fraction": 0.8,
+        "min_mean_background_delta": 0.06
+      },
+      "message": "declared object has sane exposure and background separation in its projected native-resolution region",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "node.pump.framing",
+      "category": "framing",
+      "code": "subject_fit_sane",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 10.0,
+          "min_y": 12.0,
+          "max_x": 42.0,
+          "max_y": 36.0,
+          "width": 32.0,
+          "height": 24.0
+        }
+      },
+      "target_id": "pump",
+      "affected_handles": [7],
+      "observed": {
+        "center_offset_fraction": [0.0, 0.0],
+        "fit_fraction": 0.32,
+        "height_fraction": 0.24,
+        "profile": "product",
+        "width_fraction": 0.32
+      },
+      "threshold": {
+        "max_fit_fraction": 0.94,
+        "min_fit_fraction": 0.08
+      },
+      "message": "declared object has a sane projected frame fill for the selected quality profile",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "node.pump.texture_result",
+      "category": "texture_mapping",
+      "code": "texture_result_visible",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 10.0,
+          "min_y": 12.0,
+          "max_x": 42.0,
+          "max_y": 36.0,
+          "width": 32.0,
+          "height": 24.0
+        }
+      },
+      "target_id": "pump",
+      "affected_handles": [7],
+      "observed": {
+        "foreground_pixels": 576,
+        "luminance_max": 0.74,
+        "luminance_min": 0.18,
+        "luminance_range": 0.56,
+        "luminance_stddev": 0.12,
+        "region_pixels": 768,
+        "texture_slots": ["baseColorTexture"],
+        "unique_luma_levels": 18
+      },
+      "threshold": {
+        "min_foreground_pixels": 64,
+        "min_luminance_range": 0.08,
+        "min_luminance_stddev": 0.02,
+        "min_unique_luma_levels": 3
+      },
+      "message": "decoded base-color texture produces visible luminance variation in the target's native-resolution region",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "annotation.callout.pump_note.attachment",
+      "category": "overlay",
+      "code": "callout_target_attached",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "pump_note",
+      "affected_handles": [7, 21, 22],
+      "observed": {
+        "label_handle": 22,
+        "leader_line_handle": 21,
+        "target_handle": 7,
+        "target_kind": "node"
+      },
+      "message": "declared callout is attached to its recipe target and generated overlay nodes",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "annotation.callout.pump_note.output",
+      "category": "overlay",
+      "code": "callout_overlay_output_projected",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "pump_note",
+      "affected_handles": [7, 21, 22],
+      "observed": {
+        "label_projected": true,
+        "leader_line_projected": true
+      },
+      "message": "declared callout leader line and label project to screen regions",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "annotation.measurement.width.output",
+      "category": "overlay",
+      "code": "measurement_overlay_output_projected",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "width",
+      "affected_handles": [41, 42],
+      "observed": {
+        "label_expected": true,
+        "label_projected": true,
+        "line_projected": true
+      },
+      "message": "declared measurement line and label project to screen regions",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "overlay.label.pump_note.viewport_fit",
+      "category": "overlay",
+      "code": "overlay_label_inside_viewport",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "label",
+        "handle": 22,
+        "rect_css_px": {
+          "min_x": 44.0,
+          "min_y": 18.0,
+          "max_x": 84.0,
+          "max_y": 34.0,
+          "width": 40.0,
+          "height": 16.0
+        }
+      },
+      "affected_handles": [22],
+      "observed": {
+        "clipped_rect": {
+          "height": 16,
+          "width": 40,
+          "x": 44,
+          "y": 18
+        },
+        "label_id": "pump_note",
+        "projected_rect": {
+          "height": 16.0,
+          "max_x": 84.0,
+          "max_y": 34.0,
+          "min_x": 44.0,
+          "min_y": 18.0,
+          "width": 40.0
+        },
+        "viewport": {
+          "height": 90,
+          "width": 160
+        }
+      },
+      "message": "projected label overlay is fully inside the capture viewport",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "overlay.label.pump_note.label_clearance",
+      "category": "overlay",
+      "code": "overlay_label_clear_of_labels",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "label",
+        "handle": 22,
+        "rect_css_px": {
+          "min_x": 44.0,
+          "min_y": 18.0,
+          "max_x": 84.0,
+          "max_y": 34.0,
+          "width": 40.0,
+          "height": 16.0
+        }
+      },
+      "affected_handles": [22],
+      "observed": {
+        "label_id": "pump_note",
+        "label_rect": {
+          "height": 16,
+          "width": 40,
+          "x": 44,
+          "y": 18
+        },
+        "other_label_count": 1
+      },
+      "message": "label region is clear of other projected label regions",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "overlay.label.pump_note.line_clearance",
+      "category": "overlay",
+      "code": "overlay_label_clear_of_lines",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "label",
+        "handle": 22,
+        "rect_css_px": {
+          "min_x": 44.0,
+          "min_y": 18.0,
+          "max_x": 84.0,
+          "max_y": 34.0,
+          "width": 40.0,
+          "height": 16.0
+        }
+      },
+      "affected_handles": [22],
+      "observed": {
+        "label_rect": {
+          "height": 16,
+          "width": 40,
+          "x": 44,
+          "y": 18
+        },
+        "line_count": 2
+      },
+      "message": "label region is clear of projected line-overlay interiors",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "scene.grid.ownership",
+      "category": "helper_render_layer",
+      "code": "grid_floor_output_owned",
+      "status": "checked",
+      "severity": "info",
+      "affected_handles": [31, 32],
+      "observed": {
+        "ground_draw_count": 2,
+        "owned_ground_handles": [31, 32]
+      },
+      "message": "recipe-requested grid floor output is explicitly owned by scene.grid",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_helper_occluded.helper-behind-pump",
+      "category": "helper_render_layer",
+      "code": "helper_layer_occluded_by_subject",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 18.0,
+          "min_y": 20.0,
+          "max_x": 62.0,
+          "max_y": 50.0,
+          "width": 44.0,
+          "height": 30.0
+        }
+      },
+      "target_id": "helper-behind-pump",
+      "affected_handles": [7, 44],
+      "observed": {
+        "helper_handles": [44],
+        "helper_pixels_inside_occluder": 0,
+        "helper_srgb8": [255, 32, 32],
+        "occluder_handles": [7],
+        "occluder_interior_region": {
+          "height": 30,
+          "width": 44,
+          "x": 18,
+          "y": 20
+        },
+        "tolerance_pixels": 0
+      },
+      "message": "helper pixels are absent from the occluder interior, so depth/layer policy is preserved",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_occlusion.pump-in-front",
+      "category": "occlusion_depth",
+      "code": "object_depth_order_satisfied",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 18.0,
+          "min_y": 20.0,
+          "max_x": 62.0,
+          "max_y": 50.0,
+          "width": 44.0,
+          "height": 30.0
+        }
+      },
+      "target_id": "pump-in-front",
+      "affected_handles": [7, 8],
+      "observed": {
+        "back_handles": [8],
+        "back_pixels_inside_front": 0,
+        "back_srgb8": [255, 32, 32],
+        "front_handles": [7],
+        "front_interior_region": {
+          "height": 30,
+          "width": 44,
+          "x": 18,
+          "y": 20
+        },
+        "method": "color_probe",
+        "tolerance_pixels": 0
+      },
+      "message": "back-object colored pixels are absent from the expected front-object interior",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_backend",
+      "category": "backend_conformance",
+      "code": "backend_expectation_satisfied",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "expect_backend",
+      "affected_handles": [],
+      "observed": {
+        "actual_backend": "headless",
+        "actual_gpu_device": false,
+        "expected_backend": "headless",
+        "expected_gpu_device": false
+      },
+      "message": "actual render backend matches the declared backend expectation",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "recipe.clipping_planes.active",
+      "category": "clipping_section",
+      "code": "clipping_plane_count_satisfied",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "recipe.clipping_planes.active",
+      "affected_handles": [],
+      "observed": {
+        "actual": 1,
+        "expected": 1
+      },
+      "message": "recipe active clipping-plane count matches renderer state",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "recipe.section_box.active",
+      "category": "clipping_section",
+      "code": "section_box_active",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "recipe.section_box.active",
+      "affected_handles": [],
+      "observed": {
+        "actual": true,
+        "expected": true,
+        "section_plane_count": 6
+      },
+      "message": "section box is active in renderer state",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "recipe.section_box.inverted",
+      "category": "clipping_section",
+      "code": "section_box_inversion_satisfied",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "recipe.section_box.inverted",
+      "affected_handles": [],
+      "observed": {
+        "actual": false,
+        "expected": false,
+        "section_active": true,
+        "section_plane_count": 6
+      },
+      "message": "section box inversion state satisfies the declared expectation",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_clipping.active_clipping_planes",
+      "category": "clipping_section",
+      "code": "clipping_plane_count_satisfied",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "expect_clipping.active_clipping_planes",
+      "affected_handles": [],
+      "observed": {
+        "actual": 1,
+        "expected": 1
+      },
+      "message": "active clipping-plane count satisfies expect_clipping",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_clipping.section_box_active",
+      "category": "clipping_section",
+      "code": "section_box_active",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "expect_clipping.section_box_active",
+      "affected_handles": [],
+      "observed": {
+        "actual": true,
+        "expected": true,
+        "section_plane_count": 6
+      },
+      "message": "section box is active in renderer state",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_clipping.section_box_inverted",
+      "category": "clipping_section",
+      "code": "section_box_inversion_satisfied",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "expect_clipping.section_box_inverted",
+      "affected_handles": [],
+      "observed": {
+        "actual": false,
+        "expected": false,
+        "section_active": true,
+        "section_plane_count": 6
+      },
+      "message": "section box inversion state satisfies the declared expectation",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_state.default-import-variant",
+      "category": "state_variant",
+      "code": "material_variant_state_satisfied",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "default-import-variant",
+      "affected_handles": [2],
+      "observed": {
+        "actual_active_material_variant": null,
+        "available_material_variants": ["midnight", "noon"],
+        "expected_active_material_variant": null,
+        "import": "part"
+      },
+      "message": "active material variant state satisfies the declared expectation",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "expect_grounded.pump-on-floor",
+      "category": "placement",
+      "code": "ground_contact_present",
+      "status": "checked",
+      "severity": "info",
+      "target_id": "pump-on-floor",
+      "affected_handles": [7],
+      "observed": {
+        "ground_contacts": [
+          {
+            "delta": 0.0,
+            "handle": 7,
+            "min_y": 0.0,
+            "plane_y": 0.0,
+            "tolerance": 0.01
+          }
+        ]
+      },
+      "message": "declared grounded target touches the expected ground plane within tolerance",
+      "fix_hint": "no action needed"
+    }
+  ]
+}

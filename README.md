@@ -122,6 +122,21 @@ cargo install scena
 scena-convert --help
 ```
 
+## LLM app-builder skill
+
+`scena` includes a repo-hosted LLM skill at
+[.codex/skills/scena-app-builder](.codex/skills/scena-app-builder/SKILL.md)
+and a model-agnostic guide at
+[docs/guides/llm-app-builder.md](docs/guides/llm-app-builder.md). Use them when
+asking Codex, Claude Code, or another shell-capable LLM to build a model viewer,
+CAD inspection scene, digital twin, product configurator, dashboard,
+documentation renderer, or interaction proof with `scena`.
+The installed CLI also advertises the public guide from `scena --help`.
+
+They tell the agent to use public schema discovery, scene recipes, validation,
+render introspection, verification, diagnostics, and repair tools instead of
+guessing fields or reading renderer internals.
+
 Cargo features:
 
 | Feature | Purpose |

@@ -1,23 +1,16 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
-
+use super::SceneHostEasing;
 use super::animation::{invalid_input, validate_time_seconds};
-use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
+use super::{SceneHostCameraState, SceneHostCore, SceneHostError, SceneHostErrorCode};
+use crate::controls::eased_amount;
 use crate::{AssetFetcher, Color, Transform};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum SceneHostEasing {
-    #[default]
-    Linear,
-    EaseInOut,
-}
 
 #[derive(Debug, Default)]
 pub(super) struct HostTransitions {
     transforms: BTreeMap<u64, TransformTransition>,
     tints: BTreeMap<u64, TintTransition>,
+    camera: Option<CameraTransition>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,6 +26,15 @@ struct TransformTransition {
 struct TintTransition {
     start: Option<Color>,
     target: Option<Color>,
+    elapsed_seconds: f32,
+    duration_seconds: f32,
+    easing: SceneHostEasing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CameraTransition {
+    start: SceneHostCameraState,
+    target: SceneHostCameraState,
     elapsed_seconds: f32,
     duration_seconds: f32,
     easing: SceneHostEasing,
@@ -135,12 +137,46 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         Ok(())
     }
 
+    pub fn set_camera_eased(
+        &mut self,
+        camera: SceneHostCameraState,
+        duration_seconds: f64,
+        easing: SceneHostEasing,
+    ) -> Result<(), SceneHostError> {
+        camera
+            .validate()
+            .map_err(|message| invalid_input(message.to_owned()))?;
+        let duration_seconds =
+            validate_time_seconds("transition duration_seconds", duration_seconds)?;
+        let start = self.camera_state();
+        if start == camera {
+            self.transitions.camera = None;
+            return Ok(());
+        }
+        if duration_seconds == 0.0 {
+            return self.set_camera(camera);
+        }
+
+        self.transitions.camera = Some(CameraTransition {
+            start,
+            target: camera,
+            elapsed_seconds: 0.0,
+            duration_seconds,
+            easing,
+        });
+        Ok(())
+    }
+
     pub(super) fn cancel_transform_transition(&mut self, node: u64) {
         self.transitions.transforms.remove(&node);
     }
 
     pub(super) fn cancel_tint_transition(&mut self, node: u64) {
         self.transitions.tints.remove(&node);
+    }
+
+    pub(super) fn cancel_camera_transition(&mut self) {
+        self.transitions.camera = None;
     }
 
     pub(super) fn advance_transitions(&mut self, delta_seconds: f32) -> Result<(), SceneHostError> {
@@ -151,7 +187,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             let complete = transition.elapsed_seconds >= transition.duration_seconds;
             transform_samples.push(TransformSample {
                 handle: *handle,
-                transform: transition.sample(),
+                transform: transition.sample(complete),
                 complete,
             });
         }
@@ -183,10 +219,23 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 self.transitions.tints.remove(&sample.handle);
             }
         }
+
+        let camera_sample = self.transitions.camera.as_mut().map(|transition| {
+            transition.elapsed_seconds =
+                (transition.elapsed_seconds + delta_seconds).min(transition.duration_seconds);
+            let complete = transition.elapsed_seconds >= transition.duration_seconds;
+            (transition.sample(complete), complete)
+        });
+        if let Some((camera, complete)) = camera_sample {
+            self.apply_camera_state(camera)?;
+            if complete {
+                self.transitions.camera = None;
+            }
+        }
         Ok(())
     }
 
-    fn current_host_transform(&self, handle: u64) -> Result<Transform, SceneHostError> {
+    pub(super) fn current_host_transform(&self, handle: u64) -> Result<Transform, SceneHostError> {
         if self.is_instance_root_handle(handle) {
             return self
                 .instance_handles
@@ -209,7 +258,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             })
     }
 
-    fn current_host_tint(&self, handle: u64) -> Result<Option<Color>, SceneHostError> {
+    pub(super) fn current_host_tint(&self, handle: u64) -> Result<Option<Color>, SceneHostError> {
         if self.is_instance_root_handle(handle) {
             return self
                 .instance_handles
@@ -252,7 +301,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 }
 
 impl TransformTransition {
-    fn sample(self) -> Transform {
+    fn sample(self, complete: bool) -> Transform {
+        if complete {
+            return self.target;
+        }
         let amount = eased_amount(
             self.elapsed_seconds / self.duration_seconds.max(f32::EPSILON),
             self.easing,
@@ -280,6 +332,19 @@ impl TintTransition {
     }
 }
 
+impl CameraTransition {
+    fn sample(self, complete: bool) -> SceneHostCameraState {
+        if complete {
+            return self.target;
+        }
+        let amount = eased_amount(
+            self.elapsed_seconds / self.duration_seconds.max(f32::EPSILON),
+            self.easing,
+        );
+        self.start.interpolate_to(self.target, amount)
+    }
+}
+
 fn validate_opaque_tint(tint: Option<Color>) -> Result<(), SceneHostError> {
     let Some(tint) = tint else {
         return Ok(());
@@ -294,20 +359,6 @@ fn validate_opaque_tint(tint: Option<Color>) -> Result<(), SceneHostError> {
         ));
     }
     Ok(())
-}
-
-fn eased_amount(amount: f32, easing: SceneHostEasing) -> f32 {
-    let amount = amount.clamp(0.0, 1.0);
-    match easing {
-        SceneHostEasing::Linear => amount,
-        SceneHostEasing::EaseInOut => {
-            if amount < 0.5 {
-                4.0 * amount * amount * amount
-            } else {
-                1.0 - (-2.0 * amount + 2.0).powi(3) / 2.0
-            }
-        }
-    }
 }
 
 fn lerp_color(start: Color, target: Color, amount: f32) -> Color {

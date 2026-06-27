@@ -179,9 +179,9 @@ pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
         || path.starts_with("src/demo_page/")
     {
         "viewer"
-    } else if path.starts_with("src/browser_probe") {
+    } else if path.starts_with("src/browser_probe") || path.starts_with("src/browser_proof") {
         "browser_probe"
-    } else if path.starts_with("src/bin") {
+    } else if path.starts_with("src/bin") || path.starts_with("src/schema_catalog") {
         "tools"
     } else {
         "crate-root"

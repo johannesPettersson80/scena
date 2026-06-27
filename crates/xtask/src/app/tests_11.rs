@@ -65,6 +65,7 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         "m5-public-api-freeze.json",
         "m9-platform/m9-benchmarks.json",
         "m9-platform/m9-benchmarks-4k.json",
+        "m9-platform/m9-benchmarks-feature-matrix.json",
     ] {
         write_stage_test_json(
             &fixture_root.join(format!("release-linux-native-vulkan/{suffix}")),

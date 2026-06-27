@@ -69,6 +69,7 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::ClipNotFound { .. }
         | LookupError::AmbiguousClipName { .. }
         | LookupError::VariantNotFound { .. }
+        | LookupError::AmbiguousVariantName { .. }
         | LookupError::PathNotFound { .. }
         | LookupError::InvalidViewport { .. }
         | LookupError::InvalidBounds { .. }
@@ -78,11 +79,16 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::NodeIsNotMesh { .. }
         | LookupError::NonInvertibleParentTransform { .. }
         | LookupError::GeometryNotFound { .. }
+        | LookupError::InvalidSkinBinding { .. }
         | LookupError::CameraNotFound(_)
         | LookupError::ClippingPlaneNotFound(_)
         | LookupError::InstanceSetNotFound(_)
+        | LookupError::ParticleSetNotFound(_)
         | LookupError::InstanceNotFound { .. }
-        | LookupError::LabelNotFound(_) => ConnectionError::MissingConnectorName {
+        | LookupError::InvalidInstanceTint { .. }
+        | LookupError::LabelNotFound(_)
+        | LookupError::UnsupportedLabelText { .. }
+        | LookupError::InvalidLabelStyle { .. } => ConnectionError::MissingConnectorName {
             name: requested_name.to_string(),
         },
     }

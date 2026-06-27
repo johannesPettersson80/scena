@@ -5,6 +5,7 @@ use super::{GeometryDesc, GeometryError, GeometryVertex};
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeometryMorphTarget {
     position_deltas: Vec<Vec3>,
+    normal_deltas: Option<Vec<Vec3>>,
 }
 
 impl GeometryDesc {
@@ -18,6 +19,15 @@ impl GeometryDesc {
                     vertex_count: self.vertices.len(),
                     target_index,
                     target_count: target.position_deltas.len(),
+                });
+            }
+            if let Some(normal_deltas) = target.normal_deltas.as_ref()
+                && normal_deltas.len() != self.vertices.len()
+            {
+                return Err(GeometryError::InvalidMorphTargetVertexCount {
+                    vertex_count: self.vertices.len(),
+                    target_index,
+                    target_count: normal_deltas.len(),
                 });
             }
         }
@@ -42,6 +52,18 @@ impl GeometryDesc {
                     vertex.position.z + delta.z * weight,
                 );
             }
+            if let Some(normal_deltas) = target.normal_deltas() {
+                for (vertex, delta) in vertices.iter_mut().zip(normal_deltas) {
+                    vertex.normal = normalize_or(
+                        Vec3::new(
+                            vertex.normal.x + delta.x * weight,
+                            vertex.normal.y + delta.y * weight,
+                            vertex.normal.z + delta.z * weight,
+                        ),
+                        vertex.normal,
+                    );
+                }
+            }
         }
         Some(vertices)
     }
@@ -49,10 +71,33 @@ impl GeometryDesc {
 
 impl GeometryMorphTarget {
     pub fn new(position_deltas: Vec<Vec3>) -> Self {
-        Self { position_deltas }
+        Self {
+            position_deltas,
+            normal_deltas: None,
+        }
+    }
+
+    pub fn new_with_normals(position_deltas: Vec<Vec3>, normal_deltas: Vec<Vec3>) -> Self {
+        Self {
+            position_deltas,
+            normal_deltas: Some(normal_deltas),
+        }
     }
 
     pub fn position_deltas(&self) -> &[Vec3] {
         &self.position_deltas
+    }
+
+    pub fn normal_deltas(&self) -> Option<&[Vec3]> {
+        self.normal_deltas.as_deref()
+    }
+}
+
+fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
+    let length = (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    if length <= f32::EPSILON || !length.is_finite() {
+        fallback
+    } else {
+        Vec3::new(vector.x / length, vector.y / length, vector.z / length)
     }
 }

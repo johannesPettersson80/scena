@@ -1,10 +1,10 @@
 use crate::assets::{AssetLoadProgress, Assets};
-use crate::render::Renderer;
-use crate::scene::{DirectionalLight, Scene};
+use crate::render::{Background, Renderer};
+use crate::scene::{DirectionalLight, GridFloorOptions, Scene, SceneImport, Transform};
 
 use super::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,
-    InteractiveGltfViewerBuilder, build_orbit_controls,
+    InteractiveGltfViewerBuilder, ViewerProfileLighting, build_orbit_controls,
 };
 
 impl FirstRender {
@@ -26,16 +26,31 @@ impl HeadlessGltfViewerBuilder {
         let scene_asset = scene_report.into_asset();
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
+        apply_import_transform(&mut scene, &import, self.common.import_transform)?;
         let camera = scene.add_default_camera()?;
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
+        apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
+        apply_viewer_lighting(&mut scene, self.common.lighting)?;
 
-        let mut renderer =
-            Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?;
+        let mut renderer = if self.prefer_gpu {
+            Renderer::headless_gpu_with_options(
+                self.width,
+                self.height,
+                self.common.renderer_options,
+            )
+            .or_else(|_gpu_error| {
+                Renderer::headless_with_options(
+                    self.width,
+                    self.height,
+                    self.common.renderer_options,
+                )
+            })?
+        } else {
+            Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?
+        };
+        apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
@@ -50,6 +65,7 @@ impl HeadlessGltfViewerBuilder {
             renderer,
             import,
             load_progress_events,
+            camera_bookmarks: self.common.camera_bookmarks,
         })
     }
 
@@ -67,6 +83,7 @@ impl HeadlessGltfViewerBuilder {
             renderer,
             import,
             load_progress_events,
+            camera_bookmarks,
         } = viewer;
 
         Ok(FirstRender {
@@ -77,6 +94,7 @@ impl HeadlessGltfViewerBuilder {
             outcome,
             diagnostics,
             load_progress_events,
+            camera_bookmarks,
         })
     }
 }
@@ -102,15 +120,16 @@ impl InteractiveGltfViewerBuilder {
         let scene_asset = scene_report.into_asset();
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
+        apply_import_transform(&mut scene, &import, self.common.import_transform)?;
         let camera = scene.add_default_camera()?;
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
+        apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
+        apply_viewer_lighting(&mut scene, self.common.lighting)?;
         let mut renderer =
             Renderer::from_surface_with_options(self.surface, self.common.renderer_options)?;
+        apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
             let environment = pollster::block_on(assets.load_environment(environment_path))?;
             renderer.set_environment(environment);
@@ -126,6 +145,7 @@ impl InteractiveGltfViewerBuilder {
             import,
             camera,
             load_progress_events,
+            camera_bookmarks: self.common.camera_bookmarks,
             orbit_controls,
             click_callback: None,
             hover_callback: None,
@@ -148,16 +168,17 @@ impl InteractiveGltfViewerBuilder {
         let scene_asset = scene_report.into_asset();
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
+        apply_import_transform(&mut scene, &import, self.common.import_transform)?;
         let camera = scene.add_default_camera()?;
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
+        apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
+        apply_viewer_lighting(&mut scene, self.common.lighting)?;
         let mut renderer =
             Renderer::from_surface_async_with_options(self.surface, self.common.renderer_options)
                 .await?;
+        apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
@@ -173,10 +194,60 @@ impl InteractiveGltfViewerBuilder {
             import,
             camera,
             load_progress_events,
+            camera_bookmarks: self.common.camera_bookmarks,
             orbit_controls,
             click_callback: None,
             hover_callback: None,
         })
+    }
+}
+
+fn apply_import_transform(
+    scene: &mut Scene,
+    import: &SceneImport,
+    transform: Option<Transform>,
+) -> crate::Result<()> {
+    let Some(transform) = transform else {
+        return Ok(());
+    };
+    for root in import.roots() {
+        scene.set_transform(*root, transform)?;
+    }
+    Ok(())
+}
+
+fn apply_viewer_lighting(scene: &mut Scene, lighting: ViewerProfileLighting) -> crate::Result<()> {
+    match lighting {
+        ViewerProfileLighting::None => {}
+        ViewerProfileLighting::Directional => {
+            scene.directional_light(DirectionalLight::default()).add()?;
+        }
+        ViewerProfileLighting::Studio => {
+            scene.add_studio_lighting()?;
+        }
+    }
+    Ok(())
+}
+
+fn apply_viewer_grid<F>(
+    scene: &mut Scene,
+    assets: &crate::assets::Assets<F>,
+    import: &SceneImport,
+    enabled: bool,
+) -> crate::Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+    let bounds = import
+        .bounds_world(scene)
+        .ok_or(crate::LookupError::ImportHasNoBounds)?;
+    scene.add_grid_floor(assets, GridFloorOptions::new().under_bounds(bounds))?;
+    Ok(())
+}
+
+fn apply_viewer_renderer_settings(renderer: &mut Renderer, background: Option<Background>) {
+    if let Some(background) = background {
+        renderer.set_background(background);
     }
 }
 

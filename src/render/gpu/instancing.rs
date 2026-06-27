@@ -61,6 +61,7 @@ pub(super) struct InstanceDrawBatch {
     pub(super) material_slot: u32,
     pub(super) draw_uniform_index: u32,
     pub(super) depth_prepass_eligible: bool,
+    pub(super) double_sided: bool,
 }
 
 pub(super) fn encode_instance_draw_state(
@@ -85,10 +86,12 @@ pub(super) fn encode_instance_draw_state(
             let start_vertex = primitive.original_vertex_offset();
             let material_slot = primitive.render_material_slot();
             let depth_prepass_eligible = primitive.depth_prepass_eligible();
+            let double_sided = primitive.double_sided();
             if let Some(last) = batches.last_mut()
                 && last.material_slot == material_slot
                 && last.draw_uniform_index == draw_uniform_index
                 && last.depth_prepass_eligible == depth_prepass_eligible
+                && last.double_sided == double_sided
                 && last.start_instance == start_instance
                 && last.instance_count == instance_count
                 && last.start_vertex.saturating_add(last.vertex_count) == start_vertex
@@ -104,6 +107,7 @@ pub(super) fn encode_instance_draw_state(
                 material_slot,
                 draw_uniform_index,
                 depth_prepass_eligible,
+                double_sided,
             });
         }
     }

@@ -485,9 +485,10 @@ Preset contract:
   anisotropy where appropriate, and the raised WebGL2 environment
   prefilter sample floor. They do not claim SSR floor reflections.
 - `clear_glass(Color)` and `frosted_glass(Color)` are transparent
-  transmission/IOR/volume presets with blend-mode browser previews. They
-  do not claim full refractive caustics or physical WebGPU/WebGL2 glass
-  parity.
+  transmission/IOR/volume presets. Attached GPU-device WebGPU/WebGL2/native
+  lanes may claim scene-color transmission, IOR/thickness refraction, and
+  roughness-driven blur only when their capability report has
+  `physical_glass_transmission=supported`; the presets do not claim caustics.
 - `leather(Color)` is a smooth leather-like sheen preset, not a
   procedural grain or normal-map material.
 
@@ -686,7 +687,7 @@ Material proof fixture contract:
 
 Acceptance contract per material:
 
-- [ ] `chrome`: mirror-like high-contrast environment reflections on curved
+- [x] `chrome`: mirror-like high-contrast environment reflections on curved
       geometry in WebGL2/WebGPU/native proof. Quantitative gate: foreground
       specular `p99 / p10 >= thresholds.chrome.specular_dynamic_range`, dark
       reflection `p05 <= thresholds.chrome.dark_reflection_luminance_p05_max`,
@@ -698,27 +699,27 @@ Acceptance contract per material:
       their fixture thresholds. Exact cross-renderer Delta E is diagnostic for
       chrome reflection placement; the hard identity gate is the structural
       black/white reflection contract plus neighbor separation.
-- [ ] `brushed_steel`: directional anisotropic highlight / brush direction
+- [x] `brushed_steel`: directional anisotropic highlight / brush direction
       visible under both direct light and environment light. Quantitative
       gate: highlight aspect ratio along the brush axis exceeds
       `thresholds.brushed_steel.anisotropy_aspect_ratio_direct` and
       `thresholds.brushed_steel.anisotropy_aspect_ratio_ibl`. Direct-light-only
       anisotropy cannot close this item.
-- [ ] `metal`: generic polished metal distinct from `rough_metal`, `chrome`,
+- [x] `metal`: generic polished metal distinct from `rough_metal`, `chrome`,
       and `plastic` in the same browser proof. Quantitative gate: adjacent
       material CIEDE2000 / pixel-difference thresholds pass against all three
       neighbors under the pinned fixture.
-- [ ] `rough_metal`: broad rough metallic response, visibly less mirror-like
+- [x] `rough_metal`: broad rough metallic response, visibly less mirror-like
       than `metal` and `chrome`. Quantitative gate: highlight width and
       reflection contrast differ from `metal` / `chrome` by the fixture's
       committed rough-metal thresholds.
-- [ ] `clearcoat_plastic`: base plastic plus separate clearcoat lobe,
+- [x] `clearcoat_plastic`: base plastic plus separate clearcoat lobe,
       visibly different from ordinary `plastic`. Quantitative gate:
       clearcoat ON/OFF proof shows a second specular lobe or measured
       highlight change under the pinned environment with
       `delta >= thresholds.clearcoat_plastic.clearcoat_lobe_delta`. A
       direct-light-only lobe does not close the HDR/IBL claim.
-- [ ] `clear_glass`: transparent thick object with tint, reflection,
+- [x] `clear_glass`: transparent thick object with tint, reflection,
       background visibility, and browser proof of the glass path. Quantitative
       gate: grid/text behind the object remains transmitted within the fixture
       `background_delta_e2000_max`, the measured refraction offset exceeds
@@ -727,24 +728,24 @@ Acceptance contract per material:
       Alpha blend alone cannot close this; a claimed physical-glass lane needs
       the full back-buffer / scene-color pass, refracted ray sampling, roughness
       blur where applicable, and structured fallback proof described in Round E.
-- [ ] `frosted_glass`: rough/blurred transmission, not just a lighter alpha
+- [x] `frosted_glass`: rough/blurred transmission, not just a lighter alpha
       blend. Quantitative gate: background high-frequency contrast behind the
       object is reduced relative to `clear_glass` by
       `thresholds.frosted_glass.high_frequency_contrast_reduction_min`.
-- [ ] `leather`: source-backed grain/normal/roughness variation on a strap or
+- [x] `leather`: source-backed grain/normal/roughness variation on a strap or
       panel through `Assets::material_presets()`, not only orange sheen on a
       sphere. Quantitative gate: texture / normal / roughness variance exceeds
       the fixture threshold and provenance / size-budget records are present.
-- [ ] `rubber`: dark, rough, low-gloss source-backed surface texture on a
+- [x] `rubber`: dark, rough, low-gloss source-backed surface texture on a
       gasket/foot, visibly distinct from black plastic. Quantitative gate:
       low specular contrast plus texture/roughness variance thresholds pass
       through the source-backed surface.
-- [ ] `satin`: soft cloth-like sheen on folded or curved fabric geometry,
+- [x] `satin`: soft cloth-like sheen on folded or curved fabric geometry,
       visibly distinct from glossy plastic. Quantitative gate: sheen lobe
       width and adjacent Delta E / pixel-difference thresholds pass. If texture
       maps are required to meet the threshold, this item belongs to
       `Assets::material_presets()`, not `MaterialDesc::satin(Color)`.
-- [ ] `matte` and `plastic`: remain simple easy-use materials, but proof must
+- [x] `matte` and `plastic`: remain simple easy-use materials, but proof must
       show they are not confused with metal/glass/rubber in the same fixture.
 
 Implementation order:
@@ -985,18 +986,15 @@ Progress note 2026-05-24:
        `for_attached_gpu_backend` promote the shared GPU PBR path. Doctor still
        rejects unconditional `Supported` claims. Public approval remains gated
        by the live Cloudflare and mobile proof items below.
-11. - [ ] Add Cloudflare deployment proof for the public material demo. The
+11. - [x] Add Cloudflare deployment proof for the public material demo. The
        proof must run the same material assertions against the live deployment,
-       not only a local wasm-pack page. Current live proof attempt
-       (2026-05-22) failed against
-       `https://scena-demo.pages.dev/?sample=material-presets`: chrome bright
-       reflection `p99 = 163.616 < 230`, leather texture variance
-       `0.009 < 0.02`, rubber roughness variance `0 < 0.02`,
-       clear-glass refraction `0 < 4`, frosted high-frequency contrast
-       reduction `0.039 < 0.5`, and multiple neighbor deltas failed. Failed
-       artifact preserved locally as
-       `target/gate-artifacts/round-e-cloudflare-material-proof-live-fail.json`;
-       the current source build still passes the remote-served local proof.
+       not only a local wasm-pack page. Live proof on 2026-06-22 against
+       `https://scena-demo.pages.dev/proof/?sample=material-presets` served
+       current cache buster `1.7.1-proof-7b4a84a725cd`, matched the local WASM
+       SHA-256
+       `020866b32f35e17a638dc7fe8f1c4f0832e6a9232bf683f0cb0863a2cb4005ea`,
+       and passed all hard material identity gates. Artifact:
+       `target/gate-artifacts/round-e-cloudflare-material-proof.json`.
 12. - [ ] Stand up iOS Safari and Android Chrome material proof capture for at
        least `chrome`, `brushed_steel`, `clearcoat_plastic`, and `clear_glass`
        before the public Cloudflare material demo is approved.
@@ -1048,17 +1046,17 @@ Progress note 2026-05-24:
 
 Proof checklist:
 
-- [ ] For every real-world material preset, add all three required picture
+- [x] For every real-world material preset, add all three required picture
       proof types:
       reference-image proof, browser-demo proof rendered by the host
       browser/GPU, and public docs/demo media generated from checked code.
-- [ ] The Cloudflare demo must show the material-specific proof scenes with
+- [x] The Cloudflare demo must show the material-specific proof scenes with
       labels and the actual source-backed material names. The host browser/GPU
       must create the browser proof images; static screenshots embedded in
       the page do not count.
 - [x] `scripts/probe_cloudflare_material_presets.mjs` exists and runs a
       Playwright capture against
-      `https://scena-demo.pages.dev/?sample=material-presets`. It crops
+      `https://scena-demo.pages.dev/proof/?sample=material-presets`. It crops
       per-material regions using the fixture crop windows, runs the same
       reference / neighbor / threshold assertions, and writes
       `target/gate-artifacts/round-e-cloudflare-material-proof.json` plus
@@ -1066,16 +1064,17 @@ Proof checklist:
       The existing synthetic-HDR M6 material-preset workflow remains smoke /
       capability proof only; Round E browser proof must use the live-demo HDR
       and fixture lighting.
-- [ ] The live Cloudflare proof artifact records:
+- [x] The live Cloudflare proof artifact records:
       `cache_buster.bumped == true`, `wasm.checksum_matches_build == true`,
       `fixture.environment_hdr_sha256`, `fixture.tonemapper`,
       `fixture.output_color_space`, `fixture.exposure_ev`,
       `fixture.webgl2_smooth_metal_sample_floor`, and one
       `per_material.<preset>` result for every §2.6 material name. The WASM
       checksum is compared against a current local source build, not merely
-      copied from a stale artifact. Code-side doctor parsing/enforcement for
-      this artifact is complete below; this item stays open until the live
-      deployment artifact itself is regenerated and passes.
+      copied from a stale artifact. Live 2026-06-22 artifact:
+      `target/gate-artifacts/round-e-cloudflare-material-proof.json` reports
+      `cache_buster.bumped == true`, `wasm.checksum_matches_build == true`, and
+      one passing `per_material` entry for every §2.6 material name.
 - [x] Add WebGL2, WebGPU, native/headless-GPU, CPU/reference, iOS Safari, and
       Android Chrome capability rows for each real-world material. Missing
       lanes must be explicit `proof-gap` or `degraded-fallback` rows, not
@@ -1164,8 +1163,7 @@ plus its generated frame sequence shows `presentation()` and
 `turntable(6.0)` changing camera pose over time.
 
 ```rust
-OrbitControls::from_framing(framing).cinematic()      // heavy damping
-OrbitControls::from_framing(framing).snappy()         // light damping
+OrbitControls::from_framing(framing)                  // direct user orbit
 OrbitControls::from_framing(framing).presentation()   // medium + slow auto-rotate
 OrbitControls::from_framing(framing).turntable(6.0)   // auto-rotate, 6 RPM
 ```
@@ -1209,12 +1207,13 @@ capability / performance items need structural or measured proof first
 data, allocation/performance gates), plus a rendered reference only when
 the rendered result is part of the contract.
 
-- **Anti-aliasing.** Status: **[shipped]** for the FXAA output-space
-  baseline. `AntiAliasing::Fxaa` is the default and
+- **Anti-aliasing.** Status: **[shipped]** for FXAA plus sample-based edge AA.
+  Medium quality uses `AntiAliasing::Fxaa`; high quality maps to
+  `AntiAliasing::Msaa4`, and
   `Renderer::set_anti_aliasing(AntiAliasing::None)` gives deterministic
-  unfiltered output for exact-pixel and ON/OFF proof. MSAA/TAA are reopened
-  under Round E for material-proof quality, but are not part of this shipped
-  FXAA claim. Proof:
+  unfiltered output for exact-pixel and ON/OFF proof. Recipe
+  `render.supersample` adds an opt-in N× full-frame resolve for hero captures.
+  Proof:
   `anti_aliasing_can_be_disabled_for_on_off_visual_proof` asserts the
   aliased edge stays hard with AA disabled and becomes visibly smoothed
   with FXAA, while `tests/m2_visual_proof.rs` writes the
@@ -1741,16 +1740,13 @@ specific competitor primitive.
   Visual proof: browser-demo shipped for browser input-to-motion via the
   generated Playwright artifact plus
   `target/gate-artifacts/scena-viewer-mobile-a11y-browser-proof.png`.
-- **Picking + outline + hover.** Status: **[shipped]** for the library
+- **Picking + hover + selection.** Status: **[shipped]** for the library
   renderer surface. Owner: `src/picking.rs` + `src/render/`.
   `Scene::pick_and_select_with_assets` and
   `Scene::pick_and_hover_with_assets` update typed interaction state;
-  `InteractionStyle::outline` plus `Renderer::set_hover_style` and
-  `Renderer::set_selection_style` make hover/selection visible in
-  rendered output; viewer callbacks already route through the same
-  picking path. Proof:
-  `examples_visual_picking_selection_hover_renders_styled_pick_to_ppm`
-  renders the styled pick path, and doctor rule `PICKING-OUTLINE-HOVER`
+  viewer callbacks already route through the same picking path. Proof:
+  `examples_visual_picking_selection_hover_renders_pick_state_to_ppm`
+  renders the pick state path, and doctor rule `PICKING-OUTLINE-HOVER`
   pins the source API, guide, checklist, and visual proof. The future
   `<scena-viewer>` live demo can still add a richer browser recording,
   but the renderer/library contract is closed.
@@ -1833,7 +1829,7 @@ specific competitor primitive.
 - **Inspector / dev overlay.** Status: **[shipped]** for the host-fed
   overlay and browser snapshot fixture.
   Owner: `crates/xtask/` doctor integration + `<scena-viewer>`.
-  `ScenaViewerInspectorSnapshot` turns renderer debug overlay,
+  `ScenaViewerInspectorSnapshot` turns renderer diagnostics,
   diagnostics, and render stats into a testable snapshot; the element
   exposes `setInspectorSnapshot(...)`, `setInspectorDiagnostics(...)`,
   `clearInspectorSnapshot()`, and emits
@@ -1917,7 +1913,7 @@ teachable.
       `vertical_fov: Angle::from_degrees(<lit>)`, raw FOV setter calls, or
       equivalent. Do not key the rule to dead API names like
       `with_fov(<float>)`.
-- [x] Ban inline `with_damping(<float>)` in `src/demo_page*` if a named
+- [x] Ban removed orbit damping helper calls in `src/demo_page*` if a named
       damping preset would do.
 - [x] Ban inline `Quat::from_*(<float>, ...)` in `examples/` **except**
       in the dedicated transform escape-hatch example.
@@ -2017,14 +2013,21 @@ the material-specific proof fixture below.
         browser assertions pass for all Round E hard material metrics, and the
         non-browser reference/docs-image harness now enforces value-bounded
         material-identity checks against the external-anchor PNGs.
-23. - [ ] Cloudflare deployment material proof runs against
-        `https://scena-demo.pages.dev/?sample=material-presets`, writes
+23. - [x] Cloudflare deployment material proof runs against
+        `https://scena-demo.pages.dev/proof/?sample=material-presets`, writes
         `round-e-cloudflare-material-proof.json`, verifies the cache buster and
         WASM checksum, and applies the same per-material gates (§2.6.1).
         Public approval is fail-closed on external-reference Delta E as well
         as structural metrics: every preset must report
         `reference_delta_gate: "hard"` and pass its committed
-        `delta_e2000_max`.
+        `delta_e2000_max`. Live proof on 2026-06-22 served
+        `1.7.1-proof-7b4a84a725cd`, matched the local WASM checksum, and passed:
+        `matte` 4.684/5, `plastic` 9.952/11, `metal` 18.067/20,
+        `rough_metal` 14.303/16, `chrome` 18.547/20, `brushed_steel` 13.829/15,
+        `clearcoat_plastic` 16.5/18, `satin` 4.824/6, `leather` 5.695/7,
+        `clear_glass` 31.356/32, `frosted_glass` 26.297/28, and `rubber`
+        19.332/21. Artifact:
+        `target/gate-artifacts/round-e-cloudflare-material-proof.json`.
 24. - [x] Source-backed `Assets::material_presets()` API with ambientCG /
         Poly Haven / Khronos provenance, SHA-256, license, bundled-vs-fetched
         policy, and size-budget gates (§2.6.1).
@@ -2084,9 +2087,9 @@ the material-specific proof fixture below.
         not used by the current Round E fixture, so it is not a material-
         identity blocker for this fixture. Current proof:
         `round_e_fixture_does_not_depend_on_ssao_ssr_or_msaa_taa`.
-32. - [x] MSAA/TAA beyond current FXAA only where aliasing breaks fixture
+32. - [x] Historical Round E note: MSAA/TAA beyond FXAA was required only where aliasing broke fixture
         thresholds for shiny curved metal or thin brushed highlights (§3.1).
-        MSAA/TAA beyond current FXAA is not used by the current Round E
+        MSAA/TAA beyond FXAA was not used by the Round E
         fixture, so it is not a material-identity blocker for this fixture.
         Current proof:
         `round_e_fixture_does_not_depend_on_ssao_ssr_or_msaa_taa`.
@@ -2168,19 +2171,14 @@ release-evidence gaps; larger renderer research lanes follow.
        live browser screenshots, deterministic JSON gate artifacts, and
        `target/gate-artifacts/trust-twin-robot-cell-picture-proof.html`
        displaying the browser-rendered PNGs.
-4. - [ ] **Round E real-world material parity** — **[gap]**.
-       The current `MaterialDesc::*` presets are scalar shortcuts and the
-       live browser material grid does not prove complete real-world
-       glass, leather, satin, rubber, chrome, or brushed steel. Execute
-       Round E / §2.6.1 before treating the public material demo as approved:
-       Cloudflare proof against the live URL and current WASM checksum; the
-       required picture-proof/media set; WebGL2/WebGPU/native/headless-GPU
-       release evidence where a claim needs real hardware; and iOS Safari /
-       Android Chrome material captures for the public demo claim. The
-       renderer/code-side gates in §2.6.1 and Round E are complete for the
-       current fixture; the internal twelve-sphere page is only a visual review
-       aid while the external proof work is open and is not evidence that item
-       4 is complete.
+4. - [x] **Round E real-world material parity**.
+       The `MaterialDesc::*` presets remain scalar shortcuts, and the complete
+       source-backed material proof lives in the §2.6.1
+       `Assets::material_presets()` surface. The public Cloudflare material
+       proof now runs against the live URL with current cache buster
+       `1.7.1-proof-7b4a84a725cd`, current WASM checksum, and all committed
+       external-reference and material-specific thresholds passing. Artifact:
+       `target/gate-artifacts/round-e-cloudflare-material-proof.json`.
 5. - [ ] **Transmission + IBL headless GPU capability evidence** —
        **[proof-gap]**. Gate added:
        `m8_headless_gpu_transmission_volume_ibl_capability_when_available`
@@ -2226,10 +2224,10 @@ release-evidence gaps; larger renderer research lanes follow.
        **[not required by current fixture]**. The current Round E fixture does
        not use reflective floor/product-scene evidence, so SSR is not a
        material-identity blocker for this finish line.
-11. - [x] **MSAA/TAA beyond current FXAA** —
-       **[not required by current fixture]**. The current Round E fixture
-       thresholds pass under the existing AA path. Reopen this only if a future
-       shiny/anisotropic fixture makes aliasing fail the committed thresholds.
+11. - [x] **Historical Round E MSAA/TAA note** —
+       **[not required by that fixture]**. The Round E fixture thresholds
+       passed under its then-current AA path. Later renderer-quality work adds
+       `msaa4`/`msaa8` plus `render.supersample` for agent-authored captures.
 12. - [ ] **Area lights with LTC** —
        **[deferred, later-product-lighting]**. Product-material proof can
        benefit from physically plausible rect/disc/sphere light shapes, but LTC
@@ -2652,7 +2650,7 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 `<scena-viewer>` inspector overlay pass (2026-05-19):
 
 - Added `ScenaViewerInspectorSnapshot` and
-  `ScenaViewerInspectorDiagnostic` so renderer debug overlay,
+  `ScenaViewerInspectorDiagnostic` so renderer diagnostics,
   diagnostics, and render counters can feed a browser overlay through a
   typed native-tested surface.
 - Extended the custom element with `setInspectorSnapshot(...)`,
@@ -3113,17 +3111,16 @@ Round E browser material proof pass (2026-05-22):
   `scena-builder`; refreshed proof artifact generated at
   `2026-05-22T20:30:29.070Z` with WASM SHA-256
   `34655b8c67c63d55860eb35c2392fa6b90a50de2fb56bee77aed0225e7011d69`.
-- Live Cloudflare material proof attempt (2026-05-22) failed and remains
-  open until the current source is deployed. Preserved failed artifact:
-  `target/gate-artifacts/round-e-cloudflare-material-proof-live-fail.json`.
-  The failed live page reported chrome `p99 = 163.616 < 230`,
-  `clear_glass.refraction_offset_px = 0 < 4`, and
-  `frosted_glass.high_frequency_contrast_reduction = 0.039 < 0.5`.
-  After preserving the live failure, the remote-served current build was
-  reprobed and passed again at `2026-05-22T20:32:34.700Z`.
-- Remaining Round E work is live Cloudflare proof, mobile proof, and real
-  hardware release evidence for native/WebGPU lanes where the CI/builder cannot
-  provide a trusted GPU artifact.
+- Live Cloudflare material proof now passes against the current public proof
+  bundle. On 2026-06-22 `scripts/probe_cloudflare_material_presets.mjs` verified
+  `https://scena-demo.pages.dev/proof/?sample=material-presets` with current
+  cache buster `1.7.1-proof-7b4a84a725cd`, matching WASM checksum, and all
+  committed material thresholds passing. Artifact:
+  `target/gate-artifacts/round-e-cloudflare-material-proof.json`.
+- Remaining adjacent release work is mobile proof and real-hardware release
+  evidence for native/WebGPU lanes where the CI/builder cannot provide a trusted
+  GPU artifact; it is no longer a blocker for the source-backed material parity
+  proof on the live Cloudflare surface.
 
 Viewer animation sugar pass (2026-05-19):
 

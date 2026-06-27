@@ -48,10 +48,14 @@ pub(crate) fn check_m7_inspection_contracts(root: &Path, findings: &mut Vec<Find
         "src/scene/inspection/material.rs",
         &[
             "pub struct SceneMaterialInspection",
-            "pub const fn base_color_texture",
+            "pub fn source",
+            "pub fn fallbacks",
+            "AssetMaterialSource",
+            "AssetMaterialFallback",
+            "pub fn base_color_texture",
             "pub const fn has_base_color_texture",
-            "pub const fn transmission_texture",
-            "pub const fn thickness_texture",
+            "pub fn transmission_texture",
+            "pub fn thickness_texture",
         ],
     );
     require_contains(
@@ -61,8 +65,32 @@ pub(crate) fn check_m7_inspection_contracts(root: &Path, findings: &mut Vec<Find
         "src/scene/inspection/texture.rs",
         &[
             "pub struct SceneTextureInspection",
+            "pub fn source_path",
+            "pub fn provenance",
             "pub const fn source_format",
             "pub const fn decoded_dimensions",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/inspection/schema.rs",
+        &[
+            "pub struct SceneMaterialInspectionV1",
+            "pub struct SceneMaterialSourceInspectionV1",
+            "pub struct SceneMaterialSlotInspectionV1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/inspection/schema/material.rs",
+        &[
+            "source_material",
+            "generated_default",
+            "texture_source_format_name",
         ],
     );
     require_contains(
@@ -183,7 +211,7 @@ pub(crate) fn check_m7_inspection_contracts(root: &Path, findings: &mut Vec<Find
             "set_camera_layer_mask",
             "SurfaceViewport",
             "ImportAnchorDebugMetadata",
-            "with_damping",
+            "focus(Vec3",
             "m7_beginner_scene_diagnostics_explain_invisible_setups",
             "GeometryDesc::normal_lines",
             "m7_error_display_snapshots_cover_beginner_recovery_paths",

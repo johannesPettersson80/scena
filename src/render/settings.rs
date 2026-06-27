@@ -1,11 +1,11 @@
 use crate::assets::EnvironmentHandle;
-use crate::diagnostics::{DebugOverlay, OutputColorSpace};
+use crate::diagnostics::OutputColorSpace;
 use crate::material::Color;
-use crate::picking::InteractionStyle;
 
 use super::{
-    AntiAliasing, Background, OrderIndependentTransparencyConfig, PostBloomConfig, Renderer,
-    ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    AntiAliasing, Background, DepthOfFieldConfig, OrderIndependentTransparencyConfig,
+    PostBloomConfig, ReconstructionFilter, Renderer, ScreenSpaceAmbientOcclusionConfig,
+    ScreenSpaceReflectionConfig, Tonemapper,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -119,9 +119,35 @@ impl Renderer {
         self.anti_aliasing
     }
 
+    pub fn supersample_factor(&self) -> u32 {
+        self.supersample_factor
+    }
+
+    pub fn reconstruction_filter(&self) -> ReconstructionFilter {
+        self.reconstruction_filter
+    }
+
     pub fn set_anti_aliasing(&mut self, anti_aliasing: AntiAliasing) {
         if self.anti_aliasing != anti_aliasing {
             self.anti_aliasing = anti_aliasing;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn set_supersample_factor(&mut self, factor: u32) -> Result<(), crate::RenderError> {
+        super::target::validate_supersample_target(self.target, factor)?;
+        if self.supersample_factor != factor {
+            self.supersample_factor = factor;
+            self.target_revision = self.target_revision.saturating_add(1);
+            self.clear_rendered_frame();
+            self.mark_output_changed();
+        }
+        Ok(())
+    }
+
+    pub fn set_reconstruction_filter(&mut self, filter: ReconstructionFilter) {
+        if self.reconstruction_filter != filter {
+            self.reconstruction_filter = filter;
             self.mark_output_changed();
         }
     }
@@ -173,6 +199,36 @@ impl Renderer {
         self.set_screen_space_ambient_occlusion(None);
     }
 
+    pub fn screen_space_reflections(&self) -> Option<ScreenSpaceReflectionConfig> {
+        self.screen_space_reflections
+    }
+
+    pub fn set_screen_space_reflections(&mut self, config: Option<ScreenSpaceReflectionConfig>) {
+        if self.screen_space_reflections != config {
+            self.screen_space_reflections = config;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_screen_space_reflections(&mut self) {
+        self.set_screen_space_reflections(None);
+    }
+
+    pub fn depth_of_field(&self) -> Option<DepthOfFieldConfig> {
+        self.depth_of_field
+    }
+
+    pub fn set_depth_of_field(&mut self, config: Option<DepthOfFieldConfig>) {
+        if self.depth_of_field != config {
+            self.depth_of_field = config;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_depth_of_field(&mut self) {
+        self.set_depth_of_field(None);
+    }
+
     pub fn set_bloom(&mut self, bloom: Option<PostBloomConfig>) {
         if self.bloom != bloom {
             self.bloom = bloom;
@@ -182,38 +238,6 @@ impl Renderer {
 
     pub fn clear_bloom(&mut self) {
         self.set_bloom(None);
-    }
-
-    pub fn debug_overlay(&self) -> DebugOverlay {
-        self.debug_overlay
-    }
-
-    pub fn set_debug(&mut self, overlay: DebugOverlay) {
-        self.set_debug_overlay(overlay);
-    }
-
-    pub fn set_debug_overlay(&mut self, overlay: DebugOverlay) {
-        if self.debug_overlay != overlay {
-            self.debug_overlay = overlay;
-            self.debug_revision = self.debug_revision.saturating_add(1);
-            self.clear_rendered_frame();
-        }
-    }
-
-    pub fn hover_style(&self) -> InteractionStyle {
-        self.hover_style
-    }
-
-    pub fn set_hover_style(&mut self, style: InteractionStyle) {
-        self.hover_style = style;
-    }
-
-    pub fn selection_style(&self) -> InteractionStyle {
-        self.selection_style
-    }
-
-    pub fn set_selection_style(&mut self, style: InteractionStyle) {
-        self.selection_style = style;
     }
 
     pub fn environment(&self) -> Option<EnvironmentHandle> {

@@ -1,4 +1,5 @@
 mod animation_material;
+mod calibration_oracles;
 mod camera_depth;
 mod environment_lighting;
 mod governance_backend;
@@ -10,6 +11,7 @@ mod shadow_depth;
 pub(crate) use animation_material::{
     check_m3b_animation_contracts, check_material_desc_fields_private,
 };
+pub(crate) use calibration_oracles::check_calibration_oracles_pair_parity_sweeps;
 pub(crate) use camera_depth::{
     check_camera_depth_contracts, check_clipping_contracts, check_m2_leak_stats_contracts,
     check_origin_shift_contracts, check_reversed_z_contracts, check_webgl2_depth_contracts,

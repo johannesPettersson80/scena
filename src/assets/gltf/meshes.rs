@@ -15,7 +15,7 @@ use crate::geometry::{
 use crate::material::{Color, MaterialDesc};
 use crate::scene::Vec3;
 
-use super::super::{AssetPath, AssetStorage, MaterialHandle};
+use super::super::{AssetMaterialSource, AssetPath, AssetStorage, MaterialHandle};
 use super::SceneAssetMesh;
 use super::buffers::ResolvedGltfBuffers;
 
@@ -98,9 +98,16 @@ fn parse_primitive(
     };
     let morph_targets = reader
         .read_morph_targets()
-        .filter_map(|(positions, _normals, _tangents)| {
+        .filter_map(|(positions, normals, _tangents)| {
             positions.map(|iter| {
-                GeometryMorphTarget::new(iter.map(Vec3::from_array).collect::<Vec<_>>())
+                let position_deltas = iter.map(Vec3::from_array).collect::<Vec<_>>();
+                match normals {
+                    Some(normals) => GeometryMorphTarget::new_with_normals(
+                        position_deltas,
+                        normals.map(Vec3::from_array).collect::<Vec<_>>(),
+                    ),
+                    None => GeometryMorphTarget::new(position_deltas),
+                }
             })
         })
         .collect::<Vec<_>>();
@@ -164,7 +171,17 @@ fn parse_primitive(
         .index()
         .and_then(|index| materials.get(index))
         .copied()
-        .unwrap_or_else(|| storage.materials.insert(MaterialDesc::default()));
+        .unwrap_or_else(|| {
+            let handle = storage.materials.insert(MaterialDesc::default());
+            storage.material_sources.insert(
+                handle,
+                AssetMaterialSource::generated_default(
+                    path.clone(),
+                    "source primitive did not reference a material; using glTF default material",
+                ),
+            );
+            handle
+        });
     let material_variant_bindings =
         super::material_variants::parse_primitive_material_variant_bindings(primitive, materials);
     Ok(SceneAssetMesh {

@@ -4,8 +4,9 @@ use crate::scene::Scene;
 
 use super::camera;
 use super::prepare_retained::{
-    assign_original_instance_vertex_offsets, assign_original_stroke_indices,
-    assign_original_vertex_offsets, filter_retained_instances_for_scene,
+    assign_original_instance_vertex_offsets, assign_original_label_quad_indices,
+    assign_original_stroke_indices, assign_original_vertex_offsets,
+    filter_retained_instances_for_scene, filter_retained_labels_for_scene,
     filter_retained_primitives_for_scene, filter_retained_strokes_for_scene,
     next_gpu_vertex_offset, prepared_instance_count, retained_template_covers_visible_sources,
 };
@@ -81,18 +82,27 @@ impl Renderer {
         let mut step_start = total_start;
         self.poll_device();
         self.diagnostics.clear();
-        validate_target_size(self.target.width, self.target.height).map_err(|()| {
-            PrepareError::InvalidTargetSize {
+        let target = self
+            .prepare_target()
+            .map_err(|()| PrepareError::InvalidTargetSize {
                 width: self.target.width,
                 height: self.target.height,
+            })?;
+        validate_target_size(target.width, target.height).map_err(|()| {
+            PrepareError::InvalidTargetSize {
+                width: target.width,
+                height: target.height,
             }
         })?;
-        let mut diagnostics = prepare::collect_precision_diagnostics(scene, self.target.backend);
+        let screen_space_scale = self.screen_space_prepare_scale();
+        let mut diagnostics = prepare::collect_precision_diagnostics(scene, target.backend);
         diagnostics.extend(prepare::collect_camera_visibility_diagnostics(
-            scene,
-            self.target,
+            scene, target,
         ));
         if let Some(assets) = assets {
+            diagnostics.extend(prepare::collect_asset_camera_visibility_diagnostics(
+                scene, target, assets,
+            ));
             diagnostics.extend(prepare::collect_material_texture_diagnostics(scene, assets));
         }
         step_start = log_prepare_step("diagnostics", step_start);
@@ -109,17 +119,29 @@ impl Renderer {
             }
             None => None,
         };
-        let environment_prepare_stats =
-            prepare::collect_environment_prepare_stats(environment_desc.as_ref());
+        let environment_prepare_stats = prepare::collect_environment_prepare_stats(
+            environment_desc.as_ref(),
+            self.target.backend,
+        );
         let environment_count = u64::from(environment_desc.is_some());
+        let active_camera_projection = scene
+            .active_camera()
+            .and_then(|camera| camera::CameraProjection::from_scene(scene, camera, target).ok());
         let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
         let environment_lighting = self.environment_lighting_for_prepare(environment_desc.as_ref());
-        let gpu_light_uniform =
-            prepare::collect_gpu_light_uniform(scene, scene.origin_shift(), &environment_lighting);
+        let tiled_light_assignment = prepare::collect_gpu_tiled_light_assignment(
+            scene,
+            scene.origin_shift(),
+            target,
+            active_camera_projection.as_ref(),
+        )?;
+        let gpu_light_uniform = prepare::collect_gpu_light_uniform(
+            scene,
+            scene.origin_shift(),
+            &environment_lighting,
+            tiled_light_assignment.is_active(),
+        );
         step_start = log_prepare_step("environment + lights", step_start);
-        let active_camera_projection = scene.active_camera().and_then(|camera| {
-            camera::CameraProjection::from_scene(scene, camera, self.target).ok()
-        });
         let backend_material_slots = if self.gpu.is_some() {
             prepare::collect_backend_material_slots(scene, assets)
         } else {
@@ -144,7 +166,7 @@ impl Renderer {
                     Ok(light_from_world) => {
                         if let Some(gpu) = &mut self.gpu {
                             match gpu.update_dynamic_draw_state(
-                                self.target,
+                                target,
                                 gpu_light_uniform,
                                 light_from_world,
                                 &dynamic_primitives,
@@ -197,7 +219,8 @@ impl Renderer {
             .filter_map(|slot| slot.base_color.as_ref().map(|texture| texture.handle))
             .collect::<Vec<_>>();
         let prepared_scene = prepare::collect_prepared_primitives(
-            self.target,
+            target,
+            screen_space_scale,
             scene,
             assets,
             active_camera_projection.as_ref(),
@@ -216,6 +239,8 @@ impl Renderer {
         let culled_primitives = culling::cull_prepared_primitives(
             prepared_scene.primitives,
             active_camera_projection.as_ref(),
+            target,
+            scene.clipping_planes().planes().is_empty() && scene.section_box().is_none(),
             self.gpu.is_some(),
         );
         let retained_primitives = assign_original_vertex_offsets(culled_primitives.visible);
@@ -224,6 +249,9 @@ impl Renderer {
         let retained_strokes = assign_original_stroke_indices(prepared_scene.strokes);
         let strokes = filter_retained_strokes_for_scene(scene, &retained_strokes)
             .unwrap_or_else(|| retained_strokes.clone());
+        let retained_labels = assign_original_label_quad_indices(prepared_scene.labels);
+        let labels = filter_retained_labels_for_scene(scene, &retained_labels)
+            .unwrap_or_else(|| retained_labels.clone());
         let retained_instances = assign_original_instance_vertex_offsets(
             prepared_scene.instances,
             next_gpu_vertex_offset(&retained_primitives),
@@ -246,8 +274,13 @@ impl Renderer {
                 .iter()
                 .flat_map(|set| set.primitives().iter().cloned()),
         );
-        let depth_stats =
-            prepare::collect_depth_prepass_stats(&depth_primitives, self.target.backend);
+        let depth_stats = prepare::collect_depth_prepass_stats(&depth_primitives, target.backend);
+        #[cfg(test)]
+        let depth_stats = if self.depth_prepass_enabled_for_test {
+            depth_stats
+        } else {
+            prepare::PreparedDepthStats::default()
+        };
         self.apply_prepare_stats(
             logical_stats,
             environment_prepare_stats,
@@ -259,19 +292,22 @@ impl Renderer {
         step_start = log_prepare_step("cull + stats", step_start);
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(
-                self.target,
+                target,
                 &gpu_retained_primitives,
                 &gpu_primitives,
                 &retained_instances,
                 &instances,
                 &retained_strokes,
                 &strokes,
+                &retained_labels,
+                &labels,
                 lighting_stats,
                 gpu_light_uniform,
                 light_from_world,
                 depth_stats,
                 &backend_material_slots,
                 &environment_lighting,
+                &tiled_light_assignment,
             )?;
             let stats = gpu.prepared_resource_stats();
             let pending_destructions = gpu.pending_destructions();
@@ -293,14 +329,16 @@ impl Renderer {
             visibility_revision: scene.visibility_revision(),
             environment_revision: self.environment_revision,
             target_revision: self.target_revision,
-            debug_revision: self.debug_revision,
             retained_primitives,
             primitives,
             retained_strokes,
             strokes,
+            retained_labels,
+            labels,
             retained_instances,
             instances,
             clipping_planes: scene.active_clipping_plane_values().collect(),
+            section_box: scene.section_box(),
         });
         self.stats.instances = self
             .prepared
@@ -313,6 +351,25 @@ impl Renderer {
         log_prepare_step("prepare_inner tail", step_start);
         log_prepare_step("prepare_inner total", total_start);
         Ok(())
+    }
+
+    fn prepare_target(&self) -> Result<super::RasterTarget, ()> {
+        let scale = if self.gpu.is_some()
+            && self.target.backend == crate::diagnostics::Backend::HeadlessGpu
+        {
+            self.supersample_factor
+        } else {
+            1
+        };
+        super::target::validate_supersample_target(self.target, scale).map_err(|_| ())
+    }
+
+    fn screen_space_prepare_scale(&self) -> f32 {
+        if self.gpu.is_none() || self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
+            self.supersample_factor.max(1) as f32
+        } else {
+            1.0
+        }
     }
 
     pub(super) fn dynamic_gpu_prepare_rejection_reason(
@@ -335,9 +392,6 @@ impl Renderer {
         if prepared.target_revision != self.target_revision {
             return Some("target revision changed");
         }
-        if prepared.debug_revision != self.debug_revision {
-            return Some("debug revision changed");
-        }
         if prepared.transform_revision == scene.transform_revision() {
             return None;
         }
@@ -346,6 +400,15 @@ impl Renderer {
         }
         if scene.label_nodes().next().is_some() {
             return Some("label nodes present");
+        }
+        if scene
+            .mesh_nodes()
+            .any(|(node, _mesh, _transform)| scene.skin_binding(node).is_some())
+        {
+            return Some("skinned joints may have moved");
+        }
+        if prepare::gpu_tiled_light_assignment_required(scene) {
+            return Some("tiled light assignment may have moved");
         }
         if scene
             .mesh_nodes()
@@ -376,6 +439,7 @@ impl Renderer {
             scene,
             &prepared.retained_primitives,
             &prepared.retained_strokes,
+            &prepared.retained_labels,
             &prepared.retained_instances,
         ) {
             return None;
@@ -387,6 +451,10 @@ impl Renderer {
                 .collect();
         let strokes = filter_retained_strokes_for_scene(scene, &prepared.retained_strokes)?;
         let instances = filter_retained_instances_for_scene(scene, &prepared.retained_instances)?;
+        let labels = filter_retained_labels_for_scene(scene, &prepared.retained_labels)?;
+        if !labels.is_empty() {
+            return None;
+        }
         Some((primitives, strokes, instances))
     }
 

@@ -1,0 +1,9 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "missing",
+      "uri": "missing-file.gltf"
+    }
+  ]
+}

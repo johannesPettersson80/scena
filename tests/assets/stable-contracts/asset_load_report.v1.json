@@ -45,5 +45,16 @@
       "kind": "cached",
       "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
     }
-  ]
+  ],
+  "external_resources": [
+    {
+      "kind": "buffer",
+      "path": "tests/assets/gltf/missing.bin",
+      "index": 0,
+      "status": "missing",
+      "bytes": null,
+      "reason": "not found"
+    }
+  ],
+  "material_fallbacks": []
 }

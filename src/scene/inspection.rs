@@ -11,9 +11,10 @@ mod texture;
 pub use material::SceneMaterialInspection;
 pub use schema::{
     SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspectionV1, SceneDrawInspectionV1,
-    SceneHostInstanceEntryInspectionV1, SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1,
-    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneNodeInspectionV1,
-    SceneNormalInspectionV1,
+    SceneHostInstanceEntryInspectionV1, SceneHostInstanceSetInspectionV1, SceneImportInspectionV1,
+    SceneInspectionCountsV1, SceneInspectionReportV1, SceneInspectionRevisionsV1,
+    SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1,
+    SceneNodeInspectionV1, SceneNormalInspectionV1,
 };
 pub use texture::SceneTextureInspection;
 
@@ -58,7 +59,7 @@ pub struct SceneNodeInspection {
     tint: Option<Color>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SceneDrawInspection {
     node: NodeKey,
     instance: Option<InstanceId>,
@@ -71,7 +72,6 @@ pub struct SceneDrawInspection {
     index_count: usize,
     local_bounds: Aabb,
     world_transform: Transform,
-    visible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -259,8 +259,8 @@ impl SceneNodeInspection {
         self.mesh_material
     }
 
-    pub const fn material_preview(&self) -> Option<SceneMaterialInspection> {
-        self.material_preview
+    pub const fn material_preview(&self) -> Option<&SceneMaterialInspection> {
+        self.material_preview.as_ref()
     }
 
     pub const fn camera(&self) -> Option<CameraKey> {
@@ -305,8 +305,8 @@ impl SceneDrawInspection {
         self.material
     }
 
-    pub const fn material_preview(&self) -> Option<SceneMaterialInspection> {
-        self.material_preview
+    pub const fn material_preview(&self) -> Option<&SceneMaterialInspection> {
+        self.material_preview.as_ref()
     }
 
     pub const fn topology(&self) -> GeometryTopology {
@@ -331,10 +331,6 @@ impl SceneDrawInspection {
 
     pub const fn world_transform(&self) -> Transform {
         self.world_transform
-    }
-
-    pub const fn visible(&self) -> bool {
-        self.visible
     }
 }
 
@@ -431,6 +427,7 @@ const fn kind_name(kind: &NodeKind) -> &'static str {
         NodeKind::Mesh(_) => "Mesh",
         NodeKind::Model(_) => "Model",
         NodeKind::InstanceSet(_) => "InstanceSet",
+        NodeKind::ParticleSet(_) => "ParticleSet",
         NodeKind::Label(_) => "Label",
         NodeKind::Camera(_) => "Camera",
         NodeKind::Light(_) => "Light",

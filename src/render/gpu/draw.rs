@@ -1,8 +1,6 @@
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::mpsc;
-
 use crate::diagnostics::RenderError;
 use crate::material::Color;
+use crate::scene::{ClippingPlane, SectionBox};
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
@@ -10,10 +8,16 @@ use super::depth;
 use super::draw_common::{
     camera_position_uniform, identity_matrix, post_color_management_uniform, wgpu_clear_color,
 };
-use super::output::{OutputUniformUpload, encode_output_uniform};
+use super::draw_overlays::{
+    encode_offscreen_overlay_pass, encode_surface_overlay_pass, resolved_depth_view,
+};
+use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
+use super::pipeline::GPU_COLOR_FORMAT;
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
-use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, strokes};
+use super::{
+    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuPreparedResources, GpuRenderResult, post,
+};
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
@@ -25,6 +29,8 @@ impl GpuDeviceState {
         color_management: [f32; 4],
         background_color: Color,
         camera_projection: &CameraProjection,
+        clipping_planes: &[ClippingPlane],
+        section_box: Option<SectionBox>,
         frame: &mut Vec<u8>,
         post_settings: GpuPostSettings,
     ) -> Result<GpuRenderResult, RenderError> {
@@ -38,6 +44,7 @@ impl GpuDeviceState {
                 backend: target.backend,
             });
         }
+        let sample_count = post_settings.sample_count();
         let post_enabled = post_settings.enabled();
         if post_enabled
             && !resources
@@ -56,7 +63,30 @@ impl GpuDeviceState {
                 self.surface.as_ref().map(|surface| surface.config.format),
             ));
         }
-        let color_management = post_color_management_uniform(color_management, post_enabled);
+        let mut color_management = post_color_management_uniform(color_management, post_enabled);
+        if let Some(reflections) = post_settings.reflections() {
+            color_management[2] = reflections.strength();
+            color_management[3] = reflections.roughness();
+        }
+        let scene_format = if post_enabled {
+            post::scene_color_format()
+        } else {
+            GPU_COLOR_FORMAT
+        };
+        let max_supported_sample_count = super::msaa::max_supported_sample_count(
+            &self.device,
+            &self.adapter,
+            &[scene_format, wgpu::TextureFormat::Depth32Float],
+        );
+        if sample_count > max_supported_sample_count {
+            return Err(RenderError::UnsupportedSampleCount {
+                backend: target.backend,
+                requested: sample_count,
+                maximum: max_supported_sample_count,
+            });
+        }
+        let (clipping_planes, clipping_control) =
+            encode_clipping_uniform(clipping_planes, section_box);
         self.queue.write_buffer(
             &resources.output_uniform,
             0,
@@ -77,10 +107,13 @@ impl GpuDeviceState {
                 near_far: camera_projection.near_far(),
                 color_management,
                 lighting: resources.light_uniform,
+                clipping_planes,
+                clipping_control,
             }),
         );
         let rebuild_depth_prepass = resources.depth_prepass.as_ref().and_then(|depth_prepass| {
-            (depth_prepass.depth_color_enabled() != post_settings.needs_depth_color())
+            (depth_prepass.depth_color_enabled() != post_settings.needs_depth_color()
+                || depth_prepass.sample_count() != sample_count)
                 .then(|| depth_prepass.reversed_z())
         });
         if let Some(reversed_z) = rebuild_depth_prepass {
@@ -91,6 +124,7 @@ impl GpuDeviceState {
                 &resources.output_bind_group_layout,
                 &resources.draw_bind_group_layout,
                 post_settings.needs_depth_color(),
+                sample_count,
             ));
         }
         let surface_output =
@@ -149,26 +183,84 @@ impl GpuDeviceState {
                 },
             );
         }
+        if sample_count > 1 {
+            ensure_overlay_depth_prepass(&self.device, resources, target);
+            if let Some(overlay_depth_prepass) = &resources.overlay_depth_prepass {
+                depth::encode_depth_prepass(
+                    &mut encoder,
+                    overlay_depth_prepass,
+                    depth::DepthPrepassInputs {
+                        vertex_buffer: &resources.vertex_buffer,
+                        instance_buffer: &resources.instance_buffer,
+                        camera_bind_group: &resources.output_bind_group,
+                        draw_bind_group: &resources.draw_bind_group,
+                        draw_batches: &resources.draw_batches,
+                        instance_batches: &resources.instance_batches,
+                        identity_instance: resources.identity_instance,
+                        draw_submissions: &mut draw_submissions,
+                    },
+                );
+            }
+        } else {
+            resources.overlay_depth_prepass = None;
+        }
+        if sample_count == 8 {
+            if post_enabled {
+                let post_resources = resources.post.as_mut().expect("post resources exist");
+                post::ensure_scene_msaa8_pipelines(
+                    &self.adapter,
+                    &self.device,
+                    post_resources,
+                    target,
+                    &resources.output_bind_group_layout,
+                    &resources.material_bind_group_layout,
+                    &resources.draw_bind_group_layout,
+                    resources.texture_binding_mode,
+                    resources.depth_compare,
+                )?;
+            } else {
+                super::msaa::ensure_offscreen_msaa8_pipelines(
+                    &self.adapter,
+                    &self.device,
+                    resources,
+                    target,
+                )?;
+            }
+        }
+        if sample_count > 1 {
+            super::msaa::ensure_msaa_color_resources(
+                &self.device,
+                resources,
+                target,
+                scene_format,
+                sample_count,
+            );
+        }
         let post_resources = resources.post.as_ref();
-        let (final_view, final_pipeline, base_label) = if post_enabled {
+        let (final_view, final_pipelines, base_label) = if post_enabled {
             let post_resources = post_resources.expect("post resources were created above");
             (
                 post::scene_view(post_resources),
-                &post_resources.scene_pipeline,
+                post::scene_pipelines(post_resources, sample_count),
                 "scena.headless_gpu.post_scene_pass",
             )
         } else {
             (
                 &resources.view,
-                &resources.offscreen_pipeline,
+                super::msaa::offscreen_pipelines_for_sample_count(resources, sample_count),
                 "scena.headless_gpu.render_pass",
             )
         };
+        let msaa_view = resources.msaa_color.as_ref().map(|msaa| &msaa.view);
+        let scene_attachment_view = msaa_view.unwrap_or(final_view);
+        let scene_resolve_target = msaa_view.map(|_| final_view);
+        let resolved_depth_view = resolved_depth_view(resources, sample_count);
         encode_scene_color_passes(
             &mut encoder,
             SceneColorPasses {
-                final_view,
-                final_pipeline,
+                final_view: scene_attachment_view,
+                final_resolve_target: scene_resolve_target,
+                final_pipelines,
                 depth_view: resources
                     .depth_prepass
                     .as_ref()
@@ -183,33 +275,21 @@ impl GpuDeviceState {
                 instance_batches: &resources.instance_batches,
                 identity_instance: resources.identity_instance,
                 transmission_view: &resources.transmission.view,
-                transmission_pipeline: &resources.transmission.pipeline,
+                transmission_pipelines: resources.transmission.pipelines.refs(),
+                force_scene_color_pass: post_settings.reflections().is_some(),
                 clear_color: wgpu_clear_color(background_color),
                 base_label,
                 draw_submissions: &mut draw_submissions,
             },
         );
-        if let Some(stroke_resources) = resources.strokes.as_ref() {
-            let stroke_pipeline = if post_enabled {
-                strokes::post_pipeline(stroke_resources)
-            } else {
-                strokes::pipeline(stroke_resources)
-            };
-            strokes::encode_pass(
+        if !post_enabled {
+            encode_offscreen_overlay_pass(
                 &mut encoder,
-                strokes::StrokePass {
-                    view: final_view,
-                    depth_view: resources
-                        .depth_prepass
-                        .as_ref()
-                        .map(|depth_prepass| &depth_prepass.view),
-                    output_bind_group: &resources.output_bind_group,
-                    draw_bind_group: &resources.draw_bind_group,
-                    resources: stroke_resources,
-                    pipeline: stroke_pipeline,
-                    label: "scena.gpu_strokes.offscreen_pass",
-                    draw_submissions: &mut draw_submissions,
-                },
+                resources,
+                final_view,
+                resolved_depth_view,
+                "scena.gpu_overlay.offscreen_pass",
+                &mut draw_submissions,
             );
         }
         let post_output = if post_enabled {
@@ -223,6 +303,22 @@ impl GpuDeviceState {
                 resources.depth_prepass.as_ref(),
                 &mut draw_submissions,
             )?;
+            post::encode_blit_to_view(
+                &mut encoder,
+                post_resources,
+                output,
+                &resources.view,
+                post::output_blit_pipeline(post_resources),
+                &mut draw_submissions,
+            );
+            encode_offscreen_overlay_pass(
+                &mut encoder,
+                resources,
+                &resources.view,
+                resolved_depth_view,
+                "scena.gpu_overlay.post_final_offscreen_pass",
+                &mut draw_submissions,
+            );
             if let Some(surface_view) = surface_view.as_ref() {
                 let Some(surface_blit_pipeline) = post::surface_blit_pipeline(post_resources)
                 else {
@@ -238,14 +334,17 @@ impl GpuDeviceState {
                     surface_blit_pipeline,
                     &mut draw_submissions,
                 );
+                encode_surface_overlay_pass(
+                    &mut encoder,
+                    resources,
+                    surface_view,
+                    resolved_depth_view,
+                    "scena.gpu_overlay.post_final_surface_pass",
+                    target,
+                    &mut draw_submissions,
+                )?;
             }
-            post::copy_output_to_buffer(
-                &mut encoder,
-                post_resources,
-                output,
-                &resources.readback,
-                resources.padded_bytes_per_row,
-            );
+            super::readback::encode_copy_target_to_readback(&mut encoder, resources, target);
             Some((output, post_counts))
         } else {
             None
@@ -258,11 +357,9 @@ impl GpuDeviceState {
                 &mut encoder,
                 SceneColorPasses {
                     final_view: surface_view,
-                    final_pipeline: surface_pipeline,
-                    depth_view: resources
-                        .depth_prepass
-                        .as_ref()
-                        .map(|depth_prepass| &depth_prepass.view),
+                    final_resolve_target: None,
+                    final_pipelines: surface_pipeline.refs(),
+                    depth_view: resolved_depth_view,
                     vertex_buffer: &resources.vertex_buffer,
                     instance_buffer: &resources.instance_buffer,
                     output_bind_group: &resources.output_bind_group,
@@ -273,96 +370,31 @@ impl GpuDeviceState {
                     instance_batches: &resources.instance_batches,
                     identity_instance: resources.identity_instance,
                     transmission_view: &resources.transmission.view,
-                    transmission_pipeline: &resources.transmission.pipeline,
+                    transmission_pipelines: resources.transmission.pipelines.refs(),
+                    force_scene_color_pass: false,
                     clear_color: wgpu_clear_color(background_color),
                     base_label: "scena.surface.render_pass",
                     draw_submissions: &mut draw_submissions,
                 },
             );
-            if let Some(stroke_resources) = resources.strokes.as_ref() {
-                let Some(surface_pipeline) = strokes::surface_pipeline(stroke_resources) else {
-                    return Err(RenderError::GpuResourcesNotPrepared {
-                        backend: target.backend,
-                    });
-                };
-                strokes::encode_pass(
-                    &mut encoder,
-                    strokes::StrokePass {
-                        view: surface_view,
-                        depth_view: resources
-                            .depth_prepass
-                            .as_ref()
-                            .map(|depth_prepass| &depth_prepass.view),
-                        output_bind_group: &resources.output_bind_group,
-                        draw_bind_group: &resources.draw_bind_group,
-                        resources: stroke_resources,
-                        pipeline: surface_pipeline,
-                        label: "scena.gpu_strokes.surface_pass",
-                        draw_submissions: &mut draw_submissions,
-                    },
-                );
-            }
+            encode_surface_overlay_pass(
+                &mut encoder,
+                resources,
+                surface_view,
+                resolved_depth_view,
+                "scena.gpu_overlay.surface_pass",
+                target,
+                &mut draw_submissions,
+            )?;
         }
         if !post_enabled {
-            encoder.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &resources.texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &resources.readback,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(resources.padded_bytes_per_row),
-                        rows_per_image: None,
-                    },
-                },
-                wgpu::Extent3d {
-                    width: target.width,
-                    height: target.height,
-                    depth_or_array_layers: 1,
-                },
-            );
+            super::readback::encode_copy_target_to_readback(&mut encoder, resources, target);
         }
         self.queue.submit(Some(encoder.finish()));
         if let Some(surface_output) = surface_output {
             surface_output.present();
         }
-
-        let readback = resources.readback.slice(..);
-        let (sender, receiver) = mpsc::channel();
-        readback.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = sender.send(result);
-        });
-        self.device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|_| RenderError::GpuReadback {
-                backend: target.backend,
-            })?;
-        receiver
-            .recv()
-            .map_err(|_| RenderError::GpuReadback {
-                backend: target.backend,
-            })?
-            .map_err(|_| RenderError::GpuReadback {
-                backend: target.backend,
-            })?;
-
-        let mapped = readback.get_mapped_range();
-        if frame.len() != target.byte_len() {
-            frame.resize(target.byte_len(), 0);
-        }
-        for row in 0..target.height as usize {
-            let source_start = row * resources.padded_bytes_per_row as usize;
-            let source_end = source_start + resources.unpadded_bytes_per_row as usize;
-            let target_start = row * resources.unpadded_bytes_per_row as usize;
-            let target_end = target_start + resources.unpadded_bytes_per_row as usize;
-            frame[target_start..target_end].copy_from_slice(&mapped[source_start..source_end]);
-        }
-        drop(mapped);
-        resources.readback.unmap();
+        super::readback::map_readback_to_frame(&self.device, resources, target, frame)?;
 
         Ok(GpuRenderResult {
             submitted: true,
@@ -372,4 +404,39 @@ impl GpuDeviceState {
             draw_submissions,
         })
     }
+}
+
+fn ensure_overlay_depth_prepass(
+    device: &wgpu::Device,
+    resources: &mut GpuPreparedResources,
+    target: RasterTarget,
+) {
+    let Some((reversed_z, sample_count)) = resources
+        .depth_prepass
+        .as_ref()
+        .map(|depth_prepass| (depth_prepass.reversed_z(), depth_prepass.sample_count()))
+    else {
+        resources.overlay_depth_prepass = None;
+        return;
+    };
+    if sample_count <= 1 {
+        resources.overlay_depth_prepass = None;
+        return;
+    }
+    let matches_existing = resources
+        .overlay_depth_prepass
+        .as_ref()
+        .is_some_and(|depth| depth.reversed_z() == reversed_z && depth.sample_count() == 1);
+    if matches_existing {
+        return;
+    }
+    resources.overlay_depth_prepass = Some(depth::create_depth_prepass_resources(
+        device,
+        target,
+        reversed_z,
+        &resources.output_bind_group_layout,
+        &resources.draw_bind_group_layout,
+        false,
+        1,
+    ));
 }

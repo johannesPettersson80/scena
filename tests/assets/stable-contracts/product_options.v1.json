@@ -1,0 +1,96 @@
+{
+  "schema": "scena.product_options.v1",
+  "groups": [
+    {
+      "id": "finish",
+      "label": "Finish",
+      "active": "noon",
+      "options": [
+        {
+          "id": "noon",
+          "label": "Noon",
+          "patch": {
+            "schema": "scena.visual_patch.v1",
+            "transforms": [],
+            "tints": [
+              {
+                "node": 4294967298,
+                "tint": {
+                  "r": 0.20000000298023224,
+                  "g": 0.800000011920929,
+                  "b": 0.4000000059604645,
+                  "a": 1.0
+                }
+              }
+            ],
+            "visibility": [],
+            "camera": {
+              "target": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "distance": 3.0,
+              "yaw_radians": 0.699999988079071,
+              "pitch_radians": 0.20000000298023224
+            },
+            "transforms_eased": [],
+            "tints_eased": [],
+            "camera_eased": null,
+            "animation_time": [],
+            "selection": null,
+            "hover": null,
+            "material_variants": [
+              {
+                "import": 4294967297,
+                "variant": "noon"
+              }
+            ],
+            "labels": [],
+            "section_box": null,
+            "metadata": null,
+            "echo_metadata": false
+          },
+          "metadata": {
+            "swatch": "green"
+          }
+        }
+      ]
+    },
+    {
+      "id": "accessory",
+      "label": "Accessory",
+      "active": null,
+      "options": [
+        {
+          "id": "hidden",
+          "label": "Hidden",
+          "patch": {
+            "schema": "scena.visual_patch.v1",
+            "transforms": [],
+            "tints": [],
+            "visibility": [
+              {
+                "node": 4294967299,
+                "visible": false
+              }
+            ],
+            "camera": null,
+            "transforms_eased": [],
+            "tints_eased": [],
+            "camera_eased": null,
+            "animation_time": [],
+            "selection": null,
+            "hover": null,
+            "material_variants": [],
+            "labels": [],
+            "section_box": null,
+            "metadata": null,
+            "echo_metadata": false
+          },
+          "metadata": null
+        }
+      ]
+    }
+  ]
+}

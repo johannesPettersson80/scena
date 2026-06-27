@@ -15,6 +15,7 @@
   "scripts": {
     "browser:m6": "node tests/browser/m6_rust_wasm_renderer_probe.js",
     "browser:scene-host-proof": "node tests/browser/scene_host_browser_proof.js",
+    "cloudflare:demo": "node scripts/probe_cloudflare_demo.js",
     "cloudflare:materials": "node scripts/probe_cloudflare_material_presets.mjs",
     "demo:build": "node scripts/build_demo_wasm.js",
     "proof:build": "node scripts/build_demo_wasm.js proof",

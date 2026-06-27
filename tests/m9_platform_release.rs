@@ -1,14 +1,18 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use scena::{
-    AdapterLimitsReport, Angle, Assets, Backend, Capabilities, Color, DirectionalLight,
-    GeometryDesc, GpuAdapterReport, MaterialDesc, NotPreparedReason, PerspectiveCamera, PointLight,
-    Primitive, RenderError, Renderer, RendererOptions, Scene, SpotLight, SurfaceEvent, Transform,
-    Vec3,
+    AdapterLimitsReport, Angle, AntiAliasing, AreaLight, Assets, Backend, Capabilities, Color,
+    DepthOfFieldConfig, DirectionalLight, GeometryDesc, GpuAdapterReport, MaterialDesc,
+    NotPreparedReason, PerspectiveCamera, PointLight, Primitive, ReconstructionFilter, RenderError,
+    Renderer, RendererOptions, Scene, ScreenSpaceReflectionConfig, SpotLight, SurfaceEvent,
+    Transform, Vec3,
 };
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
@@ -42,6 +46,34 @@ const ROUND_E_MATERIAL_LANES: &[&str] = &[
     "ios-safari",
     "android-chrome",
 ];
+
+#[global_allocator]
+static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+thread_local! {
+    static COUNT_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
+}
+
+struct CountingAllocator;
+
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if COUNT_ALLOCATIONS.with(Cell::get) {
+            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+        // SAFETY: this allocator only observes allocation calls and delegates
+        // allocation to the system allocator with the original layout.
+        unsafe { System.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: the pointer and layout are forwarded unchanged to the
+        // allocator that created the allocation.
+        unsafe { System.dealloc(pointer, layout) }
+    }
+}
 
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -871,10 +903,18 @@ fn write_benchmark_artifact(lane: &str) {
         "rows": rows,
     });
     write_json(&platform_dir().join("m9-benchmarks.json"), &artifact);
+    write_feature_matrix_required_artifact(lane);
+    assert_eq!(
+        artifact["baseline_comparison"]["status"], "passed",
+        "M9 benchmark artifact must fail the gate when a stored frame-time or allocation budget regresses: {:#}",
+        artifact["baseline_comparison"]
+    );
 }
 
 fn write_dedicated_4k_benchmark_artifact() -> serde_json::Value {
     let mut rows = vec![benchmark_headless_4k_measured(DEDICATED_4K_SAMPLE_COUNT)];
+    let matrix_rows = benchmark_feature_matrix_measured_rows(DEDICATED_4K_SAMPLE_COUNT);
+    rows.extend(matrix_rows.clone());
     let baseline = benchmark_baseline();
     let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline);
     let artifact = serde_json::json!({
@@ -886,7 +926,38 @@ fn write_dedicated_4k_benchmark_artifact() -> serde_json::Value {
     });
     fs::create_dir_all(platform_dir()).expect("platform artifact dir for headless-4k");
     write_json(&platform_dir().join("m9-benchmarks-4k.json"), &artifact);
+    let matrix_artifact = feature_matrix_artifact("headless-4k-performance", matrix_rows);
+    write_json(
+        &platform_dir().join("m9-benchmarks-feature-matrix.json"),
+        &matrix_artifact,
+    );
+    assert_eq!(
+        artifact["baseline_comparison"]["status"], "passed",
+        "dedicated 4K benchmark artifact must fail the gate when a stored frame-time or allocation budget regresses: {:#}",
+        artifact["baseline_comparison"]
+    );
     artifact
+}
+
+fn write_feature_matrix_required_artifact(lane: &str) {
+    let artifact = feature_matrix_artifact(lane, benchmark_feature_matrix_deferred_rows());
+    write_json(
+        &platform_dir().join("m9-benchmarks-feature-matrix.json"),
+        &artifact,
+    );
+}
+
+fn feature_matrix_artifact(lane: &str, mut rows: Vec<serde_json::Value>) -> serde_json::Value {
+    let baseline = benchmark_baseline();
+    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline);
+    serde_json::json!({
+        "schema": "scena.m9.benchmarks.feature_matrix.v1",
+        "lane": lane,
+        "matrix_contract": "resolution x feature set cost reporting for Part A visual features",
+        "regression_threshold_percent": 5.0,
+        "baseline_comparison": baseline_comparison,
+        "rows": rows,
+    })
 }
 
 fn benchmark_baseline() -> serde_json::Value {
@@ -951,8 +1022,30 @@ fn apply_benchmark_baselines(
         } else {
             f64::INFINITY
         };
-        let row_status = if sample_count >= row_minimum_sample_count && p95_frame_ms <= allowed_p95
-        {
+        let max_allocations_per_frame = row
+            .get("max_allocations_per_frame")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(u64::MAX);
+        let Some(allowed_max_allocations_per_frame) = row_baseline
+            .get("max_allocations_per_frame")
+            .and_then(serde_json::Value::as_u64)
+        else {
+            status = "failed";
+            row["baseline_comparison"] = serde_json::json!({
+                "status": "failed",
+                "reason": "missing stored allocation budget",
+                "baseline_p95_frame_ms": baseline_p95_frame_ms,
+                "allowed_regression_percent": allowed_regression_percent,
+                "allowed_p95_frame_ms": allowed_p95,
+                "regression_percent": regression_percent,
+                "minimum_sample_count": row_minimum_sample_count,
+                "max_allocations_per_frame": max_allocations_per_frame,
+            });
+            continue;
+        };
+        let frame_status = sample_count >= row_minimum_sample_count && p95_frame_ms <= allowed_p95;
+        let allocation_status = max_allocations_per_frame <= allowed_max_allocations_per_frame;
+        let row_status = if frame_status && allocation_status {
             "passed"
         } else {
             status = "failed";
@@ -961,11 +1054,15 @@ fn apply_benchmark_baselines(
 
         row["baseline_comparison"] = serde_json::json!({
             "status": row_status,
+            "frame_time_status": if frame_status { "passed" } else { "failed" },
+            "allocation_status": if allocation_status { "passed" } else { "failed" },
             "baseline_p95_frame_ms": baseline_p95_frame_ms,
             "allowed_regression_percent": allowed_regression_percent,
             "allowed_p95_frame_ms": allowed_p95,
             "regression_percent": regression_percent,
             "minimum_sample_count": row_minimum_sample_count,
+            "max_allocations_per_frame": max_allocations_per_frame,
+            "allowed_max_allocations_per_frame": allowed_max_allocations_per_frame,
         });
     }
 
@@ -973,7 +1070,7 @@ fn apply_benchmark_baselines(
         "status": status,
         "baseline_path": BENCHMARK_BASELINE_PATH,
         "baseline_sha256": asset_source_hash(BENCHMARK_BASELINE_PATH),
-        "metric": "p95_frame_ms",
+        "metrics": ["p95_frame_ms", "max_allocations_per_frame"],
         "minimum_sample_count": minimum_sample_count,
     })
 }
@@ -1102,11 +1199,17 @@ fn benchmark_idle_render_on_change() -> serde_json::Value {
     renderer.prepare(&mut scene).expect("scene prepares");
     renderer.render(&scene, camera).expect("warm render");
     let mut samples = Vec::with_capacity(BENCHMARK_SAMPLE_COUNT);
+    let mut allocation_samples = Vec::with_capacity(BENCHMARK_SAMPLE_COUNT);
     let mut outcome = None;
     for _ in 0..BENCHMARK_SAMPLE_COUNT {
         let start = Instant::now();
-        let next = renderer.render(&scene, camera).expect("idle render skips");
+        start_allocation_counting();
+        let next = renderer.render(&scene, camera);
+        stop_allocation_counting();
+        let allocation_count = allocation_count();
+        let next = next.expect("idle render skips");
         samples.push(start.elapsed().as_secs_f64() * 1000.0);
+        allocation_samples.push(allocation_count);
         outcome = Some(next);
     }
     let outcome = outcome.expect("benchmark loop records an outcome");
@@ -1114,6 +1217,7 @@ fn benchmark_idle_render_on_change() -> serde_json::Value {
         scene: "idle",
         backend: renderer.capabilities().backend,
         samples: &samples,
+        allocation_samples: &allocation_samples,
         draw_calls: outcome.draw_calls,
         skipped: outcome.skipped,
         fixture: BenchmarkFixture {
@@ -1160,6 +1264,222 @@ fn benchmark_headless_4k_measured(sample_count: usize) -> serde_json::Value {
     )
 }
 
+#[derive(Clone, Copy)]
+struct FeatureMatrixResolution {
+    id: &'static str,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Clone, Copy)]
+enum FeatureMatrixFeature {
+    AaOff,
+    Msaa4,
+    Ssaa2,
+    Ssr,
+    AreaLights,
+    DepthOfField,
+}
+
+const FEATURE_MATRIX_RESOLUTIONS: &[FeatureMatrixResolution] = &[
+    FeatureMatrixResolution {
+        id: "1080p",
+        width: 1920,
+        height: 1080,
+    },
+    FeatureMatrixResolution {
+        id: "4k",
+        width: 3840,
+        height: 2160,
+    },
+];
+
+const FEATURE_MATRIX_FEATURES: &[FeatureMatrixFeature] = &[
+    FeatureMatrixFeature::AaOff,
+    FeatureMatrixFeature::Msaa4,
+    FeatureMatrixFeature::Ssaa2,
+    FeatureMatrixFeature::Ssr,
+    FeatureMatrixFeature::AreaLights,
+    FeatureMatrixFeature::DepthOfField,
+];
+const REQUIRED_RELEASE_FEATURE_MATRIX_ROWS: &[&str] = &[
+    "headless-feature-matrix-4k-ssaa2",
+    "headless-feature-matrix-1080p-ssr-on",
+];
+
+impl FeatureMatrixFeature {
+    const fn id(self) -> &'static str {
+        match self {
+            Self::AaOff => "aa-off",
+            Self::Msaa4 => "msaa4",
+            Self::Ssaa2 => "ssaa2",
+            Self::Ssr => "ssr-on",
+            Self::AreaLights => "area-lights",
+            Self::DepthOfField => "dof-on",
+        }
+    }
+
+    const fn part_a_feature(self) -> &'static str {
+        match self {
+            Self::AaOff | Self::Msaa4 | Self::Ssaa2 => "A1 anti-aliasing and supersampling",
+            Self::Ssr => "A2 screen-space reflections",
+            Self::AreaLights => "A3 area lights",
+            Self::DepthOfField => "A4 depth of field",
+        }
+    }
+
+    fn configure_renderer(self, renderer: &mut Renderer) {
+        match self {
+            Self::AaOff => renderer.set_anti_aliasing(AntiAliasing::None),
+            Self::Msaa4 => renderer.set_anti_aliasing(AntiAliasing::Msaa4),
+            Self::Ssaa2 => {
+                renderer.set_anti_aliasing(AntiAliasing::None);
+                renderer
+                    .set_supersample_factor(2)
+                    .expect("feature-matrix ssaa2 target is valid");
+                renderer.set_reconstruction_filter(ReconstructionFilter::Tent);
+            }
+            Self::Ssr => {
+                renderer.set_anti_aliasing(AntiAliasing::None);
+                renderer.set_screen_space_reflections(Some(ScreenSpaceReflectionConfig::default()));
+            }
+            Self::AreaLights => renderer.set_anti_aliasing(AntiAliasing::None),
+            Self::DepthOfField => {
+                renderer.set_anti_aliasing(AntiAliasing::None);
+                renderer.set_depth_of_field(Some(DepthOfFieldConfig::new(2.5, 1.2, 6)));
+            }
+        }
+    }
+}
+
+fn benchmark_feature_matrix_deferred_rows() -> Vec<serde_json::Value> {
+    FEATURE_MATRIX_RESOLUTIONS
+        .iter()
+        .flat_map(|resolution| {
+            FEATURE_MATRIX_FEATURES
+                .iter()
+                .copied()
+                .map(move |feature| benchmark_feature_matrix_deferred_row(*resolution, feature))
+        })
+        .collect()
+}
+
+fn benchmark_feature_matrix_deferred_row(
+    resolution: FeatureMatrixResolution,
+    feature: FeatureMatrixFeature,
+) -> serde_json::Value {
+    serde_json::json!({
+        "scene": feature_matrix_scene_name(resolution, feature),
+        "backend": "Headless",
+        "status": "deferred-to-dedicated-performance-lane",
+        "sample_count": 0,
+        "feature_matrix": feature_matrix_metadata(resolution, feature),
+        "fixture": {
+            "source": "generated:feature-matrix-product-scene",
+            "width": resolution.width,
+            "height": resolution.height,
+            "sample_count_policy": "not measured in cargo test; requires dedicated 4K feature-matrix performance lane with 100+ timed render samples",
+        },
+        "regression_threshold_percent": 5.0,
+    })
+}
+
+fn benchmark_feature_matrix_measured_rows(sample_count: usize) -> Vec<serde_json::Value> {
+    FEATURE_MATRIX_RESOLUTIONS
+        .iter()
+        .flat_map(|resolution| {
+            FEATURE_MATRIX_FEATURES.iter().copied().map(move |feature| {
+                benchmark_feature_matrix_measured_row(*resolution, feature, sample_count)
+            })
+        })
+        .collect()
+}
+
+fn benchmark_feature_matrix_measured_row(
+    resolution: FeatureMatrixResolution,
+    feature: FeatureMatrixFeature,
+    sample_count: usize,
+) -> serde_json::Value {
+    let (mut scene, camera, assets) = feature_matrix_scene(feature);
+    let scene_name = feature_matrix_scene_name(resolution, feature);
+    let mut row = benchmark_scene_with_renderer_setup(
+        BenchmarkSceneInput {
+            name: &scene_name,
+            width: resolution.width,
+            height: resolution.height,
+            fixture_source: "generated:feature-matrix-product-scene",
+            sample_count,
+            sample_count_policy: "dedicated performance lane with 100 timed render calls after one warm render",
+        },
+        &mut scene,
+        Some(&assets),
+        camera,
+        |renderer| feature.configure_renderer(renderer),
+    );
+    row["feature_matrix"] = feature_matrix_metadata(resolution, feature);
+    row
+}
+
+fn feature_matrix_scene_name(
+    resolution: FeatureMatrixResolution,
+    feature: FeatureMatrixFeature,
+) -> String {
+    format!("headless-feature-matrix-{}-{}", resolution.id, feature.id())
+}
+
+fn feature_matrix_metadata(
+    resolution: FeatureMatrixResolution,
+    feature: FeatureMatrixFeature,
+) -> serde_json::Value {
+    serde_json::json!({
+        "resolution": resolution.id,
+        "width": resolution.width,
+        "height": resolution.height,
+        "feature_set": feature.id(),
+        "part_a_feature": feature.part_a_feature(),
+        "reports_frame_time_cost": true,
+    })
+}
+
+fn feature_matrix_scene(feature: FeatureMatrixFeature) -> (Scene, scena::CameraKey, Assets) {
+    let assets = Assets::new();
+    let body_geometry = assets.create_geometry(GeometryDesc::sphere(0.45, 32, 16));
+    let floor_geometry = assets.create_geometry(GeometryDesc::box_xyz(2.8, 0.04, 2.8));
+    let body_material = assets.create_material(MaterialDesc::chrome().with_double_sided(false));
+    let floor_material =
+        assets.create_material(MaterialDesc::rough_metal(Color::from_srgb_u8(90, 94, 105)));
+    let mut scene = Scene::new();
+    scene
+        .add_studio_lighting()
+        .expect("feature matrix studio lighting inserts");
+    if matches!(feature, FeatureMatrixFeature::AreaLights) {
+        scene
+            .area_light(AreaLight::softbox())
+            .transform(Transform::at(Vec3::new(0.0, 1.6, 1.1)))
+            .add()
+            .expect("feature matrix area light inserts");
+    }
+    scene
+        .mesh(body_geometry, body_material)
+        .transform(Transform::at(Vec3::new(0.0, 0.45, 0.0)))
+        .add()
+        .expect("feature matrix body inserts");
+    scene
+        .mesh(floor_geometry, floor_material)
+        .transform(Transform::at(Vec3::new(0.0, -0.02, 0.0)))
+        .add()
+        .expect("feature matrix floor inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let camera_node = scene.camera_node(camera).expect("camera node resolves");
+    scene
+        .set_transform(
+            camera_node,
+            Transform::at(Vec3::new(0.0, 1.1, 2.9)).looking_at(Vec3::new(0.0, 0.4, 0.0), Vec3::Y),
+        )
+        .expect("feature matrix camera positions");
+    (scene, camera, assets)
+}
+
 #[test]
 fn m9_benchmark_rows_use_distribution_not_single_sample() {
     let (mut scene, camera) = scene_with_triangle();
@@ -1194,6 +1514,14 @@ fn m9_benchmark_rows_use_distribution_not_single_sample() {
         row["stddev_frame_ms"].as_f64().is_some(),
         "benchmark row records standard deviation"
     );
+    assert!(
+        row["p95_allocations_per_frame"].as_u64().is_some(),
+        "benchmark row records p95 per-frame allocation count"
+    );
+    assert!(
+        row["max_allocations_per_frame"].as_u64().is_some(),
+        "benchmark row records max per-frame allocation count"
+    );
     assert_eq!(row["fixture"]["width"], 64);
     assert_eq!(row["fixture"]["height"], 64);
 }
@@ -1206,6 +1534,7 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
             "backend": "Headless",
             "sample_count": 100,
             "p95_frame_ms": 10.0,
+            "max_allocations_per_frame": 2,
         }),
         serde_json::json!({
             "scene": "headless-4k",
@@ -1220,7 +1549,8 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
                 "scene": "static-viewer",
                 "backend": "Headless",
                 "p95_frame_ms": 12.0,
-                "allowed_regression_percent": 5.0
+                "allowed_regression_percent": 5.0,
+                "max_allocations_per_frame": 4
             }
         ]
     });
@@ -1229,12 +1559,104 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
 
     assert_eq!(summary["status"], "passed");
     assert_eq!(summary["baseline_path"], BENCHMARK_BASELINE_PATH);
-    assert_eq!(summary["metric"], "p95_frame_ms");
+    assert_eq!(
+        summary["metrics"],
+        serde_json::json!(["p95_frame_ms", "max_allocations_per_frame"])
+    );
     assert_eq!(rows[0]["baseline_comparison"]["status"], "passed");
     assert_eq!(
         rows[1]["baseline_comparison"]["status"], "deferred",
         "dedicated-lane benchmark rows must be explicit deferrals, not silent misses"
     );
+}
+
+#[test]
+fn m9_parallel_cpu_render_has_low_steady_state_allocations() {
+    let (mut scene, camera, assets) = feature_matrix_scene(FeatureMatrixFeature::AaOff);
+    let mut renderer = Renderer::headless(1024, 768).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("warm render initializes workers");
+
+    start_allocation_counting();
+    let outcome = renderer.render(&scene, camera);
+    stop_allocation_counting();
+    let allocations = allocation_count();
+
+    outcome.expect("steady render succeeds");
+    assert!(
+        allocations <= 16,
+        "warm parallel CPU render should reuse worker resources; observed {allocations} allocations"
+    );
+}
+
+#[test]
+fn m9_cpu_supersample_render_reuses_steady_state_scratch_buffers() {
+    let (mut scene, camera, assets) = feature_matrix_scene(FeatureMatrixFeature::Msaa4);
+    let mut renderer = Renderer::headless(1024, 768).expect("renderer builds");
+    FeatureMatrixFeature::Msaa4.configure_renderer(&mut renderer);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("warm render initializes supersample scratch");
+
+    start_allocation_counting();
+    let outcome = renderer.render(&scene, camera);
+    stop_allocation_counting();
+    let allocations = allocation_count();
+
+    outcome.expect("steady supersample render succeeds");
+    assert!(
+        allocations <= 16,
+        "warm CPU supersample render should reuse supersample scratch buffers; observed {allocations} allocations"
+    );
+}
+
+#[test]
+fn m9_feature_matrix_declares_resolution_feature_cost_rows() {
+    let rows = benchmark_feature_matrix_deferred_rows();
+    assert_eq!(
+        rows.len(),
+        FEATURE_MATRIX_RESOLUTIONS.len() * FEATURE_MATRIX_FEATURES.len()
+    );
+    for resolution in FEATURE_MATRIX_RESOLUTIONS {
+        for feature in FEATURE_MATRIX_FEATURES {
+            let name = feature_matrix_scene_name(*resolution, *feature);
+            let row = rows
+                .iter()
+                .find(|row| {
+                    row.get("scene")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|scene| scene == name)
+                })
+                .unwrap_or_else(|| panic!("feature matrix row missing {name}"));
+            assert_eq!(
+                row["status"], "deferred-to-dedicated-performance-lane",
+                "normal M9 test lane must be explicit about unmeasured feature-matrix rows"
+            );
+            assert_eq!(row["feature_matrix"]["resolution"], resolution.id);
+            assert_eq!(row["feature_matrix"]["feature_set"], feature.id());
+            assert_eq!(
+                row["feature_matrix"]["part_a_feature"],
+                feature.part_a_feature()
+            );
+            assert_eq!(row["feature_matrix"]["reports_frame_time_cost"], true);
+            assert_eq!(row["fixture"]["width"], resolution.width);
+            assert_eq!(row["fixture"]["height"], resolution.height);
+        }
+    }
+    for required in REQUIRED_RELEASE_FEATURE_MATRIX_ROWS {
+        assert!(
+            rows.iter()
+                .any(|row| row["scene"].as_str() == Some(required)),
+            "release-pinned M9 feature matrix row missing: {required}"
+        );
+    }
 }
 
 #[test]
@@ -1247,7 +1669,7 @@ fn m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact() {
             "status": "fail-closed",
             "release_evidence": false,
             "reason": "SCENA_RUN_DEDICATED_4K_BENCHMARK is not set in the normal cargo-test lane",
-            "run_hint": "Set SCENA_RUN_DEDICATED_4K_BENCHMARK=1 on the dedicated performance lane to write m9-benchmarks-4k.json.",
+            "run_hint": "Run SCENA_RUN_DEDICATED_4K_BENCHMARK=1 cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact -- --nocapture on the dedicated performance lane to write m9-benchmarks-4k.json.",
             "required_artifact": path_string(&platform_dir().join("m9-benchmarks-4k.json")),
         });
         write_json(&artifact_path, &artifact);
@@ -1260,7 +1682,10 @@ fn m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact() {
 
     let artifact = write_dedicated_4k_benchmark_artifact();
     let rows = artifact["rows"].as_array().expect("benchmark rows");
-    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows.len(),
+        1 + FEATURE_MATRIX_RESOLUTIONS.len() * FEATURE_MATRIX_FEATURES.len()
+    );
     assert_eq!(rows[0]["scene"], "headless-4k");
     assert_eq!(rows[0]["sample_count"], DEDICATED_4K_SAMPLE_COUNT as u64);
     assert_ne!(
@@ -1285,6 +1710,7 @@ fn m9_benchmark_baseline_comparison_fails_significant_regressions() {
         "backend": "Headless",
         "sample_count": 100,
         "p95_frame_ms": 12.0,
+        "max_allocations_per_frame": 2,
     })];
     let baseline = serde_json::json!({
         "minimum_sample_count": 100,
@@ -1293,7 +1719,8 @@ fn m9_benchmark_baseline_comparison_fails_significant_regressions() {
                 "scene": "static-viewer",
                 "backend": "Headless",
                 "p95_frame_ms": 10.0,
-                "allowed_regression_percent": 5.0
+                "allowed_regression_percent": 5.0,
+                "max_allocations_per_frame": 4
             }
         ]
     });
@@ -1302,7 +1729,51 @@ fn m9_benchmark_baseline_comparison_fails_significant_regressions() {
 
     assert_eq!(summary["status"], "failed");
     assert_eq!(rows[0]["baseline_comparison"]["status"], "failed");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["frame_time_status"],
+        "failed"
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["allocation_status"],
+        "passed"
+    );
     assert_eq!(rows[0]["baseline_comparison"]["regression_percent"], 20.0);
+}
+
+#[test]
+fn m9_benchmark_baseline_comparison_fails_allocation_regressions() {
+    let mut rows = vec![serde_json::json!({
+        "scene": "static-viewer",
+        "backend": "Headless",
+        "sample_count": 100,
+        "p95_frame_ms": 10.0,
+        "max_allocations_per_frame": 12,
+    })];
+    let baseline = serde_json::json!({
+        "minimum_sample_count": 100,
+        "rows": [
+            {
+                "scene": "static-viewer",
+                "backend": "Headless",
+                "p95_frame_ms": 10.0,
+                "allowed_regression_percent": 5.0,
+                "max_allocations_per_frame": 4
+            }
+        ]
+    });
+
+    let summary = apply_benchmark_baselines(&mut rows, &baseline);
+
+    assert_eq!(summary["status"], "failed");
+    assert_eq!(rows[0]["baseline_comparison"]["status"], "failed");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["max_allocations_per_frame"],
+        12
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["allowed_max_allocations_per_frame"],
+        4
+    );
 }
 
 fn benchmark_scene(
@@ -1344,11 +1815,22 @@ fn benchmark_scene_with_sample_count(
     assets: Option<&Assets>,
     camera: scena::CameraKey,
 ) -> serde_json::Value {
+    benchmark_scene_with_renderer_setup(input, scene, assets, camera, |_| {})
+}
+
+fn benchmark_scene_with_renderer_setup(
+    input: BenchmarkSceneInput<'_>,
+    scene: &mut Scene,
+    assets: Option<&Assets>,
+    camera: scena::CameraKey,
+    configure_renderer: impl FnOnce(&mut Renderer),
+) -> serde_json::Value {
     assert!(
         input.sample_count > 0,
         "benchmark sample count must be nonzero"
     );
     let mut renderer = Renderer::headless(input.width, input.height).expect("renderer builds");
+    configure_renderer(&mut renderer);
     let start = Instant::now();
     if let Some(assets) = assets {
         renderer
@@ -1362,16 +1844,23 @@ fn benchmark_scene_with_sample_count(
     let warmup = renderer.render(scene, camera).expect("warm scene render");
     let warmup_frame_ms = start.elapsed().as_secs_f64() * 1000.0;
     let mut samples = Vec::with_capacity(input.sample_count);
+    let mut allocation_samples = Vec::with_capacity(input.sample_count);
     let mut outcome = warmup;
     for _ in 0..input.sample_count {
         let start = Instant::now();
-        outcome = renderer.render(scene, camera).expect("scene renders");
+        start_allocation_counting();
+        let next = renderer.render(scene, camera);
+        stop_allocation_counting();
+        let allocation_count = allocation_count();
+        outcome = next.expect("scene renders");
         samples.push(start.elapsed().as_secs_f64() * 1000.0);
+        allocation_samples.push(allocation_count);
     }
     benchmark_row(BenchmarkRowInput {
         scene: input.name,
         backend: renderer.capabilities().backend,
         samples: &samples,
+        allocation_samples: &allocation_samples,
         draw_calls: outcome.draw_calls,
         skipped: outcome.skipped,
         fixture: BenchmarkFixture {
@@ -1396,6 +1885,7 @@ struct BenchmarkRowInput<'a> {
     scene: &'a str,
     backend: Backend,
     samples: &'a [f64],
+    allocation_samples: &'a [u64],
     draw_calls: u64,
     skipped: bool,
     fixture: BenchmarkFixture<'a>,
@@ -1405,6 +1895,7 @@ struct BenchmarkRowInput<'a> {
 
 fn benchmark_row(input: BenchmarkRowInput<'_>) -> serde_json::Value {
     let distribution = benchmark_distribution(input.samples);
+    let allocation_distribution = allocation_distribution(input.allocation_samples);
     serde_json::json!({
         "scene": input.scene,
         "backend": format!("{:?}", input.backend),
@@ -1415,6 +1906,8 @@ fn benchmark_row(input: BenchmarkRowInput<'_>) -> serde_json::Value {
         "min_frame_ms": distribution.min_frame_ms,
         "max_frame_ms": distribution.max_frame_ms,
         "stddev_frame_ms": distribution.stddev_frame_ms,
+        "p95_allocations_per_frame": allocation_distribution.p95_allocations_per_frame,
+        "max_allocations_per_frame": allocation_distribution.max_allocations_per_frame,
         "prepare_ms": input.prepare_ms,
         "warmup_frame_ms": input.warmup_frame_ms,
         "fixture": {
@@ -1428,6 +1921,24 @@ fn benchmark_row(input: BenchmarkRowInput<'_>) -> serde_json::Value {
         "skipped": input.skipped,
         "regression_threshold_percent": 5.0,
     })
+}
+
+struct AllocationDistribution {
+    p95_allocations_per_frame: u64,
+    max_allocations_per_frame: u64,
+}
+
+fn allocation_distribution(samples: &[u64]) -> AllocationDistribution {
+    assert!(
+        !samples.is_empty(),
+        "allocation distribution requires at least one sample"
+    );
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    AllocationDistribution {
+        p95_allocations_per_frame: percentile_nearest_rank_u64(&sorted, 0.95),
+        max_allocations_per_frame: sorted[sorted.len() - 1],
+    }
 }
 
 struct BenchmarkDistribution {
@@ -1475,6 +1986,26 @@ fn percentile_nearest_rank(sorted_samples: &[f64], percentile: f64) -> f64 {
     let rank = (sorted_samples.len() as f64 * percentile).ceil() as usize;
     let index = rank.saturating_sub(1).min(sorted_samples.len() - 1);
     sorted_samples[index]
+}
+
+fn percentile_nearest_rank_u64(sorted_samples: &[u64], percentile: f64) -> u64 {
+    debug_assert!(!sorted_samples.is_empty());
+    let rank = (sorted_samples.len() as f64 * percentile).ceil() as usize;
+    let index = rank.saturating_sub(1).min(sorted_samples.len() - 1);
+    sorted_samples[index]
+}
+
+fn start_allocation_counting() {
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.with(|counting| counting.set(true));
+}
+
+fn stop_allocation_counting() {
+    COUNT_ALLOCATIONS.with(|counting| counting.set(false));
+}
+
+fn allocation_count() -> u64 {
+    ALLOCATION_COUNT.load(Ordering::Relaxed) as u64
 }
 
 fn capability_matrix_row(

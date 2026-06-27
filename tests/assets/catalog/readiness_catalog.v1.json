@@ -1,0 +1,79 @@
+{
+  "schema": "scena.asset_catalog.v1",
+  "assets": [
+    {
+      "id": "variant-triangle",
+      "display_name": "Variant Triangle",
+      "source": "tests/assets/gltf/material_variants_scene.gltf",
+      "required_files": [
+        "tests/assets/gltf/material_variants_scene.gltf"
+      ],
+      "declared_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handed",
+      "expected_bounds": {
+        "min": [-1.0, -1.0, -0.1],
+        "max": [1.0, 1.0, 0.1]
+      },
+      "required_anchors": [],
+      "required_connectors": [],
+      "material_requirements": {
+        "required_variants": ["midnight"],
+        "allow_material_fallbacks": false
+      },
+      "preview": {
+        "kind": "generated",
+        "width": 256,
+        "height": 256,
+        "background": [0.0, 0.0, 0.0, 1.0]
+      },
+      "license": "fixture",
+      "provenance": "scena test fixture",
+      "categories": ["demo"],
+      "tags": ["configurator"]
+    },
+    {
+      "id": "missing-source",
+      "display_name": "Missing Source",
+      "source": "tests/assets/gltf/does-not-exist.gltf",
+      "declared_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handed"
+    },
+    {
+      "id": "bad-contract",
+      "display_name": "Bad Contract",
+      "source": "tests/assets/gltf/anchor_debug_scene.gltf",
+      "required_anchors": [
+        { "name": "missing-anchor" }
+      ],
+      "required_connectors": [
+        { "name": "mount" }
+      ],
+      "material_requirements": {
+        "required_variants": ["does-not-exist"]
+      }
+    },
+    {
+      "id": "texture-required",
+      "display_name": "Texture Required",
+      "source": "tests/assets/gltf/material_variants_scene.gltf",
+      "declared_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handed",
+      "preview": {
+        "kind": "generated",
+        "width": 128,
+        "height": 128
+      },
+      "material_requirements": {
+        "require_base_color_textures": true,
+        "allow_material_fallbacks": true
+      }
+    },
+    {
+      "id": "invalid-authored-features",
+      "display_name": "Invalid Authored Features",
+      "source": "tests/assets/gltf/invalid_catalog_features.gltf",
+      "declared_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handded"
+    }
+  ]
+}

@@ -58,17 +58,18 @@ magick(
 );
 
 const easy = [
-  ["docs/assets/easy-scene-showcase/lens-presets.jpg", "camera-portrait.png"],
+  ["docs/assets/easy-scene-showcase/lens-presets.jpg", "camera-portrait.png", "480x480+960+0"],
   ["docs/assets/easy-scene-showcase/light-presets.jpg", "key-light.png"],
-  ["docs/assets/easy-scene-showcase/environment-presets.jpg", "environment-studio.png"],
+  ["docs/assets/easy-scene-showcase/environment-presets.jpg", "environment-studio.png", "480x480+480+0"],
   ["docs/assets/easy-scene-showcase/background-presets.jpg", "background-dark-studio.png"],
-  ["docs/assets/easy-scene-showcase/auto-exposure-presets.jpg", "auto-exposure-product.png"],
-  ["tests/visual/references/round_e/chrome.png", "material-chrome.png"],
+  ["docs/assets/easy-scene-showcase/auto-exposure-presets.jpg", "auto-exposure-product.png", "480x480+0+0"],
+  ["docs/assets/easy-scene-showcase/material-chrome.png", "material-chrome.png"],
 ];
 
-for (const [source, output] of easy) {
+for (const [source, output, crop] of easy) {
+  const sourceArgs = crop ? [source, "-crop", crop, "+repage"] : [source];
   magick(
-    source,
+    ...sourceArgs,
     "-resize",
     "320x200",
     "-background",

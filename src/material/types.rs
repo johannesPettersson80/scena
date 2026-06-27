@@ -9,7 +9,6 @@ pub struct TextureTransform {
     offset: [f32; 2],
     rotation_radians: f32,
     scale: [f32; 2],
-    tex_coord: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,17 +34,11 @@ pub enum AlphaMode {
 }
 
 impl TextureTransform {
-    pub const fn new(
-        offset: [f32; 2],
-        rotation_radians: f32,
-        scale: [f32; 2],
-        tex_coord: Option<u32>,
-    ) -> Self {
+    pub const fn new(offset: [f32; 2], rotation_radians: f32, scale: [f32; 2]) -> Self {
         Self {
             offset,
             rotation_radians,
             scale,
-            tex_coord,
         }
     }
 
@@ -59,9 +52,5 @@ impl TextureTransform {
 
     pub const fn scale(self) -> [f32; 2] {
         self.scale
-    }
-
-    pub const fn tex_coord(self) -> Option<u32> {
-        self.tex_coord
     }
 }

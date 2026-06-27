@@ -1,0 +1,700 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "part",
+      "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "expected_extent": {
+        "min": 0.1,
+        "max": 10.0,
+        "unit": "m"
+      }
+    }
+  ],
+  "colors": {
+    "instance_tint": "#F6C85F",
+    "label_bg": "#1D2733",
+    "label_fg": "#FFFFFF",
+    "pbr_white": "#FFFFFF",
+    "particle_red": "#E03030",
+    "attenuation_blue": "#BFD7FF",
+    "plate_blue": "#3A7BD5"
+  },
+  "geometries": [
+    {
+      "id": "plate_geo",
+      "primitive": {
+        "kind": "box",
+        "size": [
+          0.12,
+          0.06,
+          0.004
+        ]
+      }
+    },
+    {
+      "id": "torus_geo",
+      "primitive": {
+        "kind": "torus",
+        "major_radius": 0.08,
+        "minor_radius": 0.02,
+        "segments": 12,
+        "rings": 6
+      }
+    },
+    {
+      "id": "tri_base",
+      "mesh": {
+        "topology": "triangles",
+        "positions": [
+          [
+            -0.04,
+            -0.03,
+            0.0
+          ],
+          [
+            0.04,
+            -0.03,
+            0.0
+          ],
+          [
+            0.0,
+            0.03,
+            0.0
+          ]
+        ],
+        "normals": [
+          [
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2
+        ]
+      }
+    }
+  ],
+  "morphs": [
+    {
+      "id": "tri_morph",
+      "source_geometry": "tri_base",
+      "targets": [
+        {
+          "position_deltas": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.04,
+              0.0
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "skins": [
+    {
+      "id": "tri_skin",
+      "source_geometry": "tri_morph",
+      "joints": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "weights": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "id": "plate_mat",
+      "kind": "pbr_metallic_roughness",
+      "base_color": "plate_blue",
+      "metallic": 0.0,
+      "roughness": 0.42,
+      "clearcoat_factor": 0.8,
+      "clearcoat_roughness_factor": 0.16,
+      "sheen_color_factor": "pbr_white",
+      "sheen_roughness_factor": 0.35,
+      "anisotropy_strength_factor": 0.65,
+      "anisotropy_rotation_radians": 0.3,
+      "iridescence_factor": 0.45,
+      "iridescence_ior": 1.45,
+      "iridescence_thickness_minimum_nm": 120.0,
+      "iridescence_thickness_maximum_nm": 480.0,
+      "dispersion_factor": 0.02,
+      "transmission_factor": 0.18,
+      "ior": 1.52,
+      "thickness_factor": 0.05,
+      "attenuation_distance": 2.5,
+      "attenuation_color": "attenuation_blue"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "plate",
+      "geometry": "plate_geo",
+      "material": "plate_mat",
+      "name": "CAD plate",
+      "transform": {
+        "kind": "center"
+      }
+    },
+    {
+      "id": "tri_joint",
+      "geometry": "tri_base",
+      "material": "plate_mat",
+      "visible": false,
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.0,
+          0.02,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "tri_deformed",
+      "geometry": "tri_skin",
+      "material": "plate_mat",
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.18,
+          0.0,
+          0.0
+        ]
+      },
+      "morph_weights": [
+        0.5
+      ],
+      "skin_binding": {
+        "joints": [
+          "tri_joint"
+        ],
+        "inverse_bind_matrices": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    }
+  ],
+  "instance_sets": [
+    {
+      "id": "plate_instances",
+      "geometry": "plate_geo",
+      "material": "plate_mat",
+      "instances": [
+        {
+          "id": "visible-copy",
+          "transform": {
+            "kind": "trs",
+            "translation": [
+              -0.08,
+              0.0,
+              0.0
+            ]
+          },
+          "tint": "instance_tint"
+        },
+        {
+          "id": "hidden-copy",
+          "transform": {
+            "kind": "trs",
+            "translation": [
+              0.08,
+              0.0,
+              0.0
+            ]
+          },
+          "visible": false
+        }
+      ]
+    }
+  ],
+  "particles": [
+    {
+      "id": "status_particles",
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.0,
+          0.0,
+          0.02
+        ]
+      },
+      "particles": [
+        {
+          "id": "ok-green",
+          "position": [
+            -0.08,
+            0.02,
+            0.0
+          ],
+          "color": "instance_tint",
+          "size_px": 14.0
+        },
+        {
+          "id": "alarm-red",
+          "position": [
+            0.08,
+            0.02,
+            0.0
+          ],
+          "color": "particle_red",
+          "size_px": 20.0,
+          "rotation_degrees": 15.0
+        }
+      ]
+    }
+  ],
+  "labels": [
+    {
+      "id": "status_label",
+      "text": "OK",
+      "color": "label_fg",
+      "background": "label_bg",
+      "size_px": 18.0,
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.0,
+          0.08,
+          0.0
+        ]
+      }
+    }
+  ],
+  "clipping_planes": [
+    {
+      "id": "front_clip",
+      "normal": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "distance": 0.5
+    }
+  ],
+  "animations": [
+    {
+      "id": "plate_slide",
+      "duration": 1.0,
+      "channels": [
+        {
+          "target": {
+            "kind": "node",
+            "id": "plate"
+          },
+          "path": "translation",
+          "interpolation": "linear",
+          "times": [
+            0.0,
+            1.0
+          ],
+          "values": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.04,
+              0.0,
+              0.0
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "cameras": [
+    {
+      "id": "main",
+      "kind": "perspective",
+      "fov_degrees": 40.0,
+      "active": true,
+      "transform": {
+        "kind": "look_at",
+        "eye": [
+          0.2,
+          0.15,
+          0.2
+        ],
+        "target": "plate"
+      }
+    }
+  ],
+  "lights": [
+    {
+      "id": "key",
+      "kind": "directional",
+      "preset": "key"
+    },
+    {
+      "id": "fill",
+      "kind": "directional",
+      "preset": "fill"
+    },
+    {
+      "id": "rim",
+      "kind": "directional",
+      "preset": "rim"
+    }
+  ],
+  "scene": {
+    "preset": "product_studio",
+    "background": {
+      "kind": "studio"
+    },
+    "environment": {
+      "kind": "uri",
+      "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+    },
+    "grid": {
+      "padding": 0.05,
+      "line_spacing": 0.04,
+      "line_width_px": 4.0,
+      "reflection": {
+        "strength": 0.35
+      }
+    }
+  },
+  "render": {
+    "profile": "balanced",
+    "quality": "medium",
+    "anti_aliasing": "fxaa",
+    "supersample": 1,
+    "reconstruction": "box",
+    "screen_space_reflections": {
+      "strength": 0.35,
+      "roughness": 0.22,
+      "horizon_fraction": 0.58,
+      "fade": 0.35
+    },
+    "depth_of_field": {
+      "focus_distance": 2.4,
+      "aperture_f_stop": 2.8,
+      "radius_px": 6
+    },
+    "exposure_ev": 0.0,
+    "tonemapper": "pbr_neutral"
+  },
+  "section_box": {
+    "import": "part",
+    "margin": 0.125,
+    "inverted": false,
+    "helper_wireframe": true
+  },
+  "measurements": [
+    {
+      "id": "part-width",
+      "kind": "distance",
+      "start": [
+        -0.5,
+        0.0,
+        0.0
+      ],
+      "end": [
+        0.5,
+        0.0,
+        0.0
+      ],
+      "label": "part width",
+      "unit": "m",
+      "precision": 2
+    }
+  ],
+  "callouts": [
+    {
+      "id": "part-callout",
+      "text": "Part",
+      "target": {
+        "kind": "import_root",
+        "import": "part",
+        "local_offset": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "label_offset": [
+        0.25,
+        0.25,
+        0.0
+      ]
+    }
+  ],
+  "exploded_view": {
+    "import": "part",
+    "mode": "axis",
+    "axis": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "factor": 0.0,
+    "distance": 0.0
+  },
+  "expect": {
+    "expect_color": [
+      {
+        "id": "plate-color",
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "swatch_srgb8": [
+          58,
+          123,
+          213
+        ],
+        "tolerance": 0.2
+      }
+    ],
+    "expect_bbox_fit": {
+      "min": 0.05,
+      "max": 0.95
+    },
+    "expect_grounded": [
+      {
+        "id": "plate-on-floor",
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "plane_y": 0.0,
+        "tolerance": 0.01
+      }
+    ],
+    "expect_helper_occluded": [
+      {
+        "id": "helper-line-behind-plate",
+        "helper": {
+          "kind": "node",
+          "id": "tri_deformed"
+        },
+        "occluder": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "tolerance_pixels": 0
+      }
+    ],
+    "expect_occlusion": [
+      {
+        "id": "plate-in-front-of-panel",
+        "front": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "back": {
+          "kind": "node",
+          "id": "tri_deformed"
+        },
+        "tolerance_pixels": 0
+      }
+    ],
+    "expect_backend": {
+      "backend": "headless",
+      "gpu_device": false
+    },
+    "expect_clipping": {
+      "active_clipping_planes": 1,
+      "section_box_active": true,
+      "section_box_inverted": false
+    },
+    "expect_state": [
+      {
+        "id": "default-import-variant",
+        "import": "part"
+      }
+    ],
+    "expect_transform": [
+      {
+        "id": "plate-transform",
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "rotation_degrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "translation_tolerance": 0.001,
+        "scale_tolerance": 0.001,
+        "rotation_tolerance_degrees": 0.05
+      }
+    ],
+    "expect_separation": [
+      {
+        "id": "plate-clear-of-tri",
+        "a": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "b": {
+          "kind": "node",
+          "id": "tri"
+        },
+        "min_gap": 0.0,
+        "tolerance": 0.001
+      }
+    ],
+    "expect_pick": [
+      {
+        "id": "plate-pick",
+        "x_css_px": 48.0,
+        "y_css_px": 36.0,
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        }
+      }
+    ],
+    "expect_quality": {
+      "profile": "documentation",
+      "text": {
+        "min_ink_coverage": 0.05,
+        "max_ink_isolation": 0.01,
+        "min_intermediate_edge_fraction": 0.02,
+        "max_background_luminance_range": 0.03,
+        "max_background_mean_delta": 0.03
+      },
+      "line": {
+        "min_intermediate_edge_fraction": 0.005,
+        "max_straightness_error": 0.08
+      },
+      "reflection": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_luminance_range": 0.12,
+        "min_sobel_energy": 0.02,
+        "min_chroma_range": 0.04,
+        "max_firefly_fraction": 0.01,
+        "min_bright_fraction": 0.08,
+        "min_dark_fraction": 0.03
+      },
+      "area_light": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_shadow_contrast": 0.025,
+        "min_penumbra_width_px": 1.5,
+        "min_penumbra_luma_levels": 18.0,
+        "min_emitter_extent_meters": 0.5
+      },
+      "grounding": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_contact_shadow_delta": 0.018
+      },
+      "depth_of_field": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_source_background_sobel": 0.04,
+        "min_background_sobel_drop": 0.015,
+        "min_background_sobel_drop_fraction": 0.18,
+        "max_focal_mean_delta": 0.08
+      }
+    }
+  },
+  "capture": {
+    "width": 640,
+    "height": 480
+  },
+  "metadata": {
+    "purpose": "stable recipe fixture"
+  }
+}

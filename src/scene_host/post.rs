@@ -7,6 +7,8 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn set_anti_aliasing(&mut self, mode: &str) -> Result<(), SceneHostError> {
         let anti_aliasing = match mode {
             "fxaa" | "on" | "true" => AntiAliasing::Fxaa,
+            "msaa4" => AntiAliasing::Msaa4,
+            "msaa8" => AntiAliasing::Msaa8,
             "none" | "off" | "false" => AntiAliasing::None,
             other => {
                 return Err(invalid_input(format!(

@@ -1,11 +1,13 @@
 use crate::geometry::Vertex;
 use crate::material::Color;
-use crate::scene::{ClippingPlane, Vec3};
+use crate::scene::{ClippingPlane, SectionBox, Vec3};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
+pub(super) use super::cpu_overlay::write_label_overlay_pixel;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
 use super::prepare::PreparedPrimitive;
+use super::screen_space_reflections::{MaterialReflectionPixel, ScreenSpaceReflectionConfig};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct OitAccumPixel {
@@ -25,11 +27,13 @@ impl Default for OitAccumPixel {
 }
 
 pub(super) struct CpuFrame<'frame> {
-    target: RasterTarget,
-    output: OutputTransform,
-    linear_frame: &'frame mut [Color],
-    depth_frame: &'frame mut [f32],
-    frame: &'frame mut [u8],
+    pub(super) target: RasterTarget,
+    pub(super) output: OutputTransform,
+    pub(super) row_start: u32,
+    row_count: u32,
+    pub(super) linear_frame: &'frame mut [Color],
+    pub(super) depth_frame: &'frame mut [f32],
+    pub(super) frame: &'frame mut [u8],
 }
 
 impl<'frame> CpuFrame<'frame> {
@@ -40,13 +44,53 @@ impl<'frame> CpuFrame<'frame> {
         depth_frame: &'frame mut [f32],
         frame: &'frame mut [u8],
     ) -> Self {
+        Self::new_rows(
+            target,
+            output,
+            0,
+            target.height,
+            linear_frame,
+            depth_frame,
+            frame,
+        )
+    }
+
+    pub(super) const fn new_rows(
+        target: RasterTarget,
+        output: OutputTransform,
+        row_start: u32,
+        row_count: u32,
+        linear_frame: &'frame mut [Color],
+        depth_frame: &'frame mut [f32],
+        frame: &'frame mut [u8],
+    ) -> Self {
         Self {
             target,
             output,
+            row_start,
+            row_count,
             linear_frame,
             depth_frame,
             frame,
         }
+    }
+
+    pub(super) fn row_end(&self) -> u32 {
+        self.row_start
+            .saturating_add(self.row_count)
+            .min(self.target.height)
+    }
+
+    fn local_pixel_len(&self) -> usize {
+        (self.row_end().saturating_sub(self.row_start) as usize) * (self.target.width as usize)
+    }
+
+    pub(super) fn local_pixel_index(&self, x: u32, y: u32) -> Option<usize> {
+        if x >= self.target.width || y < self.row_start || y >= self.row_end() {
+            return None;
+        }
+        let local_y = y.saturating_sub(self.row_start);
+        Some((local_y as usize) * (self.target.width as usize) + (x as usize))
     }
 }
 
@@ -62,8 +106,8 @@ pub(super) fn clear_cpu(cpu_frame: &mut CpuFrame<'_>, color: Color) {
         *depth = f32::INFINITY;
         pixel.copy_from_slice(&rgba);
     }
-    debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.target.pixel_len());
-    debug_assert_eq!(cpu_frame.depth_frame.len(), cpu_frame.target.pixel_len());
+    debug_assert_eq!(cpu_frame.depth_frame.len(), cpu_frame.local_pixel_len());
+    debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.local_pixel_len());
 }
 
 pub(super) fn clear_order_independent_transparency(accum: &mut [OitAccumPixel]) {
@@ -81,13 +125,21 @@ pub(super) fn primitive_needs_order_independent_transparency(
         .any(|vertex| clamp_alpha_or(vertex.color.a, 1.0) < 1.0 - f32::EPSILON)
 }
 
+pub(super) fn primitive_needs_physical_transmission(primitive: &PreparedPrimitive) -> bool {
+    primitive.material_transmission().is_some()
+}
+
 pub(super) fn draw_primitive_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,
     clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
     camera: &CameraProjection,
+    mut material_reflections: Option<&mut [MaterialReflectionPixel]>,
+    reflection_config: Option<ScreenSpaceReflectionConfig>,
 ) {
     let [a, b, c] = primitive.vertices();
+    let [attributes_a, attributes_b, attributes_c] = primitive.vertex_attributes();
     let Some(a) = ScreenVertex::from_vertex(*a, cpu_frame.target, camera) else {
         return;
     };
@@ -104,15 +156,25 @@ pub(super) fn draw_primitive_cpu(
             .max(c.x)
             .ceil()
             .min(cpu_frame.target.width as f32 - 1.0) as u32;
-    let min_y = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
+    let min_y =
+        a.y.min(b.y)
+            .min(c.y)
+            .floor()
+            .max(cpu_frame.row_start as f32) as u32;
     let max_y =
         a.y.max(b.y)
             .max(c.y)
             .ceil()
-            .min(cpu_frame.target.height as f32 - 1.0) as u32;
+            .min(cpu_frame.row_end().saturating_sub(1) as f32) as u32;
+    if min_y > max_y {
+        return;
+    }
 
     let area = edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
+        return;
+    }
+    if !primitive.double_sided() && area < 0.0 {
         return;
     }
 
@@ -127,12 +189,34 @@ pub(super) fn draw_primitive_cpu(
                 continue;
             }
             let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
-            if is_clipped(position, clipping_planes) {
+            if is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
             let color = multiply_color(mix_color(a, b, c, w0, w1, w2), primitive.tint());
             let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
-            write_pixel(cpu_frame, x, y, color, depth);
+            if write_pixel(cpu_frame, x, y, color, depth)
+                && let (Some(buffer), Some(config), Some(reflection)) = (
+                    material_reflections.as_deref_mut(),
+                    reflection_config,
+                    primitive.material_reflection(),
+                )
+            {
+                super::cpu_reflections::record_material_reflection_pixel(
+                    super::cpu_reflections::MaterialReflectionRecord {
+                        target: cpu_frame.target,
+                        camera,
+                        material_reflections: buffer,
+                        x,
+                        y,
+                        position,
+                        normal: attributes_a.normal * w0
+                            + attributes_b.normal * w1
+                            + attributes_c.normal * w2,
+                        reflection,
+                        config,
+                    },
+                );
+            }
         }
     }
 }
@@ -141,6 +225,7 @@ pub(super) fn draw_order_independent_transparency_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,
     clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
     camera: &CameraProjection,
     accum: &mut [OitAccumPixel],
     config: OrderIndependentTransparencyConfig,
@@ -162,15 +247,25 @@ pub(super) fn draw_order_independent_transparency_cpu(
             .max(c.x)
             .ceil()
             .min(cpu_frame.target.width as f32 - 1.0) as u32;
-    let min_y = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
+    let min_y =
+        a.y.min(b.y)
+            .min(c.y)
+            .floor()
+            .max(cpu_frame.row_start as f32) as u32;
     let max_y =
         a.y.max(b.y)
             .max(c.y)
             .ceil()
-            .min(cpu_frame.target.height as f32 - 1.0) as u32;
+            .min(cpu_frame.row_end().saturating_sub(1) as f32) as u32;
+    if min_y > max_y {
+        return;
+    }
 
     let area = edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
+        return;
+    }
+    if !primitive.double_sided() && area < 0.0 {
         return;
     }
 
@@ -185,14 +280,16 @@ pub(super) fn draw_order_independent_transparency_cpu(
                 continue;
             }
             let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
-            if is_clipped(position, clipping_planes) {
+            if is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
             let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
             if !depth.is_finite() {
                 continue;
             }
-            let pixel_index = cpu_frame.target.pixel_index(x, y);
+            let Some(pixel_index) = cpu_frame.local_pixel_index(x, y) else {
+                continue;
+            };
             if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
                 continue;
             }
@@ -254,7 +351,7 @@ impl ScreenVertex {
             x: (projected.ndc_x * 0.5 + 0.5) * width,
             y: (1.0 - (projected.ndc_y * 0.5 + 0.5)) * height,
             depth: projected.depth,
-            inv_depth: projected.depth.recip(),
+            inv_depth: projected.view_depth.recip(),
             position: vertex.position,
             color: vertex.color,
         })
@@ -316,19 +413,32 @@ fn mix_depth(a: f32, b: f32, c: f32, w0: f32, w1: f32, w2: f32) -> f32 {
     a * w0 + b * w1 + c * w2
 }
 
-fn is_clipped(position: Vec3, clipping_planes: &[ClippingPlane]) -> bool {
+fn is_clipped(
+    position: Vec3,
+    clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
+) -> bool {
     clipping_planes
         .iter()
         .any(|plane| !plane.contains(position))
+        || section_box.is_some_and(|section| section.clips(position))
 }
 
-fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth: f32) {
+pub(super) fn write_pixel(
+    cpu_frame: &mut CpuFrame<'_>,
+    x: u32,
+    y: u32,
+    color: Color,
+    depth: f32,
+) -> bool {
     if !depth.is_finite() {
-        return;
+        return false;
     }
-    let pixel_index = cpu_frame.target.pixel_index(x, y);
+    let Some(pixel_index) = cpu_frame.local_pixel_index(x, y) else {
+        return false;
+    };
     if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
-        return;
+        return false;
     }
     let blended = blend_source_over(color, cpu_frame.linear_frame[pixel_index]);
     cpu_frame.linear_frame[pixel_index] = blended;
@@ -339,6 +449,7 @@ fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth
     let byte_index = pixel_index * 4;
     cpu_frame.frame[byte_index..byte_index + 4]
         .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
+    true
 }
 
 fn accumulate_order_independent_transparency(

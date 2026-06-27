@@ -1,11 +1,14 @@
 use crate::diagnostics::PrepareError;
 use crate::geometry::{GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex};
-use crate::material::MaterialKind;
+use crate::material::{MaterialDesc, MaterialKind};
 use crate::render::camera::CameraProjection;
+use crate::render::physical_transmission::{
+    PreparedPhysicalTransmission, PreparedPhysicalTransmissionInput,
+};
 
 use super::cpu_bake::{
-    CpuBakeCorner, baked_shadow_visibility, cpu_texture_subdivisions, push_material_pass_primitive,
-    subdivided_cpu_corners,
+    CpuBakeCorner, baked_area_shadow_visibility, baked_shadow_visibility, cpu_texture_subdivisions,
+    push_material_pass_primitive, subdivided_cpu_corners,
 };
 use super::lighting::{MaterialShadingInput, material_color};
 use super::materials::{
@@ -22,8 +25,8 @@ use super::transforms::{
     normal_from_model_matrix, transform_normal, transform_position, world_from_model_matrix,
 };
 use super::types::{
-    DeformationInputs, GeometryPrimitiveSource, PreparedPrimitive, PrimitiveBakeParams,
-    PrimitiveSinks,
+    DeformationInputs, GeometryPrimitiveSource, PreparedMaterialReflection, PreparedPrimitive,
+    PrimitiveBakeParams, PrimitiveSinks,
 };
 
 pub(super) fn append_geometry_primitives<F>(
@@ -163,24 +166,30 @@ fn append_triangle_primitives<F>(
         let render_material_slot =
             render_material_slot(source.material_handle, params.backend_material_slots);
         let backend_shaded_material = render_material_slot != 0;
-        let shadow_visibility_a = baked_shadow_visibility(
+        let directional_shadow_visibility_a = baked_shadow_visibility(
             position_a,
             params.lights,
             params.shadow_occluders,
             backend_shaded_material,
         );
-        let shadow_visibility_b = baked_shadow_visibility(
+        let directional_shadow_visibility_b = baked_shadow_visibility(
             position_b,
             params.lights,
             params.shadow_occluders,
             backend_shaded_material,
         );
-        let shadow_visibility_c = baked_shadow_visibility(
+        let directional_shadow_visibility_c = baked_shadow_visibility(
             position_c,
             params.lights,
             params.shadow_occluders,
             backend_shaded_material,
         );
+        let area_shadow_visibility_a =
+            baked_area_shadow_visibility(position_a, params.lights, params.shadow_occluders);
+        let area_shadow_visibility_b =
+            baked_area_shadow_visibility(position_b, params.lights, params.shadow_occluders);
+        let area_shadow_visibility_c =
+            baked_area_shadow_visibility(position_c, params.lights, params.shadow_occluders);
         let shade_vertex = |corner: CpuBakeCorner| {
             if backend_shaded_material {
                 corner.vertex_color
@@ -277,7 +286,8 @@ fn append_triangle_primitives<F>(
                                 corner.uv,
                             ),
                             environment: params.environment_lighting.clone(),
-                            directional_shadow_factor: corner.shadow_visibility,
+                            directional_shadow_factor: corner.directional_shadow_visibility,
+                            area_shadow_factor: corner.area_shadow_visibility,
                         },
                     ),
                     corner.vertex_color,
@@ -295,7 +305,8 @@ fn append_triangle_primitives<F>(
                     vertex_colors[triangle[0] as usize],
                     structural_vertex_tint(source.tint),
                 ),
-                shadow_visibility: shadow_visibility_a,
+                directional_shadow_visibility: directional_shadow_visibility_a,
+                area_shadow_visibility: area_shadow_visibility_a,
             },
             CpuBakeCorner {
                 position: position_b,
@@ -307,7 +318,8 @@ fn append_triangle_primitives<F>(
                     vertex_colors[triangle[1] as usize],
                     structural_vertex_tint(source.tint),
                 ),
-                shadow_visibility: shadow_visibility_b,
+                directional_shadow_visibility: directional_shadow_visibility_b,
+                area_shadow_visibility: area_shadow_visibility_b,
             },
             CpuBakeCorner {
                 position: position_c,
@@ -319,11 +331,22 @@ fn append_triangle_primitives<F>(
                     vertex_colors[triangle[2] as usize],
                     structural_vertex_tint(source.tint),
                 ),
-                shadow_visibility: shadow_visibility_c,
+                directional_shadow_visibility: directional_shadow_visibility_c,
+                area_shadow_visibility: area_shadow_visibility_c,
             },
         ];
         let subdivisions = cpu_texture_subdivisions(source.material, backend_shaded_material);
+        let material_reflection = material_reflection(source.material);
         for sub_triangle in subdivided_cpu_corners(corners, subdivisions) {
+            let material_transmission = material_transmission(
+                source.material,
+                average_texture_sample(&sub_triangle, |uv| {
+                    transmission_texture_sample(source.assets, source.material, uv)
+                }),
+                average_texture_sample(&sub_triangle, |uv| {
+                    thickness_texture_sample(source.assets, source.material, uv)
+                }),
+            );
             let primitive = Primitive::triangle_with_attributes(
                 sub_triangle.map(|corner| Vertex {
                     position: corner.position,
@@ -334,7 +357,7 @@ fn append_triangle_primitives<F>(
                     tex_coord0: corner.uv,
                     tangent: corner.tangent,
                     tangent_handedness: corner.tangent_handedness,
-                    shadow_visibility: corner.shadow_visibility,
+                    shadow_visibility: corner.area_shadow_visibility,
                 }),
             )
             .with_render_material_slot(render_material_slot);
@@ -343,7 +366,10 @@ fn append_triangle_primitives<F>(
                 primitive,
                 Some(source.node),
                 draw_uniform_tint(source.tint),
-            );
+            )
+            .with_double_sided(source.material.double_sided())
+            .with_material_reflection(material_reflection)
+            .with_material_transmission(material_transmission);
             push_material_pass_primitive(
                 primitive,
                 material_pass,
@@ -354,6 +380,40 @@ fn append_triangle_primitives<F>(
     }
 
     Ok(())
+}
+
+fn material_reflection(material: &MaterialDesc) -> Option<PreparedMaterialReflection> {
+    if material.kind() != MaterialKind::PbrMetallicRoughness {
+        return None;
+    }
+    PreparedMaterialReflection::new(material.metallic_factor(), material.roughness_factor())
+}
+
+fn material_transmission(
+    material: &MaterialDesc,
+    transmission_texture: f32,
+    thickness_texture: f32,
+) -> Option<PreparedPhysicalTransmission> {
+    if material.kind() != MaterialKind::PbrMetallicRoughness {
+        return None;
+    }
+    PreparedPhysicalTransmission::new(PreparedPhysicalTransmissionInput {
+        transmission: material.transmission_factor(),
+        transmission_texture,
+        ior: material.ior(),
+        thickness: material.thickness_factor(),
+        thickness_texture,
+        attenuation_color: material.attenuation_color(),
+        attenuation_distance: material.attenuation_distance(),
+        roughness: material.roughness_factor(),
+    })
+}
+
+fn average_texture_sample(
+    corners: &[CpuBakeCorner; 3],
+    mut sample: impl FnMut([f32; 2]) -> f32,
+) -> f32 {
+    (sample(corners[0].uv) + sample(corners[1].uv) + sample(corners[2].uv)) / 3.0
 }
 
 fn structural_vertex_tint(tint: Option<crate::material::Color>) -> Option<crate::material::Color> {

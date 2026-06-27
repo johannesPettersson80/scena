@@ -29,6 +29,17 @@
   "draw_list": [],
   "camera_frustums": [],
   "normal_overlays": [],
+  "imports": [
+    {
+      "handle": 7,
+      "root_handles": [1],
+      "material_variants": [
+        "midnight",
+        "noon"
+      ],
+      "active_variant": "noon"
+    }
+  ],
   "active_camera": null,
   "counts": {
     "visible_drawable": 0,

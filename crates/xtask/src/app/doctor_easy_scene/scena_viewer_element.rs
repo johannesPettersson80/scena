@@ -43,13 +43,25 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         "SCENA-VIEWER-ELEMENT",
         "src/viewer_element.rs",
         &[
+            "mod annotation_layout;",
             "mod annotations;",
             "mod model;",
             "mod inspector;",
+            "pub use annotation_layout::",
             "pub use annotations::",
             "pub use model::",
             "pub use inspector::",
             "pub const SCENA_VIEWER_TAG",
+            "defineScenaViewerElement",
+            "/src/viewer_element/element.js",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENA-VIEWER-ELEMENT",
+        "src/viewer_element/element.js",
+        &[
             "defineScenaViewerElement",
             "customElements.define",
             "attachShadow",
@@ -326,10 +338,10 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         &[
             "scena.scena_viewer_inspector_snapshot.v1",
             "scena-viewer-inspector-fixture",
-            "\"overlay\": \"Diagnostics\"",
             "\"diagnostics\"",
             "\"stats\"",
             "\"FrameBounds\"",
+            "\"drawCalls\"",
         ],
     );
     require_contains(

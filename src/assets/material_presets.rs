@@ -174,5 +174,5 @@ where
 }
 
 const fn tile_transform(scale: f32) -> TextureTransform {
-    TextureTransform::new([0.0, 0.0], 0.0, [scale, scale], None)
+    TextureTransform::new([0.0, 0.0], 0.0, [scale, scale])
 }

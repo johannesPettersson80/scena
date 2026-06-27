@@ -9,8 +9,8 @@
 
 use scena::{
     DiagnosticSeverity, InteractiveGltfViewer, OrbitControlAction, PlatformSurface, PointerButton,
-    PointerEvent, PointerEventKind, RenderMode, Renderer, Scene, SurfaceEvent,
-    interactive_gltf_viewer,
+    PointerEvent, PointerEventKind, Profile, RenderMode, Renderer, Scene, SurfaceEvent,
+    ViewerProfile, interactive_gltf_viewer,
 };
 
 #[test]
@@ -48,6 +48,82 @@ fn interactive_gltf_viewer_builds_load_instantiate_frame_prepare_render_through_
     assert!(
         outcome.draw_calls > 0 || outcome.primitives == 0,
         "render_next_frame must report a coherent draw stat (got {outcome:?})",
+    );
+}
+
+#[test]
+fn viewer_profiles_apply_named_presets_without_parallel_viewer_types() {
+    assert_eq!(
+        ViewerProfile::names(),
+        &[
+            "model_viewer",
+            "cad_inspection",
+            "product",
+            "industrial",
+            "documentation",
+        ],
+    );
+
+    let model = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf")
+            .size(96, 64)
+            .with_viewer_profile(ViewerProfile::model_viewer())
+            .build(),
+    )
+    .expect("model-viewer profile builds");
+    assert_eq!(model.renderer().profile(), Profile::Balanced);
+    assert_eq!(model.renderer().render_mode(), RenderMode::OnChange);
+    assert!(
+        model.renderer().environment().is_some(),
+        "model-viewer profile should enable the default environment"
+    );
+
+    let mut model = model;
+    let model_draws = model
+        .render_next_frame()
+        .expect("model-viewer profile renders")
+        .draw_calls;
+    let cad_profile = ViewerProfile::cad_inspection()
+        .with_grid(true)
+        .with_default_picking(true)
+        .with_section_controls(true);
+    let mut cad = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf")
+            .size(96, 64)
+            .with_viewer_profile(cad_profile)
+            .build(),
+    )
+    .expect("cad-inspection profile builds");
+
+    assert_eq!(cad_profile.name(), "cad_inspection");
+    assert_eq!(cad.renderer().profile(), Profile::Industrial);
+    assert_eq!(cad.renderer().render_mode(), RenderMode::OnChange);
+    assert!(cad_profile.default_picking());
+    let cad_draws = cad
+        .render_next_frame()
+        .expect("cad-inspection profile renders")
+        .draw_calls;
+    assert!(
+        cad_draws > model_draws,
+        "cad-inspection profile should add renderable helper/grid draws"
+    );
+}
+
+#[test]
+fn interactive_viewer_profile_attaches_orbit_controls_without_owning_the_loop() {
+    let viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf",
+        PlatformSurface::native_window(96, 64),
+    )
+    .with_viewer_profile(ViewerProfile::industrial())
+    .build()
+    .expect("industrial profile builds an interactive viewer");
+
+    assert_eq!(viewer.renderer().profile(), Profile::Industrial);
+    assert_eq!(viewer.renderer().render_mode(), RenderMode::OnChange);
+    assert!(
+        viewer.orbit_controls().is_some(),
+        "industrial profile should attach orbit controls for host-driven input"
     );
 }
 

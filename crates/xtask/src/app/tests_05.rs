@@ -236,16 +236,24 @@ pub(crate) fn doctor_rejects_render_alpha_capabilities_field_regression() {
 #[test]
 pub(crate) fn doctor_rejects_render_alpha_missing_linear_frame_path_regression() {
     // ARCH-RENDER-ALPHA (CPU path): src/render.rs must keep the
-    // linear_frame: Option<Vec<Color>> field plus the cpu::clear_cpu and
-    // cpu::draw_primitive_cpu calls so CPU-rasterised alpha blending happens
-    // in linear space before the output stage. A stub Renderer that drops
-    // the field regresses the contract.
+    // linear_frame: Option<Vec<Color>> field, and src/render/cpu_render.rs
+    // must keep the cpu::clear_cpu and cpu::draw_primitive_cpu calls so
+    // CPU-rasterised alpha blending happens in linear space before the output
+    // stage. A stub Renderer that drops the field regresses the contract.
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/render-alpha-linear-frame-stub");
     let render_path = fixture_root.join("src/render.rs");
+    let cpu_render_path = fixture_root.join("src/render/cpu_render.rs");
     fs::create_dir_all(render_path.parent().expect("render parent")).expect("fixture dir");
+    fs::create_dir_all(cpu_render_path.parent().expect("cpu render parent"))
+        .expect("cpu render fixture dir");
     fs::write(&render_path, "pub struct Renderer { pub frame: Vec<u8> }\n")
         .expect("render fixture");
+    fs::write(
+        &cpu_render_path,
+        "fn draw_cpu() { cpu::clear_cpu(); cpu::draw_primitive_cpu(); }\n",
+    )
+    .expect("cpu render fixture");
     let mut findings = Vec::new();
 
     require_contains(
@@ -253,11 +261,7 @@ pub(crate) fn doctor_rejects_render_alpha_missing_linear_frame_path_regression()
         &mut findings,
         "ARCH-RENDER-ALPHA",
         "src/render.rs",
-        &[
-            "linear_frame: Option<Vec<Color>>",
-            "cpu::clear_cpu",
-            "cpu::draw_primitive_cpu",
-        ],
+        &["linear_frame: Option<Vec<Color>>"],
     );
 
     assert!(

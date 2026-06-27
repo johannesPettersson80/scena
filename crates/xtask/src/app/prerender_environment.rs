@@ -1,21 +1,27 @@
 use crate::app::prelude::*;
 
-pub(crate) fn run_prerender_environment(input: &str) -> Result<(), Vec<Finding>> {
+pub(crate) fn run_prerender_environment(
+    input: &str,
+    resolution: Option<u32>,
+) -> Result<(), Vec<Finding>> {
     let input_path = PathBuf::from(input);
     let sidecar_path = PathBuf::from(format!("{input}.prefilter.bin"));
-    let assets = scena::Assets::new();
-    let handle = pollster::block_on(assets.load_environment(input)).map_err(|error| {
+    let source_bytes = fs::read(input).map_err(|error| {
         vec![Finding::new(
             "DEMO-HDR-SIDECAR-CURRENT",
-            format!("failed to load HDR environment {input}: {error:?}"),
+            format!("failed to read HDR environment {input}: {error}"),
         )]
     })?;
-    let environment = assets.environment(handle).ok_or_else(|| {
-        vec![Finding::new(
-            "DEMO-HDR-SIDECAR-CURRENT",
-            format!("environment handle for {input} was not retained"),
-        )]
-    })?;
+    let cubemap_resolution =
+        resolution.unwrap_or(scena::DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION);
+    let environment = scena::EnvironmentDesc::from_equirectangular_hdr_bytes(input, &source_bytes)
+        .map(|environment| environment.with_cubemap_resolution(cubemap_resolution))
+        .map_err(|error| {
+            vec![Finding::new(
+                "DEMO-HDR-SIDECAR-CURRENT",
+                format!("failed to decode HDR environment {input}: {error:?}"),
+            )]
+        })?;
     let sidecar = scena::render::precompute_environment_sidecar(
         &environment,
         scena::EnvironmentSidecarProfile::InteractiveWebGl2,
@@ -36,9 +42,10 @@ pub(crate) fn run_prerender_environment(input: &str) -> Result<(), Vec<Finding>>
         )]
     })?;
     println!(
-        "wrote {} from {} profile={} source_sha256={} bytes={}",
+        "wrote {} from {} resolution={} profile={} source_sha256={} bytes={}",
         sidecar_path.display(),
         input_path.display(),
+        cubemap_resolution,
         sidecar.profile().name(),
         sidecar.source_sha256_hex(),
         fs::metadata(&sidecar_path).map(|m| m.len()).unwrap_or(0)

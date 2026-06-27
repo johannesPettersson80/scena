@@ -96,7 +96,6 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
             "pub enum ConnectionRoll",
             "pub enum ConnectionParenting",
             "ForwardToBack",
-            "NormalToOpposite",
             "pub const fn with_alignment",
             "pub const fn preserve_roll",
             "pub fn choose_nearest_roll_degrees",
@@ -125,6 +124,257 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
             "pub fn lock_node_for_connections",
             "pub fn unlock_node_for_connections",
             "pub fn node_connections_locked",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene_host/connectors.rs",
+        &[
+            "CONNECTOR_BROWSER_SCHEMA_V1",
+            "ConnectorBrowserReportV1",
+            "connector_browser_json",
+            "connector_browser_subtree_json",
+            "connector_browser_selection_json",
+            "metadata_invalid_reasons",
+            "polarity_mismatch",
+            "tag_mismatch",
+            "preview_connector_magnet",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/connector_browser_contracts.rs",
+        &[
+            "connector_browser_reports_import_connectors_and_metadata_candidates",
+            "connector_browser_reports_subtree_and_selection_scopes",
+            "connector_browser_golden_fixture_matches_live_schema_serialization",
+            "connector_browser_targets.gltf",
+            "CONNECTOR_BROWSER_SCHEMA_V1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "examples/assembly_connector_browser.rs",
+        &[
+            "connector_browser_json",
+            "connector_debug_scene.gltf",
+            "connector_browser_targets.gltf",
+            "CONNECTOR_BROWSER_SCHEMA_V1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Connector browser and snap preview",
+            "SceneHostCore::connector_browser_json",
+            "examples/assembly_connector_browser.rs",
+            "connector-magnet-preview",
+            "scena.connector_browser.v1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene/import/variants.rs",
+        &["variant_index_for", "AmbiguousVariantName", "matches"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene_host/reporting.rs",
+        &["from_import", "material_variants", "active_variant"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene/inspection/schema.rs",
+        &["SceneImportInspectionV1", "imports", "active_variant"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/material_variant_helpers.rs",
+        &[
+            "scene_host_material_variant_reports_include_available_and_active_state",
+            "scene_host_material_variant_patch_fails_for_stale_and_ambiguous_imports",
+            "material_variants_ambiguous_scene.gltf",
+            "VisualPatchMaterialVariantV1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Material variant helpers",
+            "scena.scene_host_asset_import.v1",
+            "cargo test --features scene-host --test material_variant_helpers",
+            "scena-viewer-material-variant-render",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene_host/product_options.rs",
+        &[
+            "PRODUCT_OPTIONS_SCHEMA_V1",
+            "ProductOptionsV1",
+            "store_product_options",
+            "apply_product_option",
+            "self.apply_patch(&patch)",
+            "result.failed.is_empty()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/product_configurator_helpers.rs",
+        &[
+            "product_options_apply_visual_patches_and_report_active_choices",
+            "product_options_fail_closed_for_unknown_groups_options_and_bad_patches",
+            "product_options_golden_fixture_matches_live_schema_serialization",
+            "tests/assets/stable-contracts/product_options.v1.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "examples/product_configurator.rs",
+        &[
+            "store_product_options",
+            "apply_product_option_json",
+            "product_options_json",
+            "VisualPatchV1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Product configurator helpers",
+            "scena.product_options.v1",
+            "cargo run --example product_configurator --features",
+            "cargo test --test product_configurator_helpers --features scene-host",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene_host/presentation_timeline.rs",
+        &[
+            "PRESENTATION_TIMELINE_SCHEMA_V1",
+            "PresentationTimelineV1",
+            "timeline_patch",
+            "seek_timeline",
+            "advance_timeline",
+            "self.apply_patch(&patch)",
+            "TimelinePatchBuilder",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/presentation_timeline.rs",
+        &[
+            "presentation_timeline_seeks_flattened_visual_patch_deterministically",
+            "presentation_timeline_advance_samples_animation_clip_from_host_tick",
+            "presentation_timeline_golden_fixture_matches_live_schema_serialization",
+            "tests/assets/stable-contracts/presentation_timeline.v1.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/browser/scene_host_browser_proof.js",
+        &[
+            "timelinePatchJson",
+            "seekTimelineJson",
+            "guided_tour_timeline_emits_visual_patch_channels",
+            "guided_tour_timeline_browser_render_nonblank",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Presentation timeline",
+            "scena.presentation_timeline.v1",
+            "cargo test --test presentation_timeline --features",
+            "timelinePatchJson",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene_host/product.rs",
+        &[
+            "SCENE_HOST_GROUNDING_SCHEMA_V1",
+            "SceneHostGroundingReportV1",
+            "apply_product_grounding_preset",
+            "SceneHostGroundingPathV1::FloorReceiver",
+            "SceneHostGroundingPathV1::ScreenSpaceAmbientOcclusion",
+            "ssao_is_ambient_occlusion",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/contact_grounding.rs",
+        &[
+            "product_grounding_preset_renders_visible_receiver_and_reports_non_physical_shadow_scope",
+            "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+            "target/gate-artifacts/contact-grounding/headless-product-grounding.png",
+            "ambient_occlusion_passes > 0",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/browser/scene_host_browser_proof.js",
+        &[
+            "applyProductGroundingPresetJson",
+            "contact_grounding_report_lists_floor_ssao_and_scope_fallback",
+            "contact_grounding_browser_render_nonblank",
+            "contact_grounding_browser_runs_ssao_pass",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Contact grounding preset",
+            "scena.scene_host_grounding.v1",
+            "cargo test --test contact_grounding --features scene-host,inspection",
+            "ssao_is_ambient_occlusion",
         ],
     );
     require_contains(

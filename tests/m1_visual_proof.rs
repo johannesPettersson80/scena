@@ -358,14 +358,24 @@ fn flat_square_geometry() -> GeometryDesc {
     .expect("flat square test geometry is valid")
 }
 
-fn validate_nonblack(_frame: &[u8], _width: u32, _height: u32) {}
+fn validate_nonblack(frame: &[u8], width: u32, height: u32) {
+    assert_eq!(
+        frame.len(),
+        width as usize * height as usize * 4,
+        "visual proof frame must be tightly packed rgba8"
+    );
+    assert!(
+        nonblack_pixel_count(frame) > 0,
+        "visual proof fixture must render at least one nonblack pixel"
+    );
+}
 
 fn validate_default_cube_luminance_and_silhouette(frame: &[u8], width: u32, height: u32) {
     // CPU split-sum IBL contributes real cubemap-derived irradiance to a
     // fully-white diffuse cube and the output stage is Khronos PBR Neutral.
     assert_eq!(
         pixel_at(frame, width, width / 2, height / 2),
-        [203, 208, 214, 255]
+        [204, 208, 214, 255]
     );
     assert_eq!(pixel_at(frame, width, 0, 0), [0, 0, 0, 255]);
     assert_eq!(

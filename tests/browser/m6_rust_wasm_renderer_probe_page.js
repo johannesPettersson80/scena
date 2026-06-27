@@ -10,6 +10,7 @@ import init, {
   m6RenderMaterialVariantProbe,
   m6RenderStateLifecycleProbe,
   m6RenderWorkflowProbe,
+  m6AssetDoctorBrowserProbe,
 } from "/pkg/scena.js";
 
 let initialized = false;
@@ -89,6 +90,109 @@ async function dispatchDrop(viewer) {
   return {
     accepted: await accepted,
     rejected: await rejected,
+  };
+}
+
+function createScenaViewerHostAdapterProofHost() {
+  const queuedEvents = [];
+  const calls = [];
+  let lastDrainedSchema = null;
+  const enqueue = (event) => queuedEvents.push(event);
+  const drain = () => {
+    const batch = {
+      schema: "scena.host_event.v1",
+      events: queuedEvents.splice(0, queuedEvents.length),
+    };
+    lastDrainedSchema = batch.schema;
+    return JSON.stringify(batch);
+  };
+  const nodeHit = (x, y) => ({
+    target: "node",
+    handle: 7,
+    distance: 0.5,
+    world_position: [0, 0, 0],
+    normal: null,
+    x_css_px: x,
+    y_css_px: y,
+  });
+  return {
+    calls,
+    get lastDrainedSchema() {
+      return lastDrainedSchema;
+    },
+    applyPatch(patchJson) {
+      const patch = JSON.parse(patchJson);
+      calls.push({ method: "applyPatch", patch });
+      enqueue({ kind: "selection_changed", previous: null, current: 7 });
+      return JSON.stringify({
+        schema: "scena.visual_patch_result.v1",
+        applied: { visibility: Array.isArray(patch.visibility) ? patch.visibility.length : 0 },
+        failed: [],
+      });
+    },
+    drainEventsJson() {
+      return drain();
+    },
+    capturePng() {
+      calls.push({ method: "capturePng" });
+      enqueue({
+        kind: "capture_ready",
+        capture_schema: "scena.capture.v1",
+        width: 1,
+        height: 1,
+        pixel_format: "rgba8",
+        payload_kind: "png",
+        payload_bytes: 8,
+        payload_fnv1a64: "proof",
+      });
+      return {
+        descriptorJson: JSON.stringify({
+          schema: "scena.capture.v1",
+          width: 1,
+          height: 1,
+          payload: { byte_length: 8 },
+        }),
+        png: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      };
+    },
+    pick(x, y) {
+      calls.push({ method: "pick", x, y });
+      const hit = nodeHit(x, y);
+      enqueue({
+        kind: "pick",
+        x_css_px: x,
+        y_css_px: y,
+        hit,
+        button: "primary",
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      });
+      return 7;
+    },
+    hover(x, y) {
+      calls.push({ method: "hover", x, y });
+      enqueue({
+        kind: "hover",
+        x_css_px: x,
+        y_css_px: y,
+        phase: "entered",
+        hit: nodeHit(x, y),
+      });
+      return 7;
+    },
+    select(x, y) {
+      calls.push({ method: "select", x, y });
+      enqueue({ kind: "selection_changed", previous: null, current: 7 });
+      return 7;
+    },
+    frameAll() {
+      calls.push({ method: "frameAll" });
+    },
+    setCameraJson(cameraJson) {
+      calls.push({ method: "setCameraJson", camera: JSON.parse(cameraJson) });
+    },
+    applyProductStudioVisuals(background) {
+      calls.push({ method: "applyProductStudioVisuals", background });
+    },
   };
 }
 
@@ -281,8 +385,6 @@ window.scenaViewerModelViewerParityProbe =
         scena_pixels_nonblack: render.pixels && render.pixels.nonblack,
         scena_pixel_source: render.pixel_source,
         scena_workflow: render.workflow,
-        scene_api: render.scene_api,
-        assets_api: render.assets_api,
       });
     }
 
@@ -327,9 +429,32 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   annotation.dataset.position = "0 1 0";
   annotation.dataset.normal = "0 0 1";
   annotation.dataset.surface = "bearing";
+  annotation.dataset.priority = "10";
+  annotation.dataset.width = "72";
+  annotation.dataset.height = "24";
   annotation.textContent = "Bearing";
   annotation.style.cssText = "padding:4px 7px;background:#f8fafc;color:#0f172a;font:12px system-ui,sans-serif;border-radius:4px";
   viewer.append(annotation);
+  const clampAnnotation = document.createElement("span");
+  clampAnnotation.slot = "annotation";
+  clampAnnotation.id = "clamped-label";
+  clampAnnotation.dataset.position = "1 0 0";
+  clampAnnotation.dataset.priority = "5";
+  clampAnnotation.dataset.width = "72";
+  clampAnnotation.dataset.height = "24";
+  clampAnnotation.textContent = "Clamp";
+  clampAnnotation.style.cssText = annotation.style.cssText;
+  viewer.append(clampAnnotation);
+  const overlapAnnotation = document.createElement("span");
+  overlapAnnotation.slot = "annotation";
+  overlapAnnotation.id = "overlap-label";
+  overlapAnnotation.dataset.position = "1 0 0";
+  overlapAnnotation.dataset.priority = "1";
+  overlapAnnotation.dataset.width = "72";
+  overlapAnnotation.dataset.height = "24";
+  overlapAnnotation.textContent = "Overlap";
+  overlapAnnotation.style.cssText = annotation.style.cssText;
+  viewer.append(overlapAnnotation);
 
   const ready = once(viewer, "scena-viewer-ready");
   document.body.append(viewer);
@@ -377,11 +502,21 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   viewer.requestAnnotationProjections();
   const annotationRequestDetail = await annotationRequest;
   const annotationsRendered = once(viewer, "scena-viewer-annotations-rendered");
-  viewer.setAnnotationProjections([{ id: "bearing-label", x: 144, y: 72, visible: true }]);
+  viewer.setAnnotationProjections([
+    { id: "bearing-label", x: 144, y: 72, visible: true },
+    { id: "clamped-label", x: -24, y: 260, visible: true },
+    { id: "overlap-label", x: 146, y: 74, visible: true },
+  ]);
   const annotationsRenderedDetail = await annotationsRendered;
   const firstAnnotationTransform = getComputedStyle(annotation).transform;
+  const clampedEntry = annotationsRenderedDetail.layout_report.entries.find((entry) => entry.id === "clamped-label");
+  const overlapEntry = annotationsRenderedDetail.layout_report.entries.find((entry) => entry.id === "overlap-label");
   const annotationsUpdated = once(viewer, "scena-viewer-annotations-rendered");
-  viewer.setAnnotationProjections([{ id: "bearing-label", x: 188, y: 96, visible: true }]);
+  viewer.setAnnotationProjections([
+    { id: "bearing-label", x: 188, y: 96, visible: true },
+    { id: "clamped-label", x: -24, y: 260, visible: true },
+    { id: "overlap-label", x: 190, y: 98, visible: true },
+  ]);
   const annotationsUpdatedDetail = await annotationsUpdated;
   const secondAnnotationTransform = getComputedStyle(annotation).transform;
 
@@ -396,6 +531,56 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   const dropDetail = await dispatchDrop(viewer);
   const dropRender = await renderDroppedFileIntoViewer(viewer, "webgl2", dropDetail);
   await nextFrame();
+
+  const hostDomEvents = [];
+  const hostEventKinds = [];
+  const hostSpecificDetails = {};
+  const recordHostDomEvent = (name, detail) => {
+    hostDomEvents.push(name);
+    if (detail?.kind) {
+      hostEventKinds.push(detail.kind);
+    }
+    hostSpecificDetails[name] = detail;
+  };
+  for (const eventName of [
+    "scena-viewer-host-event",
+    "scena-viewer-pick",
+    "scena-viewer-hover",
+    "scena-viewer-selection-changed",
+    "scena-viewer-capture-ready",
+  ]) {
+    viewer.addEventListener(eventName, (event) => recordHostDomEvent(eventName, event.detail));
+  }
+  const host = createScenaViewerHostAdapterProofHost();
+  const hostBound = once(viewer, "scena-viewer-host-bound");
+  viewer.bindHost(host);
+  const hostBoundDetail = await hostBound;
+  const patchApplied = once(viewer, "scena-viewer-patch-applied");
+  const patchResult = viewer.applyPatch({
+    schema: "scena.visual_patch.v1",
+    visibility: [{ node: 7, visible: true }],
+  });
+  await patchApplied;
+  viewer.frameAll();
+  const lightingApplied = once(viewer, "scena-viewer-lighting-applied");
+  viewer.applyLightingPreset("studio", { background: "studio" });
+  const lightingDetail = await lightingApplied;
+  viewer.setCamera({
+    target: [0, 0, 0],
+    yaw_radians: 0,
+    pitch_radians: 0,
+    distance: 4,
+  });
+  const pickResult = viewer.pickAt(18, 24);
+  const hoverResult = viewer.hoverAt(18, 24);
+  viewer.selectAt(18, 24);
+  const capture = viewer.capturePng();
+  const downloadEvent = once(viewer, "scena-viewer-capture-download");
+  const download = viewer.downloadPng("scena-viewer-proof.png", { click: false });
+  const downloadDetail = await downloadEvent;
+  const frameCall = host.calls.find((call) => call.method === "frameAll");
+  const cameraCall = host.calls.find((call) => call.method === "setCameraJson");
+  const lightingCall = host.calls.find((call) => call.method === "applyProductStudioVisuals");
 
   const checks = {
     defined,
@@ -421,9 +606,12 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     annotation_count: annotationRequestDetail.anchors.length,
     annotation_visible: annotationsRenderedDetail.visible,
     annotation_update_visible: annotationsUpdatedDetail.visible,
+    annotation_layout_entries: annotationsRenderedDetail.layout_report.entries.length,
+    annotation_clamped_visible: Boolean(clampedEntry && clampedEntry.visible && clampedEntry.x === 0 && clampedEntry.y < clampedEntry.original_y),
+    annotation_overlap_hidden: Boolean(overlapEntry && overlapEntry.visible === false && overlapEntry.hidden_reason === "overlap"),
     annotation_tracking_sequence: [firstAnnotationTransform, secondAnnotationTransform],
     annotation_transform: secondAnnotationTransform,
-    inspector_overlay: inspectorDetail.overlay,
+    inspector_status: inspectorDetail.status,
     inspector_warnings: inspectorDetail.warnings,
     inspector_fixture_schema: inspectorSnapshot.schema,
     inspector_fixture_source: inspectorSnapshot.source,
@@ -441,6 +629,22 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     drop_render_auto_frame_inside_viewport: dropRender.metadata.auto_frame.inside_viewport,
     drop_render_auto_frame_centered: dropRender.metadata.auto_frame.centered,
     drop_render_auto_frame_fill_fraction: dropRender.metadata.auto_frame.fill_fraction,
+    host_adapter_bound: hostBoundDetail.bound,
+    visual_patch_applied_visibility: patchResult.applied.visibility,
+    host_event_schema: host.lastDrainedSchema,
+    host_event_kinds: [...new Set(hostEventKinds)],
+    host_dom_events: [...new Set(hostDomEvents)],
+    host_event_pick_detail_handle: hostSpecificDetails["scena-viewer-pick"]?.hit?.handle,
+    host_event_hover_detail_handle: hostSpecificDetails["scena-viewer-hover"]?.hit?.handle,
+    host_event_selection_current: hostSpecificDetails["scena-viewer-selection-changed"]?.current,
+    capture_png_bytes: capture.png.length,
+    download_file_name: downloadDetail.filename || download.filename,
+    download_bytes: downloadDetail.bytes || download.bytes,
+    lighting_preset_background: lightingDetail.background || lightingCall?.background,
+    frame_method: frameCall?.method,
+    camera_method: cameraCall?.method,
+    pick_result_handle: pickResult.handle,
+    hover_result_handle: hoverResult.handle,
   };
 
   const passed =
@@ -472,14 +676,17 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.variant_render_active === "noon" &&
     checks.variant_render_green_dominant === true &&
     checks.variant_render_pixels_nonblack > 0 &&
-    checks.annotation_count === 1 &&
-    checks.annotation_visible === 1 &&
-    checks.annotation_update_visible === 1 &&
+    checks.annotation_count === 3 &&
+    checks.annotation_visible === 2 &&
+    checks.annotation_update_visible === 2 &&
+    checks.annotation_layout_entries === 3 &&
+    checks.annotation_clamped_visible === true &&
+    checks.annotation_overlap_hidden === true &&
     Array.isArray(checks.annotation_tracking_sequence) &&
     checks.annotation_tracking_sequence.length === 2 &&
     checks.annotation_tracking_sequence[0] !== checks.annotation_tracking_sequence[1] &&
     checks.annotation_transform !== "none" &&
-    checks.inspector_overlay === "Diagnostics" &&
+    checks.inspector_status.includes("1 warning") &&
     checks.inspector_warnings === 1 &&
     checks.keyboard_action === "orbit-left" &&
     checks.drop_accepted_names.includes("accepted-machine.glb") &&
@@ -633,8 +840,9 @@ window.scenaViewerMobileA11yProbe = async function scenaViewerMobileA11yProbe() 
 
 function createCanvas(backend, workflow = "triangle") {
   const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
+  const squareProofSize = workflow === "pbr-material-presets" ? 96 : 64;
+  canvas.width = squareProofSize;
+  canvas.height = squareProofSize;
   canvas.dataset.backend = backend;
   canvas.dataset.workflow = workflow;
   document.body.appendChild(canvas);
@@ -675,17 +883,164 @@ function summarizePixels(width, height, pixels) {
   };
 }
 
-function readWebGl2Pixels(canvas) {
+function summarizePixelBuffer(buffer) {
+  return buffer ? summarizePixels(buffer.width, buffer.height, buffer.pixels) : null;
+}
+
+function rendererReadbackPixelBuffer(result) {
+  const readback = result && result.renderer_readback;
+  if (
+    !readback ||
+    !Number.isFinite(readback.width) ||
+    !Number.isFinite(readback.height) ||
+    typeof readback.rgba8_base64 !== "string"
+  ) {
+    return null;
+  }
+  const binary = atob(readback.rgba8_base64);
+  const pixels = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    pixels[index] = binary.charCodeAt(index);
+  }
+  return { width: readback.width, height: readback.height, pixels };
+}
+
+function samplePixelBuffer(buffer, xNorm, yNorm) {
+  if (!buffer) {
+    return null;
+  }
+  const x = Math.max(0, Math.min(buffer.width - 1, Math.floor(xNorm * buffer.width)));
+  const y = Math.max(0, Math.min(buffer.height - 1, Math.floor(yNorm * buffer.height)));
+  const offset = (y * buffer.width + x) * 4;
+  return Array.from(buffer.pixels.slice(offset, offset + 4));
+}
+
+function pixelLuma(pixel) {
+  if (!pixel || pixel.length < 3) {
+    return null;
+  }
+  return 0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2];
+}
+
+function samplePixelNeighborhood(buffer, xNorm, yNorm, radius = 2) {
+  if (!buffer) {
+    return null;
+  }
+  const centerX = Math.max(0, Math.min(buffer.width - 1, Math.floor(xNorm * buffer.width)));
+  const centerY = Math.max(0, Math.min(buffer.height - 1, Math.floor(yNorm * buffer.height)));
+  let minimumLuma = Number.POSITIVE_INFINITY;
+  let maximumLuma = Number.NEGATIVE_INFINITY;
+  let sumLuma = 0;
+  let samples = 0;
+  for (let y = Math.max(0, centerY - radius); y <= Math.min(buffer.height - 1, centerY + radius); y += 1) {
+    for (let x = Math.max(0, centerX - radius); x <= Math.min(buffer.width - 1, centerX + radius); x += 1) {
+      const offset = (y * buffer.width + x) * 4;
+      const luma = pixelLuma(buffer.pixels.slice(offset, offset + 4));
+      if (!Number.isFinite(luma)) {
+        continue;
+      }
+      minimumLuma = Math.min(minimumLuma, luma);
+      maximumLuma = Math.max(maximumLuma, luma);
+      sumLuma += luma;
+      samples += 1;
+    }
+  }
+  if (samples === 0) {
+    return null;
+  }
+  return {
+    center_x: centerX,
+    center_y: centerY,
+    radius,
+    samples,
+    min_luma: minimumLuma,
+    max_luma: maximumLuma,
+    mean_luma: sumLuma / samples,
+  };
+}
+
+function materialPresetGlassPixelProof(metadata, buffer) {
+  const probes = Array.isArray(metadata && metadata.glass_pixel_probes)
+    ? metadata.glass_pixel_probes
+    : [];
+  if (!buffer || probes.length === 0) {
+    return {
+      status: "failed",
+      reason: "material preset glass proof has no projected browser pixel probes",
+      probes: [],
+      preset_contrasts: [],
+    };
+  }
+  const measured = probes.map((probe) => {
+    const pixel = samplePixelBuffer(buffer, probe.x_norm, probe.y_norm);
+    const neighborhood = samplePixelNeighborhood(buffer, probe.x_norm, probe.y_norm);
+    return {
+      preset: probe.preset,
+      bar_index: probe.bar_index,
+      expected: probe.expected,
+      x_norm: probe.x_norm,
+      y_norm: probe.y_norm,
+      pixel,
+      luma: pixelLuma(pixel),
+      neighborhood,
+    };
+  });
+  const byPreset = new Map();
+  for (const probe of measured) {
+    if (!byPreset.has(probe.preset)) {
+      byPreset.set(probe.preset, { bright: [], dark: [] });
+    }
+    const bucket = byPreset.get(probe.preset);
+    if (probe.expected === "bright" && probe.neighborhood) {
+      bucket.bright.push(probe.neighborhood.max_luma);
+    } else if (probe.expected === "dark" && probe.neighborhood) {
+      bucket.dark.push(probe.neighborhood.min_luma);
+    }
+  }
+  const presetContrasts = [];
+  for (const [preset, bucket] of byPreset.entries()) {
+    const bright = bucket.bright.length
+      ? Math.max(...bucket.bright)
+      : null;
+    const dark = bucket.dark.length
+      ? Math.min(...bucket.dark)
+      : null;
+    const contrast = Number.isFinite(bright) && Number.isFinite(dark) ? bright - dark : null;
+    presetContrasts.push({
+      preset,
+      bright_luma: bright,
+      dark_luma: dark,
+      contrast,
+      passed: Number.isFinite(contrast) && contrast >= 10,
+    });
+  }
+  const passed =
+    presetContrasts.length >= 2 &&
+    presetContrasts.every((entry) => entry.passed === true);
+  return {
+    status: passed ? "passed" : "failed",
+    proof_class: "browser-glass-pixel-probes",
+    min_contrast: presetContrasts.reduce(
+      (minimum, entry) =>
+        Number.isFinite(entry.contrast) ? Math.min(minimum, entry.contrast) : minimum,
+      Number.POSITIVE_INFINITY,
+    ),
+    probes: measured,
+    preset_contrasts: presetContrasts,
+  };
+}
+
+function readWebGl2PixelBuffer(canvas) {
   const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
   if (!gl) {
     return null;
   }
   const pixels = new Uint8Array(canvas.width * canvas.height * 4);
   gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  return summarizePixels(canvas.width, canvas.height, pixels);
+  return { width: canvas.width, height: canvas.height, pixels };
 }
 
-function readCanvasPixels(canvas) {
+function readCanvasPixelBuffer(canvas) {
   const copy = document.createElement("canvas");
   copy.width = canvas.width;
   copy.height = canvas.height;
@@ -694,11 +1049,26 @@ function readCanvasPixels(canvas) {
     return null;
   }
   context.drawImage(canvas, 0, 0);
-  return summarizePixels(
-    copy.width,
-    copy.height,
-    context.getImageData(0, 0, copy.width, copy.height).data,
-  );
+  return {
+    width: copy.width,
+    height: copy.height,
+    pixels: context.getImageData(0, 0, copy.width, copy.height).data,
+  };
+}
+
+function readRenderedPixelBuffer(backend, canvas) {
+  if (backend === "webgl2") {
+    return readWebGl2PixelBuffer(canvas) || readCanvasPixelBuffer(canvas);
+  }
+  return readCanvasPixelBuffer(canvas);
+}
+
+function readWebGl2Pixels(canvas) {
+  return summarizePixelBuffer(readWebGl2PixelBuffer(canvas));
+}
+
+function readCanvasPixels(canvas) {
+  return summarizePixelBuffer(readCanvasPixelBuffer(canvas));
 }
 
 function readRenderedPixels(backend, canvas) {
@@ -772,6 +1142,12 @@ async function runProbe(backend, workflow, render) {
   result.pixels = pixelStatistics;
   result.pixel_source = useRendererReadback ? "renderer-owned-gpu-copy" : "canvas-readback";
   result.pixel_readback_attempts = readback.attempts;
+  if (workflow === "pbr-material-presets") {
+    result.material_preset_glass_pixels = materialPresetGlassPixelProof(
+      result.metadata || {},
+      rendererReadbackPixelBuffer(result) || readRenderedPixelBuffer(backend, canvas),
+    );
+  }
   result.canvas_data_url = canvas.toDataURL("image/png");
   result.screenshot_metadata = {
     backend,
@@ -814,6 +1190,41 @@ window.scenaM6RustWasmWorkflowProbe = async function scenaM6RustWasmWorkflowProb
   return runProbe(backend, workflow, (canvas) =>
     m6RenderWorkflowProbe(canvas, backend, workflow),
   );
+};
+
+window.scenaAssetDoctorBrowserProbe = async function scenaAssetDoctorBrowserProbe() {
+  await ensureInit();
+  const raw = await m6AssetDoctorBrowserProbe(
+    "/fixtures/gltf/unsupported_required_extension.gltf",
+  );
+  const result = JSON.parse(raw);
+  const finding =
+    result.doctor &&
+    Array.isArray(result.doctor.findings) &&
+    result.doctor.findings.find((entry) => entry.code === "unsupported_required_extension");
+  const section = document.createElement("section");
+  section.dataset.proof = "asset-doctor-browser";
+  section.style.cssText =
+    "box-sizing:border-box;width:560px;padding:16px;background:#101820;color:#f3f4f6;font:13px system-ui,sans-serif";
+  const title = document.createElement("strong");
+  title.textContent = "Asset doctor";
+  const code = document.createElement("p");
+  code.dataset.field = "code";
+  code.textContent = finding ? finding.code : "missing-finding";
+  const message = document.createElement("p");
+  message.dataset.field = "message";
+  message.textContent = finding ? finding.message : "no message";
+  const fix = document.createElement("p");
+  fix.dataset.field = "fix";
+  fix.textContent = finding ? finding.suggested_fix : "no fix";
+  section.append(title, code, message, fix);
+  document.body.append(section);
+  return {
+    ...result,
+    displayed_code: code.textContent === "unsupported_required_extension",
+    displayed_fix: fix.textContent,
+    screenshot_selector: "section[data-proof=\"asset-doctor-browser\"]",
+  };
 };
 
 window.scenaM6DisplayP3OutputProbe = async function scenaM6DisplayP3OutputProbe(backend) {

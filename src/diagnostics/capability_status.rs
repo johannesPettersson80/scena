@@ -23,9 +23,25 @@ pub(in crate::diagnostics) const fn forward_pbr_status(
 }
 
 pub(in crate::diagnostics) const fn directional_shadow_status(
-    _backend: Backend,
+    backend: Backend,
+    gpu_device: bool,
 ) -> CapabilityStatus {
-    CapabilityStatus::Degraded
+    match (backend, gpu_device) {
+        (
+            Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2,
+            true,
+        ) => CapabilityStatus::Supported,
+        (
+            Backend::Headless
+            | Backend::HeadlessGpu
+            | Backend::SurfaceDescriptor
+            | Backend::NativeSurface
+            | Backend::WebGpu
+            | Backend::WebGl2,
+            false,
+        )
+        | (Backend::Headless | Backend::SurfaceDescriptor, true) => CapabilityStatus::Degraded,
+    }
 }
 
 pub(in crate::diagnostics) const fn punctual_shadow_status(_backend: Backend) -> CapabilityStatus {
@@ -203,8 +219,8 @@ pub(in crate::diagnostics) const fn default_clipping_planes(backend: Backend) ->
 
 pub(in crate::diagnostics) const fn max_clipping_planes(backend: Backend) -> u8 {
     match backend {
-        Backend::WebGl2 => 8,
-        Backend::Headless
+        Backend::WebGl2
+        | Backend::Headless
         | Backend::HeadlessGpu
         | Backend::SurfaceDescriptor
         | Backend::NativeSurface

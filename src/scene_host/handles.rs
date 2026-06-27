@@ -139,6 +139,14 @@ impl<T> HandleTable<T> {
     pub(super) fn values(&self) -> impl Iterator<Item = &T> {
         self.slots.iter().filter_map(|slot| slot.value.as_ref())
     }
+
+    pub(super) fn entries(&self) -> impl Iterator<Item = (u64, &T)> {
+        self.slots.iter().enumerate().filter_map(|(index, slot)| {
+            slot.value
+                .as_ref()
+                .map(|value| (encode_handle(index, slot.generation), value))
+        })
+    }
 }
 
 fn encode_handle(index: usize, generation: u32) -> u64 {

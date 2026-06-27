@@ -26,11 +26,16 @@ fn log_texture_step(path: &AssetPath, label: &str, start_ms: f64) -> f64 {
     now
 }
 
+#[path = "texture_image_decode.rs"]
+mod texture_image_decode;
 #[path = "texture_ktx2.rs"]
 mod texture_ktx2;
+#[path = "texture_limits.rs"]
+mod texture_limits;
 #[path = "texture_source.rs"]
 mod texture_source;
 
+use texture_image_decode::{decode_jpeg_rgba8, decode_png_rgba8};
 use texture_ktx2::decode_ktx2_basisu_rgba8;
 #[cfg(all(
     feature = "ktx2",
@@ -516,35 +521,4 @@ fn decode_texture_pixels(
         log_texture_step(path, "decode_texture_pixels total", total_start);
     }
     pixels
-}
-
-fn decode_png_rgba8(path: &AssetPath, bytes: &[u8]) -> Result<TexturePixels, AssetError> {
-    decode_via_image_crate(path, bytes, image::ImageFormat::Png)
-}
-
-fn decode_jpeg_rgba8(path: &AssetPath, bytes: &[u8]) -> Result<TexturePixels, AssetError> {
-    decode_via_image_crate(path, bytes, image::ImageFormat::Jpeg)
-}
-
-/// Stage B2: delegate PNG/JPEG decode to the `image` crate. `image` wraps
-/// the same `png` and `jpeg-decoder` crates scena previously used directly,
-/// but its unified `DynamicImage::into_rgba8` handles every color-type
-/// expansion (RGB→RGBA, Grayscale→RGBA, Grayscale+Alpha→RGBA, 16-bit→8-bit,
-/// CMYK→RGBA) without us re-implementing each path by hand. Removes the
-/// hand-rolled `cmyk_to_rgba8` + 4 color-type match arms that previously
-/// lived here.
-fn decode_via_image_crate(
-    path: &AssetPath,
-    bytes: &[u8],
-    format: image::ImageFormat,
-) -> Result<TexturePixels, AssetError> {
-    let image =
-        image::load_from_memory_with_format(bytes, format).map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("invalid texture payload: {error}"),
-        })?;
-    let rgba = image.into_rgba8();
-    let width = rgba.width();
-    let height = rgba.height();
-    Ok(TexturePixels::single_level(width, height, rgba.into_raw()))
 }

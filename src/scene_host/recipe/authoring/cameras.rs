@@ -1,0 +1,272 @@
+use std::collections::BTreeMap;
+
+use super::common::DiagnosticPathExt;
+use super::transform::{TransformResolutionInput, transform_from_recipe};
+use crate::assets::DefaultAssetFetcher;
+use crate::scene::recipe::{
+    SceneRecipeBuildTargetV1, SceneRecipeCameraFramingV1, SceneRecipeCameraV1,
+    SceneRecipeDiagnosticV1,
+};
+use crate::scene_host::SceneHostCore;
+use crate::scene_host::camera::controls_from_scene_camera;
+use crate::{Aabb, FramingOptions, NodeKey, OrbitControls, PerspectiveCamera, Vec3};
+
+use super::super::{error_diagnostic, scene_host_error_diagnostic};
+
+pub(in crate::scene_host::recipe) fn build_authored_cameras(
+    host: &mut SceneHostCore<DefaultAssetFetcher>,
+    recipes: &[SceneRecipeCameraV1],
+    node_keys: &BTreeMap<String, NodeKey>,
+    manifest: &mut Vec<SceneRecipeBuildTargetV1>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let root = host.scene.root();
+    let root_handle = host.root_handle();
+    for (index, recipe) in recipes.iter().enumerate() {
+        let path = format!("$.cameras[{index}]");
+        if recipe.kind != "perspective" {
+            diagnostics.push(error_diagnostic(
+                &path,
+                "unsupported_feature",
+                format!(
+                    "camera kind '{}' is not implemented in this slice",
+                    recipe.kind
+                ),
+                "use kind:\"perspective\"",
+            ));
+            continue;
+        }
+        if matches!(
+            recipe
+                .framing
+                .as_ref()
+                .and_then(|framing| framing.mode.as_deref()),
+            Some("default_for_bounds")
+        ) {
+            let Some(bounds) = scene_bounds_for_camera(host, &path, diagnostics) else {
+                continue;
+            };
+            let viewport = host.viewport.physical_size();
+            let camera_key = match host
+                .scene
+                .add_perspective_camera_default_for(bounds, (viewport.width, viewport.height))
+            {
+                Ok(camera) => camera,
+                Err(error) => {
+                    diagnostics.push(error_diagnostic(
+                        &path,
+                        "camera_framing_failed",
+                        format!(
+                            "failed to create default framed camera '{}': {error}",
+                            recipe.id
+                        ),
+                        "check the declared renderable bounds and camera framing options",
+                    ));
+                    continue;
+                }
+            };
+            host.active_camera = camera_key;
+            if let Some(camera_node) = host.scene.camera_node(camera_key) {
+                let handle = host.register_node(camera_node);
+                match controls_from_scene_camera(&host.scene, host.active_camera, bounds.center()) {
+                    Ok(controls) => host.camera_controls = controls,
+                    Err(error) => diagnostics.push(scene_host_error_diagnostic(
+                        &path,
+                        "camera_controls_failed",
+                        error,
+                    )),
+                }
+                manifest.push(SceneRecipeBuildTargetV1 {
+                    id: recipe.id.clone(),
+                    handle,
+                    kind: "camera".to_owned(),
+                    parent: Some(root_handle),
+                    name: None,
+                    active: Some(true),
+                });
+            } else {
+                diagnostics.push(error_diagnostic(
+                    &path,
+                    "camera_create_failed",
+                    format!("camera '{}' did not create a scene node", recipe.id),
+                    "report this as a scena bug",
+                ));
+            }
+            continue;
+        }
+        let camera = match camera_from_recipe(recipe, &path, diagnostics) {
+            Some(camera) => {
+                camera.with_aspect(host.viewport.logical_width() / host.viewport.logical_height())
+            }
+            None => continue,
+        };
+        let empty_imports = BTreeMap::new();
+        let transform = match transform_from_recipe(
+            recipe.transform.as_ref(),
+            TransformResolutionInput {
+                node_keys,
+                imports: &empty_imports,
+                parent: Some(root),
+                current_bounds: None,
+            },
+            host,
+        ) {
+            Ok(transform) => transform,
+            Err(diagnostic) => {
+                diagnostics.push((*diagnostic).with_path(format!("{path}.transform")));
+                continue;
+            }
+        };
+        let camera_key = match host.scene.add_perspective_camera(root, camera, transform) {
+            Ok(camera) => camera,
+            Err(error) => {
+                diagnostics.push(error_diagnostic(
+                    &path,
+                    "camera_create_failed",
+                    format!("failed to create camera '{}': {error}", recipe.id),
+                    "check the camera transform and kind",
+                ));
+                continue;
+            }
+        };
+        let Some(camera_node) = host.scene.camera_node(camera_key) else {
+            diagnostics.push(error_diagnostic(
+                &path,
+                "camera_create_failed",
+                format!("camera '{}' did not create a scene node", recipe.id),
+                "report this as a scena bug",
+            ));
+            continue;
+        };
+        let handle = host.register_node(camera_node);
+        let framed_controls = if let Some(framing) = &recipe.framing {
+            let Some(bounds) = scene_bounds_for_camera(host, &path, diagnostics) else {
+                continue;
+            };
+            let viewport = host.viewport.physical_size();
+            let options = framing_options_from_recipe(framing, viewport.width, viewport.height);
+            match host.scene.frame_bounds(camera_key, bounds, options) {
+                Ok(framing) => Some(OrbitControls::from_framing(framing)),
+                Err(error) => {
+                    diagnostics.push(error_diagnostic(
+                        &path,
+                        "camera_framing_failed",
+                        format!("failed to frame camera '{}': {error}", recipe.id),
+                        "check the declared renderable bounds and camera framing options",
+                    ));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        if recipe.active {
+            if let Err(error) = host.scene.set_active_camera(camera_key) {
+                diagnostics.push(error_diagnostic(
+                    &path,
+                    "camera_activate_failed",
+                    format!("failed to activate camera '{}': {error}", recipe.id),
+                    "check the camera handle",
+                ));
+            } else {
+                host.active_camera = camera_key;
+                if let Some(controls) = framed_controls {
+                    host.camera_controls = controls;
+                } else {
+                    match controls_from_scene_camera(&host.scene, host.active_camera, Vec3::ZERO) {
+                        Ok(controls) => host.camera_controls = controls,
+                        Err(error) => diagnostics.push(scene_host_error_diagnostic(
+                            &path,
+                            "camera_controls_failed",
+                            error,
+                        )),
+                    }
+                }
+            }
+        }
+        manifest.push(SceneRecipeBuildTargetV1 {
+            id: recipe.id.clone(),
+            handle,
+            kind: "camera".to_owned(),
+            parent: Some(root_handle),
+            name: None,
+            active: Some(recipe.active),
+        });
+    }
+}
+
+fn camera_from_recipe(
+    recipe: &SceneRecipeCameraV1,
+    path: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<PerspectiveCamera> {
+    if let Some(lens) = recipe.lens.as_deref() {
+        return match PerspectiveCamera::from_lens_preset_name(lens) {
+            Some(camera) => Some(camera),
+            None => {
+                diagnostics.push(error_diagnostic(
+                    format!("{path}.lens"),
+                    "invalid_camera_lens",
+                    format!("camera lens preset '{lens}' is not supported"),
+                    format!(
+                        "use one of: {}",
+                        PerspectiveCamera::LENS_PRESET_NAMES.join(", ")
+                    ),
+                ));
+                None
+            }
+        };
+    }
+    Some(PerspectiveCamera::default().with_fov_degrees(recipe.fov_degrees.unwrap_or(60.0) as f32))
+}
+
+fn framing_options_from_recipe(
+    framing: &SceneRecipeCameraFramingV1,
+    width: u32,
+    height: u32,
+) -> FramingOptions {
+    let mut options = framing
+        .preset
+        .as_deref()
+        .and_then(FramingOptions::from_preset_name)
+        .unwrap_or_default()
+        .viewport(width, height);
+    if let Some(fill) = framing.fill {
+        options = options.fill(fill as f32);
+    }
+    if let Some(margin_px) = framing.margin_px {
+        options = options.margin_px(margin_px as f32);
+    }
+    options
+}
+
+fn scene_bounds_for_camera(
+    host: &SceneHostCore<DefaultAssetFetcher>,
+    path: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<Aabb> {
+    match host
+        .scene
+        .node_world_bounds(host.scene.root(), &host.assets)
+    {
+        Ok(Some(bounds)) => Some(bounds),
+        Ok(None) => {
+            diagnostics.push(error_diagnostic(
+                format!("{path}.framing"),
+                "camera_framing_failed",
+                "camera framing requires at least one declared renderable with bounds",
+                "add a node/import/instance before using camera.framing",
+            ));
+            None
+        }
+        Err(error) => {
+            diagnostics.push(error_diagnostic(
+                format!("{path}.framing"),
+                "camera_framing_failed",
+                format!("failed to compute scene bounds for camera framing: {error}"),
+                "check that declared renderables have valid finite bounds",
+            ));
+            None
+        }
+    }
+}

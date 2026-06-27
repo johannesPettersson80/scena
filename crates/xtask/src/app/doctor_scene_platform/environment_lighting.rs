@@ -157,9 +157,9 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         &[
             "pub(in crate::render) struct PreparedEnvironmentStats",
             "cubemaps: 1",
-            "prefilter_passes: u64::from(environment.prefilter_sidecar_identity().is_none())",
+            "!environment.has_prefilter_sidecar_profile(sidecar_profile)",
             "brdf_luts: 1",
-            "environment.cubemap_faces().is_some()",
+            "environment.has_cubemap_face_source()",
         ],
     );
     require_contains(
@@ -168,7 +168,8 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         "ARCH-ENV-IBL-PREP",
         "src/render/prepare_lifecycle.rs",
         &[
-            "prepare::collect_environment_prepare_stats(environment_desc.as_ref())",
+            "prepare::collect_environment_prepare_stats(",
+            "self.target.backend",
             "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
             "self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes",
             "self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts",
@@ -201,11 +202,14 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
             // switches to a real `texture_cube<f32>` mip-roughness sample
             // composed with `prefiltered * (F0 * lut.x + lut.y)`.
             "environment.cubemap_faces()",
+            "warn_environment_sidecar_profile_mismatch",
+            "profile_mismatched_sidecar_preserves_specular_reflection_contrast",
             "environment.preview_irradiance_rgb()",
             "build_face_pixels_rgba32f",
             "PreparedEnvironmentCubemap",
-            "prefilter_specular_cubemap_mips",
-            "build_brdf_lut",
+            "bake_environment_ibl",
+            "EnvironmentIblBakeRequest",
+            "prefilter_lod_for_roughness",
             "PREFILTER_MIP_COUNT",
             "BRDF_LUT_SIZE",
             "gpu_diffuse_intensity",
@@ -218,16 +222,116 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         root,
         findings,
         "ARCH-ENV-IBL-PREP",
-        "src/render/prepare/environment_prefilter.rs",
+        "tests/m8_hdr_rle.rs",
         &[
-            "pub(in crate::render) fn prefilter_specular_cubemap_mips",
-            "pub(in crate::render) fn build_brdf_lut",
+            "profile_mismatched_sidecar_renders_structured_chrome_not_flat",
+            "environment_prefilter_passes",
+            "range >= 80.0 && gradient >= 0.8",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/assets/environment_sidecar.rs",
+        &[
+            "SCENA_ENV_PF_V2",
+            "const SIDECAR_VERSION: u32 = 2",
+            "legacy_v1_sidecar_is_rejected_after_khronos_baker_change",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare.rs",
+        &["mod environment_baker;"],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare.rs",
+        &["mod environment_prefilter;"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare/environment_baker.rs",
+        &[
+            "Rust-owned image-based-lighting baker",
+            "Khronos glTF IBL Sampler filtered",
+            "pub(in crate::render) struct EnvironmentIblBakeRequest",
+            "pub(in crate::render) struct BakedEnvironmentIbl",
+            "pub(in crate::render) fn bake_environment_ibl",
+            "fn prefilter_specular_cubemap_mips",
+            "prefilter_roughness_for_mip",
+            "prefilter_lod_for_roughness",
+            "fn build_brdf_lut",
             "fn integrate_ggx_specular",
+            "fn source_mip_level_for_sample",
+            "ggx_prefilter_suppresses_tiny_hdr_firefly_outliers",
+            "bake_environment_ibl_owns_specular_mips_and_brdf_lut_product",
+            "prefilter_roughness_lod_mapping_is_shared_and_low_roughness_concentrated",
+            "source_mip_lod_matches_khronos_filtered_importance_sampling_formula",
             "fn integrate_brdf_lut_cell",
+            "ggx_visibility_correlated",
             "fn importance_sample_ggx_local",
             "fn hammersley_2d",
             "fn radical_inverse_van_der_corput",
-            "fn geometry_smith_ggx",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/pbr_brdf.rs",
+        &[
+            "KhronosGroup/glTF-Sample-Renderer commit",
+            "pub(in crate::render) fn ggx_visibility_correlated",
+            "pub(in crate::render) fn brdf_specular_ggx",
+            "pub(in crate::render) fn split_sum_brdf_approx",
+            "khronos_correlated_ggx_reference_probes_match_bec106e",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "tests/pbr_brdf_parity.rs",
+        &[
+            "scena.core_pbr_brdf_parity_sweep.v1",
+            "core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep",
+            "render_scene_cpu_gpu_pair_with_renderer",
+            "dielectric-glossy",
+            "metal-glossy",
+            "metallic must visibly change direct-PBR output",
+            "pbr-brdf-parity.json",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare/environment_baker.rs",
+        &[
+            "pub(in crate::render) fn prefilter_specular_cubemap_mips",
+            "pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality",
+            "pub(in crate::render) fn build_brdf_lut",
+            "pub(in crate::render) fn build_brdf_lut_with_sample_count",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare/environment_baker/source_mips.rs",
+        &[
+            "sample_source_cubemap_lod",
+            "build_source_cubemap_mip_chain",
+            "source_mip_resolution",
+            "direction_to_face_uv_round_trips_face_centers",
         ],
     );
     require_contains(
@@ -264,8 +368,15 @@ pub(crate) fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Findin
             "DirectionalLight,",
             "LightBuilder,",
             "StudioLightingHandles",
-            "NodeKind::Light",
+            "Light(LightKey)",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-LIGHTS",
+        "src/scene/lights.rs",
+        &["NodeKind::Light"],
     );
     require_contains(
         root,
@@ -319,7 +430,7 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
         root,
         findings,
         "ARCH-DIRECT-LIGHT-SHADING",
-        "src/scene.rs",
+        "src/scene/render_nodes.rs",
         &[
             "impl Iterator<Item = (NodeKey, LightKey, Light, Transform)>",
             "self.world_transform(node_key)",

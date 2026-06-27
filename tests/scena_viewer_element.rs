@@ -1,10 +1,11 @@
 use scena::{
-    AssetLoadProgress, AssetPath, DebugOverlay, Diagnostic, DiagnosticCode, DiagnosticSeverity,
-    RendererStats, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
-    ScenaViewerAnnotationError, ScenaViewerAttributes, ScenaViewerDropDecision,
+    AssetLoadProgress, AssetPath, Diagnostic, DiagnosticCode, DiagnosticSeverity, RendererStats,
+    SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
+    ScenaViewerAnnotationError, ScenaViewerAnnotationLayoutInput,
+    ScenaViewerAnnotationLayoutOptions, ScenaViewerAttributes, ScenaViewerDropDecision,
     ScenaViewerDropKind, ScenaViewerGestureAction, ScenaViewerInspectorSnapshot,
     ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
-    ScenaViewerVariantSelection, Tonemapper,
+    ScenaViewerVariantSelection, Tonemapper, ViewerProfile, layout_scena_viewer_annotations,
 };
 
 #[test]
@@ -12,6 +13,7 @@ fn scena_viewer_attributes_parse_model_viewer_style_surface() {
     let attrs = ScenaViewerAttributes::from_pairs([
         ("src", "machine.glb"),
         ("environment", "studio"),
+        ("profile", "product"),
         ("tone-mapping", "neutral"),
         ("camera-controls", ""),
         ("auto-rotate", "true"),
@@ -19,12 +21,25 @@ fn scena_viewer_attributes_parse_model_viewer_style_surface() {
     ]);
 
     assert_eq!(SCENA_VIEWER_TAG, "scena-viewer");
+    assert!(ViewerProfile::names().contains(&"product"));
     assert_eq!(attrs.src(), Some("machine.glb"));
     assert_eq!(attrs.environment(), Some("studio"));
+    assert_eq!(attrs.profile(), Some("product"));
     assert_eq!(attrs.tonemapper(), Tonemapper::PbrNeutral);
     assert!(attrs.camera_controls());
     assert!(attrs.auto_rotate());
     assert!(!attrs.ar());
+}
+
+#[test]
+fn scena_viewer_profile_attribute_uses_native_viewer_profile_names() {
+    for name in ViewerProfile::names() {
+        let attrs = ScenaViewerAttributes::from_pairs([("profile", *name)]);
+        assert_eq!(attrs.profile(), Some(*name));
+    }
+
+    let invalid = ScenaViewerAttributes::from_pairs([("profile", "viewer_only_browser_name")]);
+    assert_eq!(invalid.profile(), None);
 }
 
 #[test]
@@ -188,13 +203,8 @@ fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
         ..RendererStats::default()
     };
 
-    let snapshot = ScenaViewerInspectorSnapshot::from_renderer_state(
-        DebugOverlay::BoundingBoxes,
-        &diagnostics,
-        stats,
-    );
+    let snapshot = ScenaViewerInspectorSnapshot::from_renderer_state(&diagnostics, stats);
 
-    assert_eq!(snapshot.overlay(), DebugOverlay::BoundingBoxes);
     assert_eq!(snapshot.diagnostics().len(), 2);
     assert_eq!(
         snapshot.diagnostics()[0].severity(),
@@ -209,7 +219,7 @@ fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
     assert!(snapshot.has_errors());
     assert_eq!(
         snapshot.status_text(),
-        "BoundingBoxes overlay; 1 error, 1 warning; 7 draws; 42 triangles at 320x180"
+        "1 error, 1 warning; 7 draws; 42 triangles at 320x180"
     );
 }
 
@@ -250,5 +260,61 @@ fn scena_viewer_annotation_anchor_parses_dataset_position_normal_and_surface() {
             field: "data-position",
             value: "1 2 nope".to_string(),
         }
+    );
+}
+
+#[test]
+fn scena_viewer_annotation_layout_clamps_hides_and_declutters_deterministically() {
+    let options = ScenaViewerAnnotationLayoutOptions::new(100.0, 60.0)
+        .with_viewport_clamping(true)
+        .with_overlap_avoidance(true)
+        .with_occlusion_hiding(true);
+    let report = layout_scena_viewer_annotations(
+        [
+            ScenaViewerAnnotationLayoutInput::new("primary", 10.0, 10.0, 30.0, 12.0)
+                .with_priority(10),
+            ScenaViewerAnnotationLayoutInput::new("overlap", 14.0, 12.0, 30.0, 12.0)
+                .with_priority(1),
+            ScenaViewerAnnotationLayoutInput::new("offscreen", -8.0, 70.0, 20.0, 12.0),
+            ScenaViewerAnnotationLayoutInput::new("behind", 50.0, 20.0, 18.0, 10.0)
+                .behind_camera(true),
+            ScenaViewerAnnotationLayoutInput::new("occluded", 78.0, 20.0, 18.0, 10.0)
+                .occluded(true),
+        ],
+        options,
+    );
+
+    assert_eq!(report.coordinate_space(), "css_pixels");
+    assert_eq!(report.viewport_width(), 100.0);
+    assert_eq!(report.viewport_height(), 60.0);
+    let primary = report.entry("primary").expect("primary entry exists");
+    assert!(primary.visible());
+    assert_eq!(primary.x(), 10.0);
+    assert_eq!(primary.y(), 10.0);
+
+    let overlap = report.entry("overlap").expect("overlap entry exists");
+    assert!(!overlap.visible());
+    assert_eq!(overlap.hidden_reason(), Some("overlap"));
+
+    let offscreen = report.entry("offscreen").expect("offscreen entry exists");
+    assert!(offscreen.visible());
+    assert_eq!(offscreen.original_x(), -8.0);
+    assert_eq!(offscreen.original_y(), 70.0);
+    assert_eq!(offscreen.x(), 0.0);
+    assert_eq!(offscreen.y(), 48.0);
+
+    assert_eq!(
+        report
+            .entry("behind")
+            .expect("behind entry exists")
+            .hidden_reason(),
+        Some("behind_camera")
+    );
+    assert_eq!(
+        report
+            .entry("occluded")
+            .expect("occluded entry exists")
+            .hidden_reason(),
+        Some("occluded")
     );
 }

@@ -103,12 +103,20 @@ fn round_e_material_demo_does_not_apply_one_global_key_light_to_ibl_sensitive_pr
 }
 
 #[test]
-fn round_e_material_demo_camera_matches_external_reference_fixture() {
+fn round_e_material_proof_camera_matches_external_reference_fixture() {
     let source = include_str!("../src/demo_page/material_presets.rs");
+    let proof_js = include_str!("../demo/proof.js");
     assert!(
-        source.contains(".azimuth_elevation(-18.0, 18.0)"),
-        "Round E browser/demo proof must use the same camera azimuth/elevation pinned in \
-         round_e_material_fixture.toml so external-reference comparisons are meaningful"
+        source.contains("pub async fn load_material_proof_scene")
+            && source.contains(".azimuth_elevation(-18.0, 18.0)")
+            && proof_js.contains("load_material_proof_scene")
+            && proof_js.contains("load_material_proof_scene(canvas.width, canvas.height)")
+            && proof_js.contains("set_background_scheme(app, \"neutral_gray\")")
+            && proof_js.contains("applyCanvasBackground(\"neutral_gray\")")
+            && !proof_js.contains("load_material_presets_scene"),
+        "Round E hard-reference proof must use the material-specific proof export and camera \
+         pinned in round_e_material_fixture.toml; comparing the public 12-sphere route against \
+         material-specific references is not meaningful"
     );
 }
 
@@ -177,6 +185,7 @@ fn round_e_ibl_extension_gates_are_value_bounded_browser_metrics() {
         .expect("Round E material proof script is readable");
     for required in [
         "anisotropy_aspect_ratio_ibl",
+        "ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON",
         "passed_anisotropy_aspect_ratio_ibl",
         "brushed_steel anisotropy aspect ratio",
         "clearcoat_lobe_delta",
@@ -489,10 +498,13 @@ fn public_showcase_probe_checks_visible_canvas_pixels() {
 #[test]
 fn browser_gpu_live_render_routes_postprocess_to_gpu_settings() {
     let render_rs = include_str!("../src/render.rs");
+    let draw_surface_rs = include_str!("../src/render/gpu/draw_surface.rs");
 
     assert!(
         render_rs.contains("GpuPostSettings::new")
-            && render_rs.contains("self.stats.fxaa_passes = post_counts.fxaa")
+            && render_rs.contains("self.stats.fxaa_passes = gpu_result.post_counts.fxaa")
+            && draw_surface_rs.contains("post_settings.without_fxaa()")
+            && draw_surface_rs.contains("scena.browser.overlay_final_surface_pass")
             && !render_rs.contains("fn cpu_frame_postprocess_applies"),
         "browser live WebGL2/WebGPU rendering must route post-processing through the GPU post \
          settings instead of the removed CPU frame postprocess gate"
@@ -590,6 +602,8 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
     );
     assert!(
         sidecar_rs.contains("SIDECAR_FILE_SUFFIX")
+            && sidecar_rs.contains("SCENA_ENV_PF_V2")
+            && sidecar_rs.contains("const SIDECAR_VERSION: u32 = 2")
             && sidecar_rs.contains("EnvironmentSidecarHeader")
             && sidecar_rs.contains("bytemuck")
             && sidecar_rs.contains("source_sha256"),
@@ -598,9 +612,10 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
     assert!(
         prepare_environment_rs.contains("environment.prefilter_sidecar(sidecar_profile)")
             && prepare_environment_rs.contains("load_prefilter_sidecar")
-            && prepare_environment_rs.contains("prefilter_specular_cubemap_mips_with_quality"),
+            && prepare_environment_rs.contains("bake_environment_ibl")
+            && prepare_environment_rs.contains("EnvironmentIblBakeRequest"),
         "render prepare must consume sidecars through the existing environment_lighting_for_prepare \
-         path and only fall back to runtime GGX prefilter when the sidecar is absent"
+         path and only fall back to the current Rust IBL baker when the sidecar is absent"
     );
     assert!(
         environment_cache_rs.contains("EnvironmentLightingCache")

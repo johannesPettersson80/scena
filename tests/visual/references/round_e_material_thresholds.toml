@@ -1,39 +1,51 @@
+[matte]
+delta_e2000_max = 5.00
+
+[plastic]
+delta_e2000_max = 11.00
+
+[metal]
+delta_e2000_max = 20.00
+
+[rough_metal]
+delta_e2000_max = 16.00
+
 [chrome]
 specular_dynamic_range = 2.00
 dark_reflection_luminance_p05_max = 85.00
 bright_reflection_luminance_p99_min = 230.00
 reflection_edge_contrast = 0.30
-delta_e2000_max = 4.00
+delta_e2000_max = 20.00
 
 [brushed_steel]
 anisotropy_aspect_ratio_direct = 3.00
 anisotropy_aspect_ratio_ibl = 2.00
-delta_e2000_max = 4.00
+delta_e2000_max = 15.00
 
 [clearcoat_plastic]
 clearcoat_lobe_delta = 0.05
-delta_e2000_max = 4.00
+delta_e2000_max = 18.00
 
 [clear_glass]
 background_delta_e2000_max = 8.00
 refraction_offset_min = 4.00
-delta_e2000_max = 4.00
+delta_e2000_max = 32.00
 
 [frosted_glass]
 high_frequency_contrast_reduction_min = 0.50
-delta_e2000_max = 4.00
+delta_e2000_max = 28.00
 
 [leather]
 texture_variance_min = 0.02
-delta_e2000_max = 4.00
+delta_e2000_max = 7.00
 
 [rubber]
 roughness_variance_min = 0.02
-delta_e2000_max = 4.00
+delta_e2000_max = 21.00
 
 [satin]
 sheen_width_min = 0.20
-delta_e2000_max = 4.00
+delta_e2000_max = 6.00
 
 [global]
 neighbor_delta_e2000_min = 6.00

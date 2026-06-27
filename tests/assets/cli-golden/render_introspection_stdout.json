@@ -1,0 +1,68 @@
+{
+  "artifacts": {
+    "capture": {
+      "height": 48,
+      "payload_fnv1a64": "2b817375a1281999",
+      "schema": "scena.capture.v1",
+      "width": 64
+    },
+    "capture_descriptor_path": "target/gate-artifacts/scena-cli-agent-golden/render-frame.capture.json",
+    "capture_png_path": "target/gate-artifacts/scena-cli-agent-golden/render-frame.png"
+  },
+  "capabilities": {
+    "backend": "headless",
+    "forward_pbr": "degraded",
+    "gpu_device": false,
+    "hardware_tier": "low",
+    "readback_headless_screenshots": "supported",
+    "surface_attached": false
+  },
+  "content_bbox_css_px": {
+    "height": 29.0,
+    "max_x": 45.0,
+    "max_y": 37.0,
+    "min_x": 17.0,
+    "min_y": 9.0,
+    "width": 29.0
+  },
+  "content_bbox_fraction": {
+    "height": 0.604,
+    "max_x": 0.703,
+    "max_y": 0.771,
+    "min_x": 0.266,
+    "min_y": 0.188,
+    "width": 0.453
+  },
+  "fixes": [],
+  "framing": {
+    "active_camera": 3,
+    "center_offset_fraction": [
+      -0.008,
+      -0.01
+    ],
+    "cropped": false,
+    "fit_fraction": 0.604,
+    "tiny_in_frame": false
+  },
+  "luminance": {
+    "max": 134.045,
+    "mean": 11.556,
+    "min": 0.0,
+    "p05": 0.0,
+    "p50": 0.0,
+    "p95": 99.959
+  },
+  "nodes_detail": [],
+  "nodes_summary": {
+    "culled": 0,
+    "drawn": 1,
+    "failed_material": 1,
+    "hidden": 0,
+    "transparent": 0,
+    "visible": 4
+  },
+  "ok": true,
+  "reasons": [],
+  "schema": "scena.render_introspection.v1",
+  "visible_pixel_fraction": 0.137
+}

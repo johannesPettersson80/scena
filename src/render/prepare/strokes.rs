@@ -32,6 +32,7 @@ pub(super) fn append_wireframe_primitives(
     inputs: StrokeBakeInputs<'_, '_>,
 ) -> Result<(), PrepareError> {
     let (color, width_px) = technical_stroke_material(node, material)?;
+    let width_px = scale_screen_space_width(width_px, inputs.params.screen_space_scale);
     let style = StrokeSegmentStyle {
         color,
         tint: inputs.tint,
@@ -65,6 +66,7 @@ pub(super) fn append_edge_primitives(
     inputs: StrokeBakeInputs<'_, '_>,
 ) -> Result<(), PrepareError> {
     let (color, width_px) = technical_stroke_material(node, material)?;
+    let width_px = scale_screen_space_width(width_px, inputs.params.screen_space_scale);
     let style = StrokeSegmentStyle {
         color,
         tint: inputs.tint,
@@ -113,6 +115,7 @@ pub(super) fn append_line_primitives(
     inputs: StrokeBakeInputs<'_, '_>,
 ) -> Result<(), PrepareError> {
     let (color, width_px) = line_material(node, material)?;
+    let width_px = scale_screen_space_width(width_px, inputs.params.screen_space_scale);
     let style = StrokeSegmentStyle {
         color,
         tint: inputs.tint,
@@ -182,6 +185,10 @@ fn line_material(node: NodeKey, material: &MaterialDesc) -> Result<(Color, f32),
     }
 
     technical_stroke_material(node, material)
+}
+
+fn scale_screen_space_width(width_px: f32, scale: f32) -> f32 {
+    width_px * scale.max(1.0)
 }
 
 fn append_line_segment(

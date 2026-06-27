@@ -1,0 +1,105 @@
+{
+  "schema": "scena.presentation_timeline.v1",
+  "camera_bookmarks": [
+    {
+      "name": "overview",
+      "camera": {
+        "target": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "distance": 4.0,
+        "yaw_radians": 0.5,
+        "pitch_radians": 0.25
+      }
+    }
+  ],
+  "actions": [
+    {
+      "at_seconds": 0.0,
+      "kind": "apply_patch",
+      "patch": {
+        "schema": "scena.visual_patch.v1",
+        "transforms": [
+          {
+            "node": 42,
+            "transform": {
+              "translation": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ],
+        "tints": [
+          {
+            "node": 42,
+            "tint": {
+              "r": 0.20000000298023224,
+              "g": 0.800000011920929,
+              "b": 0.4000000059604645,
+              "a": 1.0
+            }
+          }
+        ],
+        "visibility": [],
+        "camera": null,
+        "transforms_eased": [],
+        "tints_eased": [],
+        "camera_eased": null,
+        "animation_time": [],
+        "selection": null,
+        "hover": null,
+        "material_variants": [],
+        "labels": [
+          {
+            "id": "tour-label",
+            "target": {
+              "kind": "node",
+              "node": 42,
+              "local_offset": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          }
+        ],
+        "section_box": null,
+        "metadata": null,
+        "echo_metadata": false
+      }
+    },
+    {
+      "at_seconds": 0.5,
+      "kind": "apply_visual_state",
+      "name": "exploded"
+    },
+    {
+      "at_seconds": 1.0,
+      "kind": "camera_bookmark",
+      "name": "overview"
+    },
+    {
+      "at_seconds": 1.25,
+      "kind": "animation_clip",
+      "mixer": 7,
+      "start_seconds": 0.0,
+      "speed": 1.0,
+      "end_seconds": 1.0
+    }
+  ]
+}

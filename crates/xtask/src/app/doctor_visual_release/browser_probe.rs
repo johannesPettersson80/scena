@@ -7,6 +7,87 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         "Cargo.toml",
         &["browser-probe = [\"viewer-element\"]"],
     );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "package.json",
+        &[
+            "\"browser:scene-host-proof\": \"node tests/browser/scene_host_browser_proof.js\"",
+            "\"cloudflare:demo\": \"node scripts/probe_cloudflare_demo.js\"",
+            "\"cloudflare:materials\": \"node scripts/probe_cloudflare_material_presets.mjs\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        ".github/workflows/ci.yml",
+        &[
+            "npm run browser:scene-host-proof",
+            "npm run demo:build",
+            "npm run proof:build",
+            "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
+            "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        ".github/workflows/release.yml",
+        &[
+            "npm run browser:scene-host-proof",
+            "npm run demo:build",
+            "npm run proof:build",
+            "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
+            "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "scripts/probe_cloudflare_demo.js",
+        &[
+            "assertConnectorRenderedPixelsMoveDuringReplay",
+            "assertDeploymentBundleConsistency",
+            "deployed WASM checksum mismatch",
+            "connector replay marker motion is not enough",
+            "rendered connector pixels did not move",
+            "changedPixels >= 128",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/assets/browser-proof/round-e-cloudflare-material-proof.json",
+        &[
+            "\"proof_class\": \"round-e-cloudflare-material-proof\"",
+            "\"url\": \"https://scena-demo.pages.dev/proof/?sample=material-presets\"",
+            "\"status\": \"pass\"",
+            "\"checksum_matches_build\": true",
+            "\"per_material\"",
+            "\"neighbor_pairs\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/browser/scene_host_browser_proof.js",
+        &[
+            "phase2_ssao_only_changes_rendered_pixels",
+            "ssao_only_delta",
+            "phase2SsaoOnlyDelta",
+            "ambient_occlusion_passes === 1",
+            "bloom_passes === 0",
+            "fxaa_passes === 0",
+            "SCENA_BROWSER_REQUIRE_V3D",
+            "REQUIRE_V3D_HARDWARE",
+        ],
+    );
     check_raw_webgl2_renderer_removed(root, findings);
     require_contains(
         root,
@@ -24,13 +105,19 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "m6RenderStateLifecycleProbe",
             "Renderer::from_surface_async",
             "prepare_with_assets",
-            "Renderer::render",
             "browser_probe_readback_rgba8",
             "renderer-owned-gpu-copy",
             "scena.m6.browser_renderer_probe.v1",
             "m6CameraControlKitProbe",
             "scena.m6.camera_control_kit_browser_proof.v1",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "src/browser_probe/probes.rs",
+        &[".render(&scene, camera)"],
     );
     require_contains(
         root,
@@ -355,6 +442,50 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "right",
         ],
     );
+    forbid_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/m6_browser_renderer_parity.rs",
+        &[
+            "return;",
+            "could not build on this lane; skipping",
+            "could not render on this lane; skipping",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/m6_browser_renderer_parity.rs",
+        &[
+            "browser_canvas_rgba8(&canvas).expect(\"WebGL2 canvas readback exists\")",
+            "readPixels",
+            "WebGL2 proof must include rendered pixels",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/reference_image_regression_api.rs",
+        &[
+            "reference_image_regression_compares_real_renderer_output_to_committed_golden",
+            "Renderer::headless(4, 4)",
+            "renderer output matches committed golden",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/placeholder_regression.rs",
+        &[
+            "agent_contract_fields_differ_across_distinct_scenes",
+            "public_quality_knob_changes_renderer_state",
+            "public_double_sided_material_knob_changes_pixels",
+        ],
+    );
     require_contains(
         root,
         findings,
@@ -363,7 +494,10 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         &[
             "scena.scena_viewer_inspector_snapshot.v1",
             "scena-viewer-inspector-fixture",
-            "\"overlay\": \"Diagnostics\"",
+            "\"diagnostics\"",
+            "\"stats\"",
+            "\"FrameBounds\"",
+            "\"drawCalls\"",
         ],
     );
     if let Ok(page_source) =
@@ -380,7 +514,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         root,
         findings,
         "VISUAL-BROWSER-M6",
-        "src/render/gpu/prepare_resources.rs",
+        "src/render/gpu/prepare_resources_wasm.rs",
         &["target.backend == Backend::WebGpu"],
     );
     require_contains(

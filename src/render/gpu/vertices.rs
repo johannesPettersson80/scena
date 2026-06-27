@@ -45,6 +45,7 @@ pub(super) struct PrimitiveDrawBatch {
     pub(super) material_slot: u32,
     pub(super) draw_uniform_index: u32,
     pub(super) depth_prepass_eligible: bool,
+    pub(super) double_sided: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -114,12 +115,14 @@ pub(super) fn encode_draw_batches(
         let start_vertex = primitive.original_vertex_offset();
         let material_slot = primitive.render_material_slot();
         let depth_prepass_eligible = primitive.depth_prepass_eligible();
+        let double_sided = primitive.double_sided();
         let draw_uniform_index =
             draw_uniform_index_for(&mut draw_uniforms, draw_uniform_value_for(primitive));
         if let Some(last) = batches.last_mut()
             && last.material_slot == material_slot
             && last.draw_uniform_index == draw_uniform_index
             && last.depth_prepass_eligible == depth_prepass_eligible
+            && last.double_sided == double_sided
             && last.start_vertex.saturating_add(last.vertex_count) == start_vertex
         {
             last.vertex_count = last.vertex_count.saturating_add(3);
@@ -131,6 +134,7 @@ pub(super) fn encode_draw_batches(
             material_slot,
             draw_uniform_index,
             depth_prepass_eligible,
+            double_sided,
         });
     }
     if draw_uniforms.is_empty() {
@@ -314,6 +318,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    double_sided: false,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 6,
@@ -321,6 +326,7 @@ mod tests {
                     material_slot: 2,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    double_sided: false,
                 },
             ],
             "GPU draw encoding must preserve prepared per-material slots instead of drawing \
@@ -437,6 +443,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    double_sided: false,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 3,
@@ -444,6 +451,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: false,
+                    double_sided: false,
                 },
             ],
             "eligible triangles and ineligible helper strokes must not merge into one draw batch; the depth pass needs to skip the helper stroke while the color pass still draws it",
@@ -453,6 +461,39 @@ mod tests {
             1,
             "depth eligibility should not force another draw uniform when the transform is shared",
         );
+    }
+
+    #[test]
+    fn gpu_draw_batches_split_when_material_sidedness_differs() {
+        let single_sided = prepared(Primitive::unlit_triangle().with_render_material_slot(1), 0);
+        let double_sided = prepared(Primitive::unlit_triangle().with_render_material_slot(1), 3)
+            .with_double_sided(true);
+
+        let (batches, draw_uniforms) = encode_draw_batches(&[single_sided, double_sided]);
+
+        assert_eq!(
+            batches,
+            vec![
+                PrimitiveDrawBatch {
+                    start_vertex: 0,
+                    vertex_count: 3,
+                    material_slot: 1,
+                    draw_uniform_index: 0,
+                    depth_prepass_eligible: true,
+                    double_sided: false,
+                },
+                PrimitiveDrawBatch {
+                    start_vertex: 3,
+                    vertex_count: 3,
+                    material_slot: 1,
+                    draw_uniform_index: 0,
+                    depth_prepass_eligible: true,
+                    double_sided: true,
+                },
+            ],
+            "single- and double-sided triangles need separate GPU draw batches so the encoder can use the culling pipeline for only the single-sided draws",
+        );
+        assert_eq!(draw_uniforms.len(), 1);
     }
 
     fn prepared(primitive: Primitive, original_vertex_offset: u32) -> PreparedPrimitive {

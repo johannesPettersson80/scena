@@ -1,14 +1,15 @@
 use wasm_bindgen::prelude::*;
 
 use super::inputs::vec3_array_from_slice;
+use super::wasm_capture::capture_descriptor_json;
 use super::wasm_readback::browser_canvas_rgba8;
-use super::{SceneHostCore, SceneHostError};
+use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{Assets, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
 
 #[wasm_bindgen]
 pub struct SceneHost {
     pub(super) core: SceneHostCore,
-    browser_canvas: Option<web_sys::HtmlCanvasElement>,
+    pub(super) browser_canvas: Option<web_sys::HtmlCanvasElement>,
 }
 
 #[wasm_bindgen]
@@ -217,6 +218,63 @@ impl SceneHost {
         self.core.clear_annotation(&id)
     }
 
+    #[wasm_bindgen(js_name = addNodeCallout)]
+    pub fn add_node_callout(
+        &mut self,
+        id: String,
+        node: u64,
+        local_offset: Box<[f32]>,
+        label_offset: Box<[f32]>,
+        text: String,
+    ) -> Result<String, JsValue> {
+        let report = self
+            .core
+            .add_node_callout(
+                &id,
+                node,
+                vec3_array_from_slice("localOffset", &local_offset).map_err(js_error)?,
+                vec3_array_from_slice("labelOffset", &label_offset).map_err(js_error)?,
+                &text,
+            )
+            .map_err(js_error)?;
+        serde_json::to_string(&report).map_err(|error| {
+            js_error(SceneHostError::new(
+                SceneHostErrorCode::InvalidInput,
+                format!("callout report serialization failed: {error}"),
+            ))
+        })
+    }
+
+    #[wasm_bindgen(js_name = addWorldCallout)]
+    pub fn add_world_callout(
+        &mut self,
+        id: String,
+        position: Box<[f32]>,
+        label_offset: Box<[f32]>,
+        text: String,
+    ) -> Result<String, JsValue> {
+        let report = self
+            .core
+            .add_world_callout(
+                &id,
+                vec3_array_from_slice("position", &position).map_err(js_error)?,
+                vec3_array_from_slice("labelOffset", &label_offset).map_err(js_error)?,
+                &text,
+            )
+            .map_err(js_error)?;
+        serde_json::to_string(&report).map_err(|error| {
+            js_error(SceneHostError::new(
+                SceneHostErrorCode::InvalidInput,
+                format!("callout report serialization failed: {error}"),
+            ))
+        })
+    }
+
+    #[wasm_bindgen(js_name = clearCallout)]
+    pub fn clear_callout(&mut self, id: String) -> bool {
+        self.core.clear_callout(&id)
+    }
+
     #[wasm_bindgen(js_name = removeNode)]
     pub fn remove_node(&mut self, node: u64) -> Result<(), JsValue> {
         self.core.remove_node(node).map_err(js_error)
@@ -249,26 +307,8 @@ impl SceneHost {
 
     #[wasm_bindgen(js_name = capture)]
     pub fn capture(&self) -> Result<JsValue, JsValue> {
-        let capture = match self
-            .browser_canvas
-            .as_ref()
-            .map(browser_canvas_rgba8)
-            .transpose()
-            .map_err(js_error)?
-            .flatten()
-        {
-            Some((width, height, rgba8)) => self
-                .core
-                .capture_from_rgba8(width, height, rgba8)
-                .map_err(js_error)?,
-            None => self.core.capture().map_err(js_error)?,
-        };
-        let descriptor_json = serde_json::to_string(&capture.descriptor).map_err(|error| {
-            js_error(SceneHostError::new(
-                super::SceneHostErrorCode::Capture,
-                format!("capture descriptor serialization failed: {error}"),
-            ))
-        })?;
+        let capture = self.capture_rgba8_for_wasm().map_err(js_error)?;
+        let descriptor_json = capture_descriptor_json(&capture).map_err(js_error)?;
         let object = js_sys::Object::new();
         let rgba8 = js_sys::Uint8Array::from(capture.rgba8.as_slice());
         let _ = js_sys::Reflect::set(
@@ -280,6 +320,22 @@ impl SceneHost {
         Ok(object.into())
     }
 
+    #[wasm_bindgen(js_name = capturePng)]
+    pub fn capture_png(&self) -> Result<JsValue, JsValue> {
+        let capture = self.capture_rgba8_for_wasm().map_err(js_error)?;
+        let descriptor_json = capture_descriptor_json(&capture).map_err(js_error)?;
+        let png_bytes = capture.to_png_bytes().map_err(js_error)?;
+        let object = js_sys::Object::new();
+        let png = js_sys::Uint8Array::from(png_bytes.as_slice());
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("descriptorJson"),
+            &JsValue::from_str(&descriptor_json),
+        );
+        let _ = js_sys::Reflect::set(&object, &JsValue::from_str("png"), &png);
+        Ok(object.into())
+    }
+
     #[wasm_bindgen(js_name = captureJson)]
     pub fn capture_json(&self) -> Result<String, JsValue> {
         self.core.capture_json().map_err(js_error)
@@ -287,6 +343,19 @@ impl SceneHost {
 
     pub fn pick(&mut self, x: f32, y: f32) -> Result<Option<u64>, JsValue> {
         self.core.pick(x, y).map_err(js_error)
+    }
+
+    pub fn hover(&mut self, x: f32, y: f32) -> Result<Option<u64>, JsValue> {
+        self.core.hover(x, y).map_err(js_error)
+    }
+
+    pub fn select(&mut self, x: f32, y: f32) -> Result<Option<u64>, JsValue> {
+        self.core.select(x, y).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = drainEventsJson)]
+    pub fn drain_events_json(&self) -> Result<String, JsValue> {
+        self.core.drain_events_json().map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = frameNode)]
@@ -309,6 +378,11 @@ impl SceneHost {
     #[wasm_bindgen(js_name = frameAll)]
     pub fn frame_all(&mut self) -> Result<(), JsValue> {
         self.core.frame_all().map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = frameAllWithOverlays)]
+    pub fn frame_all_with_overlays(&mut self) -> Result<(), JsValue> {
+        self.core.frame_all_with_overlays().map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = worldDistance)]

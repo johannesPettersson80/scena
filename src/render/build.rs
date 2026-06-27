@@ -4,17 +4,16 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::diagnostics::{
-    Backend, BuildError, Capabilities, DebugOverlay, HardwareTier, OutputColorSpace, RendererStats,
+    Backend, BuildError, Capabilities, HardwareTier, OutputColorSpace, RendererStats,
 };
 use crate::material::Color;
-use crate::picking::InteractionStyle;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment};
 
 use super::gpu;
 use super::gpu::GpuDeviceState;
 use super::{
-    OutputTransform, Profile, Quality, RasterTarget, RenderMode, Renderer, RendererOptions,
-    backend_for_attached_surface, validate_target_size,
+    AntiAliasing, OutputTransform, Profile, Quality, RasterTarget, RenderMode, Renderer,
+    RendererOptions, backend_for_attached_surface, validate_target_size,
 };
 
 impl Renderer {
@@ -42,6 +41,15 @@ impl Renderer {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn headless_gpu(width: u32, height: u32) -> Result<Self, BuildError> {
+        Self::headless_gpu_with_options(width, height, RendererOptions::default())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn headless_gpu_with_options(
+        width: u32,
+        height: u32,
+        options: RendererOptions,
+    ) -> Result<Self, BuildError> {
         validate_target_size(width, height)
             .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
         let headless_gpu_test_guard = Some(HeadlessGpuTestSupportGuard::acquire());
@@ -52,7 +60,7 @@ impl Renderer {
             Backend::HeadlessGpu,
             Some(gpu),
             false,
-            RendererOptions::default(),
+            options,
         )?;
         renderer._headless_gpu_test_guard = headless_gpu_test_guard;
         Ok(renderer)
@@ -65,6 +73,15 @@ impl Renderer {
         Err(BuildError::UnsupportedBackend {
             backend: Backend::HeadlessGpu,
         })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn headless_gpu_with_options(
+        width: u32,
+        height: u32,
+        _options: RendererOptions,
+    ) -> Result<Self, BuildError> {
+        Self::headless_gpu(width, height)
     }
 
     pub fn from_surface(surface: PlatformSurface) -> Result<Self, BuildError> {
@@ -229,8 +246,12 @@ impl Renderer {
             fxaa_scratch: vec![0; target.byte_len()],
             bloom_scratch: vec![0; target.byte_len()],
             oit_scratch: vec![super::cpu::OitAccumPixel::default(); target.pixel_len()],
+            cpu_supersample_frame: Vec::new(),
+            cpu_supersample_oit_scratch: Vec::new(),
             linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()]),
             depth_frame: (!has_gpu).then(|| vec![f32::INFINITY; target.pixel_len()]),
+            cpu_supersample_linear_frame: Vec::new(),
+            cpu_supersample_depth_frame: Vec::new(),
             stats: RendererStats {
                 target_width: width,
                 target_height: height,
@@ -240,9 +261,13 @@ impl Renderer {
             capabilities,
             gpu,
             output: OutputTransform::default(),
-            anti_aliasing: Default::default(),
+            anti_aliasing: anti_aliasing_for_quality(quality),
+            supersample_factor: 1,
+            reconstruction_filter: super::ReconstructionFilter::Box,
             order_independent_transparency: None,
             screen_space_ambient_occlusion: None,
+            screen_space_reflections: None,
+            depth_of_field: None,
             bloom: None,
             profile,
             quality,
@@ -251,13 +276,9 @@ impl Renderer {
             render_generation: 0,
             last_rendered_generation: None,
             last_rendered_frame: None,
-            debug_overlay: DebugOverlay::None,
-            debug_revision: 0,
             surface_lost: None,
             context_lost: None,
             device_lost: None,
-            hover_style: InteractionStyle::default(),
-            selection_style: InteractionStyle::default(),
             environment: None,
             environment_lighting_cache: Default::default(),
             background_color: Color::BLACK,
@@ -266,6 +287,8 @@ impl Renderer {
             environment_revision: 0,
             target_revision: 0,
             prepare_telemetry: Default::default(),
+            #[cfg(test)]
+            depth_prepass_enabled_for_test: true,
             #[cfg(not(target_arch = "wasm32"))]
             _headless_gpu_test_guard: None,
             not_sync: PhantomData::<Cell<()>>,
@@ -343,6 +366,14 @@ fn resolve_quality(options: RendererOptions, capabilities: Capabilities) -> Qual
             HardwareTier::Medium => Quality::Medium,
             HardwareTier::Low => Quality::Low,
         },
+    }
+}
+
+fn anti_aliasing_for_quality(quality: Quality) -> AntiAliasing {
+    match quality {
+        Quality::Low => AntiAliasing::None,
+        Quality::Medium => AntiAliasing::Fxaa,
+        Quality::High => AntiAliasing::Msaa4,
     }
 }
 

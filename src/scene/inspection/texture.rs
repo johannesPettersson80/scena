@@ -1,9 +1,13 @@
-use crate::assets::{TextureDesc, TextureHandle, TextureSamplerDesc, TextureSourceFormat};
+use crate::assets::{
+    AssetPath, AssetProvenance, TextureDesc, TextureHandle, TextureSamplerDesc, TextureSourceFormat,
+};
 use crate::material::TextureColorSpace;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SceneTextureInspection {
     texture: TextureHandle,
+    source_path: AssetPath,
+    provenance: AssetProvenance,
     color_space: TextureColorSpace,
     sampler: TextureSamplerDesc,
     source_format: TextureSourceFormat,
@@ -15,6 +19,8 @@ impl SceneTextureInspection {
     pub(super) fn new(texture: TextureHandle, desc: TextureDesc) -> Self {
         Self {
             texture,
+            source_path: desc.path().clone(),
+            provenance: desc.provenance().clone(),
             color_space: desc.color_space(),
             sampler: desc.sampler(),
             source_format: desc.source_format(),
@@ -25,6 +31,14 @@ impl SceneTextureInspection {
 
     pub const fn texture(&self) -> TextureHandle {
         self.texture
+    }
+
+    pub fn source_path(&self) -> &AssetPath {
+        &self.source_path
+    }
+
+    pub fn provenance(&self) -> &AssetProvenance {
+        &self.provenance
     }
 
     pub const fn color_space(&self) -> TextureColorSpace {

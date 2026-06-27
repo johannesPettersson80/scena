@@ -1,7 +1,6 @@
 {
   "schema": "scena.scena_viewer_inspector_snapshot.v1",
   "source": "scena-viewer-inspector-fixture",
-  "overlay": "Diagnostics",
   "diagnostics": [
     {
       "severity": "warning",

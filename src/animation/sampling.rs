@@ -353,3 +353,61 @@ fn slerp_quat(left: Quat, right: Quat, amount: f32) -> Quat {
         left.w * left_scale + right.w * right_scale,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn step_vec3_holds_left_key_until_boundary() {
+        let times = [0.0, 1.0];
+        let values = [Vec3::ZERO, Vec3::new(2.0, 0.0, 0.0)];
+        assert_eq!(
+            sample_vec3(&times, &values, AnimationInterpolation::Step, 0.5),
+            Some(Vec3::ZERO)
+        );
+        assert_eq!(
+            sample_vec3(&times, &values, AnimationInterpolation::Step, 1.0),
+            Some(Vec3::new(2.0, 0.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn linear_quat_slerps_between_distinct_rotations() {
+        let times = [0.0, 1.0];
+        let values = [
+            Quat::IDENTITY,
+            Quat::from_xyzw(
+                0.0,
+                0.0,
+                std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ),
+        ];
+        let sampled = sample_quat(&times, &values, AnimationInterpolation::Linear, 0.5)
+            .expect("midpoint samples");
+        assert!(
+            sampled.z.abs() > 0.35 && sampled.w < 0.95,
+            "slerp midpoint should not stay identity: {sampled:?}"
+        );
+    }
+
+    #[test]
+    fn cubic_vec3_uses_gltf_in_value_out_layout() {
+        let times = [0.0, 1.0];
+        let values = [
+            Vec3::ZERO,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::ZERO,
+        ];
+        let sampled = sample_vec3(&times, &values, AnimationInterpolation::CubicSpline, 0.5)
+            .expect("cubic midpoint samples");
+        assert!(
+            (sampled.x - 0.5).abs() < 0.02,
+            "zero-tangent Hermite midpoint should land halfway, got {sampled:?}"
+        );
+    }
+}

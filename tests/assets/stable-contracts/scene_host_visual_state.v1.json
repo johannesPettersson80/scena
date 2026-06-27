@@ -1,0 +1,32 @@
+{
+  "schema": "scena.scene_host_visual_state.v1",
+  "name": "service_view",
+  "patch": {
+    "schema": "scena.visual_patch.v1",
+    "transforms": [],
+    "tints": [],
+    "visibility": [
+      {
+        "node": 42,
+        "visible": false
+      }
+    ],
+    "camera": null,
+    "transforms_eased": [],
+    "tints_eased": [],
+    "camera_eased": null,
+    "animation_time": [],
+    "selection": null,
+    "hover": null,
+    "material_variants": [],
+    "labels": [],
+    "section_box": null,
+    "metadata": {
+      "preset": "service_view"
+    },
+    "echo_metadata": true
+  },
+  "metadata": {
+    "label": "Service view"
+  }
+}

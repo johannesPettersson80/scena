@@ -9,7 +9,7 @@ import init, {
   load_gltf_from_bytes,
   load_gltf_with_floor_from_bytes,
   load_gltf_with_view_from_bytes,
-  load_material_presets_scene,
+  load_material_proof_scene,
   replay_connector_snap,
   resize,
   set_anti_aliasing_mode,
@@ -18,7 +18,7 @@ import init, {
   set_bloom_enabled,
   set_fixed_exposure_ev,
   tick,
-} from "./proof/pkg/scena.js?v=20260524-scena-1.5.1-1";
+} from "./proof/pkg/scena.js?v=1.7.1-proof-7b4a84a725cd";
 
 const SAMPLE_GROUPS = [
   {
@@ -508,7 +508,7 @@ async function start() {
   beginPhase("initialising WASM");
   await init({
     module_or_path: new URL(
-      "./proof/pkg/scena_bg.wasm?v=20260524-scena-1.5.1-1",
+      "./proof/pkg/scena_bg.wasm?v=1.7.1-proof-7b4a84a725cd",
       import.meta.url,
     ),
   });
@@ -574,13 +574,13 @@ async function loadMaterialPresetsAndAttach(asset) {
   updateMetrics(0);
   beginPhase("building material preset scene");
   applyBufferSize();
-  app = await load_material_presets_scene(canvas.width, canvas.height);
+  app = await load_material_proof_scene(canvas.width, canvas.height);
   beginPhase("creating WebGL2 renderer");
   await attach_to_canvas(app, canvas);
-  set_background_scheme(app, "dark_studio");
-  applyCanvasBackground("dark_studio");
+  set_background_scheme(app, "neutral_gray");
+  applyCanvasBackground("neutral_gray");
   set_fixed_exposure_ev(app, 0.0);
-  if (v14BackgroundSelect) v14BackgroundSelect.value = "dark_studio";
+  if (v14BackgroundSelect) v14BackgroundSelect.value = "neutral_gray";
   if (v14AutoExposureSelect) v14AutoExposureSelect.value = "fixed_0_ev";
   attached = true;
   resizeAttachedRenderer();
