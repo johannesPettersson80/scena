@@ -7,6 +7,7 @@ const { chromium } = require("playwright");
 
 const url = process.argv[2] || "http://127.0.0.1:18104/index.html";
 const outDir = path.resolve("target/gate-artifacts/cloudflare-demo");
+const CANVAS_OPERATION_TIMEOUT_MS = 90000;
 
 fs.mkdirSync(outDir, { recursive: true });
 for (const file of fs.readdirSync(outDir)) {
@@ -69,69 +70,74 @@ async function waitForSceneRendered(page, scene, timeout = 90000) {
 async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFraction) {
   const file = path.join(outDir, `${scene}-canvas.png`);
   const canvas = page.locator(`.stage[data-scene='${scene}'] canvas`);
-  const stats = await canvas.evaluate((source) => {
-    const width = source.width;
-    const height = source.height;
-    const sampleWidth = Math.max(1, Math.min(320, width));
-    const sampleHeight = Math.max(1, Math.min(240, height));
-    const canvas = document.createElement("canvas");
-    canvas.width = sampleWidth;
-    canvas.height = sampleHeight;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
-    const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
-    const bg = [data[0], data[1], data[2]];
-    let sum = 0;
-    let sumSq = 0;
-    let minX = sampleWidth;
-    let minY = sampleHeight;
-    let maxX = -1;
-    let maxY = -1;
-    for (let y = 0; y < sampleHeight; y += 1) {
-      for (let x = 0; x < sampleWidth; x += 1) {
-        const i = (y * sampleWidth + x) * 4;
-        const gray = (data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722) / 255;
-        sum += gray;
-        sumSq += gray * gray;
-        const delta =
-          Math.abs(data[i] - bg[0]) +
-          Math.abs(data[i + 1] - bg[1]) +
-          Math.abs(data[i + 2] - bg[2]);
-        if (data[i + 3] > 16 && delta > 18) {
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x);
-          maxY = Math.max(maxY, y);
+  const stats = await canvas.evaluate(
+    (source) => {
+      const width = source.width;
+      const height = source.height;
+      const sampleWidth = Math.max(1, Math.min(320, width));
+      const sampleHeight = Math.max(1, Math.min(240, height));
+      const canvas = document.createElement("canvas");
+      canvas.width = sampleWidth;
+      canvas.height = sampleHeight;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
+      const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+      const bg = [data[0], data[1], data[2]];
+      let sum = 0;
+      let sumSq = 0;
+      let minX = sampleWidth;
+      let minY = sampleHeight;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < sampleHeight; y += 1) {
+        for (let x = 0; x < sampleWidth; x += 1) {
+          const i = (y * sampleWidth + x) * 4;
+          const gray =
+            (data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722) / 255;
+          sum += gray;
+          sumSq += gray * gray;
+          const delta =
+            Math.abs(data[i] - bg[0]) +
+            Math.abs(data[i + 1] - bg[1]) +
+            Math.abs(data[i + 2] - bg[2]);
+          if (data[i + 3] > 16 && delta > 18) {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
         }
       }
-    }
-    const count = sampleWidth * sampleHeight;
-    const mean = sum / count;
-    const variance = Math.max(0, sumSq / count - mean * mean);
-    const foregroundRect =
-      maxX >= minX && maxY >= minY
-        ? {
-            minX,
-            minY,
-            maxX,
-            maxY,
-            width: maxX - minX + 1,
-            height: maxY - minY + 1,
-            imageWidth: sampleWidth,
-            imageHeight: sampleHeight,
-          }
-        : null;
-    return {
-      sourceWidth: width,
-      sourceHeight: height,
-      sampleWidth,
-      sampleHeight,
-      mean,
-      deviation: Math.sqrt(variance),
-      foregroundRect,
-    };
-  });
-  await canvas.screenshot({ path: file, timeout: 30000 });
+      const count = sampleWidth * sampleHeight;
+      const mean = sum / count;
+      const variance = Math.max(0, sumSq / count - mean * mean);
+      const foregroundRect =
+        maxX >= minX && maxY >= minY
+          ? {
+              minX,
+              minY,
+              maxX,
+              maxY,
+              width: maxX - minX + 1,
+              height: maxY - minY + 1,
+              imageWidth: sampleWidth,
+              imageHeight: sampleHeight,
+            }
+          : null;
+      return {
+        sourceWidth: width,
+        sourceHeight: height,
+        sampleWidth,
+        sampleHeight,
+        mean,
+        deviation: Math.sqrt(variance),
+        foregroundRect,
+      };
+    },
+    undefined,
+    { timeout: CANVAS_OPERATION_TIMEOUT_MS },
+  );
+  await canvas.screenshot({ path: file, timeout: CANVAS_OPERATION_TIMEOUT_MS });
   if (stats.mean < 0.003 || stats.deviation < 0.002) {
     throw new Error(`${scene} canvas looks blank: ${JSON.stringify(stats)}`);
   }
@@ -146,23 +152,27 @@ async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFracti
 
 async function sampleSceneCanvasPixels(page, scene) {
   const canvas = page.locator(`.stage[data-scene='${scene}'] canvas`);
-  return canvas.evaluate((source) => {
-    const width = source.width;
-    const height = source.height;
-    const sampleWidth = Math.max(1, Math.min(320, width));
-    const sampleHeight = Math.max(1, Math.min(240, height));
-    const scratch = document.createElement("canvas");
-    scratch.width = sampleWidth;
-    scratch.height = sampleHeight;
-    const context = scratch.getContext("2d", { willReadFrequently: true });
-    context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
-    const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
-    return {
-      width: sampleWidth,
-      height: sampleHeight,
-      pixels: Array.from(data),
-    };
-  });
+  return canvas.evaluate(
+    (source) => {
+      const width = source.width;
+      const height = source.height;
+      const sampleWidth = Math.max(1, Math.min(320, width));
+      const sampleHeight = Math.max(1, Math.min(240, height));
+      const scratch = document.createElement("canvas");
+      scratch.width = sampleWidth;
+      scratch.height = sampleHeight;
+      const context = scratch.getContext("2d", { willReadFrequently: true });
+      context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
+      const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+      return {
+        width: sampleWidth,
+        height: sampleHeight,
+        pixels: Array.from(data),
+      };
+    },
+    undefined,
+    { timeout: CANVAS_OPERATION_TIMEOUT_MS },
+  );
 }
 
 function renderedPixelMotion(before, after) {
