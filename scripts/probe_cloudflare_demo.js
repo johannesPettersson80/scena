@@ -31,6 +31,14 @@ function assertForegroundCoverage(stats, label, minWidthFraction, minHeightFract
   return { rect, widthFraction, heightFraction };
 }
 
+function writePngDataUrl(file, dataUrl) {
+  const prefix = "data:image/png;base64,";
+  if (!dataUrl.startsWith(prefix)) {
+    throw new Error(`canvas did not produce a PNG data URL for ${file}`);
+  }
+  fs.writeFileSync(file, Buffer.from(dataUrl.slice(prefix.length), "base64"));
+}
+
 function statusFailed(status) {
   return /failed|error|panic/i.test(status || "");
 }
@@ -70,7 +78,7 @@ async function waitForSceneRendered(page, scene, timeout = 90000) {
 async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFraction) {
   const file = path.join(outDir, `${scene}-canvas.png`);
   const canvas = page.locator(`.stage[data-scene='${scene}'] canvas`);
-  const stats = await canvas.evaluate(
+  const capture = await canvas.evaluate(
     (source) => {
       const width = source.width;
       const height = source.height;
@@ -125,19 +133,23 @@ async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFracti
             }
           : null;
       return {
-        sourceWidth: width,
-        sourceHeight: height,
-        sampleWidth,
-        sampleHeight,
-        mean,
-        deviation: Math.sqrt(variance),
-        foregroundRect,
+        pngDataUrl: canvas.toDataURL("image/png"),
+        stats: {
+          sourceWidth: width,
+          sourceHeight: height,
+          sampleWidth,
+          sampleHeight,
+          mean,
+          deviation: Math.sqrt(variance),
+          foregroundRect,
+        },
       };
     },
     undefined,
     { timeout: CANVAS_OPERATION_TIMEOUT_MS },
   );
-  await canvas.screenshot({ path: file, timeout: CANVAS_OPERATION_TIMEOUT_MS });
+  const { pngDataUrl, stats } = capture;
+  writePngDataUrl(file, pngDataUrl);
   if (stats.mean < 0.003 || stats.deviation < 0.002) {
     throw new Error(`${scene} canvas looks blank: ${JSON.stringify(stats)}`);
   }
