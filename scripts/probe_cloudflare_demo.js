@@ -387,7 +387,11 @@ async function assertImagesLoad(page) {
     await assertConnectorMarkers(page);
 
     const images = await assertImagesLoad(page);
-    await page.screenshot({ path: path.join(outDir, "desktop-page.png"), fullPage: true });
+    await page.screenshot({
+      path: path.join(outDir, "desktop-page.png"),
+      fullPage: false,
+      timeout: CANVAS_OPERATION_TIMEOUT_MS,
+    });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(url, { waitUntil: "domcontentloaded" });
@@ -400,7 +404,11 @@ async function assertImagesLoad(page) {
     await waitForSceneRendered(page, "connector");
     await assertConnectorMarkers(page);
     const mobileConnector = await captureSceneCanvas(page, "connector", 0.30, 0.16);
-    await page.screenshot({ path: path.join(outDir, "mobile-page.png"), fullPage: true });
+    await page.screenshot({
+      path: path.join(outDir, "mobile-page.png"),
+      fullPage: false,
+      timeout: CANVAS_OPERATION_TIMEOUT_MS,
+    });
 
     if (errors.length) throw new Error(errors.join("\n"));
 
