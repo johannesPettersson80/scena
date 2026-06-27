@@ -1508,7 +1508,7 @@ dependencies = [
 
 [[package]]
 name = "scena"
-version = "1.7.1"
+version = "1.7.2"
 dependencies = [
  "base64 0.22.1",
  "basisu_c_sys",

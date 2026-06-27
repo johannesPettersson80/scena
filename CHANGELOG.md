@@ -4,6 +4,23 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-06-27
+
+### Fixed
+
+- Rebuilt the easy-scene chrome showcase cards with the real Studio HDR
+  environment and higher sphere tessellation so reflective materials read as
+  smooth studio chrome instead of faceted synthetic reflections.
+- Removed the experimental `chrome_white_line` environment preset and updated
+  recipe validation, docs, and doctor pins to use file-backed environments.
+- Added warning-level recipe validation for near-mirror sphere materials whose
+  tessellation is too low for smooth reflections, and raised authored recipe
+  sphere defaults to a safer baseline.
+- Restored public recipe-render reflection verification coverage for chrome
+  read failures, including bright/dark fraction diagnostics.
+- Hardened browser and platform CI proof for the public demo, WebGL2 software
+  lanes, Windows DX12, macOS Metal, and WaterBottle reference-image artifacts.
+
 ### Added
 
 - Improved the LLM app-builder path: schema examples and `examples agent`
