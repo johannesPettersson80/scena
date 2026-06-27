@@ -255,6 +255,7 @@ pub(crate) fn check_m8_real_asset_dual_lane(root: &Path, findings: &mut Vec<Find
         "build_waterbottle_scene",
         "Microsoft Basic Render Driver",
         "software-dx12",
+        "SCENA_REFERENCE_DIFF",
     ];
     for needle in required {
         if !text.contains(needle) {
