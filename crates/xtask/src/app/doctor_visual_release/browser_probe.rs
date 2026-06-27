@@ -26,8 +26,9 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         &[
             "npm run browser:scene-host-proof",
             "npm run demo:build",
+            "npm run proof:build",
             "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
-            "npm run cloudflare:materials",
+            "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
         ],
     );
     require_contains(
@@ -38,8 +39,9 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         &[
             "npm run browser:scene-host-proof",
             "npm run demo:build",
+            "npm run proof:build",
             "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
-            "npm run cloudflare:materials",
+            "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
         ],
     );
     require_contains(
