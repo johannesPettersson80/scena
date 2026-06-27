@@ -239,6 +239,15 @@ jobs:
         env:
           SCENA_RELEASE_ARTIFACT_ROOT: target/gate-artifacts
         run: cargo run -p xtask -- release-readiness
+      - name: Restore publish checkout cleanliness
+        shell: bash
+        run: |
+          if ! git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock changed while preparing release readiness; restoring the committed lockfile before publish."
+            git diff -- Cargo.lock
+            git checkout -- Cargo.lock
+          fi
+          git diff --exit-code
       - name: Clean publish dry run
         run: cargo publish --dry-run
       - name: Publish crate
