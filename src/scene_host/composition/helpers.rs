@@ -25,7 +25,7 @@ pub(super) fn declared_draw_handles(manifest: &SceneRecipeBuildV1) -> BTreeSet<u
     for node in &manifest.nodes {
         if matches!(
             node.kind.as_str(),
-            "node" | "instance_set" | "particle_set" | "label"
+            "node" | "instance_set" | "particle_set" | "label" | "generated_overlay"
         ) {
             handles.insert(node.handle);
         }

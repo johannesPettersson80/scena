@@ -67,8 +67,15 @@ pub(super) const ROOT_FIELDS: &[&str] = &[
     "capture",
     "metadata",
 ];
-pub(super) const IMPORT_FIELDS: &[&str] =
-    &["id", "uri", "optional", "transform", "expected_extent"];
+pub(super) const IMPORT_FIELDS: &[&str] = &[
+    "id",
+    "uri",
+    "optional",
+    "transform",
+    "expected_extent",
+    "material",
+    "edge_emphasis",
+];
 pub(super) const CAPTURE_FIELDS: &[&str] = &["width", "height"];
 pub(super) const EXPECTED_EXTENT_FIELDS: &[&str] = &["min", "max", "unit"];
 pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[

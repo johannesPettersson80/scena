@@ -12,6 +12,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
         "scena.schema_entry.v1",
     ),
     (
+        "tests/assets/stable-contracts/cad_inspection_result.v1.json",
+        "scena.cad_inspection_result.v1",
+    ),
+    (
         "tests/assets/stable-contracts/scene_inspection.v1.json",
         "scena.scene_inspection.v1",
     ),

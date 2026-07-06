@@ -203,13 +203,16 @@ fn validate_camera_framing(
         .get("mode")
         .and_then(Value::as_str)
         .unwrap_or("frame_bounds");
-    if !matches!(mode, "frame_bounds" | "default_for_bounds") {
+    if !matches!(
+        mode,
+        "frame_bounds" | "default_for_bounds" | "principal_face"
+    ) {
         diagnostics.push(diagnostic(
             "invalid_camera_framing",
             "error",
             format!("{framing_path}.mode"),
             format!("camera framing mode '{mode}' is not supported"),
-            "use frame_bounds or default_for_bounds",
+            "use frame_bounds, default_for_bounds, or principal_face",
             None,
             false,
         ));

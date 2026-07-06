@@ -144,7 +144,8 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
                 continue;
             };
             let viewport = host.viewport.physical_size();
-            let options = framing_options_from_recipe(framing, viewport.width, viewport.height);
+            let options =
+                framing_options_from_recipe(framing, viewport.width, viewport.height, bounds);
             match host.scene.frame_bounds(camera_key, bounds, options) {
                 Ok(framing) => Some(OrbitControls::from_framing(framing)),
                 Err(error) => {
@@ -224,6 +225,7 @@ fn framing_options_from_recipe(
     framing: &SceneRecipeCameraFramingV1,
     width: u32,
     height: u32,
+    bounds: Aabb,
 ) -> FramingOptions {
     let mut options = framing
         .preset
@@ -231,6 +233,9 @@ fn framing_options_from_recipe(
         .and_then(FramingOptions::from_preset_name)
         .unwrap_or_default()
         .viewport(width, height);
+    if framing.mode.as_deref() == Some("principal_face") {
+        options = options.look_from(principal_face_view_direction(bounds));
+    }
     if let Some(fill) = framing.fill {
         options = options.fill(fill as f32);
     }
@@ -238,6 +243,52 @@ fn framing_options_from_recipe(
         options = options.margin_px(margin_px as f32);
     }
     options
+}
+
+fn principal_face_view_direction(bounds: Aabb) -> Vec3 {
+    let extent = (bounds.max - bounds.min).abs();
+    let thin_axis = smallest_axis(extent);
+    let face_normal = axis_vec(thin_axis);
+    let reveal_axis = if thin_axis != 1 {
+        Vec3::Y
+    } else {
+        axis_vec(strongest_non_parallel_axis(extent, thin_axis))
+    };
+    let context_axis = axis_vec(strongest_non_parallel_axis(extent, thin_axis));
+    (face_normal + reveal_axis * 0.18 + context_axis * 0.08).normalize()
+}
+
+fn smallest_axis(extent: Vec3) -> usize {
+    let values = [extent.x.abs(), extent.y.abs(), extent.z.abs()];
+    values
+        .iter()
+        .enumerate()
+        .min_by(|(left_index, left), (right_index, right)| {
+            left.total_cmp(right).then(left_index.cmp(right_index))
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(0)
+}
+
+fn strongest_non_parallel_axis(extent: Vec3, excluded: usize) -> usize {
+    let values = [extent.x.abs(), extent.y.abs(), extent.z.abs()];
+    values
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != excluded)
+        .max_by(|(left_index, left), (right_index, right)| {
+            left.total_cmp(right).then(left_index.cmp(right_index))
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(2)
+}
+
+fn axis_vec(axis: usize) -> Vec3 {
+    match axis {
+        0 => Vec3::X,
+        1 => Vec3::Y,
+        _ => Vec3::Z,
+    }
 }
 
 fn scene_bounds_for_camera(

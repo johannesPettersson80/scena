@@ -8,6 +8,16 @@
         "min": 0.1,
         "max": 10.0,
         "unit": "m"
+      },
+      "material": {
+        "base_color": "#565A60",
+        "roughness": 0.86,
+        "metallic": 0.0
+      },
+      "edge_emphasis": {
+        "base_color": "#FFB000",
+        "stroke_width_px": 2.0,
+        "edge_angle_threshold_degrees": 18.0
       }
     }
   ],

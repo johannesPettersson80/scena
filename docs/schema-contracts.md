@@ -1287,7 +1287,15 @@ The current v1 recipe slice supports:
   with raw `fov_degrees`. Ergonomic `framing` routes through
   `FramingOptions` and `Scene::frame_bounds`; `framing.mode:
   "default_for_bounds"` routes through
-  `Scene::add_perspective_camera_default_for`.
+  `Scene::add_perspective_camera_default_for`; `framing.mode:"principal_face"`
+  chooses the imported/rendered bounds' thinnest axis as the view direction so
+  thin CAD parts are framed by their broad face rather than their edge.
+- `imports[]` may declare presentation-only `material` and `edge_emphasis`
+  objects. `material` overrides the imported mesh material with a recipe-owned
+  PBR base color, roughness, and metallic factor. `edge_emphasis` adds renderer
+  edge-material overlay geometry for boundary and crease edges above the
+  requested angle threshold. Both are Scena rendering controls only; they do not
+  change imported geometry, CAD truth, or source glTF bytes.
 - `lights[]` authored directional, point, spot, area, or `studio_rig` lights
   with presets, color, intensity/range/cone fields, area shape/size/flux
   fields, and transforms. `kind:"studio_rig"` routes through

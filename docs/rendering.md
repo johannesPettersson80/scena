@@ -55,7 +55,31 @@ presets instead of hand-tuning a `look_at` distance:
 `lens` routes to `PerspectiveCamera::wide_angle()`, `standard()`,
 `portrait()`, or `telephoto()`. `framing` routes to `FramingOptions` and
 `Scene::frame_bounds`; `framing.mode:"default_for_bounds"` routes to
-`Scene::add_perspective_camera_default_for`.
+`Scene::add_perspective_camera_default_for`. For thin imported CAD parts,
+`framing.mode:"principal_face"` frames the largest face instead of letting the
+camera land edge-on.
+
+Imported CAD can also request presentation-only material and edge emphasis
+directly on the import. This does not mutate the glTF or CAD truth; it only
+controls how Scena renders the imported mesh:
+
+```json
+"imports": [{
+  "id": "terminal",
+  "uri": "terminal-block.scene.geometry.gltf",
+  "material": {
+    "base_color": "#565A60",
+    "roughness": 0.86,
+    "metallic": 0.0
+  },
+  "edge_emphasis": {
+    "enabled": true,
+    "base_color": "#FFB000",
+    "stroke_width_px": 2.0,
+    "edge_angle_threshold_degrees": 18.0
+  }
+}]
+```
 
 ## Lights
 

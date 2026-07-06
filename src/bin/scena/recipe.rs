@@ -11,6 +11,9 @@ mod verification;
 
 use verification::{RecipeVerificationInput, verify_recipe_expectations};
 
+#[path = "recipe/cad_inspection.rs"]
+mod cad_inspection;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecipeRenderCommandArgs {
     recipe: PathBuf,
@@ -145,6 +148,10 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         exit_code,
         "failed to serialize recipe render result",
     )
+}
+
+pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, String> {
+    cad_inspection::run_recipe_inspect_cad_command(args)
 }
 
 impl RecipeRenderCommandArgs {

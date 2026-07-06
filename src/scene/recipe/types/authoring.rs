@@ -1,11 +1,16 @@
 use serde::{Deserialize, Serialize};
 
-use crate::scene::Transform;
+mod imports;
 
 use super::overlays::SceneRecipeTargetV1;
 use super::{
     default_transform_scale, default_transform_up, default_true, is_default_scale, is_default_up,
     is_false, is_true, is_zero_f64, is_zero_vec3,
+};
+
+pub use imports::{
+    SceneRecipeExpectedExtentV1, SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportMaterialV1,
+    SceneRecipeImportV1,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -510,24 +515,4 @@ pub enum SceneRecipeTransformV1 {
 pub enum SceneRecipeLookAtTargetV1 {
     Node(String),
     Position([f64; 3]),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SceneRecipeImportV1 {
-    pub id: String,
-    pub uri: String,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub optional: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<Transform>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected_extent: Option<SceneRecipeExpectedExtentV1>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SceneRecipeExpectedExtentV1 {
-    pub min: f64,
-    pub max: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<String>,
 }

@@ -75,6 +75,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, subcommand, rest @ ..] if command == "recipe" && subcommand == "render" => {
             run_recipe_render_command(rest)
         }
+        [command, subcommand, rest @ ..] if command == "recipe" && subcommand == "inspect-cad" => {
+            run_recipe_inspect_cad_command(rest)
+        }
         [command, subcommand, rest @ ..] if command == "examples" && subcommand == "agent" => {
             run_examples_agent_command(rest)
         }
@@ -100,6 +103,7 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
              'validate-recipe <recipe.json>', \
              'place <recipe.json> --import <id> --verb <verb>', \
              'recipe render <recipe.json> --introspect --verify --out <png>', \
+             'recipe inspect-cad <recipe.json> --out-dir <dir>', \
              'examples agent [get] <template> [--out <dir>]', \
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
@@ -126,6 +130,19 @@ fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
 fn run_recipe_render_command(_args: &[String]) -> Result<CliOutcome, String> {
     Err(
         "recipe render requires building the scena binary with the 'scene-host' feature"
+            .to_string(),
+    )
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_recipe::run_recipe_inspect_cad_command(args)
+}
+
+#[cfg(not(all(feature = "inspection", feature = "scene-host")))]
+fn run_recipe_inspect_cad_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err(
+        "recipe inspect-cad requires building the scena binary with the 'scene-host' feature"
             .to_string(),
     )
 }

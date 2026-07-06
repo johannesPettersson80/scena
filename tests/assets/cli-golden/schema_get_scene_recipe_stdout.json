@@ -101,9 +101,18 @@
       "plate_blue": "#3A7BD5"
     },
     "expect": {
+      "expect_backend": {
+        "backend": "headless",
+        "gpu_device": false
+      },
       "expect_bbox_fit": {
         "max": 0.95,
         "min": 0.05
+      },
+      "expect_clipping": {
+        "active_clipping_planes": 1,
+        "section_box_active": true,
+        "section_box_inverted": false
       },
       "expect_color": [
         {
@@ -159,15 +168,85 @@
           "tolerance_pixels": 0
         }
       ],
-      "expect_backend": {
-        "backend": "headless",
-        "gpu_device": false
+      "expect_pick": [
+        {
+          "id": "plate-pick",
+          "target": {
+            "id": "plate",
+            "kind": "node"
+          },
+          "x_css_px": 48.0,
+          "y_css_px": 36.0
+        }
+      ],
+      "expect_quality": {
+        "area_light": {
+          "min_emitter_extent_meters": 0.5,
+          "min_penumbra_luma_levels": 18.0,
+          "min_penumbra_width_px": 1.5,
+          "min_shadow_contrast": 0.025,
+          "target": {
+            "id": "plate",
+            "kind": "node"
+          }
+        },
+        "depth_of_field": {
+          "max_focal_mean_delta": 0.08,
+          "min_background_sobel_drop": 0.015,
+          "min_background_sobel_drop_fraction": 0.18,
+          "min_source_background_sobel": 0.04,
+          "target": {
+            "id": "plate",
+            "kind": "node"
+          }
+        },
+        "grounding": {
+          "min_contact_shadow_delta": 0.018,
+          "target": {
+            "id": "plate",
+            "kind": "node"
+          }
+        },
+        "line": {
+          "max_straightness_error": 0.08,
+          "min_intermediate_edge_fraction": 0.005
+        },
+        "profile": "documentation",
+        "reflection": {
+          "max_firefly_fraction": 0.01,
+          "min_bright_fraction": 0.08,
+          "min_chroma_range": 0.04,
+          "min_dark_fraction": 0.03,
+          "min_luminance_range": 0.12,
+          "min_sobel_energy": 0.02,
+          "target": {
+            "id": "plate",
+            "kind": "node"
+          }
+        },
+        "text": {
+          "max_background_luminance_range": 0.03,
+          "max_background_mean_delta": 0.03,
+          "max_ink_isolation": 0.01,
+          "min_ink_coverage": 0.05,
+          "min_intermediate_edge_fraction": 0.02
+        }
       },
-      "expect_clipping": {
-        "active_clipping_planes": 1,
-        "section_box_active": true,
-        "section_box_inverted": false
-      },
+      "expect_separation": [
+        {
+          "a": {
+            "id": "plate",
+            "kind": "node"
+          },
+          "b": {
+            "id": "tri",
+            "kind": "node"
+          },
+          "id": "plate-clear-of-tri",
+          "min_gap": 0.0,
+          "tolerance": 0.001
+        }
+      ],
       "expect_state": [
         {
           "id": "default-import-variant",
@@ -200,86 +279,7 @@
           ],
           "translation_tolerance": 0.001
         }
-      ],
-      "expect_separation": [
-        {
-          "a": {
-            "id": "plate",
-            "kind": "node"
-          },
-          "b": {
-            "id": "tri",
-            "kind": "node"
-          },
-          "id": "plate-clear-of-tri",
-          "min_gap": 0.0,
-          "tolerance": 0.001
-        }
-      ],
-      "expect_pick": [
-        {
-          "id": "plate-pick",
-          "target": {
-            "id": "plate",
-            "kind": "node"
-          },
-          "x_css_px": 48.0,
-          "y_css_px": 36.0
-        }
-      ],
-      "expect_quality": {
-        "area_light": {
-          "min_emitter_extent_meters": 0.5,
-          "min_penumbra_luma_levels": 18.0,
-          "min_penumbra_width_px": 1.5,
-          "min_shadow_contrast": 0.025,
-          "target": {
-            "id": "plate",
-            "kind": "node"
-          }
-        },
-        "line": {
-          "max_straightness_error": 0.08,
-          "min_intermediate_edge_fraction": 0.005
-        },
-        "grounding": {
-          "min_contact_shadow_delta": 0.018,
-          "target": {
-            "id": "plate",
-            "kind": "node"
-          }
-        },
-        "depth_of_field": {
-          "max_focal_mean_delta": 0.08,
-          "min_background_sobel_drop": 0.015,
-          "min_background_sobel_drop_fraction": 0.18,
-          "min_source_background_sobel": 0.04,
-          "target": {
-            "id": "plate",
-            "kind": "node"
-          }
-        },
-        "profile": "documentation",
-        "reflection": {
-          "max_firefly_fraction": 0.01,
-          "min_bright_fraction": 0.08,
-          "min_chroma_range": 0.04,
-          "min_dark_fraction": 0.03,
-          "min_luminance_range": 0.12,
-          "min_sobel_energy": 0.02,
-          "target": {
-            "id": "plate",
-            "kind": "node"
-          }
-        },
-        "text": {
-          "max_background_luminance_range": 0.03,
-          "max_background_mean_delta": 0.03,
-          "max_ink_isolation": 0.01,
-          "min_ink_coverage": 0.05,
-          "min_intermediate_edge_fraction": 0.02
-        }
-      }
+      ]
     },
     "exploded_view": {
       "axis": [
@@ -362,12 +362,22 @@
     ],
     "imports": [
       {
+        "edge_emphasis": {
+          "base_color": "#FFB000",
+          "edge_angle_threshold_degrees": 18.0,
+          "stroke_width_px": 2.0
+        },
         "expected_extent": {
           "max": 10.0,
           "min": 0.1,
           "unit": "m"
         },
         "id": "part",
+        "material": {
+          "base_color": "#565A60",
+          "metallic": 0.0,
+          "roughness": 0.86
+        },
         "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
       }
     ],
@@ -616,14 +626,6 @@
     ],
     "render": {
       "anti_aliasing": "fxaa",
-      "supersample": 1,
-      "reconstruction": "box",
-      "screen_space_reflections": {
-        "fade": 0.35,
-        "horizon_fraction": 0.58,
-        "roughness": 0.22,
-        "strength": 0.35
-      },
       "depth_of_field": {
         "aperture_f_stop": 2.8,
         "focus_distance": 2.4,
@@ -632,10 +634,17 @@
       "exposure_ev": 0.0,
       "profile": "balanced",
       "quality": "medium",
+      "reconstruction": "box",
+      "screen_space_reflections": {
+        "fade": 0.35,
+        "horizon_fraction": 0.58,
+        "roughness": 0.22,
+        "strength": 0.35
+      },
+      "supersample": 1,
       "tonemapper": "pbr_neutral"
     },
     "scene": {
-      "preset": "product_studio",
       "background": {
         "kind": "studio"
       },
@@ -650,7 +659,8 @@
         "reflection": {
           "strength": 0.35
         }
-      }
+      },
+      "preset": "product_studio"
     },
     "schema": "scena.scene_recipe.v1",
     "section_box": {

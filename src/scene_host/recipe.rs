@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
+use super::{SceneHostCore, SceneHostError};
+use crate::AssetPath;
 use crate::assets::{AssetLoadOptions, DefaultAssetFetcher};
 use crate::diagnostics::AssetError;
 use crate::scene::recipe::{
@@ -9,9 +10,10 @@ use crate::scene::recipe::{
     SceneRecipeBuildV1, SceneRecipeDiagnosticV1, build_diagnostic,
     parse_valid_scene_recipe_json_with_policy,
 };
-use crate::{AssetPath, Assets, Renderer, SurfaceViewport};
 
 mod authoring;
+mod host;
+mod import_presentation;
 mod overlays;
 mod policy;
 mod setup;
@@ -24,6 +26,8 @@ use authoring::{
     build_authored_materials, build_authored_morphs, build_authored_nodes,
     build_authored_particle_sets, build_authored_skins,
 };
+use host::recipe_headless_host;
+use import_presentation::apply_import_presentation;
 use overlays::apply_recipe_overlays;
 use policy::{RecipeBuildBudget, RecipeTextureBudget, asset_policy_diagnostics};
 use setup::{apply_render_setup, apply_scene_setup, renderer_options_from_recipe};
@@ -244,6 +248,18 @@ impl SceneHostCore<DefaultAssetFetcher> {
                     }
                 }
             }
+            apply_import_presentation(
+                &mut host,
+                &recipe.colors,
+                import,
+                &root_handles,
+                &import_path,
+                &mut nodes,
+                &mut diagnostics,
+            );
+            if has_errors(&diagnostics[diagnostic_start..]) {
+                continue;
+            }
 
             let addressable_paths = match host.resolve_import(import_handle) {
                 Ok(scene_import) => scene_import.addressable_node_paths(),
@@ -442,27 +458,6 @@ impl SceneHostCore<DefaultAssetFetcher> {
             Err(manifest)
         }
     }
-}
-
-fn recipe_headless_host(
-    width: u32,
-    height: u32,
-    options: crate::RendererOptions,
-    prefer_gpu: bool,
-) -> Result<SceneHostCore<DefaultAssetFetcher>, SceneHostError> {
-    let viewport = SurfaceViewport::new(width as f32, height as f32, 1.0).ok_or_else(|| {
-        SceneHostError::new(
-            SceneHostErrorCode::InvalidViewport,
-            format!("invalid viewport {width}x{height} at DPR 1"),
-        )
-    })?;
-    let renderer = if prefer_gpu {
-        Renderer::headless_gpu_with_options(width, height, options)
-            .or_else(|_gpu_error| Renderer::headless_with_options(width, height, options))?
-    } else {
-        Renderer::headless_with_options(width, height, options)?
-    };
-    SceneHostCore::from_renderer(Assets::new(), renderer, viewport)
 }
 
 fn build_manifest(

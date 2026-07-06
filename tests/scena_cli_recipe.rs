@@ -14,6 +14,7 @@ const TEST_ASSET: &str = "tests/assets/gltf/mesh_material_vertex_color_scene.glt
 const ANCHORED_ASSET: &str = "tests/assets/gltf/anchored_triangle_scene.gltf";
 const ANCHOR_ASSET: &str = "tests/assets/gltf/anchor_debug_scene.gltf";
 const CONNECTOR_ASSET: &str = "tests/assets/gltf/connector_basis_scene.gltf";
+const CAD_TERMINAL_ASSET: &str = "tests/assets/gltf/cad_terminal_block.gltf";
 const LAVAPIPE_ICD: &str = "/usr/share/vulkan/icd.d/lvp_icd.json";
 
 fn configure_command_for_lavapipe(command: &mut Command) {
@@ -145,6 +146,266 @@ fn scena_inspect_and_diagnose_cli_accept_scene_recipe_input() {
             .iter()
             .any(|reason| reason["code"] == "stale_handle"),
         "recipe diagnosis should explain stale handle: {diagnosis:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_inspect_cad_generates_reviewable_feature_views() {
+    let dir = artifact_dir("recipe-inspect-cad-terminal");
+    let recipe_path = dir.join("terminal.recipe.json");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{
+                "id": "terminal",
+                "uri": CAD_TERMINAL_ASSET
+            }]
+        }))
+        .expect("recipe serializes"),
+    )
+    .expect("recipe writes");
+    let out_dir = dir.join("inspection");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "inspect-cad",
+            path_str(&recipe_path),
+            "--out-dir",
+            path_str(&out_dir),
+            "--width",
+            "512",
+            "--height",
+            "384",
+        ])
+        .output()
+        .expect("scena recipe inspect-cad runs");
+
+    assert!(
+        output.status.success(),
+        "stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "inspect-cad keeps stdout JSON clean, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("inspect-cad emits JSON");
+    assert_eq!(report["schema"], "scena.cad_inspection_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["source_recipe"], path_str(&recipe_path));
+    let contact_sheet = out_dir.join("cad-inspection-contact-sheet.png");
+    assert_eq!(report["contact_sheet_png"], path_str(&contact_sheet));
+    assert!(
+        fs::metadata(&contact_sheet)
+            .expect("contact sheet exists")
+            .len()
+            > 0
+    );
+
+    let views = report["views"].as_array().expect("views array");
+    assert_eq!(views.len(), 3, "{report:#}");
+    for expected in ["broad_face", "top_features", "overview"] {
+        let view = views
+            .iter()
+            .find(|candidate| candidate["id"] == expected)
+            .unwrap_or_else(|| panic!("missing view {expected}: {report:#}"));
+        assert_eq!(view["render_result"]["ok"], true, "{view:#}");
+        assert_eq!(view["render_result"]["verification_ok"], true, "{view:#}");
+        assert_eq!(view["render_result"]["introspection_ok"], true, "{view:#}");
+        assert!(
+            view["postprocess"]["foreground_pixels"]
+                .as_u64()
+                .expect("foreground count numeric")
+                > 250,
+            "{view:#}"
+        );
+        assert!(
+            view["postprocess"]["edge_pixels"]
+                .as_u64()
+                .expect("edge count numeric")
+                > 50,
+            "{view:#}"
+        );
+        assert_eq!(view["postprocess"]["tone_override"], true, "{view:#}");
+        assert_eq!(view["postprocess"]["edge_emphasis"], true, "{view:#}");
+        assert!(Path::new(view["processed_png"].as_str().unwrap()).exists());
+        assert!(Path::new(view["raw_png"].as_str().unwrap()).exists());
+        assert!(Path::new(view["recipe_json"].as_str().unwrap()).exists());
+        assert!(Path::new(view["render_result_json"].as_str().unwrap()).exists());
+    }
+
+    let broad_face = views
+        .iter()
+        .find(|candidate| candidate["id"] == "broad_face")
+        .expect("broad-face view exists");
+    assert!(
+        broad_face["postprocess"]["content_bbox_fraction"]["width"]
+            .as_f64()
+            .expect("width fraction numeric")
+            > 0.25,
+        "broad-face view should not be edge-on: {broad_face:#}"
+    );
+    assert!(
+        broad_face["postprocess"]["content_bbox_fraction"]["height"]
+            .as_f64()
+            .expect("height fraction numeric")
+            > 0.45,
+        "broad-face view should frame the broad feature face: {broad_face:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_import_material_edges_and_principal_face_camera_make_cad_features_visible() {
+    let dir = artifact_dir("recipe-cad-import-presentation");
+    let recipe_path = dir.join("terminal-cad-presentation.recipe.json");
+    let png_path = dir.join("terminal-cad-presentation.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{
+                "id": "terminal",
+                "uri": CAD_TERMINAL_ASSET,
+                "material": {
+                    "base_color": "#565A60",
+                    "roughness": 0.86,
+                    "metallic": 0.0
+                },
+                "edge_emphasis": {
+                    "enabled": true,
+                    "base_color": "#FFB000",
+                    "stroke_width_px": 2.25,
+                    "edge_angle_threshold_degrees": 18.0
+                }
+            }],
+            "scene": {
+                "background": { "kind": "custom", "color": "#F4F6FA" },
+                "grid": { "enabled": false }
+            },
+            "render": {
+                "profile": "industrial",
+                "quality": "high",
+                "anti_aliasing": "fxaa",
+                "supersample": 2,
+                "reconstruction": "gaussian",
+                "tonemapper": "aces",
+                "exposure_ev": 0.0
+            },
+            "lights": [
+                { "id": "cad_key", "kind": "directional", "preset": "key" },
+                { "id": "cad_fill", "kind": "directional", "preset": "fill" },
+                { "id": "cad_rim", "kind": "directional", "preset": "rim" }
+            ],
+            "cameras": [{
+                "id": "cad_principal",
+                "kind": "perspective",
+                "lens": "telephoto",
+                "active": true,
+                "framing": {
+                    "mode": "principal_face",
+                    "fill": 0.76,
+                    "margin_px": 16.0
+                }
+            }],
+            "capture": { "width": 640, "height": 480 },
+            "expect": {
+                "expect_bbox_fit": {
+                    "min": 0.22,
+                    "max": 0.92
+                }
+            }
+        }))
+        .expect("CAD presentation recipe serializes"),
+    )
+    .expect("CAD presentation recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--detail",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render CAD presentation command runs");
+
+    assert!(
+        output.status.success(),
+        "CAD presentation render should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "CAD presentation render keeps stdout JSON clean, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["build"]["ok"], true, "{report:#}");
+    assert_eq!(report["introspection"]["ok"], true, "{report:#}");
+    assert_eq!(report["verification"]["ok"], true, "{report:#}");
+    assert!(
+        report["introspection"]["nodes_summary"]["drawn"]
+            .as_u64()
+            .expect("drawn count numeric")
+            >= 2,
+        "edge emphasis should add renderer-visible overlay drawables, not a PNG-only filter: {report:#}"
+    );
+
+    let bbox = &report["introspection"]["content_bbox_fraction"];
+    assert!(
+        bbox["width"]
+            .as_f64()
+            .expect("content bbox width fraction numeric")
+            > 0.30,
+        "principal_face camera should not land edge-on to the 6 mm side: {report:#}"
+    );
+    assert!(
+        bbox["height"]
+            .as_f64()
+            .expect("content bbox height fraction numeric")
+            > 0.45,
+        "principal_face camera should frame the 44x48 feature face: {report:#}"
+    );
+
+    let image = decode_png_rgba8(&png_path);
+    let content = quality_region_from_pixel_region(content_region_from_introspection_report(
+        &report["introspection"],
+    ));
+    let dark_material_pixels = count_pixels_in_region(
+        &image.rgba8,
+        image.width,
+        content,
+        is_dark_grey_material_pixel,
+    );
+    assert!(
+        dark_material_pixels > 1_500,
+        "import material override must make the terminal dark grey, not white; dark_pixels={dark_material_pixels}, png={png_path:?}, report={report:#}"
+    );
+    let white_blob_pixels =
+        count_pixels_in_region(&image.rgba8, image.width, content, is_white_blob_pixel);
+    let content_pixels = content.width.saturating_mul(content.height).max(1);
+    assert!(
+        white_blob_pixels < content_pixels / 6,
+        "CAD import must not render as a white-on-white blob; white_pixels={white_blob_pixels}, content_pixels={content_pixels}, dark_pixels={dark_material_pixels}, png={png_path:?}"
+    );
+    let edge_pixels = count_pixels_in_region(&image.rgba8, image.width, content, is_cad_edge_pixel);
+    assert!(
+        edge_pixels > 300,
+        "edge emphasis should draw visible CAD edges for chamfers, wells, and groove; edge_pixels={edge_pixels}, png={png_path:?}"
     );
 }
 
@@ -9820,6 +10081,16 @@ fn content_region_from_introspection_report(
 }
 
 #[cfg(feature = "scene-host")]
+fn quality_region_from_pixel_region(region: support::parity::PixelRegion) -> QualityPixelRegion {
+    QualityPixelRegion {
+        x: region.x,
+        y: region.y,
+        width: region.width,
+        height: region.height,
+    }
+}
+
+#[cfg(feature = "scene-host")]
 fn parity_region_json(region: support::parity::PixelRegion) -> String {
     format!(
         "{{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}",
@@ -10463,6 +10734,22 @@ fn is_blue_object_pixel(r: u8, g: u8, b: u8) -> bool {
 #[cfg(feature = "scene-host")]
 fn is_red_grid_pixel(r: u8, g: u8, b: u8) -> bool {
     r > 150 && g < 95 && b < 95
+}
+
+#[cfg(feature = "scene-host")]
+fn is_dark_grey_material_pixel(r: u8, g: u8, b: u8) -> bool {
+    let max_delta = r.abs_diff(g).max(g.abs_diff(b)).max(r.abs_diff(b));
+    (25..=145).contains(&r) && (25..=145).contains(&g) && (25..=145).contains(&b) && max_delta <= 38
+}
+
+#[cfg(feature = "scene-host")]
+fn is_white_blob_pixel(r: u8, g: u8, b: u8) -> bool {
+    r >= 235 && g >= 235 && b >= 235
+}
+
+#[cfg(feature = "scene-host")]
+fn is_cad_edge_pixel(r: u8, g: u8, b: u8) -> bool {
+    r >= 170 && (95..=210).contains(&g) && b <= 90
 }
 
 fn system_test_font_path() -> PathBuf {

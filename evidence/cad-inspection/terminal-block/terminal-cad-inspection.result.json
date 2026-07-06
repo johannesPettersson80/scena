@@ -1,0 +1,525 @@
+{
+  "schema": "scena.recipe_render_result.v1",
+  "ok": true,
+  "build": {
+    "schema": "scena.scene_recipe_build.v1",
+    "ok": true,
+    "imports": [
+      {
+        "id": "terminal",
+        "uri": "tests/assets/gltf/cad_terminal_block.gltf",
+        "import_handle": 4294967297,
+        "root_handles": [
+          4294967299
+        ],
+        "primary_root": 4294967299,
+        "nodes_by_path": {
+          "terminal:/": 4294967299,
+          "terminal:/terminal-block-din CAD visual mesh": 4294967299
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "id": "terminal.edge_emphasis.0.0",
+        "handle": 4294967300,
+        "kind": "generated_overlay",
+        "parent": 4294967299
+      }
+    ],
+    "cameras": [
+      {
+        "id": "cad_principal",
+        "handle": 4294967301,
+        "kind": "camera",
+        "parent": 4294967297,
+        "active": true
+      }
+    ],
+    "lights": [
+      {
+        "id": "cad_key",
+        "handle": 4294967302,
+        "kind": "light",
+        "parent": 4294967297
+      },
+      {
+        "id": "cad_fill",
+        "handle": 4294967303,
+        "kind": "light",
+        "parent": 4294967297
+      },
+      {
+        "id": "cad_rim",
+        "handle": 4294967304,
+        "kind": "light",
+        "parent": 4294967297
+      }
+    ],
+    "geometries": [],
+    "materials": [],
+    "diagnostics": [],
+    "skipped": []
+  },
+  "capture": {
+    "schema": "scena.capture.v1",
+    "width": 2560,
+    "height": 1920,
+    "pixel_format": "rgba8",
+    "payload": {
+      "kind": "rgba8",
+      "byte_length": 19660800,
+      "fnv1a64": "75b38423fd1f49f9"
+    },
+    "revisions": {
+      "structure": 8,
+      "transform": 1,
+      "appearance": 0,
+      "interaction": 0
+    },
+    "camera": {
+      "active": true,
+      "world_transform": {
+        "translation": [
+          0.20613648,
+          0.07718025,
+          0.021999998
+        ],
+        "rotation": [
+          -0.089690425,
+          0.70139545,
+          0.089690425,
+          0.7013955
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "projection": {
+        "kind": "perspective",
+        "vertical_fov_radians": 0.31415927,
+        "aspect": 1.3333334,
+        "near": 0.01,
+        "far": 1000.0
+      }
+    },
+    "viewport": {
+      "width": 2560,
+      "height": 1920,
+      "logical_width": 2560.0,
+      "logical_height": 1920.0,
+      "device_pixel_ratio": 1.0
+    },
+    "backend": "headless",
+    "capabilities": {
+      "backend": "headless",
+      "color_target_format": "Rgba8UnormSrgb",
+      "gpu_device": false,
+      "surface_attached": false,
+      "hardware_tier": "low",
+      "output_stage": "pbr_neutral_srgb",
+      "alpha_pipeline": "linear_source_over",
+      "forward_pbr": "degraded",
+      "directional_shadows": "degraded",
+      "point_shadows": "feature_disabled",
+      "spot_shadows": "feature_disabled",
+      "directional_shadow_map_default_size": 2048,
+      "directional_shadow_map_max_size": 4096,
+      "directional_shadow_pcf_kernel": 3,
+      "ibl_cubemap_default_size": 256,
+      "ibl_brdf_lut_default_size": 256,
+      "bloom": "supported",
+      "screen_space_ambient_occlusion": "supported",
+      "order_independent_transparency": "supported",
+      "physical_glass_transmission": "degraded",
+      "wide_gamut_output": "feature_disabled",
+      "texture_compression_basisu": "feature_disabled",
+      "hardware_instancing": "feature_disabled",
+      "texture_arrays": "feature_disabled",
+      "max_texture_array_layers": 0,
+      "fragment_high_precision": "feature_disabled",
+      "uniform_buffers": "feature_disabled",
+      "uniform_buffer_max_bytes": 0,
+      "default_clipping_planes": 8,
+      "max_clipping_planes": 16,
+      "gpu_frustum_culling": "feature_disabled",
+      "per_instance_culling": "degraded",
+      "compute_shaders": "feature_disabled",
+      "storage_buffers": "feature_disabled",
+      "readback_headless_screenshots": "supported",
+      "reversed_z_depth": "feature_disabled"
+    },
+    "auto_frame": null,
+    "pixels": {
+      "nonblack": 4915200,
+      "bbox": {
+        "min_x": 0,
+        "min_y": 0,
+        "max_x": 2559,
+        "max_y": 1919,
+        "width": 2560,
+        "height": 1920
+      },
+      "center": [
+        30,
+        32,
+        35,
+        255
+      ],
+      "fnv1a64": "75b38423fd1f49f9"
+    }
+  },
+  "introspection": {
+    "schema": "scena.render_introspection.v1",
+    "ok": true,
+    "reasons": [],
+    "fixes": [],
+    "content_bbox_css_px": {
+      "min_x": 615.0,
+      "min_y": 264.0,
+      "max_x": 1944.0,
+      "max_y": 1654.0,
+      "width": 1330.0,
+      "height": 1391.0
+    },
+    "content_bbox_fraction": {
+      "min_x": 0.24,
+      "min_y": 0.138,
+      "max_x": 0.759,
+      "max_y": 0.861,
+      "width": 0.52,
+      "height": 0.724
+    },
+    "visible_pixel_fraction": 0.347,
+    "luminance": {
+      "min": 23.004,
+      "max": 245.864,
+      "mean": 177.94,
+      "p05": 23.719,
+      "p50": 245.864,
+      "p95": 245.864
+    },
+    "framing": {
+      "center_offset_fraction": [
+        0.0,
+        0.0
+      ],
+      "fit_fraction": 0.724,
+      "cropped": false,
+      "tiny_in_frame": false,
+      "active_camera": 4294967301
+    },
+    "nodes_summary": {
+      "visible": 8,
+      "hidden": 0,
+      "drawn": 2,
+      "culled": 0,
+      "transparent": 0,
+      "failed_material": 0
+    },
+    "nodes_detail": [
+      {
+        "handle": 4294967297,
+        "kind": "Empty",
+        "visible": true,
+        "reason_codes": []
+      },
+      {
+        "handle": 4294967298,
+        "kind": "Camera",
+        "visible": true,
+        "reason_codes": []
+      },
+      {
+        "handle": 4294967299,
+        "kind": "Mesh",
+        "visible": true,
+        "reason_codes": []
+      },
+      {
+        "handle": 4294967300,
+        "kind": "Mesh",
+        "visible": true,
+        "reason_codes": []
+      },
+      {
+        "handle": 4294967301,
+        "kind": "Camera",
+        "visible": true,
+        "reason_codes": []
+      },
+      {
+        "handle": 4294967302,
+        "kind": "Light",
+        "visible": true,
+        "reason_codes": []
+      },
+      {
+        "handle": 4294967303,
+        "kind": "Light",
+        "visible": true,
+        "reason_codes": []
+      },
+      {
+        "handle": 4294967304,
+        "kind": "Light",
+        "visible": true,
+        "reason_codes": []
+      }
+    ],
+    "artifacts": {
+      "capture_png_path": "evidence/cad-inspection/terminal-block/terminal-cad-inspection.png",
+      "capture_descriptor_path": "evidence/cad-inspection/terminal-block/terminal-cad-inspection.capture.json",
+      "capture": {
+        "schema": "scena.capture.v1",
+        "width": 2560,
+        "height": 1920,
+        "payload_fnv1a64": "75b38423fd1f49f9"
+      }
+    },
+    "capabilities": {
+      "backend": "headless",
+      "gpu_device": false,
+      "surface_attached": false,
+      "hardware_tier": "low",
+      "forward_pbr": "degraded",
+      "readback_headless_screenshots": "supported"
+    }
+  },
+  "verification": {
+    "ok": true,
+    "summary": {
+      "render_checks": 1,
+      "appearance_targets": 0,
+      "interaction_steps": 0,
+      "composition_checks": 7,
+      "quality_checks": 2,
+      "errors": 0,
+      "warnings": 0
+    },
+    "reasons": [],
+    "composition": {
+      "schema": "scena.scene_composition.v1",
+      "ok": true,
+      "summary": {
+        "checks": 7,
+        "checked": 7,
+        "failed": 0,
+        "skipped": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "errors": 0,
+        "warnings": 0
+      },
+      "checks": [
+        {
+          "id": "render.anti_aliasing",
+          "category": "backend_conformance",
+          "code": "render_antialiasing_active",
+          "status": "checked",
+          "severity": "info",
+          "target_id": "render.anti_aliasing",
+          "affected_handles": [],
+          "observed": {
+            "actual": "fxaa",
+            "expected": "fxaa"
+          },
+          "message": "anti-aliasing mode requested by the recipe is active",
+          "fix_hint": "no action needed"
+        },
+        {
+          "id": "render.supersample",
+          "category": "backend_conformance",
+          "code": "render_supersample_active",
+          "status": "checked",
+          "severity": "info",
+          "target_id": "render.supersample",
+          "affected_handles": [],
+          "observed": {
+            "actual": 2,
+            "expected": 2
+          },
+          "message": "supersample factor requested by the recipe is active",
+          "fix_hint": "no action needed"
+        },
+        {
+          "id": "render.reconstruction",
+          "category": "backend_conformance",
+          "code": "render_reconstruction_active",
+          "status": "checked",
+          "severity": "info",
+          "target_id": "render.reconstruction",
+          "affected_handles": [],
+          "observed": {
+            "actual": "gaussian",
+            "expected": "gaussian"
+          },
+          "message": "reconstruction filter requested by the recipe is active",
+          "fix_hint": "no action needed"
+        },
+        {
+          "id": "import.terminal.presence",
+          "category": "completeness",
+          "code": "import_visible",
+          "status": "checked",
+          "severity": "info",
+          "target_id": "terminal",
+          "affected_handles": [
+            4294967299
+          ],
+          "observed": {
+            "draw_count": 1,
+            "node_count": 1,
+            "uri": "tests/assets/gltf/cad_terminal_block.gltf"
+          },
+          "message": "declared import is visible and contributes owned draw output",
+          "fix_hint": "no action needed"
+        },
+        {
+          "id": "import.terminal.projected_bbox",
+          "category": "placement",
+          "code": "projected_bbox_available",
+          "status": "checked",
+          "severity": "info",
+          "region": {
+            "kind": "import",
+            "handle": 4294967299,
+            "rect_css_px": {
+              "min_x": 616.714,
+              "min_y": 267.583,
+              "max_x": 1943.284,
+              "max_y": 1652.122,
+              "width": 1326.57,
+              "height": 1384.539
+            }
+          },
+          "target_id": "terminal",
+          "affected_handles": [
+            4294967299
+          ],
+          "observed": {
+            "center_x_px": 1279.9990234375,
+            "center_y_px": 959.8519897460938,
+            "height_px": 1384.5389404296875,
+            "width_px": 1326.5699462890625
+          },
+          "message": "declared import has a projected screen region",
+          "fix_hint": "no action needed"
+        },
+        {
+          "id": "import.terminal.visible_coverage",
+          "category": "occlusion_depth",
+          "code": "visible_pixel_coverage_available",
+          "status": "checked",
+          "severity": "info",
+          "region": {
+            "kind": "import",
+            "handle": 4294967299,
+            "rect_css_px": {
+              "min_x": 616.0,
+              "min_y": 267.0,
+              "max_x": 1944.0,
+              "max_y": 1653.0,
+              "width": 1328.0,
+              "height": 1386.0
+            }
+          },
+          "target_id": "terminal",
+          "affected_handles": [
+            4294967299
+          ],
+          "observed": {
+            "foreground_fraction": 0.921999990940094,
+            "foreground_pixels": 1697872,
+            "region_pixels": 1840608
+          },
+          "message": "declared import has measured non-background pixels in its projected screen region",
+          "fix_hint": "no action needed"
+        },
+        {
+          "id": "draw_output.extra",
+          "category": "completeness",
+          "code": "no_unowned_draw_output",
+          "status": "checked",
+          "severity": "info",
+          "affected_handles": [],
+          "observed": {
+            "extra_draw_handles": []
+          },
+          "message": "rendered draw output is owned by declared recipe elements or generated overlays",
+          "fix_hint": "no action needed"
+        }
+      ]
+    },
+    "quality": {
+      "schema": "scena.render_quality.v1",
+      "ok": true,
+      "profile": "product",
+      "summary": {
+        "checks": 2,
+        "errors": 0,
+        "warnings": 0
+      },
+      "checks": [
+        {
+          "id": "baseline.black_crush",
+          "code": "severe_black_crush",
+          "status": "checked",
+          "severity": "info",
+          "region": {
+            "kind": "subject",
+            "rect_css_px": {
+              "min_x": 615.0,
+              "min_y": 264.0,
+              "max_x": 1944.0,
+              "max_y": 1654.0,
+              "width": 1329.0,
+              "height": 1390.0
+            }
+          },
+          "observed": {
+            "low_clip_fraction": 0.682
+          },
+          "threshold": {
+            "max_low_clip_fraction": 0.8
+          },
+          "fix_hint": "no action needed"
+        },
+        {
+          "id": "baseline.blown_out",
+          "code": "severe_blown_out",
+          "status": "checked",
+          "severity": "info",
+          "region": {
+            "kind": "subject",
+            "rect_css_px": {
+              "min_x": 615.0,
+              "min_y": 264.0,
+              "max_x": 1944.0,
+              "max_y": 1654.0,
+              "width": 1329.0,
+              "height": 1390.0
+            }
+          },
+          "observed": {
+            "high_clip_fraction": 0.0
+          },
+          "threshold": {
+            "max_high_clip_fraction": 0.65
+          },
+          "fix_hint": "no action needed"
+        }
+      ],
+      "capabilities": {
+        "backend": "headless",
+        "gpu_device": false,
+        "surface_attached": false,
+        "hardware_tier": "low",
+        "forward_pbr": "degraded",
+        "readback_headless_screenshots": "supported"
+      }
+    }
+  }
+}

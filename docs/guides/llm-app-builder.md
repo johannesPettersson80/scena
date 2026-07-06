@@ -88,6 +88,20 @@ For presentation or beauty output, add `--gpu`; CPU remains the default, and
 the report `capabilities.backend` / `gpu_device` fields say which backend
 actually ran.
 
+For CAD imports that render as an edge sliver or white-on-white blob, run the
+inspection preset instead of hand-tuning a single camera:
+
+```bash
+scena recipe inspect-cad "$RECIPE" --out-dir target/cad-inspection
+```
+
+It generates broad-face, top-feature, and overview recipes, renders each through
+`recipe render --introspect --verify`, then writes PNGs and
+`scena.cad_inspection_result.v1`. Generated CAD inspection recipes apply
+presentation-only `imports[].material`, `imports[].edge_emphasis`, and a
+principal-face camera where appropriate; these controls do not change the
+source geometry or CAD truth.
+
 For user-facing renders, add one more pass before calling the image done:
 inspect the native-resolution frame in explicit "what is wrong?" mode. Check
 the whole composition: declared objects visible and placed correctly, no stale

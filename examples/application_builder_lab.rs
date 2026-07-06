@@ -499,6 +499,8 @@ fn agent_render_loop(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>> 
                 max: 2.0,
                 unit: Some("scene units".to_owned()),
             }),
+            material: None,
+            edge_emphasis: None,
         }],
         colors: BTreeMap::new(),
         geometries: Vec::new(),

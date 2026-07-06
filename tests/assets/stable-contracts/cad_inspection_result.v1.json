@@ -1,0 +1,62 @@
+{
+  "schema": "scena.cad_inspection_result.v1",
+  "ok": true,
+  "source_recipe": "examples/terminal.recipe.json",
+  "output_dir": "target/gate-artifacts/cad-inspection-terminal",
+  "contact_sheet_png": "target/gate-artifacts/cad-inspection-terminal/cad-inspection-contact-sheet.png",
+  "subject_bounds": {
+    "min": [0.0, 0.0, 0.0],
+    "max": [0.006, 0.048, 0.044],
+    "extent": [0.006, 0.048, 0.044]
+  },
+  "presentation_policy": {
+    "cad_truth_owned_by": "source recipe and imported geometry",
+    "tone_override": "presentation_only",
+    "edge_emphasis": "presentation_only",
+    "geometry_modified": false
+  },
+  "views": [
+    {
+      "id": "broad_face",
+      "purpose": "principal broad face with the thin dimension facing the camera",
+      "recipe_json": "target/gate-artifacts/cad-inspection-terminal/broad_face.recipe.json",
+      "raw_png": "target/gate-artifacts/cad-inspection-terminal/broad_face.raw.png",
+      "processed_png": "target/gate-artifacts/cad-inspection-terminal/broad_face.png",
+      "render_result_json": "target/gate-artifacts/cad-inspection-terminal/broad_face.render-result.json",
+      "camera": {
+        "eye": [0.21, 0.03, 0.02],
+        "target": [0.003, 0.024, 0.022],
+        "up": [0.0, 1.0, 0.0],
+        "fov_degrees": 24.0
+      },
+      "render_result": {
+        "ok": true,
+        "introspection_ok": true,
+        "verification_ok": true
+      },
+      "postprocess": {
+        "tone_override": true,
+        "edge_emphasis": true,
+        "presentation_only": true,
+        "foreground_pixels": 52400,
+        "edge_pixels": 3100,
+        "content_bbox_css_px": {
+          "min_x": 112,
+          "min_y": 72,
+          "max_x": 400,
+          "max_y": 318,
+          "width": 289,
+          "height": 247
+        },
+        "content_bbox_fraction": {
+          "min_x": 0.21875,
+          "min_y": 0.1875,
+          "max_x": 0.78125,
+          "max_y": 0.828125,
+          "width": 0.564453125,
+          "height": 0.6432291666666666
+        }
+      }
+    }
+  ]
+}

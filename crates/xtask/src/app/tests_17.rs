@@ -238,6 +238,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         "src/assets/environment_loading.rs",
         "src/render/prepare/environment.rs",
         "crates/xtask/src/app/prerender_environment.rs",
+        "examples/easy_scene_showcase.rs",
         "tests/round_e_material_showcase.rs",
         "tests/geometry_generated_uvs.rs",
         "tests/round_e_source_backed_material_presets.rs",
@@ -325,11 +326,24 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         "assertMaterialPresetProof pbr-material-presets material_preset_glass_pixels browser-glass-pixel-probes structured glass pixels behind clear/frosted glass webgl2_smooth_metal_sample_floor < 96 /demo/samples/environment/white_studio_03_1k.hdr single-shape grid Assets::material_presets()",
     );
     fs::write(browser_probe, browser_probe_fixture).expect("browser probe fixture");
-    fs::write(
-        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
+    append_fixture_text(
+        fixture_root,
+        "tests/browser/m6_rust_wasm_renderer_probe_page.js",
         "materialPresetGlassPixelProof glass_pixel_probes samplePixelBuffer browser-glass-pixel-probes readRenderedPixelBuffer",
-    )
-    .expect("browser probe page fixture");
+    );
+    append_fixture_text(
+        fixture_root,
+        "crates/xtask/src/app/core.rs",
+        " prerender-environment <input.hdr> [--resolution <face_px>] ",
+    );
+    for rel in [
+        "docs/assets/easy-scene-showcase/lens-presets.jpg",
+        "docs/assets/easy-scene-showcase/auto-exposure-presets.jpg",
+        "docs/assets/easy-scene-showcase/environment-presets.jpg",
+        "docs/assets/easy-scene-showcase/material-chrome.png",
+    ] {
+        copy_repo_fixture_file(fixture_root, rel);
+    }
     fs::create_dir_all(fixture_root.join("src/render/prepare"))
         .expect("render prepare fixture dir");
     fs::write(

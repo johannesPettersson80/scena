@@ -185,7 +185,8 @@ Additive public API changes in Unreleased:
 - The `scena` binary with `schema list`, `schema get <schema>`,
   `validate-recipe <recipe.json>`, `place <recipe.json> --import <id>
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`,
-  `recipe render <recipe.json> --introspect --verify --out <png>`, and,
+  `recipe render <recipe.json> --introspect --verify --out <png>`,
+  `recipe inspect-cad <recipe.json> --out-dir <dir>`, and,
   when built with `inspection`, asset-or-recipe-input
   `render --introspect`, `inspect`, `diagnose --visibility`, and
   `repair --from <report.json>`, and

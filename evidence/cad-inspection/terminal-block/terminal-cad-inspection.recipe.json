@@ -1,0 +1,78 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "terminal",
+      "uri": "../../../tests/assets/gltf/cad_terminal_block.gltf",
+      "material": {
+        "base_color": "#565A60",
+        "roughness": 0.86,
+        "metallic": 0.0
+      },
+      "edge_emphasis": {
+        "enabled": true,
+        "base_color": "#FFB000",
+        "stroke_width_px": 2.25,
+        "edge_angle_threshold_degrees": 18.0
+      }
+    }
+  ],
+  "scene": {
+    "background": {
+      "kind": "custom",
+      "color": "#F4F6FA"
+    },
+    "grid": {
+      "enabled": false
+    }
+  },
+  "render": {
+    "profile": "industrial",
+    "quality": "high",
+    "anti_aliasing": "fxaa",
+    "supersample": 2,
+    "reconstruction": "gaussian",
+    "tonemapper": "aces",
+    "exposure_ev": 0.0
+  },
+  "lights": [
+    {
+      "id": "cad_key",
+      "kind": "directional",
+      "preset": "key"
+    },
+    {
+      "id": "cad_fill",
+      "kind": "directional",
+      "preset": "fill"
+    },
+    {
+      "id": "cad_rim",
+      "kind": "directional",
+      "preset": "rim"
+    }
+  ],
+  "cameras": [
+    {
+      "id": "cad_principal",
+      "kind": "perspective",
+      "lens": "telephoto",
+      "active": true,
+      "framing": {
+        "mode": "principal_face",
+        "fill": 0.76,
+        "margin_px": 48.0
+      }
+    }
+  ],
+  "capture": {
+    "width": 2560,
+    "height": 1920
+  },
+  "expect": {
+    "expect_bbox_fit": {
+      "min": 0.22,
+      "max": 0.92
+    }
+  }
+}

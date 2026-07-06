@@ -7,6 +7,7 @@ pub(crate) fn help_json() -> String {
             "validate-recipe <recipe.json>",
             "place <recipe.json> --import <id> --verb <verb>",
             "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu]",
+            "recipe inspect-cad <recipe.json> --out-dir <dir> [--width 2560] [--height 1920] [--gpu]",
             "examples agent [get] <template> [--out <dir>]",
             "render <asset-or-recipe> --introspect --out <png> [--gpu]",
             "inspect <asset-or-recipe>",

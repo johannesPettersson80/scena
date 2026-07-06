@@ -14,11 +14,11 @@ pub use authoring::{
     SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
     SceneRecipeCameraFramingV1, SceneRecipeCameraV1, SceneRecipeClippingPlaneV1,
     SceneRecipeColorV1, SceneRecipeExpectedExtentV1, SceneRecipeFontV1, SceneRecipeGeometryV1,
-    SceneRecipeImportV1, SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1,
-    SceneRecipeLightV1, SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1,
-    SceneRecipeMorphTargetV1, SceneRecipeMorphV1, SceneRecipeNodeLodV1,
-    SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipeParticleSetV1,
-    SceneRecipeParticleV1, SceneRecipePrimitiveV1, SceneRecipeSkinV1,
+    SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportMaterialV1, SceneRecipeImportV1,
+    SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
+    SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1,
+    SceneRecipeMorphV1, SceneRecipeNodeLodV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
+    SceneRecipeParticleSetV1, SceneRecipeParticleV1, SceneRecipePrimitiveV1, SceneRecipeSkinV1,
     SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
 };
 pub use build_manifest::{

@@ -203,6 +203,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.recipe_render_result.v1",
         ),
         (
+            "tests/assets/stable-contracts/cad_inspection_result.v1.json",
+            "scena.cad_inspection_result.v1",
+        ),
+        (
             "tests/assets/stable-contracts/placement_result.v1.json",
             "scena.placement_result.v1",
         ),
