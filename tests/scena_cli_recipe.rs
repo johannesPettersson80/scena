@@ -275,6 +275,7 @@ fn recipe_import_material_edges_and_principal_face_camera_make_cad_features_visi
                 "id": "terminal",
                 "uri": CAD_TERMINAL_ASSET,
                 "material": {
+                    "preset": "matte",
                     "base_color": "#565A60",
                     "roughness": 0.86,
                     "metallic": 0.0

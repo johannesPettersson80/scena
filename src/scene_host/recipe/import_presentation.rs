@@ -83,19 +83,43 @@ fn import_material_handle(
     import_path: &str,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> Option<MaterialHandle> {
-    let material = import.material.as_ref()?;
-    let base_color = import_presentation_color(
-        colors,
-        &material.base_color,
-        format!("{import_path}.material.base_color"),
-        diagnostics,
-    )?;
-    let material = MaterialDesc::pbr_metallic_roughness(
-        base_color,
-        material.metallic.unwrap_or(0.0) as f32,
-        material.roughness.unwrap_or(1.0) as f32,
-    )
-    .with_double_sided(material.double_sided);
+    let recipe_material = import.material.as_ref()?;
+    let base_color = recipe_material.base_color.as_ref().and_then(|base_color| {
+        import_presentation_color(
+            colors,
+            base_color,
+            format!("{import_path}.material.base_color"),
+            diagnostics,
+        )
+    });
+    let mut material = if let Some(preset) = recipe_material.preset.as_deref() {
+        match MaterialDesc::from_preset_name(preset, base_color) {
+            Some(material) => material,
+            None => {
+                diagnostics.push(error_diagnostic(
+                    format!("{import_path}.material.preset"),
+                    "invalid_material_preset",
+                    format!("import material preset '{preset}' is not supported"),
+                    format!("use one of: {}", MaterialDesc::PRESET_NAMES.join(", ")),
+                ));
+                return None;
+            }
+        }
+    } else {
+        let base_color = base_color?;
+        MaterialDesc::pbr_metallic_roughness(
+            base_color,
+            recipe_material.metallic.unwrap_or(0.0) as f32,
+            recipe_material.roughness.unwrap_or(1.0) as f32,
+        )
+    };
+    if let Some(metallic) = recipe_material.metallic {
+        material = material.with_metallic_factor(metallic as f32);
+    }
+    if let Some(roughness) = recipe_material.roughness {
+        material = material.with_roughness_factor(roughness as f32);
+    }
+    material = material.with_double_sided(recipe_material.double_sided);
     Some(host.assets.create_material(material))
 }
 

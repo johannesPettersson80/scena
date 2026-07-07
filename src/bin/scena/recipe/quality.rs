@@ -340,7 +340,7 @@ fn projected_region_for_handle_kind(
             return None;
         }
         let region = check.region.as_ref()?;
-        if region.handle != Some(handle) || region.kind != "node" {
+        if region.handle != Some(handle) || !matches!(region.kind.as_str(), "node" | "import") {
             return None;
         }
         let rect = region.rect_css_px?;

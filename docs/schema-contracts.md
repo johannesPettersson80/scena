@@ -1291,13 +1291,14 @@ The current v1 recipe slice supports:
   chooses the imported/rendered bounds' thinnest axis as the view direction so
   thin CAD parts are framed by their broad face rather than their edge.
 - `imports[]` may declare presentation-only `material` and `edge_emphasis`
-  objects. `material` overrides the imported mesh material with a recipe-owned
-  PBR base color, roughness, metallic factor, and optional `double_sided:true`
-  for CAD inspection views where thin imported surfaces must remain visible from
-  the back side. `edge_emphasis` adds renderer edge-material overlay geometry
-  for boundary and crease edges above the requested angle threshold. Both are
-  Scena rendering controls only; they do not change imported geometry, CAD
-  truth, or source glTF bytes.
+  objects. `material` overrides the imported mesh material with either a named
+  material `preset` plus optional tint or a recipe-owned PBR base color,
+  roughness, metallic factor, and optional `double_sided:true` for CAD
+  inspection views where thin imported surfaces must remain visible from the
+  back side. `edge_emphasis` adds renderer edge-material overlay geometry for
+  boundary and crease edges above the requested angle threshold. Both are Scena
+  rendering controls only; they do not change imported geometry, CAD truth, or
+  source glTF bytes.
 - `lights[]` authored directional, point, spot, area, or `studio_rig` lights
   with presets, color, intensity/range/cone fields, area shape/size/flux
   fields, and transforms. `kind:"studio_rig"` routes through

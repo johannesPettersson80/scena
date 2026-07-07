@@ -31,7 +31,10 @@ pub struct SceneRecipeExpectedExtentV1 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeImportMaterialV1 {
-    pub base_color: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roughness: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

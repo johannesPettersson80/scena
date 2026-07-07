@@ -110,6 +110,48 @@ fn scene_recipe_validation_accepts_import_double_sided_material() {
 }
 
 #[test]
+fn scene_recipe_validation_accepts_import_material_preset() {
+    let report = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [{
+            "id": "cad_panel",
+            "uri": "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+            "material": {
+                "preset": "clearcoat_plastic",
+                "base_color": "#D8C69A",
+                "roughness": 0.34,
+                "double_sided": true
+            }
+        }]
+    }));
+    assert!(
+        report.ok,
+        "import material preset should be available for imported CAD meshes: {report:#?}"
+    );
+}
+
+#[test]
+fn scene_recipe_validation_rejects_unknown_import_material_preset() {
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [{
+            "id": "cad_panel",
+            "uri": "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+            "material": {
+                "preset": "premium_magic_plastic"
+            }
+        }]
+    }));
+
+    assert!(!invalid.ok);
+    assert_reason_at(
+        &invalid,
+        "invalid_material_preset",
+        "$.imports[0].material.preset",
+    );
+}
+
+#[test]
 fn scene_recipe_validation_rejects_unknown_ergonomic_presets_at_exact_paths() {
     let invalid = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",

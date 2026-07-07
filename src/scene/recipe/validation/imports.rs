@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use crate::material::MaterialDesc;
 use crate::scene::Transform;
 use crate::scene::recipe::{RecipeBuildPolicy, types::SceneRecipeDiagnosticV1};
 
@@ -277,14 +278,20 @@ fn validate_import_material(
     material: &Value,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
-    const FIELDS: &[&str] = &["base_color", "roughness", "metallic", "double_sided"];
+    const FIELDS: &[&str] = &[
+        "preset",
+        "base_color",
+        "roughness",
+        "metallic",
+        "double_sided",
+    ];
     let Some(object) = material.as_object() else {
         diagnostics.push(diagnostic(
             "invalid_import_material",
             "error",
             &path,
-            "import material must be an object with base_color, roughness, and metallic",
-            "use material:{base_color:\"#3A3D42\",roughness:0.8,metallic:0.0}",
+            "import material must be an object with preset or base_color plus optional roughness and metallic",
+            "use material:{preset:\"clearcoat_plastic\",base_color:\"#D8C69A\"} or material:{base_color:\"#3A3D42\",roughness:0.8,metallic:0.0}",
             None,
             false,
         ));
@@ -297,15 +304,37 @@ fn validate_import_material(
                 "error",
                 format!("{path}.{key}"),
                 format!("import material field '{key}' is not part of scena.scene_recipe.v1"),
-                "use base_color, roughness, metallic, or double_sided",
+                "use preset, base_color, roughness, metallic, or double_sided",
                 None,
                 false,
             ));
         }
     }
+    match object.get("preset").and_then(Value::as_str) {
+        Some(preset) if MaterialDesc::PRESET_NAMES.contains(&preset) => {}
+        Some(preset) => diagnostics.push(diagnostic(
+            "invalid_material_preset",
+            "error",
+            format!("{path}.preset"),
+            format!("import material preset '{preset}' is not supported"),
+            format!("use one of: {}", MaterialDesc::PRESET_NAMES.join(", ")),
+            None,
+            false,
+        )),
+        None if object.get("preset").is_some() => diagnostics.push(diagnostic(
+            "invalid_material_preset",
+            "error",
+            format!("{path}.preset"),
+            "import material preset must be a string",
+            format!("use one of: {}", MaterialDesc::PRESET_NAMES.join(", ")),
+            None,
+            false,
+        )),
+        None => {}
+    }
     match object.get("base_color").and_then(Value::as_str) {
         Some(color) if !color.trim().is_empty() => {}
-        Some(_) | None => diagnostics.push(diagnostic(
+        Some(_) => diagnostics.push(diagnostic(
             "invalid_import_material",
             "error",
             format!("{path}.base_color"),
@@ -314,6 +343,16 @@ fn validate_import_material(
             None,
             false,
         )),
+        None if object.get("preset").is_none() => diagnostics.push(diagnostic(
+            "invalid_import_material",
+            "error",
+            format!("{path}.base_color"),
+            "import material must include base_color unless it uses a preset",
+            "provide base_color or use a supported material preset with an optional tint",
+            None,
+            false,
+        )),
+        None => {}
     }
     validate_unit_scalar(&path, object.get("roughness"), "roughness", diagnostics);
     validate_unit_scalar(&path, object.get("metallic"), "metallic", diagnostics);
