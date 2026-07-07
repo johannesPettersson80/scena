@@ -170,7 +170,7 @@ pub(super) fn inspection_recipe(
         { "id": "cad_rim", "kind": "directional", "preset": "rim" }
     ]);
     recipe["scene"] = json!({
-        "background": { "kind": "custom", "color": "#101318" },
+        "background": { "kind": "custom", "color": "#EEF1F4" },
         "grid": { "enabled": false }
     });
     recipe["render"] = json!({
@@ -215,8 +215,8 @@ fn apply_import_presentation_defaults(recipe: &mut Value) {
             import.insert(
                 "material".to_owned(),
                 json!({
-                    "base_color": "#565A60",
-                    "roughness": 0.86,
+                    "base_color": "#9AA4AE",
+                    "roughness": 0.78,
                     "metallic": 0.0
                 }),
             );
@@ -226,7 +226,7 @@ fn apply_import_presentation_defaults(recipe: &mut Value) {
                 "edge_emphasis".to_owned(),
                 json!({
                     "enabled": true,
-                    "base_color": "#FFB000",
+                    "base_color": "#1F252C",
                     "stroke_width_px": 2.0,
                     "edge_angle_threshold_degrees": 18.0
                 }),
