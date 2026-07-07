@@ -676,6 +676,76 @@ fn recipe_import_budget_override_is_operator_owned_for_validate_and_render() {
     );
     assert_eq!(raised_render_report["ok"], true, "{raised_render_report:#}");
     assert!(png_path.exists(), "raised render writes the requested PNG");
+
+    let default_inspect_dir = dir.join("inspect-default");
+    let default_inspect = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "inspect-cad",
+            path_str(&recipe_path),
+            "--out-dir",
+            path_str(&default_inspect_dir),
+            "--width",
+            "128",
+            "--height",
+            "96",
+        ])
+        .output()
+        .expect("scena recipe inspect-cad default import budget command runs");
+    assert!(
+        !default_inspect.status.success(),
+        "default inspect-cad should enforce max_imports, stdout={}, stderr={}",
+        String::from_utf8_lossy(&default_inspect.stdout),
+        stderr(&default_inspect)
+    );
+    let default_inspect_report = json_report(&default_inspect);
+    assert_eq!(
+        default_inspect_report["schema"],
+        "scena.recipe_render_result.v1"
+    );
+    assert_eq!(
+        default_inspect_report["build"]["diagnostics"][0]["path"], "$.imports",
+        "{default_inspect_report:#}"
+    );
+
+    let raised_inspect_dir = dir.join("inspect-raised");
+    let raised_inspect = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "inspect-cad",
+            path_str(&recipe_path),
+            "--out-dir",
+            path_str(&raised_inspect_dir),
+            "--width",
+            "128",
+            "--height",
+            "96",
+            "--max-imports",
+            "128",
+        ])
+        .output()
+        .expect("scena recipe inspect-cad raised import budget command runs");
+    assert!(
+        raised_inspect.status.success(),
+        "raised inspect-cad should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&raised_inspect.stdout),
+        stderr(&raised_inspect)
+    );
+    let raised_inspect_report = json_report(&raised_inspect);
+    assert_eq!(
+        raised_inspect_report["schema"],
+        "scena.cad_inspection_result.v1"
+    );
+    assert_eq!(
+        raised_inspect_report["ok"], true,
+        "{raised_inspect_report:#}"
+    );
+    assert!(
+        raised_inspect_dir
+            .join("cad-inspection-contact-sheet.png")
+            .exists(),
+        "raised inspect-cad writes the contact sheet"
+    );
 }
 
 #[test]

@@ -19,6 +19,7 @@ struct InspectCadArgs {
     width: u32,
     height: u32,
     gpu: bool,
+    max_imports: Option<usize>,
 }
 
 pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, String> {
@@ -32,10 +33,14 @@ pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutco
 
     let recipe_text = fs::read_to_string(&args.recipe)
         .map_err(|error| format!("failed to read recipe '{}': {error}", args.recipe.display()))?;
+    let mut policy = scena::RecipeBuildPolicy::testing();
+    if let Some(max_imports) = args.max_imports {
+        policy = policy.with_max_imports(max_imports);
+    }
     let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
         &args.recipe.display().to_string(),
         &recipe_text,
-        scena::RecipeBuildPolicy::testing(),
+        policy,
     ));
     let build = match build {
         Ok(build) => build,
@@ -106,6 +111,10 @@ pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutco
         ];
         if args.gpu {
             render_args.push("--gpu".to_owned());
+        }
+        if let Some(max_imports) = args.max_imports {
+            render_args.push("--max-imports".to_owned());
+            render_args.push(max_imports.to_string());
         }
         let render = super::run_recipe_render_command(&render_args)?;
         fs::write(&render_result_json, render.stdout.as_bytes()).map_err(|error| {
@@ -191,6 +200,7 @@ impl InspectCadArgs {
         let mut width = 2560;
         let mut height = 1920;
         let mut gpu = super::super::scena_input::gpu_requested_from_env();
+        let mut max_imports = None;
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -210,6 +220,13 @@ impl InspectCadArgs {
                     gpu = true;
                     index += 1;
                 }
+                "--max-imports" => {
+                    max_imports = Some(parse_positive_usize(
+                        "--max-imports",
+                        flag_value(args, index, "--max-imports")?,
+                    )?);
+                    index += 2;
+                }
                 "--json" => {
                     index += 1;
                 }
@@ -228,12 +245,13 @@ impl InspectCadArgs {
             width,
             height,
             gpu,
+            max_imports,
         })
     }
 }
 
 fn inspect_cad_usage() -> String {
-    "usage: scena recipe inspect-cad <recipe.json> --out-dir <dir> [--width 2560] [--height 1920] [--gpu]"
+    "usage: scena recipe inspect-cad <recipe.json> --out-dir <dir> [--width 2560] [--height 1920] [--gpu] [--max-imports <n>]"
         .to_owned()
 }
 
@@ -249,6 +267,16 @@ fn parse_positive_u32(value: &str, flag: &str) -> Result<u32, String> {
         .map_err(|error| format!("{flag} must be a positive integer: {error}"))?;
     if parsed == 0 {
         return Err(format!("{flag} must be greater than zero"));
+    }
+    Ok(parsed)
+}
+
+fn parse_positive_usize(flag: &str, value: String) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
+    if parsed == 0 {
+        return Err(format!("{flag} requires a positive integer, got 0"));
     }
     Ok(parsed)
 }
