@@ -277,7 +277,7 @@ fn validate_import_material(
     material: &Value,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
-    const FIELDS: &[&str] = &["base_color", "roughness", "metallic"];
+    const FIELDS: &[&str] = &["base_color", "roughness", "metallic", "double_sided"];
     let Some(object) = material.as_object() else {
         diagnostics.push(diagnostic(
             "invalid_import_material",
@@ -297,7 +297,7 @@ fn validate_import_material(
                 "error",
                 format!("{path}.{key}"),
                 format!("import material field '{key}' is not part of scena.scene_recipe.v1"),
-                "use base_color, roughness, or metallic",
+                "use base_color, roughness, metallic, or double_sided",
                 None,
                 false,
             ));
@@ -317,6 +317,20 @@ fn validate_import_material(
     }
     validate_unit_scalar(&path, object.get("roughness"), "roughness", diagnostics);
     validate_unit_scalar(&path, object.get("metallic"), "metallic", diagnostics);
+    if object
+        .get("double_sided")
+        .is_some_and(|double_sided| !double_sided.is_boolean())
+    {
+        diagnostics.push(diagnostic(
+            "invalid_import_material",
+            "error",
+            format!("{path}.double_sided"),
+            "import material double_sided must be a boolean",
+            "set double_sided:true when a CAD import must be reviewable from the back side",
+            None,
+            false,
+        ));
+    }
 }
 
 fn validate_import_edge_emphasis(

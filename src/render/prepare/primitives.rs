@@ -5,6 +5,7 @@ use crate::render::camera::CameraProjection;
 use crate::render::physical_transmission::{
     PreparedPhysicalTransmission, PreparedPhysicalTransmissionInput,
 };
+use crate::scene::Vec3;
 
 use super::cpu_bake::{
     CpuBakeCorner, baked_area_shadow_visibility, baked_shadow_visibility, cpu_texture_subdivisions,
@@ -190,15 +191,24 @@ fn append_triangle_primitives<F>(
             baked_area_shadow_visibility(position_b, params.lights, params.shadow_occluders);
         let area_shadow_visibility_c =
             baked_area_shadow_visibility(position_c, params.lights, params.shadow_occluders);
+        let camera_position = params
+            .camera_projection
+            .map(CameraProjection::camera_position);
         let shade_vertex = |corner: CpuBakeCorner| {
             if backend_shaded_material {
                 corner.vertex_color
             } else {
+                let geometric_normal = camera_facing_double_sided_normal(
+                    corner.geometric_normal,
+                    source.material.double_sided(),
+                    corner.position,
+                    camera_position,
+                );
                 let normal = normal_texture_sample(
                     source.assets,
                     source.material,
                     corner.uv,
-                    corner.geometric_normal,
+                    geometric_normal,
                 );
                 let clearcoat_normal = clearcoat_normal_texture_sample(
                     source.assets,
@@ -206,7 +216,37 @@ fn append_triangle_primitives<F>(
                     corner.uv,
                     normal,
                 );
-                multiply_color(
+                let base_color_texture = base_color_texture_sample(
+                    source.assets,
+                    source.material,
+                    corner.uv,
+                    params.backend_sampled_base_color_textures,
+                );
+                let metallic_roughness_texture =
+                    metallic_roughness_texture_sample(source.assets, source.material, corner.uv);
+                let occlusion_texture =
+                    occlusion_texture_sample(source.assets, source.material, corner.uv);
+                let emissive_texture =
+                    emissive_texture_sample(source.assets, source.material, corner.uv);
+                let clearcoat_texture =
+                    clearcoat_texture_sample(source.assets, source.material, corner.uv);
+                let clearcoat_roughness_texture =
+                    clearcoat_roughness_texture_sample(source.assets, source.material, corner.uv);
+                let sheen_color_texture =
+                    sheen_color_texture_sample(source.assets, source.material, corner.uv);
+                let sheen_roughness_texture =
+                    sheen_roughness_texture_sample(source.assets, source.material, corner.uv);
+                let anisotropy_texture =
+                    anisotropy_texture_sample(source.assets, source.material, corner.uv);
+                let iridescence_texture =
+                    iridescence_texture_sample(source.assets, source.material, corner.uv);
+                let iridescence_thickness_texture =
+                    iridescence_thickness_texture_sample(source.assets, source.material, corner.uv);
+                let transmission_texture =
+                    transmission_texture_sample(source.assets, source.material, corner.uv);
+                let thickness_texture =
+                    thickness_texture_sample(source.assets, source.material, corner.uv);
+                let shade_with_normal = |normal, clearcoat_normal| {
                     material_color(
                         source.material,
                         params.lights,
@@ -215,83 +255,36 @@ fn append_triangle_primitives<F>(
                             normal,
                             tangent: corner.tangent,
                             tangent_handedness: corner.tangent_handedness,
-                            camera_position: params
-                                .camera_projection
-                                .map(CameraProjection::camera_position),
-                            base_color_texture: base_color_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                                params.backend_sampled_base_color_textures,
-                            ),
-                            metallic_roughness_texture: metallic_roughness_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            occlusion_texture: occlusion_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            emissive_texture: emissive_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            clearcoat_texture: clearcoat_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            clearcoat_roughness_texture: clearcoat_roughness_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
+                            camera_position,
+                            base_color_texture,
+                            metallic_roughness_texture,
+                            occlusion_texture,
+                            emissive_texture,
+                            clearcoat_texture,
+                            clearcoat_roughness_texture,
                             clearcoat_normal,
-                            sheen_color_texture: sheen_color_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            sheen_roughness_texture: sheen_roughness_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            anisotropy_texture: anisotropy_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            iridescence_texture: iridescence_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            iridescence_thickness_texture: iridescence_thickness_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            transmission_texture: transmission_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
-                            thickness_texture: thickness_texture_sample(
-                                source.assets,
-                                source.material,
-                                corner.uv,
-                            ),
+                            sheen_color_texture,
+                            sheen_roughness_texture,
+                            anisotropy_texture,
+                            iridescence_texture,
+                            iridescence_thickness_texture,
+                            transmission_texture,
+                            thickness_texture,
                             environment: params.environment_lighting.clone(),
                             directional_shadow_factor: corner.directional_shadow_visibility,
                             area_shadow_factor: corner.area_shadow_visibility,
                         },
-                    ),
-                    corner.vertex_color,
-                )
+                    )
+                };
+                let lit = shade_with_normal(normal, clearcoat_normal);
+                let lit = if source.material.double_sided()
+                    && matches!(source.material.kind(), MaterialKind::PbrMetallicRoughness)
+                {
+                    brighter_color(lit, shade_with_normal(-normal, -clearcoat_normal))
+                } else {
+                    lit
+                };
+                multiply_color(lit, corner.vertex_color)
             }
         };
         let corners = [
@@ -387,6 +380,39 @@ fn material_reflection(material: &MaterialDesc) -> Option<PreparedMaterialReflec
         return None;
     }
     PreparedMaterialReflection::new(material.metallic_factor(), material.roughness_factor())
+}
+
+fn camera_facing_double_sided_normal(
+    normal: Vec3,
+    double_sided: bool,
+    position: Vec3,
+    camera_position: Option<Vec3>,
+) -> Vec3 {
+    let Some(camera_position) = camera_position.filter(|_| double_sided) else {
+        return normal;
+    };
+    if normal.dot(camera_position - position) < 0.0 {
+        -normal
+    } else {
+        normal
+    }
+}
+
+fn brighter_color(
+    left: crate::material::Color,
+    right: crate::material::Color,
+) -> crate::material::Color {
+    if relative_luminance(right) > relative_luminance(left) {
+        right
+    } else {
+        left
+    }
+}
+
+fn relative_luminance(color: crate::material::Color) -> f32 {
+    color
+        .r
+        .mul_add(0.2126, color.g.mul_add(0.7152, color.b * 0.0722))
 }
 
 fn material_transmission(

@@ -376,7 +376,8 @@
         "material": {
           "base_color": "#565A60",
           "metallic": 0.0,
-          "roughness": 0.86
+          "roughness": 0.86,
+          "double_sided": true
         },
         "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
       }

@@ -94,7 +94,8 @@ fn import_material_handle(
         base_color,
         material.metallic.unwrap_or(0.0) as f32,
         material.roughness.unwrap_or(1.0) as f32,
-    );
+    )
+    .with_double_sided(material.double_sided);
     Some(host.assets.create_material(material))
 }
 

@@ -12,7 +12,8 @@
       "material": {
         "base_color": "#565A60",
         "roughness": 0.86,
-        "metallic": 0.0
+        "metallic": 0.0,
+        "double_sided": true
       },
       "edge_emphasis": {
         "base_color": "#FFB000",

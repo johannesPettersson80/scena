@@ -36,6 +36,8 @@ pub struct SceneRecipeImportMaterialV1 {
     pub roughness: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metallic: Option<f64>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub double_sided: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

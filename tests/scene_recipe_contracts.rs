@@ -89,6 +89,27 @@ fn scene_recipe_validation_accepts_ergonomic_backbone_fields() {
 }
 
 #[test]
+fn scene_recipe_validation_accepts_import_double_sided_material() {
+    let report = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [{
+            "id": "cad_panel",
+            "uri": "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+            "material": {
+                "base_color": "#DDE2E5",
+                "roughness": 0.72,
+                "metallic": 0.1,
+                "double_sided": true
+            }
+        }]
+    }));
+    assert!(
+        report.ok,
+        "import material double_sided is the CAD inspection backface contract and must validate: {report:#?}"
+    );
+}
+
+#[test]
 fn scene_recipe_validation_rejects_unknown_ergonomic_presets_at_exact_paths() {
     let invalid = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",

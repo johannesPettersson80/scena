@@ -15,6 +15,7 @@ const ANCHORED_ASSET: &str = "tests/assets/gltf/anchored_triangle_scene.gltf";
 const ANCHOR_ASSET: &str = "tests/assets/gltf/anchor_debug_scene.gltf";
 const CONNECTOR_ASSET: &str = "tests/assets/gltf/connector_basis_scene.gltf";
 const CAD_TERMINAL_ASSET: &str = "tests/assets/gltf/cad_terminal_block.gltf";
+const CAD_PLATE_ASSET: &str = "tests/assets/gltf/cad_plate_drawing_scene.gltf";
 const LAVAPIPE_ICD: &str = "/usr/share/vulkan/icd.d/lvp_icd.json";
 
 fn configure_command_for_lavapipe(command: &mut Command) {
@@ -406,6 +407,121 @@ fn recipe_import_material_edges_and_principal_face_camera_make_cad_features_visi
     assert!(
         edge_pixels > 300,
         "edge emphasis should draw visible CAD edges for chamfers, wells, and groove; edge_pixels={edge_pixels}, png={png_path:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_import_double_sided_material_renders_backface() {
+    let dir = artifact_dir("recipe-cad-import-double-sided-backface");
+    let recipe_path = dir.join("cad-panel-backface.recipe.json");
+    let png_path = dir.join("cad-panel-backface.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{
+                "id": "cad_panel",
+                "uri": CAD_PLATE_ASSET,
+                "material": {
+                    "base_color": "#DDE2E5",
+                    "roughness": 0.72,
+                    "metallic": 0.1,
+                    "double_sided": true
+                },
+                "edge_emphasis": {
+                    "enabled": true,
+                    "base_color": "#607080",
+                    "stroke_width_px": 1.25,
+                    "edge_angle_threshold_degrees": 12.0
+                }
+            }],
+            "scene": {
+                "background": { "kind": "custom", "color": "#F5F7FA" },
+                "grid": { "enabled": false }
+            },
+            "render": {
+                "profile": "industrial",
+                "quality": "high",
+                "anti_aliasing": "fxaa",
+                "supersample": 2,
+                "reconstruction": "gaussian",
+                "tonemapper": "aces",
+                "exposure_ev": 0.0
+            },
+            "lights": [
+                { "id": "key", "kind": "directional", "preset": "key" },
+                { "id": "fill", "kind": "directional", "preset": "fill" },
+                { "id": "rim", "kind": "directional", "preset": "rim" }
+            ],
+            "cameras": [{
+                "id": "backface_camera",
+                "kind": "perspective",
+                "lens": "telephoto",
+                "active": true,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.0, -0.45],
+                    "target": [0.0, 0.0, 0.0]
+                }
+            }],
+            "capture": { "width": 640, "height": 480 },
+            "expect": {
+                "expect_bbox_fit": {
+                    "min": 0.08,
+                    "max": 0.95
+                }
+            }
+        }))
+        .expect("double-sided CAD recipe serializes"),
+    )
+    .expect("double-sided CAD recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--detail",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render CAD backface command runs");
+
+    assert!(
+        output.status.success(),
+        "double-sided imported CAD material should render its back face, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["verification"]["ok"], true, "{report:#}");
+    assert_eq!(report["introspection"]["ok"], true, "{report:#}");
+
+    let image = decode_png_rgba8(&png_path);
+    let content = quality_region_from_pixel_region(content_region_from_introspection_report(
+        &report["introspection"],
+    ));
+    let light_panel_pixels = count_pixels_in_region(
+        &image.rgba8,
+        image.width,
+        content,
+        is_light_cad_panel_material_pixel,
+    );
+    assert!(
+        light_panel_pixels > 1_000,
+        "double-sided import material should make the back face visibly light, not black/culled; light_pixels={light_panel_pixels}, png={png_path:?}, report={report:#}"
+    );
+    let black_slab_pixels =
+        count_pixels_in_region(&image.rgba8, image.width, content, is_black_slab_pixel);
+    assert!(
+        black_slab_pixels < light_panel_pixels / 4,
+        "back-facing CAD surface must not present as a black slab; black_pixels={black_slab_pixels}, light_pixels={light_panel_pixels}, png={png_path:?}"
     );
 }
 
@@ -10951,6 +11067,19 @@ fn is_white_blob_pixel(r: u8, g: u8, b: u8) -> bool {
 #[cfg(feature = "scene-host")]
 fn is_cad_edge_pixel(r: u8, g: u8, b: u8) -> bool {
     r >= 170 && (95..=210).contains(&g) && b <= 90
+}
+
+#[cfg(feature = "scene-host")]
+fn is_light_cad_panel_material_pixel(r: u8, g: u8, b: u8) -> bool {
+    (120..=245).contains(&r)
+        && (125..=245).contains(&g)
+        && (130..=250).contains(&b)
+        && r.abs_diff(g).max(g.abs_diff(b)).max(r.abs_diff(b)) <= 55
+}
+
+#[cfg(feature = "scene-host")]
+fn is_black_slab_pixel(r: u8, g: u8, b: u8) -> bool {
+    r < 25 && g < 25 && b < 25
 }
 
 fn system_test_font_path() -> PathBuf {

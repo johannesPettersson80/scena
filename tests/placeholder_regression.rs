@@ -2,7 +2,7 @@
 use scena::{AlphaMode, RenderIntrospectionOptions};
 use scena::{
     AntiAliasing, Assets, Color, GeometryDesc, GeometryTopology, GeometryVertex, MaterialDesc,
-    PerspectiveCamera, Quality, Renderer, RendererOptions, Scene, Transform, Vec3,
+    PerspectiveCamera, PointLight, Quality, Renderer, RendererOptions, Scene, Transform, Vec3,
 };
 
 #[cfg(feature = "inspection")]
@@ -116,6 +116,22 @@ fn public_double_sided_material_knob_changes_pixels() {
     );
 }
 
+#[test]
+fn double_sided_pbr_backface_uses_camera_facing_shading_normal() {
+    let single_sided = render_pbr_backface_cpu(false);
+    let double_sided = render_pbr_backface_cpu(true);
+
+    assert_eq!(
+        visible_gray_pixel_count(&single_sided),
+        0,
+        "single-sided PBR back face should be culled on the CPU path"
+    );
+    assert!(
+        visible_gray_pixel_count(&double_sided) > 60,
+        "double-sided PBR back face should shade as its material instead of a black slab"
+    );
+}
+
 #[cfg(feature = "inspection")]
 fn introspection_for_material(
     material: MaterialDesc,
@@ -165,6 +181,16 @@ fn render_backface_gpu(double_sided: bool) -> Vec<u8> {
     renderer.frame_rgba8().to_vec()
 }
 
+fn render_pbr_backface_cpu(double_sided: bool) -> Vec<u8> {
+    let (assets, mut scene) = pbr_backface_scene(double_sided);
+    let mut renderer = Renderer::headless(32, 32).expect("CPU renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("CPU scene prepares");
+    renderer.render_active(&scene).expect("CPU scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
 fn backface_scene(double_sided: bool) -> (Assets, Scene) {
     let assets = Assets::new();
     let geometry = assets.create_geometry(
@@ -203,8 +229,59 @@ fn backface_scene(double_sided: bool) -> (Assets, Scene) {
     (assets, scene)
 }
 
+fn pbr_backface_scene(double_sided: bool) -> (Assets, Scene) {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(
+        GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![
+                GeometryVertex {
+                    position: Vec3::new(-0.6, -0.5, -2.0),
+                    normal: Vec3::new(0.0, 0.0, -1.0),
+                },
+                GeometryVertex {
+                    position: Vec3::new(0.0, 0.6, -2.0),
+                    normal: Vec3::new(0.0, 0.0, -1.0),
+                },
+                GeometryVertex {
+                    position: Vec3::new(0.6, -0.5, -2.0),
+                    normal: Vec3::new(0.0, 0.0, -1.0),
+                },
+            ],
+            vec![0, 1, 2],
+        )
+        .expect("triangle geometry is valid"),
+    );
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(221, 226, 229), 0.1, 0.72)
+            .with_double_sided(double_sided),
+    );
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("camera activates");
+    scene
+        .point_light(PointLight::softbox().with_intensity_candela(2_000.0))
+        .transform(Transform::at(Vec3::new(0.0, 0.0, 0.0)))
+        .add()
+        .expect("camera-side point light inserts");
+    scene.mesh(geometry, material).add().expect("mesh inserts");
+    (assets, scene)
+}
+
 fn nonblack_pixel_count(rgba: &[u8]) -> usize {
     rgba.chunks_exact(4)
         .filter(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
+        .count()
+}
+
+fn visible_gray_pixel_count(rgba: &[u8]) -> usize {
+    rgba.chunks_exact(4)
+        .filter(|pixel| pixel[0] > 80 && pixel[1] > 80 && pixel[2] > 80)
         .count()
 }
