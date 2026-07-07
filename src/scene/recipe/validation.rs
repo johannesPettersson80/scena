@@ -33,7 +33,7 @@ pub fn validate_scene_recipe_json_with_policy(
         return recipe_too_large_report(text.len(), policy.max_recipe_bytes());
     }
     match serde_json::from_str::<Value>(text) {
-        Ok(value) => validate_scene_recipe_value(value),
+        Ok(value) => validate_scene_recipe_value_with_policy(value, policy),
         Err(error) => validation_report(vec![diagnostic(
             "invalid_json",
             "error",
@@ -117,7 +117,12 @@ fn validate_scene_recipe_value_inner(
     validate_root_fields(object.keys().map(String::as_str), diagnostics);
     validate_schema(object.get("schema"), diagnostics);
     let allow_empty_imports = has_authored_renderable_nodes(object);
-    imports::validate_imports(object.get("imports"), allow_empty_imports, diagnostics);
+    imports::validate_imports(
+        object.get("imports"),
+        allow_empty_imports,
+        policy,
+        diagnostics,
+    );
     validate_authoring_sections(object, policy, diagnostics);
     let import_ids = imports::import_ids(object.get("imports"));
     validate_section_box(object.get("section_box"), &import_ids, diagnostics);

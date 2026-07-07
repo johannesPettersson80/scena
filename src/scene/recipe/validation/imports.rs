@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use crate::scene::Transform;
-use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
+use crate::scene::recipe::{RecipeBuildPolicy, types::SceneRecipeDiagnosticV1};
 
 use super::diagnostic;
 use super::suggestions::{EXPECTED_EXTENT_FIELDS, IMPORT_FIELDS, nearest_import_field};
@@ -11,6 +11,7 @@ use super::suggestions::{EXPECTED_EXTENT_FIELDS, IMPORT_FIELDS, nearest_import_f
 pub(super) fn validate_imports(
     imports: Option<&Value>,
     allow_empty: bool,
+    policy: &RecipeBuildPolicy,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(imports) = imports else {
@@ -33,6 +34,21 @@ pub(super) fn validate_imports(
     };
     if imports.is_empty() && !allow_empty {
         diagnostics.push(missing_imports_diagnostic());
+    }
+    if imports.len() > policy.max_imports() {
+        diagnostics.push(diagnostic(
+            "policy_violation",
+            "error",
+            "$.imports",
+            format!(
+                "recipe imports {} assets, exceeding RecipeBuildPolicy max_imports {}",
+                imports.len(),
+                policy.max_imports()
+            ),
+            "split the recipe or raise the operator-owned max_imports policy",
+            None,
+            false,
+        ));
     }
 
     let mut ids = BTreeSet::new();

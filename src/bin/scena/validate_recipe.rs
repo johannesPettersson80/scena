@@ -3,8 +3,12 @@ use super::scena_input::{RecipeReadError, read_recipe_text};
 use super::scena_output::{CliOutcome, json_outcome};
 
 pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {
-    let recipe_path = ValidateRecipeCommandArgs::parse(args)?.recipe;
-    let policy = scena::RecipeBuildPolicy::testing();
+    let args = ValidateRecipeCommandArgs::parse(args)?;
+    let recipe_path = args.recipe;
+    let mut policy = scena::RecipeBuildPolicy::testing();
+    if let Some(max_imports) = args.max_imports {
+        policy = policy.with_max_imports(max_imports);
+    }
     let text = match read_recipe_text(&recipe_path, &policy) {
         Ok(text) => text,
         Err(RecipeReadError::TooLarge(report)) => return emit_report(report),

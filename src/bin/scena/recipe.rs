@@ -22,6 +22,7 @@ pub(crate) struct RecipeRenderCommandArgs {
     verify: bool,
     detail: bool,
     gpu: bool,
+    max_imports: Option<usize>,
 }
 
 pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
@@ -30,7 +31,10 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         return Err(recipe_render_usage());
     }
 
-    let policy = scena::RecipeBuildPolicy::testing();
+    let mut policy = scena::RecipeBuildPolicy::testing();
+    if let Some(max_imports) = args.max_imports {
+        policy = policy.with_max_imports(max_imports);
+    }
     let recipe_text = match read_recipe_text(&args.recipe, &policy) {
         Ok(text) => text,
         Err(RecipeReadError::TooLarge(report)) => {
@@ -164,6 +168,7 @@ impl RecipeRenderCommandArgs {
         let mut verify = false;
         let mut detail = false;
         let mut gpu = super::scena_input::gpu_requested_from_env();
+        let mut max_imports = None;
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -187,6 +192,13 @@ impl RecipeRenderCommandArgs {
                     gpu = true;
                     index += 1;
                 }
+                "--max-imports" => {
+                    max_imports = Some(parse_positive_usize(
+                        "--max-imports",
+                        flag_value(args, index, "--max-imports")?,
+                    )?);
+                    index += 2;
+                }
                 "--json" => {
                     index += 1;
                 }
@@ -205,8 +217,19 @@ impl RecipeRenderCommandArgs {
             verify,
             detail,
             gpu,
+            max_imports,
         })
     }
+}
+
+fn parse_positive_usize(flag: &str, value: String) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
+    if parsed == 0 {
+        return Err(format!("{flag} requires a positive integer, got 0"));
+    }
+    Ok(parsed)
 }
 
 fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
@@ -216,6 +239,6 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, Strin
 }
 
 fn recipe_render_usage() -> String {
-    "usage: scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu]"
+    "usage: scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]"
         .to_owned()
 }

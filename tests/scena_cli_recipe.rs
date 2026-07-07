@@ -571,6 +571,113 @@ fn scena_validate_recipe_cli_rejects_out_of_root_imports_before_build() {
     );
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_import_budget_override_is_operator_owned_for_validate_and_render() {
+    let dir = artifact_dir("recipe-import-budget-override");
+    let recipe_path = write_many_import_recipe(&dir, 65);
+    let png_path = dir.join("many-imports.png");
+
+    let default_validate = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&recipe_path)])
+        .output()
+        .expect("scena validate-recipe default import budget command runs");
+    assert!(
+        !default_validate.status.success(),
+        "default validate should enforce max_imports, stdout={}, stderr={}",
+        String::from_utf8_lossy(&default_validate.stdout),
+        stderr(&default_validate)
+    );
+    let default_report = json_report(&default_validate);
+    assert_eq!(default_report["ok"], false, "{default_report:#}");
+    let diagnostic = default_report["diagnostics"]
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == "policy_violation")
+        .unwrap_or_else(|| panic!("expected max_imports policy diagnostic: {default_report:#}"));
+    assert_eq!(diagnostic["path"], "$.imports", "{default_report:#}");
+    assert!(
+        diagnostic["message"]
+            .as_str()
+            .expect("diagnostic message")
+            .contains("max_imports 64"),
+        "{default_report:#}"
+    );
+
+    let raised_validate = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "validate-recipe",
+            path_str(&recipe_path),
+            "--max-imports",
+            "128",
+        ])
+        .output()
+        .expect("scena validate-recipe raised import budget command runs");
+    assert!(
+        raised_validate.status.success(),
+        "raised validate should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&raised_validate.stdout),
+        stderr(&raised_validate)
+    );
+    let raised_report = json_report(&raised_validate);
+    assert_eq!(raised_report["ok"], true, "{raised_report:#}");
+
+    let default_render = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render default import budget command runs");
+    assert!(
+        !default_render.status.success(),
+        "default render should enforce max_imports, stdout={}, stderr={}",
+        String::from_utf8_lossy(&default_render.stdout),
+        stderr(&default_render)
+    );
+    let default_render_report = json_report(&default_render);
+    assert_eq!(
+        default_render_report["schema"],
+        "scena.recipe_render_result.v1"
+    );
+    assert_eq!(
+        default_render_report["build"]["diagnostics"][0]["path"], "$.imports",
+        "{default_render_report:#}"
+    );
+
+    let raised_render = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+            "--max-imports",
+            "128",
+        ])
+        .output()
+        .expect("scena recipe render raised import budget command runs");
+    assert!(
+        raised_render.status.success(),
+        "raised render should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&raised_render.stdout),
+        stderr(&raised_render)
+    );
+    let raised_render_report = json_report(&raised_render);
+    assert_eq!(
+        raised_render_report["schema"],
+        "scena.render_introspection.v1"
+    );
+    assert_eq!(raised_render_report["ok"], true, "{raised_render_report:#}");
+    assert!(png_path.exists(), "raised render writes the requested PNG");
+}
+
 #[test]
 fn invalid_primitive_diagnostic_lists_supported_kinds() {
     let dir = artifact_dir("invalid-primitive-supported-kinds");
@@ -9738,6 +9845,30 @@ fn write_valid_recipe(dir: &Path) -> PathBuf {
         .expect("recipe serializes"),
     )
     .expect("recipe writes");
+    recipe_path
+}
+
+#[cfg(feature = "scene-host")]
+fn write_many_import_recipe(dir: &Path, count: usize) -> PathBuf {
+    let imports = (0..count)
+        .map(|index| {
+            json!({
+                "id": format!("part_{index:03}"),
+                "uri": TEST_ASSET
+            })
+        })
+        .collect::<Vec<_>>();
+    let recipe_path = dir.join("many-imports.recipe.json");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": imports,
+            "capture": { "width": 64, "height": 64 }
+        }))
+        .expect("many-import recipe serializes"),
+    )
+    .expect("many-import recipe writes");
     recipe_path
 }
 

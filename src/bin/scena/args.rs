@@ -46,6 +46,7 @@ pub(crate) struct InspectCommandArgs {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidateRecipeCommandArgs {
     pub(crate) recipe: PathBuf,
+    pub(crate) max_imports: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,15 +71,31 @@ impl ValidateRecipeCommandArgs {
         let Some(recipe) = args.first() else {
             return Err(validate_recipe_usage());
         };
-        if args.len() > 1 {
-            return Err(format!(
-                "unknown validate-recipe argument '{}'; {}",
-                args[1],
-                validate_recipe_usage()
-            ));
+        let mut max_imports = None;
+        let mut index = 1;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--max-imports" => {
+                    max_imports = Some(parse_positive_usize(
+                        "--max-imports",
+                        flag_value_any(args, index, "--max-imports")?,
+                    )?);
+                    index += 2;
+                }
+                "--json" => {
+                    index += 1;
+                }
+                flag => {
+                    return Err(format!(
+                        "unknown validate-recipe argument '{flag}'; {}",
+                        validate_recipe_usage()
+                    ));
+                }
+            }
         }
         Ok(Self {
             recipe: PathBuf::from(recipe),
+            max_imports,
         })
     }
 }
@@ -483,6 +500,16 @@ fn parse_positive_u32(flag: &str, value: String) -> Result<u32, String> {
     Ok(parsed)
 }
 
+fn parse_positive_usize(flag: &str, value: String) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
+    if parsed == 0 {
+        return Err(format!("{flag} requires a positive integer, got 0"));
+    }
+    Ok(parsed)
+}
+
 #[cfg(feature = "inspection")]
 fn parse_u32(flag: &str, value: String) -> Result<u32, String> {
     let parsed = value
@@ -499,7 +526,7 @@ fn parse_u64(flag: &str, value: String) -> Result<u64, String> {
 }
 
 fn validate_recipe_usage() -> String {
-    "usage: scena validate-recipe <recipe.json>".to_string()
+    "usage: scena validate-recipe <recipe.json> [--max-imports <n>]".to_string()
 }
 
 fn place_usage() -> String {
