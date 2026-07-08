@@ -200,6 +200,7 @@ pub use scene::recipe::{
     SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1, SceneRecipeQualityReflectionV1,
     SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1, SceneRecipeSectionBoxV1,
     SceneRecipeSeparationExpectationV1, SceneRecipeSkinV1, SceneRecipeStateExpectationV1,
+    SceneRecipeTargetBoundsV1, SceneRecipeTargetFitExpectationV1, SceneRecipeTargetRegionV1,
     SceneRecipeTargetV1, SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1,
     SceneRecipeTransformExpectationV1, SceneRecipeTransformV1, SceneRecipeV1,
     SceneRecipeValidationReportV1, SceneRecipeVisibleExpectationV1, parse_valid_scene_recipe_json,

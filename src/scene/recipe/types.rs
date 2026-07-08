@@ -35,7 +35,8 @@ pub use expectations::{
     SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1, SceneRecipeQualityGroundingV1,
     SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1, SceneRecipeQualityReflectionV1,
     SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1,
-    SceneRecipeSeparationExpectationV1, SceneRecipeStateExpectationV1,
+    SceneRecipeSeparationExpectationV1, SceneRecipeStateExpectationV1, SceneRecipeTargetBoundsV1,
+    SceneRecipeTargetFitExpectationV1, SceneRecipeTargetRegionV1,
     SceneRecipeTransformExpectationV1, SceneRecipeVisibleExpectationV1,
 };
 pub use overlays::{

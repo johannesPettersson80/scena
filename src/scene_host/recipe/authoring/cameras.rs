@@ -140,7 +140,7 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
         };
         let handle = host.register_node(camera_node);
         let framed_controls = if let Some(framing) = &recipe.framing {
-            let Some(bounds) = scene_bounds_for_camera(host, &path, diagnostics) else {
+            let Some(bounds) = camera_framing_bounds(framing, host, &path, diagnostics) else {
                 continue;
             };
             let viewport = host.viewport.physical_size();
@@ -194,6 +194,50 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
             active: Some(recipe.active),
         });
     }
+}
+
+fn camera_framing_bounds(
+    framing: &SceneRecipeCameraFramingV1,
+    host: &SceneHostCore<DefaultAssetFetcher>,
+    path: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<Aabb> {
+    if framing.mode.as_deref() == Some("target_region") || framing.target_region.is_some() {
+        return target_region_bounds(framing, path, diagnostics);
+    }
+    scene_bounds_for_camera(host, path, diagnostics)
+}
+
+fn target_region_bounds(
+    framing: &SceneRecipeCameraFramingV1,
+    path: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<Aabb> {
+    let Some(target_region) = &framing.target_region else {
+        diagnostics.push(error_diagnostic(
+            format!("{path}.framing.target_region"),
+            "camera_framing_failed",
+            "target_region framing requires target_region bounds",
+            "emit framing.target_region:{bounds:{min,max},centroid}",
+        ));
+        return None;
+    };
+    let min = vec3_from_array(target_region.bounds.min);
+    let max = vec3_from_array(target_region.bounds.max);
+    if !min.is_finite() || !max.is_finite() || min.x > max.x || min.y > max.y || min.z > max.z {
+        diagnostics.push(error_diagnostic(
+            format!("{path}.framing.target_region.bounds"),
+            "camera_framing_failed",
+            "target_region bounds must be finite with min <= max on every axis",
+            "emit finite axis-aligned bounds around the target region",
+        ));
+        return None;
+    }
+    Some(Aabb::new(min, max))
+}
+
+fn vec3_from_array(value: [f64; 3]) -> Vec3 {
+    Vec3::new(value[0] as f32, value[1] as f32, value[2] as f32)
 }
 
 fn camera_from_recipe(

@@ -4,6 +4,7 @@ mod bbox_fit;
 mod interaction;
 mod quality;
 mod reference_quality;
+mod target_fit;
 
 use interaction::{compile_interaction_expectation, run_interaction_verification};
 use std::path::Path;
@@ -47,6 +48,13 @@ pub(crate) fn verify_recipe_expectations(
             capture,
             inspection,
             introspection,
+            &mut reasons,
+        );
+        render_checks += target_fit::verify_target_fit(
+            &expect.expect_target_fit,
+            manifest,
+            capture,
+            host.renderer().background_color(),
             &mut reasons,
         );
         render_checks += verify_no_warnings(expect, introspection, &mut reasons);

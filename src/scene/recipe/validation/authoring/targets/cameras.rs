@@ -17,7 +17,9 @@ const CAMERA_FIELDS: &[&str] = &[
     "active",
     "transform",
 ];
-const FRAMING_FIELDS: &[&str] = &["mode", "preset", "fill", "margin_px"];
+const FRAMING_FIELDS: &[&str] = &["mode", "preset", "fill", "margin_px", "target_region"];
+const TARGET_REGION_FIELDS: &[&str] = &["bounds", "centroid"];
+const TARGET_BOUNDS_FIELDS: &[&str] = &["min", "max"];
 
 pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
     value: Option<&Value>,
@@ -205,18 +207,45 @@ fn validate_camera_framing(
         .unwrap_or("frame_bounds");
     if !matches!(
         mode,
-        "frame_bounds" | "default_for_bounds" | "principal_face"
+        "frame_bounds" | "default_for_bounds" | "principal_face" | "target_region"
     ) {
         diagnostics.push(diagnostic(
             "invalid_camera_framing",
             "error",
             format!("{framing_path}.mode"),
             format!("camera framing mode '{mode}' is not supported"),
-            "use frame_bounds, default_for_bounds, or principal_face",
+            "use frame_bounds, default_for_bounds, principal_face, or target_region",
             None,
             false,
         ));
     }
+    if mode == "target_region" && !object.contains_key("target_region") {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            format!("{framing_path}.target_region"),
+            "target_region framing requires target_region bounds and centroid",
+            "emit framing.target_region:{bounds:{min,max},centroid}",
+            None,
+            false,
+        ));
+    }
+    if object.contains_key("target_region") && mode != "target_region" {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            format!("{framing_path}.target_region"),
+            "target_region is only accepted with framing.mode:\"target_region\"",
+            "set framing.mode:\"target_region\" or remove target_region",
+            None,
+            false,
+        ));
+    }
+    validate_target_region(
+        &format!("{framing_path}.target_region"),
+        object.get("target_region"),
+        diagnostics,
+    );
     if mode == "default_for_bounds" {
         for field in ["lens", "fov_degrees", "transform"] {
             if camera.contains_key(field) {
@@ -297,4 +326,142 @@ fn validate_camera_framing(
             )),
         }
     }
+}
+
+fn validate_target_region(
+    path: &str,
+    target_region: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(target_region) = target_region else {
+        return;
+    };
+    let Some(object) = target_region.as_object() else {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            path,
+            "target_region must be an object",
+            "emit target_region:{bounds:{min:[x,y,z],max:[x,y,z]},centroid:[x,y,z]}",
+            None,
+            false,
+        ));
+        return;
+    };
+    validate_known_fields(path, object, TARGET_REGION_FIELDS, diagnostics);
+    validate_target_bounds(&format!("{path}.bounds"), object.get("bounds"), diagnostics);
+    validate_vec3(
+        &format!("{path}.centroid"),
+        object.get("centroid"),
+        "target_region centroid",
+        diagnostics,
+    );
+}
+
+fn validate_target_bounds(
+    path: &str,
+    bounds: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(bounds) = bounds else {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            path,
+            "target_region bounds are required",
+            "emit bounds:{min:[x,y,z],max:[x,y,z]}",
+            None,
+            false,
+        ));
+        return;
+    };
+    let Some(object) = bounds.as_object() else {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            path,
+            "target_region bounds must be an object",
+            "emit bounds:{min:[x,y,z],max:[x,y,z]}",
+            None,
+            false,
+        ));
+        return;
+    };
+    validate_known_fields(path, object, TARGET_BOUNDS_FIELDS, diagnostics);
+    let min = validate_vec3(
+        &format!("{path}.min"),
+        object.get("min"),
+        "target_region bounds min",
+        diagnostics,
+    );
+    let max = validate_vec3(
+        &format!("{path}.max"),
+        object.get("max"),
+        "target_region bounds max",
+        diagnostics,
+    );
+    if let (Some(min), Some(max)) = (min, max)
+        && min.iter().zip(max).any(|(min, max)| *min > max)
+    {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            path,
+            "target_region bounds min must be <= max on every axis",
+            "emit finite axis-aligned bounds around the target region",
+            None,
+            false,
+        ));
+    }
+}
+
+fn validate_vec3(
+    path: &str,
+    value: Option<&Value>,
+    label: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<[f64; 3]> {
+    let Some(values) = value.and_then(Value::as_array) else {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            path,
+            format!("{label} must be a three-number array"),
+            "emit finite [x,y,z] coordinates",
+            None,
+            false,
+        ));
+        return None;
+    };
+    if values.len() != 3 {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            path,
+            format!("{label} must contain exactly three numbers"),
+            "emit finite [x,y,z] coordinates",
+            None,
+            false,
+        ));
+        return None;
+    }
+    let mut parsed = [0.0; 3];
+    for (index, value) in values.iter().enumerate() {
+        match value.as_f64() {
+            Some(number) if number.is_finite() => parsed[index] = number,
+            _ => {
+                diagnostics.push(diagnostic(
+                    "invalid_camera_framing",
+                    "error",
+                    format!("{path}[{index}]"),
+                    format!("{label} coordinates must be finite numbers"),
+                    "emit finite [x,y,z] coordinates",
+                    None,
+                    false,
+                ));
+                return None;
+            }
+        }
+    }
+    Some(parsed)
 }

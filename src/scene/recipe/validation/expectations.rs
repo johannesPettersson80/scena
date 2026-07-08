@@ -10,6 +10,7 @@ const EXPECT_FIELDS: &[&str] = &[
     "expect_visible",
     "expect_color",
     "expect_bbox_fit",
+    "expect_target_fit",
     "expect_grounded",
     "expect_helper_occluded",
     "expect_occlusion",
@@ -34,6 +35,16 @@ const COLOR_FIELDS: &[&str] = &[
     "require_base_color_texture",
 ];
 const BBOX_FIT_FIELDS: &[&str] = &["min", "max"];
+const TARGET_FIT_FIELDS: &[&str] = &[
+    "id",
+    "target",
+    "bounds",
+    "centroid",
+    "min_fit",
+    "max_fit",
+    "min_visible_coverage",
+];
+const TARGET_BOUNDS_FIELDS: &[&str] = &["min", "max"];
 const PICK_FIELDS: &[&str] = &["id", "x_css_px", "y_css_px", "target"];
 const TARGET_FIELDS: &[&str] = &["kind", "id", "position"];
 
@@ -77,6 +88,13 @@ pub(super) fn validate_expectations(
         diagnostics,
     );
     validate_bbox_fit(object.get("expect_bbox_fit"), diagnostics);
+    validate_array(
+        object.get("expect_target_fit"),
+        "$.expect.expect_target_fit",
+        TARGET_FIT_FIELDS,
+        validate_target_fit_expectation,
+        diagnostics,
+    );
     validate_array(
         object.get("expect_grounded"),
         "$.expect.expect_grounded",
@@ -337,6 +355,194 @@ fn validate_bbox_fit(bbox_fit: Option<&Value>, diagnostics: &mut Vec<SceneRecipe
             None,
             false,
         ));
+    }
+}
+
+fn validate_target_fit_expectation(
+    path: &str,
+    object: &serde_json::Map<String, Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    validate_target(
+        &format!("{path}.target"),
+        object.get("target"),
+        true,
+        diagnostics,
+    );
+    validate_target_bounds(&format!("{path}.bounds"), object.get("bounds"), diagnostics);
+    validate_vec3(
+        &format!("{path}.centroid"),
+        object.get("centroid"),
+        "target-fit centroid",
+        diagnostics,
+    );
+    let min_fit = validate_fraction(
+        &format!("{path}.min_fit"),
+        object.get("min_fit"),
+        "min_fit",
+        diagnostics,
+    );
+    let max_fit = validate_fraction(
+        &format!("{path}.max_fit"),
+        object.get("max_fit"),
+        "max_fit",
+        diagnostics,
+    );
+    if let (Some(min_fit), Some(max_fit)) = (min_fit, max_fit)
+        && min_fit > max_fit
+    {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            path,
+            "target fit min_fit must be <= max_fit",
+            "lower min_fit or raise max_fit",
+            None,
+            false,
+        ));
+    }
+    validate_fraction(
+        &format!("{path}.min_visible_coverage"),
+        object.get("min_visible_coverage"),
+        "min_visible_coverage",
+        diagnostics,
+    );
+}
+
+fn validate_target_bounds(
+    path: &str,
+    bounds: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(bounds) = bounds else {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            path,
+            "target-fit bounds are required",
+            "emit bounds:{min:[x,y,z],max:[x,y,z]}",
+            None,
+            false,
+        ));
+        return;
+    };
+    let Some(object) = bounds.as_object() else {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            path,
+            "target-fit bounds must be an object",
+            "emit bounds:{min:[x,y,z],max:[x,y,z]}",
+            None,
+            false,
+        ));
+        return;
+    };
+    validate_known_fields(
+        path,
+        object.keys().map(String::as_str),
+        TARGET_BOUNDS_FIELDS,
+        diagnostics,
+    );
+    let min = validate_vec3(
+        &format!("{path}.min"),
+        object.get("min"),
+        "target-fit bounds min",
+        diagnostics,
+    );
+    let max = validate_vec3(
+        &format!("{path}.max"),
+        object.get("max"),
+        "target-fit bounds max",
+        diagnostics,
+    );
+    if let (Some(min), Some(max)) = (min, max)
+        && min.iter().zip(max).any(|(min, max)| *min > max)
+    {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            path,
+            "target-fit bounds min must be <= max on every axis",
+            "emit finite axis-aligned bounds around the target region",
+            None,
+            false,
+        ));
+    }
+}
+
+fn validate_vec3(
+    path: &str,
+    value: Option<&Value>,
+    label: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<[f64; 3]> {
+    let Some(values) = value.and_then(Value::as_array) else {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            path,
+            format!("{label} must be a three-number array"),
+            "emit finite [x,y,z] coordinates",
+            None,
+            false,
+        ));
+        return None;
+    };
+    if values.len() != 3 {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            path,
+            format!("{label} must contain exactly three numbers"),
+            "emit finite [x,y,z] coordinates",
+            None,
+            false,
+        ));
+        return None;
+    }
+    let mut parsed = [0.0; 3];
+    for (index, value) in values.iter().enumerate() {
+        match value.as_f64() {
+            Some(number) if number.is_finite() => parsed[index] = number,
+            _ => {
+                diagnostics.push(diagnostic(
+                    "invalid_expect",
+                    "error",
+                    format!("{path}[{index}]"),
+                    format!("{label} coordinates must be finite numbers"),
+                    "emit finite [x,y,z] coordinates",
+                    None,
+                    false,
+                ));
+                return None;
+            }
+        }
+    }
+    Some(parsed)
+}
+
+fn validate_fraction(
+    path: &str,
+    value: Option<&Value>,
+    field: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<f64> {
+    let value = value?;
+    match value.as_f64() {
+        Some(number) if number.is_finite() && (0.0..=1.0).contains(&number) => Some(number),
+        _ => {
+            diagnostics.push(diagnostic(
+                "invalid_expect",
+                "error",
+                path,
+                format!("{field} must be finite and between 0 and 1"),
+                "use a normalized frame fraction",
+                None,
+                false,
+            ));
+            None
+        }
     }
 }
 

@@ -413,6 +413,148 @@ fn recipe_import_material_edges_and_principal_face_camera_make_cad_features_visi
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn recipe_target_region_fit_frames_subject_and_allows_context_crop() {
+    let dir = artifact_dir("recipe-target-region-fit");
+    let recipe_path = dir.join("target-region.recipe.json");
+    let png_path = dir.join("target-region.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [
+                {
+                    "id": "subject_box",
+                    "primitive": { "kind": "box", "size": [0.20, 0.20, 0.20] }
+                },
+                {
+                    "id": "context_panel",
+                    "primitive": { "kind": "box", "size": [2.40, 0.30, 0.30] }
+                }
+            ],
+            "materials": [
+                {
+                    "id": "subject_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "#D85C5C",
+                    "roughness": 0.45,
+                    "metallic": 0.0
+                },
+                {
+                    "id": "context_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "#707782",
+                    "roughness": 0.72,
+                    "metallic": 0.0
+                }
+            ],
+            "nodes": [
+                {
+                    "id": "subject",
+                    "geometry": "subject_box",
+                    "material": "subject_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] }
+                },
+                {
+                    "id": "context",
+                    "geometry": "context_panel",
+                    "material": "context_mat",
+                    "transform": { "kind": "trs", "translation": [0.95, 0.0, 0.0] }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": "#F4F6FA" },
+                "grid": { "enabled": false }
+            },
+            "render": {
+                "profile": "industrial",
+                "quality": "high",
+                "anti_aliasing": "fxaa",
+                "tonemapper": "aces"
+            },
+            "lights": [
+                { "id": "key", "kind": "directional", "preset": "key" },
+                { "id": "fill", "kind": "directional", "preset": "fill" }
+            ],
+            "cameras": [{
+                "id": "subject_closeup",
+                "kind": "perspective",
+                "lens": "telephoto",
+                "active": true,
+                "framing": {
+                    "mode": "target_region",
+                    "preset": "front",
+                    "fill": 0.62,
+                    "margin_px": 24.0,
+                    "target_region": {
+                        "bounds": {
+                            "min": [-0.10, -0.10, -0.10],
+                            "max": [0.10, 0.10, 0.10]
+                        },
+                        "centroid": [0.0, 0.0, 0.0]
+                    }
+                }
+            }],
+            "capture": { "width": 640, "height": 480 },
+            "expect": {
+                "expect_target_fit": [{
+                    "id": "subject-closeup",
+                    "target": { "kind": "node", "id": "subject" },
+                    "bounds": {
+                        "min": [-0.10, -0.10, -0.10],
+                        "max": [0.10, 0.10, 0.10]
+                    },
+                    "centroid": [0.0, 0.0, 0.0],
+                    "min_fit": 0.35,
+                    "max_fit": 0.82,
+                    "min_visible_coverage": 0.12
+                }]
+            }
+        }))
+        .expect("target-region recipe serializes"),
+    )
+    .expect("target-region recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--detail",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render target-region command runs");
+
+    assert!(
+        output.status.success(),
+        "target-region render should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "target-region render keeps stdout JSON clean, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["verification"]["ok"], true, "{report:#}");
+    assert_eq!(report["introspection"]["ok"], true, "{report:#}");
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("reasons array")
+            .is_empty(),
+        "target-region verification should not report failures: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn recipe_import_double_sided_material_renders_backface() {
     let dir = artifact_dir("recipe-cad-import-double-sided-backface");
     let recipe_path = dir.join("cad-panel-backface.recipe.json");

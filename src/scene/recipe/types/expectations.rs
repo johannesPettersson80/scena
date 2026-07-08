@@ -12,6 +12,8 @@ pub struct SceneRecipeExpectV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_bbox_fit: Option<SceneRecipeBboxFitExpectationV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expect_target_fit: Vec<SceneRecipeTargetFitExpectationV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expect_grounded: Vec<SceneRecipeGroundedExpectationV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expect_helper_occluded: Vec<SceneRecipeHelperOcclusionExpectationV1>,
@@ -68,6 +70,35 @@ pub struct SceneRecipeBboxFitExpectationV1 {
     pub min: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeTargetBoundsV1 {
+    pub min: [f64; 3],
+    pub max: [f64; 3],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeTargetRegionV1 {
+    pub bounds: SceneRecipeTargetBoundsV1,
+    pub centroid: [f64; 3],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeTargetFitExpectationV1 {
+    pub id: String,
+    pub target: SceneRecipeTargetV1,
+    pub bounds: SceneRecipeTargetBoundsV1,
+    pub centroid: [f64; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_fit: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_fit: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_visible_coverage: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

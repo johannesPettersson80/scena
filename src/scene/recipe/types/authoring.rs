@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 mod imports;
 
+use super::expectations::SceneRecipeTargetRegionV1;
 use super::overlays::SceneRecipeTargetV1;
 use super::{
     default_transform_scale, default_transform_up, default_true, is_default_scale, is_default_up,
@@ -424,6 +425,8 @@ pub struct SceneRecipeCameraFramingV1 {
     pub fill: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin_px: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_region: Option<SceneRecipeTargetRegionV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
