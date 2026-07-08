@@ -104,10 +104,33 @@ pub(crate) fn verify_quality_expectations(
                 source: "quality".to_owned(),
                 expectation_id: Some(check.id.clone()),
                 affected_handles: check.region.handle.into_iter().collect(),
-                message: format!("{}; fix: {}", check.code, check.fix_hint),
+                message: quality_failure_message(check),
             }),
     );
     Ok(quality)
+}
+
+fn quality_failure_message(check: &scena::RenderQualityCheckV1) -> String {
+    let Some((observed_key, observed)) = check.observed.iter().next() else {
+        return format!("{}; fix: {}", check.code, check.fix_hint);
+    };
+    let Some((threshold_key, threshold)) = check.threshold.iter().next() else {
+        return format!(
+            "{}: {}={:.3}; fix: {}",
+            check.code, observed_key, observed, check.fix_hint
+        );
+    };
+    let comparison = if threshold_key.starts_with("min_") || check.code.ends_with("_too_low") {
+        "<"
+    } else if threshold_key.starts_with("max_") || check.code.ends_with("_too_high") {
+        ">"
+    } else {
+        "vs"
+    };
+    format!(
+        "{}: {}={:.3} {} {}={:.3}; fix: {}",
+        check.code, observed_key, observed, comparison, threshold_key, threshold, check.fix_hint
+    )
 }
 
 fn append_label_checks(
@@ -340,5 +363,35 @@ fn append_grounding_checks(
             Vec::new(),
             message,
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    #[test]
+    fn quality_failure_message_includes_metric_value_and_threshold() {
+        let check = scena::RenderQualityCheckV1 {
+            id: "baseline.clipped_highlights".to_owned(),
+            code: "clipped_highlight_fraction_too_high".to_owned(),
+            status: scena::RenderQualityStatusV1::Failed,
+            severity: "error".to_owned(),
+            region: scena::RenderQualityRegionV1 {
+                kind: "subject".to_owned(),
+                handle: None,
+                rect_css_px: None,
+            },
+            observed: BTreeMap::from([("clipped_highlight_fraction".to_owned(), 0.41)]),
+            threshold: BTreeMap::from([("max_clipped_highlight_fraction".to_owned(), 0.05)]),
+            fix_hint: "lower exposure".to_owned(),
+        };
+
+        assert_eq!(
+            quality_failure_message(&check),
+            "clipped_highlight_fraction_too_high: clipped_highlight_fraction=0.410 > max_clipped_highlight_fraction=0.050; fix: lower exposure"
+        );
     }
 }

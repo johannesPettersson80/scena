@@ -202,6 +202,24 @@ fn evaluate_render_quality_rgba8_region(
                     },
                 );
             }
+            if let Some(max_clipped_highlight) = exposure.max_clipped_highlight_fraction {
+                let max_clipped_highlight = max_clipped_highlight as f32;
+                push_threshold_check(
+                    &mut checks,
+                    ThresholdCheck {
+                        id: "expect_quality.exposure.clipped_highlights",
+                        code: "clipped_highlight_fraction_too_high",
+                        severity: "error",
+                        region,
+                        observed_key: "clipped_highlight_fraction",
+                        observed: metrics.clipped_highlight_fraction,
+                        threshold_key: "max_clipped_highlight_fraction",
+                        threshold: max_clipped_highlight,
+                        fails: metrics.clipped_highlight_fraction > max_clipped_highlight,
+                        fix_hint: "lower exposure, reduce light intensity, or darken bright materials so subject highlights retain detail",
+                    },
+                );
+            }
         }
 
         if let Some(contrast) = expectation.contrast {
@@ -238,6 +256,24 @@ fn evaluate_render_quality_rgba8_region(
                         threshold: min_sobel as f32,
                         fails: metrics.sobel_energy < min_sobel as f32,
                         fix_hint: "increase capture resolution or add lighting/background contrast at object edges",
+                    },
+                );
+            }
+            if let Some(min_subject_range) = contrast.min_subject_luminance_range {
+                let min_subject_range = min_subject_range as f32;
+                push_threshold_check(
+                    &mut checks,
+                    ThresholdCheck {
+                        id: "expect_quality.contrast.subject_range",
+                        code: "subject_luminance_range_too_low",
+                        severity: "error",
+                        region,
+                        observed_key: "subject_luminance_range",
+                        observed: metrics.luminance_range,
+                        threshold_key: "min_subject_luminance_range",
+                        threshold: min_subject_range,
+                        fails: metrics.luminance_range < min_subject_range,
+                        fix_hint: "increase subject/background separation or add lighting that reveals shape detail",
                     },
                 );
             }

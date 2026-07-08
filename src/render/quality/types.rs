@@ -74,6 +74,7 @@ pub struct RenderQualityRegion {
 pub struct RenderQualityFrameMetrics {
     pub low_clip_fraction: f32,
     pub high_clip_fraction: f32,
+    pub clipped_highlight_fraction: f32,
     pub p01: f32,
     pub p05: f32,
     pub p50: f32,

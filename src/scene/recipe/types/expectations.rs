@@ -234,6 +234,8 @@ pub struct SceneRecipeQualityExposureV1 {
     pub max_low_clip_fraction: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_high_clip_fraction: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_clipped_highlight_fraction: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -243,6 +245,8 @@ pub struct SceneRecipeQualityContrastV1 {
     pub min_luminance_range: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_sobel_energy: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_subject_luminance_range: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

@@ -14,6 +14,7 @@ pub fn frame_metrics(
         return RenderQualityFrameMetrics {
             low_clip_fraction: 1.0,
             high_clip_fraction: 0.0,
+            clipped_highlight_fraction: 0.0,
             p01: 0.0,
             p05: 0.0,
             p50: 0.0,
@@ -45,6 +46,9 @@ pub fn frame_metrics(
         high_clip_fraction: round3(
             sorted.iter().filter(|value| **value >= 0.98).count() as f32 / sorted.len() as f32,
         ),
+        clipped_highlight_fraction: round3(display_highlight_fraction(
+            rgba8, width, height, region,
+        )),
         p01: round3(percentile_sorted(&sorted, 0.01)),
         p05: round3(p05),
         p50: round3(percentile_sorted(&sorted, 0.50)),
@@ -251,6 +255,35 @@ fn collect_luminance(
     values
 }
 
+fn display_highlight_fraction(
+    rgba8: &[u8],
+    width: u32,
+    height: u32,
+    region: RenderQualityRegion,
+) -> f32 {
+    let mut highlighted = 0usize;
+    let mut samples = 0usize;
+    for y in region.y..region.y.saturating_add(region.height).min(height) {
+        for x in region.x..region.x.saturating_add(region.width).min(width) {
+            let Some(offset) = pixel_offset(rgba8, width, x, y) else {
+                continue;
+            };
+            let Some(pixel) = rgba8.get(offset..offset + 4) else {
+                continue;
+            };
+            samples = samples.saturating_add(1);
+            if display_luminance_from_srgb8(pixel[0], pixel[1], pixel[2]) >= 0.95 {
+                highlighted = highlighted.saturating_add(1);
+            }
+        }
+    }
+    if samples == 0 {
+        0.0
+    } else {
+        highlighted as f32 / samples as f32
+    }
+}
+
 fn sobel_energy(rgba8: &[u8], width: u32, height: u32, region: RenderQualityRegion) -> f32 {
     if width < 3 || height < 3 {
         return 0.0;
@@ -411,6 +444,10 @@ pub(super) fn luminance_from_srgb8(r: u8, g: u8, b: u8) -> f32 {
         }
     };
     0.2126 * srgb_to_linear(r) + 0.7152 * srgb_to_linear(g) + 0.0722 * srgb_to_linear(b)
+}
+
+fn display_luminance_from_srgb8(r: u8, g: u8, b: u8) -> f32 {
+    (0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b)) / 255.0
 }
 
 pub(super) fn percentile_sorted(values: &[f32], percentile: f32) -> f32 {

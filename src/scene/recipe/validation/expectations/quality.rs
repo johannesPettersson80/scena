@@ -17,8 +17,16 @@ const QUALITY_FIELDS: &[&str] = &[
     "grounding",
     "depth_of_field",
 ];
-const QUALITY_EXPOSURE_FIELDS: &[&str] = &["max_low_clip_fraction", "max_high_clip_fraction"];
-const QUALITY_CONTRAST_FIELDS: &[&str] = &["min_luminance_range", "min_sobel_energy"];
+const QUALITY_EXPOSURE_FIELDS: &[&str] = &[
+    "max_low_clip_fraction",
+    "max_high_clip_fraction",
+    "max_clipped_highlight_fraction",
+];
+const QUALITY_CONTRAST_FIELDS: &[&str] = &[
+    "min_luminance_range",
+    "min_sobel_energy",
+    "min_subject_luminance_range",
+];
 const QUALITY_NOISE_FIELDS: &[&str] = &["max_outlier_fraction"];
 const QUALITY_TEXT_FIELDS: &[&str] = &[
     "min_ink_coverage",
