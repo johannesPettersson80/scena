@@ -60,6 +60,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
     if args.is_empty() || args == ["--help"] || args == ["-h"] {
         return Ok(success(scena_help::help_json()));
     }
+    if args == ["--version"] || args == ["version"] {
+        return Ok(success(version_json()));
+    }
 
     let mut outcome = match args.as_slice() {
         [command, subcommand] if command == "schema" && subcommand == "list" => {
@@ -119,6 +122,21 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
     }?;
     apply_output_format(&mut outcome, output_format)?;
     Ok(outcome)
+}
+
+fn version_json() -> String {
+    let git_commit = option_env!("SCENA_GIT_COMMIT").filter(|value| !value.is_empty());
+    serde_json::json!({
+        "schema": "scena.cli_version.v1",
+        "package_name": "scena",
+        "package_version": env!("CARGO_PKG_VERSION"),
+        "git_commit": git_commit,
+        "features": {
+            "inspection": cfg!(feature = "inspection"),
+            "scene_host": cfg!(feature = "scene-host")
+        }
+    })
+    .to_string()
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]

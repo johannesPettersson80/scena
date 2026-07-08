@@ -4,6 +4,30 @@ use std::path::Path;
 use std::process::Command;
 
 #[test]
+fn scena_version_cli_reports_package_version_and_commit_field() {
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .arg("--version")
+        .output()
+        .expect("scena --version runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "--version should keep stdout JSON clean and stderr empty, got {}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("--version emits JSON");
+    assert_eq!(report["schema"], "scena.cli_version.v1");
+    assert_eq!(report["package_name"], "scena");
+    assert_eq!(report["package_version"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        report["git_commit"].is_null() || report["git_commit"].as_str().is_some(),
+        "git_commit must be a string when pinned at compile time, otherwise null: {report:#}"
+    );
+}
+
+#[test]
 fn scena_schema_cli_lists_and_gets_stable_contracts() {
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["schema", "list"])

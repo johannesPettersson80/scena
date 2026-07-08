@@ -2,6 +2,7 @@ pub(crate) fn help_json() -> String {
     serde_json::json!({
         "schema": "scena.cli_help.v1",
         "commands": [
+            "--version",
             "schema list",
             "schema get <scena.*.vN>",
             "validate-recipe <recipe.json> [--max-imports <n>]",
@@ -20,6 +21,7 @@ pub(crate) fn help_json() -> String {
             "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>"
         ],
         "global_options": [
+            "--version",
             "--round-floats <0..6>"
         ],
         "guides": [
