@@ -18,39 +18,45 @@
   ],
   "nodes": [
     {
-      "id": "plate",
+      "id": "part.edge_emphasis.0.0",
       "handle": 4294967300,
+      "kind": "generated_overlay",
+      "parent": 4294967299
+    },
+    {
+      "id": "plate",
+      "handle": 4294967301,
       "kind": "node",
       "parent": 4294967297,
       "name": "CAD plate"
     },
     {
       "id": "tri_joint",
-      "handle": 4294967301,
-      "kind": "node",
-      "parent": 4294967297
-    },
-    {
-      "id": "tri_deformed",
       "handle": 4294967302,
       "kind": "node",
       "parent": 4294967297
     },
     {
-      "id": "plate_instances",
+      "id": "tri_deformed",
       "handle": 4294967303,
+      "kind": "node",
+      "parent": 4294967297
+    },
+    {
+      "id": "plate_instances",
+      "handle": 4294967304,
       "kind": "instance_set",
       "parent": 4294967297
     },
     {
       "id": "status_particles",
-      "handle": 4294967304,
+      "handle": 4294967305,
       "kind": "particle_set",
       "parent": 4294967297
     },
     {
       "id": "status_label",
-      "handle": 4294967305,
+      "handle": 4294967306,
       "kind": "label",
       "parent": 4294967297,
       "name": "OK"
@@ -59,7 +65,7 @@
   "cameras": [
     {
       "id": "main",
-      "handle": 4294967306,
+      "handle": 4294967307,
       "kind": "camera",
       "parent": 4294967297,
       "active": true
@@ -68,19 +74,19 @@
   "lights": [
     {
       "id": "key",
-      "handle": 4294967307,
-      "kind": "light",
-      "parent": 4294967297
-    },
-    {
-      "id": "fill",
       "handle": 4294967308,
       "kind": "light",
       "parent": 4294967297
     },
     {
-      "id": "rim",
+      "id": "fill",
       "handle": 4294967309,
+      "kind": "light",
+      "parent": 4294967297
+    },
+    {
+      "id": "rim",
+      "handle": 4294967310,
       "kind": "light",
       "parent": 4294967297
     }
