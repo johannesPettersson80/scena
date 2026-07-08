@@ -1,5 +1,8 @@
 [advisories]
 version = 2
+# `ttf-parser` is pulled by the current `fontdue` 0.9.3 release. Revisit this
+# when replacing the font rasterization path with a maintained parser.
+ignore = ["RUSTSEC-2026-0192"]
 
 [licenses]
 version = 2
