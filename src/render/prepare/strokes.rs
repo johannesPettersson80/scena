@@ -100,10 +100,11 @@ fn visible_edge_segments(geometry: &GeometryDesc, threshold_degrees: f32) -> Vec
         let normal = triangle_normal(geometry, triangle);
         for (start, end) in triangle_edges(triangle) {
             let key = ordered_position_edge_key(geometry, start, end);
+            let endpoint_normals = EdgeEndpointNormals::from_edge(geometry, start, end);
             edges
                 .entry(key)
-                .and_modify(|edge| edge.add_face(normal))
-                .or_insert_with(|| EdgeCandidate::new(start, end, normal));
+                .and_modify(|edge| edge.add_face(normal, endpoint_normals))
+                .or_insert_with(|| EdgeCandidate::new(start, end, normal, endpoint_normals));
         }
     }
     edges
@@ -336,24 +337,31 @@ struct EdgeCandidate {
     end: u32,
     first_normal: Vec3,
     second_normal: Option<Vec3>,
+    endpoint_normals: EdgeEndpointNormals,
+    smooth_vertex_normals: bool,
     face_count: u8,
 }
 
 impl EdgeCandidate {
-    fn new(start: u32, end: u32, normal: Vec3) -> Self {
+    fn new(start: u32, end: u32, normal: Vec3, endpoint_normals: EdgeEndpointNormals) -> Self {
         Self {
             start,
             end,
             first_normal: normal,
             second_normal: None,
+            endpoint_normals,
+            smooth_vertex_normals: true,
             face_count: 1,
         }
     }
 
-    fn add_face(&mut self, normal: Vec3) {
+    fn add_face(&mut self, normal: Vec3, endpoint_normals: EdgeEndpointNormals) {
         self.face_count = self.face_count.saturating_add(1);
         if self.second_normal.is_none() {
             self.second_normal = Some(normal);
+        }
+        if !self.endpoint_normals.matches_smooth(endpoint_normals) {
+            self.smooth_vertex_normals = false;
         }
     }
 
@@ -361,10 +369,53 @@ impl EdgeCandidate {
         if self.face_count != 2 {
             return true;
         }
+        if self.smooth_vertex_normals {
+            return false;
+        }
         let Some(second_normal) = self.second_normal else {
             return true;
         };
         angle_degrees(self.first_normal, second_normal) > threshold_degrees
+    }
+}
+
+#[derive(Clone, Copy)]
+struct EdgeEndpointNormals {
+    start_key: PositionKey,
+    end_key: PositionKey,
+    start_normal: Vec3,
+    end_normal: Vec3,
+}
+
+impl EdgeEndpointNormals {
+    fn from_edge(geometry: &GeometryDesc, start: u32, end: u32) -> Self {
+        let vertices = geometry.vertices();
+        let start_vertex = &vertices[start as usize];
+        let end_vertex = &vertices[end as usize];
+        let start_key = PositionKey::from_vec3(start_vertex.position);
+        let end_key = PositionKey::from_vec3(end_vertex.position);
+        if start_key <= end_key {
+            Self {
+                start_key,
+                end_key,
+                start_normal: start_vertex.normal,
+                end_normal: end_vertex.normal,
+            }
+        } else {
+            Self {
+                start_key: end_key,
+                end_key: start_key,
+                start_normal: end_vertex.normal,
+                end_normal: start_vertex.normal,
+            }
+        }
+    }
+
+    fn matches_smooth(self, other: Self) -> bool {
+        self.start_key == other.start_key
+            && self.end_key == other.end_key
+            && normals_close(self.start_normal, other.start_normal)
+            && normals_close(self.end_normal, other.end_normal)
     }
 }
 
@@ -399,6 +450,10 @@ fn dot(left: Vec3, right: Vec3) -> f32 {
 fn normalize(value: Vec3) -> Option<Vec3> {
     let length = dot(value, value).sqrt();
     (length > f32::EPSILON).then(|| Vec3::new(value.x / length, value.y / length, value.z / length))
+}
+
+fn normals_close(left: Vec3, right: Vec3) -> bool {
+    dot(left, right) > 0.995
 }
 
 #[cfg(test)]
@@ -441,6 +496,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn edge_segments_hide_smooth_cylinder_facets_but_keep_cap_feature_rings() {
+        let segments = 12;
+        let geometry = GeometryDesc::cylinder(1.0, 2.0, segments);
+
+        let edge_segments = visible_edge_segments(&geometry, 18.0);
+
+        assert_eq!(
+            edge_segments.len(),
+            (segments * 2) as usize,
+            "CAD edge emphasis must keep the two cap feature rings only, not side facet or cap triangulation edges: {edge_segments:?}"
+        );
+        assert!(
+            !edge_segments.iter().any(|segment| is_vertical_side_edge(
+                &geometry,
+                segment.start,
+                segment.end
+            )),
+            "smooth cylinder side tessellation edges must not be drawn as CAD feature edges: {edge_segments:?}"
+        );
+    }
+
     fn vertex(x: f32, y: f32, normal: Vec3) -> GeometryVertex {
         GeometryVertex {
             position: Vec3::new(x, y, 0.0),
@@ -451,6 +528,15 @@ mod tests {
     fn same_position_pair(a: Vec3, b: Vec3, left: Vec3, right: Vec3) -> bool {
         (a.abs_diff_eq(left, 1.0e-6) && b.abs_diff_eq(right, 1.0e-6))
             || (a.abs_diff_eq(right, 1.0e-6) && b.abs_diff_eq(left, 1.0e-6))
+    }
+
+    fn is_vertical_side_edge(geometry: &GeometryDesc, start: u32, end: u32) -> bool {
+        let vertices = geometry.vertices();
+        let start = vertices[start as usize].position;
+        let end = vertices[end as usize].position;
+        (start.x - end.x).abs() < 1.0e-6
+            && (start.z - end.z).abs() < 1.0e-6
+            && (start.y - end.y).abs() > 1.0e-6
     }
 }
 
