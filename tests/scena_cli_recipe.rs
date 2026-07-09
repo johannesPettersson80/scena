@@ -555,6 +555,132 @@ fn recipe_target_region_fit_frames_subject_and_allows_context_crop() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn recipe_target_region_fit_allows_cropped_non_target_imports() {
+    let dir = artifact_dir("recipe-target-region-cropped-context-import");
+    let recipe_path = dir.join("target-region-import.recipe.json");
+    let png_path = dir.join("target-region-import.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                {
+                    "id": "subject_import",
+                    "uri": TEST_ASSET
+                },
+                {
+                    "id": "context_import",
+                    "uri": TEST_ASSET,
+                    "transform": {
+                        "translation": [4.0, 0.0, 0.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": "#F4F6FA" },
+                "grid": { "enabled": false }
+            },
+            "render": {
+                "profile": "industrial",
+                "quality": "high",
+                "anti_aliasing": "fxaa",
+                "tonemapper": "aces"
+            },
+            "cameras": [{
+                "id": "subject_import_closeup",
+                "kind": "perspective",
+                "lens": "telephoto",
+                "active": true,
+                "framing": {
+                    "mode": "target_region",
+                    "preset": "front",
+                    "fill": 0.72,
+                    "margin_px": 16.0,
+                    "target_region": {
+                        "bounds": {
+                            "min": [-0.5, -0.5, -0.01],
+                            "max": [0.5, 0.5, 0.01]
+                        },
+                        "centroid": [0.0, 0.0, 0.0]
+                    }
+                }
+            }],
+            "capture": { "width": 640, "height": 480 },
+            "expect": {
+                "expect_target_fit": [{
+                    "id": "subject-import-closeup",
+                    "target": { "kind": "import", "id": "subject_import" },
+                    "bounds": {
+                        "min": [-0.5, -0.5, -0.01],
+                        "max": [0.5, 0.5, 0.01]
+                    },
+                    "centroid": [0.0, 0.0, 0.0],
+                    "min_fit": 0.45,
+                    "max_fit": 0.86,
+                    "min_visible_coverage": 0.06
+                }],
+                "expect_quality": { "profile": "cad" }
+            }
+        }))
+        .expect("target-region import recipe serializes"),
+    )
+    .expect("target-region import recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--detail",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render target-region import command runs");
+
+    assert!(
+        output.status.success(),
+        "target-region import render should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "target-region import render keeps stdout JSON clean, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["verification"]["ok"], true, "{report:#}");
+    assert_eq!(report["introspection"]["ok"], true, "{report:#}");
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("reasons array")
+            .is_empty(),
+        "cropped non-target import must not produce verification failures: {report:#}"
+    );
+
+    let composition_checks = report["verification"]["composition"]["checks"]
+        .as_array()
+        .expect("composition checks serialize");
+    assert!(
+        composition_checks.iter().any(|check| {
+            check["id"] == "import.context_import.projected_bbox"
+                && check["code"] == "target_region_context_crop_allowed"
+                && check["status"] == "not_applicable"
+        }),
+        "cropped context import should be explicitly recorded as allowed by target-region framing: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn recipe_import_double_sided_material_renders_backface() {
     let dir = artifact_dir("recipe-cad-import-double-sided-backface");
     let recipe_path = dir.join("cad-panel-backface.recipe.json");

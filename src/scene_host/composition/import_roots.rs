@@ -2,12 +2,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::json;
 
-use super::checks::{CompositionCheckExt, checked_check, error_check, observed_pairs, round3};
+use super::checks::{
+    CompositionCheckExt, checked_check, error_check, observed_pairs, round3, skip_check,
+};
 use super::helpers::{draws_for_handles, projected_node_rect, visible_coverage_for_rect};
 use super::object_pixels::object_pixel_quality_check;
 use super::object_textures::object_texture_result_check;
 use super::objects::ObjectCompositionInput;
-use crate::SceneCompositionCheckV1;
+use crate::{
+    CaptureRgba8, CaptureScreenRect, SceneCompositionCheckV1, SceneCompositionStatusV1,
+    SceneRecipeTargetV1,
+};
 
 pub(super) fn composition_import_checks(
     input: &ObjectCompositionInput<'_>,
@@ -15,9 +20,12 @@ pub(super) fn composition_import_checks(
     require_object_masks: bool,
 ) -> Vec<SceneCompositionCheckV1> {
     let mut checks = Vec::new();
+    let target_fit_import_ids = target_fit_import_ids(input);
 
     for import in &input.manifest.imports {
         let target_path = format!("import.{}", import.id);
+        let target_region_context_crop_allowed = !target_fit_import_ids.is_empty()
+            && !target_fit_import_ids.contains(import.id.as_str());
         let mut handles = import
             .nodes_by_path
             .values()
@@ -88,26 +96,46 @@ pub(super) fn composition_import_checks(
 
         let projected_rect = projected_node_rect(input.capture, draws.as_slice());
         if let Some(rect) = projected_rect.filter(|rect| rect.width > 0.0 && rect.height > 0.0) {
-            checks.push(
-                checked_check(
+            if target_region_context_crop_allowed && !rect_intersects_capture(input.capture, rect) {
+                checks.push(target_region_context_crop_check(
                     format!("{target_path}.projected_bbox"),
                     "placement",
-                    "projected_bbox_available",
                     Some(import.id.clone()),
                     vec![representative_handle],
-                    observed_pairs([
-                        ("width_px", json!(round3(rect.width))),
-                        ("height_px", json!(round3(rect.height))),
-                        ("center_x_px", json!(round3(rect.center_x))),
-                        ("center_y_px", json!(round3(rect.center_y))),
-                    ]),
-                    (
-                        "declared import has a projected screen region",
-                        "no action needed",
+                ));
+            } else {
+                checks.push(
+                    checked_check(
+                        format!("{target_path}.projected_bbox"),
+                        "placement",
+                        "projected_bbox_available",
+                        Some(import.id.clone()),
+                        vec![representative_handle],
+                        observed_pairs([
+                            ("width_px", json!(round3(rect.width))),
+                            ("height_px", json!(round3(rect.height))),
+                            ("center_x_px", json!(round3(rect.center_x))),
+                            ("center_y_px", json!(round3(rect.center_y))),
+                        ]),
+                        (
+                            "declared import has a projected screen region",
+                            "no action needed",
+                        ),
+                    )
+                    .with_region(
+                        "import",
+                        Some(representative_handle),
+                        Some(rect),
                     ),
-                )
-                .with_region("import", Some(representative_handle), Some(rect)),
-            );
+                );
+            }
+        } else if target_region_context_crop_allowed {
+            checks.push(target_region_context_crop_check(
+                format!("{target_path}.projected_bbox"),
+                "placement",
+                Some(import.id.clone()),
+                handles.iter().copied().collect(),
+            ));
         } else {
             checks.push(error_check(
                 format!("{target_path}.projected_bbox"),
@@ -149,7 +177,9 @@ pub(super) fn composition_import_checks(
                     )
                     .with_region_from_screen("import", Some(representative_handle), coverage.region),
                 );
-                if let Some(profile) = required_profile {
+                if let Some(profile) = required_profile
+                    && !target_region_context_crop_allowed
+                {
                     checks.push(object_pixel_quality_check(
                         &target_path,
                         &import.id,
@@ -171,6 +201,13 @@ pub(super) fn composition_import_checks(
                         checks.push(check);
                     }
                 }
+            } else if target_region_context_crop_allowed {
+                checks.push(target_region_context_crop_check(
+                    format!("{target_path}.visible_coverage"),
+                    "occlusion_depth",
+                    Some(import.id.clone()),
+                    vec![representative_handle],
+                ));
             } else {
                 checks.push(
                     error_check(
@@ -196,6 +233,13 @@ pub(super) fn composition_import_checks(
                     .with_region_from_screen("import", Some(representative_handle), coverage.region),
                 );
             }
+        } else if require_object_masks && target_region_context_crop_allowed {
+            checks.push(target_region_context_crop_check(
+                format!("{target_path}.visible_coverage"),
+                "occlusion_depth",
+                Some(import.id.clone()),
+                vec![representative_handle],
+            ));
         } else if require_object_masks {
             checks.push(error_check(
                 format!("{target_path}.visible_coverage"),
@@ -213,4 +257,44 @@ pub(super) fn composition_import_checks(
     }
 
     checks
+}
+
+fn target_fit_import_ids(input: &ObjectCompositionInput<'_>) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    let Some(expect) = input.expect else {
+        return ids;
+    };
+    for target_fit in &expect.expect_target_fit {
+        if let SceneRecipeTargetV1::Import { id } = &target_fit.target {
+            ids.insert(id.clone());
+        }
+    }
+    ids
+}
+
+fn rect_intersects_capture(capture: &CaptureRgba8, rect: CaptureScreenRect) -> bool {
+    rect.max_x > 0.0
+        && rect.max_y > 0.0
+        && rect.min_x < capture.descriptor.width as f32
+        && rect.min_y < capture.descriptor.height as f32
+}
+
+fn target_region_context_crop_check(
+    id: String,
+    category: &str,
+    target_id: Option<String>,
+    affected_handles: Vec<u64>,
+) -> SceneCompositionCheckV1 {
+    skip_check(
+        id,
+        category,
+        "target_region_context_crop_allowed",
+        SceneCompositionStatusV1::NotApplicable,
+        target_id,
+        affected_handles,
+        (
+            "non-target import is allowed to be cropped by target-region framing",
+            "no action needed unless this import should be the framed target",
+        ),
+    )
 }
