@@ -79,33 +79,47 @@ pub(super) fn append_edge_primitives(
     let threshold = material
         .edge_angle_threshold_degrees()
         .unwrap_or(DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES);
-    let mut edges: BTreeMap<(u32, u32), EdgeCandidate> = BTreeMap::new();
+    let vertices = geometry.vertices();
+    for edge in visible_edge_segments(geometry, threshold) {
+        append_line_segment(
+            node,
+            vertices[edge.start as usize].position,
+            vertices[edge.end as usize].position,
+            &style,
+            inputs.params.target,
+            inputs.sinks.primitives,
+            inputs.sinks.strokes,
+        );
+    }
+    Ok(())
+}
+
+fn visible_edge_segments(geometry: &GeometryDesc, threshold_degrees: f32) -> Vec<EdgeSegment> {
+    let mut edges: BTreeMap<(PositionKey, PositionKey), EdgeCandidate> = BTreeMap::new();
     for triangle in geometry.indices().chunks_exact(3) {
         let normal = triangle_normal(geometry, triangle);
         for (start, end) in triangle_edges(triangle) {
-            let key = ordered_edge_key(start, end);
+            let key = ordered_position_edge_key(geometry, start, end);
             edges
                 .entry(key)
                 .and_modify(|edge| edge.add_face(normal))
                 .or_insert_with(|| EdgeCandidate::new(start, end, normal));
         }
     }
+    edges
+        .values()
+        .filter(|edge| edge.is_visible(threshold_degrees))
+        .map(|edge| EdgeSegment {
+            start: edge.start,
+            end: edge.end,
+        })
+        .collect()
+}
 
-    let vertices = geometry.vertices();
-    for edge in edges.values() {
-        if edge.is_visible(threshold) {
-            append_line_segment(
-                node,
-                vertices[edge.start as usize].position,
-                vertices[edge.end as usize].position,
-                &style,
-                inputs.params.target,
-                inputs.sinks.primitives,
-                inputs.sinks.strokes,
-            );
-        }
-    }
-    Ok(())
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EdgeSegment {
+    start: u32,
+    end: u32,
 }
 
 pub(super) fn append_line_primitives(
@@ -281,11 +295,39 @@ fn triangle_edges(triangle: &[u32]) -> [(u32, u32); 3] {
     ]
 }
 
-fn ordered_edge_key(start: u32, end: u32) -> (u32, u32) {
+fn ordered_position_edge_key(
+    geometry: &GeometryDesc,
+    start: u32,
+    end: u32,
+) -> (PositionKey, PositionKey) {
+    let vertices = geometry.vertices();
+    let start = PositionKey::from_vec3(vertices[start as usize].position);
+    let end = PositionKey::from_vec3(vertices[end as usize].position);
     if start <= end {
         (start, end)
     } else {
         (end, start)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PositionKey([u32; 3]);
+
+impl PositionKey {
+    fn from_vec3(position: Vec3) -> Self {
+        Self([
+            scalar_position_key(position.x),
+            scalar_position_key(position.y),
+            scalar_position_key(position.z),
+        ])
+    }
+}
+
+fn scalar_position_key(value: f32) -> u32 {
+    if value == 0.0 {
+        0.0f32.to_bits()
+    } else {
+        value.to_bits()
     }
 }
 
@@ -357,6 +399,59 @@ fn dot(left: Vec3, right: Vec3) -> f32 {
 fn normalize(value: Vec3) -> Option<Vec3> {
     let length = dot(value, value).sqrt();
     (length > f32::EPSILON).then(|| Vec3::new(value.x / length, value.y / length, value.z / length))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
+
+    #[test]
+    fn edge_segments_merge_duplicate_positions_and_hide_coplanar_triangulation_diagonal() {
+        let z = Vec3::new(0.0, 0.0, 1.0);
+        let vertices = vec![
+            vertex(0.0, 0.0, z),
+            vertex(1.0, 0.0, z),
+            vertex(1.0, 1.0, z),
+            vertex(0.0, 0.0, z),
+            vertex(1.0, 1.0, z),
+            vertex(0.0, 1.0, z),
+        ];
+        let geometry = GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vertices,
+            vec![0, 1, 2, 3, 4, 5],
+        )
+        .expect("duplicated-vertex quad geometry is valid");
+
+        let segments = visible_edge_segments(&geometry, 18.0);
+
+        assert_eq!(
+            segments.len(),
+            4,
+            "CAD edge emphasis must keep only feature/boundary edges, not the duplicated triangle edge set: {segments:?}"
+        );
+        assert!(
+            !segments.iter().any(|segment| {
+                let a = geometry.vertices()[segment.start as usize].position;
+                let b = geometry.vertices()[segment.end as usize].position;
+                same_position_pair(a, b, Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 0.0))
+            }),
+            "coplanar triangulation diagonal must not be drawn as a CAD edge: {segments:?}"
+        );
+    }
+
+    fn vertex(x: f32, y: f32, normal: Vec3) -> GeometryVertex {
+        GeometryVertex {
+            position: Vec3::new(x, y, 0.0),
+            normal,
+        }
+    }
+
+    fn same_position_pair(a: Vec3, b: Vec3, left: Vec3, right: Vec3) -> bool {
+        (a.abs_diff_eq(left, 1.0e-6) && b.abs_diff_eq(right, 1.0e-6))
+            || (a.abs_diff_eq(right, 1.0e-6) && b.abs_diff_eq(left, 1.0e-6))
+    }
 }
 
 #[derive(Clone, Copy)]

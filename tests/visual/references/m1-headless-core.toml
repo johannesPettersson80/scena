@@ -52,7 +52,7 @@ max_abs_diff = 0
 center_rgba = [121, 214, 251, 255]
 corner_rgba = [238, 237, 131, 255]
 nonblack_pixels = 256
-rgba_hash = "fnv1a64:49a652c05ba6d876"
+rgba_hash = "fnv1a64:42bab7c2034cc9d1"
 
 [[reference]]
 name = "default-cube"

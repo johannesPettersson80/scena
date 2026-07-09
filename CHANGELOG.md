@@ -4,6 +4,12 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Changed CAD edge-emphasis rendering to merge coincident imported mesh
+  vertices by position before selecting visible edges, so duplicated
+  triangulation diagonals no longer render as technical CAD lines.
+
 ## [1.7.2] - 2026-06-27
 
 ### Fixed
