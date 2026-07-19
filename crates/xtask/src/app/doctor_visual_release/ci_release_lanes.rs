@@ -54,8 +54,9 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "cargo run -p xtask -- doctor --full",
             "premerge-release-evidence-integrity",
             "Download release lane artifacts",
-            "Validate source evidence while independent reviews remain external",
-            "RELEASE-REVIEWS-MISSING:",
+            "Stage and validate source-provenance release evidence",
+            "SCENA_RELEASE_ARTIFACT_ROOT=target/gate-artifacts",
+            "cargo run -p xtask -- release-readiness",
             "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0",
             "target/release-artifacts",
             "cargo run -p xtask -- stage-release-artifacts",
@@ -75,6 +76,8 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "if-no-files-found: ignore",
             "merge-multiple: true",
             "SCENA_BROWSER_ALLOW_UNAVAILABLE",
+            "RELEASE-REVIEWS-MISSING:",
+            "independent reviews remain external",
         ],
     );
     forbid_contains(
@@ -82,7 +85,16 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
         findings,
         "RELEASE-CI-M9",
         ".github/workflows/release.yml",
-        &["merge-multiple: true"],
+        &[
+            "merge-multiple: true",
+            "review_bundle_url",
+            "review_bundle_sha256",
+            "SCENA_REVIEW_BUNDLE_URL",
+            "SCENA_REVIEW_BUNDLE_SHA256",
+            "Install independently authored review evidence",
+            "scripts/install_release_review_bundle.py",
+            "target/release-artifacts/release-review-evidence",
+        ],
     );
     require_contains(
         root,
@@ -119,10 +131,6 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             ISOLATED_M9_PLATFORM_BENCHMARK_COMMAND,
             "needs:",
             "release-lane-artifact",
-            "SCENA_REVIEW_BUNDLE_URL",
-            "SCENA_REVIEW_BUNDLE_SHA256",
-            "scripts/install_release_review_bundle.py",
-            "target/release-artifacts/release-review-evidence",
         ],
     );
     require_contains(
@@ -197,20 +205,22 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "camera_framing_frame_bounds.json",
         ],
     );
-    require_contains(
+    forbid_contains(
         root,
         findings,
         "RELEASE-CI-M9",
-        "scripts/install_release_review_bundle.py",
+        "crates/xtask/src/app/release/stage_artifacts.rs",
         &[
-            "install_review_bundle",
-            "SHA256_RE",
-            "unsafe archive path",
-            "archive links are forbidden",
-            "outside reviews/",
-            "reviews/findings.json",
-            "reviews/maintainer-signoff.toml",
+            "copy_and_validate_required_reviews",
+            "RELEASE-REVIEWS-MISSING",
         ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "crates/xtask/src/app/release/bundle_schema.rs",
+        &["check_release_review_artifacts", "REQUIRED_REVIEW_ROLES"],
     );
     require_contains(
         root,

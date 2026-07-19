@@ -244,6 +244,10 @@ when the pattern can be checked from source, docs, manifests, or gate artifacts.
 ## Git And Release Hygiene
 
 - Do not commit, tag, push, merge, close issues, or delete branches unless explicitly asked.
+- Before starting a release matrix, verify that every configured publication prerequisite is
+  satisfiable by the repository's actual lanes, secrets, and governance. Technical evidence
+  and provenance may block automation; unavailable reviewer counts or external approval
+  bundles must not become machine publication prerequisites or be synthesized by automation.
 - Treat local checkout state, remote branch state, GitHub workflow state, and published
   release state as separate evidence.
 - If no GitHub remote exists yet, report local git evidence and state that GitHub proof is

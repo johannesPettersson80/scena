@@ -72,8 +72,6 @@ pub(crate) fn stage_release_artifacts_for_commit(
         .map_err(|error| coded_stage_error("RELEASE-CAPABILITY-AGGREGATION", error))?;
     super::stage_visual_proofs::write_visual_proof_artifacts(output, &files, expected_commit)
         .map_err(|error| coded_stage_error("RELEASE-VISUAL-PROOF", error))?;
-    super::stage_reviews::copy_and_validate_required_reviews(&files, output, expected_commit)
-        .map_err(|error| coded_stage_error("RELEASE-REVIEWS", error))?;
     write_staging_metadata(output, expected_commit)
         .map_err(|error| coded_stage_error("RELEASE-STAGING-METADATA", error))?;
     Ok(())
@@ -126,7 +124,7 @@ fn copy_required_artifacts(
     expected_commit: &str,
 ) -> Result<(), String> {
     for suffix in REQUIRED_RELEASE_ARTIFACT_SUFFIXES {
-        if generated_stage_suffix(suffix) || suffix.starts_with("reviews/") {
+        if generated_stage_suffix(suffix) {
             continue;
         }
         let Some(source) = select_stage_source(files, suffix) else {
@@ -230,16 +228,7 @@ fn copy_stage_file(
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    if suffix.starts_with("reviews/") {
-        fs::copy(source, target).map_err(|error| {
-            format!(
-                "failed to copy independent review evidence {} to {}: {error}",
-                source.display(),
-                target.display()
-            )
-        })?;
-        Ok(())
-    } else if source.extension().and_then(OsStr::to_str) == Some("json") {
+    if source.extension().and_then(OsStr::to_str) == Some("json") {
         let text = fs::read_to_string(source)
             .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
         let value = serde_json::from_str::<Value>(&text)

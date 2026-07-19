@@ -6,6 +6,11 @@ All notable user-facing changes are recorded here.
 
 ## [1.8.0] - 2026-07-19
 
+- Remove the unsatisfiable seven-person release-review bundle requirement.
+  Exact-commit technical evidence, cross-platform lanes, release readiness,
+  package checks, and publication verification remain mandatory; doctor now
+  rejects workflow or staging changes that reintroduce an external-personnel
+  gate.
 - Add enforceable investigation circuit breakers, exact-run CI failure evidence
   collection, serialized heavyweight CLI subprocess tests, and a single
   checksum-verified Windows hardware-proof workflow so release debugging stops
@@ -66,8 +71,8 @@ All notable user-facing changes are recorded here.
   regression fixture.
 - Make remote-builder validation default to an explicit task-scoped snapshot,
   add a checked-in preflight that reports the absent legacy shared checkout,
-  and doctor-enforce both manual agent-file bootstrap and review-provenance
-  corrections.
+  and doctor-enforce manual agent-file bootstrap and release-evidence
+  provenance corrections.
 
 ### Fixed
 

@@ -64,9 +64,11 @@ does not require or generate ignored `target/gate-artifacts` files. Artifact
 production is the explicit prerequisite above, and release staging is the
 separate fail-closed consumer.
 
-Independent review reports and maintainer sign-off follow
-`docs/specs/release-reviews.md`. GitHub workflow status, a Git tag, a GitHub
-release object, and registry publication are separate downstream facts.
+Human review remains normal repository governance but is not a machine release
+artifact or publication prerequisite. Optional supplementary review evidence
+is described in `docs/specs/release-reviews.md`. GitHub workflow status, a Git
+tag, a GitHub release object, and registry publication are separate downstream
+facts.
 
 ## Workflow dependency policy
 

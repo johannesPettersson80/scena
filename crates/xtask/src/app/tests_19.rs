@@ -1,78 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::tests_11::{STAGE_TEST_COMMIT, write_stage_test_json};
 
-pub(crate) fn write_stage_review_fixture(
-    fixture_root: &Path,
-    reviewed_commit: &str,
-) -> Vec<(PathBuf, Vec<u8>)> {
-    let reviews_root = fixture_root.join("release-review-evidence/reviews");
-    let mut expected = Vec::new();
-    for (index, role) in REQUIRED_REVIEW_ROLES.iter().enumerate() {
-        let relative = PathBuf::from(format!("reviews/{role}/{reviewed_commit}.md"));
-        let body = format!(
-            "---\nrole: {role}\nreviewed_commit: {reviewed_commit}\n\
-             session_id: independent-review-{role}\ndate: 2026-07-16\n\
-             reviewer_identity: github:independent-reviewer-{index}\n\
-             reviewer_provenance: https://github.com/scena-rs/scena/actions/runs/{index}\n\
-             blocker_status: clear\nfindings_count: 0\n---\n\n\
-             # Independent {role} release review\n\nNo findings.\n"
-        )
-        .into_bytes();
-        let path = fixture_root.join("release-review-evidence").join(&relative);
-        fs::create_dir_all(path.parent().expect("review report parent")).expect("review dir");
-        fs::write(&path, &body).expect("review report fixture");
-        expected.push((relative, body));
-    }
-
-    let findings_relative = PathBuf::from("reviews/findings.json");
-    let findings = format!(
-        "{{\n  \"schema\": \"scena.release.findings.v1\",\n  \
-         \"reviewed_commit\": \"{reviewed_commit}\",\n  \
-         \"generated_at\": \"2026-07-16T00:00:00Z\",\n  \"findings\": []\n}}\n"
-    )
-    .into_bytes();
-    fs::create_dir_all(&reviews_root).expect("reviews root");
-    fs::write(reviews_root.join("findings.json"), &findings).expect("findings fixture");
-    expected.push((findings_relative, findings));
-
-    let signoff_relative = PathBuf::from("reviews/maintainer-signoff.toml");
-    let required_roles = REQUIRED_REVIEW_ROLES
-        .iter()
-        .map(|role| format!("\"{role}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let report_hashes = expected
-        .iter()
-        .filter_map(|(relative, _)| {
-            if relative.extension() != Some(OsStr::new("md")) {
-                return None;
-            }
-            let role = relative.parent()?.file_name()?.to_str()?;
-            let key = format!("{}_sha256", role.replace('-', "_"));
-            let hash = sha256_hex(&fixture_root.join("release-review-evidence").join(relative))
-                .expect("review hash");
-            Some(format!("{key} = \"{hash}\""))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let findings_sha256 = sha256_hex(&reviews_root.join("findings.json")).expect("findings hash");
-    let signoff = format!(
-        "[maintainer]\nname = \"Independent Maintainer\"\n\
-         identity = \"github:independent-maintainer\"\n\
-         signed_commit = \"{reviewed_commit}\"\n\n\
-         [reviews]\nall_clear = true\nfindings_register = \"reviews/findings.json\"\n\
-         findings_sha256 = \"{findings_sha256}\"\n\
-         required_roles = [{required_roles}]\n{report_hashes}\n\n\
-         [approval]\ndecision = \"approve\"\n\
-         approved_at = \"2026-07-16T00:00:00Z\"\n"
-    )
-    .into_bytes();
-    fs::write(reviews_root.join("maintainer-signoff.toml"), &signoff)
-        .expect("maintainer signoff fixture");
-    expected.push((signoff_relative, signoff));
-    expected
-}
-
 pub(crate) fn stamp_stage_json_fixtures(dir: &Path, commit: &str, timestamp: u64) {
     for entry in fs::read_dir(dir).expect("stage fixture directory reads") {
         let path = entry.expect("stage fixture entry").path();
@@ -267,37 +195,6 @@ pub(crate) fn write_stage_waterbottle_result(fixture_root: &Path, png_path: &Pat
         ),
     )
     .expect("WaterBottle result fixture writes");
-}
-
-#[test]
-pub(crate) fn release_readiness_rejects_automation_review_identity_without_staging() {
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-release-readiness-test/direct-review-bundle");
-    let _ = fs::remove_dir_all(&fixture_root);
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
-    let artifact_root = fixture_root.join("release-review-evidence");
-    let role = REQUIRED_REVIEW_ROLES[0];
-    let report_path = artifact_root.join(format!("reviews/{role}/{STAGE_TEST_COMMIT}.md"));
-    let report = fs::read_to_string(&report_path).expect("direct review fixture reads");
-    fs::write(
-        &report_path,
-        report.replace(
-            "github:independent-reviewer-0",
-            "github:scena-release-automation",
-        ),
-    )
-    .expect("direct automation review writes");
-    let mut findings = Vec::new();
-
-    check_release_review_artifacts(&artifact_root, &mut findings);
-
-    assert!(
-        findings.iter().any(|finding| {
-            finding.rule == "RELEASE-REVIEWS-INTEGRITY" && finding.message.contains("automation")
-        }),
-        "release readiness must enforce reviewer identity without relying on staging: \
-         {findings:?}",
-    );
 }
 
 #[test]

@@ -24,7 +24,11 @@ developer commands, diagnostics, or documented contracts.
    exists.
 6. For rendering, browser, visual, glTF, or platform changes, require the proof named in
    `docs/specs/release-gates.md`; unit tests alone are not release evidence.
-7. Do not publish or tag unless the user asks.
+7. Before starting a release matrix, prove every configured publication prerequisite is
+   satisfiable by the repository's actual lanes, secrets, and governance. Technical evidence
+   and provenance may block; unavailable reviewer counts and external approval bundles must
+   not be machine publication prerequisites or be synthesized by automation.
+8. Do not publish or tag unless the user asks.
 
 ## Versioning Defaults
 

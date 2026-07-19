@@ -306,22 +306,28 @@ pub(crate) fn doctor_rejects_wasm_size_gate_without_provenance_contract() {
 }
 
 #[test]
-pub(crate) fn doctor_rejects_release_workflow_without_independent_review_bundle() {
+pub(crate) fn doctor_rejects_release_workflow_that_requires_external_review_bundle() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root =
-        root.join("target/xtask-doctor-regressions/release-workflow-missing-review-bundle");
+        root.join("target/xtask-doctor-regressions/release-workflow-requires-review-bundle");
     let workflow = fixture_root.join(".github/workflows/release.yml");
     fs::create_dir_all(workflow.parent().expect("workflow fixture parent")).expect("fixture dir");
-    fs::write(&workflow, "name: release without review evidence\n").expect("workflow fixture");
+    fs::write(
+        &workflow,
+        "name: release\nenv:\n  SCENA_REVIEW_BUNDLE_URL: required\n",
+    )
+    .expect("workflow fixture");
     let mut findings = Vec::new();
 
     check_m9_ci_release_lanes(&fixture_root, &mut findings);
 
     assert!(
         findings.iter().any(|finding| {
-            finding.rule == "RELEASE-CI-M9" && finding.message.contains("SCENA_REVIEW_BUNDLE_URL")
+            finding.rule == "RELEASE-CI-M9"
+                && finding.message.contains("forbidden boundary text")
+                && finding.message.contains("SCENA_REVIEW_BUNDLE_URL")
         }),
-        "doctor must reject a publish workflow with no independently supplied review bundle: \
+        "doctor must reject a publish workflow that requires an external review bundle: \
          {findings:?}",
     );
 }

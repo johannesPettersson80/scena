@@ -1,6 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::tests_19::{
-    assert_m5_provenance_mutations_rejected, stamp_stage_json_fixtures, write_stage_review_fixture,
+    assert_m5_provenance_mutations_rejected, stamp_stage_json_fixtures,
     write_stage_waterbottle_result,
 };
 
@@ -177,145 +177,13 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
     write_stage_test_png(&waterbottle);
     write_stage_waterbottle_result(&fixture_root, &waterbottle);
 
-    let missing_review_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("staging must not manufacture missing release-review evidence");
+    stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
+        .expect("technically complete release evidence must not require human review artifacts");
     assert!(
-        missing_review_error.contains("RELEASE-REVIEWS-MISSING")
-            && missing_review_error.contains("review"),
-        "missing reviewer evidence must fail for an explicit review reason: \
-         {missing_review_error}",
+        !output_root.join("reviews").exists(),
+        "release staging must not manufacture reviewer approvals",
     );
-
-    let expected_review_files = write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
     let expected_benchmark = fs::read(&benchmark_source).expect("benchmark source reads");
-
-    let first_role = REQUIRED_REVIEW_ROLES[0];
-    let first_report = fixture_root.join(format!(
-        "release-review-evidence/reviews/{first_role}/{STAGE_TEST_COMMIT}.md"
-    ));
-    let report_text = fs::read_to_string(&first_report).expect("review fixture reads");
-    fs::write(
-        &first_report,
-        report_text.replace(
-            "github:independent-reviewer-0",
-            "github:scena-release-automation",
-        ),
-    )
-    .expect("automation-authored review fixture writes");
-    let automation_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("synthetic automation must not count as an independent reviewer");
-    assert!(
-        automation_error.contains("automation") && automation_error.contains("reviewer"),
-        "automation-authored review must fail for reviewer identity: {automation_error}",
-    );
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
-
-    fs::remove_file(&first_report).expect("required review removal");
-    let missing_role_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("every required review role must be present");
-    assert!(
-        missing_role_error.contains(first_role) && missing_role_error.contains("missing"),
-        "missing review role must fail explicitly: {missing_role_error}",
-    );
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
-
-    let report_text = fs::read_to_string(&first_report).expect("review fixture reads");
-    fs::write(
-        &first_report,
-        report_text.replace(
-            STAGE_TEST_COMMIT,
-            "ffffffffffffffffffffffffffffffffffffffff",
-        ),
-    )
-    .expect("commit-mismatched review fixture writes");
-    let review_commit_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("review commit mismatch must fail closed");
-    assert!(
-        review_commit_error.contains("reviewed_commit")
-            && review_commit_error.contains(STAGE_TEST_COMMIT),
-        "review commit mismatch must fail for the exact commit contract: {review_commit_error}",
-    );
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
-
-    let second_role = REQUIRED_REVIEW_ROLES[1];
-    let second_report = fixture_root.join(format!(
-        "release-review-evidence/reviews/{second_role}/{STAGE_TEST_COMMIT}.md"
-    ));
-    let second_text = fs::read_to_string(&second_report).expect("second review reads");
-    fs::write(
-        &second_report,
-        second_text.replace(
-            "github:independent-reviewer-1",
-            "github:independent-reviewer-0",
-        ),
-    )
-    .expect("duplicate reviewer fixture writes");
-    let duplicate_reviewer_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("one identity must not satisfy multiple required roles");
-    assert!(
-        duplicate_reviewer_error.contains("reused")
-            && duplicate_reviewer_error.contains("review roles"),
-        "duplicate reviewer must fail distinct-role policy: {duplicate_reviewer_error}",
-    );
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
-
-    let findings_path = fixture_root.join("release-review-evidence/reviews/findings.json");
-    write_stage_test_json(
-        &findings_path,
-        &json!({
-            "schema": "scena.release.findings.v1",
-            "reviewed_commit": STAGE_TEST_COMMIT,
-            "generated_at": "2026-07-16T00:00:00Z",
-            "findings": [{
-                "id": "D01-BLOCKER",
-                "role": first_role,
-                "summary": "release evidence is not trustworthy",
-                "severity": "blocker",
-                "status": "open",
-                "evidence": ["crates/xtask/src/app/release/stage_reviews.rs"],
-                "notes": "must be fixed before release",
-                "deferral_target": null,
-                "history": [{"status":"open", "at":"2026-07-16T00:00:00Z"}]
-            }]
-        }),
-    );
-    let blocker_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("open blocker must fail release review validation");
-    assert!(
-        blocker_error.contains("D01-BLOCKER") && blocker_error.contains("remains open"),
-        "open blocker must fail for its status: {blocker_error}",
-    );
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
-
-    let mut report_bytes = fs::read(&first_report).expect("review fixture reads");
-    report_bytes.extend_from_slice(b"\nTampered after maintainer sign-off.\n");
-    fs::write(&first_report, report_bytes).expect("tampered review writes");
-    let tamper_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("report bytes changed after sign-off must fail");
-    assert!(
-        tamper_error.contains("tampered") && tamper_error.contains(first_role),
-        "tampered review report must fail its sign-off hash: {tamper_error}",
-    );
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
-
-    let signoff_path = fixture_root.join("release-review-evidence/reviews/maintainer-signoff.toml");
-    fs::remove_file(&signoff_path).expect("maintainer sign-off removal");
-    let missing_signoff_error =
-        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
-            .expect_err("maintainer sign-off is mandatory");
-    assert!(
-        missing_signoff_error.contains("maintainer-signoff.toml")
-            && missing_signoff_error.contains("missing"),
-        "absent maintainer sign-off must fail explicitly: {missing_signoff_error}",
-    );
-    write_stage_review_fixture(&fixture_root, STAGE_TEST_COMMIT);
 
     fs::write(
         &waterbottle,
@@ -359,16 +227,6 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
     stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
         .expect("stage succeeds");
 
-    for (relative, expected) in expected_review_files {
-        let staged = fs::read(output_root.join(&relative))
-            .unwrap_or_else(|error| panic!("staged review {} reads: {error}", relative.display()));
-        assert_eq!(
-            staged,
-            expected,
-            "staging must preserve independently authored review evidence byte-for-byte: {}",
-            relative.display(),
-        );
-    }
     assert_eq!(
         fs::read(output_root.join("m5-benchmarks.json")).expect("staged benchmark reads"),
         expected_benchmark,

@@ -308,18 +308,15 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: target/release-artifacts
-      - name: Validate source evidence while independent reviews remain external
+      - name: Stage and validate source-provenance release evidence
         shell: bash
         run: |
-          set +e
           cargo run -p xtask -- stage-release-artifacts \
             target/release-artifacts target/gate-artifacts \
-            > target/release-artifacts/release-evidence-integrity-report.log 2>&1
-          status=$?
-          set -e
-          test "$status" -ne 0
-          grep -F "RELEASE-REVIEWS-MISSING:" \
-            target/release-artifacts/release-evidence-integrity-report.log
+            2>&1 | tee target/release-artifacts/release-evidence-integrity-report.log
+          SCENA_RELEASE_ARTIFACT_ROOT=target/gate-artifacts \
+            cargo run -p xtask -- release-readiness \
+            2>&1 | tee -a target/release-artifacts/release-evidence-integrity-report.log
       - name: Upload release evidence integrity report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

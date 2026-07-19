@@ -9,5 +9,5 @@ Status: active evidence index
 - [x] Package assembly is checked with `cargo publish --dry-run`.
 
 The boxes describe required surfaces, not a claim that the current checkout is
-published. Exact-commit staging and the independent review bundle remain
-mandatory.
+published. Exact-commit technical staging remains mandatory. Supplementary
+human review evidence is optional and is not a publication prerequisite.

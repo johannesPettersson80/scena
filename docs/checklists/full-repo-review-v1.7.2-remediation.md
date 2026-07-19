@@ -295,22 +295,20 @@ Scope: N07-N11, N21, and parts of S1/S4/S7/S8.
   checksum, commit, timestamp, and release status.
 - [x] Delete staging behavior that authors role review reports, an empty
   findings register, maintainer sign-off, or an approval decision. Artifact
-  staging may validate and copy review evidence; it must never perform the
-  review or approve the release.
-- [x] Require pre-existing reports for every required role, the complete
-  findings register, and explicit maintainer sign-off, all bound to the exact
-  commit and carrying independently verifiable reviewer identity/provenance.
-- [x] Validate that required roles are distinct as policy requires, every
-  finding is represented with status/history, no blocker remains open, and the
-  sign-off references hashes of the exact reviewed reports/register.
+  staging must never perform a review, approve a release, or require external
+  personnel evidence.
+- [x] Superseded on 2026-07-19: do not require pre-existing role reports,
+  reviewer counts, findings registers, or maintainer sign-off for staging,
+  readiness, or publication. Delete the historical role-bundle validator,
+  installer, fixtures, and workflow inputs so dormant policy cannot be mistaken
+  for a release prerequisite.
 - [x] For browser GPU claims, require
   `renderer_readback.source == "renderer-owned-gpu-copy"`; reject generic
   Canvas2D or arbitrary nonblack JSON as renderer proof.
 - [x] Add negative fixtures for wrong backend, wrong lane, absent result,
   canvas-only readback, zero pixels, stale hash, substituted PNG, missing
-  command, synthesized provenance, missing review role, open finding, review
-  commit mismatch, synthetic automation reviewer, tampered report, and absent
-  maintainer sign-off.
+  command, and synthesized provenance. The retired review-bundle policy has no
+  validator or staging tests.
 - [x] Update release-readiness reports to distinguish source generation from
   staging/aggregation and surface every rejected artifact with a stable code.
 
@@ -323,9 +321,10 @@ Acceptance:
 - [x] Staging cannot turn arbitrary bytes or stale local output into a
   `passed`, current-commit visual-proof contract.
 - [x] Staging cannot create, clear, close, sign, or approve a review; the staged
-  report hashes match independently produced inputs byte-for-byte.
-- [x] Missing reviewers, automation-authored approval, open blockers, and
-  tampered review inputs make release readiness fail closed.
+  technical bundle contains no manufactured `reviews/` subtree.
+- [x] A technically complete release stages and passes readiness without human
+  review artifacts; doctor rejects any workflow that reintroduces an external
+  review bundle as a publication prerequisite.
 
 Validation ledger (D01, remote isolated builder copy
 `$HOME/.cache/codex-worktrees/scena-d01-release-evidence`, target
@@ -347,10 +346,10 @@ Validation ledger (D01, remote isolated builder copy
 - `full`: full M5 (6/6) and M9 (17/17) targets passed for the changed artifact
   producers. `doctor --full` now reports only the four pre-existing D03 module
   size findings and no D01 release/provenance finding.
-- `skipped`: the final release-readiness success assertion remains intentionally
-  unrun until independent reviewer evidence and final hardware/browser lane
-  artifacts exist; no commit, push, tag, merge, release, or publish action was
-  performed.
+- `historical note`: this ledger originally deferred the final readiness
+  assertion to an external reviewer bundle. The owner removed that
+  unsatisfiable policy on 2026-07-19; final hardware/browser lane artifacts and
+  the technical release bundle remain mandatory.
 
 ### D02 — Make doctor fail closed and syntax/ownership aware
 
@@ -3826,13 +3825,13 @@ Validation ledger (2026-07-18 integrated checkpoint):
   boxes are closed by disposition, not by implementation, and the deferred
   capabilities remain forbidden from support or release claims until their
   stated reopen triggers are met.
-- `release artifact staging (2026-07-19)`: the focused duplicate-producer
+- `historical release artifact staging (2026-07-19, superseded policy)`: the focused duplicate-producer
   regression
   `q01_stage_source_prefers_the_finalized_headless_cpu_producer` first selected
   the unfinished macOS Q01 copy and then passed after source ranking was bound
   to the Linux/headless producer. Replaying the complete artifact download from
   GitHub run `29697027666` with the corrected staging executable consumed the
-  finalized Q01 result and reached only the stable external-review boundary,
+  finalized Q01 result and reached the then-configured external-review boundary,
   `RELEASE-REVIEWS-MISSING`. The bootstrapped remote snapshot
   `/home/johannes/.cache/codex-worktrees/scena-scena-release-guardrails`, with
   target `/home/johannes/.cache/codex-targets/scena-scena-release-guardrails`,
@@ -3847,9 +3846,16 @@ Validation ledger (2026-07-18 integrated checkpoint):
   package, and headless 4K performance. Its dependent `Pre-merge release
   evidence integrity` job downloaded those source-provenance-bearing lane
   outputs, staged them successfully through every source-evidence check, and
-  passed only when the resulting report ended at `RELEASE-REVIEWS-MISSING`.
-  This closes artifact staging without pretending that branch CI can approve
-  its own commit.
+  passed under the then-current policy when the report ended at
+  `RELEASE-REVIEWS-MISSING`. The 2026-07-19 policy correction replaces that
+  sentinel with successful technical staging plus `release-readiness`.
+- `release-policy correction (2026-07-19)`: a focused regression proved that
+  technically complete evidence failed solely because staging called the
+  mandatory review-bundle path. The owner removed that impossible
+  seven-person prerequisite. Staging/readiness no longer consume review
+  artifacts, release workflows have no review URL/checksum inputs, and doctor
+  fails if the dependency is reintroduced. Human review remains repository
+  governance, not a machine publication artifact.
 - `final evidence separation (2026-07-19)`: canonical local `main` was clean
   and matched `origin/main` at
   `bf0ba170010ec0d913cdeefcaf753d919bec3562` when the deciding CI run passed.
@@ -3860,10 +3866,11 @@ Validation ledger (2026-07-18 integrated checkpoint):
   from the completed remediation or CI evidence.
 - `skipped`: no gate was rerun for this evidence-only checklist edit because
   it changes no code, workflow, schema, or artifact-selection surface after
-  run `29699581847`. Final `v1.8.0` release readiness and publication remain a
-  separate operation requiring the independently authored review bundle
-  defined by `docs/specs/release-reviews.md`; no review identity or approval
-  was synthesized to close this checklist.
+  run `29699581847`. This historical closeout preceded the 2026-07-19 owner
+  decision that removed the impossible external review-bundle prerequisite.
+  Publication still requires the exact technical lane, provenance, readiness,
+  package, GitHub, and registry evidence; no review identity or approval is
+  synthesized.
 
 ### 11.3 Completion conditions
 
