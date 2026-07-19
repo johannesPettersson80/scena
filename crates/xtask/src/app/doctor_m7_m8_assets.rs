@@ -1,4 +1,5 @@
 mod anisotropy_materials;
+mod asset_fetch_evidence;
 mod asset_instancing;
 mod asset_load_reports;
 mod asset_matrix;
@@ -14,6 +15,7 @@ mod sheen_materials;
 mod state_of_art;
 mod visual_materials;
 
+pub(crate) use asset_fetch_evidence::check_asset_load_test_evidence;
 pub(crate) use asset_matrix::{
     binary_render_asset_extension, check_binary_render_asset_contracts,
     check_gltf_asset_matrix_contract, check_tangent_generation_dependency_contracts,

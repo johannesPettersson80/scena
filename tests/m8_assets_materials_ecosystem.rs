@@ -4627,7 +4627,13 @@ fn m8_native_fetcher_cache_dedup_reload_retain_and_external_buffers_are_explicit
     ))
     .expect("native file fetcher reports relative external buffer");
     assert_eq!(external.external_buffers(), 1);
-    assert!(external.fetched_bytes() > first.fetched_bytes());
+    assert!(external.progress_events().iter().any(|event| matches!(
+        event,
+        AssetLoadProgress::ExternalBufferFetched { path, index: 0, bytes }
+            if path.as_str()
+                == "tests/assets/gltf/khronos/TextureTransformTest/TextureTransformTest.bin"
+                && *bytes > 0
+    )));
 }
 
 #[test]

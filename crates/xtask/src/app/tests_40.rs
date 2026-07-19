@@ -1,6 +1,40 @@
 use crate::app::prelude::*;
 
 #[test]
+fn doctor_rejects_cross_fixture_asset_byte_ordering_as_external_fetch_proof() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/asset-fetch-byte-ordering");
+    let test_path = fixture_root.join("tests/m8_assets_materials_ecosystem.rs");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(test_path.parent().expect("asset test fixture parent"))
+        .expect("asset test fixture directory");
+    fs::write(
+        &test_path,
+        r#"
+fn m8_native_fetcher_cache_dedup_reload_retain_and_external_buffers_are_explicit() {
+    let _direct_evidence = "AssetLoadProgress::ExternalBufferFetched";
+    let _buffer = "tests/assets/gltf/khronos/TextureTransformTest/TextureTransformTest.bin";
+    assert!(external.fetched_bytes() > first.fetched_bytes());
+}
+"#,
+    )
+    .expect("asset fetch byte-order fixture");
+    let mut findings = Vec::new();
+
+    check_asset_load_test_evidence(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ASSETS-M8"
+                && finding
+                    .message
+                    .contains("external.fetched_bytes() > first.fetched_bytes()")
+        }),
+        "doctor must reject cross-fixture byte ordering as external-fetch evidence: {findings:?}",
+    );
+}
+
+#[test]
 fn doctor_rejects_webgl2_angle_forced_unroll_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/webgl2-angle-forced-unroll");

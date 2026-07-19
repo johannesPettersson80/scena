@@ -1,4 +1,5 @@
 use super::anisotropy_materials::check_anisotropy_material_contracts;
+use super::asset_fetch_evidence::check_asset_load_test_evidence;
 use super::asset_instancing::check_m8_instancing_contracts;
 use super::asset_load_reports::check_asset_load_report_contracts;
 use super::clearcoat_materials::check_clearcoat_material_contracts;
@@ -28,6 +29,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
     check_m8_visual_material_contracts(root, findings);
     check_compressed_asset_proof_contracts(root, findings);
     check_asset_load_report_contracts(root, findings);
+    check_asset_load_test_evidence(root, findings);
     require_contains(
         root,
         findings,

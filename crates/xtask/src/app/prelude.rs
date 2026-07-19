@@ -52,10 +52,10 @@ pub(crate) use crate::app::doctor_docs::{
 };
 pub(crate) use crate::app::doctor_easy_scene::check_easy_scene_setup_contracts;
 pub(crate) use crate::app::doctor_m7_m8_assets::{
-    backtick_values, binary_render_asset_extension, check_binary_render_asset_contracts,
-    check_c03_texture_contracts, check_c04_deformation_contracts, check_c05_unit_contracts,
-    check_gltf_asset_matrix_contract, check_m7_ergonomics_contracts,
-    check_m8_assets_materials_contracts, check_manifest_file_hash,
+    backtick_values, binary_render_asset_extension, check_asset_load_test_evidence,
+    check_binary_render_asset_contracts, check_c03_texture_contracts,
+    check_c04_deformation_contracts, check_c05_unit_contracts, check_gltf_asset_matrix_contract,
+    check_m7_ergonomics_contracts, check_m8_assets_materials_contracts, check_manifest_file_hash,
     check_state_of_art_checklist_links, check_tangent_generation_dependency_contracts,
     collect_text_binary_asset_findings, contains_placeholder, derivative_manifest_entries,
     expected_result_is_explicit, first_backtick_value, is_local_evidence_path, is_lower_hex_sha256,
