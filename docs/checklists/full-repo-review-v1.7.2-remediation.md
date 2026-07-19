@@ -4,7 +4,7 @@ Created: 2026-07-16
 
 Source review: `docs/reviews/full-repo-review-v1.7.2.md`
 
-Checklist status: **open; verification complete, remediation in progress (D01-D04, C01-C13, Q01-Q07, and O01 closed)**
+Checklist status: **complete; every required remediation is closed by implementation or an explicitly approved disposition**
 
 Canonical charter: `docs/RFC-rust-3d-renderer.md`
 
@@ -3763,7 +3763,7 @@ remote snapshot and appropriate real GPU/browser machines:
 - [x] Performance distributions/baseline comparison for any PF item.
 - [x] `cargo publish --dry-run` and semver/public-API checks only at a
   release-ready/public-API checkpoint.
-- [ ] Stage release artifacts from source-provenance-bearing lane outputs and
+- [x] Stage release artifacts from source-provenance-bearing lane outputs and
   prove all known-bad substitutions are rejected.
 
 Validation ledger (2026-07-18 integrated checkpoint):
@@ -3826,30 +3826,44 @@ Validation ledger (2026-07-18 integrated checkpoint):
   boxes are closed by disposition, not by implementation, and the deferred
   capabilities remain forbidden from support or release claims until their
   stated reopen triggers are met.
-- `final evidence separation (2026-07-19)`: local source remains the dirty,
-  uncommitted `main` tree at HEAD
-  `bea2a36f5a5e5f5610fa578f1915f137e432281c`; no commit was synthesized from
-  that state. The final bootstrapped remote-builder snapshot is
-  `/home/johannes/.cache/codex-worktrees/scena-scena-pf00-final` with target
-  `/home/johannes/.cache/codex-targets/scena-scena-pf00-final`; focused env
-  registry and FR06 fixture regressions pass, all 328 `xtask` tests pass, and
-  `doctor --full` reports `mode=Full status=pass`. The separately supplied
-  Windows laptop run passed strict PF01 WebGPU plus WebGL2 on physical Intel
-  Arc hardware; its uploaded browser artifact has SHA-256
-  `acb44b7ec7838fb3011b4ca904081de552023957850a43f6fd841a903baae9ed`.
-  That is laptop-local hardware proof, not a GitHub workflow run. A fresh
-  read-only GitHub query reports remote `main` at
-  `755ac40f601c7789750d9766b7f98469482cf3aa`, only the historical CI and
-  Release workflows, zero repository Actions runners, and no execution of the
-  current remediation tree. The public GitHub Latest release and crates.io
-  sparse index both remain at `v1.7.2`/`1.7.2`; neither is evidence that these
-  local changes were published.
-- `skipped`: GitHub exposes zero repository Actions runners, the local hardware
-  workflow is not present on `origin`, and no push is authorized.
-  Release artifact staging remains open and is not inferred from the complete
-  hardware proof, the nonrelease performance bundle, or partial V3D,
-  llvmpipe, or SwiftShader execution. No commit, push, tag, merge, release,
-  publish, issue mutation, or other external-state mutation was performed.
+- `release artifact staging (2026-07-19)`: the focused duplicate-producer
+  regression
+  `q01_stage_source_prefers_the_finalized_headless_cpu_producer` first selected
+  the unfinished macOS Q01 copy and then passed after source ranking was bound
+  to the Linux/headless producer. Replaying the complete artifact download from
+  GitHub run `29697027666` with the corrected staging executable consumed the
+  finalized Q01 result and reached only the stable external-review boundary,
+  `RELEASE-REVIEWS-MISSING`. The bootstrapped remote snapshot
+  `/home/johannes/.cache/codex-worktrees/scena-scena-release-guardrails`, with
+  target `/home/johannes/.cache/codex-targets/scena-scena-release-guardrails`,
+  passed that focused regression, all 337 `xtask` tests, warning-denied scoped
+  Clippy, formatting, and `doctor --full`. The full D01 negative matrix remains
+  green, including wrong-backend, wrong-lane, missing-result, stale-hash,
+  substituted-output, synthetic-provenance, missing-review, automation-review,
+  open-finding, commit-mismatch, tampered-report, and missing-signoff fixtures.
+- `GitHub`: CI run `29699581847` at exact commit
+  `bf0ba170010ec0d913cdeefcaf753d919bec3562` passed Linux native/headless,
+  Linux browser WebGL2, Linux browser WebGPU, Windows DX12, macOS Metal, WASM
+  package, and headless 4K performance. Its dependent `Pre-merge release
+  evidence integrity` job downloaded those source-provenance-bearing lane
+  outputs, staged them successfully through every source-evidence check, and
+  passed only when the resulting report ended at `RELEASE-REVIEWS-MISSING`.
+  This closes artifact staging without pretending that branch CI can approve
+  its own commit.
+- `final evidence separation (2026-07-19)`: canonical local `main` was clean
+  and matched `origin/main` at
+  `bf0ba170010ec0d913cdeefcaf753d919bec3562` when the deciding CI run passed.
+  The separately supplied Windows laptop result remains physical-hardware
+  proof, while run `29699581847` is GitHub workflow proof. The public GitHub
+  Latest release and crates.io version remain `v1.7.2`/`1.7.2`; no `v1.8.0`
+  tag or release existed at checklist closeout, so publication is not inferred
+  from the completed remediation or CI evidence.
+- `skipped`: no gate was rerun for this evidence-only checklist edit because
+  it changes no code, workflow, schema, or artifact-selection surface after
+  run `29699581847`. Final `v1.8.0` release readiness and publication remain a
+  separate operation requiring the independently authored review bundle
+  defined by `docs/specs/release-reviews.md`; no review identity or approval
+  was synthesized to close this checklist.
 
 ### 11.3 Completion conditions
 
