@@ -2186,13 +2186,16 @@ fn pf00_remaining_transform_draw_environment_and_gpu_contract_rows_are_fail_clos
             }
         }
     }
-    for row in [native_capture, output_settings] {
-        assert_eq!(row["release_evidence"], false);
-        assert!(matches!(
-            row["status"].as_str(),
-            Some("partial-measured") | Some("hardware-unavailable")
-        ));
-    }
+    assert_eq!(native_capture["release_evidence"], false);
+    assert!(matches!(
+        native_capture["status"].as_str(),
+        Some("contract-scale-measured") | Some("hardware-unavailable")
+    ));
+    assert_eq!(output_settings["release_evidence"], false);
+    assert!(matches!(
+        output_settings["status"].as_str(),
+        Some("contract-scale-or-unsupported") | Some("hardware-unavailable")
+    ));
 }
 
 #[test]
