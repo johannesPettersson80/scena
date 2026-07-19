@@ -15,6 +15,15 @@ const Q02_MATERIAL_PRESETS: &[&str] = &[
     "rubber",
 ];
 
+const Q02_NEIGHBOR_PAIRS: &[(&str, &str)] = &[
+    ("metal", "rough_metal"),
+    ("metal", "chrome"),
+    ("chrome", "plastic"),
+    ("clearcoat_plastic", "plastic"),
+    ("clear_glass", "frosted_glass"),
+    ("rubber", "plastic"),
+];
+
 pub(crate) fn q02_material_result_passes(
     root: &Path,
     relative: &str,
@@ -49,10 +58,12 @@ pub(crate) fn q02_material_result_passes(
         .get("neighbor_pairs")
         .and_then(Value::as_array)
         .is_some_and(|neighbors| {
-            neighbors.len() >= Q02_MATERIAL_PRESETS.len() - 1
-                && neighbors
-                    .iter()
-                    .all(|neighbor| neighbor.get("passed").and_then(Value::as_bool) == Some(true))
+            Q02_NEIGHBOR_PAIRS.iter().all(|(left, right)| {
+                neighbors.iter().any(|neighbor| {
+                    neighbor.get("passed").and_then(Value::as_bool) == Some(true)
+                        && q02_neighbor_pair_matches(neighbor, left, right)
+                })
+            })
         });
     let commit_valid = value
         .get("commit_sha")
@@ -143,4 +154,16 @@ pub(crate) fn q02_material_result_passes(
         && source_checksums_valid
         && live_frame_valid
         && surface_specific)
+}
+
+fn q02_neighbor_pair_matches(entry: &Value, left: &str, right: &str) -> bool {
+    let Some(pair) = entry.get("pair").and_then(Value::as_array) else {
+        return false;
+    };
+    if pair.len() != 2 {
+        return false;
+    }
+    let first = pair[0].as_str();
+    let second = pair[1].as_str();
+    (first == Some(left) && second == Some(right)) || (first == Some(right) && second == Some(left))
 }

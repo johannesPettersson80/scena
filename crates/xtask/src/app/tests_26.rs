@@ -15,6 +15,15 @@ const PRESETS: &[&str] = &[
     "rubber",
 ];
 
+const NEIGHBOR_PAIRS: &[(&str, &str)] = &[
+    ("metal", "rough_metal"),
+    ("metal", "chrome"),
+    ("chrome", "plastic"),
+    ("clearcoat_plastic", "plastic"),
+    ("clear_glass", "frosted_glass"),
+    ("rubber", "plastic"),
+];
+
 #[test]
 pub(crate) fn q02_release_content_accepts_bound_results_and_rejects_surface_tampering() {
     let root = repo_root().expect("test runs inside the scena workspace");
@@ -238,8 +247,9 @@ fn write_material_result(
         },
         "live_frame":{"path":live_frame,"sha256":frame_sha},
         "per_material":materials,
-        "neighbor_pairs":(0..PRESETS.len() - 1)
-            .map(|index| json!({"pair":[PRESETS[index],PRESETS[index + 1]],"passed":true}))
+        "neighbor_pairs":NEIGHBOR_PAIRS
+            .iter()
+            .map(|(left, right)| json!({"pair":[left,right],"passed":true}))
             .collect::<Vec<_>>(),
         "errors":[],
     });

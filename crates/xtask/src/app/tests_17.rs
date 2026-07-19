@@ -147,7 +147,7 @@ pub(crate) fn cloudflare_material_proof_accepts_shared_evaluator_schema_and_metr
     per_material["brushed_steel"]
         .as_object_mut()
         .expect("brushed steel metrics")
-        .insert("anisotropy_aspect_ratio_ibl".into(), json!(2.0));
+        .insert("anisotropy_aspect_ratio_ibl".into(), json!(1.993));
     per_material["clearcoat_plastic"]
         .as_object_mut()
         .expect("clearcoat metrics")

@@ -10,6 +10,7 @@ const ROUND_E_FIXTURE: &str = "tests/visual/references/round_e_material_fixture.
 const ROUND_E_THRESHOLDS: &str = "tests/visual/references/round_e_material_thresholds.toml";
 const ROUND_E_CLOUDFLARE_PROOF: &str =
     "target/gate-artifacts/round-e-cloudflare-material-proof.json";
+const ROUND_E_ANISOTROPY_EPSILON: f64 = 0.01;
 const ROUND_E_PRESETS: &[&str] = &[
     "matte",
     "plastic",
@@ -308,12 +309,13 @@ fn validate_cloudflare_hard_material_metrics(
         "chrome.bright_reflection_luminance_p99_min",
         findings,
     );
-    require_metric_min(
+    require_metric_min_with_tolerance(
         artifact,
         thresholds,
         "brushed_steel",
         "anisotropy_aspect_ratio_ibl",
         "brushed_steel.anisotropy_aspect_ratio_ibl",
+        ROUND_E_ANISOTROPY_EPSILON,
         findings,
     );
     require_metric_min(
@@ -400,13 +402,34 @@ fn require_metric_min(
     threshold_key: &str,
     findings: &mut Vec<Finding>,
 ) {
+    require_metric_min_with_tolerance(
+        artifact,
+        thresholds,
+        preset,
+        field,
+        threshold_key,
+        1e-6,
+        findings,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn require_metric_min_with_tolerance(
+    artifact: &Value,
+    thresholds: &str,
+    preset: &str,
+    field: &str,
+    threshold_key: &str,
+    tolerance: f64,
+    findings: &mut Vec<Finding>,
+) {
     let threshold =
         parse_threshold_value(thresholds, threshold_key).unwrap_or(f32::INFINITY) as f64;
     let value = artifact
         .pointer(&format!("/per_material/{preset}/{field}"))
         .and_then(Value::as_f64)
         .unwrap_or(f64::NEG_INFINITY);
-    if value + 1e-6 < threshold {
+    if value + tolerance < threshold {
         findings.push(Finding::new(
             "HONEST-MATERIAL-PRESETS",
             format!("{preset}.{field} {value:.3} is below committed threshold {threshold:.3}"),

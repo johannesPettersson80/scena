@@ -227,6 +227,39 @@ pub(crate) fn release_readiness_reports_missing_downloaded_artifacts() {
 }
 
 #[test]
+pub(crate) fn release_readiness_collects_required_command_record_and_log_artifacts() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let artifact_root = root.join("target/xtask-release-readiness-test/command-files");
+    let lane_dir = artifact_root.join("release-lanes");
+    let _ = fs::remove_dir_all(&artifact_root);
+    fs::create_dir_all(&lane_dir).expect("release command fixture dir");
+    fs::write(lane_dir.join("headless-cpu.commands.jsonl"), "{}\n")
+        .expect("release command record fixture");
+    fs::write(
+        lane_dir.join("headless-cpu.log"),
+        "focused command passed\n",
+    )
+    .expect("release command log fixture");
+    let mut findings = Vec::new();
+
+    check_release_artifact_bundle(&artifact_root, &mut findings);
+
+    for required in [
+        "release-lanes/headless-cpu.commands.jsonl",
+        "release-lanes/headless-cpu.log",
+    ] {
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| finding.message.contains(&format!(
+                    "downloaded release artifacts are missing {required}"
+                ))),
+            "release readiness must collect required non-JSON command evidence: {findings:?}",
+        );
+    }
+}
+
+#[test]
 pub(crate) fn release_readiness_rejects_unavailable_browser_artifact() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let artifact_root = root.join("target/xtask-release-readiness-test/unavailable-browser");
