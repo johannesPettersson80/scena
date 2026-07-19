@@ -46,7 +46,6 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         (
             "src/render/gpu/post/mod.rs",
             &[
-                "feature = \"scene-host\"",
                 "copy::copy_output_to_buffer",
                 "PostUniformSlot::Bloom",
                 "PostUniformSlot::Fxaa",
@@ -401,6 +400,23 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             RULE,
             "post pipeline helper must consume shared layouts instead of creating one per pipeline",
         ));
+    }
+
+    if let Ok(source) = fs::read_to_string(root.join("src/render/gpu/post/mod.rs")) {
+        const EXPORT: &str = "pub(super) use copy::copy_output_to_buffer;";
+        if let Some(export_offset) = source.find(EXPORT) {
+            let attribute_block_start = source[..export_offset]
+                .rfind("\n\n")
+                .map_or(0, |offset| offset + 2);
+            if source[attribute_block_start..export_offset].contains("#[cfg") {
+                findings.push(Finding::new(
+                    RULE,
+                    "src/render/gpu/post/mod.rs must export copy_output_to_buffer \
+                     unconditionally because the plain wasm32 surface path calls it without \
+                     browser-probe or scene-host features",
+                ));
+            }
+        }
     }
 
     if fs::read_to_string(root.join("src/render/gpu/post/mod.rs"))

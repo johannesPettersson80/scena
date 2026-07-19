@@ -25,11 +25,6 @@ pub(in crate::render::gpu) use types::PostResources;
 pub(in crate::render) use types::{GpuOutputPlan, GpuPostPassCounts, GpuPostSettings};
 use types::{POST_UNIFORM_BYTE_LEN, PostChainOutput, PostTextureSlot, PostUniformSlot};
 
-#[cfg(any(
-    not(target_arch = "wasm32"),
-    feature = "browser-probe",
-    feature = "scene-host"
-))]
 #[allow(unused_imports)]
 pub(super) use copy::copy_output_to_buffer;
 

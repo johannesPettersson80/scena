@@ -374,6 +374,27 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "doctor must reject per-pipeline layout recreation: {findings:?}",
     );
 
+    let source = fs::read_to_string(&post).expect("read unconditional copy export fixture");
+    let mutated = source.replace(
+        "#[allow(unused_imports)]\npub(super) use copy::copy_output_to_buffer;",
+        "#[cfg(feature = \"scene-host\")]\n#[allow(unused_imports)]\npub(super) use copy::copy_output_to_buffer;",
+    );
+    assert_ne!(
+        source, mutated,
+        "copy export mutation must add a feature gate"
+    );
+    fs::write(&post, mutated).expect("feature-gate plain wasm copy export");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding.message.contains("copy_output_to_buffer")
+                && finding.message.contains("unconditionally")
+        }),
+        "doctor must reject feature-gating the copy helper used by plain wasm: {findings:?}",
+    );
+
     let workflow = fixture_root.join(".github/workflows/hardware-gpu.yml");
     let source = fs::read_to_string(&workflow).expect("read hardware workflow fixture");
     let mutated = source.replace(

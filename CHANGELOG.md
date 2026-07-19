@@ -56,6 +56,9 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
+- Kept the renderer-owned output-copy helper available to plain wasm32 builds,
+  so browser packages no longer require `browser-probe` or `scene-host` merely
+  to compile the surface readback path.
 - Bound CPU texture baking with adaptive 16x16-capped subdivision, reusable
   scratch, and inactive transmission gates; cache generated model-space
   tangents for static geometry while preserving nonuniform, mirrored, morph,

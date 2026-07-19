@@ -678,11 +678,25 @@ mod tests {
 
         let metrics = bins.rebuild(&primitives, target, &projection, 8);
 
-        assert_eq!(bins.band_count(), 8);
-        assert!(
-            metrics.candidate_triangles < metrics.full_rescan_triangles / 2,
-            "screen-row bins must avoid rescanning all triangles in every band: {metrics:?}"
+        assert_eq!(bins.band_count(), metrics.workers as usize);
+        assert_eq!(
+            metrics.full_rescan_triangles,
+            primitives.len() as u64 * metrics.workers
         );
+        match metrics.workers {
+            1 => assert_eq!(
+                metrics.candidate_triangles, metrics.full_rescan_triangles,
+                "one worker has no cross-band rescans to eliminate"
+            ),
+            2 => assert!(
+                metrics.candidate_triangles < metrics.full_rescan_triangles,
+                "two row bands must reduce candidate scans: {metrics:?}"
+            ),
+            _ => assert!(
+                metrics.candidate_triangles < metrics.full_rescan_triangles / 2,
+                "three or more row bands must avoid at least half of full rescans: {metrics:?}"
+            ),
+        }
         for band in bins.bands() {
             assert!(
                 band.windows(2).all(|pair| pair[0] < pair[1]),

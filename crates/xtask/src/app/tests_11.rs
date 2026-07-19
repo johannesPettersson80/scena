@@ -136,8 +136,9 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         );
     }
 
-    let local_checkout_error = stage_release_artifacts(&root, &fixture_root, &output_root)
-        .expect_err("release staging must reject an unattributed local checkout");
+    let local_checkout_error =
+        stage_release_artifacts_for_commit(&fixture_root, &output_root, "local-checkout")
+            .expect_err("release staging must reject an unattributed local checkout");
     assert!(
         local_checkout_error.contains("local-checkout"),
         "local release provenance must fail before artifact validation: {local_checkout_error}",
