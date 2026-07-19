@@ -525,8 +525,8 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
                 prepared.bind_groups,
                 prepared.shader_modules,
             ),
-            (11, 23, 7, 19, 9, 18),
-            "the default FXAA output owner inventory, including two prepared readback buffers, must be exact before render",
+            (12, 23, 7, 19, 9, 18),
+            "the default FXAA output owner inventory, including two prepared readback buffers and the post-uniform staging buffer, must be exact before render",
         );
         assert_eq!(prepared.pending_destructions, 0);
         assert!(prepared.approximate_gpu_memory_bytes.unwrap_or_default() > 0);
