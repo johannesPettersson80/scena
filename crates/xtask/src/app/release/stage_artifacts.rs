@@ -183,26 +183,42 @@ pub(super) fn select_stage_source(files: &[PathBuf], suffix: &str) -> Option<Pat
 fn stage_source_rank(path: &Path, suffix: &str) -> (usize, usize, String) {
     let text = path.to_string_lossy().replace('\\', "/");
     let preferred = if suffix.contains("headless-cpu")
+        || suffix.starts_with("q01-waterbottle-cpu/")
         || suffix == "m9-platform/m9-benchmarks.json"
         || suffix == "m9-platform/m9-benchmarks-feature-matrix.json"
     {
-        text.contains("release-linux-native-vulkan") as usize
+        stage_source_matches_lane(&text, "linux-native-vulkan") as usize
     } else if suffix.contains("macos-metal") {
-        text.contains("release-macos-metal") as usize
+        stage_source_matches_lane(&text, "macos-metal") as usize
     } else if suffix.contains("windows-dx12") {
-        text.contains("release-windows-dx12") as usize
+        stage_source_matches_lane(&text, "windows-dx12") as usize
     } else if suffix.contains("linux-native-vulkan") {
-        text.contains("release-linux-native-vulkan") as usize
+        stage_source_matches_lane(&text, "linux-native-vulkan") as usize
     } else if suffix.contains("linux-webgpu-chromium") {
-        text.contains("release-linux-webgpu-chromium") as usize
+        stage_source_matches_lane(&text, "linux-webgpu-chromium") as usize
     } else if suffix.contains("linux-webgl2-chromium") {
-        text.contains("release-linux-webgl2-chromium") as usize
+        stage_source_matches_lane(&text, "linux-webgl2-chromium") as usize
     } else if suffix.contains("wasm32-unknown-unknown") {
-        text.contains("release-wasm32-unknown-unknown") as usize
+        stage_source_matches_lane(&text, "wasm32-unknown-unknown") as usize
     } else {
         0
     };
     (usize::MAX - preferred, text.len(), text)
+}
+
+fn stage_source_matches_lane(path: &str, lane: &str) -> bool {
+    let ci_artifact = match lane {
+        "linux-native-vulkan" => "linux-native-vulkan-gate-artifacts",
+        "linux-webgpu-chromium" => "linux-browser-webgpu-gate-artifacts",
+        "linux-webgl2-chromium" => "linux-browser-webgl2-gate-artifacts",
+        "wasm32-unknown-unknown" => "wasm32-package",
+        "macos-metal" => "macos-metal-gate-artifacts",
+        "windows-dx12" => "windows-dx12-gate-artifacts",
+        _ => return false,
+    };
+    let release_artifact = format!("release-{lane}");
+    path.split('/')
+        .any(|component| component == release_artifact || component == ci_artifact)
 }
 
 fn copy_stage_file(
@@ -573,4 +589,42 @@ fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
     let month = mp + if mp < 10 { 3 } else { -9 };
     year += if month <= 2 { 1 } else { 0 };
     (year, month, day)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_stage_source;
+    use std::path::PathBuf;
+
+    #[test]
+    fn q01_stage_source_prefers_the_finalized_headless_cpu_producer() {
+        let suffix = "q01-waterbottle-cpu/result.json";
+        for (layout, linux_root, macos_root, windows_root) in [
+            (
+                "premerge",
+                "linux-native-vulkan-gate-artifacts",
+                "macos-metal-gate-artifacts",
+                "windows-dx12-gate-artifacts",
+            ),
+            (
+                "release",
+                "release-linux-native-vulkan",
+                "release-macos-metal",
+                "release-windows-dx12",
+            ),
+        ] {
+            let expected = PathBuf::from(format!("{linux_root}/{suffix}"));
+            let files = vec![
+                PathBuf::from(format!("{macos_root}/{suffix}")),
+                PathBuf::from(format!("{windows_root}/{suffix}")),
+                expected.clone(),
+            ];
+
+            assert_eq!(
+                select_stage_source(&files, suffix),
+                Some(expected),
+                "{layout} staging must select the finalized Linux headless-CPU result",
+            );
+        }
+    }
 }
