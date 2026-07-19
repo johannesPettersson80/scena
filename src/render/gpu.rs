@@ -87,10 +87,6 @@ pub(super) struct GpuDeviceState {
     surface: Option<GpuSurfaceState>,
     pending_destructions: u64,
     #[cfg(target_arch = "wasm32")]
-    submitted_destructions: u64,
-    #[cfg(target_arch = "wasm32")]
-    confirmed_destructions: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    #[cfg(target_arch = "wasm32")]
     last_poll_observation: &'static str,
     resources: Option<GpuPreparedResources>,
     output_color_space: OutputColorSpace,

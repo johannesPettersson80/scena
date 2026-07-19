@@ -551,35 +551,17 @@ function assertStateLifecycleProbe(backend, result) {
       `${backend} state lifecycle probe did not prove resource-lifetime baseline recovery: ${JSON.stringify(result)}`,
     );
   }
-  if (backend === "webgl2") {
-    if (
-      result.resource_lifetime.retirement_mode !== "automatic-webgl2" ||
-      result.resource_lifetime.submitted_poll_status !== "Automatic" ||
-      result.resource_lifetime.completion_poll_status !== "Automatic" ||
-      result.resource_lifetime.completion_confirmed !== false
-    ) {
-      throw new Error(
-        `${backend} state lifecycle probe did not prove honest automatic WebGL2 retirement: ${JSON.stringify(result)}`,
-      );
-    }
-  } else {
-    if (
-      result.resource_lifetime.retirement_mode !== "confirmed-callback" ||
-      (result.resource_lifetime.submitted_poll_status !== "Submitted" &&
-        result.resource_lifetime.submitted_poll_status !== "Confirmed")
-    ) {
-      throw new Error(
-        `${backend} state lifecycle probe did not report submitted GPU destruction work: ${JSON.stringify(result)}`,
-      );
-    }
-    if (
-      result.resource_lifetime.completion_poll_status !== "Confirmed" ||
-      result.resource_lifetime.completion_confirmed !== true
-    ) {
-      throw new Error(
-        `${backend} state lifecycle probe did not prove callback-confirmed GPU destruction completion: ${JSON.stringify(result)}`,
-      );
-    }
+  const expectedRetirementMode =
+    backend === "webgl2" ? "automatic-webgl2" : "automatic-webgpu";
+  if (
+    result.resource_lifetime.retirement_mode !== expectedRetirementMode ||
+    result.resource_lifetime.submitted_poll_status !== "Automatic" ||
+    result.resource_lifetime.completion_poll_status !== "Automatic" ||
+    result.resource_lifetime.completion_confirmed !== false
+  ) {
+    throw new Error(
+      `${backend} state lifecycle probe did not prove honest browser-managed retirement: ${JSON.stringify(result)}`,
+    );
   }
   if (
     !result.allocation_steady_state ||

@@ -1930,6 +1930,36 @@ fn m9_benchmark_baseline_prefers_an_exact_lane_over_the_generic_fallback() {
 }
 
 #[test]
+fn m9_linux_native_baseline_covers_exact_source_hosted_measurement() {
+    let mut rows = vec![serde_json::json!({
+        "scene": "larger-industrial-gltf",
+        "backend": "Headless",
+        "sample_count": 100,
+        "p95_frame_ms": 56.560595,
+        "p95_prepare_ms": 1930.651602,
+        "max_allocations_per_frame": 0,
+        "max_allocated_bytes_per_frame": 0,
+    })];
+    let baseline = benchmark_baseline();
+
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "linux-native-vulkan");
+
+    assert_eq!(summary["status"], "passed");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["baseline_lane"],
+        "linux-native-vulkan"
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["baseline_p95_frame_ms"],
+        60.0
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["baseline_p95_prepare_ms"],
+        1950.0
+    );
+}
+
+#[test]
 fn pf00_profiled_pick_benchmark_row_records_work_and_byte_distributions() {
     let row = benchmark_profiled_pick_workload(32, 3);
 

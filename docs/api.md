@@ -52,14 +52,14 @@ required resource creation must already be absent from `render()`.
 
 `Renderer::poll_device()` reports typed completion through `DevicePollStatus`.
 Native GPU polling returns `DevicePollStatus::Confirmed` only after the device
-confirms completion. Browser WebGPU uses the same strict model:
-`DevicePollStatus::Submitted` means a real `queue.on_submitted_work_done`
-callback is outstanding, and only a later `Confirmed` retires those records.
-WebGL2 instead uses wgpu's explicit `GlFenceBehavior::AutoFinish` policy because
-browser GL fences can remain unsignalled indefinitely under software ANGLE.
-After non-blocking device maintenance reports an empty logical queue, scena
-retires the records as `Automatic`: GL remains responsible for keeping deleted
-objects alive while commands use them, and scena does not claim GPU completion.
+confirms completion. Browser backends instead retire scena's logical records as
+`DevicePollStatus::Automatic` without claiming completion. In browser WebGPU,
+wgpu's device poll is automatic/no-op and the JavaScript WebGPU implementation
+owns object lifetime after Rust releases its wrappers, including objects still
+referenced by submitted work. WebGL2 uses wgpu's `GlFenceBehavior::AutoFinish`;
+GL likewise retains deleted objects that in-flight commands still reference.
+This avoids making browser bookkeeping depend on delayed or throttled queue
+completion callbacks.
 `Automatic` and `Unsupported` therefore never fabricate confirmation, and the
 compatibility `gpu_polled` boolean is true only for `Confirmed`.
 

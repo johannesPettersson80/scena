@@ -58,7 +58,7 @@
   ],
   "images": [
     {
-      "uri": "textures/albedo.png"
+      "uri": "khronos/WaterBottle/WaterBottle_baseColor.png"
     }
   ],
   "buffers": [

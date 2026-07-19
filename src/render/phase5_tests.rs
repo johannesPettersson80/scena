@@ -205,7 +205,7 @@ fn eased_tint_transition_gpu_prepare_uses_dynamic_path_without_recollecting_prim
 
 #[cfg(feature = "scene-host")]
 #[test]
-fn imported_gltf_transform_gpu_prepare_moves_rendered_pixels_after_fallback() {
+fn imported_gltf_transform_gpu_prepare_moves_rendered_pixels_via_dynamic_path() {
     use crate::scene_host::SceneHostCore;
     use crate::{AssetPath, SurfaceViewport};
 
@@ -231,6 +231,12 @@ fn imported_gltf_transform_gpu_prepare_moves_rendered_pixels_after_fallback() {
 
     host.set_transform(mesh, Transform::at(Vec3::new(0.4, 0.0, 0.0)))
         .expect("imported mesh moves right");
+    assert_eq!(
+        host.renderer()
+            .phase5_dynamic_rejection_reason_for_test(host.scene(), host.assets()),
+        None,
+        "an imported mesh-node transform should satisfy dynamic GPU prepare preconditions"
+    );
     host.prepare()
         .expect("moved imported mesh prepares dynamically");
     host.render().expect("moved imported render succeeds");
@@ -238,17 +244,22 @@ fn imported_gltf_transform_gpu_prepare_moves_rendered_pixels_after_fallback() {
         .expect("moved imported render must contain mesh pixels");
     let second = host.renderer().phase5_prepare_telemetry_for_test();
 
-    assert!(
-        second.prepared_primitive_collections > first.prepared_primitive_collections,
-        "imported glTF model-node transforms currently reject the dynamic path and must full-prepare instead of reusing stale pixels"
+    assert_eq!(
+        second.prepared_primitive_collections, first.prepared_primitive_collections,
+        "imported mesh-node transforms must skip canonical primitive collection"
     );
-    assert!(
-        second.static_gpu_resource_rebuilds > first.static_gpu_resource_rebuilds,
-        "imported glTF fallback must rebuild static GPU resources when model-node transforms change"
+    assert_eq!(
+        second.static_gpu_resource_rebuilds, first.static_gpu_resource_rebuilds,
+        "imported mesh-node transforms must not rebuild static GPU resources"
+    );
+    assert_eq!(
+        second.draw_uniform_only_updates,
+        first.draw_uniform_only_updates + 1,
+        "imported mesh-node transforms must update retained draw uniforms"
     );
     assert!(
         moved_x > initial_x + 8.0,
-        "imported transform fallback must move rendered mesh pixels: initial_x={initial_x:.2}, moved_x={moved_x:.2}"
+        "imported dynamic transform must move rendered mesh pixels: initial_x={initial_x:.2}, moved_x={moved_x:.2}"
     );
 }
 

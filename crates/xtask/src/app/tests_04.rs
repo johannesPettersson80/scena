@@ -363,6 +363,9 @@ pub(crate) fn doctor_rejects_lane_agnostic_m9_benchmark_baselines() {
         findings.iter().any(|finding| {
             finding.rule == "RELEASE-CI-M9"
                 && (finding.message.contains("baseline_lane")
+                    || finding
+                        .message
+                        .contains("\"lane\": \"linux-native-vulkan\"")
                     || finding.message.contains("\"lane\": \"macos-metal\"")
                     || finding.message.contains("\"lane\": \"windows-dx12\""))
         }),

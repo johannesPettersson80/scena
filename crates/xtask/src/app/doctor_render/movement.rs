@@ -78,7 +78,7 @@ pub(crate) fn check_render_movement_contracts(root: &Path, findings: &mut Vec<Fi
         "src/render/phase5_tests.rs",
         &[
             "transform_animation_gpu_prepare_uses_dynamic_path_without_recollecting_primitives",
-            "imported_gltf_transform_gpu_prepare_moves_rendered_pixels_after_fallback",
+            "imported_gltf_transform_gpu_prepare_moves_rendered_pixels_via_dynamic_path",
             "must move rendered mesh pixels",
         ],
     );

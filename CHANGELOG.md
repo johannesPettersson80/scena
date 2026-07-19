@@ -56,14 +56,17 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
-- Prevent WebGL2 resource-retirement records from waiting forever on browser GL
-  fences: WebGL2 now uses wgpu's automatic WebGL fence policy and reports
-  automatic logical retirement, while WebGPU retains real queue-completion
-  callbacks. Hosted WebGPU CI is explicitly software conformance; strict
-  hardware parity remains confined to the self-hosted release lane.
+- Prevent browser resource-retirement records from waiting forever on delayed
+  completion callbacks: WebGPU now reports browser-managed automatic logical
+  retirement, while WebGL2 uses wgpu's automatic WebGL fence policy and reports
+  the same non-confirming status. Hosted WebGPU CI is explicitly software
+  conformance; strict hardware parity remains confined to the self-hosted
+  release lane.
 - Select M9 performance baselines by release lane before falling back to the
-  generic row, with exact-source macOS Metal and Windows DX12 ceilings, so host
-  timing differences no longer masquerade as renderer regressions.
+  generic row, with exact-source Linux, macOS Metal, and Windows DX12 ceilings,
+  so host timing differences no longer masquerade as renderer regressions.
+- Keep the application-builder lab's typed scene-recipe example synchronized
+  with the public anchor, connector, bounds, and named-state fields.
 - Kept the renderer-owned output-copy helper available to plain wasm32 builds,
   so browser packages no longer require `browser-probe` or `scene-host` merely
   to compile the surface readback path.
@@ -149,8 +152,8 @@ All notable user-facing changes are recorded here.
   hold terminal poses for one-shot mixers, and wrap repeat subranges stably.
 - Moved retained MSAA, depth-color, and post-processing GPU resource creation
   entirely into prepare, added exact physical texture/resource inventories, and
-  made browser destruction polling distinguish submitted work from
-  callback-confirmed completion instead of fabricating success.
+  made browser destruction polling report browser-managed automatic logical
+  retirement without fabricating GPU-completion confirmation.
 - Made generated measurement and callout nodes one atomic owned closure, so
   deleting either line/leader or label also removes its sibling, registry and
   annotation state, and invalidates every affected SceneHost handle.

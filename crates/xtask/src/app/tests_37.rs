@@ -28,6 +28,8 @@ fn fr06_doctor_rejects_persistent_runtime_handle_claims() {
         "docs/schema-contracts.md",
         "tests/fr06_semantic_aov.rs",
         "tests/browser/fr06_semantic_aov.js",
+        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+        "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
         "tests/release/windows_complete_hardware_proof_validation.js",
         "scripts/run_windows_complete_hardware_proof.ps1",
         "package.json",
@@ -44,6 +46,49 @@ fn fr06_doctor_rejects_persistent_runtime_handle_claims() {
     let mut findings = Vec::new();
     check_fr06_semantic_aov_contracts(&fixture_root, &mut findings);
     assert_eq!(findings, Vec::new());
+
+    let asset = fixture_root.join("tests/assets/gltf/mesh_material_vertex_color_scene.gltf");
+    let source = fs::read_to_string(&asset).expect("FR06 asset fixture reads");
+    let mutated = source.replacen(
+        "khronos/WaterBottle/WaterBottle_baseColor.png",
+        "textures/albedo.png",
+        1,
+    );
+    assert_ne!(
+        source, mutated,
+        "FR06 embedded-texture mutation must alter the fixture"
+    );
+    fs::write(&asset, mutated).expect("FR06 embedded-texture mutation writes");
+    findings.clear();
+    check_fr06_semantic_aov_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR06-SEMANTIC-AOV"
+                && finding
+                    .message
+                    .contains("khronos/WaterBottle/WaterBottle_baseColor.png")
+        }),
+        "restoring a missing external FR06 texture must fail: {findings:?}"
+    );
+
+    fs::write(&asset, source).expect("FR06 asset fixture restores");
+    let texture =
+        fixture_root.join("tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png");
+    fs::remove_file(&texture).expect("FR06 texture mutation removes referenced image");
+    findings.clear();
+    check_fr06_semantic_aov_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR06-SEMANTIC-AOV"
+                && finding.message.contains("FR06 fixture texture is missing")
+        }),
+        "removing the committed FR06 texture must fail: {findings:?}"
+    );
+    fs::copy(
+        root.join("tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png"),
+        &texture,
+    )
+    .expect("FR06 texture fixture restores");
 
     let host = fixture_root.join("src/scene_host/semantic_aov.rs");
     let source = fs::read_to_string(&host).expect("FR06 host fixture reads");

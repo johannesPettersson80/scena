@@ -213,6 +213,13 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
             ],
         ),
         (
+            "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+            &[
+                "\"baseColorTexture\"",
+                "khronos/WaterBottle/WaterBottle_baseColor.png",
+            ],
+        ),
+        (
             "tests/release/windows_complete_hardware_proof_validation.js",
             &[
                 "scena.windows_complete_hardware_proof.v1",
@@ -263,6 +270,13 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
     ];
     for (relative, needles) in required {
         require_contains(root, findings, RULE, relative, needles);
+    }
+    const FR06_TEXTURE: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png";
+    if !root.join(FR06_TEXTURE).is_file() {
+        findings.push(Finding::new(
+            RULE,
+            format!("FR06 fixture texture is missing: {FR06_TEXTURE}"),
+        ));
     }
     require_rust_test_functions(
         root,

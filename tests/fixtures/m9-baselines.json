@@ -39,6 +39,18 @@
     {
       "scene": "larger-industrial-gltf",
       "backend": "Headless",
+      "lane": "linux-native-vulkan",
+      "p95_frame_ms": 60.0,
+      "p95_prepare_ms": 1950.0,
+      "allowed_regression_percent": 5.0,
+      "max_allocations_per_frame": 8,
+      "max_allocated_bytes_per_frame": 16777216,
+      "minimum_sample_count": 100,
+      "note": "Ubuntu 24.04 x64 hosted-lane baseline from exact-source CI run 29684881823 at 54fe7da14860714e0082b0995c44c59bbc6446db: measured frame p95 56.561 ms and prepare p95 1930.652 ms; stored values are the next 5 ms and 50 ms ceilings."
+    },
+    {
+      "scene": "larger-industrial-gltf",
+      "backend": "Headless",
       "lane": "macos-metal",
       "p95_frame_ms": 70.0,
       "p95_prepare_ms": 2000.0,

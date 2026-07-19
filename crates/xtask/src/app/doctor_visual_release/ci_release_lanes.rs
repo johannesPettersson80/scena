@@ -426,7 +426,11 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
         findings,
         "RELEASE-CI-M9",
         "tests/fixtures/m9-baselines.json",
-        &["\"lane\": \"macos-metal\"", "\"lane\": \"windows-dx12\""],
+        &[
+            "\"lane\": \"linux-native-vulkan\"",
+            "\"lane\": \"macos-metal\"",
+            "\"lane\": \"windows-dx12\"",
+        ],
     );
     forbid_contains(
         root,

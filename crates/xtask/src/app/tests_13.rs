@@ -477,15 +477,15 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
     let lifecycle = fixture_root.join("src/render/gpu/lifecycle.rs");
     let source = fs::read_to_string(&lifecycle).expect("read lifecycle completion fixture");
     let mutated = source.replacen(
-        "self.queue.on_submitted_work_done",
-        "removed_queue_completion_callback",
+        "wgpu::Backend::Gl | wgpu::Backend::BrowserWebGpu",
+        "wgpu::Backend::Gl",
         1,
     );
     assert_ne!(
         source, mutated,
-        "queue-completion mutation must alter the lifecycle implementation"
+        "WebGPU-retirement mutation must alter the lifecycle implementation"
     );
-    fs::write(&lifecycle, mutated).expect("remove queue completion callback");
+    fs::write(&lifecycle, mutated).expect("remove browser WebGPU automatic retirement");
     findings.clear();
     check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
     assert!(
@@ -493,10 +493,35 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
             finding.rule == "RENDER-C09"
                 && finding
                     .message
-                    .contains("self.queue.on_submitted_work_done")
+                    .contains("wgpu::Backend::Gl | wgpu::Backend::BrowserWebGpu")
         }),
-        "doctor must reject restoring synthetic submissions in place of queue completion: \
+        "doctor must reject removing browser-managed WebGPU retirement: \
          {findings:?}",
+    );
+
+    fs::write(&lifecycle, &source).expect("restore lifecycle fixture");
+    let mutated = source.replacen(
+        "(0, DevicePollStatus::Unsupported)",
+        "self.queue.on_submitted_work_done(|| {});\n        \
+         (0, DevicePollStatus::Unsupported)",
+        1,
+    );
+    assert_ne!(
+        source, mutated,
+        "callback-regression mutation must alter the lifecycle implementation"
+    );
+    fs::write(&lifecycle, mutated).expect("restore callback-dependent retirement");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding.message.contains(
+                    "browser logical resource retirement must not wait on \
+                     on_submitted_work_done",
+                )
+        }),
+        "doctor must reject callback-dependent browser retirement: {findings:?}",
     );
 
     let build = fixture_root.join("src/render/gpu/build.rs");

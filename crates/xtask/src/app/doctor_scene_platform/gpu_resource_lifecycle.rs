@@ -178,36 +178,32 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         (
             "src/render/gpu/lifecycle.rs",
             &[
-                "self.queue.on_submitted_work_done",
+                "browser_uses_automatic_resource_retirement",
                 "self.device.poll(wgpu::PollType::Poll)",
-                "self.adapter.get_info().backend == wgpu::Backend::Gl",
+                "wgpu::Backend::Gl | wgpu::Backend::BrowserWebGpu",
+                "Browser WebGPU's Device::poll is automatic/no-op",
                 "DevicePollStatus::Automatic",
-                "DevicePollStatus::Submitted",
-                "DevicePollStatus::Confirmed",
-                "confirmed_destructions",
-                "submitted_destructions",
+                "DevicePollStatus::Unsupported",
             ],
         ),
         (
             "src/browser_probe/probes/state_lifecycle.rs",
             &[
-                "async fn verify_resource_lifetime",
-                "next_browser_turn().await?",
-                "request_animation_frame",
+                "fn verify_resource_lifetime",
                 "completion_confirmed",
                 "automatic-webgl2",
-                "confirmed-callback",
+                "automatic-webgpu",
                 "DevicePollStatus::Confirmed",
             ],
         ),
         (
             "tests/browser/m6_rust_wasm_renderer_probe.js",
             &[
+                "expectedRetirementMode",
                 "submitted_poll_status",
                 "completion_poll_status",
-                "backend === \"webgl2\"",
-                "retirement_mode !== \"automatic-webgl2\"",
-                "completion_confirmed !== true",
+                "\"automatic-webgl2\" : \"automatic-webgpu\"",
+                "completion_confirmed !== false",
             ],
         ),
         (
@@ -365,7 +361,7 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             &[
                 "GPU resource lifecycle invariant",
                 "RendererStats::gpu_textures",
-                "DevicePollStatus::Submitted",
+                "DevicePollStatus::Automatic",
                 "DevicePollStatus::Confirmed",
                 "RenderReadbackMode::PresentOnly",
                 "RenderReadbackMode::Synchronous",
@@ -387,6 +383,16 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
     ];
     for (relative, needles) in required {
         require_contains(root, findings, RULE, relative, needles);
+    }
+
+    if fs::read_to_string(root.join("src/render/gpu/lifecycle.rs"))
+        .is_ok_and(|source| source.contains("on_submitted_work_done"))
+    {
+        findings.push(Finding::new(
+            RULE,
+            "browser logical resource retirement must not wait on \
+             on_submitted_work_done because browser WebGPU owns in-flight object lifetime",
+        ));
     }
 
     if fs::read_to_string(root.join(".github/workflows/hardware-gpu.yml"))
@@ -511,7 +517,6 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             "self.pending_destructions = 0;\n        (pending, DevicePollStatus::Confirmed)",
             "self.pending_destructions = 0;\n        (pending, DevicePollStatus::Automatic)",
             "scena.resource_destruction_completion",
-            "self.queue.submit(std::iter::once(command_buffer))",
         ] {
             if source.contains(forbidden) {
                 findings.push(Finding::new(

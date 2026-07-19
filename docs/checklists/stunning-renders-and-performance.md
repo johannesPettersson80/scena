@@ -588,10 +588,10 @@ especially with expensive PBR/SSR/area-light shaders.
   `visibility_middle_primitive_reencodes_batches_without_vertex_reupload`,
   which now renders before/after hiding a retained middle primitive and asserts
   rendered coverage drops, not just retained vertex ranges or counters.
-  Imported glTF model-node transform correctness is pinned by
-  `imported_gltf_transform_gpu_prepare_moves_rendered_pixels_after_fallback`,
-  which asserts the current safe fallback re-prepares and moves pixels instead
-  of reusing stale GPU state. `scena verify animation --expect-change` now
+  Imported glTF mesh-node transform correctness is pinned by
+  `imported_gltf_transform_gpu_prepare_moves_rendered_pixels_via_dynamic_path`,
+  which asserts retained draw uniforms update without static resource rebuilds
+  and the rendered pixels move. `scena verify animation --expect-change` now
   records selected-node `rendered_centroid_css_px`,
   `rendered_coverage_px`, `summary.rendered_movement`, and fails frozen
   selected-node coverage with exact `rendered_node_coverage_frozen`; the

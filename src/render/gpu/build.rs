@@ -31,10 +31,6 @@ pub(in crate::render) async fn request_headless_gpu(
         surface: None,
         pending_destructions: 0,
         #[cfg(target_arch = "wasm32")]
-        submitted_destructions: 0,
-        #[cfg(target_arch = "wasm32")]
-        confirmed_destructions: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-        #[cfg(target_arch = "wasm32")]
         last_poll_observation: "not-polled",
         resources: None,
         output_color_space: OutputColorSpace::Srgb,
@@ -242,10 +238,6 @@ async fn request_gpu_for_surface(
         queue,
         surface: Some(GpuSurfaceState { surface, config }),
         pending_destructions: 0,
-        #[cfg(target_arch = "wasm32")]
-        submitted_destructions: 0,
-        #[cfg(target_arch = "wasm32")]
-        confirmed_destructions: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         #[cfg(target_arch = "wasm32")]
         last_poll_observation: "not-polled",
         resources: None,

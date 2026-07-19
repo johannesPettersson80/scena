@@ -1180,11 +1180,12 @@ Scope: B10, B19; shares implementation with PF01.
   do not estimate from a partial baseline.
 - [x] Replace wasm `(pending,true)` fabrication with explicit
   automatic/unsupported/submitted/confirmed states.
-- [x] Do not clear pending destruction until an actual async completion signal
-  supports it; browser lifecycle proof must wait for and report that signal.
+- [x] Keep native destruction retirement completion-confirmed, but do not make
+  browser logical bookkeeping depend on a completion callback: WebGPU/WebGL2
+  own in-flight object lifetime and must report non-confirming `Automatic`.
 - [x] Add source-lifecycle doctor rules and browser proof for honest status.
 
-C09 validation ledger (2026-07-17):
+C09 validation ledger (2026-07-17; corrected 2026-07-19):
 
 - `focused`: test-first work began with an output-setting contract that failed
   because MSAA/post/depth resources were still created lazily, then with typed
@@ -1208,14 +1209,15 @@ C09 validation ledger (2026-07-17):
   owners; the partial aggregate estimator was deleted. Destruction records
   count every retained buffer, texture, pipeline, and bind group, while render
   targets remain an explicit texture subset.
-- `implementation`: public polling now reports `DevicePollStatus::{Automatic,
+- `implementation`: public polling reports `DevicePollStatus::{Automatic,
   Unsupported,Submitted,Confirmed}`. Native pending work retires only after a
-  confirmed device poll. Wasm submits a concrete completion command buffer and
-  advances an atomic confirmation counter only from
-  `on_submitted_work_done`; later polling retires the corresponding records.
-  The compatibility `gpu_polled` boolean is true only for `Confirmed`. Browser
-  lifecycle proof waits with animation frames for this real asynchronous
-  transition rather than clearing records or passing on a fabricated boolean.
+  confirmed device poll. Browser WebGPU and WebGL2 retire scena's logical
+  records as `Automatic`: wgpu's browser WebGPU poll is automatic/no-op and the
+  JavaScript implementation retains objects referenced by submitted work;
+  WebGL2 uses `GlFenceBehavior::AutoFinish` and GL retains deleted in-flight
+  objects. Scena neither waits on `on_submitted_work_done` nor claims browser
+  GPU completion. The compatibility `gpu_polled` boolean remains true only for
+  `Confirmed`.
 - `scoped`: the lifecycle suite passes 4/4, the post-processing suite passes
   4/4, and the `SCENE-C09` doctor mutation passes 1/1 by rejecting both a
   draw-time post allocation and restoration of an aggregate estimator.
@@ -1224,29 +1226,24 @@ C09 validation ledger (2026-07-17):
   rustdoc all pass on the isolated remote builder. The current browser-probe
   wasm package also builds successfully with `wasm-pack` and the
   `browser-probe` feature.
-- `browser`: the first strict WebGL2 reproducer exposed two independent proof
-  defects before it became green. WebGPU/Vulkan Chromium flags were being
-  enabled even for a WebGL2-only run, preventing the software WebGL2 context;
-  backend-specific launch flags corrected that. A timer-loop probe then stayed
-  `Submitted`, proving that the prior lifecycle model had no real completion
-  signal. The concrete submitted command-buffer callback plus animation-frame
-  waiting corrected it. The focused strict WebGL2 proof passes with
-  `baseline_poll_status=Automatic`, `submitted_poll_status=Submitted`,
-  `completion_poll_status=Confirmed`, `completion_confirmed=true`, and pending
-  destructions returned to the zero baseline.
-- `full`: the complete strict WebGL2 browser gate passes all 38 results. Its
-  persisted `scena.m6.browser_state_lifecycle_probe.v1` result independently
-  records the same `Automatic -> Submitted -> Confirmed` transition, a live
-  heavy-resource phase, zero released logical handles, zero released pending
-  destructions, and `pending_returned_to_baseline=true`. The all-feature test
-  checkpoint passed 282 library tests with 1 pre-existing policy-accepted
-  ignore and all integration targets until a stale M1 resource-count range
-  failed. The repaired exact M1 proof passes, every root integration target
-  from that boundary through `visual_repair_contracts` passes in a continuation
-  sweep, the xtask suite passes 286/286, all-feature doctests pass 58 with 1
-  ignored, and all 4 compile-fail doctests pass. This is the unchanged green
-  prefix, focused repaired boundary, and complete green suffix; the unchanged
-  long prefix was not rerun merely for a newer timestamp.
+- `browser/root cause`: exact-source hosted run `29684881823` reproduced WebGPU
+  stuck in `Submitted/queue-empty`. Instrumentation proved the callback bridge
+  was wired correctly but callbacks for the failing device could arrive tens
+  of seconds late; a direct Chromium probe separately proved
+  `GPUQueue.onSubmittedWorkDone()` and `mapAsync()` work. The defect was
+  therefore scena's callback-dependent logical-retirement contract, not a
+  missing browser API or command submission. Focused hosted-style WebGPU and
+  WebGL2 M6 runs now both pass with a live heavy-resource phase, exact
+  `0 -> 2 -> 0` logical-handle recovery, zero pending destructions, backend
+  modes `automatic-webgpu`/`automatic-webgl2`, and
+  `completion_confirmed=false`.
+- `integration`: the earlier 38-result WebGL2 run and Rust checkpoint remain
+  useful for unaffected coverage, but their callback-transition assertion is
+  superseded by the correction above. The current exact tree has passed both
+  focused browser backends, the focused lifecycle unit contract, the C09 doctor
+  mutation, and both WASM package builds. One final remote-builder checkpoint
+  and the exact pushed-SHA GitHub run are retained as the release-level proof;
+  no success is inferred from the failed hosted run.
 - `provenance`: canonical source remained `/home/johannes/projects/scena`,
   branch `main`, HEAD `bea2a36f5a5e5f5610fa578f1915f137e432281c`.
   `AGENTS.md` and the complete `.codex/skills/**` tree were manually copied and
@@ -2481,6 +2478,32 @@ PF00/PF01/PF02 hardware-lane readiness and execution ledger (2026-07-18):
   SHA-256, and pins the PF00/PF10 exact-provenance producers. The focused
   mutation was observed red with no finding before the doctor change and
   passes after it.
+- `hosted Linux baseline correction (2026-07-19)`: exact-source GitHub run
+  `29684881823` measured the larger-industrial lane at frame p95 `56.560595 ms`
+  and prepare p95 `1930.651602 ms`; the run failed because the generic fallback
+  allowed only `1837.5 ms` prepare time. The fixture now has an explicit
+  `linux-native-vulkan` row (`60 ms` frame, `1950 ms` prepare, 5% policy),
+  matching the existing macOS/Windows lane-selection design. The focused test
+  replays the exact failed measurements and passes only through that Linux row;
+  `RELEASE-CI-M9` now requires all three hosted lane rows and its mutation test
+  rejects removal of Linux coverage.
+- `FR06 hosted-asset correction (2026-07-19)`: the same run rendered WebGL2 but
+  failed the strict HTTP gate on the fixture's uncommitted
+  `textures/albedo.png`. The glTF now references the existing committed
+  WaterBottle base-color PNG. The focused WebGL2 FR06 proof passes with 2,010
+  semantic hits, 2,010 finite depth samples, and deterministic repeat output;
+  doctor pins the exact URI and rejects either URI drift or removal of the
+  referenced file.
+- `fixture cross-backend correction (2026-07-19)`: an initial replacement with
+  WaterBottle's valid but almost entirely black emissive map made the native
+  headless movement fixture blank. The exact all-feature library run failed at
+  that assertion, and the focused test reproduced it. Using the committed
+  base-color map restored visible pixels, then exposed a stale expectation that
+  imported mesh-node transforms must full-prepare. The corrected focused test
+  proves the dynamic path has no rejection reason, does not recollect
+  primitives or rebuild static GPU resources, increments one retained
+  draw-uniform update, and moves the rendered centroid. The focused WebGL2
+  FR06 proof also passes with no HTTP failure after the final URI correction.
 
 ### PF03 — Remove wholesale prepared-data cloning
 
