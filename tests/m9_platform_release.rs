@@ -995,7 +995,7 @@ fn write_benchmark_artifact(lane: &str) {
         benchmark_headless_4k(),
     ];
     let baseline = benchmark_baseline();
-    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline);
+    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline, lane);
     let artifact = serde_json::json!({
         "schema": "scena.m9.benchmarks.v1",
         "lane": lane,
@@ -1018,7 +1018,8 @@ fn write_dedicated_4k_benchmark_artifact() -> serde_json::Value {
     let matrix_rows = benchmark_feature_matrix_measured_rows(DEDICATED_4K_SAMPLE_COUNT);
     rows.extend(matrix_rows.clone());
     let baseline = benchmark_baseline();
-    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline);
+    let baseline_comparison =
+        apply_benchmark_baselines(&mut rows, &baseline, "headless-4k-performance");
     let artifact = serde_json::json!({
         "schema": "scena.m9.benchmarks.v1",
         "lane": "headless-4k-performance",
@@ -1052,7 +1053,7 @@ fn write_feature_matrix_required_artifact(lane: &str) {
 
 fn feature_matrix_artifact(lane: &str, mut rows: Vec<serde_json::Value>) -> serde_json::Value {
     let baseline = benchmark_baseline();
-    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline);
+    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline, lane);
     serde_json::json!({
         "schema": "scena.m9.benchmarks.feature_matrix.v1",
         "lane": lane,
@@ -1169,6 +1170,7 @@ fn benchmark_baseline() -> serde_json::Value {
 fn apply_benchmark_baselines(
     rows: &mut [serde_json::Value],
     baseline: &serde_json::Value,
+    lane: &str,
 ) -> serde_json::Value {
     let mut status = "passed";
     let minimum_sample_count = baseline
@@ -1187,7 +1189,7 @@ fn apply_benchmark_baselines(
             continue;
         }
 
-        let Some(row_baseline) = benchmark_baseline_for_row(row, baseline) else {
+        let Some(row_baseline) = benchmark_baseline_for_row(row, baseline, lane) else {
             status = "failed";
             row["baseline_comparison"] = serde_json::json!({
                 "status": "failed",
@@ -1282,6 +1284,10 @@ fn apply_benchmark_baselines(
 
         row["baseline_comparison"] = serde_json::json!({
             "status": row_status,
+            "baseline_lane": row_baseline
+                .get("lane")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("generic"),
             "frame_time_status": if frame_status { "passed" } else { "failed" },
             "prepare_time_status": if prepare_status { "passed" } else { "failed" },
             "allocation_status": if allocation_status { "passed" } else { "failed" },
@@ -1304,6 +1310,7 @@ fn apply_benchmark_baselines(
 
     serde_json::json!({
         "status": status,
+        "lane": lane,
         "baseline_path": BENCHMARK_BASELINE_PATH,
         "baseline_sha256": asset_source_hash(BENCHMARK_BASELINE_PATH),
         "metrics": [
@@ -1319,16 +1326,26 @@ fn apply_benchmark_baselines(
 fn benchmark_baseline_for_row<'a>(
     row: &serde_json::Value,
     baseline: &'a serde_json::Value,
+    lane: &str,
 ) -> Option<&'a serde_json::Value> {
     let scene = row.get("scene").and_then(serde_json::Value::as_str)?;
     let backend = row.get("backend").and_then(serde_json::Value::as_str)?;
-    baseline
-        .get("rows")
-        .and_then(serde_json::Value::as_array)?
+    let candidates = baseline.get("rows").and_then(serde_json::Value::as_array)?;
+    let matches_row = |candidate: &&serde_json::Value| {
+        candidate.get("scene").and_then(serde_json::Value::as_str) == Some(scene)
+            && candidate.get("backend").and_then(serde_json::Value::as_str) == Some(backend)
+    };
+    candidates
         .iter()
-        .find(|candidate| {
-            candidate.get("scene").and_then(serde_json::Value::as_str) == Some(scene)
-                && candidate.get("backend").and_then(serde_json::Value::as_str) == Some(backend)
+        .filter(matches_row)
+        .find(|candidate| candidate.get("lane").and_then(serde_json::Value::as_str) == Some(lane))
+        .or_else(|| {
+            candidates.iter().filter(matches_row).find(|candidate| {
+                candidate
+                    .get("lane")
+                    .and_then(serde_json::Value::as_str)
+                    .is_none()
+            })
         })
 }
 
@@ -1842,7 +1859,7 @@ fn pf00_baseline_comparison_gates_prepare_p95_and_allocation_bytes() {
         }]
     });
 
-    let summary = apply_benchmark_baselines(&mut rows, &baseline);
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "test-lane");
 
     assert_eq!(summary["status"], "failed");
     assert_eq!(
@@ -1860,6 +1877,55 @@ fn pf00_baseline_comparison_gates_prepare_p95_and_allocation_bytes() {
     assert_eq!(
         rows[0]["baseline_comparison"]["allocation_bytes_status"],
         "failed"
+    );
+}
+
+#[test]
+fn m9_benchmark_baseline_prefers_an_exact_lane_over_the_generic_fallback() {
+    let mut rows = vec![serde_json::json!({
+        "scene": "lane-specific-row",
+        "backend": "Headless",
+        "sample_count": 100,
+        "p95_frame_ms": 10.0,
+        "p95_prepare_ms": 15.0,
+        "max_allocations_per_frame": 0,
+        "max_allocated_bytes_per_frame": 0,
+    })];
+    let baseline = serde_json::json!({
+        "minimum_sample_count": 100,
+        "rows": [
+            {
+                "scene": "lane-specific-row",
+                "backend": "Headless",
+                "p95_frame_ms": 10.0,
+                "p95_prepare_ms": 10.0,
+                "allowed_regression_percent": 5.0,
+                "max_allocations_per_frame": 0,
+                "max_allocated_bytes_per_frame": 0
+            },
+            {
+                "scene": "lane-specific-row",
+                "backend": "Headless",
+                "lane": "macos-metal",
+                "p95_frame_ms": 10.0,
+                "p95_prepare_ms": 15.0,
+                "allowed_regression_percent": 5.0,
+                "max_allocations_per_frame": 0,
+                "max_allocated_bytes_per_frame": 0
+            }
+        ]
+    });
+
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "macos-metal");
+
+    assert_eq!(summary["status"], "passed");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["baseline_lane"],
+        "macos-metal"
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["baseline_p95_prepare_ms"],
+        15.0
     );
 }
 
@@ -2231,7 +2297,7 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
         ]
     });
 
-    let summary = apply_benchmark_baselines(&mut rows, &baseline);
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "test-lane");
 
     assert_eq!(summary["status"], "passed");
     assert_eq!(summary["baseline_path"], BENCHMARK_BASELINE_PATH);
@@ -3055,7 +3121,7 @@ fn m9_benchmark_baseline_comparison_fails_significant_regressions() {
         ]
     });
 
-    let summary = apply_benchmark_baselines(&mut rows, &baseline);
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "test-lane");
 
     assert_eq!(summary["status"], "failed");
     assert_eq!(rows[0]["baseline_comparison"]["status"], "failed");
@@ -3092,7 +3158,7 @@ fn m9_benchmark_baseline_comparison_fails_allocation_regressions() {
         ]
     });
 
-    let summary = apply_benchmark_baselines(&mut rows, &baseline);
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "test-lane");
 
     assert_eq!(summary["status"], "failed");
     assert_eq!(rows[0]["baseline_comparison"]["status"], "failed");

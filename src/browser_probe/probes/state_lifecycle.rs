@@ -23,7 +23,7 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     .map_err(|error| JsValue::from_str(&format!("state lifecycle build failed: {error:?}")))?;
 
     let mut events = Vec::new();
-    let lifetime = verify_resource_lifetime(&mut renderer, &mut events).await?;
+    let lifetime = verify_resource_lifetime(&mut renderer, backend, &mut events).await?;
     let assets = Assets::new();
     let base_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.35, 0.35, 0.35));
     let base_material =
@@ -247,6 +247,7 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
 
 async fn verify_resource_lifetime(
     renderer: &mut Renderer,
+    backend: Backend,
     events: &mut Vec<&'static str>,
 ) -> Result<serde_json::Value, JsValue> {
     let empty_assets = Assets::new();
@@ -293,7 +294,9 @@ async fn verify_resource_lifetime(
             JsValue::from_str(&format!("lifetime release prepare failed: {error:?}"))
         })?;
     let submitted_poll = renderer.poll_device();
+    let submitted_poll_observation = renderer.browser_device_poll_observation();
     let mut completion_poll = submitted_poll;
+    let mut completion_poll_observation = submitted_poll_observation;
     for _ in 0..120 {
         if completion_poll.status == crate::DevicePollStatus::Confirmed
             || completion_poll.pending_destructions_after == 0
@@ -302,6 +305,7 @@ async fn verify_resource_lifetime(
         }
         next_browser_turn().await?;
         completion_poll = renderer.poll_device();
+        completion_poll_observation = renderer.browser_device_poll_observation();
     }
     let released = renderer.stats();
     if released.live_logical_handles != baseline.live_logical_handles {
@@ -311,8 +315,8 @@ async fn verify_resource_lifetime(
     }
     if released.pending_destructions != baseline.pending_destructions {
         return Err(JsValue::from_str(&format!(
-            "resource-lifetime: pending destructions were not confirmed before timeout; submitted={:?}, last={:?}",
-            submitted_poll.status, completion_poll.status
+            "resource-lifetime: pending destructions were not confirmed before timeout; submitted={:?}/{submitted_poll_observation}, last={:?}/{completion_poll_observation}",
+            submitted_poll.status, completion_poll.status,
         )));
     }
     events.push("resource-lifetime");
@@ -326,8 +330,15 @@ async fn verify_resource_lifetime(
         "pending_returned_to_baseline": released.pending_destructions == baseline.pending_destructions,
         "baseline_poll_status": format!("{:?}", baseline_poll.status),
         "submitted_poll_status": format!("{:?}", submitted_poll.status),
+        "submitted_wgpu_poll_observation": submitted_poll_observation,
         "completion_poll_status": format!("{:?}", completion_poll.status),
+        "completion_wgpu_poll_observation": completion_poll_observation,
         "completion_confirmed": completion_poll.status == crate::DevicePollStatus::Confirmed,
+        "retirement_mode": if backend == Backend::WebGl2 {
+            "automatic-webgl2"
+        } else {
+            "confirmed-callback"
+        },
     }))
 }
 

@@ -37,6 +37,30 @@
       "note": "Debug-profile software-renderer baseline for the BrainStem stress fixture, refreshed after PF08 adaptive texture baking from a 100-sample serial scena-builder p95 of 1703.421 ms on 2026-07-18; the stored value is the next 50 ms ceiling. Release lanes must retain their own optimized baseline."
     },
     {
+      "scene": "larger-industrial-gltf",
+      "backend": "Headless",
+      "lane": "macos-metal",
+      "p95_frame_ms": 70.0,
+      "p95_prepare_ms": 2000.0,
+      "allowed_regression_percent": 5.0,
+      "max_allocations_per_frame": 8,
+      "max_allocated_bytes_per_frame": 16777216,
+      "minimum_sample_count": 100,
+      "note": "macOS 15 arm64 hosted-lane baseline from exact-source CI run 29681381289 at 3d8871a748849a54b6a992082d5b25a9409d9463: measured frame p95 68.498 ms and prepare p95 1975.562 ms; stored values are the next 5 ms and 50 ms ceilings."
+    },
+    {
+      "scene": "larger-industrial-gltf",
+      "backend": "Headless",
+      "lane": "windows-dx12",
+      "p95_frame_ms": 70.0,
+      "p95_prepare_ms": 2000.0,
+      "allowed_regression_percent": 5.0,
+      "max_allocations_per_frame": 8,
+      "max_allocated_bytes_per_frame": 16777216,
+      "minimum_sample_count": 100,
+      "note": "Windows Server 2025 x64 hosted-lane baseline from exact-source CI run 29681381289 at 3d8871a748849a54b6a992082d5b25a9409d9463: measured frame p95 69.881 ms and prepare p95 1935.809 ms; stored values are the next 5 ms and 50 ms ceilings."
+    },
+    {
       "scene": "high-instance",
       "backend": "Headless",
       "p95_frame_ms": 75.0,

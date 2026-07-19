@@ -338,6 +338,40 @@ pub(crate) fn doctor_rejects_release_ci_missing_lane_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_lane_agnostic_m9_benchmark_baselines() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/m9-lane-baselines");
+    let producer = fixture_root.join("tests/m9_platform_release.rs");
+    let baseline = fixture_root.join("tests/fixtures/m9-baselines.json");
+    fs::create_dir_all(producer.parent().expect("producer parent")).expect("producer dir");
+    fs::create_dir_all(baseline.parent().expect("baseline parent")).expect("baseline dir");
+    fs::write(
+        &producer,
+        "fn apply_benchmark_baselines() {}\nfn benchmark_baseline_for_row() {}\n",
+    )
+    .expect("producer fixture");
+    fs::write(
+        &baseline,
+        r#"{"rows":[{"scene":"larger-industrial-gltf","backend":"Headless"}]}"#,
+    )
+    .expect("baseline fixture");
+    let mut findings = Vec::new();
+
+    check_m9_ci_release_lanes(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-CI-M9"
+                && (finding.message.contains("baseline_lane")
+                    || finding.message.contains("\"lane\": \"macos-metal\"")
+                    || finding.message.contains("\"lane\": \"windows-dx12\""))
+        }),
+        "doctor must reject one host's wall-clock baseline being applied to every release lane: \
+         {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_ergonomics_m7_missing_controls_contract_regression() {
     // ERGONOMICS-M7: src/controls.rs must expose the orbit-controls contract terms
     // (with_damping, focus, apply_to_scene, damping_factor, TouchEvent, wheel) so

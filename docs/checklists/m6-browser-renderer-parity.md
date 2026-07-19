@@ -40,15 +40,22 @@ The WebGL2 release headline also fails closed when its parity object, either
 frame input, normalization, passing metrics, mutation rejection, or
 renderer-owned GPU checksum link is absent.
 
-Required WebGPU uses `SCENA_REQUIRE_PARITY=1`. Its headline triangle must report
-an actual WebGPU device, positive draw and submission counts, nonblack
-`renderer-owned-gpu-copy` readback, and an adapter classified as discrete,
-integrated, or virtual hardware. `NoAdapter`, zero output, missing identity,
+The GitHub-hosted WebGPU job is software conformance, because the hosted Ubuntu
+runner has no physical GPU to attest. It still requires an actual WebGPU
+device, positive draw and submission counts, and nonblack
+`renderer-owned-gpu-copy` readback; missing adapters or blank output fail the
+job. It does not claim hardware evidence.
+
+Required release WebGPU uses `SCENA_REQUIRE_PARITY=1` on the self-hosted
+`[self-hosted, linux, x64, gpu, scena-gpu]` runner. Its headline triangle must
+also identify an adapter classified as discrete, integrated, or virtual
+hardware. `NoAdapter`, zero output, missing identity,
 SwiftShader/llvmpipe/lavapipe, CPU adapters, and unproven `Other` adapters fail
 the producer immediately. `SCENA_BROWSER_ALLOW_UNAVAILABLE` remains available
-only for explicitly diagnostic local probes and is forbidden in required CI and
-release jobs. The required-parity evaluator has a standalone mutation suite,
-and `Q06-REQUIRED-GPU-LANES` prevents workflow or validator drift.
+only for explicitly diagnostic local probes and is forbidden in CI and release
+jobs. The required-parity evaluator has a standalone mutation suite, and
+`Q06-REQUIRED-GPU-LANES` prevents a hosted software-conformance job from being
+misrepresented as hardware release evidence.
 
 The Linux native lane separately proves strict `HeadlessGpu` Vulkan-path
 construction and rendered output; it rejects the `Backend::Headless` CPU

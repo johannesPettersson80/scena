@@ -473,4 +473,55 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         }),
         "doctor must reject routing Windows Chromium hardware proof through Vulkan flags: {findings:?}",
     );
+
+    let lifecycle = fixture_root.join("src/render/gpu/lifecycle.rs");
+    let source = fs::read_to_string(&lifecycle).expect("read lifecycle completion fixture");
+    let mutated = source.replacen(
+        "self.queue.on_submitted_work_done",
+        "removed_queue_completion_callback",
+        1,
+    );
+    assert_ne!(
+        source, mutated,
+        "queue-completion mutation must alter the lifecycle implementation"
+    );
+    fs::write(&lifecycle, mutated).expect("remove queue completion callback");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding
+                    .message
+                    .contains("self.queue.on_submitted_work_done")
+        }),
+        "doctor must reject restoring synthetic submissions in place of queue completion: \
+         {findings:?}",
+    );
+
+    let build = fixture_root.join("src/render/gpu/build.rs");
+    let source = fs::read_to_string(&build).expect("read WebGL2 fence-policy fixture");
+    let mutated = source.replacen(
+        "descriptor.backend_options.gl.fence_behavior = wgpu::GlFenceBehavior::AutoFinish;",
+        "descriptor.backend_options.gl.fence_behavior = wgpu::GlFenceBehavior::Normal;",
+        1,
+    );
+    assert_ne!(
+        source, mutated,
+        "WebGL2 fence-policy mutation must alter the GPU builder"
+    );
+    fs::write(&build, mutated).expect("restore normal WebGL2 fence behavior");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding.message.contains(
+                    "descriptor.backend_options.gl.fence_behavior = \
+                     wgpu::GlFenceBehavior::AutoFinish;",
+                )
+        }),
+        "doctor must reject WebGL2 lifetime tracking that depends on a browser fence: \
+         {findings:?}",
+    );
 }

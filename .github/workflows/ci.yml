@@ -126,7 +126,7 @@ jobs:
           if-no-files-found: error
 
   linux-browser-webgpu:
-    name: Linux browser WebGPU
+    name: Linux browser WebGPU software conformance
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -147,7 +147,7 @@ jobs:
       - name: Browser WebGPU proof through Rust/WASM
         env:
           SCENA_BROWSER_BACKENDS: webgpu
-          SCENA_REQUIRE_PARITY: "1"
+          SCENA_GPU_EVIDENCE_CLASS: "software-conformance"
         run: |
           npm run test:required-gpu-parity
           bash scripts/release_lane_command.sh linux-webgpu-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe

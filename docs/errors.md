@@ -43,7 +43,8 @@ as preparing again after stale renderer state.
 |---|---|
 | Render called before prepare | call `prepare()` and render again |
 | Unsupported GPU sample count | choose a supported anti-aliasing mode; the renderer rejects it during `prepare()` before any render-time fallback |
-| GPU destruction still `Submitted` | yield to the browser event loop and poll again until `DevicePollStatus::Confirmed`; do not treat submission as completion |
+| WebGPU destruction still `Submitted` | yield to the browser event loop and poll again until `DevicePollStatus::Confirmed`; do not treat submission as completion |
+| WebGL2 destruction reports `Automatic` | wgpu retired its logical queue records using the GL lifetime model; do not present this as physical GPU-completion confirmation |
 | Scene changed after prepare | call `prepare()` again |
 | Surface resized | forward the surface event, then prepare again |
 | Missing asset file | fix path or fetcher configuration |

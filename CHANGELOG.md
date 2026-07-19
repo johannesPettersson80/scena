@@ -56,6 +56,14 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
+- Prevent WebGL2 resource-retirement records from waiting forever on browser GL
+  fences: WebGL2 now uses wgpu's automatic WebGL fence policy and reports
+  automatic logical retirement, while WebGPU retains real queue-completion
+  callbacks. Hosted WebGPU CI is explicitly software conformance; strict
+  hardware parity remains confined to the self-hosted release lane.
+- Select M9 performance baselines by release lane before falling back to the
+  generic row, with exact-source macOS Metal and Windows DX12 ceilings, so host
+  timing differences no longer masquerade as renderer regressions.
 - Kept the renderer-owned output-copy helper available to plain wasm32 builds,
   so browser packages no longer require `browser-probe` or `scene-host` merely
   to compile the surface readback path.

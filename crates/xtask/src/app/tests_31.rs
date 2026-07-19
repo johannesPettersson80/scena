@@ -62,14 +62,23 @@ fn q06_doctor_requires_strict_gpu_lane_contracts() {
         "unsafe allow-unavailable, fallback, and missing required mode must fail: {findings:?}"
     );
 
-    let strong_workflow = "jobs:\n  linux-native-vulkan:\n    env:\n      SCENA_REQUIRE_PARITY: \"1\"\n    run: cargo test --test m9_platform_release\n  linux-browser-webgpu:\n    env:\n      SCENA_BROWSER_BACKENDS: webgpu\n      SCENA_REQUIRE_PARITY: \"1\"\n    run: npm run test:required-gpu-parity && npm run browser:m6\n";
-    for workflow in ["ci.yml", "release.yml"] {
-        fs::write(
-            fixture_root.join(".github/workflows").join(workflow),
-            strong_workflow,
-        )
-        .expect("strong Q06 workflow writes");
-    }
+    let hosted_conformance_workflow = "jobs:\n  linux-native-vulkan:\n    env:\n      SCENA_REQUIRE_PARITY: \"1\"\n    run: cargo test --test m9_platform_release\n  linux-browser-webgpu:\n    runs-on: ubuntu-24.04\n    env:\n      SCENA_BROWSER_BACKENDS: webgpu\n      SCENA_GPU_EVIDENCE_CLASS: \"software-conformance\"\n    run: npm run test:required-gpu-parity && npm run browser:m6\n";
+    fs::write(
+        fixture_root.join(".github/workflows/ci.yml"),
+        hosted_conformance_workflow,
+    )
+    .expect("hosted Q06 conformance workflow writes");
+    let hardware_release_workflow = "jobs:\n  linux-native-vulkan:\n    env:\n      SCENA_REQUIRE_PARITY: \"1\"\n    run: cargo test --test m9_platform_release\n  linux-browser-webgpu:\n    runs-on: [self-hosted, linux, x64, gpu, scena-gpu]\n    env:\n      SCENA_BROWSER_BACKENDS: webgpu\n      SCENA_REQUIRE_PARITY: \"1\"\n      SCENA_GPU_EVIDENCE_CLASS: \"hardware-release\"\n    run: npm run test:required-gpu-parity && npm run browser:m6\n";
+    fs::write(
+        fixture_root.join(".github/workflows/release.yml"),
+        hardware_release_workflow,
+    )
+    .expect("hardware Q06 release workflow writes");
+    fs::write(
+        fixture_root.join(".github/workflows/hardware-gpu.yml"),
+        "jobs:\n  native-browser-gpu:\n    runs-on: [self-hosted, linux, x64, gpu, scena-gpu]\n    env:\n      SCENA_REQUIRE_HARDWARE_GPU: \"1\"\n      SCENA_REQUIRE_PARITY: \"1\"\n      SCENA_BROWSER_BACKENDS: webgpu,webgl2\n",
+    )
+    .expect("hardware Q06 evidence workflow writes");
     fs::write(
         fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
         "SCENA_REQUIRE_PARITY evaluateRequiredGpuParity required_parity renderer-owned-gpu-copy\n",

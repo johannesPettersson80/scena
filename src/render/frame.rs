@@ -260,6 +260,14 @@ impl Renderer {
         }
     }
 
+    #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+    pub(crate) fn browser_device_poll_observation(&self) -> &'static str {
+        self.gpu
+            .as_ref()
+            .map(GpuDeviceState::last_poll_observation)
+            .unwrap_or("no-gpu")
+    }
+
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }

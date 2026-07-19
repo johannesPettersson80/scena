@@ -464,7 +464,7 @@ pub enum AnimationError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum DevicePollStatus {
-    /// Browser GPU work advances automatically; no explicit completion was requested.
+    /// The backend safely retires logical resources without claiming GPU completion.
     Automatic,
     /// The renderer/backend has no explicit GPU completion path.
     #[default]

@@ -46,5 +46,9 @@ envelope participates in the depth warning.
 `gpu_textures` counts physical allocations, and `render_targets` classifies a
 subset of those allocations. `pub struct DevicePoll` reports `DevicePollStatus::Automatic`,
 `Unsupported`, `Submitted`, or `Confirmed`; pending destructions retire only on
-confirmed backend completion. A prepared resource inventory is complete before
-render, and render may not allocate a missing output resource.
+confirmed backend completion on native GPU and browser WebGPU. WebGL2 reports
+`Automatic` after wgpu retires its logical queue records under
+`GlFenceBehavior::AutoFinish`; this does not claim physical GPU completion,
+because GL owns the lifetime of deleted objects still used by in-flight work.
+A prepared resource inventory is complete before render, and render may not
+allocate a missing output resource.

@@ -34,6 +34,8 @@ pub(in crate::render) async fn request_headless_gpu(
         submitted_destructions: 0,
         #[cfg(target_arch = "wasm32")]
         confirmed_destructions: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        #[cfg(target_arch = "wasm32")]
+        last_poll_observation: "not-polled",
         resources: None,
         output_color_space: OutputColorSpace::Srgb,
         display_p3_canvas_configured: false,
@@ -244,6 +246,8 @@ async fn request_gpu_for_surface(
         submitted_destructions: 0,
         #[cfg(target_arch = "wasm32")]
         confirmed_destructions: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        #[cfg(target_arch = "wasm32")]
+        last_poll_observation: "not-polled",
         resources: None,
         output_color_space,
         display_p3_canvas_configured: false,
@@ -348,21 +352,34 @@ fn prepare_webgl2_opaque_canvas_context(canvas: &web_sys::HtmlCanvasElement) {
     let _ = canvas.get_context_with_context_options("webgl2", attributes.as_ref());
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+fn browser_instance_descriptor(backend: Backend) -> wgpu::InstanceDescriptor {
+    let backends = match backend {
+        Backend::WebGl2 => wgpu::Backends::GL,
+        Backend::WebGpu => wgpu::Backends::BROWSER_WEBGPU,
+        Backend::Headless
+        | Backend::HeadlessGpu
+        | Backend::SurfaceDescriptor
+        | Backend::NativeSurface => wgpu::Backends::all(),
+    };
+    let mut descriptor = wgpu::InstanceDescriptor {
+        backends,
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    };
+    if backend == Backend::WebGl2 {
+        // Browser GL fence sync objects can remain unsignalled indefinitely
+        // under software ANGLE/SwiftShader. wgpu explicitly provides this
+        // policy for WebGL: GL owns the real in-flight lifetime after objects
+        // are deleted, while wgpu may retire its logical submission records.
+        descriptor.backend_options.gl.fence_behavior = wgpu::GlFenceBehavior::AutoFinish;
+    }
+    descriptor
+}
+
 fn instance_for_backend(backend: Backend) -> wgpu::Instance {
     #[cfg(target_arch = "wasm32")]
     {
-        let backends = match backend {
-            Backend::WebGl2 => wgpu::Backends::GL,
-            Backend::WebGpu => wgpu::Backends::BROWSER_WEBGPU,
-            Backend::Headless
-            | Backend::HeadlessGpu
-            | Backend::SurfaceDescriptor
-            | Backend::NativeSurface => wgpu::Backends::all(),
-        };
-        wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends,
-            ..wgpu::InstanceDescriptor::new_without_display_handle()
-        })
+        wgpu::Instance::new(browser_instance_descriptor(backend))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -387,6 +404,23 @@ mod tests {
                 && source.contains("JsValue::FALSE"),
             "browser material proof must configure an opaque surface when supported; otherwise \
              the WebGL canvas clears to alpha 0 and screenshots composite over page/chrome backgrounds"
+        );
+    }
+
+    #[test]
+    fn webgl2_uses_automatic_fence_retirement_without_weakening_webgpu() {
+        let webgl2 = super::browser_instance_descriptor(crate::Backend::WebGl2);
+        assert_eq!(
+            webgl2.backend_options.gl.fence_behavior,
+            wgpu::GlFenceBehavior::AutoFinish,
+            "WebGL2 cannot depend on a browser GL fence that may never signal"
+        );
+
+        let webgpu = super::browser_instance_descriptor(crate::Backend::WebGpu);
+        assert_eq!(
+            webgpu.backend_options.gl.fence_behavior,
+            wgpu::GlFenceBehavior::Normal,
+            "the WebGPU backend must retain real queue-completion semantics"
         );
     }
 

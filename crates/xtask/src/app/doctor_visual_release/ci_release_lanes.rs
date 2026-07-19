@@ -375,12 +375,15 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "BENCHMARK_SAMPLE_COUNT: usize = 100",
             "m9_benchmark_rows_use_distribution_not_single_sample",
             "m9_benchmark_rows_record_stored_baseline_comparison",
+            "m9_benchmark_baseline_prefers_an_exact_lane_over_the_generic_fallback",
             "m9_feature_matrix_declares_resolution_feature_cost_rows",
             "m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact",
             "m9_benchmark_baseline_comparison_fails_significant_regressions",
             "m9_benchmark_baseline_comparison_fails_allocation_regressions",
             "apply_benchmark_baselines",
             "benchmark_baseline_for_row",
+            "\"baseline_lane\"",
+            "candidate.get(\"lane\")",
             "tests/fixtures/m9-baselines.json",
             "scena.m9.benchmarks.feature_matrix.v1",
             "benchmark_feature_matrix_deferred_rows",
@@ -417,6 +420,13 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "source_checksums",
             "tests/m9_platform_release.rs",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "tests/fixtures/m9-baselines.json",
+        &["\"lane\": \"macos-metal\"", "\"lane\": \"windows-dx12\""],
     );
     forbid_contains(
         root,

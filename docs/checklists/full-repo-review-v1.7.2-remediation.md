@@ -2019,6 +2019,27 @@ Validation ledger (2026-07-17):
   builder. A required real-GPU lane must produce the positive adapter/readback
   artifact before any hardware-specific release claim can pass.
 
+Validation correction (2026-07-19):
+
+- `root cause`: GitHub Actions run `29681381289` proved that the hosted Ubuntu
+  WebGPU job rendered far enough to reach the required-parity evaluator, then
+  failed solely with `ADAPTER_HARDWARE_UNPROVEN`. The repository has zero
+  registered Actions runners, so requiring hardware identity from
+  `runs-on: ubuntu-24.04` made the job structurally impossible rather than
+  fail-closed.
+- `implementation`: push CI now labels that hosted job
+  `software-conformance` and still requires real WebGPU device creation,
+  submissions, and nonblank renderer-owned readback. The release workflow
+  routes strict `SCENA_REQUIRE_PARITY=1` WebGPU proof to
+  `[self-hosted, linux, x64, gpu, scena-gpu]`; the manual hardware workflow
+  retains the same fail-closed labels and parity requirements.
+- `test-first`: the revised Q06 workflow contract first failed because doctor
+  still demanded hardware parity from the hosted job, then passed after doctor
+  learned the software-conformance versus hardware-release split.
+- `scope`: this correction makes ordinary CI executable without accepting
+  software output as physical-GPU release evidence. Publishing remains blocked
+  unless a matching hardware runner produces the strict source-bound lane.
+
 ### Q07 — Make SSIM and ICC claims real
 
 Scope: S9, N13.

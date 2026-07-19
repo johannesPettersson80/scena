@@ -13,24 +13,60 @@ pub(crate) fn check_q06_required_gpu_lane_contracts(root: &Path, findings: &mut 
                 format!("{workflow} must not enable diagnostic allow-unavailable behavior"),
             ));
         }
-        for job in ["linux-native-vulkan", "linux-browser-webgpu"] {
-            let Some(block) = workflow_job_block(&text, job) else {
-                findings.push(Finding::new(
-                    RULE,
-                    format!("{workflow} is missing required job {job}"),
-                ));
-                continue;
-            };
-            if !block.contains("SCENA_REQUIRE_PARITY: \"1\"") {
-                findings.push(Finding::new(
-                    RULE,
-                    format!("{workflow} job {job} must set SCENA_REQUIRE_PARITY: \"1\""),
-                ));
-            }
-        }
-        let Some(webgpu) = workflow_job_block(&text, "linux-browser-webgpu") else {
+        let Some(native) = workflow_job_block(&text, "linux-native-vulkan") else {
+            findings.push(Finding::new(
+                RULE,
+                format!("{workflow} is missing required job linux-native-vulkan"),
+            ));
             continue;
         };
+        if !native.contains("SCENA_REQUIRE_PARITY: \"1\"") {
+            findings.push(Finding::new(
+                RULE,
+                format!("{workflow} job linux-native-vulkan must set SCENA_REQUIRE_PARITY: \"1\""),
+            ));
+        }
+        let Some(webgpu) = workflow_job_block(&text, "linux-browser-webgpu") else {
+            findings.push(Finding::new(
+                RULE,
+                format!("{workflow} is missing required job linux-browser-webgpu"),
+            ));
+            continue;
+        };
+        if workflow == ".github/workflows/ci.yml" {
+            if webgpu.contains("SCENA_REQUIRE_PARITY: \"1\"") {
+                findings.push(Finding::new(
+                    RULE,
+                    format!(
+                        "{workflow} hosted linux-browser-webgpu must not claim hardware parity"
+                    ),
+                ));
+            }
+            for required in [
+                "runs-on: ubuntu-24.04",
+                "SCENA_GPU_EVIDENCE_CLASS: \"software-conformance\"",
+            ] {
+                if !webgpu.contains(required) {
+                    findings.push(Finding::new(
+                        RULE,
+                        format!("{workflow} hosted WebGPU conformance job is missing {required}"),
+                    ));
+                }
+            }
+        } else {
+            for required in [
+                "runs-on: [self-hosted, linux, x64, gpu, scena-gpu]",
+                "SCENA_REQUIRE_PARITY: \"1\"",
+                "SCENA_GPU_EVIDENCE_CLASS: \"hardware-release\"",
+            ] {
+                if !webgpu.contains(required) {
+                    findings.push(Finding::new(
+                        RULE,
+                        format!("{workflow} hardware WebGPU release job is missing {required}"),
+                    ));
+                }
+            }
+        }
         for required in [
             "SCENA_BROWSER_BACKENDS: webgpu",
             "npm run test:required-gpu-parity",
@@ -44,6 +80,18 @@ pub(crate) fn check_q06_required_gpu_lane_contracts(root: &Path, findings: &mut 
             }
         }
     }
+
+    require_source_tokens(
+        root,
+        findings,
+        ".github/workflows/hardware-gpu.yml",
+        &[
+            "runs-on: [self-hosted, linux, x64, gpu, scena-gpu]",
+            "SCENA_REQUIRE_HARDWARE_GPU: \"1\"",
+            "SCENA_REQUIRE_PARITY: \"1\"",
+            "SCENA_BROWSER_BACKENDS: webgpu,webgl2",
+        ],
+    );
 
     require_source_tokens(
         root,

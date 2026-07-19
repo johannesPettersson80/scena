@@ -135,6 +135,8 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "enable_scene_host_surface_readback",
                 "capabilities.usages.contains(wgpu::TextureUsages::COPY_SRC)",
                 "config.usage |= wgpu::TextureUsages::COPY_SRC",
+                "browser_instance_descriptor",
+                "descriptor.backend_options.gl.fence_behavior = wgpu::GlFenceBehavior::AutoFinish;",
             ],
         ),
         (
@@ -176,9 +178,10 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         (
             "src/render/gpu/lifecycle.rs",
             &[
-                "command_buffer.on_submitted_work_done",
+                "self.queue.on_submitted_work_done",
                 "self.device.poll(wgpu::PollType::Poll)",
-                "self.queue.submit(std::iter::once(command_buffer))",
+                "self.adapter.get_info().backend == wgpu::Backend::Gl",
+                "DevicePollStatus::Automatic",
                 "DevicePollStatus::Submitted",
                 "DevicePollStatus::Confirmed",
                 "confirmed_destructions",
@@ -192,6 +195,8 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "next_browser_turn().await?",
                 "request_animation_frame",
                 "completion_confirmed",
+                "automatic-webgl2",
+                "confirmed-callback",
                 "DevicePollStatus::Confirmed",
             ],
         ),
@@ -200,6 +205,8 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             &[
                 "submitted_poll_status",
                 "completion_poll_status",
+                "backend === \"webgl2\"",
+                "retirement_mode !== \"automatic-webgl2\"",
                 "completion_confirmed !== true",
             ],
         ),
@@ -503,6 +510,8 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         for forbidden in [
             "self.pending_destructions = 0;\n        (pending, DevicePollStatus::Confirmed)",
             "self.pending_destructions = 0;\n        (pending, DevicePollStatus::Automatic)",
+            "scena.resource_destruction_completion",
+            "self.queue.submit(std::iter::once(command_buffer))",
         ] {
             if source.contains(forbidden) {
                 findings.push(Finding::new(
