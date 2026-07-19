@@ -131,7 +131,7 @@ fn gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts() {
     );
     assert_eq!(
         texture.path().as_str(),
-        "tests/assets/gltf/textures/albedo.png"
+        "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png"
     );
 
     let mut scene = Scene::new();
