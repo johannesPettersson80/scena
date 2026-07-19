@@ -1,6 +1,8 @@
 use crate::Assets;
 use crate::diagnostics::LookupError;
-use crate::picking::{CursorPosition, Hit, HitTarget, InteractionContext, Viewport};
+use crate::picking::{
+    CursorPosition, Hit, HitTarget, InteractionContext, PickingMetrics, Viewport,
+};
 
 use super::{CameraKey, NodeKey, NodeKind, RenderableNode, Scene, Transform};
 
@@ -14,6 +16,15 @@ impl Scene {
         crate::picking::pick_scene(self, camera, cursor, viewport)
     }
 
+    /// Intersects asset-backed mesh triangles in their current rendered pose.
+    ///
+    /// Morph targets are evaluated before skinning, matching render and shadow
+    /// preparation. Node transforms and instance-root transforms are then
+    /// applied in scene-graph order. Hits report world-space distance, position,
+    /// and the transformed geometric winding normal; singular transforms only
+    /// remain hittable where they leave a nondegenerate triangle. Missing or
+    /// invalid deformation inputs return a structured
+    /// [`LookupError::InvalidSkinBinding`] instead of using base vertices.
     pub fn pick_with_assets<F>(
         &self,
         camera: CameraKey,
@@ -22,6 +33,21 @@ impl Scene {
         assets: &Assets<F>,
     ) -> Result<Option<Hit>, LookupError> {
         crate::picking::pick_scene_with_assets(self, assets, camera, cursor, viewport)
+    }
+
+    /// Runs an asset-aware pick while returning deterministic work counters.
+    ///
+    /// Use this inspection path for benchmark and diagnostic evidence. Normal
+    /// interactive picking should use [`Scene::pick_with_assets`] so it does
+    /// not collect profiling counters.
+    pub fn pick_with_assets_profiled<F>(
+        &self,
+        camera: CameraKey,
+        cursor: CursorPosition,
+        viewport: Viewport,
+        assets: &Assets<F>,
+    ) -> Result<(Option<Hit>, PickingMetrics), LookupError> {
+        crate::picking::pick_scene_with_assets_profiled(self, assets, camera, cursor, viewport)
     }
 
     pub fn pick_pointer(

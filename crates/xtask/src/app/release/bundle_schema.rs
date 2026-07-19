@@ -11,7 +11,7 @@ pub(crate) fn check_release_artifact_bundle(artifact_root: &Path, findings: &mut
 
     let mut files = Vec::new();
     if let Err(error) =
-        collect_files_with_extensions(artifact_root, &["json", "ppm", "toml"], &mut files)
+        collect_files_with_extensions(artifact_root, &["json", "ppm", "png", "toml"], &mut files)
     {
         findings.push(Finding::new(
             "RELEASE-READY-ARTIFACTS",
@@ -105,6 +105,7 @@ pub(crate) const REQUIRED_REVIEW_ROLES: &[&str] = &[
 ];
 
 pub(crate) fn check_release_review_artifacts(artifact_root: &Path, findings: &mut Vec<Finding>) {
+    let finding_count_before_review_schema = findings.len();
     // RELEASE-REVIEWS-PRESENT: per docs/specs/release-reviews.md, every release
     // requires one Markdown review report per configured subagent role under
     // reviews/<role>/<commit>.md, plus a sign-off TOML and findings register
@@ -159,6 +160,15 @@ pub(crate) fn check_release_review_artifacts(artifact_root: &Path, findings: &mu
     let signoff_path = reviews_root.join("maintainer-signoff.toml");
     if let Ok(text) = fs::read_to_string(&signoff_path) {
         validate_maintainer_signoff_schema(&text, findings);
+    }
+    if findings.len() == finding_count_before_review_schema
+        && let Ok(text) = fs::read_to_string(&findings_path)
+        && let Ok(value) = serde_json::from_str::<Value>(&text)
+        && let Some(expected_commit) = value.get("reviewed_commit").and_then(Value::as_str)
+        && let Err(message) =
+            super::stage_reviews::validate_review_bundle_integrity(artifact_root, expected_commit)
+    {
+        findings.push(Finding::new("RELEASE-REVIEWS-INTEGRITY", message));
     }
 }
 

@@ -13,6 +13,16 @@ use ::gltf::texture::{MagFilter, MinFilter, Texture, WrappingMode};
 use crate::diagnostics::AssetError;
 use crate::material::TextureColorSpace;
 
+use super::super::provenance::sha256_hex;
+#[cfg(all(
+    feature = "ktx2",
+    not(all(
+        target_arch = "wasm32",
+        target_vendor = "unknown",
+        target_os = "unknown"
+    ))
+))]
+use super::super::texture::texture_ktx2::validate_ktx2_material_color_space;
 use super::super::{
     AssetPath, AssetStorage, TextureCacheKey, TextureDesc, TextureFilter, TextureHandle,
     TextureSamplerDesc, TextureSourceFormat, TextureWrap, validate_texture_source_format,
@@ -66,7 +76,7 @@ pub(in crate::assets::gltf) fn parse_textures(
                     false,
                     basisu_image
                         .as_ref()
-                        .and_then(|image| image_path(path, image)),
+                        .and_then(|image| image_path(path, image, buffers)),
                 )
             } else if let Some(image) = basisu_image {
                 (image, true, None)
@@ -76,8 +86,8 @@ pub(in crate::assets::gltf) fn parse_textures(
             let (image_path, source_bytes) = match image.source() {
                 ImageSource::Uri { uri, .. } => {
                     if uri.starts_with("data:") {
-                        let (_, bytes) = decode_data_uri(uri)?;
-                        (AssetPath::from(uri), Some(bytes))
+                        let (path, bytes) = canonical_data_uri_image(uri)?;
+                        (path, Some(bytes))
                     } else {
                         let resolved = resolve_relative_path(path, uri);
                         let bytes = external_images.get(&resolved).cloned();
@@ -87,10 +97,7 @@ pub(in crate::assets::gltf) fn parse_textures(
                 ImageSource::View { view, mime_type } => {
                     let bytes = buffers.view_bytes(&view)?.to_vec();
                     let extension = extension_for_mime(Some(mime_type)).unwrap_or("png");
-                    (
-                        AssetPath::from(format!("memory:image-{}.{extension}", image.index())),
-                        Some(bytes),
-                    )
+                    (embedded_image_path(&bytes, extension), Some(bytes))
                 }
             };
             Some(GltfTexture {
@@ -123,23 +130,33 @@ impl GltfTexture {
     }
 }
 
-fn image_path(path: &AssetPath, image: &Image<'_>) -> Option<AssetPath> {
+fn image_path(
+    path: &AssetPath,
+    image: &Image<'_>,
+    buffers: &ResolvedGltfBuffers,
+) -> Option<AssetPath> {
     match image.source() {
         ImageSource::Uri { uri, .. } => {
             if uri.starts_with("data:") {
-                Some(AssetPath::from(uri))
+                canonical_data_uri_image(uri).map(|(path, _bytes)| path)
             } else {
                 Some(resolve_relative_path(path, uri))
             }
         }
-        ImageSource::View { mime_type, .. } => {
+        ImageSource::View { view, mime_type } => {
             let extension = extension_for_mime(Some(mime_type)).unwrap_or("png");
-            Some(AssetPath::from(format!(
-                "memory:image-{}.{extension}",
-                image.index()
-            )))
+            buffers
+                .view_bytes(&view)
+                .map(|bytes| embedded_image_path(bytes, extension))
         }
     }
+}
+
+fn embedded_image_path(bytes: &[u8], extension: &str) -> AssetPath {
+    AssetPath::from(format!(
+        "memory:image-sha256-{}.{extension}",
+        sha256_hex(bytes)
+    ))
 }
 
 fn texture_source_image<'a>(document: &'a Document, texture: &Texture<'a>) -> Option<Image<'a>> {
@@ -177,6 +194,24 @@ pub(super) fn texture_slot(
     } else {
         validate_texture_source_format(&texture.path)?
     };
+    #[cfg(all(
+        feature = "ktx2",
+        not(all(
+            target_arch = "wasm32",
+            target_vendor = "unknown",
+            target_os = "unknown"
+        ))
+    ))]
+    if source_format == TextureSourceFormat::Ktx2Basisu
+        && let Some(source_bytes) = texture.source_bytes.as_deref()
+    {
+        validate_ktx2_material_color_space(
+            &texture.path,
+            source_bytes,
+            color_space,
+            material_slot,
+        )?;
+    }
     insert_texture(
         storage,
         texture.path.clone(),
@@ -211,7 +246,7 @@ fn insert_texture(
                     reason: "texture cache lookup pointed at a missing texture descriptor"
                         .to_string(),
                 })?;
-            texture.decode_missing_pixels_from_bytes(source_bytes)?;
+            std::sync::Arc::make_mut(texture).decode_missing_pixels_from_bytes(source_bytes)?;
         }
         return Ok(*handle);
     }
@@ -222,7 +257,7 @@ fn insert_texture(
         cache_key.source_format,
         source_bytes,
     )?;
-    let handle = storage.textures.insert(texture);
+    let handle = storage.textures.insert(std::sync::Arc::new(texture));
     storage.texture_lookup.insert(cache_key, handle);
     Ok(handle)
 }
@@ -293,6 +328,13 @@ fn decode_data_uri(uri: &str) -> Option<(Option<String>, Vec<u8>)> {
     Some((mime, bytes))
 }
 
+fn canonical_data_uri_image(uri: &str) -> Option<(AssetPath, Vec<u8>)> {
+    let (mime, bytes) = decode_data_uri(uri)?;
+    let extension = extension_for_mime(mime.as_deref())?;
+    let path = embedded_image_path(&bytes, extension);
+    Some((path, bytes))
+}
+
 fn extension_for_mime(mime: Option<&str>) -> Option<&'static str> {
     match mime? {
         "image/png" => Some("png"),
@@ -300,5 +342,27 @@ fn extension_for_mime(mime: Option<&str>) -> Option<&'static str> {
         "image/webp" => Some("webp"),
         "image/ktx2" => Some("ktx2"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pf10_data_uri_cache_identity_is_content_addressed_and_bounded() {
+        use base64::Engine;
+        let bytes = vec![0x5a; 512 * 1024];
+        let uri = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        );
+        let (path, decoded) = canonical_data_uri_image(&uri).expect("valid data URI");
+
+        assert_eq!(decoded, bytes);
+        assert!(path.as_str().starts_with("memory:image-sha256-"));
+        assert!(path.as_str().ends_with(".png"));
+        assert!(path.as_str().len() < 128, "digest key must stay bounded");
+        assert!(!path.as_str().contains("base64"));
     }
 }

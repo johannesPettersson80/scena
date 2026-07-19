@@ -48,6 +48,73 @@ pub(crate) fn check_schema_doc_references_listed_in_catalog(
     }
 }
 
+pub(crate) fn check_public_cli_schemas_listed_in_catalog(root: &Path, findings: &mut Vec<Finding>) {
+    let catalog_rel = "tests/assets/stable-contracts/schema_catalog.v1.json";
+    let Ok(catalog_text) = fs::read_to_string(root.join(catalog_rel)) else {
+        findings.push(Finding::new(
+            "PUBLIC-SCHEMA-DISCOVERY",
+            format!("{catalog_rel} must be readable for public contract discovery"),
+        ));
+        return;
+    };
+    let Ok(catalog_json) = serde_json::from_str::<Value>(&catalog_text) else {
+        findings.push(Finding::new(
+            "PUBLIC-SCHEMA-DISCOVERY",
+            format!("{catalog_rel} must be valid JSON for public contract discovery"),
+        ));
+        return;
+    };
+    let catalog_schemas = catalog_json
+        .get("entries")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.get("schema").and_then(Value::as_str))
+        .collect::<BTreeSet<_>>();
+
+    let mut sources = vec![PathBuf::from("src/bin/scena.rs")];
+    collect_rust_sources(
+        &root.join("src/bin/scena"),
+        Path::new("src/bin/scena"),
+        &mut sources,
+    );
+    for rel in sources {
+        let Ok(text) = fs::read_to_string(root.join(&rel)) else {
+            findings.push(Finding::new(
+                "PUBLIC-SCHEMA-DISCOVERY",
+                format!("could not read public CLI source {}", rel.display()),
+            ));
+            continue;
+        };
+        for schema in schema_references_in_text(&text) {
+            if !catalog_schemas.contains(schema.as_str()) {
+                findings.push(Finding::new(
+                    "PUBLIC-SCHEMA-DISCOVERY",
+                    format!(
+                        "{} exposes public schema {schema}, but {catalog_rel} does not list it",
+                        rel.display()
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn collect_rust_sources(dir: &Path, rel_dir: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let rel = rel_dir.join(entry.file_name());
+        if path.is_dir() {
+            collect_rust_sources(&path, &rel, files);
+        } else if path.extension().and_then(OsStr::to_str) == Some("rs") {
+            files.push(rel);
+        }
+    }
+}
+
 pub(crate) fn check_schema_catalog_covers_stable_fixtures(
     root: &Path,
     findings: &mut Vec<Finding>,

@@ -1,19 +1,39 @@
 mod browser_probe;
 mod ci_release_lanes;
+mod cpu_webgl2_parity;
+mod feature_specific_oracles;
 mod fixture_metadata;
+mod performance_truth;
 mod publish_fail_closed;
+mod q05_effect_footprints;
+mod q06_required_gpu_lanes;
+mod round_e_materials;
+mod waterbottle_cpu;
+mod workflow_dependencies;
 
 pub(crate) use browser_probe::check_m6_browser_renderer_probe;
 pub(crate) use ci_release_lanes::{
     check_m9_ci_release_lanes, check_m10_claim_audit_contract, require_contains_in_xtask_app_tree,
 };
+pub(crate) use cpu_webgl2_parity::check_q04_cpu_webgl2_parity_contracts;
+pub(crate) use feature_specific_oracles::check_feature_specific_visual_oracles;
 pub(crate) use fixture_metadata::{
     check_default_environment_derivative_payload, check_default_environment_manifest,
     check_m1_browser_rendered_output, check_m2_browser_rendered_output,
     check_m2_visual_fixture_metadata, check_ndc_smoke_fixture_classification,
     check_visual_fixture_metadata, fixture_block,
 };
+pub(crate) use performance_truth::{
+    check_pf00_performance_truth_contracts, check_pf03_pf05_hot_path_contracts,
+    check_pf06_spatial_acceleration_contracts, check_pf07_pf08_cpu_prepare_contracts,
+    check_pf09_parallel_work_contracts, check_pf10_hot_path_contracts,
+};
 pub(crate) use publish_fail_closed::{
     check_release_publish_dry_run_helper, check_release_readiness_ci_fail_closed,
     jobs_with_continue_on_error_release_readiness,
 };
+pub(crate) use q05_effect_footprints::check_q05_effect_footprint_contracts;
+pub(crate) use q06_required_gpu_lanes::check_q06_required_gpu_lane_contracts;
+pub(crate) use round_e_materials::check_q02_round_e_material_proof;
+pub(crate) use waterbottle_cpu::check_q01_waterbottle_cpu_proof;
+pub(crate) use workflow_dependencies::check_workflow_action_pins;

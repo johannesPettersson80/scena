@@ -1,21 +1,34 @@
 use super::inputs::{
     transform_from_component_array, transform_from_components, validate_transform,
 };
+use super::instances::HostInstanceBinding;
 use super::{SceneHostCore, SceneHostError};
-use crate::{AssetFetcher, Transform};
+use crate::{AssetFetcher, NodeKey, Transform};
+
+#[derive(Debug, Clone)]
+enum ResolvedTransformTarget {
+    Node(NodeKey),
+    InstanceRoot {
+        handle: u64,
+        binding: HostInstanceBinding,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedTransformUpdate {
+    handle: u64,
+    target: ResolvedTransformTarget,
+    transform: Transform,
+}
 
 impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn set_transform(&mut self, node: u64, transform: Transform) -> Result<(), SceneHostError> {
         let handle = node;
         let transform = validate_transform(transform)?;
         if self.is_instance_root_handle(handle) {
-            self.instance_handles.get(
-                handle,
-                super::SceneHostErrorCode::NodeHandleNotFound,
-                super::SceneHostErrorCode::StaleNodeHandle,
-            )?;
+            let binding = self.preflight_instance_root_transform(handle)?;
             self.cancel_transform_transition(handle);
-            return self.set_instance_root_transform(handle, transform);
+            return self.set_preflighted_instance_root_transform(handle, &binding, transform);
         }
         let node = self.resolve_node(handle)?;
         self.cancel_transform_transition(handle);
@@ -38,26 +51,41 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         &mut self,
         transforms: &[(u64, Transform)],
     ) -> Result<(), SceneHostError> {
-        let mut raw = Vec::with_capacity(transforms.len());
-        let mut instance_roots = Vec::new();
-        let mut handles = Vec::with_capacity(transforms.len());
+        let mut resolved = Vec::with_capacity(transforms.len());
         for (node, transform) in transforms {
             let transform = validate_transform(*transform)?;
-            handles.push(*node);
-            if self.is_instance_root_handle(*node) {
-                instance_roots.push((*node, transform));
+            let target = if self.is_instance_root_handle(*node) {
+                ResolvedTransformTarget::InstanceRoot {
+                    handle: *node,
+                    binding: self.preflight_instance_root_transform(*node)?,
+                }
             } else {
-                raw.push((self.resolve_node(*node)?, transform));
-            }
+                ResolvedTransformTarget::Node(self.resolve_node(*node)?)
+            };
+            resolved.push(ResolvedTransformUpdate {
+                handle: *node,
+                target,
+                transform,
+            });
         }
-        for handle in handles {
-            self.cancel_transform_transition(handle);
+
+        for update in &resolved {
+            self.cancel_transform_transition(update.handle);
         }
+        let raw = resolved
+            .iter()
+            .filter_map(|update| match &update.target {
+                ResolvedTransformTarget::Node(node) => Some((*node, update.transform)),
+                ResolvedTransformTarget::InstanceRoot { .. } => None,
+            })
+            .collect::<Vec<_>>();
         if !raw.is_empty() {
             self.scene.set_transforms(&raw)?;
         }
-        for (node, transform) in instance_roots {
-            self.set_instance_root_transform(node, transform)?;
+        for update in resolved {
+            if let ResolvedTransformTarget::InstanceRoot { handle, binding } = update.target {
+                self.set_preflighted_instance_root_transform(handle, &binding, update.transform)?;
+            }
         }
         Ok(())
     }
@@ -66,27 +94,11 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         &mut self,
         transforms: &[(u64, [f32; 10])],
     ) -> Result<(), SceneHostError> {
-        let mut raw = Vec::with_capacity(transforms.len());
-        let mut instance_roots = Vec::new();
-        let mut handles = Vec::with_capacity(transforms.len());
+        let mut resolved = Vec::with_capacity(transforms.len());
         for (node, components) in transforms {
             let transform = transform_from_component_array(*components)?;
-            handles.push(*node);
-            if self.is_instance_root_handle(*node) {
-                instance_roots.push((*node, transform));
-            } else {
-                raw.push((self.resolve_node(*node)?, transform));
-            }
+            resolved.push((*node, transform));
         }
-        for handle in handles {
-            self.cancel_transform_transition(handle);
-        }
-        if !raw.is_empty() {
-            self.scene.set_transforms(&raw)?;
-        }
-        for (node, transform) in instance_roots {
-            self.set_instance_root_transform(node, transform)?;
-        }
-        Ok(())
+        self.set_transforms(&resolved)
     }
 }

@@ -249,17 +249,23 @@ pub(super) fn authored_geometry(
                 GeometryDesc::line(vec3(start), vec3(end)),
             ))
         }
-        "polyline" => Ok((
-            "polyline".to_owned(),
-            GeometryDesc::polyline(
-                &primitive
-                    .points
-                    .iter()
-                    .copied()
-                    .map(vec3)
-                    .collect::<Vec<_>>(),
-            ),
-        )),
+        "polyline" => {
+            let points = primitive
+                .points
+                .iter()
+                .copied()
+                .map(vec3)
+                .collect::<Vec<_>>();
+            let geometry = GeometryDesc::try_polyline(&points).map_err(|error| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    format!("polyline requires at least two points: {error:?}"),
+                    "emit points:[[x0,y0,z0],[x1,y1,z1],...]",
+                ))
+            })?;
+            Ok(("polyline".to_owned(), geometry))
+        }
         "arrow" => {
             let start = primitive.start.ok_or_else(|| {
                 Box::new(error_diagnostic(
@@ -419,4 +425,31 @@ fn authored_mesh(
             "fix positions, normals, colors, uvs, and indices",
         ))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::json;
+
+    use super::authored_geometry;
+    use crate::scene::recipe::SceneRecipeGeometryV1;
+
+    #[test]
+    fn polyline_build_rejects_zero_or_one_point_without_unwinding() {
+        for points in [json!([]), json!([[0.0, 0.0, 0.0]])] {
+            let recipe: SceneRecipeGeometryV1 = serde_json::from_value(json!({
+                "id": "rail",
+                "primitive": {"kind": "polyline", "points": points}
+            }))
+            .expect("polyline recipe fixture parses");
+            let result = std::panic::catch_unwind(|| authored_geometry(&recipe, &BTreeMap::new()));
+            let diagnostic = result
+                .expect("recipe polyline construction must not unwind")
+                .expect_err("short recipe polyline must be rejected");
+            assert_eq!(diagnostic.code, "invalid_primitive");
+            assert!(diagnostic.message.contains("at least two points"));
+        }
+    }
 }

@@ -1,4 +1,5 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::material::Color;
 use crate::scene::{NodeKey, Scene, Vec3};
@@ -70,6 +71,7 @@ pub(super) fn filter_retained_primitives_for_scene(
     retained: &[prepare::PreparedPrimitive],
 ) -> Option<Vec<prepare::PreparedPrimitive>> {
     let mut visible = Vec::with_capacity(retained.len());
+    let mut draw_transforms = BTreeMap::new();
     for primitive in retained {
         let mut primitive = primitive.clone();
         if let Some(node) = primitive.source_node() {
@@ -77,11 +79,15 @@ pub(super) fn filter_retained_primitives_for_scene(
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
-            let transform = scene.world_transform(node)?;
-            primitive.set_world_from_model(
-                world_from_model_matrix(transform, scene.origin_shift()),
-                normal_from_model_matrix(transform),
-            );
+            if let std::collections::btree_map::Entry::Vacant(entry) = draw_transforms.entry(node) {
+                let transform = scene.world_transform(node)?;
+                entry.insert(prepare::PreparedDrawTransform::shared(
+                    world_from_model_matrix(transform, scene.origin_shift()),
+                    normal_from_model_matrix(transform),
+                ));
+            }
+            let draw_transform = draw_transforms.get(&node)?;
+            primitive.set_draw_transform(Arc::clone(draw_transform));
             primitive.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }
         visible.push(primitive);

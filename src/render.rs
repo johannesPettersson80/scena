@@ -1,5 +1,7 @@
 //! wgpu device/surface ownership, prepare lifecycle, passes, resource tables, and stats.
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::VecDeque;
 use std::{cell::Cell, marker::PhantomData};
 
 #[cfg(feature = "inspection")]
@@ -7,6 +9,7 @@ pub mod animation_introspection;
 #[cfg(feature = "inspection")]
 pub mod appearance;
 mod area_ltc;
+mod backend_selection;
 mod background;
 mod build;
 mod camera;
@@ -24,11 +27,13 @@ mod culling;
 mod depth_prepass_tests;
 mod environment_cache;
 mod exposure;
+mod frame;
 mod gpu;
 #[cfg(feature = "inspection")]
 pub mod introspection;
 mod offscreen;
 mod output;
+mod parallel;
 mod pbr_brdf;
 mod physical_transmission;
 mod prepare;
@@ -40,6 +45,8 @@ mod reporting;
 #[cfg(feature = "inspection")]
 mod screen_bounds;
 mod screen_space_reflections;
+#[cfg_attr(not(feature = "scene-host"), allow(dead_code))]
+pub(crate) mod semantic_aov;
 mod settings;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
 mod state;
@@ -49,20 +56,23 @@ mod target;
 pub mod visibility_diagnosis;
 #[cfg(feature = "inspection")]
 pub mod visual_repair;
+mod work_metrics;
 
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
-    Capabilities, ChangeKind, DevicePoll, Diagnostic, GpuAdapterReport, NotPreparedReason,
-    OutputColorSpace, RenderError, RenderOutcome, RendererStats,
+    Capabilities, ChangeKind, DevicePoll, DevicePollStatus, Diagnostic, GpuAdapterReport,
+    NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome, RendererStats,
 };
 use crate::material::Color;
 use crate::scene::{CameraKey, ClippingPlane, Scene, SectionBox};
 
+pub use self::backend_selection::HeadlessBackendSelectionReport;
 pub use self::background::Background;
 pub use self::exposure::{
     AutoExposureConfig, AutoExposureResult, estimate_auto_exposure_from_linear_colors,
     estimate_auto_exposure_from_srgb8,
 };
+use self::frame::depth_of_field_post_config;
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
@@ -71,11 +81,14 @@ pub use self::output::{
     ReconstructionFilter, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 #[doc(hidden)]
-pub use self::prepare::precompute_environment_sidecar;
+pub use self::prepare::{
+    EnvironmentBakeMetrics, precompute_environment_sidecar, precompute_environment_sidecar_profiled,
+};
 pub use self::screen_space_reflections::ScreenSpaceReflectionConfig;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 use self::state::{PreparedSceneState, RenderedFrameState};
 use self::target::{RasterTarget, backend_for_attached_surface, validate_target_size};
+pub use self::work_metrics::RenderWorkMetrics;
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -94,12 +107,18 @@ pub struct Renderer {
     depth_frame: Option<Vec<f32>>,
     cpu_supersample_linear_frame: Vec<Color>,
     cpu_supersample_depth_frame: Vec<f32>,
+    cpu_material_reflection_scratch: Vec<screen_space_reflections::MaterialReflectionPixel>,
+    cpu_effect_rgba8_scratch: Vec<u8>,
+    cpu_row_band_bins: cpu_render::CpuRowBandBins,
+    gpu_supersample_frame: Vec<u8>,
     stats: RendererStats,
     diagnostics: Vec<Diagnostic>,
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
     anti_aliasing: AntiAliasing,
+    cpu_occlusion_culling: bool,
+    semantic_aov_capture_enabled: bool,
     supersample_factor: u32,
     reconstruction_filter: ReconstructionFilter,
     order_independent_transparency: Option<OrderIndependentTransparencyConfig>,
@@ -114,6 +133,7 @@ pub struct Renderer {
     render_generation: u64,
     last_rendered_generation: Option<u64>,
     last_rendered_frame: Option<RenderedFrameState>,
+    last_readback_frame: Option<RenderedFrameState>,
     surface_lost: Option<bool>,
     context_lost: Option<bool>,
     device_lost: Option<bool>,
@@ -124,7 +144,9 @@ pub struct Renderer {
     last_auto_exposure: Option<AutoExposureResult>,
     environment_revision: u64,
     target_revision: u64,
+    output_resources_revision: u64,
     prepare_telemetry: PrepareTelemetry,
+    last_render_work_metrics: RenderWorkMetrics,
     #[cfg(test)]
     depth_prepass_enabled_for_test: bool,
     #[cfg(not(target_arch = "wasm32"))]
@@ -141,355 +163,354 @@ struct PrepareTelemetry {
     draw_uniform_only_updates: u64,
 }
 
-impl Renderer {
-    pub fn render(
-        &mut self,
-        scene: &Scene,
-        camera: CameraKey,
-    ) -> Result<RenderOutcome, RenderError> {
-        self.loss_error()?;
-        self.prepared_state(scene)?;
-        if scene.camera(camera).is_none() {
-            return Err(RenderError::CameraNotFound(camera));
-        }
+/// Controls whether a GPU render only presents or also synchronously copies
+/// the rendered pixels into [`Renderer::frame_rgba8`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RenderReadbackMode {
+    /// Headless GPU rendering captures pixels; attached native/browser
+    /// surfaces present without readback unless managed auto exposure needs it.
+    #[default]
+    Automatic,
+    /// Submit/present without a texture-to-buffer copy, map, or blocking wait.
+    PresentOnly,
+    /// Copy and map the rendered pixels before returning.
+    Synchronous,
+}
 
-        let dirty_state = scene.dirty_state();
-        if self.render_mode == RenderMode::OnChange
-            && self.last_rendered_generation == Some(self.render_generation)
-            && self
-                .last_rendered_frame
-                .is_some_and(|state| state.matches(dirty_state, camera))
-        {
-            self.stats.skipped_frames = self.stats.skipped_frames.saturating_add(1);
-            return Ok(RenderOutcome {
-                width: self.target.width,
-                height: self.target.height,
-                draw_calls: 0,
-                primitives: 0,
-                skipped: true,
-            });
-        }
+/// Deterministic CPU work and byte counters collected by a profiled prepare.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PrepareWorkMetrics {
+    pub prepared_triangle_count: u64,
+    pub prepared_model_vertex_buffer_count: u64,
+    pub prepared_model_vertex_bytes: u64,
+    pub prepared_unique_draw_transforms: u64,
+    pub prepared_draw_transform_bytes: u64,
+    pub prepared_triangle_reference_bytes: u64,
+    pub prepared_list_copy_bytes: u64,
+    pub asset_storage_lock_acquisitions: u64,
+    pub generated_tangent_calls: u64,
+    pub generated_tangent_triangles: u64,
+    pub generated_tangent_vertices: u64,
+    pub generated_tangent_cache_hits: u64,
+    pub generated_tangent_cache_misses: u64,
+    pub tangent_input_transform_bytes: u64,
+    pub tangent_output_bytes: u64,
+    pub deformed_vertex_bytes_materialized: u64,
+    pub shadow_rays: u64,
+    pub shadow_visibility_cache_hits: u64,
+    pub shadow_visibility_cache_misses: u64,
+    pub bvh_node_bounds_tests: u64,
+    pub ray_triangle_intersection_tests: u64,
+    pub area_light_samples: u64,
+    pub cpu_bake_subdivided_triangles: u64,
+    pub cpu_bake_shaded_vertices: u64,
+    pub texture_samples: u64,
+    pub cpu_bake_corner_bytes_copied: u64,
+    pub gpu_buffer_creations: u64,
+    pub gpu_texture_creations: u64,
+    pub gpu_pipeline_creations: u64,
+    pub gpu_bind_group_creations: u64,
+    pub gpu_shader_module_creations: u64,
+    pub draw_uniform_unique_values: u64,
+    pub draw_uniform_lookup_probes: u64,
+    pub draw_uniform_bytes_copied: u64,
+}
 
-        let gpu_target = if self.gpu.is_some() {
-            Some(self.gpu_render_target()?)
-        } else {
-            None
-        };
-        let camera_projection =
-            camera::CameraProjection::from_scene(scene, camera, gpu_target.unwrap_or(self.target))?;
-        let primitive_count = prepared_triangle_alias_count(self.prepared_state(scene)?);
-        let mut auto_exposure_attempted = false;
-        let mut gpu_draw_submissions = 0;
-        loop {
-            if self.gpu.is_some() {
-                let (clipping_planes, section_box) = {
-                    let prepared = self.prepared_state(scene)?;
-                    (prepared.clipping_planes.clone(), prepared.section_box)
-                };
-                let gpu_result = self.draw_gpu(
-                    gpu_target.expect("GPU render target exists when GPU is active"),
-                    &camera_projection,
-                    &clipping_planes,
-                    section_box,
-                )?;
-                gpu_draw_submissions = gpu_result.draw_submissions;
-                self.stats.order_independent_transparency_passes = 0;
-                self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion;
-                self.stats.screen_space_reflection_passes =
-                    gpu_result.post_counts.screen_space_reflections;
-                self.stats.bloom_passes = gpu_result.post_counts.bloom;
-                self.stats.depth_of_field_passes = gpu_result.post_counts.depth_of_field;
-                self.stats.fxaa_passes = gpu_result.post_counts.fxaa;
-            } else {
-                let cpu_projection =
-                    camera::CameraProjection::from_scene(scene, camera, self.target)?;
-                self.draw_cpu(scene, camera, &cpu_projection)?;
-            }
-            if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
-                break;
-            }
-            auto_exposure_attempted = true;
-        }
-        self.poll_device();
-
-        self.stats.frames_rendered = self.stats.frames_rendered.saturating_add(1);
-        self.stats.draw_calls = primitive_count;
-        self.stats.triangles = primitive_count;
-        self.stats.primitives = primitive_count;
-        self.stats.instances = self
-            .prepared_state(scene)
-            .map(|prepared| {
-                prepared
-                    .instances
-                    .iter()
-                    .map(|set| set.instances().len() as u64)
-                    .sum()
-            })
-            .unwrap_or(0);
-        self.stats.gpu_draw_submissions = gpu_draw_submissions;
-        self.last_rendered_generation = Some(self.render_generation);
-        self.last_rendered_frame = Some(RenderedFrameState {
-            dirty_state,
-            camera,
-        });
-
-        Ok(RenderOutcome {
-            width: self.target.width,
-            height: self.target.height,
-            draw_calls: primitive_count,
-            primitives: primitive_count,
-            skipped: false,
-        })
+impl PrepareWorkMetrics {
+    pub const fn bytes_cloned_or_copied(self) -> u64 {
+        self.prepared_model_vertex_bytes
+            .saturating_add(self.prepared_list_copy_bytes)
+            .saturating_add(self.tangent_input_transform_bytes)
+            .saturating_add(self.tangent_output_bytes)
+            .saturating_add(self.deformed_vertex_bytes_materialized)
+            .saturating_add(self.cpu_bake_corner_bytes_copied)
+            .saturating_add(self.draw_uniform_bytes_copied)
     }
+}
 
-    pub fn gpu_adapter_report(&self) -> Option<GpuAdapterReport> {
-        self.gpu.as_ref().map(GpuDeviceState::adapter_report)
-    }
+#[derive(Debug, Default)]
+pub(in crate::render) struct PrepareWorkCounter {
+    prepared_triangle_count: Cell<u64>,
+    prepared_model_vertex_buffer_count: Cell<u64>,
+    prepared_model_vertex_bytes: Cell<u64>,
+    prepared_unique_draw_transforms: Cell<u64>,
+    prepared_draw_transform_bytes: Cell<u64>,
+    prepared_triangle_reference_bytes: Cell<u64>,
+    prepared_list_copy_bytes: Cell<u64>,
+    asset_storage_lock_acquisitions: Cell<u64>,
+    generated_tangent_calls: Cell<u64>,
+    generated_tangent_triangles: Cell<u64>,
+    generated_tangent_vertices: Cell<u64>,
+    generated_tangent_cache_hits: Cell<u64>,
+    generated_tangent_cache_misses: Cell<u64>,
+    tangent_input_transform_bytes: Cell<u64>,
+    tangent_output_bytes: Cell<u64>,
+    deformed_vertex_bytes_materialized: Cell<u64>,
+    shadow_rays: Cell<u64>,
+    shadow_visibility_cache_hits: Cell<u64>,
+    shadow_visibility_cache_misses: Cell<u64>,
+    bvh_node_bounds_tests: Cell<u64>,
+    ray_triangle_intersection_tests: Cell<u64>,
+    area_light_samples: Cell<u64>,
+    cpu_bake_subdivided_triangles: Cell<u64>,
+    cpu_bake_shaded_vertices: Cell<u64>,
+    texture_samples: Cell<u64>,
+    cpu_bake_corner_bytes_copied: Cell<u64>,
+    gpu_buffer_creations: Cell<u64>,
+    gpu_texture_creations: Cell<u64>,
+    gpu_pipeline_creations: Cell<u64>,
+    gpu_bind_group_creations: Cell<u64>,
+    gpu_shader_module_creations: Cell<u64>,
+    draw_uniform_unique_values: Cell<u64>,
+    draw_uniform_lookup_probes: Cell<u64>,
+    draw_uniform_bytes_copied: Cell<u64>,
+}
 
-    pub fn render_active(&mut self, scene: &Scene) -> Result<RenderOutcome, RenderError> {
-        self.prepared_state(scene)?;
-        let camera = scene.active_camera().ok_or(RenderError::NoActiveCamera)?;
-        self.render(scene, camera)
-    }
-
-    pub fn frame_rgba8(&self) -> &[u8] {
-        &self.frame
-    }
-
-    pub fn poll_device(&mut self) -> DevicePoll {
-        let before = self.stats.pending_destructions;
-        let (destroyed_resources, gpu_polled) = self
-            .gpu
-            .as_mut()
-            .map(|gpu| gpu.poll_device())
-            .unwrap_or((before, false));
-        let after = self
-            .gpu
-            .as_ref()
-            .map(|gpu| gpu.pending_destructions())
-            .unwrap_or(0);
-        self.stats.pending_destructions = after;
-        DevicePoll {
-            pending_destructions_before: before,
-            pending_destructions_after: after,
-            destroyed_resources,
-            gpu_polled,
-        }
-    }
-
-    pub fn capabilities(&self) -> &Capabilities {
-        &self.capabilities
-    }
-
-    pub(crate) fn rendered_frame_state(&self) -> Option<RenderedFrameState> {
-        self.last_rendered_frame
-    }
-
-    pub(crate) fn clear_rendered_frame(&mut self) {
-        self.last_rendered_generation = None;
-        self.last_rendered_frame = None;
-    }
-
-    pub fn has_gpu_device(&self) -> bool {
-        self.gpu.is_some()
-    }
-
-    fn draw_gpu(
-        &mut self,
-        target: RasterTarget,
-        camera_projection: &camera::CameraProjection,
-        clipping_planes: &[ClippingPlane],
-        section_box: Option<SectionBox>,
-    ) -> Result<gpu::GpuRenderResult, RenderError> {
-        let post_settings = gpu::GpuPostSettings::new(
-            self.anti_aliasing,
-            self.bloom,
-            self.screen_space_ambient_occlusion,
-            self.screen_space_reflections,
-            depth_of_field_post_config(self.depth_of_field, camera_projection),
+impl PrepareWorkCounter {
+    pub(in crate::render) fn record_prepared_geometry_storage(
+        &self,
+        metrics: prepare::PreparedGeometryStorageMetrics,
+    ) {
+        self.prepared_triangle_count.set(
+            self.prepared_triangle_count
+                .get()
+                .saturating_add(metrics.triangle_count),
         );
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let gpu = self
-                .gpu
-                .as_mut()
-                .expect("draw_gpu is called only when a GPU device exists");
-            let scale = if target == self.target {
-                1
-            } else {
-                self.supersample_factor
-            };
-            let mut supersample_frame = Vec::new();
-            let frame = if scale > 1 {
-                &mut supersample_frame
-            } else {
-                &mut self.frame
-            };
-            let result = gpu.render_to_frame(
-                target,
-                self.output.exposure_ev(),
-                self.output.color_management_uniform(),
-                self.background_color,
-                camera_projection,
-                clipping_planes,
-                section_box,
-                frame,
-                post_settings,
-            )?;
-            if scale > 1 {
-                cpu_resolve::downsample_rgba8_reconstruction_filter(
-                    target,
-                    scale,
-                    supersample_frame.as_slice(),
-                    self.target,
-                    &mut self.frame,
-                    self.reconstruction_filter,
-                );
-            }
-            if result.submitted {
-                self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
-            }
-            // self.stats.gpu_culling_dispatches stays at 0 — the empty culling
-            // kernel was deleted in commit a311fcd. The public counter is kept
-            // for API stability and will be repurposed when a real culling
-            // kernel lands in a future v1.x.
-            Ok(result)
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = target;
-            let gpu = self
-                .gpu
-                .as_mut()
-                .expect("draw_gpu is called only when a GPU device exists");
-            let result = gpu.render_to_surface(
-                self.target,
-                self.output.exposure_ev(),
-                self.output.color_management_uniform(),
-                self.background_color,
-                camera_projection,
-                clipping_planes,
-                section_box,
-                post_settings,
-            )?;
-            if result.submitted {
-                self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
-            }
-            Ok(result)
-        }
+        self.prepared_model_vertex_buffer_count.set(
+            self.prepared_model_vertex_buffer_count
+                .get()
+                .saturating_add(metrics.model_vertex_buffer_count),
+        );
+        self.prepared_model_vertex_bytes.set(
+            self.prepared_model_vertex_bytes
+                .get()
+                .saturating_add(metrics.model_vertex_bytes),
+        );
+        self.prepared_unique_draw_transforms.set(
+            self.prepared_unique_draw_transforms
+                .get()
+                .saturating_add(metrics.unique_draw_transforms),
+        );
+        self.prepared_draw_transform_bytes.set(
+            self.prepared_draw_transform_bytes
+                .get()
+                .saturating_add(metrics.draw_transform_bytes),
+        );
+        self.prepared_triangle_reference_bytes.set(
+            self.prepared_triangle_reference_bytes
+                .get()
+                .saturating_add(metrics.triangle_reference_bytes),
+        );
     }
 
-    fn gpu_render_target(&self) -> Result<RasterTarget, RenderError> {
-        let scale = if self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
-            self.supersample_factor
+    pub(in crate::render) fn record_prepared_list_copy_bytes(&self, bytes: u64) {
+        self.prepared_list_copy_bytes
+            .set(self.prepared_list_copy_bytes.get().saturating_add(bytes));
+    }
+
+    pub(in crate::render) fn record_asset_storage_locks(&self, acquisitions: u64) {
+        self.asset_storage_lock_acquisitions.set(
+            self.asset_storage_lock_acquisitions
+                .get()
+                .saturating_add(acquisitions),
+        );
+    }
+
+    pub(in crate::render) fn record_generated_tangents(
+        &self,
+        triangles: usize,
+        vertices: usize,
+        input_transform_bytes: u64,
+        output_bytes: u64,
+    ) {
+        self.generated_tangent_calls
+            .set(self.generated_tangent_calls.get().saturating_add(1));
+        self.generated_tangent_triangles.set(
+            self.generated_tangent_triangles
+                .get()
+                .saturating_add(triangles as u64),
+        );
+        self.generated_tangent_vertices.set(
+            self.generated_tangent_vertices
+                .get()
+                .saturating_add(vertices as u64),
+        );
+        self.tangent_input_transform_bytes.set(
+            self.tangent_input_transform_bytes
+                .get()
+                .saturating_add(input_transform_bytes),
+        );
+        self.tangent_output_bytes
+            .set(self.tangent_output_bytes.get().saturating_add(output_bytes));
+    }
+
+    pub(in crate::render) fn record_generated_tangent_cache(&self, hit: bool) {
+        let counter = if hit {
+            &self.generated_tangent_cache_hits
         } else {
-            1
+            &self.generated_tangent_cache_misses
         };
-        self::target::validate_supersample_target(self.target, scale)
+        counter.set(counter.get().saturating_add(1));
     }
 
-    fn prepared_state(&self, scene: &Scene) -> Result<&PreparedSceneState, RenderError> {
-        let prepared = self.prepared.as_ref().ok_or(RenderError::NotPrepared {
-            reason: NotPreparedReason::NeverPrepared,
-        })?;
-
-        if !prepared.scene.ptr_eq(&scene.identity()) {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::DifferentScene,
-            });
-        }
-
-        let current_revision = scene.structure_revision();
-        if prepared.structure_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.structure_revision,
-                    current_revision,
-                    change: ChangeKind::SceneStructure,
-                },
-            });
-        }
-
-        let current_revision = scene.transform_revision();
-        if prepared.transform_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.transform_revision,
-                    current_revision,
-                    change: ChangeKind::Transform,
-                },
-            });
-        }
-
-        let current_revision = scene.appearance_revision();
-        if prepared.appearance_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.appearance_revision,
-                    current_revision,
-                    change: ChangeKind::Appearance,
-                },
-            });
-        }
-
-        let current_revision = scene.visibility_revision();
-        if prepared.visibility_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.visibility_revision,
-                    current_revision,
-                    change: ChangeKind::Visibility,
-                },
-            });
-        }
-
-        if prepared.environment_revision != self.environment_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::EnvironmentChanged {
-                    prepared_revision: prepared.environment_revision,
-                    current_revision: self.environment_revision,
-                    change: ChangeKind::Environment,
-                },
-            });
-        }
-
-        if prepared.target_revision != self.target_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::TargetChanged {
-                    prepared_revision: prepared.target_revision,
-                    current_revision: self.target_revision,
-                    change: ChangeKind::RenderTarget,
-                },
-            });
-        }
-
-        Ok(prepared)
+    pub(in crate::render) fn record_tangent_output_bytes(&self, output_bytes: u64) {
+        self.tangent_output_bytes
+            .set(self.tangent_output_bytes.get().saturating_add(output_bytes));
     }
-}
 
-fn depth_of_field_post_config(
-    config: Option<DepthOfFieldConfig>,
-    camera_projection: &camera::CameraProjection,
-) -> Option<output::DepthOfFieldPostConfig> {
-    let config = config?;
-    let focus_depth =
-        camera_projection.depth_buffer_for_camera_distance(config.focus_distance())?;
-    Some(output::DepthOfFieldPostConfig::new(
-        focus_depth,
-        config.aperture_f_stop(),
-        config.radius_px(),
-    ))
-}
+    pub(in crate::render) fn record_deformed_vertex_bytes(&self, bytes: u64) {
+        self.deformed_vertex_bytes_materialized.set(
+            self.deformed_vertex_bytes_materialized
+                .get()
+                .saturating_add(bytes),
+        );
+    }
 
-fn prepared_triangle_alias_count(prepared: &PreparedSceneState) -> u64 {
-    let primitive_triangles = prepared.primitives.len() as u64;
-    let instance_triangles = prepared
-        .instances
-        .iter()
-        .map(|set| (set.primitives().len() as u64).saturating_mul(set.instances().len() as u64))
-        .sum::<u64>();
-    primitive_triangles.saturating_add(instance_triangles)
+    pub(in crate::render) fn record_shadow_ray(&self) {
+        self.shadow_rays
+            .set(self.shadow_rays.get().saturating_add(1));
+    }
+
+    pub(in crate::render) fn record_bvh_node_bounds_tests(&self, tests: u64) {
+        self.bvh_node_bounds_tests
+            .set(self.bvh_node_bounds_tests.get().saturating_add(tests));
+    }
+
+    pub(in crate::render) fn record_shadow_visibility_cache(&self, hit: bool) {
+        let counter = if hit {
+            &self.shadow_visibility_cache_hits
+        } else {
+            &self.shadow_visibility_cache_misses
+        };
+        counter.set(counter.get().saturating_add(1));
+    }
+
+    pub(in crate::render) fn record_ray_triangle_intersection_test(&self) {
+        self.ray_triangle_intersection_tests
+            .set(self.ray_triangle_intersection_tests.get().saturating_add(1));
+    }
+
+    pub(in crate::render) fn record_area_light_sample(&self) {
+        self.area_light_samples
+            .set(self.area_light_samples.get().saturating_add(1));
+    }
+
+    pub(in crate::render) fn record_cpu_bake_triangles(
+        &self,
+        triangles: usize,
+        corner_bytes_copied: u64,
+    ) {
+        self.cpu_bake_subdivided_triangles.set(
+            self.cpu_bake_subdivided_triangles
+                .get()
+                .saturating_add(triangles as u64),
+        );
+        self.cpu_bake_corner_bytes_copied.set(
+            self.cpu_bake_corner_bytes_copied
+                .get()
+                .saturating_add(corner_bytes_copied),
+        );
+    }
+
+    pub(in crate::render) fn record_cpu_bake_shaded_vertex(&self, texture_samples: u64) {
+        self.cpu_bake_shaded_vertices
+            .set(self.cpu_bake_shaded_vertices.get().saturating_add(1));
+        self.record_texture_samples(texture_samples);
+    }
+
+    pub(in crate::render) fn record_texture_samples(&self, samples: u64) {
+        self.texture_samples
+            .set(self.texture_samples.get().saturating_add(samples));
+    }
+
+    pub(in crate::render) fn record_gpu_resource_creations(
+        &self,
+        buffers: u64,
+        textures: u64,
+        pipelines: u64,
+        bind_groups: u64,
+        shader_modules: u64,
+    ) {
+        self.gpu_buffer_creations
+            .set(self.gpu_buffer_creations.get().saturating_add(buffers));
+        self.gpu_texture_creations
+            .set(self.gpu_texture_creations.get().saturating_add(textures));
+        self.gpu_pipeline_creations
+            .set(self.gpu_pipeline_creations.get().saturating_add(pipelines));
+        self.gpu_bind_group_creations.set(
+            self.gpu_bind_group_creations
+                .get()
+                .saturating_add(bind_groups),
+        );
+        self.gpu_shader_module_creations.set(
+            self.gpu_shader_module_creations
+                .get()
+                .saturating_add(shader_modules),
+        );
+    }
+
+    pub(in crate::render) fn record_draw_uniform_indexing(
+        &self,
+        unique_values: usize,
+        lookup_probes: u64,
+        bytes_copied: u64,
+    ) {
+        self.draw_uniform_unique_values.set(
+            self.draw_uniform_unique_values
+                .get()
+                .saturating_add(unique_values as u64),
+        );
+        self.draw_uniform_lookup_probes.set(
+            self.draw_uniform_lookup_probes
+                .get()
+                .saturating_add(lookup_probes),
+        );
+        self.draw_uniform_bytes_copied.set(
+            self.draw_uniform_bytes_copied
+                .get()
+                .saturating_add(bytes_copied),
+        );
+    }
+
+    pub(in crate::render) fn snapshot(&self) -> PrepareWorkMetrics {
+        PrepareWorkMetrics {
+            prepared_triangle_count: self.prepared_triangle_count.get(),
+            prepared_model_vertex_buffer_count: self.prepared_model_vertex_buffer_count.get(),
+            prepared_model_vertex_bytes: self.prepared_model_vertex_bytes.get(),
+            prepared_unique_draw_transforms: self.prepared_unique_draw_transforms.get(),
+            prepared_draw_transform_bytes: self.prepared_draw_transform_bytes.get(),
+            prepared_triangle_reference_bytes: self.prepared_triangle_reference_bytes.get(),
+            prepared_list_copy_bytes: self.prepared_list_copy_bytes.get(),
+            asset_storage_lock_acquisitions: self.asset_storage_lock_acquisitions.get(),
+            generated_tangent_calls: self.generated_tangent_calls.get(),
+            generated_tangent_triangles: self.generated_tangent_triangles.get(),
+            generated_tangent_vertices: self.generated_tangent_vertices.get(),
+            generated_tangent_cache_hits: self.generated_tangent_cache_hits.get(),
+            generated_tangent_cache_misses: self.generated_tangent_cache_misses.get(),
+            tangent_input_transform_bytes: self.tangent_input_transform_bytes.get(),
+            tangent_output_bytes: self.tangent_output_bytes.get(),
+            deformed_vertex_bytes_materialized: self.deformed_vertex_bytes_materialized.get(),
+            shadow_rays: self.shadow_rays.get(),
+            shadow_visibility_cache_hits: self.shadow_visibility_cache_hits.get(),
+            shadow_visibility_cache_misses: self.shadow_visibility_cache_misses.get(),
+            bvh_node_bounds_tests: self.bvh_node_bounds_tests.get(),
+            ray_triangle_intersection_tests: self.ray_triangle_intersection_tests.get(),
+            area_light_samples: self.area_light_samples.get(),
+            cpu_bake_subdivided_triangles: self.cpu_bake_subdivided_triangles.get(),
+            cpu_bake_shaded_vertices: self.cpu_bake_shaded_vertices.get(),
+            texture_samples: self.texture_samples.get(),
+            cpu_bake_corner_bytes_copied: self.cpu_bake_corner_bytes_copied.get(),
+            gpu_buffer_creations: self.gpu_buffer_creations.get(),
+            gpu_texture_creations: self.gpu_texture_creations.get(),
+            gpu_pipeline_creations: self.gpu_pipeline_creations.get(),
+            gpu_bind_group_creations: self.gpu_bind_group_creations.get(),
+            gpu_shader_module_creations: self.gpu_shader_module_creations.get(),
+            draw_uniform_unique_values: self.draw_uniform_unique_values.get(),
+            draw_uniform_lookup_probes: self.draw_uniform_lookup_probes.get(),
+            draw_uniform_bytes_copied: self.draw_uniform_bytes_copied.get(),
+        }
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

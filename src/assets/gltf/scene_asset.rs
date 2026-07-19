@@ -199,6 +199,50 @@ impl SceneAsset {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn inject_invalid_child_for_transaction_test(
+        &mut self,
+        parent: usize,
+        child: usize,
+    ) {
+        Arc::make_mut(&mut self.inner).nodes[parent]
+            .children
+            .push(child);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_invalid_anchor_for_transaction_test(&mut self, node: usize, reason: &str) {
+        Arc::make_mut(&mut self.inner).nodes[node]
+            .anchors
+            .push(SceneAssetAnchor::invalid_for_transaction_test(reason));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_invalid_connector_for_transaction_test(
+        &mut self,
+        node: usize,
+        reason: &str,
+    ) {
+        Arc::make_mut(&mut self.inner).nodes[node]
+            .connectors
+            .push(SceneAssetConnector::invalid_for_transaction_test(reason));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_invalid_skin_for_transaction_test(&mut self, node: usize, skin: usize) {
+        Arc::make_mut(&mut self.inner).nodes[node].skin = Some(skin);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_additional_root_for_transaction_test(&mut self) {
+        let inner = Arc::make_mut(&mut self.inner);
+        let mut root = inner.nodes[0].clone();
+        root.name = Some("SecondRoot".to_owned());
+        root.children.clear();
+        inner.nodes.push(root);
+        inner.node_count = inner.nodes.len();
+    }
+
     fn root_indices(&self) -> Vec<usize> {
         let mut child_indices = BTreeSet::new();
         for node in &self.inner.nodes {

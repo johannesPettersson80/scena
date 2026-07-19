@@ -1,0 +1,44 @@
+{
+  "schema": "scena.recipe_build_result.v1",
+  "ok": true,
+  "build": {
+    "schema": "scena.scene_recipe_build.v1",
+    "ok": true,
+    "imports": [],
+    "nodes": [],
+    "cameras": [],
+    "lights": [],
+    "geometries": [],
+    "materials": [],
+    "diagnostics": [],
+    "skipped": []
+  },
+  "policy": {
+    "schema": "scena.recipe_policy.v1",
+    "network": {
+      "allowed": false,
+      "source": "compiled_default"
+    },
+    "allowed_uri_schemes": [
+      {
+        "value": "file",
+        "source": "compiled_default"
+      }
+    ],
+    "allowed_roots": [
+      {
+        "path": ".",
+        "source": "compiled_default"
+      }
+    ],
+    "limits": {}
+  },
+  "execution": {
+    "asset_fetches": 0,
+    "renderer_constructions": 0,
+    "gpu_context_constructions": 0,
+    "prepare_calls": 0,
+    "render_calls": 0,
+    "capture_constructions": 0
+  }
+}

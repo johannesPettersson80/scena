@@ -503,6 +503,7 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
     if let Ok(mut renderer) = Renderer::headless_gpu(4, 4) {
         let baseline = renderer.stats();
         assert_eq!(baseline.buffers, 0);
+        assert_eq!(baseline.gpu_textures, 0);
         assert_eq!(baseline.textures, 0);
         assert_eq!(baseline.render_targets, 0);
         assert_eq!(baseline.pipelines, 0);
@@ -514,17 +515,19 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
         let (mut scene, camera) = scene_with_fullscreen_triangle(Color::WHITE);
         renderer.prepare(&mut scene).expect("gpu scene prepares");
         let prepared = renderer.stats();
-        assert!(prepared.buffers >= 3);
         assert_eq!(prepared.textures, baseline.textures);
-        // The headless GPU path keeps an offscreen color attachment, a physical
-        // transmission scene-color target, and optionally a depth target when
-        // the prepare phase decides a depth pre-pass is worthwhile. Use lower-
-        // bound checks so the resource-lifetime contract (counters return to
-        // baseline) stays the focus.
-        assert!(prepared.render_targets >= 2 && prepared.render_targets <= 3);
-        assert!(prepared.pipelines >= 1);
-        assert!(prepared.bind_groups >= 1);
-        assert!(prepared.shader_modules >= 1);
+        assert_eq!(
+            (
+                prepared.buffers,
+                prepared.gpu_textures,
+                prepared.render_targets,
+                prepared.pipelines,
+                prepared.bind_groups,
+                prepared.shader_modules,
+            ),
+            (11, 23, 7, 19, 9, 18),
+            "the default FXAA output owner inventory, including two prepared readback buffers, must be exact before render",
+        );
         assert_eq!(prepared.pending_destructions, 0);
         assert!(prepared.approximate_gpu_memory_bytes.unwrap_or_default() > 0);
         renderer.render(&scene, camera).expect("gpu scene renders");
@@ -535,12 +538,16 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
             .expect("empty gpu scene prepares and releases resources");
         let queued = renderer.stats();
         assert_eq!(queued.buffers, baseline.buffers);
+        assert_eq!(queued.gpu_textures, baseline.gpu_textures);
         assert_eq!(queued.textures, baseline.textures);
         assert_eq!(queued.render_targets, baseline.render_targets);
         assert_eq!(queued.pipelines, baseline.pipelines);
         assert_eq!(queued.bind_groups, baseline.bind_groups);
         assert_eq!(queued.shader_modules, baseline.shader_modules);
-        assert!(queued.pending_destructions > baseline.pending_destructions);
+        assert_eq!(
+            queued.pending_destructions,
+            prepared.buffers + prepared.gpu_textures + prepared.pipelines + prepared.bind_groups,
+        );
         assert_eq!(
             queued.approximate_gpu_memory_bytes,
             baseline.approximate_gpu_memory_bytes
@@ -716,6 +723,23 @@ fn color_constructors_make_source_color_space_explicit() {
         Color::from_srgb_u8(255, 128, 0)
     );
     assert!(Color::from_hex_srgb("ff8000").is_err());
+}
+
+#[test]
+fn color_hex_constructors_reject_non_ascii_without_unwinding() {
+    for (name, result) in [
+        (
+            "from_hex",
+            std::panic::catch_unwind(|| Color::from_hex("€abc")),
+        ),
+        (
+            "from_hex_srgb",
+            std::panic::catch_unwind(|| Color::from_hex_srgb("#€abc")),
+        ),
+    ] {
+        let parsed = result.unwrap_or_else(|_| panic!("{name} must not panic on non-ASCII input"));
+        assert!(parsed.is_err(), "{name} must reject non-ASCII hex input");
+    }
 }
 
 #[test]
@@ -1991,6 +2015,22 @@ fn builtin_geometry_generators_produce_valid_bounds_and_indices() {
         GeometryDesc::box_xyz(2.0, 4.0, 6.0).bounds(),
         Aabb::new(Vec3::new(-1.0, -2.0, -3.0), Vec3::new(1.0, 2.0, 3.0))
     );
+}
+
+#[test]
+fn fallible_polyline_rejects_zero_or_one_point_without_unwinding() {
+    for points in [&[][..], &[Vec3::ZERO][..]] {
+        let result = std::panic::catch_unwind(|| GeometryDesc::try_polyline(points));
+        let error = result
+            .expect("fallible polyline construction must not unwind")
+            .expect_err("fewer than two points must be rejected");
+        assert_eq!(
+            error,
+            scena::GeometryError::PolylineTooShort {
+                point_count: points.len()
+            }
+        );
+    }
 }
 
 #[test]

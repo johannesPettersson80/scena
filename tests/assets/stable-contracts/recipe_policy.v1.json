@@ -1,0 +1,13 @@
+{
+  "schema": "scena.recipe_policy.v1",
+  "network": { "allowed": false, "source": "compiled_default" },
+  "allowed_uri_schemes": [
+    { "value": "file", "source": "compiled_default" }
+  ],
+  "allowed_roots": [
+    { "path": ".", "source": "compiled_default" }
+  ],
+  "limits": {
+    "max_imports": { "value": 64, "source": "compiled_default" }
+  }
+}

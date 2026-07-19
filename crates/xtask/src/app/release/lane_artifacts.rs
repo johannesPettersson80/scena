@@ -1,7 +1,15 @@
 use crate::app::prelude::*;
+use crate::app::release::round_e_material_results::q02_material_result_passes;
 
 pub(crate) fn run_release_lane_artifact(lane: &str) -> Result<(), Vec<Finding>> {
     let root = repo_root().map_err(|message| vec![Finding::new("RELEASE-LANE-ROOT", message)])?;
+    if lane == "macos-metal" {
+        finalize_waterbottle_gpu_result(&root)
+            .map_err(|message| vec![Finding::new("RELEASE-LANE", message)])?;
+    } else if lane == "headless-cpu" {
+        finalize_waterbottle_cpu_result(&root)
+            .map_err(|message| vec![Finding::new("RELEASE-LANE", message)])?;
+    }
     let artifact = release_lane_artifact(&root, lane)
         .map_err(|message| vec![Finding::new("RELEASE-LANE", message)])?;
     let artifact_dir = root.join("target/gate-artifacts/release-lanes");
@@ -18,6 +26,18 @@ pub(crate) fn run_release_lane_artifact(lane: &str) -> Result<(), Vec<Finding>> 
         return Err(vec![Finding::new(
             "RELEASE-LANE",
             format!("failed to write {}: {error}", artifact_path.display()),
+        )]);
+    }
+    if env::var("SCENA_REQUIRE_PARITY").as_deref() == Ok("1")
+        && matches!(lane, "linux-native-vulkan" | "linux-webgpu-chromium")
+        && artifact.get("status").and_then(Value::as_str) != Some("passed")
+    {
+        return Err(vec![Finding::new(
+            "RELEASE-LANE-REQUIRED-PARITY",
+            format!(
+                "required GPU lane {lane} is incomplete; see {}",
+                artifact_path.display()
+            ),
         )]);
     }
     println!("{}", artifact_path.display());
@@ -54,14 +74,20 @@ pub(crate) fn release_lane_artifact(root: &Path, lane: &str) -> Result<serde_jso
     } else {
         "incomplete"
     };
+    let generated_at = current_unix_seconds();
+    let source_checksums = release_lane_source_checksums(root, &evidence)?;
     Ok(json!({
         "schema": "scena.release_lane.v1",
         "lane": lane,
         "os": os,
         "backend": backend,
         "rustc": "1.93.1",
-        "generated_at_unix_seconds": current_unix_seconds(),
+        "producer": format!("cargo run -p xtask -- release-lane-artifact {lane}"),
+        "generated_at_unix_seconds": generated_at,
+        "timestamp_unix_seconds": generated_at,
         "commit": release_artifact_commit_label(root),
+        "commit_sha": release_artifact_commit_label(root),
+        "source_checksums": source_checksums,
         "status": status,
         "required_artifacts": evidence,
         "content_ok": content_ok,
@@ -70,6 +96,33 @@ pub(crate) fn release_lane_artifact(root: &Path, lane: &str) -> Result<serde_jso
         "command_records": command_records,
         "note": "Lane status is passed only when the required local gate artifacts exist, are checksummed, and native GPU rendered-output proof is not CPU fallback. CI may populate command duration and failure-log fields through the same command_records schema."
     }))
+}
+
+fn release_lane_source_checksums(root: &Path, evidence: &[Value]) -> Result<Vec<Value>, String> {
+    let mut checksums = evidence
+        .iter()
+        .filter(|entry| entry.get("exists").and_then(Value::as_bool) == Some(true))
+        .filter_map(|entry| {
+            Some(json!({
+                "path": entry.get("path")?.clone(),
+                "sha256": entry.get("sha256")?.clone(),
+            }))
+        })
+        .collect::<Vec<_>>();
+    for relative in [
+        "Cargo.lock",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+    ] {
+        let path = root.join(relative);
+        checksums.push(json!({
+            "path": relative,
+            "sha256": sha256_hex(&path).map_err(|error| {
+                format!("failed to hash release-lane source {relative}: {error}")
+            })?,
+        }));
+    }
+    Ok(checksums)
 }
 
 pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, String> {
@@ -82,7 +135,24 @@ pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, S
             .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
         let value = serde_json::from_str::<serde_json::Value>(&text)
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        return Ok(headless_cpu_render_proof_passes(&value));
+        let q01_path = root.join("target/gate-artifacts/q01-waterbottle-cpu/result.json");
+        if !q01_path.is_file() {
+            return Ok(false);
+        }
+        let q01_text = fs::read_to_string(&q01_path)
+            .map_err(|error| format!("failed to read {}: {error}", q01_path.display()))?;
+        let q01 = serde_json::from_str::<Value>(&q01_text)
+            .map_err(|error| format!("failed to parse {}: {error}", q01_path.display()))?;
+        return Ok(headless_cpu_render_proof_passes(&value)
+            && validate_waterbottle_cpu_result(&root.join("target/gate-artifacts"), &q01).is_ok()
+            && q02_material_result_passes(
+                root,
+                "target/gate-artifacts/round-e-cpu-material-proof.json",
+                "scena.q02.round_e_cpu_material_proof.v1",
+                "live-cpu-headless",
+                "live-cpu-round-e-shared-threshold-evaluation",
+                "target/gate-artifacts/round-e-cpu-material-proof/live-frame.png",
+            )?);
     }
     if matches!(lane, "linux-webgl2-chromium" | "linux-webgpu-chromium") {
         let path = root.join("target/gate-artifacts/m6-rust-wasm-renderer-probe.json");
@@ -93,9 +163,34 @@ pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, S
             .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
         let value = serde_json::from_str::<serde_json::Value>(&text)
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        return Ok(browser_probe_release_proof_passes(&value, lane));
+        let (result, schema, surface, proof_class, live_frame) = match lane {
+            "linux-webgl2-chromium" => (
+                "target/gate-artifacts/round-e-cloudflare-material-proof.json",
+                "scena.q02.round_e_webgl2_material_proof.v1",
+                "live-webgl2-chromium",
+                "round-e-cloudflare-material-proof",
+                "target/gate-artifacts/round-e-cloudflare-material-proof/canvas.png",
+            ),
+            "linux-webgpu-chromium" => (
+                "target/gate-artifacts/round-e-webgpu-material-proof/result.json",
+                "scena.q02.round_e_webgpu_material_proof.v1",
+                "live-webgpu-chromium",
+                "required-live-webgpu-round-e-shared-threshold-evaluation",
+                "target/gate-artifacts/round-e-webgpu-material-proof/live-frame.png",
+            ),
+            _ => unreachable!("browser lane was matched above"),
+        };
+        return Ok(browser_probe_release_proof_passes(&value, lane)
+            && q02_material_result_passes(
+                root,
+                result,
+                schema,
+                surface,
+                proof_class,
+                live_frame,
+            )?);
     }
-    if !matches!(lane, "macos-metal" | "windows-dx12") {
+    if !matches!(lane, "linux-native-vulkan" | "macos-metal" | "windows-dx12") {
         return Ok(true);
     }
     let path = root.join(format!(
@@ -111,35 +206,6 @@ pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, S
     Ok(native_gpu_render_proof_passes(&value))
 }
 
-fn browser_probe_release_proof_passes(value: &serde_json::Value, lane: &str) -> bool {
-    let expected_backend = match lane {
-        "linux-webgl2-chromium" => "webgl2",
-        "linux-webgpu-chromium" => "webgpu",
-        _ => return false,
-    };
-    value.get("gate").and_then(serde_json::Value::as_str) == Some("m6-rust-wasm-renderer-probe")
-        && value.get("status").and_then(serde_json::Value::as_str) == Some("passed")
-        && value
-            .get("results")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|results| {
-                results.iter().any(|result| {
-                    result
-                        .get("backend")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|backend| backend.eq_ignore_ascii_case(expected_backend))
-                        && result.get("status").and_then(serde_json::Value::as_str)
-                            == Some("passed")
-                        && result
-                            .get("pixels")
-                            .and_then(|pixels| pixels.get("nonblack"))
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0)
-                            > 0
-                })
-            })
-}
-
 pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
     match lane {
         "headless-cpu" => [
@@ -149,6 +215,14 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
             "target/gate-artifacts/m9-platform/headless-cpu/static-gltf.ppm".to_string(),
             "target/gate-artifacts/m9-platform/m9-benchmarks.json".to_string(),
             "target/gate-artifacts/m9-platform/m9-benchmarks-feature-matrix.json".to_string(),
+            "target/gate-artifacts/q01-waterbottle-cpu/live.png".to_string(),
+            "target/gate-artifacts/q01-waterbottle-cpu/known_bad_flattened_chrome.png".to_string(),
+            "target/gate-artifacts/q01-waterbottle-cpu/known_bad_wrong_material.png".to_string(),
+            "target/gate-artifacts/q01-waterbottle-cpu/known_bad_wrong_camera.png".to_string(),
+            "target/gate-artifacts/q01-waterbottle-cpu/result.json".to_string(),
+            "target/gate-artifacts/round-e-cpu-material-proof/live-frame.png".to_string(),
+            "target/gate-artifacts/round-e-cpu-material-proof/live-cpu-frame.json".to_string(),
+            "target/gate-artifacts/round-e-cpu-material-proof.json".to_string(),
         ]
         .into_iter()
         .collect(),
@@ -166,9 +240,34 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
         ]
         .into_iter()
         .collect(),
-        "linux-webgl2-chromium" | "linux-webgpu-chromium" => {
-            vec!["target/gate-artifacts/m6-rust-wasm-renderer-probe.json".to_string()]
-        }
+        "linux-webgl2-chromium" => [
+            "target/gate-artifacts/m6-rust-wasm-renderer-probe.json",
+            "target/gate-artifacts/round-e-cloudflare-material-proof.json",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/canvas.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/matte.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/plastic.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/metal.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/rough_metal.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/chrome.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/brushed_steel.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/clearcoat_plastic.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/satin.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/leather.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/clear_glass.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/frosted_glass.png",
+            "target/gate-artifacts/round-e-cloudflare-material-proof/rubber.png",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect(),
+        "linux-webgpu-chromium" => [
+            "target/gate-artifacts/m6-rust-wasm-renderer-probe.json",
+            "target/gate-artifacts/round-e-webgpu-material-proof/live-frame.png",
+            "target/gate-artifacts/round-e-webgpu-material-proof/result.json",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect(),
         "wasm32-unknown-unknown" => {
             vec!["target/gate-artifacts/m9-wasm-size.json".to_string()]
         }
@@ -178,13 +277,24 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
 
 pub(crate) fn release_lane_expected_commands(lane: &str) -> Vec<&'static str> {
     match lane {
-        "headless-cpu" => vec!["cargo test --test m9_platform_release"],
+        "headless-cpu" => vec![
+            "cargo test --test m9_platform_release",
+            "cargo test --test q01_waterbottle_cpu_reference q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders -- --exact",
+            "cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact",
+            "node scripts/evaluate_round_e_cpu_materials.cjs",
+        ],
         "linux-native-vulkan" | "macos-metal" | "windows-dx12" => vec![
             "cargo test --test m9_platform_release",
             "cargo check --examples",
         ],
-        "linux-webgl2-chromium" | "linux-webgpu-chromium" => vec![
+        "linux-webgl2-chromium" => vec![
             "wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe",
+            "npm run browser:m6",
+            "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
+        ],
+        "linux-webgpu-chromium" => vec![
+            "wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe",
+            "npm run browser:q02-materials",
             "npm run browser:m6",
         ],
         "wasm32-unknown-unknown" => vec![

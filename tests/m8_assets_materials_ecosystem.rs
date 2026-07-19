@@ -98,7 +98,7 @@ fn m8_normal_texture_scale_and_occlusion_strength_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -168,7 +168,7 @@ fn m8_clearcoat_material_factors_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -242,7 +242,7 @@ fn m8_clearcoat_texture_slots_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -334,7 +334,7 @@ fn m8_sheen_material_factors_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -404,7 +404,7 @@ fn m8_sheen_texture_slots_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -485,7 +485,7 @@ fn m8_anisotropy_material_factors_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -549,7 +549,7 @@ fn m8_anisotropy_texture_slot_is_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -617,7 +617,7 @@ fn m8_iridescence_material_factors_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -698,7 +698,7 @@ fn m8_iridescence_texture_slots_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -780,7 +780,7 @@ fn m8_dispersion_material_factor_is_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -867,7 +867,7 @@ fn m8_transmission_ior_volume_material_factors_are_parsed_from_gltf() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -1195,7 +1195,7 @@ fn m8_texture_transform_nonzero_texcoord_fails_closed() {
                 { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
             ],
             "accessors": [
-                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] },
                 { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
             ]
         }"#
@@ -1342,7 +1342,7 @@ fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
 }
 
 #[test]
-fn m8_gltf_data_uri_image_texture_descriptor_is_preserved() {
+fn m8_gltf_data_uri_image_texture_uses_bounded_content_identity() {
     let image_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     let gltf = format!(
         r#"{{
@@ -1396,7 +1396,14 @@ fn m8_gltf_data_uri_image_texture_descriptor_is_preserved() {
                 .expect("base color texture handle"),
         )
         .expect("texture descriptor exists");
-    assert_eq!(texture.path().as_str(), image_uri);
+    assert!(
+        texture.path().as_str().starts_with("memory:image-sha256-")
+            && texture.path().as_str().ends_with(".png")
+            && texture.path().as_str().len() < 128,
+        "data URI images must use a bounded content-addressed identity, got {}",
+        texture.path().as_str()
+    );
+    assert_ne!(texture.path().as_str(), image_uri);
     assert_eq!(texture.color_space(), TextureColorSpace::Srgb);
     assert_eq!(texture.source_format(), TextureSourceFormat::Png);
     assert_eq!(texture.sampler().mag_filter(), Some(TextureFilter::Linear));
@@ -1441,7 +1448,7 @@ fn m8_gltf_texcoord0_is_preserved_for_material_texture_sampling_contract() {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -1497,7 +1504,7 @@ fn m8_gltf_tangent_attribute_is_preserved_with_handedness() {
                 {{ "buffer": 0, "byteOffset": 84, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC4" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -1567,7 +1574,7 @@ fn m8_data_uri_base_color_texture_affects_cpu_preview_pixels() {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -1645,7 +1652,7 @@ fn m8_external_png_base_color_texture_affects_cpu_preview_pixels() {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -1729,7 +1736,7 @@ fn m8_reload_promotes_cached_texture_descriptor_when_external_png_arrives() {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -2314,7 +2321,7 @@ fn m8_emissive_png_texture_affects_cpu_preview_pixels() {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -2572,7 +2579,7 @@ fn m8_headless_gpu_applies_base_color_texture_transform_when_available() {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -3234,7 +3241,7 @@ fn m8_texture_sampler_clamp_to_edge_affects_cpu_preview_pixels() {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -3461,21 +3468,24 @@ fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
             "nodes": [{ "name": "Root", "mesh": 0 }],
             "buffers": [{ "byteLength": 36, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAA" }],
             "bufferViews": [{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }],
-            "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }]
+            "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }]
         }"#
         .to_vec(),
     )]));
 
     let error = pollster::block_on(assets.load_scene("memory://missing-texture.gltf"))
         .expect_err("missing texture index must not silently fall back");
-    assert!(matches!(
-        error,
-        AssetError::MissingTexture {
-            ref material_slot,
-            texture_index: 9,
-            ..
-        } if material_slot == "baseColorTexture"
-    ));
+    assert!(
+        matches!(
+            error,
+            AssetError::MissingTexture {
+                ref material_slot,
+                texture_index: 9,
+                ..
+            } if material_slot == "baseColorTexture"
+        ),
+        "unexpected error: {error:?}"
+    );
     assert!(error.help().contains("material slot"));
 }
 
@@ -3543,7 +3553,7 @@ fn m8_unsupported_texture_formats_fail_before_silent_handles_are_created() {
             "nodes": [{ "name": "Root", "mesh": 0 }],
             "buffers": [{ "byteLength": 36, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAA" }],
             "bufferViews": [{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }],
-            "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }]
+            "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }]
         }"#
         .to_vec(),
     )]));
@@ -3889,12 +3899,14 @@ fn m8_optional_basisu_texture_uses_png_fallback_without_ktx2_feature() {
             .ends_with("missing-albedo.ktx2"),
         "fallback source should name the skipped Basis source, got {fallback:?}"
     );
+    let fallback_path = fallback["fallback_path"]
+        .as_str()
+        .expect("fallback_path is a string");
     assert!(
-        fallback["fallback_path"]
-            .as_str()
-            .expect("fallback_path is a string")
-            .starts_with("data:image/png;base64,"),
-        "fallback path should name the authored PNG fallback, got {fallback:?}"
+        fallback_path.starts_with("memory:image-sha256-")
+            && fallback_path.ends_with(".png")
+            && fallback_path.len() < 128,
+        "fallback path should retain the authored PNG as a bounded content identity, got {fallback:?}"
     );
     assert_eq!(
         fallback["reason"], "KHR_texture_basisu unavailable; using authored fallback texture",
@@ -5080,7 +5092,7 @@ fn missing_texture_gltf() -> &'static [u8] {
         "nodes": [{ "name": "MissingTexture", "mesh": 0 }],
         "buffers": [{ "byteLength": 36, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAA" }],
         "bufferViews": [{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }],
-        "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }]
+        "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }]
     }"#
 }
 
@@ -5101,7 +5113,7 @@ fn external_buffer_gltf(buffer_uri: &str) -> String {
                 {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
         }}"#
@@ -5133,7 +5145,7 @@ fn minimal_glb_triangle_scene() -> Vec<u8> {
                 {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ],
             "meshes": [
@@ -5277,7 +5289,7 @@ fn textured_triangle_gltf(image_uri: &str) -> String {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -5533,7 +5545,7 @@ fn ext_mesh_gpu_instancing_triangle_gltf() -> String {
         ],
         "accessors": [
             {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.25,-0.25,0.0], "max": [0.25,0.25,0.0] }},
-            {{ "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC3" }}
+            {{ "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }}
         ]
     }}"#
     )

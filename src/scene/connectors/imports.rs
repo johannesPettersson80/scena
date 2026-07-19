@@ -51,10 +51,12 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         LookupError::AmbiguousConnectorName { name, hosts } => {
             ConnectionError::AmbiguousImportConnector { name, hosts }
         }
-        LookupError::StaleImport => ConnectionError::StaleConnectorHandle {
-            connector: None,
-            name: Some(requested_name.to_string()),
-        },
+        LookupError::StaleImport | LookupError::ImportFromDifferentScene => {
+            ConnectionError::StaleConnectorHandle {
+                connector: None,
+                name: Some(requested_name.to_string()),
+            }
+        }
         LookupError::NodeNotFound(node) => ConnectionError::NodeNotFound(node),
         LookupError::CannotRemoveRootNode(node) => ConnectionError::NodeNotFound(node),
         LookupError::AmbiguousNodeName { matches, .. } => {
@@ -78,6 +80,7 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::ImportHasNoBounds
         | LookupError::NodeIsNotMesh { .. }
         | LookupError::NonInvertibleParentTransform { .. }
+        | LookupError::InvalidTransform { .. }
         | LookupError::GeometryNotFound { .. }
         | LookupError::InvalidSkinBinding { .. }
         | LookupError::CameraNotFound(_)

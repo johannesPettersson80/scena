@@ -182,10 +182,14 @@ fn visibility_diagnosis_classifies_parent_hidden_nan_and_layer_masked_targets() 
     );
 
     scene.set_visible(parent, true).expect("parent shows");
-    scene
-        .set_transform(child, scena::Transform::at(Vec3::new(f32::NAN, 0.0, 0.0)))
-        .expect("non-finite transform stores");
-    let inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let mut inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let malformed_node = inspection
+        .nodes
+        .iter_mut()
+        .find(|node| node.handle == child_handle)
+        .expect("inspection contains the target child");
+    malformed_node.local_transform.translation.x = f32::NAN;
+    malformed_node.world_transform.translation.x = f32::NAN;
     let nan_transform = renderer.diagnose_visibility(
         &inspection,
         Some(child_handle),
@@ -195,9 +199,6 @@ fn visibility_diagnosis_classifies_parent_hidden_nan_and_layer_masked_targets() 
     assert_reason(&nan_transform, "nan_transform");
     assert_fix(&nan_transform, "set_transform");
 
-    scene
-        .set_transform(child, scena::Transform::IDENTITY)
-        .expect("finite transform restores");
     scene
         .set_layer_mask(child, 0b0010)
         .expect("child mask hides");

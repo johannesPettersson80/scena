@@ -57,6 +57,19 @@ pub enum BuildError {
     UnsupportedBackend { backend: Backend },
 }
 
+/// KTX2 Data Format Descriptor values reported for a material-role mismatch.
+///
+/// The detail payload is boxed by [`AssetError::Ktx2ColorSpaceMismatch`] so a
+/// rich texture diagnostic does not inflate every result that returns
+/// [`AssetError`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ktx2ColorSpaceDfd {
+    pub expected_primaries: &'static str,
+    pub expected_transfer: &'static str,
+    pub actual_primaries: &'static str,
+    pub actual_transfer: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetError {
     NotFound {
@@ -92,6 +105,12 @@ pub enum AssetError {
     },
     UnsupportedTextureFormat {
         path: String,
+        help: &'static str,
+    },
+    Ktx2ColorSpaceMismatch {
+        path: String,
+        material_slot: String,
+        dfd: Box<Ktx2ColorSpaceDfd>,
         help: &'static str,
     },
     Cancelled {
@@ -187,6 +206,11 @@ pub enum PrepareError {
         backend: Backend,
         reason: String,
     },
+    UnsupportedSampleCount {
+        backend: Backend,
+        requested: u32,
+        maximum: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,9 +269,30 @@ pub enum InstantiateError {
         skin: usize,
         joint: usize,
     },
+    InvalidAnimationClip {
+        name: Option<String>,
+        reason: String,
+    },
     InvalidAnchorExtras {
         node: String,
         reason: String,
+    },
+    InvalidConnectorExtras {
+        node: String,
+        reason: String,
+    },
+    CyclicNodeGraph {
+        node: usize,
+    },
+    MultipleNodeParents {
+        node: usize,
+        first_parent: usize,
+        second_parent: usize,
+    },
+    StaleReplacementImport,
+    ForeignReplacementImport,
+    MissingReplacementRoot {
+        root: NodeKey,
     },
     UnsupportedCoordinateSystem {
         coordinate_system: SourceCoordinateSystem,
@@ -274,6 +319,11 @@ pub enum NotPreparedReason {
         current_revision: u64,
         change: ChangeKind,
     },
+    OutputSettingsChanged {
+        prepared_revision: u64,
+        current_revision: u64,
+        change: ChangeKind,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -284,12 +334,14 @@ pub enum ChangeKind {
     Visibility,
     Environment,
     RenderTarget,
+    OutputSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LookupError {
     NodeNotFound(NodeKey),
     CannotRemoveRootNode(NodeKey),
+    ImportFromDifferentScene,
     NodeNameNotFound {
         name: String,
     },
@@ -366,6 +418,9 @@ pub enum LookupError {
         node: NodeKey,
         parent: NodeKey,
     },
+    InvalidTransform {
+        reason: &'static str,
+    },
     GeometryNotFound {
         node: NodeKey,
         geometry: GeometryHandle,
@@ -407,10 +462,26 @@ pub enum AnimationError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum DevicePollStatus {
+    /// Browser GPU work advances automatically; no explicit completion was requested.
+    Automatic,
+    /// The renderer/backend has no explicit GPU completion path.
+    #[default]
+    Unsupported,
+    /// A real asynchronous queue-completion signal has been submitted but not observed yet.
+    Submitted,
+    /// The backend confirmed completion and the reported destructions may be retired.
+    Confirmed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DevicePoll {
     pub pending_destructions_before: u64,
     pub pending_destructions_after: u64,
     pub destroyed_resources: u64,
+    pub status: DevicePollStatus,
+    /// Compatibility projection: true only when `status == Confirmed`.
     pub gpu_polled: bool,
 }
 

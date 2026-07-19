@@ -1,32 +1,30 @@
-use super::create_post_pipeline;
+use super::{create_post_pipeline_with_shader, create_post_shader};
 
 const SHADER: &str = include_str!("fxaa.wgsl");
 
-pub(super) fn create_pipeline(
+pub(super) fn create_pipelines(
     device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
-) -> wgpu::RenderPipeline {
-    create_post_pipeline(
+    pipeline_layout: &wgpu::PipelineLayout,
+    surface_format: Option<wgpu::TextureFormat>,
+) -> (wgpu::RenderPipeline, Option<wgpu::RenderPipeline>) {
+    let shader = create_post_shader(device, "scena.gpu_post.fxaa_shader", SHADER);
+    let post = create_post_pipeline_with_shader(
         device,
         "scena.gpu_post.fxaa_pipeline",
-        SHADER,
-        bind_group_layout,
+        &shader,
+        pipeline_layout,
         wgpu::TextureFormat::Rgba8Unorm,
-    )
-}
-
-pub(super) fn create_surface_pipeline(
-    device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
-    format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
-    create_post_pipeline(
-        device,
-        "scena.gpu_post.surface_fxaa_pipeline",
-        SHADER,
-        bind_group_layout,
-        format,
-    )
+    );
+    let surface = surface_format.map(|format| {
+        create_post_pipeline_with_shader(
+            device,
+            "scena.gpu_post.surface_fxaa_pipeline",
+            &shader,
+            pipeline_layout,
+            format,
+        )
+    });
+    (post, surface)
 }
 
 pub(super) fn encode(

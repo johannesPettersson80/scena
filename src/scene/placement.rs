@@ -6,6 +6,7 @@ use super::view_math::transform_aabb;
 use super::{Transform, Vec3};
 
 pub const SCENE_PLACEMENT_RESULT_SCHEMA_V1: &str = "scena.placement_result.v1";
+pub const SCENE_RECIPE_PATCH_SCHEMA_V1: &str = "scena.recipe_patch.v1";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScenePlacementResultV1 {
@@ -21,6 +22,55 @@ pub struct ScenePlacementResultV1 {
     )]
     pub transform: Option<Transform>,
     pub diagnostics: Vec<ScenePlacementDiagnosticV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneRecipePatchResultV1 {
+    pub schema: String,
+    pub ok: bool,
+    pub source_path: String,
+    pub source_sha256: String,
+    pub import_id: String,
+    pub verb: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_transform_option",
+        deserialize_with = "deserialize_transform_option"
+    )]
+    pub previous_transform: Option<Transform>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_transform_option",
+        deserialize_with = "deserialize_transform_option"
+    )]
+    pub transform: Option<Transform>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_recipe: Option<serde_json::Value>,
+    pub formatting_preserved: bool,
+    pub semantic_changes: Vec<SceneRecipeSemanticChangeV1>,
+    pub diagnostics: Vec<ScenePlacementDiagnosticV1>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneRecipePatchSuccessInputV1 {
+    pub source_path: String,
+    pub source_sha256: String,
+    pub import_id: String,
+    pub verb: String,
+    pub previous_transform: Option<Transform>,
+    pub transform: Transform,
+    pub updated_recipe: serde_json::Value,
+    pub semantic_change: SceneRecipeSemanticChangeV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneRecipeSemanticChangeV1 {
+    pub path: String,
+    pub operation: String,
+    pub before: serde_json::Value,
+    pub after: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +114,71 @@ impl ScenePlacementResultV1 {
             import_id: import_id.into(),
             transform: None,
             diagnostics: vec![diagnostic],
+        }
+    }
+}
+
+impl SceneRecipePatchResultV1 {
+    pub fn success(input: SceneRecipePatchSuccessInputV1) -> Self {
+        let SceneRecipePatchSuccessInputV1 {
+            source_path,
+            source_sha256,
+            import_id,
+            verb,
+            previous_transform,
+            transform,
+            updated_recipe,
+            semantic_change,
+        } = input;
+        Self {
+            schema: SCENE_RECIPE_PATCH_SCHEMA_V1.to_owned(),
+            ok: true,
+            source_path,
+            source_sha256,
+            import_id,
+            verb,
+            previous_transform,
+            transform: Some(round_transform(transform)),
+            updated_recipe: Some(updated_recipe),
+            formatting_preserved: false,
+            semantic_changes: vec![semantic_change],
+            diagnostics: Vec::new(),
+        }
+    }
+
+    pub fn failure(
+        source_path: impl Into<String>,
+        source_sha256: impl Into<String>,
+        import_id: impl Into<String>,
+        verb: impl Into<String>,
+        diagnostic: ScenePlacementDiagnosticV1,
+    ) -> Self {
+        Self {
+            schema: SCENE_RECIPE_PATCH_SCHEMA_V1.to_owned(),
+            ok: false,
+            source_path: source_path.into(),
+            source_sha256: source_sha256.into(),
+            import_id: import_id.into(),
+            verb: verb.into(),
+            previous_transform: None,
+            transform: None,
+            updated_recipe: None,
+            formatting_preserved: false,
+            semantic_changes: Vec::new(),
+            diagnostics: vec![diagnostic],
+        }
+    }
+}
+
+impl SceneRecipeSemanticChangeV1 {
+    pub fn transform(path: impl Into<String>, before: Option<Transform>, after: Transform) -> Self {
+        Self {
+            path: path.into(),
+            operation: "replace".to_owned(),
+            before: serde_json::to_value(before.map(StableTransformV1::from))
+                .expect("stable transform serialization is infallible"),
+            after: serde_json::to_value(StableTransformV1::from(after))
+                .expect("stable transform serialization is infallible"),
         }
     }
 }

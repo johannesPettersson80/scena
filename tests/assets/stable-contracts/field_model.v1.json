@@ -1,0 +1,23 @@
+{
+  "schema": "scena.field_model.v1",
+  "contract": "scena.scene_recipe.v1",
+  "fields": [
+    {
+      "path": "$.schema",
+      "type": "string",
+      "required": true,
+      "enum": ["scena.scene_recipe.v1"],
+      "deprecated": false,
+      "examples": ["scena.scene_recipe.v1"]
+    },
+    {
+      "path": "$.capture.width",
+      "type": "integer",
+      "required": true,
+      "minimum": 1.0,
+      "maximum": 4294967295.0,
+      "deprecated": false,
+      "examples": [800]
+    }
+  ]
+}

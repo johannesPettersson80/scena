@@ -87,6 +87,9 @@ fn depth_color_target_is_allocated_only_for_depth_post_effects() {
     renderer.set_anti_aliasing(AntiAliasing::Fxaa);
     renderer.set_bloom(Some(PostBloomConfig::new(96, 0.65, 3)));
     renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("bloom+fxaa output resources prepare");
+    renderer
         .render(&scene, camera)
         .expect("bloom+fxaa render without SSAO renders");
     assert_eq!(renderer.stats().ambient_occlusion_passes, 0);
@@ -99,6 +102,9 @@ fn depth_color_target_is_allocated_only_for_depth_post_effects() {
     renderer.set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::new(
         3, 0.5, 0.015,
     )));
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("SSAO depth-color resources prepare");
     renderer
         .render(&scene, camera)
         .expect("SSAO render allocates depth-color target");
@@ -113,6 +119,9 @@ fn depth_color_target_is_allocated_only_for_depth_post_effects() {
     renderer.clear_bloom();
     renderer.set_anti_aliasing(AntiAliasing::None);
     renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("all-off output resources reprepare");
+    renderer
         .render(&scene, camera)
         .expect("all-off render after SSAO drops depth-color target");
     assert_eq!(renderer.stats().ambient_occlusion_passes, 0);
@@ -124,6 +133,9 @@ fn depth_color_target_is_allocated_only_for_depth_post_effects() {
 
     renderer.set_depth_of_field(Some(DepthOfFieldConfig::new(1.0, 1.4, 4)));
     renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("DoF depth-color resources prepare");
+    renderer
         .render(&scene, camera)
         .expect("DoF render allocates depth-color target");
     assert_eq!(renderer.stats().depth_of_field_passes, 1);
@@ -134,6 +146,9 @@ fn depth_color_target_is_allocated_only_for_depth_post_effects() {
     );
 
     renderer.clear_depth_of_field();
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("cleared DoF resources reprepare");
     renderer
         .render(&scene, camera)
         .expect("all-off render after DoF drops depth-color target");
@@ -228,6 +243,9 @@ fn cpu_and_gpu_bloom_threshold_delta_match_with_reference_tolerance() {
         .expect("GPU bloom baseline renders");
     let gpu_baseline = gpu_renderer.frame_rgba8().to_vec();
     gpu_renderer.set_bloom(Some(config));
+    gpu_renderer
+        .prepare_with_assets(&mut gpu_scene, &gpu_assets)
+        .expect("GPU bloom output resources prepare");
     gpu_renderer
         .render(&gpu_scene, gpu_camera)
         .expect("GPU bloom threshold renders");

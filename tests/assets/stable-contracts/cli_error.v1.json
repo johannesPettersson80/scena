@@ -1,0 +1,6 @@
+{
+  "schema": "scena.cli_error.v1",
+  "ok": false,
+  "code": "invalid_command",
+  "message": "unknown command"
+}

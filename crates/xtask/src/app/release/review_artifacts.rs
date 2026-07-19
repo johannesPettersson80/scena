@@ -195,6 +195,7 @@ pub(crate) fn iterate_finding_blocks(text: &str) -> Vec<ReleaseFindingBlock<'_>>
 }
 
 pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
+    "staging-metadata.json",
     "release-lanes/linux-native-vulkan.json",
     "release-lanes/headless-cpu.json",
     "release-lanes/linux-webgl2-chromium.json",
@@ -240,6 +241,34 @@ pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/windows-dx12/pbr-directional-red.ppm",
     "m9-platform/windows-dx12/pbr-point-green.ppm",
     "m9-platform/windows-dx12/pbr-spot-blue.ppm",
+    "m8-real-asset/waterbottle_gpu.png",
+    "m8-real-asset/waterbottle_gpu_result.json",
+    "q01-waterbottle-cpu/live.png",
+    "q01-waterbottle-cpu/known_bad_flattened_chrome.png",
+    "q01-waterbottle-cpu/known_bad_wrong_material.png",
+    "q01-waterbottle-cpu/known_bad_wrong_camera.png",
+    "q01-waterbottle-cpu/result.json",
+    "round-e-cpu-material-proof/live-frame.png",
+    "round-e-cpu-material-proof/live-cpu-frame.json",
+    "round-e-cpu-material-proof.json",
+    "round-e-cloudflare-material-proof.json",
+    "round-e-cloudflare-material-proof/canvas.png",
+    "round-e-cloudflare-material-proof/matte.png",
+    "round-e-cloudflare-material-proof/plastic.png",
+    "round-e-cloudflare-material-proof/metal.png",
+    "round-e-cloudflare-material-proof/rough_metal.png",
+    "round-e-cloudflare-material-proof/chrome.png",
+    "round-e-cloudflare-material-proof/brushed_steel.png",
+    "round-e-cloudflare-material-proof/clearcoat_plastic.png",
+    "round-e-cloudflare-material-proof/satin.png",
+    "round-e-cloudflare-material-proof/leather.png",
+    "round-e-cloudflare-material-proof/clear_glass.png",
+    "round-e-cloudflare-material-proof/frosted_glass.png",
+    "round-e-cloudflare-material-proof/rubber.png",
+    "round-e-webgpu-material-proof/live-frame.png",
+    "round-e-webgpu-material-proof/result.json",
+    "release-lanes/headless-cpu.commands.jsonl",
+    "release-lanes/headless-cpu.log",
     // Phase 6 paperwork: per docs/specs/release-reviews.md, the findings register and
     // maintainer sign-off must accompany the release-lane artifacts before publish.
     // Per-subagent <role>/<commit>.md reports are validated separately by
@@ -248,14 +277,20 @@ pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "reviews/findings.json",
     "reviews/maintainer-signoff.toml",
     "visual-proof/waterbottle-gpu.json",
+    "visual-proof/waterbottle-cpu.json",
     "visual-proof/browser-webgpu.json",
     "visual-proof/browser-webgl2.json",
     "visual-proof/native-gpu.json",
 ];
 
 pub(crate) const REQUIRED_PASSED_STATUS_ARTIFACT_SUFFIXES: &[&str] = &[
+    "staging-metadata.json",
     "m6-rust-wasm-renderer-probe.json",
     "m9-platform/m9-capability-matrix.json",
+    "q01-waterbottle-cpu/result.json",
+    "round-e-cpu-material-proof.json",
+    "round-e-cloudflare-material-proof.json",
+    "round-e-webgpu-material-proof/result.json",
 ];
 
 pub(crate) const RELEASE_LANE_ARTIFACT_SUFFIXES: &[&str] = &[
@@ -274,27 +309,39 @@ pub(crate) const REQUIRED_NATIVE_GPU_RENDER_ARTIFACT_SUFFIXES: &[&str] = &[
 ];
 
 pub(crate) const REQUIRED_JSON_TIMESTAMP_ARTIFACT_SUFFIXES: &[&str] = &[
+    "staging-metadata.json",
     "m9-platform/m9-capability-matrix.json",
     "m9-platform/linux-native-vulkan/rendered-output.json",
     "m9-platform/linux-native-vulkan/capabilities.json",
     "m9-platform/headless-cpu/rendered-output.json",
     "m9-platform/headless-cpu/capabilities.json",
+    "q01-waterbottle-cpu/result.json",
+    "round-e-cpu-material-proof/live-cpu-frame.json",
+    "round-e-cpu-material-proof.json",
+    "round-e-cloudflare-material-proof.json",
+    "round-e-webgpu-material-proof/result.json",
     "m9-platform/macos-metal/rendered-output.json",
     "m9-platform/macos-metal/capabilities.json",
     "m9-platform/windows-dx12/rendered-output.json",
     "m9-platform/windows-dx12/capabilities.json",
 ];
 pub(crate) const REQUIRED_JSON_COMMIT_ARTIFACT_SUFFIXES: &[&str] = &[
+    "staging-metadata.json",
     "m9-platform/m9-capability-matrix.json",
     "m9-platform/linux-native-vulkan/rendered-output.json",
     "m9-platform/linux-native-vulkan/capabilities.json",
     "m9-platform/headless-cpu/rendered-output.json",
     "m9-platform/headless-cpu/capabilities.json",
+    "round-e-cpu-material-proof/live-cpu-frame.json",
+    "round-e-cpu-material-proof.json",
+    "round-e-cloudflare-material-proof.json",
+    "round-e-webgpu-material-proof/result.json",
     "m9-platform/macos-metal/rendered-output.json",
     "m9-platform/macos-metal/capabilities.json",
     "m9-platform/windows-dx12/rendered-output.json",
     "m9-platform/windows-dx12/capabilities.json",
     "visual-proof/waterbottle-gpu.json",
+    "visual-proof/waterbottle-cpu.json",
     "visual-proof/browser-webgpu.json",
     "visual-proof/browser-webgl2.json",
     "visual-proof/native-gpu.json",
@@ -336,6 +383,7 @@ pub(crate) const REQUIRED_RENDERED_OUTPUT_METADATA_ARTIFACT_SUFFIXES: &[&str] = 
 ];
 pub(crate) const REQUIRED_VISUAL_PROOF_ARTIFACT_SUFFIXES: &[&str] = &[
     "visual-proof/waterbottle-gpu.json",
+    "visual-proof/waterbottle-cpu.json",
     "visual-proof/browser-webgpu.json",
     "visual-proof/browser-webgl2.json",
     "visual-proof/native-gpu.json",

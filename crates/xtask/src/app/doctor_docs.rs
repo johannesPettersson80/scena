@@ -1,7 +1,18 @@
 use crate::app::prelude::*;
 
+mod contract_discovery;
+mod contract_pins;
+mod onboarding;
+mod review_provenance;
 pub(crate) mod schema_references;
 mod stable_fixtures;
+
+pub(crate) use contract_discovery::check_fr01_fr04_contract_discovery;
+pub(crate) use contract_pins::{
+    is_retired_internal_doc, require_contains, require_rust_test_functions,
+};
+pub(crate) use onboarding::check_c11_onboarding_contracts;
+pub(crate) use review_provenance::check_review_provenance_contracts;
 
 pub(crate) fn check_markdown_links(root: &Path, findings: &mut Vec<Finding>) {
     for rel in markdown_files(root) {
@@ -111,6 +122,116 @@ pub(crate) fn check_for_stale_doc_terms(root: &Path, findings: &mut Vec<Finding>
     }
 }
 
+pub(crate) fn check_shipped_feature_status_drift(root: &Path, findings: &mut Vec<Finding>) {
+    struct ShippedFeature<'a> {
+        label: &'a str,
+        aliases: &'a [&'a str],
+        authority_marker: &'a str,
+        source_path: &'a str,
+        source_marker: &'a str,
+    }
+
+    const AUTHORITY: &str = "docs/checklists/stunning-renders-and-performance.md";
+    let contracts = [
+        ShippedFeature {
+            label: "Clustered / tiled light culling",
+            aliases: &[
+                "clustered / tiled light culling",
+                "clustered/tiled light culling",
+                "clustered/tiled culling",
+            ],
+            authority_marker: "## B2 — Clustered / tiled light culling — [shipped]",
+            source_path: "src/render/prepare/lighting/tiled.rs",
+            source_marker: "collect_tiled_light_assignment",
+        },
+        ShippedFeature {
+            label: "Clustered/tiled light culling",
+            aliases: &[
+                "clustered / tiled light culling",
+                "clustered/tiled light culling",
+                "clustered/tiled culling",
+            ],
+            authority_marker: "## B2 — Clustered / tiled light culling — [shipped]",
+            source_path: "src/render/prepare/lighting/tiled.rs",
+            source_marker: "collect_tiled_light_assignment",
+        },
+        ShippedFeature {
+            label: "Area lights with LTC",
+            aliases: &["area lights with ltc", "ltc area lights"],
+            authority_marker: "## A3 — Soft area lights (LTC rect/disc/sphere) — [shipped]",
+            source_path: "src/render/area_ltc.rs",
+            source_marker: "sample_ltc_tables",
+        },
+        ShippedFeature {
+            label: "Screen-space reflections (SSR)",
+            aliases: &[
+                "screen-space reflections (ssr)",
+                "screen-space reflections",
+                "ssr now point",
+            ],
+            authority_marker: "## A2 — Reflections: SSR + reflective floor — [shipped]",
+            source_path: "src/render/settings.rs",
+            source_marker: "set_screen_space_reflections",
+        },
+    ];
+    let authority = fs::read_to_string(root.join(AUTHORITY)).unwrap_or_default();
+    let checklists = markdown_files(root)
+        .into_iter()
+        .filter(|rel| {
+            rel.starts_with("docs/checklists")
+                && rel != Path::new(AUTHORITY)
+                && rel != Path::new("docs/checklists/full-repo-review-v1.7.2-remediation.md")
+        })
+        .collect::<Vec<_>>();
+
+    for contract in contracts {
+        let source_shipped = fs::read_to_string(root.join(contract.source_path))
+            .is_ok_and(|text| text.contains(contract.source_marker));
+        if !source_shipped || !authority.contains(contract.authority_marker) {
+            continue;
+        }
+        for rel in &checklists {
+            let Ok(text) = fs::read_to_string(root.join(rel)) else {
+                continue;
+            };
+            let lines = text.lines().collect::<Vec<_>>();
+            for (index, line) in lines.iter().enumerate() {
+                let line = line.to_ascii_lowercase();
+                if !contract.aliases.iter().any(|alias| line.contains(alias)) {
+                    continue;
+                }
+                let start = index.saturating_sub(3);
+                let end = (index + 4).min(lines.len());
+                let status_window = lines[start..end].join("\n").to_ascii_lowercase();
+                let stale = [
+                    "[deferred",
+                    "[reopened",
+                    "stay later",
+                    "future backend lane",
+                ]
+                .iter()
+                .any(|marker| status_window.contains(marker));
+                let reconciled = status_window.contains("[shipped]")
+                    || status_window.contains("superseded")
+                    || status_window.contains("are shipped");
+                if stale && !reconciled {
+                    findings.push(Finding::new(
+                        "DOCS-REVERSE-STATUS-DRIFT",
+                        format!(
+                            "{}:{} marks shipped feature '{}' deferred/reopened; source {} and accepted authority {} both mark it shipped",
+                            rel.display(),
+                            index + 1,
+                            contract.label,
+                            contract.source_path,
+                            AUTHORITY,
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn check_required_doc_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -208,6 +329,7 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
         stable_fixtures::FIXTURES,
     );
     schema_references::check_schema_doc_references_listed_in_catalog(root, findings);
+    schema_references::check_public_cli_schemas_listed_in_catalog(root, findings);
 
     require_contains(
         root,
@@ -325,60 +447,6 @@ pub(crate) fn check_demo_build_heartbeat_contract(root: &Path, findings: &mut Ve
             "process.exit(code ?? 1)",
         ],
     );
-}
-
-pub(crate) fn require_contains(
-    root: &Path,
-    findings: &mut Vec<Finding>,
-    rule: &'static str,
-    rel: &str,
-    needles: &[&str],
-) {
-    let path = root.join(rel);
-    let Ok(text) = fs::read_to_string(&path) else {
-        if is_retired_internal_doc(rel) {
-            return;
-        }
-        findings.push(Finding::new(rule, format!("could not read {rel}")));
-        return;
-    };
-
-    // Phase 5.4 follow-up: extracted shader text lives in a sibling
-    // `<module>_shader.wgsl` file. When checking a `.rs` module, fall
-    // back to that sibling so doctor pins that name shader-text
-    // strings (e.g. `var brdf_lut: texture_2d<f32>`) continue to
-    // resolve after the extraction.
-    let sibling = if rel.ends_with(".rs") {
-        let stripped = rel.trim_end_matches(".rs");
-        let sibling_rel = format!("{stripped}_shader.wgsl");
-        fs::read_to_string(root.join(&sibling_rel)).ok()
-    } else {
-        None
-    };
-
-    for needle in needles {
-        let found_in_primary = text.contains(needle);
-        let found_in_sibling = sibling
-            .as_deref()
-            .is_some_and(|sibling_text| sibling_text.contains(needle));
-        if !found_in_primary && !found_in_sibling {
-            findings.push(Finding::new(
-                rule,
-                format!("{rel} is missing required contract text '{}'", needle),
-            ));
-        }
-    }
-}
-
-pub(crate) fn is_retired_internal_doc(rel: &str) -> bool {
-    rel == "docs/RFC-rust-3d-renderer.md"
-        || rel == "docs/release-notes-template.md"
-        || rel.starts_with("docs/specs/")
-        || rel.starts_with("docs/checklists/")
-        || rel.starts_with("docs/decisions/")
-        || rel.starts_with("docs/api/")
-        || rel.starts_with("docs/benchmarks/")
-        || rel == "docs/assets/gltf-asset-matrix.md"
 }
 
 pub(crate) fn check_source_scope(root: &Path, findings: &mut Vec<Finding>) {

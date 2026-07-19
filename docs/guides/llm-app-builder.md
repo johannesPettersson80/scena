@@ -69,6 +69,16 @@ RECIPE=target/scena-agent/primitive_scene/recipe.json
 
 Validate before rendering:
 
+For assembly/viewer snapshots, use persistent recipe ids in `anchors`,
+`connectors`, `bounds`, and `named_states`; never persist the numeric handles
+from `scena.scene_recipe_build.v1`. Spatial targets are typed objects such as
+`{"kind":"node","id":"shaft"}` or
+`{"kind":"import_node","import":"pump","path":"Root/Flange"}`. Authored
+offsets, snap tolerances, clearances, and bounds are scene meters. A connector
+`mate` names another connector id, while an active named state may apply only
+transform, tint, and visibility. See
+`docs/specs/recipe-spatial-state-v1.md` for inheritance and failure rules.
+
 ```bash
 scena validate-recipe "$RECIPE"
 ```
@@ -101,6 +111,49 @@ It generates broad-face, top-feature, and overview recipes, renders each through
 presentation-only `imports[].material`, `imports[].edge_emphasis`, and a
 principal-face camera where appropriate; these controls do not change the
 source geometry or CAD truth.
+
+For a general review sequence, reuse the same SceneHost and capture lifecycle:
+
+```bash
+scena recipe capture "$RECIPE" --out-dir target/capture \
+  --views front,top,right,isometric --turntable 24
+```
+
+Add `--clip open --frames 12` to sample an authored or imported animation from
+time zero through its duration. The command writes numbered PNG frames,
+descriptor JSON beside every frame, a contact sheet, and one
+`scena.capture_sequence_result.v1` report containing every camera, clip name,
+sample time, and payload hash. Use `--views none` when only a turntable or clip
+sequence is wanted. The core command deliberately does not choose a GIF/video
+codec; pass its ordered PNGs to an external encoder when that delivery format
+is needed.
+
+For attributed pixels, depth, or normals, produce semantic AOVs separately:
+
+```bash
+scena recipe aov "$RECIPE" --out-dir target/semantic-aov \
+  --passes id,depth,normal
+```
+
+Read persistent `recipe_node`, `recipe_instance`, or `import_node` identities
+from the legend. Do not store `runtime_identity` handles. Treat transparent
+geometry, strokes, labels, particles, helpers, and overlays as explicitly
+unattributed in CPU v1; the report's exclusion counts keep that limitation
+machine-visible.
+
+To review a recipe change structurally without constructing a renderer, run:
+
+```bash
+scena diff before.recipe.json after.recipe.json
+```
+
+Add `--render --out-dir target/recipe-diff` when pixels also matter. The
+rendered mode reuses the aggregate capture baseline diff and semantic AOVs; it
+does not turn every changed pixel into a confident node claim. Always verify
+the partition `changed_pixels = attributed_pixels + ambiguous_pixels + unattributed_pixels`
+and inspect ambiguous/unattributed regions before accepting the change. Edge
+pixels, excluded transparency/overlays, and different before/after identity
+candidates remain explicit rather than being silently assigned.
 
 For user-facing renders, add one more pass before calling the image done:
 inspect the native-resolution frame in explicit "what is wrong?" mode. Check

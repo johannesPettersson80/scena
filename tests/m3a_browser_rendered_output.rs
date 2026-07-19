@@ -11,11 +11,36 @@ use wasm_bindgen::{Clamped, JsCast};
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
+#[path = "support/q03_visual_metrics.rs"]
+mod q03_visual_metrics;
+use q03_visual_metrics::foreground_metrics;
+
 wasm_bindgen_test_configure!(run_in_browser);
+
+const CAMERA_DISTANCE_FOR_NDC_FIXTURE: f32 = 1.732_050_8;
 
 #[wasm_bindgen_test]
 fn m3a_browser_wasm_renders_import_and_interaction_paths_to_canvas() {
-    for frame in [render_glb_import_frame(), render_interaction_frame()] {
+    let import = render_glb_import_frame();
+    let interaction_base = render_interaction_frame(false);
+    let interaction_selected = render_interaction_frame(true);
+    let import_metrics = foreground_metrics(&import, 32, 32);
+    let selection_metrics = foreground_metrics(&interaction_selected, 32, 32);
+    assert_eq!(import_metrics.component_count, 1);
+    assert!(
+        import_metrics
+            .rect
+            .is_some_and(|rect| rect.width() >= 12 && rect.height() >= 12),
+        "browser import must occupy its expected projected region: {import_metrics:?}"
+    );
+    assert!(
+        selection_metrics.component_count == 1
+            && selection_metrics
+                .rect
+                .is_some_and(|rect| rect.width() >= 12 && rect.height() >= 12),
+        "browser selection path must retain the picked subject in its projected region: {selection_metrics:?}"
+    );
+    for frame in [import, interaction_base, interaction_selected] {
         assert!(nonblack_pixel_count(&frame) > 0);
         assert_eq!(browser_canvas_roundtrip(&frame, 32, 32), frame);
     }
@@ -58,13 +83,13 @@ fn render_glb_import_frame() -> Vec<u8> {
     renderer.frame_rgba8().to_vec()
 }
 
-fn render_interaction_frame() -> Vec<u8> {
+fn render_interaction_frame(selected: bool) -> Vec<u8> {
     let mut scene = Scene::new();
     let camera = scene
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURE)),
         )
         .expect("camera inserts");
     let node = scene
@@ -83,12 +108,18 @@ fn render_interaction_frame() -> Vec<u8> {
         .expect("pick succeeds")
         .expect("pick returns a hit");
     assert!(matches!(hit.target(), HitTarget::Node(hit_node) if hit_node == node));
-    scene
-        .interaction_mut()
-        .set_hover(Some(HitTarget::Node(node)));
-    scene
-        .interaction_mut()
-        .set_primary_selection(Some(HitTarget::Node(node)));
+    if selected {
+        scene
+            .interaction_mut()
+            .set_hover(Some(HitTarget::Node(node)));
+        scene
+            .interaction_mut()
+            .set_primary_selection(Some(HitTarget::Node(node)));
+        assert!(matches!(
+            scene.interaction().primary_selection(),
+            Some(HitTarget::Node(selected_node)) if selected_node == node
+        ));
+    }
 
     let mut renderer = Renderer::headless(32, 32).expect("renderer builds in wasm");
     renderer
@@ -197,7 +228,7 @@ fn minimal_glb_triangle_scene() -> Vec<u8> {
                 {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 0.0] }},
                 {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ],
             "materials": [

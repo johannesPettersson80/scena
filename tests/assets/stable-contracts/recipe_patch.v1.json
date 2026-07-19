@@ -1,0 +1,41 @@
+{
+  "schema": "scena.recipe_patch.v1",
+  "ok": true,
+  "source_path": "scene.recipe.json",
+  "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "import_id": "part",
+  "verb": "center",
+  "transform": {
+    "translation": [1.0, 2.0, 3.0],
+    "rotation": [0.0, 0.0, 0.0, 1.0],
+    "scale": [1.0, 1.0, 1.0]
+  },
+  "updated_recipe": {
+    "schema": "scena.scene_recipe.v1",
+    "imports": [
+      {
+        "id": "part",
+        "uri": "part.glb",
+        "transform": {
+          "translation": [1.0, 2.0, 3.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        }
+      }
+    ]
+  },
+  "formatting_preserved": false,
+  "semantic_changes": [
+    {
+      "path": "$.imports[0].transform",
+      "operation": "replace",
+      "before": null,
+      "after": {
+        "translation": [1.0, 2.0, 3.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    }
+  ],
+  "diagnostics": []
+}

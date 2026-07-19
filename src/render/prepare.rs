@@ -1,6 +1,5 @@
-use crate::assets::{Assets, GeometryHandle, TextureHandle};
+use crate::assets::{Assets, TextureHandle};
 use crate::diagnostics::PrepareError;
-use crate::geometry::Aabb;
 use crate::scene::{Scene, Vec3};
 
 use self::auto_instance::append_auto_instanced_mesh_groups;
@@ -10,17 +9,22 @@ pub(super) use self::diagnostics::{
 };
 pub(super) use self::dynamic::collect_dynamic_light_from_world;
 pub(super) use self::environment::collect_environment_lighting;
-#[doc(hidden)]
-pub use self::environment::precompute_environment_sidecar;
 pub(in crate::render) use self::environment::{
     EnvironmentLightingProfile, PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
 };
+#[doc(hidden)]
+pub use self::environment::{
+    precompute_environment_sidecar, precompute_environment_sidecar_profiled,
+};
+#[doc(hidden)]
+pub use self::environment_baker::EnvironmentBakeMetrics;
 use self::lighting::PreparedLights;
 pub(super) use self::lighting::{
     PreparedGpuLightUniform, TiledLightAssignment, collect_gpu_light_uniform,
     collect_gpu_tiled_light_assignment, gpu_tiled_light_assignment_required,
 };
-use self::materials::validate_material_texture_handles;
+use self::lod::select_mesh_lod_geometry;
+use self::materials::{PreparedMaterialTextures, validate_material_texture_handles};
 use self::primitives::append_geometry_primitives;
 pub(in crate::render) use self::primitives::draw_uniform_tint;
 #[cfg(test)]
@@ -32,14 +36,14 @@ pub(super) use self::resources::{
 use self::shadows::{collect_shadow_occluders, cpu_shadow_visibility_required};
 pub(super) use self::stats::{
     PreparedDepthStats, PreparedEnvironmentStats, PreparedLightingStats,
-    collect_depth_prepass_stats, collect_environment_prepare_stats, collect_lighting_stats,
+    collect_depth_prepass_stats_iter, collect_environment_prepare_stats, collect_lighting_stats,
 };
 use self::transforms::{compose_transform, identity_matrix4, prepared_primitive};
 use self::types::{
     DeformationInputs, GeometryPrimitiveSource, PreparedScene, PrimitiveBakeParams, PrimitiveSinks,
     TransparentPrimitive,
 };
-use super::{RasterTarget, camera::CameraProjection};
+use super::{PrepareWorkCounter, RasterTarget, camera::CameraProjection};
 
 mod auto_instance;
 mod cpu_bake;
@@ -51,6 +55,7 @@ mod labels;
 mod material_batch;
 pub(in crate::render) use self::material_batch::compute_material_batch_plan;
 mod lighting;
+mod lod;
 mod materials;
 mod particles;
 mod pbr_contract;
@@ -65,11 +70,13 @@ mod tests;
 pub(super) mod transforms;
 mod types;
 pub(in crate::render) use types::{
-    PreparedInstanceRecord, PreparedInstanceSet, PreparedLabelAtlas, PreparedLabelQuad,
-    PreparedMaterialReflection, PreparedPrimitive, PreparedStrokeSegment,
+    PreparedDrawTransform, PreparedGeometryStorageMetrics, PreparedInstanceRecord,
+    PreparedInstanceSet, PreparedLabelAtlas, PreparedLabelQuad, PreparedMaterialReflection,
+    PreparedPrimitive, PreparedStrokeSegment, share_model_space_vertex_buffer,
 };
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
     screen_space_scale: f32,
@@ -79,6 +86,31 @@ pub(super) fn collect_prepared_primitives<F>(
     backend_sampled_base_color_textures: &[TextureHandle],
     backend_material_slots: &[crate::assets::MaterialHandle],
     environment_lighting: PreparedEnvironmentLighting,
+) -> Result<PreparedScene, PrepareError> {
+    collect_prepared_primitives_profiled(
+        target,
+        screen_space_scale,
+        scene,
+        assets,
+        camera_projection,
+        backend_sampled_base_color_textures,
+        backend_material_slots,
+        environment_lighting,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn collect_prepared_primitives_profiled<F>(
+    target: RasterTarget,
+    screen_space_scale: f32,
+    scene: &Scene,
+    assets: Option<&Assets<F>>,
+    camera_projection: Option<&CameraProjection>,
+    backend_sampled_base_color_textures: &[TextureHandle],
+    backend_material_slots: &[crate::assets::MaterialHandle],
+    environment_lighting: PreparedEnvironmentLighting,
+    work: Option<&PrepareWorkCounter>,
 ) -> Result<PreparedScene, PrepareError> {
     if let Some(model_node) = scene.model_nodes().next() {
         return Err(PrepareError::UnsupportedModelNode { node: model_node });
@@ -91,8 +123,9 @@ pub(super) fn collect_prepared_primitives<F>(
     let shadow_occluders = if needs_cpu_shadow_visibility {
         collect_shadow_occluders(scene, assets, origin_shift)?
     } else {
-        Vec::new()
+        shadows::ShadowOccluderSet::default()
     };
+    let shadow_visibility_cache = shadows::ShadowVisibilityCache::new(&lights, &shadow_occluders);
     let shadow_projection_points = if needs_cpu_shadow_visibility {
         None
     } else {
@@ -105,11 +138,16 @@ pub(super) fn collect_prepared_primitives<F>(
     let mut primitives: Vec<PreparedPrimitive> = scene
         .renderable_nodes()
         .flat_map(|(node, renderable, transform)| {
+            let draw_transform = PreparedDrawTransform::shared(
+                transforms::world_from_model_matrix(transform, origin_shift),
+                transforms::normal_from_model_matrix(transform),
+            );
             renderable.primitives().iter().map(move |primitive| {
-                PreparedPrimitive::new(
+                PreparedPrimitive::new_with_draw_transform(
                     prepared_primitive(primitive, transform, origin_shift),
                     Some(node),
                     draw_uniform_tint(scene.node_tint(node).unwrap_or(None)),
+                    Arc::clone(&draw_transform),
                 )
             })
         })
@@ -134,10 +172,12 @@ pub(super) fn collect_prepared_primitives<F>(
             origin_shift,
             &lights,
             &shadow_occluders,
+            &shadow_visibility_cache,
             camera_projection,
             backend_sampled_base_color_textures,
             backend_material_slots,
             environment_lighting.clone(),
+            work,
             &mut instances,
             &mut strokes,
         )?
@@ -154,7 +194,7 @@ pub(super) fn collect_prepared_primitives<F>(
         };
         let base_geometry =
             assets
-                .geometry(mesh.geometry())
+                .geometry_snapshot(mesh.geometry())
                 .ok_or(PrepareError::GeometryNotFound {
                     node,
                     geometry: mesh.geometry(),
@@ -167,26 +207,30 @@ pub(super) fn collect_prepared_primitives<F>(
             transform,
             camera_projection,
         );
-        let geometry = assets
-            .geometry(geometry_handle)
-            .ok_or(PrepareError::GeometryNotFound {
-                node,
-                geometry: geometry_handle,
-            })?;
-        let material = assets
-            .material(mesh.material())
-            .ok_or(PrepareError::MaterialNotFound {
-                node,
-                material: mesh.material(),
-            })?;
+        let geometry =
+            assets
+                .geometry_snapshot(geometry_handle)
+                .ok_or(PrepareError::GeometryNotFound {
+                    node,
+                    geometry: geometry_handle,
+                })?;
+        let material =
+            assets
+                .material_snapshot(mesh.material())
+                .ok_or(PrepareError::MaterialNotFound {
+                    node,
+                    material: mesh.material(),
+                })?;
         validate_material_texture_handles(node, mesh.material(), &material, assets)?;
+        let material_textures = PreparedMaterialTextures::new(assets, &material);
         append_geometry_primitives(
             GeometryPrimitiveSource {
                 node,
+                instance: None,
                 material_handle: mesh.material(),
                 geometry: &geometry,
                 material: &material,
-                assets,
+                textures: &material_textures,
                 tint: scene.node_tint(node).unwrap_or(None),
             },
             DeformationInputs {
@@ -200,10 +244,12 @@ pub(super) fn collect_prepared_primitives<F>(
                 origin_shift,
                 lights: &lights,
                 shadow_occluders: &shadow_occluders,
+                shadow_visibility_cache: &shadow_visibility_cache,
                 camera_projection,
                 backend_sampled_base_color_textures,
                 backend_material_slots,
                 environment_lighting: environment_lighting.clone(),
+                work,
             },
             PrimitiveSinks {
                 primitives: &mut primitives,
@@ -217,21 +263,20 @@ pub(super) fn collect_prepared_primitives<F>(
         let Some(assets) = assets else {
             return Err(PrepareError::AssetsRequired { node });
         };
-        let geometry =
-            assets
-                .geometry(instance_set.geometry())
-                .ok_or(PrepareError::GeometryNotFound {
-                    node,
-                    geometry: instance_set.geometry(),
-                })?;
-        let material =
-            assets
-                .material(instance_set.material())
-                .ok_or(PrepareError::MaterialNotFound {
-                    node,
-                    material: instance_set.material(),
-                })?;
+        let geometry = assets.geometry_snapshot(instance_set.geometry()).ok_or(
+            PrepareError::GeometryNotFound {
+                node,
+                geometry: instance_set.geometry(),
+            },
+        )?;
+        let material = assets.material_snapshot(instance_set.material()).ok_or(
+            PrepareError::MaterialNotFound {
+                node,
+                material: instance_set.material(),
+            },
+        )?;
         validate_material_texture_handles(node, instance_set.material(), &material, assets)?;
+        let material_textures = PreparedMaterialTextures::new(assets, &material);
 
         let can_use_gpu_instance_path = gpu_instance_path
             && !matches!(
@@ -247,10 +292,11 @@ pub(super) fn collect_prepared_primitives<F>(
             append_geometry_primitives(
                 GeometryPrimitiveSource {
                     node,
+                    instance: None,
                     material_handle: instance_set.material(),
                     geometry: &geometry,
                     material: &material,
-                    assets,
+                    textures: &material_textures,
                     tint: None,
                 },
                 DeformationInputs::default(),
@@ -261,10 +307,12 @@ pub(super) fn collect_prepared_primitives<F>(
                     origin_shift,
                     lights: &lights,
                     shadow_occluders: &shadow_occluders,
+                    shadow_visibility_cache: &shadow_visibility_cache,
                     camera_projection,
                     backend_sampled_base_color_textures,
                     backend_material_slots,
                     environment_lighting: environment_lighting.clone(),
+                    work,
                 },
                 PrimitiveSinks {
                     primitives: &mut retained,
@@ -297,10 +345,11 @@ pub(super) fn collect_prepared_primitives<F>(
                 append_geometry_primitives(
                     GeometryPrimitiveSource {
                         node,
+                        instance: Some(instance.id()),
                         material_handle: instance_set.material(),
                         geometry: &geometry,
                         material: &material,
-                        assets,
+                        textures: &material_textures,
                         tint: multiply_tint(scene.node_tint(node).unwrap_or(None), instance.tint()),
                     },
                     DeformationInputs::default(),
@@ -311,10 +360,12 @@ pub(super) fn collect_prepared_primitives<F>(
                         origin_shift,
                         lights: &lights,
                         shadow_occluders: &shadow_occluders,
+                        shadow_visibility_cache: &shadow_visibility_cache,
                         camera_projection,
                         backend_sampled_base_color_textures,
                         backend_material_slots,
                         environment_lighting: environment_lighting.clone(),
+                        work,
                     },
                     PrimitiveSinks {
                         primitives: &mut primitives,
@@ -347,9 +398,10 @@ pub(super) fn collect_prepared_primitives<F>(
                     light_direction,
                     points.iter().copied(),
                 ),
-                None => {
-                    shadows::directional_light_view_projection(light_direction, &shadow_occluders)
-                }
+                None => shadows::directional_light_view_projection(
+                    light_direction,
+                    shadow_occluders.triangles(),
+                ),
             }
         })
         .unwrap_or_else(identity_matrix4);
@@ -361,71 +413,6 @@ pub(super) fn collect_prepared_primitives<F>(
         instances,
         light_from_world,
     })
-}
-
-fn select_mesh_lod_geometry(
-    scene: &Scene,
-    node: crate::scene::NodeKey,
-    base_geometry: GeometryHandle,
-    local_bounds: Aabb,
-    transform: crate::scene::Transform,
-    camera_projection: Option<&CameraProjection>,
-) -> GeometryHandle {
-    let Some(levels) = scene.mesh_lods(node) else {
-        return base_geometry;
-    };
-    let Some(fraction) =
-        projected_bounds_screen_fraction(local_bounds, transform, camera_projection)
-    else {
-        return base_geometry;
-    };
-    levels
-        .iter()
-        .find(|level| fraction <= level.max_screen_fraction())
-        .map_or(base_geometry, |level| level.geometry())
-}
-
-fn projected_bounds_screen_fraction(
-    local_bounds: Aabb,
-    transform: crate::scene::Transform,
-    camera_projection: Option<&CameraProjection>,
-) -> Option<f32> {
-    let projection = camera_projection?;
-    let bounds = crate::scene::view_math::transform_aabb(local_bounds, transform);
-    let mut min_x = f32::INFINITY;
-    let mut min_y = f32::INFINITY;
-    let mut max_x = f32::NEG_INFINITY;
-    let mut max_y = f32::NEG_INFINITY;
-    let mut projected_any = false;
-    for corner in aabb_corners(bounds) {
-        let Some(projected) = projection.project(corner) else {
-            continue;
-        };
-        min_x = min_x.min(projected.ndc_x);
-        min_y = min_y.min(projected.ndc_y);
-        max_x = max_x.max(projected.ndc_x);
-        max_y = max_y.max(projected.ndc_y);
-        projected_any = true;
-    }
-    if !projected_any {
-        return None;
-    }
-    let width_fraction = ((max_x - min_x).abs() * 0.5).clamp(0.0, 1.0);
-    let height_fraction = ((max_y - min_y).abs() * 0.5).clamp(0.0, 1.0);
-    Some(width_fraction.max(height_fraction))
-}
-
-fn aabb_corners(bounds: Aabb) -> [Vec3; 8] {
-    [
-        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
-        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
-        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
-        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
-        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
-        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
-        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
-        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
-    ]
 }
 
 fn collect_prepared_instance_records(
@@ -473,3 +460,4 @@ fn multiply_tint(
         (None, None) => None,
     }
 }
+use std::sync::Arc;

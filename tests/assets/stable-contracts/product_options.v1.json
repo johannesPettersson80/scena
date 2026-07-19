@@ -14,7 +14,7 @@
             "transforms": [],
             "tints": [
               {
-                "node": 4294967298,
+                "node": 562950221856770,
                 "tint": {
                   "r": 0.20000000298023224,
                   "g": 0.800000011920929,
@@ -42,7 +42,7 @@
             "hover": null,
             "material_variants": [
               {
-                "import": 4294967297,
+                "import": 1125900175278081,
                 "variant": "noon"
               }
             ],
@@ -71,7 +71,7 @@
             "tints": [],
             "visibility": [
               {
-                "node": 4294967299,
+                "node": 562950221856771,
                 "visible": false
               }
             ],

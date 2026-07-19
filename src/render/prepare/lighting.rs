@@ -149,6 +149,32 @@ impl PreparedLights {
             .find(|light| light.casts_shadows)
             .map(|light| negate_vec3(light.direction))
     }
+
+    pub(super) fn shadow_state_signature(&self) -> u64 {
+        let mut signature = 0xcbf2_9ce4_8422_2325_u64;
+        for light in &self.directional {
+            signature = hash_shadow_u32(signature, u32::from(light.casts_shadows));
+            signature = hash_shadow_vec3(signature, light.direction);
+        }
+        for sample in self.area_shadow_sample_positions() {
+            signature = hash_shadow_vec3(signature, sample);
+        }
+        signature
+    }
+}
+
+fn hash_shadow_vec3(signature: u64, value: Vec3) -> u64 {
+    let signature = hash_shadow_u32(signature, value.x.to_bits());
+    let signature = hash_shadow_u32(signature, value.y.to_bits());
+    hash_shadow_u32(signature, value.z.to_bits())
+}
+
+fn hash_shadow_u32(mut signature: u64, value: u32) -> u64 {
+    for byte in value.to_le_bytes() {
+        signature ^= u64::from(byte);
+        signature = signature.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    signature
 }
 
 pub(in crate::render) fn collect_gpu_light_uniform(

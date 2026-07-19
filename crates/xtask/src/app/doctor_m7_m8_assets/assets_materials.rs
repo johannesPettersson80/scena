@@ -9,7 +9,16 @@ use super::material_texture_diagnostics::check_material_texture_diagnostic_contr
 use super::sheen_materials::check_sheen_material_contracts;
 use super::visual_materials::check_m8_visual_material_contracts;
 use crate::app::prelude::*;
+mod c03_texture;
+mod c04_deformation;
+mod c05_units;
+pub(crate) use c03_texture::check_c03_texture_contracts;
+pub(crate) use c04_deformation::check_c04_deformation_contracts;
+pub(crate) use c05_units::check_c05_unit_contracts;
 pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    check_c03_texture_contracts(root, findings);
+    check_c04_deformation_contracts(root, findings);
+    check_c05_unit_contracts(root, findings);
     check_m8_instancing_contracts(root, findings);
     check_clearcoat_material_contracts(root, findings);
     check_sheen_material_contracts(root, findings);
@@ -136,7 +145,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_scene_load_reports_cache_fetch_and_external_buffer_metadata",
             "m8_cancelled_scene_load_does_not_cache_partial_asset_state",
             "m8_scene_load_progress_reports_fetch_parse_cache_and_external_buffers",
-            "m8_gltf_data_uri_image_texture_descriptor_is_preserved",
+            "m8_gltf_data_uri_image_texture_uses_bounded_content_identity",
             "m8_gltf_texcoord0_is_preserved_for_material_texture_sampling_contract",
             "m8_gltf_tangent_attribute_is_preserved_with_handedness",
             "m8_data_uri_base_color_texture_affects_cpu_preview_pixels",
@@ -389,12 +398,22 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         &[
             "create_material_bind_group_layout",
             "create_material_resources",
-            "material_texture_byte_len",
             "Vec<MaterialTextureResources>",
             "MaterialTextureUpload",
             "MaterialUniformUpload",
             "MATERIAL_UNIFORM_BYTE_LEN",
             "binding: 2",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/materials/resource_stats.rs",
+        &[
+            "material_texture_byte_len",
+            "material_texture_count",
+            "GpuResourceStats",
         ],
     );
     require_contains(

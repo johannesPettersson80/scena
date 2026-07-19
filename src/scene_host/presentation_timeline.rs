@@ -12,6 +12,7 @@ use super::visual_patch::{
 };
 use super::{SceneHostCameraState, SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::AssetFetcher;
+use crate::animation::AnimationLoopMode;
 
 pub const PRESENTATION_TIMELINE_SCHEMA_V1: &str = "scena.presentation_timeline.v1";
 
@@ -75,6 +76,13 @@ struct TimelinePatchBuilder {
     section_box: Option<VisualPatchSectionBoxV1>,
     metadata: Option<serde_json::Value>,
     echo_metadata: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResolvedAnimationSegment {
+    start_seconds: f64,
+    end_seconds: f64,
+    loop_mode: AnimationLoopMode,
 }
 
 impl PresentationTimelineV1 {
@@ -150,13 +158,24 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     ) -> Result<VisualPatchV1, SceneHostError> {
         let seconds = validate_time_seconds("timeline seconds", seconds)?;
         validate_timeline(timeline)?;
-        let mut builder = TimelinePatchBuilder::default();
-        for action in timeline
+        let resolved_animation_segments = timeline
             .actions
             .iter()
-            .filter(|action| action.at_seconds <= f64::from(seconds))
+            .map(|action| self.resolve_animation_segment(action))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut builder = TimelinePatchBuilder::default();
+        for (action, resolved_animation) in timeline
+            .actions
+            .iter()
+            .zip(resolved_animation_segments)
+            .filter(|(action, _)| action.at_seconds <= f64::from(seconds))
         {
-            let patch = self.timeline_action_patch(timeline, action, f64::from(seconds))?;
+            let patch = self.timeline_action_patch(
+                timeline,
+                action,
+                resolved_animation,
+                f64::from(seconds),
+            )?;
             builder.merge(patch);
         }
         Ok(builder.finish())
@@ -231,6 +250,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         &self,
         timeline: &PresentationTimelineV1,
         action: &PresentationTimelineActionV1,
+        resolved_animation: Option<ResolvedAnimationSegment>,
         seconds: f64,
     ) -> Result<VisualPatchV1, SceneHostError> {
         match &action.action {
@@ -252,17 +272,12 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                     ..VisualPatchV1::default()
                 })
             }
-            PresentationTimelineActionKindV1::AnimationClip {
-                mixer,
-                start_seconds,
-                speed,
-                end_seconds,
-            } => {
+            PresentationTimelineActionKindV1::AnimationClip { mixer, speed, .. } => {
                 let elapsed = (seconds - action.at_seconds).max(0.0);
-                let mut sample_seconds = start_seconds + elapsed * speed;
-                if let Some(end_seconds) = end_seconds {
-                    sample_seconds = sample_seconds.min(*end_seconds);
-                }
+                let segment = resolved_animation.ok_or_else(|| {
+                    invalid_input("timeline animation action was not pre-resolved")
+                })?;
+                let sample_seconds = segment.sample(elapsed, *speed);
                 Ok(VisualPatchV1 {
                     animation_time: vec![VisualPatchAnimationTimeV1 {
                         mixer: *mixer,
@@ -271,6 +286,58 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                     }],
                     ..VisualPatchV1::default()
                 })
+            }
+        }
+    }
+
+    fn resolve_animation_segment(
+        &self,
+        action: &PresentationTimelineActionV1,
+    ) -> Result<Option<ResolvedAnimationSegment>, SceneHostError> {
+        let PresentationTimelineActionKindV1::AnimationClip {
+            mixer,
+            start_seconds,
+            end_seconds,
+            ..
+        } = &action.action
+        else {
+            return Ok(None);
+        };
+        let (duration_seconds, loop_mode) = self.animation_timeline_binding(*mixer)?;
+        if *start_seconds > duration_seconds {
+            return Err(invalid_input(format!(
+                "timeline animation mixer {mixer} start_seconds {start_seconds} exceeds clip duration {duration_seconds}"
+            )));
+        }
+        let end_seconds = end_seconds
+            .unwrap_or(duration_seconds)
+            .min(duration_seconds);
+        Ok(Some(ResolvedAnimationSegment {
+            start_seconds: *start_seconds,
+            end_seconds,
+            loop_mode,
+        }))
+    }
+}
+
+impl ResolvedAnimationSegment {
+    fn sample(self, elapsed_seconds: f64, speed: f64) -> f64 {
+        let span = self.end_seconds - self.start_seconds;
+        if span <= f64::EPSILON {
+            return self.start_seconds;
+        }
+        let offset = elapsed_seconds * speed;
+        match self.loop_mode {
+            AnimationLoopMode::Once => (self.start_seconds + offset).min(self.end_seconds),
+            AnimationLoopMode::Repeat => {
+                let remainder = offset.rem_euclid(span);
+                let tolerance = f64::from(f32::EPSILON) * span.max(1.0) * 4.0;
+                let stable_remainder = if remainder <= tolerance || span - remainder <= tolerance {
+                    0.0
+                } else {
+                    remainder
+                };
+                self.start_seconds + stable_remainder
             }
         }
     }
@@ -399,9 +466,9 @@ fn validate_timeline(timeline: &PresentationTimelineV1) -> Result<(), SceneHostE
                 ..
             } => {
                 validate_time_seconds("timeline animation start_seconds", *start_seconds)?;
-                if !speed.is_finite() || *speed <= 0.0 {
+                if !speed.is_finite() || *speed <= 0.0 || *speed > f64::from(f32::MAX) {
                     return Err(invalid_input(format!(
-                        "timeline animation speed must be finite and > 0, got {speed}"
+                        "timeline animation speed must be finite, > 0, and <= f32::MAX, got {speed}"
                     )));
                 }
                 if let Some(end_seconds) = end_seconds {

@@ -16,9 +16,12 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{cell::RefCell, rc::Rc};
 
+use base64::Engine as _;
 use scena::material_showcase::{
     MaterialShowcasePreset, glass_background_target_bars, material_preset_showcase,
 };
@@ -31,6 +34,7 @@ use scena::{
     SourceUnits, TouchEvent, Transform, Vec3, Viewport, headless_gltf_viewer,
     interactive_gltf_viewer,
 };
+use sha2::{Digest, Sha256};
 
 const ARTIFACT_WIDTH: u32 = 256;
 const ARTIFACT_HEIGHT: u32 = 256;
@@ -170,10 +174,34 @@ fn write_frame_bounds_artifact(
     for pixel in rgba.chunks_exact(4) {
         ppm.extend_from_slice(&pixel[..3]);
     }
-    fs::write(dir.join(format!("{name}.ppm")), ppm).expect("PPM artifact can be written");
+    let ppm_path = dir.join(format!("{name}.ppm"));
+    fs::write(&ppm_path, ppm).expect("PPM artifact can be written");
+    let commit_sha = release_commit_sha().expect("release artifact commit resolves");
+    let timestamp_unix_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time follows Unix epoch")
+        .as_secs();
     fs::write(
         dir.join(format!("{name}.json")),
         serde_json::json!({
+            "schema": "scena.examples_visual.frame_bounds.v1",
+            "producer": "cargo test --test examples_visual_proof frame_bounds_rendered_output_proves_fill_center_and_unclipped_object -- --exact",
+            "commit_sha": commit_sha,
+            "timestamp_unix_seconds": timestamp_unix_seconds,
+            "source_checksums": [
+                {
+                    "path": "Cargo.lock",
+                    "sha256": sha256_path(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock")),
+                },
+                {
+                    "path": "tests/examples_visual_proof.rs",
+                    "sha256": sha256_path(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/examples_visual_proof.rs")),
+                },
+                {
+                    "path": format!("examples-visual/{name}.ppm"),
+                    "sha256": sha256_path(&ppm_path),
+                }
+            ],
             "proof_class": "frame-bounds-rendered-output",
             "rendered_image": format!("{}.ppm", name),
             "viewport": { "width": width, "height": height, "aspect": width as f32 / height as f32 },
@@ -204,6 +232,40 @@ fn write_frame_bounds_artifact(
         .to_string(),
     )
     .expect("frame_bounds metadata can be written");
+}
+
+fn release_commit_sha() -> Result<String, String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let candidate = std::env::var("SCENA_RELEASE_COMMIT")
+        .ok()
+        .or_else(|| std::env::var("GITHUB_SHA").ok())
+        .or_else(|| {
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(root)
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .map(|commit| commit.trim().to_string())
+        })
+        .ok_or_else(|| {
+            "release artifacts require SCENA_RELEASE_COMMIT, GITHUB_SHA, or a Git checkout"
+                .to_string()
+        })?;
+    if candidate.len() != 40 || !candidate.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!(
+            "release artifact commit must be exactly 40 hexadecimal characters, got {candidate:?}"
+        ));
+    }
+    Ok(candidate.to_ascii_lowercase())
+}
+
+fn sha256_path(path: &Path) -> String {
+    Sha256::digest(fs::read(path).expect("release provenance source reads"))
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn write_docs_image_artifact(name: &str, source: &str, width: u32, height: u32, rgba: &[u8]) {
@@ -658,6 +720,159 @@ fn round_b_material_preset_reference_docs_image() {
         height,
         &rgba,
     );
+}
+
+#[test]
+fn q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame() {
+    const WIDTH: u32 = 512;
+    const HEIGHT: u32 = 384;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("target/gate-artifacts/round-e-cpu-material-proof");
+    fs::create_dir_all(&dir).expect("Q02 CPU material artifact directory");
+    let assets = Assets::new();
+    let environment = pollster::block_on(
+        assets.load_environment("demo/samples/environment/white_studio_03_1k.hdr"),
+    )
+    .expect("Q02 approved public material-proof HDR loads for CPU");
+    let mut scene = Scene::new();
+    let glass_target_geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    for preset in material_preset_showcase() {
+        if let Some(position) = preset.background_target_position() {
+            for bar in glass_background_target_bars() {
+                scene
+                    .mesh(
+                        glass_target_geometry,
+                        assets.create_material(MaterialDesc::matte(bar.color)),
+                    )
+                    .transform(Transform {
+                        translation: position + bar.offset,
+                        rotation: Quat::IDENTITY,
+                        scale: bar.scale,
+                    })
+                    .add()
+                    .unwrap_or_else(|error| {
+                        panic!("Q02 {} CPU glass target inserts: {error:?}", preset.id)
+                    });
+            }
+        }
+        let material = match preset.id {
+            "satin" => pollster::block_on(assets.material_presets().satin())
+                .expect("Q02 source-backed satin loads"),
+            "leather" => pollster::block_on(assets.material_presets().leather())
+                .expect("Q02 source-backed leather loads"),
+            "rubber" => pollster::block_on(assets.material_presets().rubber())
+                .expect("Q02 source-backed rubber loads"),
+            _ => assets.create_material(preset.material_desc().with_double_sided(true)),
+        };
+        scene
+            .mesh(assets.create_geometry(preset.geometry_desc()), material)
+            .transform(preset.transform())
+            .add()
+            .unwrap_or_else(|error| panic!("Q02 {} CPU material inserts: {error:?}", preset.id));
+    }
+    scene
+        .directional_light(
+            DirectionalLight::key_light()
+                .with_illuminance_lux(1_600.0)
+                .with_shadows(false),
+        )
+        .add()
+        .expect("Q02 CPU material proof light inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )
+        .expect("Q02 CPU material proof camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("Q02 CPU material proof camera activates");
+    scene
+        .frame_bounds(
+            camera,
+            Aabb::new(Vec3::new(-1.18, -0.86, -0.24), Vec3::new(1.18, 0.82, 0.24)),
+            scena::FramingOptions::new()
+                .azimuth_elevation(-18.0, 18.0)
+                .fill(0.82)
+                .margin_px(18.0)
+                .viewport(WIDTH, HEIGHT),
+        )
+        .expect("Q02 CPU material proof frames shared fixture");
+    let mut renderer = Renderer::headless(WIDTH, HEIGHT).expect("Q02 headless CPU renderer builds");
+    renderer.set_environment(environment);
+    renderer.set_background(Background::NeutralGray);
+    renderer.set_exposure_ev(0.0);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("Q02 shared CPU material scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("Q02 shared CPU material scene renders");
+    let rgba = renderer.frame_rgba8();
+    assert_eq!(rgba.len(), (WIDTH * HEIGHT * 4) as usize);
+    assert!(
+        count_nonblack_pixels(rgba) > (WIDTH * HEIGHT / 8) as usize,
+        "Q02 shared CPU material frame must contain substantial live output"
+    );
+    let png_path = dir.join("live-frame.png");
+    image::save_buffer_with_format(
+        &png_path,
+        rgba,
+        WIDTH,
+        HEIGHT,
+        image::ColorType::Rgba8,
+        image::ImageFormat::Png,
+    )
+    .expect("Q02 live CPU frame PNG writes");
+    let timestamp_unix_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time follows Unix epoch")
+        .as_secs();
+    fs::write(
+        dir.join("live-cpu-frame.json"),
+        format!(
+            "{}\n",
+            serde_json::json!({
+                "schema": "scena.q02.live_cpu_material_frame.v1",
+                "proof_class": "live-cpu-rendered-round-e-material-showcase",
+                "producer": "cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact",
+                "commit_sha": release_commit_sha().expect("Q02 release commit resolves"),
+                "timestamp_unix_seconds": timestamp_unix_seconds,
+                "renderer": "Renderer::headless live CPU",
+                "fixture": "material_preset_showcase shared 4x3 scene",
+                "frame": {
+                    "width": WIDTH,
+                    "height": HEIGHT,
+                    "pixel_format": "rgba8-srgb-top-to-bottom",
+                    "rgba8_base64": base64::engine::general_purpose::STANDARD.encode(rgba),
+                    "rgba8_sha256": Sha256::digest(rgba)
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<String>(),
+                    "png_path": "round-e-cpu-material-proof/live-frame.png",
+                    "png_sha256": sha256_path(&png_path),
+                },
+                "source_checksums": [
+                    {
+                        "path": "tests/examples_visual_proof.rs",
+                        "sha256": sha256_path(&root.join("tests/examples_visual_proof.rs")),
+                    },
+                    {
+                        "path": "scripts/round_e_material_evaluator.cjs",
+                        "sha256": sha256_path(&root.join("scripts/round_e_material_evaluator.cjs")),
+                    },
+                    {
+                        "path": "tests/visual/references/round_e_material_thresholds.toml",
+                        "sha256": sha256_path(
+                            &root.join("tests/visual/references/round_e_material_thresholds.toml"),
+                        ),
+                    },
+                ],
+            })
+        ),
+    )
+    .expect("Q02 live CPU frame manifest writes");
 }
 
 #[test]
@@ -1770,6 +1985,29 @@ fn frame_bounds_rendered_output_proves_fill_center_and_unclipped_object() {
         frame,
         outcome,
         pixel_rect,
+    );
+    let metadata: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(artifact_dir().join("camera_framing_frame_bounds.json"))
+            .expect("frame-bounds release metadata reads"),
+    )
+    .expect("frame-bounds release metadata parses");
+    assert_eq!(metadata["schema"], "scena.examples_visual.frame_bounds.v1");
+    assert_eq!(
+        metadata["producer"],
+        "cargo test --test examples_visual_proof frame_bounds_rendered_output_proves_fill_center_and_unclipped_object -- --exact"
+    );
+    assert!(
+        metadata["commit_sha"].as_str().is_some_and(
+            |commit| commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+        ),
+        "frame-bounds release metadata must bind an exact commit"
+    );
+    assert!(metadata["timestamp_unix_seconds"].as_u64().is_some());
+    assert!(
+        metadata["source_checksums"]
+            .as_array()
+            .is_some_and(|entries| !entries.is_empty()),
+        "frame-bounds release metadata must bind producer sources"
     );
 }
 

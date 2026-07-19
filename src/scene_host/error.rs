@@ -16,6 +16,7 @@ pub enum SceneHostErrorCode {
     AnimationClipNotFound,
     AnimationHandleNotFound,
     StaleAnimationHandle,
+    WrongHandleNamespace,
     NodeHandleNotFound,
     StaleNodeHandle,
     ImportHandleNotFound,

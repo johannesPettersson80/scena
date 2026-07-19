@@ -7,27 +7,25 @@ use crate::render::prepare::{
     PreparedStrokeSegment,
 };
 
+#[cfg(any(feature = "browser-probe", feature = "scene-host"))]
 use super::browser_readback::create_browser_readback_resources;
 use super::instancing::INSTANCE_BYTE_LEN;
 use super::material_support::reject_unsupported_volume_texture_slots;
-use super::materials::{
-    create_material_bind_group_layout, create_material_resources, material_bind_group_count,
-    material_texture_byte_len, material_texture_count,
-};
+use super::materials::{create_material_bind_group_layout, create_material_resources};
 use super::output::{create_output_bind_group_layout, create_output_uniform_buffer};
 use super::pipeline::create_unlit_pipeline_set;
 use super::resource_encoding::{
     encode_draw_resources, encode_retained_vertices, retained_draw_uniform_capacity,
     retained_instance_buffer_capacity,
 };
-use super::stats::{PreparedResourceEstimateInput, estimate_prepared_resource_stats};
+use super::stats::GpuResourceStats;
 use super::vertices::VERTEX_BYTE_LEN;
 use super::{
-    GpuDeviceState, GpuPrepareOutcome, GpuPreparedResources, depth, environment, light_assignment,
-    material_texture_binding_mode, output, transmission,
+    GpuDeviceState, GpuOutputPlan, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
+    light_assignment, material_texture_binding_mode, output, transmission,
 };
-use crate::render::RasterTarget;
 use crate::render::prepare::TiledLightAssignment;
+use crate::render::{PrepareWorkCounter, RasterTarget};
 
 impl GpuDeviceState {
     #[allow(clippy::too_many_arguments)]
@@ -49,6 +47,9 @@ impl GpuDeviceState {
         material_slots: &[PreparedMaterialSlot],
         environment_lighting: &PreparedEnvironmentLighting,
         tiled_light_assignment: &TiledLightAssignment,
+        semantic_aov_capture_enabled: bool,
+        output_plan: GpuOutputPlan,
+        work: Option<&PrepareWorkCounter>,
     ) -> Result<GpuPrepareOutcome, crate::PrepareError> {
         self.configure_surface(target);
         self.release_prepared_resources();
@@ -63,9 +64,46 @@ impl GpuDeviceState {
             return Ok(GpuPrepareOutcome::NoResources);
         }
         reject_unsupported_volume_texture_slots(target, material_slots)?;
+        if output_plan.sample_count() > 1 {
+            return Err(crate::PrepareError::UnsupportedSampleCount {
+                backend: target.backend,
+                requested: output_plan.sample_count(),
+                maximum: 1,
+            });
+        }
+        let semantic_attribution = semantic_aov_capture_enabled
+            .then(|| {
+                crate::render::semantic_aov::build_gpu_semantic_attribution(
+                    draw_primitives,
+                    draw_instances,
+                    draw_strokes.len(),
+                    draw_labels.quads().len(),
+                )
+            })
+            .transpose()
+            .map_err(|entries| crate::PrepareError::GpuResourceUpload {
+                backend: target.backend,
+                reason: format!(
+                    "semantic AOV requires {entries} palette entries, exceeding the 24-bit limit"
+                ),
+            })?;
         let vertex_bytes = encode_retained_vertices(retained_primitives, retained_instances);
-        let encoded_draw_resources =
-            encode_draw_resources(draw_primitives, draw_instances, draw_strokes);
+        let encoded_draw_resources = encode_draw_resources(
+            draw_primitives,
+            draw_instances,
+            draw_strokes,
+            semantic_attribution.as_ref(),
+        );
+        if let Some(work) = work {
+            work.record_draw_uniform_indexing(
+                encoded_draw_resources.draw_uniforms.len(),
+                encoded_draw_resources
+                    .draw_uniform_index_metrics
+                    .lookup_probes,
+                (encoded_draw_resources.draw_uniforms.len() as u64)
+                    .saturating_mul(output::DRAW_UNIFORM_ENTRY_STRIDE),
+            );
+        }
         let instance_bytes = &encoded_draw_resources.instance_bytes;
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -134,7 +172,7 @@ impl GpuDeviceState {
                     depth_stats.reversed_z,
                     &output_bind_group_layout,
                     &draw_bind_group_layout,
-                    false,
+                    output_plan.depth_color_enabled(),
                     1,
                 )
             });
@@ -210,6 +248,23 @@ impl GpuDeviceState {
                 },
             )
         });
+        let semantic_aov = semantic_attribution.map(|attribution| {
+            super::semantic_aov::create_resources(
+                &self.device,
+                super::semantic_aov::SemanticAovResourceDescriptor {
+                    target,
+                    output_layout: &output_bind_group_layout,
+                    material_layout: &material_bind_group_layout,
+                    draw_layout: &draw_bind_group_layout,
+                    texture_binding_mode,
+                    reversed_z: depth_stats.reversed_z,
+                    attribution,
+                    webgl2_surface_format: (target.backend == Backend::WebGl2)
+                        .then_some(surface.config.format),
+                },
+            )
+        });
+        #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
         let readback = (target.backend == Backend::WebGpu).then(|| {
             create_browser_readback_resources(
                 &self.device,
@@ -221,20 +276,63 @@ impl GpuDeviceState {
                 depth_compare,
             )
         });
-        let vertex_count = (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32;
-        let stats = estimate_prepared_resource_stats(PreparedResourceEstimateInput {
-            target,
-            vertex_count: vertex_count as usize,
-            instance_capacity: instance_buffer_capacity,
-            has_surface_pipeline: true,
-            shadow_maps: lighting_stats.shadow_maps,
-            shadow_map_resolution: lighting_stats.directional_shadow_map_resolution,
-            depth_prepass_passes: u64::from(depth_prepass.is_some()),
-            material_texture_count: material_texture_count(&material_resources),
-            material_texture_bytes: material_texture_byte_len(&material_resources),
-            light_assignment_bytes: light_assignment.byte_len,
-            material_bind_groups: material_bind_group_count(&material_resources),
+        #[cfg(not(any(feature = "browser-probe", feature = "scene-host")))]
+        let readback = None;
+        let post = output_plan.post_enabled().then(|| {
+            super::post::create_resources(
+                &self.device,
+                target,
+                &output_bind_group_layout,
+                &material_bind_group_layout,
+                &draw_bind_group_layout,
+                texture_binding_mode,
+                depth_compare,
+                Some(surface.config.format),
+                depth_prepass
+                    .as_ref()
+                    .and_then(depth::DepthPrepassResources::color_view),
+            )
         });
+        let vertex_count = (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32;
+        let mut stats = GpuResourceStats {
+            buffers: 4,
+            pipelines: 2,
+            bind_groups: 1,
+            shader_modules: 2,
+            approximate_gpu_memory_bytes: vertex_buffer_size
+                .saturating_add(instance_buffer_size)
+                .saturating_add(output::OUTPUT_UNIFORM_BYTE_LEN)
+                .saturating_add(
+                    output::DRAW_UNIFORM_ENTRY_STRIDE
+                        .saturating_mul((draw_uniform_capacity as u64).max(1)),
+                ),
+            ..GpuResourceStats::default()
+        };
+        stats.add_assign(light_assignment::resource_stats(&light_assignment));
+        stats.add_assign(super::materials::resource_stats(&material_resources));
+        stats.add_assign(environment::resource_stats(
+            lighting_stats.directional_shadow_map_resolution,
+            environment_lighting,
+        ));
+        stats.add_assign(transmission::resource_stats(target));
+        if let Some(resources) = &depth_prepass {
+            stats.add_assign(depth::resource_stats(resources, target));
+        }
+        if let Some(resources) = &strokes {
+            stats.add_assign(super::strokes::resource_stats(resources));
+        }
+        if let Some(resources) = &labels {
+            stats.add_assign(super::labels::resource_stats(resources, retained_labels));
+        }
+        if let Some(resources) = &semantic_aov {
+            stats.add_assign(super::semantic_aov::resource_stats(resources));
+        }
+        if let Some(resources) = &post {
+            stats.add_assign(super::post::resource_stats(resources));
+        }
+        if let Some(resources) = &readback {
+            stats.add_assign(super::browser_readback::resource_stats(resources, target));
+        }
 
         self.resources = Some(GpuPreparedResources {
             target,
@@ -257,6 +355,7 @@ impl GpuDeviceState {
             depth_prepass,
             strokes,
             labels,
+            semantic_aov,
             surface_pipeline,
             readback,
             vertex_count,
@@ -268,12 +367,7 @@ impl GpuDeviceState {
             draw_uniform_capacity,
             draw_uniform_buffer,
             draw_bind_group,
-            output_bind_group_layout,
-            material_bind_group_layout,
-            draw_bind_group_layout,
-            texture_binding_mode,
-            depth_compare,
-            post: None,
+            post,
             stats,
         });
         Ok(GpuPrepareOutcome::FullRebuild)

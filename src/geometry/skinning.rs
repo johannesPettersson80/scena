@@ -28,6 +28,7 @@ impl GeometryDesc {
             });
         }
         self.skin = Some(skin);
+        self.generated_tangent_cache = Default::default();
         Ok(self)
     }
 

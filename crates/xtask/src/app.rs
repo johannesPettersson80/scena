@@ -50,6 +50,50 @@ mod tests_16;
 mod tests_17;
 #[cfg(test)]
 mod tests_18;
+#[cfg(test)]
+mod tests_19;
+#[cfg(test)]
+mod tests_20;
+#[cfg(test)]
+mod tests_21;
+#[cfg(test)]
+mod tests_22;
+#[cfg(test)]
+mod tests_23;
+#[cfg(test)]
+mod tests_24;
+#[cfg(test)]
+mod tests_25;
+#[cfg(test)]
+mod tests_26;
+#[cfg(test)]
+mod tests_27;
+#[cfg(test)]
+mod tests_28;
+#[cfg(test)]
+mod tests_29;
+#[cfg(test)]
+mod tests_30;
+#[cfg(test)]
+mod tests_31;
+#[cfg(test)]
+mod tests_32;
+#[cfg(test)]
+mod tests_33;
+#[cfg(test)]
+mod tests_34;
+#[cfg(test)]
+mod tests_35;
+#[cfg(test)]
+mod tests_36;
+#[cfg(test)]
+mod tests_37;
+#[cfg(test)]
+mod tests_38;
+#[cfg(test)]
+mod tests_39;
+#[cfg(test)]
+mod tests_40;
 mod util;
 mod visual_artifacts;
 mod visual_proof;

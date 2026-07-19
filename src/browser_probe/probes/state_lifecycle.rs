@@ -1,5 +1,6 @@
 use serde_json::{Map, json};
 use wasm_bindgen::prelude::JsValue;
+use wasm_bindgen_futures::JsFuture;
 use web_sys::HtmlCanvasElement;
 
 use crate::{
@@ -22,7 +23,7 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     .map_err(|error| JsValue::from_str(&format!("state lifecycle build failed: {error:?}")))?;
 
     let mut events = Vec::new();
-    let lifetime = verify_resource_lifetime(&mut renderer, &mut events)?;
+    let lifetime = verify_resource_lifetime(&mut renderer, &mut events).await?;
     let assets = Assets::new();
     let base_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.35, 0.35, 0.35));
     let base_material =
@@ -193,7 +194,7 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     );
     events.push("context-recovery");
     let renderer_readback = renderer
-        .browser_probe_readback_rgba8()
+        .browser_readback_rgba8()
         .await?
         .map(|readback| renderer_readback_json(&readback));
 
@@ -244,7 +245,7 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     .to_string())
 }
 
-fn verify_resource_lifetime(
+async fn verify_resource_lifetime(
     renderer: &mut Renderer,
     events: &mut Vec<&'static str>,
 ) -> Result<serde_json::Value, JsValue> {
@@ -258,7 +259,7 @@ fn verify_resource_lifetime(
         .map_err(|error| {
             JsValue::from_str(&format!("lifetime baseline prepare failed: {error:?}"))
         })?;
-    renderer.poll_device();
+    let baseline_poll = renderer.poll_device();
     let baseline = renderer.stats();
 
     let heavy_assets = Assets::new();
@@ -291,12 +292,28 @@ fn verify_resource_lifetime(
         .map_err(|error| {
             JsValue::from_str(&format!("lifetime release prepare failed: {error:?}"))
         })?;
-    renderer.poll_device();
+    let submitted_poll = renderer.poll_device();
+    let mut completion_poll = submitted_poll;
+    for _ in 0..120 {
+        if completion_poll.status == crate::DevicePollStatus::Confirmed
+            || completion_poll.pending_destructions_after == 0
+        {
+            break;
+        }
+        next_browser_turn().await?;
+        completion_poll = renderer.poll_device();
+    }
     let released = renderer.stats();
     if released.live_logical_handles != baseline.live_logical_handles {
         return Err(JsValue::from_str(
             "resource-lifetime: live logical handles should return to baseline",
         ));
+    }
+    if released.pending_destructions != baseline.pending_destructions {
+        return Err(JsValue::from_str(&format!(
+            "resource-lifetime: pending destructions were not confirmed before timeout; submitted={:?}, last={:?}",
+            submitted_poll.status, completion_poll.status
+        )));
     }
     events.push("resource-lifetime");
 
@@ -307,7 +324,22 @@ fn verify_resource_lifetime(
         "baseline_pending_destructions": baseline.pending_destructions,
         "released_pending_destructions": released.pending_destructions,
         "pending_returned_to_baseline": released.pending_destructions == baseline.pending_destructions,
+        "baseline_poll_status": format!("{:?}", baseline_poll.status),
+        "submitted_poll_status": format!("{:?}", submitted_poll.status),
+        "completion_poll_status": format!("{:?}", completion_poll.status),
+        "completion_confirmed": completion_poll.status == crate::DevicePollStatus::Confirmed,
     }))
+}
+
+async fn next_browser_turn() -> Result<(), JsValue> {
+    let window =
+        web_sys::window().ok_or_else(|| JsValue::from_str("browser window unavailable"))?;
+    let promise = js_sys::Promise::new(&mut |resolve, reject| {
+        if let Err(error) = window.request_animation_frame(&resolve) {
+            let _ = reject.call1(&JsValue::UNDEFINED, &error);
+        }
+    });
+    JsFuture::from(promise).await.map(|_| ())
 }
 
 async fn verify_animation_dirty(

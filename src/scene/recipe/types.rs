@@ -10,6 +10,7 @@ mod overlays;
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 mod render_result;
 mod setup;
+mod spatial_state;
 pub use authoring::{
     SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
     SceneRecipeCameraFramingV1, SceneRecipeCameraV1, SceneRecipeClippingPlaneV1,
@@ -22,7 +23,10 @@ pub use authoring::{
     SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
 };
 pub use build_manifest::{
-    SceneRecipeBuildAnimationV1, SceneRecipeBuildImportV1, SceneRecipeBuildResourceV1,
+    RECIPE_BUILD_RESULT_SCHEMA_V1, RecipeBuildExecutionV1, RecipeBuildResultV1,
+    SceneRecipeBuildAnchorV1, SceneRecipeBuildAnimationV1, SceneRecipeBuildBoundsV1,
+    SceneRecipeBuildConnectionV1, SceneRecipeBuildConnectorV1, SceneRecipeBuildImportV1,
+    SceneRecipeBuildInstanceV1, SceneRecipeBuildNamedStateV1, SceneRecipeBuildResourceV1,
     SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1, SceneRecipeBuildV1,
     SceneRecipeDiagnosticV1, SceneRecipeValidationReportV1,
 };
@@ -57,6 +61,14 @@ pub use setup::{
     SceneRecipeGridV1, SceneRecipeRenderV1, SceneRecipeSceneV1,
     SceneRecipeScreenSpaceReflectionsV1, SceneRecipeSsaoV1,
 };
+pub use spatial_state::{
+    SceneRecipeAnchorSourceV1, SceneRecipeAnchorV1, SceneRecipeBoundsSourceV1, SceneRecipeBoundsV1,
+    SceneRecipeConnectionParentingV1, SceneRecipeConnectionRollV1, SceneRecipeConnectorAlignmentV1,
+    SceneRecipeConnectorMateV1, SceneRecipeConnectorPolarityV1, SceneRecipeConnectorRollPolicyV1,
+    SceneRecipeConnectorSourceV1, SceneRecipeConnectorV1, SceneRecipeNamedStateV1,
+    SceneRecipeSpatialTargetV1, SceneRecipeStateTintV1, SceneRecipeStateTransformV1,
+    SceneRecipeStateVisibilityV1,
+};
 
 pub const SCENE_RECIPE_SCHEMA_V1: &str = "scena.scene_recipe.v1";
 pub const SCENE_RECIPE_VALIDATION_SCHEMA_V1: &str = "scena.scene_recipe_validation.v1";
@@ -79,6 +91,14 @@ pub struct SceneRecipeV1 {
     pub materials: Vec<SceneRecipeMaterialV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nodes: Vec<SceneRecipeNodeV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anchors: Vec<SceneRecipeAnchorV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connectors: Vec<SceneRecipeConnectorV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bounds: Vec<SceneRecipeBoundsV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub named_states: Vec<SceneRecipeNamedStateV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_sets: Vec<SceneRecipeInstanceSetV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

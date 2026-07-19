@@ -4,6 +4,19 @@ const http = require("http");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const zlib = require("zlib");
+const {
+  attachReleaseArtifactProvenance,
+} = require("../release/release_artifact_provenance.js");
+const { evaluateRequiredGpuParity } = require("./required_gpu_parity.js");
+const {
+  cropRoundEMaterialTiles,
+  evaluateRoundEMaterialTiles,
+  parseThresholds,
+} = require("../../scripts/round_e_material_evaluator.cjs");
+
+const ROUND_E_MATERIAL_THRESHOLDS = parseThresholds(
+  fs.readFileSync("tests/visual/references/round_e_material_thresholds.toml", "utf8"),
+);
 
 const MODEL_VIEWER_FIXTURE = "/fixtures/gltf/non_ndc_camera_scene.gltf";
 const ASSET_CATALOG_PREVIEW_FIXTURE = "/fixtures/gltf/material_variants_scene.gltf";
@@ -120,6 +133,30 @@ function solidPng(width, height, rgba) {
     row.copy(raw, y * row.length);
   }
 
+  return Buffer.concat([
+    signature,
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function rgbaPng(width, height, rgba) {
+  if (rgba.length !== width * height * 4) {
+    throw new Error(`RGBA PNG input length ${rgba.length} does not match ${width}x${height}`);
+  }
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width * 4 + 1);
+    raw[row] = 0;
+    rgba.copy(raw, row + 1, y * width * 4, (y + 1) * width * 4);
+  }
   return Buffer.concat([
     signature,
     pngChunk("IHDR", ihdr),
@@ -353,13 +390,11 @@ function chromiumExecutablePath() {
 }
 
 function chromiumLaunchArgs(backends) {
-  const args = [
-    "--enable-unsafe-webgpu",
-    "--enable-features=Vulkan,WebGPU",
-    "--ignore-gpu-blocklist",
-  ];
-  if (!backends.includes("webgpu") && !chromiumExecutablePath()) {
-    args.push("--use-angle=swiftshader");
+  const args = ["--ignore-gpu-blocklist"];
+  if (backends.includes("webgpu")) {
+    args.push("--enable-unsafe-webgpu", "--enable-features=Vulkan,WebGPU");
+  } else if (!chromiumExecutablePath()) {
+    args.push("--use-angle=swiftshader", "--enable-unsafe-swiftshader");
   }
   return args;
 }
@@ -459,6 +494,9 @@ function compactBrowserProbeArtifact(artifact) {
 }
 
 function isAllowedUnavailable(backend, error) {
+  if (process.env.SCENA_REQUIRE_PARITY === "1") {
+    return false;
+  }
   if (process.env.SCENA_BROWSER_ALLOW_UNAVAILABLE !== "1") {
     return false;
   }
@@ -511,6 +549,22 @@ function assertStateLifecycleProbe(backend, result) {
   if (!result.resource_lifetime || result.resource_lifetime.pending_returned_to_baseline !== true) {
     throw new Error(
       `${backend} state lifecycle probe did not prove resource-lifetime baseline recovery: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    result.resource_lifetime.submitted_poll_status !== "Submitted" &&
+    result.resource_lifetime.submitted_poll_status !== "Confirmed"
+  ) {
+    throw new Error(
+      `${backend} state lifecycle probe did not report submitted GPU destruction work: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    result.resource_lifetime.completion_poll_status !== "Confirmed" ||
+    result.resource_lifetime.completion_confirmed !== true
+  ) {
+    throw new Error(
+      `${backend} state lifecycle probe did not prove callback-confirmed GPU destruction completion: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -641,6 +695,84 @@ function assertDepthOverlapProof(backend, result) {
     throw new Error(
       `${backend} depth-overlap proof did not keep the nearer green triangle visible over later red geometry: ${JSON.stringify(result)}`,
     );
+  }
+}
+
+function assertCpuWebGl2Parity(result) {
+  const parity = result && result.parity;
+  const cpu = parity && parity.cpu_frame;
+  const gpu = parity && parity.gpu_frame;
+  const normalization = parity && parity.normalization;
+  const metrics = parity && parity.metrics;
+  const mutation = parity && parity.known_bad_mutation;
+  const readback = result && result.renderer_readback;
+  if (
+    !parity ||
+    parity.schema !== "scena.m6.cpu_webgl2_parity.v1" ||
+    parity.status !== "passed" ||
+    !Array.isArray(parity.failure_codes) ||
+    parity.failure_codes.length !== 0
+  ) {
+    throw new Error(`webgl2 headline proof is missing passing CPU/WebGL2 parity: ${JSON.stringify(result)}`);
+  }
+  if (
+    !cpu ||
+    cpu.source !== "renderer-owned-cpu-frame" ||
+    !gpu ||
+    gpu.source !== "renderer-owned-gpu-copy" ||
+    !Number.isInteger(cpu.width) ||
+    !Number.isInteger(cpu.height) ||
+    cpu.width <= 0 ||
+    cpu.height <= 0 ||
+    cpu.width !== gpu.width ||
+    cpu.height !== gpu.height ||
+    typeof cpu.rgba8_base64 !== "string" ||
+    cpu.rgba8_base64.length === 0 ||
+    typeof gpu.rgba8_base64 !== "string" ||
+    gpu.rgba8_base64.length === 0
+  ) {
+    throw new Error(`webgl2 parity must retain both renderer-owned RGBA8 frame inputs: ${JSON.stringify(parity)}`);
+  }
+  if (
+    !readback ||
+    readback.source !== "renderer-owned-gpu-copy" ||
+    readback.width !== gpu.width ||
+    readback.height !== gpu.height ||
+    readback.rgba8_fnv1a64 !== gpu.rgba8_fnv1a64
+  ) {
+    throw new Error(`webgl2 parity GPU input is not the renderer-owned headline readback: ${JSON.stringify(parity)}`);
+  }
+  if (
+    !normalization ||
+    normalization.row_origin !== "top-left" ||
+    normalization.transfer !== "srgb8" ||
+    normalization.alpha !== "straight-opaque" ||
+    normalization.dimensions !== "exact" ||
+    normalization.width !== cpu.width ||
+    normalization.height !== cpu.height
+  ) {
+    throw new Error(`webgl2 parity normalization is incomplete: ${JSON.stringify(normalization)}`);
+  }
+  if (
+    !metrics ||
+    !(metrics.rmse <= 0.08) ||
+    !(metrics.ssim >= 0.93) ||
+    !(metrics.p95_channel_delta <= 24) ||
+    !(metrics.mean_channel_delta <= 6.0) ||
+    !(metrics.foreground_iou >= 0.90) ||
+    !(metrics.foreground_region_rmse <= 0.13) ||
+    metrics.compared_pixels !== cpu.width * cpu.height
+  ) {
+    throw new Error(`webgl2 parity metrics are missing or outside bounds: ${JSON.stringify(metrics)}`);
+  }
+  if (
+    !mutation ||
+    mutation.kind !== "gpu-center-channel-perturbation" ||
+    mutation.rejected !== true ||
+    !Array.isArray(mutation.failure_codes) ||
+    mutation.failure_codes.length === 0
+  ) {
+    throw new Error(`webgl2 parity did not reject the known-bad GPU mutation: ${JSON.stringify(mutation)}`);
   }
 }
 
@@ -1068,6 +1200,92 @@ function assertMaterialPresetProof(backend, result) {
       `${backend} pbr-material-presets proof did not preserve screenshot/readback evidence: ${JSON.stringify(result)}`,
     );
   }
+}
+
+function evaluateRequiredWebgpuMaterialProof(result) {
+  const readback = result && result.renderer_readback;
+  if (
+    !readback ||
+    !Number.isInteger(readback.width) ||
+    !Number.isInteger(readback.height) ||
+    typeof readback.rgba8_base64 !== "string"
+  ) {
+    throw new Error("webgpu pbr-material-presets requires renderer-owned RGBA8 readback");
+  }
+  const rgba = Buffer.from(readback.rgba8_base64, "base64");
+  if (rgba.length !== readback.width * readback.height * 4) {
+    throw new Error(
+      `webgpu pbr-material-presets readback byte count ${rgba.length} does not match ${readback.width}x${readback.height} RGBA8`,
+    );
+  }
+  const tiles = cropRoundEMaterialTiles({
+    width: readback.width,
+    height: readback.height,
+    data: rgba,
+  });
+  const evaluation = evaluateRoundEMaterialTiles({
+    surface: "live-webgpu-chromium",
+    tiles,
+    thresholds: ROUND_E_MATERIAL_THRESHOLDS,
+    requireReferenceDelta: false,
+  });
+  result.round_e_threshold_evaluation = evaluation;
+  return evaluation;
+}
+
+function writeRequiredWebgpuMaterialArtifact(artifactDir, result, evaluation) {
+  const root = path.join(artifactDir, "round-e-webgpu-material-proof");
+  fs.mkdirSync(root, { recursive: true });
+  const pngPath = path.join(root, "live-frame.png");
+  const readbackRgba = Buffer.from(result.renderer_readback.rgba8_base64, "base64");
+  const png = rgbaPng(
+    result.renderer_readback.width,
+    result.renderer_readback.height,
+    readbackRgba,
+  );
+  fs.writeFileSync(pngPath, png);
+  const artifact = attachReleaseArtifactProvenance({
+    proof_class: "required-live-webgpu-round-e-shared-threshold-evaluation",
+    status: evaluation.status === "pass" ? "passed" : "failed",
+    backend: result.backend,
+    adapter: result.gpu_device,
+    renderer_readback: {
+      source: result.renderer_readback.source,
+      width: result.renderer_readback.width,
+      height: result.renderer_readback.height,
+      rgba8_fnv1a64: result.renderer_readback.rgba8_fnv1a64,
+    },
+    live_frame: {
+      path: path.relative(process.cwd(), pngPath),
+      sha256: crypto.createHash("sha256").update(png).digest("hex"),
+      bytes: png.length,
+    },
+    threshold_evaluator: {
+      proof_class: evaluation.proof_class,
+      evaluator_version: evaluation.evaluator_version,
+      surface: evaluation.surface,
+    },
+    thresholds: evaluation.thresholds,
+    per_material: evaluation.per_material,
+    neighbor_pairs: evaluation.neighbor_pairs,
+    errors: evaluation.errors,
+  }, {
+    root: process.cwd(),
+    schema: "scena.q02.round_e_webgpu_material_proof.v1",
+    producer: "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    sourcePaths: [
+      "scripts/round_e_material_evaluator.cjs",
+      "tests/browser/m6_rust_wasm_renderer_probe.js",
+      "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+      "tests/browser/required_gpu_parity.js",
+      "tests/visual/references/round_e_material_thresholds.toml",
+      "tests/release/release_artifact_provenance.js",
+    ],
+  });
+  fs.writeFileSync(
+    path.join(root, "result.json"),
+    `${JSON.stringify(artifact, null, 2)}\n`,
+  );
 }
 
 function assertCompressedAssetProof(backend, result) {
@@ -1627,6 +1845,7 @@ function assertDisplayP3OutputProof(backend, result) {
 }
 
 async function main() {
+  const materialOnly = process.argv.includes("--q02-material-only");
   const { chromium } = loadPlaywright();
   const browserRoot = __dirname;
   const pkgRoot = path.join(process.cwd(), "target", "m6-browser-pkg");
@@ -1645,6 +1864,14 @@ async function main() {
 
   const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot, demoRoot);
   const selectedBackends = configuredBackends();
+  const requiredParity = process.env.SCENA_REQUIRE_PARITY === "1";
+  const requiredParityEvaluations = [];
+  if (
+    materialOnly &&
+    (selectedBackends.length !== 1 || selectedBackends[0].toLowerCase() !== "webgpu")
+  ) {
+    throw new Error("Q02 material-only proof requires exactly the webgpu backend");
+  }
   const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
   const browser = await chromium.launch({
     executablePath: chromiumExecutablePath(),
@@ -1652,7 +1879,7 @@ async function main() {
     args: chromiumLaunchArgs(selectedBackends),
   });
 
-  let workflows = [
+  let workflows = materialOnly ? ["pbr-material-presets"] : [
     "model-viewer",
     "instancing",
     "picking-selection",
@@ -1691,40 +1918,42 @@ async function main() {
   workflows = configuredWorkflows(workflows);
   const results = [];
   try {
-    const viewerElementPage = await browser.newPage({ viewport: { width: 480, height: 320 } });
-    const viewerElementConsoleMessages = [];
-    viewerElementPage.on("console", (message) => {
-      viewerElementConsoleMessages.push(`${message.type()}: ${message.text()}`);
-    });
-    viewerElementPage.on("pageerror", (error) => {
-      viewerElementConsoleMessages.push(`pageerror: ${error.message}`);
-    });
-    try {
-      await viewerElementPage.goto(url);
-      results.push(await runScenaViewerElementProof(viewerElementPage, artifactDir));
-      results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
-      results.push(await runAssetDoctorBrowserProof(viewerElementPage, artifactDir));
-    } catch (error) {
-      if (viewerElementConsoleMessages.length > 0) {
-        error.message += `\nconsole:\n${viewerElementConsoleMessages.join("\n")}`;
+    if (!materialOnly) {
+      const viewerElementPage = await browser.newPage({ viewport: { width: 480, height: 320 } });
+      const viewerElementConsoleMessages = [];
+      viewerElementPage.on("console", (message) => {
+        viewerElementConsoleMessages.push(`${message.type()}: ${message.text()}`);
+      });
+      viewerElementPage.on("pageerror", (error) => {
+        viewerElementConsoleMessages.push(`pageerror: ${error.message}`);
+      });
+      try {
+        await viewerElementPage.goto(url);
+        results.push(await runScenaViewerElementProof(viewerElementPage, artifactDir));
+        results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
+        results.push(await runAssetDoctorBrowserProof(viewerElementPage, artifactDir));
+      } catch (error) {
+        if (viewerElementConsoleMessages.length > 0) {
+          error.message += `\nconsole:\n${viewerElementConsoleMessages.join("\n")}`;
+        }
+        throw error;
+      } finally {
+        await viewerElementPage.close();
       }
-      throw error;
-    } finally {
-      await viewerElementPage.close();
-    }
-    const viewerParityPage = await browser.newPage({ viewport: { width: 960, height: 760 } });
-    try {
-      await viewerParityPage.goto(url);
-      results.push(await runScenaViewerParityProof(viewerParityPage, artifactDir));
-    } finally {
-      await viewerParityPage.close();
-    }
-    const mobileA11yPage = await browser.newPage({ viewport: { width: 390, height: 640 }, isMobile: true, hasTouch: true });
-    try {
-      await mobileA11yPage.goto(url);
-      results.push(await runScenaViewerMobileA11yProof(mobileA11yPage, artifactDir));
-    } finally {
-      await mobileA11yPage.close();
+      const viewerParityPage = await browser.newPage({ viewport: { width: 960, height: 760 } });
+      try {
+        await viewerParityPage.goto(url);
+        results.push(await runScenaViewerParityProof(viewerParityPage, artifactDir));
+      } finally {
+        await viewerParityPage.close();
+      }
+      const mobileA11yPage = await browser.newPage({ viewport: { width: 390, height: 640 }, isMobile: true, hasTouch: true });
+      try {
+        await mobileA11yPage.goto(url);
+        results.push(await runScenaViewerMobileA11yProof(mobileA11yPage, artifactDir));
+      } finally {
+        await mobileA11yPage.close();
+      }
     }
     for (const backend of viewerElementOnly ? [] : selectedBackends) {
       const page = await browser.newPage({ viewport: { width: 96, height: 96 } });
@@ -1741,11 +1970,13 @@ async function main() {
       try {
         await page.goto(url);
         await waitForProbeFunction(page, "scenaM6RustWasmRendererProbe");
-        await waitForProbeFunction(page, "scenaM6DisplayP3OutputProbe");
         await waitForProbeFunction(page, "scenaM6RustWasmWorkflowProbe");
-        await waitForProbeFunction(page, "scenaM6RustWasmLifecycleProbe");
-        await waitForProbeFunction(page, "scenaM6RustWasmBenchmarkProbe");
-        await waitForProbeFunction(page, "scenaM6RustWasmStateLifecycleProbe");
+        if (!materialOnly) {
+          await waitForProbeFunction(page, "scenaM6DisplayP3OutputProbe");
+          await waitForProbeFunction(page, "scenaM6RustWasmLifecycleProbe");
+          await waitForProbeFunction(page, "scenaM6RustWasmBenchmarkProbe");
+          await waitForProbeFunction(page, "scenaM6RustWasmStateLifecycleProbe");
+        }
         let result;
         try {
           result = await page.evaluate(
@@ -1766,12 +1997,28 @@ async function main() {
             `${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}${consoleSuffix}`,
           );
         }
-        const displayP3Result = await page.evaluate(
-          (name) => window.scenaM6DisplayP3OutputProbe(name),
-          backend,
-        );
-        results.push(displayP3Result);
-        assertDisplayP3OutputProof(backend, displayP3Result);
+        const requiredEvaluation = evaluateRequiredGpuParity({
+          required: requiredParity,
+          requestedBackend: backend,
+          result,
+        });
+        requiredParityEvaluations.push({ backend, ...requiredEvaluation });
+        if (requiredEvaluation.status === "failed") {
+          throw new Error(
+            `${backend} required GPU parity failed: ${JSON.stringify(requiredEvaluation.failure_codes)}`,
+          );
+        }
+        if (backend === "webgl2") {
+          assertCpuWebGl2Parity(result);
+        }
+        if (!materialOnly) {
+          const displayP3Result = await page.evaluate(
+            (name) => window.scenaM6DisplayP3OutputProbe(name),
+            backend,
+          );
+          results.push(displayP3Result);
+          assertDisplayP3OutputProof(backend, displayP3Result);
+        }
         const workflowResults = new Map();
         for (const workflow of workflows) {
           let workflowResult;
@@ -1829,7 +2076,17 @@ async function main() {
           assertMaterialExtensionProof(backend, workflowResults.get("pbr-material-extensions"));
         }
         if (workflowResults.has("pbr-material-presets")) {
-          assertMaterialPresetProof(backend, workflowResults.get("pbr-material-presets"));
+          const materialPresetResult = workflowResults.get("pbr-material-presets");
+          assertMaterialPresetProof(backend, materialPresetResult);
+          if (backend === "webgpu") {
+            const evaluation = evaluateRequiredWebgpuMaterialProof(materialPresetResult);
+            writeRequiredWebgpuMaterialArtifact(artifactDir, materialPresetResult, evaluation);
+            if (evaluation.status !== "pass") {
+              throw new Error(
+                `webgpu pbr-material-presets failed shared Round E thresholds: ${JSON.stringify(evaluation.errors)}`,
+              );
+            }
+          }
         }
         if (workflowResults.has("material-textures")) {
           assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
@@ -1882,6 +2139,10 @@ async function main() {
             );
           }
         }
+        if (materialOnly) {
+          assertNoScenaGpuValidationErrors(backend, consoleMessages);
+          continue;
+        }
         const lifecycleResult = await page.evaluate(
           (name) => window.scenaM6RustWasmLifecycleProbe(name),
           backend,
@@ -1932,12 +2193,76 @@ async function main() {
     await new Promise((resolve) => server.close(resolve));
   }
 
-  const artifact = {
+  if (materialOnly) {
+    const q02Path = path.join(
+      artifactDir,
+      "round-e-webgpu-material-proof",
+      "result.json",
+    );
+    const q02 = JSON.parse(fs.readFileSync(q02Path, "utf8"));
+    if (q02.status !== "passed") {
+      throw new Error(`Q02 material-only proof did not pass: ${JSON.stringify(q02.errors)}`);
+    }
+    console.log(JSON.stringify({
+      gate: "q02-round-e-webgpu-materials",
+      status: q02.status,
+      artifact: path.relative(process.cwd(), q02Path),
+      live_frame: q02.live_frame,
+      threshold_evaluator: q02.threshold_evaluator,
+    }, null, 2));
+    return;
+  }
+
+  const releaseResults = results.filter(
+    (result) =>
+      result.schema === "scena.m6.browser_renderer_probe.v1" &&
+      result.workflow === "triangle" &&
+      result.status === "passed" &&
+      selectedBackends.some(
+        (backend) => String(result.backend).toLowerCase() === backend.toLowerCase(),
+      ),
+  );
+  for (const backend of selectedBackends) {
+    const matches = releaseResults.filter(
+      (result) => String(result.backend).toLowerCase() === backend.toLowerCase(),
+    );
+    if (matches.length !== 1) {
+      throw new Error(
+        `release browser proof requires exactly one renderer-owned triangle result for ${backend}, found ${matches.length}`,
+      );
+    }
+  }
+  const artifact = attachReleaseArtifactProvenance({
     gate: "m6-rust-wasm-renderer-probe",
     status: results.some((result) => result.status === "unavailable") ? "unavailable" : "passed",
     renderer: "scena Rust/WASM",
+    required_parity: {
+      enabled: requiredParity,
+      status:
+        requiredParity && requiredParityEvaluations.every((entry) => entry.status === "passed")
+          ? "passed"
+          : requiredParity
+            ? "failed"
+            : "diagnostic",
+      backends: selectedBackends,
+      evaluations: requiredParityEvaluations,
+    },
+    release_results: releaseResults,
     results,
-  };
+  }, {
+    root: process.cwd(),
+    schema: "scena.m6.rust_wasm_renderer_probe.v1",
+    producer: "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    sourcePaths: [
+      "Cargo.lock",
+      "package-lock.json",
+      "src/browser_probe.rs",
+      "src/browser_probe/parity.rs",
+      "tests/browser/m6_rust_wasm_renderer_probe.js",
+      "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+      "tests/release/release_artifact_provenance.js",
+    ],
+  });
   const artifactPath = path.join(artifactDir, "m6-rust-wasm-renderer-probe.json");
   fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
   console.log(JSON.stringify(compactBrowserProbeArtifact(artifact), null, 2));

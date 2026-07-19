@@ -7,6 +7,14 @@ on:
         description: "Existing v* tag to verify/publish, for example v1.3.0"
         required: false
         type: string
+      review_bundle_url:
+        description: "HTTPS URL for the independently authored reviews/*.tar.gz bundle"
+        required: false
+        type: string
+      review_bundle_sha256:
+        description: "Expected lowercase SHA-256 of the independent review bundle"
+        required: false
+        type: string
   push:
     tags: ["v*"]
 
@@ -21,8 +29,8 @@ jobs:
   linux-native-vulkan:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
       - name: Install software Vulkan
@@ -34,18 +42,30 @@ jobs:
           echo "VK_ICD_FILENAMES=$LVP_ICD" >> "$GITHUB_ENV"
           echo "LIBGL_ALWAYS_SOFTWARE=1" >> "$GITHUB_ENV"
       - name: Native release lane
+        env:
+          SCENA_REQUIRE_PARITY: "1"
         run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test -p xtask
+          cargo test -p xtask -- --list | grep -Fqx 'app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact: test'
+          cargo test -p xtask app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact -- --exact
           cargo test
+          cargo test --features inspection --test measurement_visual_proof
+          cargo test --lib --features scene-host scene_host::core_tests::c13_
+          SCENA_RELEASE_COMMIT="$GITHUB_SHA" SCENA_RELEASE_PROFILE="test-unoptimized" \
+            cargo test --test m5_release
           bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release
           bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh headless-cpu cargo test --test q01_waterbottle_cpu_reference q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders -- --exact
+          bash scripts/release_lane_command.sh headless-cpu cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact
+          bash scripts/release_lane_command.sh headless-cpu node scripts/evaluate_round_e_cpu_materials.cjs
           bash scripts/release_lane_command.sh linux-native-vulkan cargo check --examples
           RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
           cargo run -p xtask -- doctor --full
           cargo run -p xtask -- release-lane-artifact linux-native-vulkan
           cargo run -p xtask -- release-lane-artifact headless-cpu
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: release-linux-native-vulkan
@@ -55,12 +75,12 @@ jobs:
   linux-browser-webgl2:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20.20.0"
           cache: npm
@@ -71,10 +91,14 @@ jobs:
           npm ci
           npx playwright install chromium --with-deps
           cargo install wasm-pack --version 0.14.0 --locked
-          wasm-pack test --headless --chrome --test m6_browser_renderer_parity
+          wasm-pack test --headless --chrome --test m1_browser_rendered_output
+          wasm-pack test --headless --chrome --test m3a_browser_rendered_output
+          wasm-pack test --headless --chrome --test m3b_browser_rendered_output
+          wasm-pack test --headless --chrome --test m6_browser_renderer_parity --features browser-probe
           bash scripts/release_lane_command.sh linux-webgl2-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:m6
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:scene-host-proof
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:fr06-semantic-aov
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run demo:build
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run proof:build
           python3 -m http.server 18104 --directory demo > target/gate-artifacts/cloudflare-demo-server.log 2>&1 &
@@ -85,7 +109,7 @@ jobs:
           kill "$demo_server_pid" 2>/dev/null || true
           trap - EXIT
           cargo run -p xtask -- release-lane-artifact linux-webgl2-chromium
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: release-linux-webgl2-chromium
@@ -95,26 +119,30 @@ jobs:
   linux-browser-webgpu:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20.20.0"
           cache: npm
       - name: Browser WebGPU release lane
         env:
           SCENA_BROWSER_BACKENDS: webgpu
+          SCENA_REQUIRE_PARITY: "1"
         run: |
           npm ci
           npx playwright install chromium --with-deps
           cargo install wasm-pack --version 0.14.0 --locked
+          npm run test:required-gpu-parity
           bash scripts/release_lane_command.sh linux-webgpu-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
+          bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:q02-materials
           bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:m6
+          bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:fr06-semantic-aov
           cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: release-linux-webgpu-chromium
@@ -124,24 +152,24 @@ jobs:
   wasm32-unknown-unknown:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20.20.0"
           cache: npm
       - name: WASM release lane
         run: |
           npm ci
-          cargo check --target wasm32-unknown-unknown
+          cargo check --target wasm32-unknown-unknown --all-features
           cargo install wasm-pack --version 0.14.0 --locked
           bash scripts/release_lane_command.sh wasm32-unknown-unknown wasm-pack build --release --target web --out-dir target/m9-browser-pkg . --features browser-probe
           bash scripts/release_lane_command.sh wasm32-unknown-unknown npm run wasm:size
           cargo run -p xtask -- release-lane-artifact wasm32-unknown-unknown
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: release-wasm32-unknown-unknown
@@ -153,8 +181,8 @@ jobs:
   macos-metal:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
       - name: macOS release lane
@@ -164,7 +192,7 @@ jobs:
           SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- release-lane-artifact macos-metal
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: release-macos-metal
@@ -174,8 +202,8 @@ jobs:
   windows-dx12:
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
       - name: Windows release lane
@@ -185,7 +213,7 @@ jobs:
           bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
           bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
           cargo run -p xtask -- release-lane-artifact windows-dx12
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: release-windows-dx12
@@ -195,13 +223,15 @@ jobs:
   headless-4k-performance:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
       - name: Dedicated 4K benchmark
         env:
           SCENA_RUN_DEDICATED_4K_BENCHMARK: "1"
-        run: cargo test --release --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
-      - uses: actions/upload-artifact@v4
+          SCENA_BENCHMARK_PROFILE: perf-test
+          SCENA_BENCHMARK_COMMAND: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
+        run: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: release-headless-4k-performance
@@ -223,14 +253,42 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
       - name: Download release lane artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: target/release-artifacts
+      - name: Install independently authored review evidence
+        env:
+          SCENA_REVIEW_BUNDLE_URL: ${{ inputs.review_bundle_url }}
+          SCENA_REVIEW_BUNDLE_SHA256: ${{ inputs.review_bundle_sha256 }}
+        shell: bash
+        run: |
+          case "$SCENA_REVIEW_BUNDLE_URL" in
+            https://*) ;;
+            *)
+              echo "Release requires an HTTPS independent review bundle URL" >&2
+              exit 1
+              ;;
+          esac
+          case "$SCENA_REVIEW_BUNDLE_SHA256" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
+            *)
+              echo "Release requires a lowercase review bundle SHA-256" >&2
+              exit 1
+              ;;
+          esac
+          mkdir -p target/release-review-download
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            "$SCENA_REVIEW_BUNDLE_URL" \
+            --output target/release-review-download/reviews.tar.gz
+          python3 scripts/install_release_review_bundle.py \
+            --archive target/release-review-download/reviews.tar.gz \
+            --sha256 "$SCENA_REVIEW_BUNDLE_SHA256" \
+            --output target/release-artifacts/release-review-evidence
       - name: Stage release artifacts for readiness
         shell: bash
         run: |

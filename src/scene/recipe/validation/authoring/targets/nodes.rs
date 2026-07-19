@@ -98,20 +98,35 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_nodes(
         validate_known_fields(&path, object, NODE_FIELDS, diagnostics);
         validate_required_id(&path, object.get("id"), diagnostics);
         let geometry_id = object.get("geometry").and_then(Value::as_str);
-        validate_ref(
-            &format!("{path}.geometry"),
-            object.get("geometry"),
-            resources.geometries,
-            "geometry",
-            diagnostics,
-        );
-        validate_ref(
-            &format!("{path}.material"),
-            object.get("material"),
-            resources.materials,
-            "material",
-            diagnostics,
-        );
+        let material_id = object.get("material").and_then(Value::as_str);
+        match (object.get("geometry"), object.get("material")) {
+            (Some(geometry), Some(material)) => {
+                validate_ref(
+                    &format!("{path}.geometry"),
+                    Some(geometry),
+                    resources.geometries,
+                    "geometry",
+                    diagnostics,
+                );
+                validate_ref(
+                    &format!("{path}.material"),
+                    Some(material),
+                    resources.materials,
+                    "material",
+                    diagnostics,
+                );
+            }
+            (None, None) => {}
+            _ => diagnostics.push(diagnostic(
+                "incomplete_node_renderable",
+                "error",
+                &path,
+                "node geometry and material must be provided together, or both omitted for a group node",
+                "add both geometry and material, or omit both",
+                None,
+                false,
+            )),
+        }
         if let Some(parent) = object.get("parent") {
             validate_ref(
                 &format!("{path}.parent"),
@@ -205,6 +220,25 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_nodes(
             resources.all_node_ids,
             diagnostics,
         );
+        if geometry_id.is_none()
+            && (!object
+                .get("lods")
+                .and_then(Value::as_array)
+                .is_none_or(Vec::is_empty)
+                || object.get("morph_weights").is_some()
+                || object.get("skin_binding").is_some())
+        {
+            diagnostics.push(diagnostic(
+                "group_node_deformation",
+                "error",
+                &path,
+                "group nodes cannot declare LOD, morph, or skin data",
+                "attach deformation data to a node with geometry and material",
+                None,
+                false,
+            ));
+        }
+        let _ = material_id;
     }
 }
 

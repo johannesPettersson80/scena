@@ -1,6 +1,7 @@
 mod evidence_links;
 mod release_evidence;
 mod required_artifacts;
+mod typed_visual_proof;
 
 pub(crate) use evidence_links::evidence_links_for_category;
 pub(crate) use release_evidence::{

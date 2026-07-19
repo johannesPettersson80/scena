@@ -125,7 +125,7 @@ impl<F: AssetFetcher> Assets<F> {
             return;
         }
         let path = AssetPath::from(required_file.to_owned());
-        if let Err(error) = self.fetcher.fetch(&path).await {
+        if let Err(error) = self.tracked_fetcher().fetch(&path).await {
             findings.push(finding(
                 AssetReadinessSeverityV1::Error,
                 "required_file_missing",
@@ -152,7 +152,7 @@ impl<F: AssetFetcher> Assets<F> {
             return;
         };
         let path = AssetPath::from(path.to_owned());
-        match self.fetcher.fetch(&path).await {
+        match self.tracked_fetcher().fetch(&path).await {
             Ok(bytes) if !bytes.is_empty() => {
                 preview.status = "fetched".to_owned();
             }

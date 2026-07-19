@@ -28,6 +28,26 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/schema_entry.v1.json"),
         ),
         (
+            "scena.field_model.v1",
+            include_str!("../../tests/assets/stable-contracts/field_model.v1.json"),
+        ),
+        (
+            "scena.recipe_patch.v1",
+            include_str!("../../tests/assets/stable-contracts/recipe_patch.v1.json"),
+        ),
+        (
+            "scena.vocab.v1",
+            include_str!("../../tests/assets/stable-contracts/vocab.v1.json"),
+        ),
+        (
+            "scena.recipe_policy.v1",
+            include_str!("../../tests/assets/stable-contracts/recipe_policy.v1.json"),
+        ),
+        (
+            "scena.cli_error.v1",
+            include_str!("../../tests/assets/stable-contracts/cli_error.v1.json"),
+        ),
+        (
             "scena.capability_report.v1",
             include_str!("../../tests/assets/stable-contracts/capability_report.v1.json"),
         ),
@@ -128,12 +148,32 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/scene_recipe_build.v1.json"),
         ),
         (
+            "scena.recipe_build_result.v1",
+            include_str!("../../tests/assets/stable-contracts/recipe_build_result.v1.json"),
+        ),
+        (
             "scena.recipe_render_result.v1",
             include_str!("../../tests/assets/stable-contracts/recipe_render_result.v1.json"),
         ),
         (
             "scena.cad_inspection_result.v1",
             include_str!("../../tests/assets/stable-contracts/cad_inspection_result.v1.json"),
+        ),
+        (
+            "scena.capture_sequence_result.v1",
+            include_str!("../../tests/assets/stable-contracts/capture_sequence_result.v1.json"),
+        ),
+        (
+            "scena.semantic_aov_result.v1",
+            include_str!("../../tests/assets/stable-contracts/semantic_aov_result.v1.json"),
+        ),
+        (
+            "scena.scene_recipe_diff.v1",
+            include_str!("../../tests/assets/stable-contracts/scene_recipe_diff.v1.json"),
+        ),
+        (
+            "scena.scene_recipe_diff_result.v1",
+            include_str!("../../tests/assets/stable-contracts/scene_recipe_diff_result.v1.json"),
         ),
         (
             "scena.placement_result.v1",

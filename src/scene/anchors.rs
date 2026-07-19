@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use super::import::ImportAnchor;
 use super::{
     AnchorKey, ConnectionError, NodeKey, Scene, SourceCoordinateSystem, SourceUnits, Transform,
+    slot_index,
 };
 
 #[derive(Debug, Clone)]
@@ -120,6 +121,10 @@ impl AnchorFrame {
         self.import_live.as_ref().map(Arc::clone)
     }
 
+    pub(super) fn import_retirement_name(&self) -> Option<Option<String>> {
+        self.import_live.as_ref().map(|_| self.name.clone())
+    }
+
     fn is_live(&self) -> bool {
         match &self.import_live {
             Some(flag) => flag.load(Ordering::Acquire),
@@ -140,10 +145,17 @@ impl Scene {
     }
 
     pub fn anchor(&self, anchor: AnchorKey) -> Result<&AnchorFrame, ConnectionError> {
-        let frame = self
-            .anchors
-            .get(anchor)
-            .ok_or(ConnectionError::MissingAnchor { anchor })?;
+        let Some(frame) = self.anchors.get(anchor) else {
+            if let Some((retired, name)) = self.retired_anchors.get(&slot_index(anchor))
+                && *retired == anchor
+            {
+                return Err(ConnectionError::StaleAnchorHandle {
+                    anchor: Some(anchor),
+                    name: name.clone(),
+                });
+            }
+            return Err(ConnectionError::MissingAnchor { anchor });
+        };
         validate_anchor_live(frame, Some(anchor))?;
         if !self.nodes.contains_key(frame.node) {
             return Err(ConnectionError::NodeNotFound(frame.node));

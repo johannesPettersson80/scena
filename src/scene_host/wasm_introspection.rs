@@ -11,4 +11,18 @@ impl SceneHost {
             .render_introspection_json_from_capture(&capture, detail)
             .map_err(js_error)
     }
+
+    #[wasm_bindgen(js_name = renderIntrospectionJsonAsync)]
+    pub async fn render_introspection_json_async(
+        &mut self,
+        detail: bool,
+    ) -> Result<String, JsValue> {
+        let capture = self
+            .capture_rgba8_for_wasm_async()
+            .await
+            .map_err(js_error)?;
+        self.core
+            .render_introspection_json_from_capture(&capture, detail)
+            .map_err(js_error)
+    }
 }

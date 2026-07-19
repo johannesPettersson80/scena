@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::diagnostics::{ImportDiagnosticOverlay, LookupError};
@@ -319,6 +320,12 @@ impl SceneImport {
         } else {
             Err(LookupError::StaleImport)
         }
+    }
+
+    pub(in crate::scene) fn belongs_to(&self, scene: &Scene) -> bool {
+        self.scene_identity
+            .upgrade()
+            .is_some_and(|identity| Arc::ptr_eq(&identity, &scene.identity))
     }
 
     pub(super) fn is_live(&self) -> bool {

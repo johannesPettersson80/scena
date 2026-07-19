@@ -14,11 +14,15 @@ mod draw_common;
 mod draw_overlays;
 #[cfg(target_arch = "wasm32")]
 mod draw_surface;
+#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+mod draw_surface_probe;
 #[cfg(target_arch = "wasm32")]
 mod draw_surface_support;
 mod draw_uniform;
 mod dynamic_draw_state;
 mod environment;
+#[cfg(not(target_arch = "wasm32"))]
+mod headless_target;
 mod instancing;
 mod labels;
 mod lifecycle;
@@ -43,6 +47,8 @@ mod prepare_resources_wasm;
 mod readback;
 mod resource_encoding;
 mod scene_color;
+#[cfg_attr(not(feature = "scene-host"), allow(dead_code))]
+mod semantic_aov;
 mod shadow;
 mod stats;
 mod strokes;
@@ -57,12 +63,13 @@ use crate::platform::SurfaceSize;
 
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
+pub(in crate::render) use self::dynamic_draw_state::DynamicDrawStateUpdate;
 use self::instancing::InstanceDrawBatch;
 use self::labels::LabelResources;
 use self::light_assignment::LightAssignmentResources;
 use self::material_bindings::MaterialTextureBindingMode;
 use self::pipeline::MeshPipelineSet;
-pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
+pub(super) use self::post::{GpuOutputPlan, GpuPostPassCounts, GpuPostSettings};
 use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
 use self::strokes::StrokeResources;
@@ -79,6 +86,10 @@ pub(super) struct GpuDeviceState {
     queue: wgpu::Queue,
     surface: Option<GpuSurfaceState>,
     pending_destructions: u64,
+    #[cfg(target_arch = "wasm32")]
+    submitted_destructions: u64,
+    #[cfg(target_arch = "wasm32")]
+    confirmed_destructions: std::sync::Arc<std::sync::atomic::AtomicU64>,
     resources: Option<GpuPreparedResources>,
     output_color_space: OutputColorSpace,
     display_p3_canvas_configured: bool,
@@ -119,6 +130,12 @@ pub(in crate::render) struct GpuRenderResult {
     pub(in crate::render) submitted: bool,
     pub(in crate::render) post_counts: GpuPostPassCounts,
     pub(in crate::render) draw_submissions: u64,
+    pub(in crate::render) readback_copies: u64,
+    pub(in crate::render) readback_bytes_copied: u64,
+    pub(in crate::render) map_requests: u64,
+    pub(in crate::render) blocking_polls: u64,
+    pub(in crate::render) blocking_waits: u64,
+    pub(in crate::render) cpu_frame_copy_bytes: u64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -127,7 +144,7 @@ struct GpuPreparedResources {
     target: RasterTarget,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    readback: wgpu::Buffer,
+    readback: [wgpu::Buffer; 2],
     vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     instance_buffer_capacity: usize,
@@ -156,6 +173,7 @@ struct GpuPreparedResources {
     overlay_depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
     labels: Option<LabelResources>,
+    semantic_aov: Option<semantic_aov::SemanticAovResources>,
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
@@ -171,11 +189,6 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     draw_uniform_buffer: wgpu::Buffer,
     draw_bind_group: wgpu::BindGroup,
-    output_bind_group_layout: wgpu::BindGroupLayout,
-    material_bind_group_layout: wgpu::BindGroupLayout,
-    draw_bind_group_layout: wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
-    depth_compare: Option<wgpu::CompareFunction>,
     post: Option<post::PostResources>,
     offscreen_pipelines: MeshPipelineSet,
     offscreen_msaa4_pipelines: MeshPipelineSet,
@@ -231,6 +244,7 @@ struct GpuPreparedResources {
     depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
     labels: Option<LabelResources>,
+    semantic_aov: Option<semantic_aov::SemanticAovResources>,
     surface_pipeline: MeshPipelineSet,
     readback: Option<BrowserReadbackResources>,
     #[allow(dead_code)]
@@ -247,11 +261,6 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     draw_uniform_buffer: wgpu::Buffer,
     draw_bind_group: wgpu::BindGroup,
-    output_bind_group_layout: wgpu::BindGroupLayout,
-    material_bind_group_layout: wgpu::BindGroupLayout,
-    draw_bind_group_layout: wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
-    depth_compare: Option<wgpu::CompareFunction>,
     post: Option<post::PostResources>,
     stats: GpuResourceStats,
 }
@@ -288,6 +297,10 @@ impl GpuDeviceState {
             width: surface.config.width,
             height: surface.config.height,
         })
+    }
+
+    pub(super) const fn has_surface(&self) -> bool {
+        self.surface.is_some()
     }
 
     #[cfg(all(test, not(target_arch = "wasm32")))]

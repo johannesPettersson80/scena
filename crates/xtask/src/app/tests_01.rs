@@ -146,6 +146,17 @@ pub(crate) fn release_lane_artifacts_use_release_schema() {
             .is_some_and(|value| !value.is_empty()),
         "release lane artifacts must record the source revision"
     );
+    assert_eq!(
+        artifact["producer"],
+        "cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium"
+    );
+    assert!(artifact["timestamp_unix_seconds"].as_u64().is_some());
+    assert!(
+        artifact["source_checksums"]
+            .as_array()
+            .is_some_and(|entries| !entries.is_empty()),
+        "release lane artifacts must bind their measured source evidence"
+    );
     let command_records = artifact["command_records"]
         .as_array()
         .expect("command records are present");

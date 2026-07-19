@@ -139,6 +139,21 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .clip())
     }
 
+    pub(super) fn animation_timeline_binding(
+        &self,
+        handle: u64,
+    ) -> Result<(f64, AnimationLoopMode), SceneHostError> {
+        let mixer = self.resolve_animation_handle(handle)?;
+        let mixer = self
+            .scene
+            .animation_mixer(mixer)
+            .map_err(map_animation_error)?;
+        Ok((
+            f64::from(mixer.clip().duration_seconds()),
+            mixer.loop_mode(),
+        ))
+    }
+
     pub(super) fn advance_animation(
         &mut self,
         handle: u64,
@@ -173,6 +188,25 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 SceneHostErrorCode::StaleAnimationHandle,
             )
             .copied()
+    }
+
+    pub(super) fn invalidate_stale_animation_handles(&mut self) {
+        let stale = self
+            .animation_handles
+            .entries()
+            .filter_map(|(handle, mixer)| {
+                self.scene
+                    .animation_mixer(*mixer)
+                    .map_or(Some(handle), |mixer| mixer.is_stale().then_some(handle))
+            })
+            .collect::<Vec<_>>();
+        for handle in stale {
+            let _ = self.animation_handles.remove(
+                handle,
+                SceneHostErrorCode::AnimationHandleNotFound,
+                SceneHostErrorCode::StaleAnimationHandle,
+            );
+        }
     }
 }
 

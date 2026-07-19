@@ -75,11 +75,16 @@ const REQUIRED_BINDINGS = [
   ["prototype", "clearSectionBox"],
   ["prototype", "prepare"],
   ["prototype", "render"],
+  ["prototype", "renderTyped"],
   ["prototype", "inspectJson"],
   ["prototype", "renderIntrospectionJson"],
+  ["prototype", "renderIntrospectionJsonAsync"],
   ["prototype", "annotationProjectionsJson"],
   ["prototype", "capture"],
+  ["prototype", "captureAsync"],
   ["prototype", "capturePng"],
+  ["prototype", "capturePngAsync"],
+  ["prototype", "captureJsonAsync"],
   ["prototype", "pick"],
   ["prototype", "hover"],
   ["prototype", "select"],
@@ -992,6 +997,7 @@ async function runPageProof(page) {
       const phase0BeforeRightFrame = nodeByHandle(phase0BeforeInspection, rightFrame);
       const phase0BeforePrepare = timedPrepare("phase0_visual_patch_baseline");
       const phase0BeforeRender = JSON.parse(host.render());
+      const phase0BeforeRenderTyped = host.renderTyped();
       await waitForCanvasPresent();
       const phase0BeforeCapture = captureSummary(host.capture());
       const phase0TargetTransform = {
@@ -1045,8 +1051,12 @@ async function runPageProof(page) {
       const phase0AfterPrepare = timedPrepare("phase0_visual_patch_after");
       const phase0AfterRender = JSON.parse(host.render());
       await waitForCanvasPresent();
-      const phase0AfterCapture = captureSummary(host.capture());
-      const phase0CapturePng = host.capturePng();
+      const phase0AfterCapture = captureSummary(await host.captureAsync());
+      const phase0CapturePng = await host.capturePngAsync();
+      const phase0CaptureJson = JSON.parse(await host.captureJsonAsync());
+      if (phase0CaptureJson.schema !== "scena.capture.v1") {
+        throw new Error("captureJsonAsync returned an unexpected descriptor schema");
+      }
       const phase0CapturePngDescriptor = JSON.parse(phase0CapturePng.descriptorJson);
       const phase0CapturePngBytes = phase0CapturePng.png;
       const phase0CapturePngHeader = Array.from(phase0CapturePngBytes.slice(0, 8));
@@ -1364,7 +1374,7 @@ async function runPageProof(page) {
         return { result: null, expected: trackedNode, first_hit: firstHit };
       })();
       const phase3GridHandles = Array.from(
-        host.addProductGridFloorUnderNode(handleBigInt(leftImportReport.import)),
+        host.addProductGridFloorUnderNode(leftFrameHandle),
         handleNumber,
       );
       const afterGridInspection = JSON.parse(host.inspectJson());
@@ -1708,6 +1718,7 @@ async function runPageProof(page) {
           after_prepare: phase0AfterPrepare,
           restore_prepare: phase0RestorePrepare,
           before_render: phase0BeforeRender,
+          before_render_typed: phase0BeforeRenderTyped,
           after_render: phase0AfterRender,
           restore_render: phase0RestoreRender,
           before_capture: phase0BeforeCapture,
@@ -2073,6 +2084,26 @@ function assertProof(pageProof, screenshot) {
     contextEvents,
   );
   const phase0 = pageProof.phase0_visual_patch;
+  check(
+    "render_typed_returns_native_object_matching_json_compatibility_result",
+    phase0.before_render_typed &&
+      typeof phase0.before_render_typed === "object" &&
+      !Array.isArray(phase0.before_render_typed) &&
+      Number.isInteger(phase0.before_render_typed.width) &&
+      Number.isInteger(phase0.before_render_typed.height) &&
+      Number.isInteger(phase0.before_render_typed.draw_calls) &&
+      Number.isInteger(phase0.before_render_typed.primitives) &&
+      typeof phase0.before_render_typed.skipped === "boolean" &&
+      ["width", "height", "draw_calls", "primitives", "skipped"].every(
+        (field) => phase0.before_render_typed[field] === phase0.before_render[field],
+      ) &&
+      Object.keys(phase0.before_render_typed).sort().join(",") ===
+        ["draw_calls", "height", "primitives", "skipped", "width"].join(","),
+    {
+      typed: phase0.before_render_typed,
+      json_compatibility: phase0.before_render,
+    },
+  );
   const phase0AfterLeft = nodeByHandle(phase0.after_inspection, pageProof.handles.left_mesh);
   const phase0AfterRightFrame = nodeByHandle(
     phase0.after_inspection,

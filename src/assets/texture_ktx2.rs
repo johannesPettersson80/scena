@@ -42,6 +42,113 @@ pub(super) fn decode_ktx2_basisu_rgba8(
 
 #[cfg(all(
     feature = "ktx2",
+    not(all(
+        target_arch = "wasm32",
+        target_vendor = "unknown",
+        target_os = "unknown"
+    ))
+))]
+pub(in crate::assets) fn validate_ktx2_material_color_space(
+    path: &AssetPath,
+    bytes: &[u8],
+    color_space: TextureColorSpace,
+    material_slot: &str,
+) -> Result<(), AssetError> {
+    let reader = ktx2::Reader::new(bytes).map_err(|error| AssetError::Parse {
+        path: path.as_str().to_string(),
+        reason: format!("invalid KTX2 container: {error:?}"),
+    })?;
+    let actual_primaries = reader.color_primaries();
+    let actual_transfer = reader.transfer_function();
+    let (expected_primaries, expected_transfer, help) = match color_space {
+        TextureColorSpace::Srgb => (
+            Some(ktx2::ColorPrimaries::BT709),
+            Some(ktx2::TransferFunction::SRGB),
+            "Repair: encode color material textures with BT709 primaries and the sRGB transfer function.",
+        ),
+        TextureColorSpace::Linear => (
+            None,
+            Some(ktx2::TransferFunction::Linear),
+            "Repair: encode non-color material textures with unspecified primaries and the linear transfer function.",
+        ),
+    };
+    if actual_primaries == expected_primaries && actual_transfer == expected_transfer {
+        return Ok(());
+    }
+    Err(AssetError::Ktx2ColorSpaceMismatch {
+        path: path.as_str().to_string(),
+        material_slot: material_slot.to_string(),
+        dfd: Box::new(crate::diagnostics::Ktx2ColorSpaceDfd {
+            expected_primaries: primaries_name(expected_primaries),
+            expected_transfer: transfer_name(expected_transfer),
+            actual_primaries: primaries_name(actual_primaries),
+            actual_transfer: transfer_name(actual_transfer),
+        }),
+        help,
+    })
+}
+
+#[cfg(all(
+    feature = "ktx2",
+    not(all(
+        target_arch = "wasm32",
+        target_vendor = "unknown",
+        target_os = "unknown"
+    ))
+))]
+fn primaries_name(value: Option<ktx2::ColorPrimaries>) -> &'static str {
+    match value {
+        None => "UNSPECIFIED",
+        Some(ktx2::ColorPrimaries::BT709) => "BT709",
+        Some(ktx2::ColorPrimaries::BT601EBU) => "BT601_EBU",
+        Some(ktx2::ColorPrimaries::BT601SMPTE) => "BT601_SMPTE",
+        Some(ktx2::ColorPrimaries::BT2020) => "BT2020",
+        Some(ktx2::ColorPrimaries::CIEXYZ) => "CIEXYZ",
+        Some(ktx2::ColorPrimaries::ACES) => "ACES",
+        Some(ktx2::ColorPrimaries::ACESCC) => "ACESCC",
+        Some(ktx2::ColorPrimaries::NTSC1953) => "NTSC1953",
+        Some(ktx2::ColorPrimaries::PAL525) => "PAL525",
+        Some(ktx2::ColorPrimaries::DISPLAYP3) => "DISPLAY_P3",
+        Some(ktx2::ColorPrimaries::AdobeRGB) => "ADOBE_RGB",
+        Some(_) => "UNKNOWN",
+    }
+}
+
+#[cfg(all(
+    feature = "ktx2",
+    not(all(
+        target_arch = "wasm32",
+        target_vendor = "unknown",
+        target_os = "unknown"
+    ))
+))]
+fn transfer_name(value: Option<ktx2::TransferFunction>) -> &'static str {
+    match value {
+        None => "UNSPECIFIED",
+        Some(ktx2::TransferFunction::Linear) => "LINEAR",
+        Some(ktx2::TransferFunction::SRGB) => "SRGB",
+        Some(ktx2::TransferFunction::ITU) => "ITU",
+        Some(ktx2::TransferFunction::NTSC) => "NTSC",
+        Some(ktx2::TransferFunction::SLOG) => "SLOG",
+        Some(ktx2::TransferFunction::SLOG2) => "SLOG2",
+        Some(ktx2::TransferFunction::BT1886) => "BT1886",
+        Some(ktx2::TransferFunction::HLGOETF) => "HLG_OETF",
+        Some(ktx2::TransferFunction::HLGEOTF) => "HLG_EOTF",
+        Some(ktx2::TransferFunction::PQEOTF) => "PQ_EOTF",
+        Some(ktx2::TransferFunction::PQOETF) => "PQ_OETF",
+        Some(ktx2::TransferFunction::DCIP3) => "DCI_P3",
+        Some(ktx2::TransferFunction::PALOETF) => "PAL_OETF",
+        Some(ktx2::TransferFunction::PAL625EOTF) => "PAL625_EOTF",
+        Some(ktx2::TransferFunction::ST240) => "ST240",
+        Some(ktx2::TransferFunction::ACESCC) => "ACESCC",
+        Some(ktx2::TransferFunction::ACESCCT) => "ACESCCT",
+        Some(ktx2::TransferFunction::AdobeRGB) => "ADOBE_RGB",
+        Some(_) => "UNKNOWN",
+    }
+}
+
+#[cfg(all(
+    feature = "ktx2",
     target_arch = "wasm32",
     target_vendor = "unknown",
     target_os = "unknown"

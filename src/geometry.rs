@@ -3,17 +3,21 @@
 use crate::material::Color;
 use crate::scene::Vec3;
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, OnceLock};
 
 mod bounds;
+mod deformation;
 mod helpers;
 mod morph;
 mod primitive;
 mod primitive_meshes;
 mod skinning;
+mod spatial;
 mod static_batch;
 mod tangents;
 pub use morph::GeometryMorphTarget;
 pub use skinning::{GeometrySkin, SkinningMatrix};
+pub(crate) use spatial::TriangleBvh;
 pub use static_batch::StaticBatchReport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,6 +30,9 @@ pub enum GeometryTopology {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GeometryError {
     EmptyVertices,
+    PolylineTooShort {
+        point_count: usize,
+    },
     InvalidIndexCount {
         topology: GeometryTopology,
         index_count: usize,
@@ -68,6 +75,7 @@ pub enum GeometryError {
         joint: usize,
         joint_count: usize,
     },
+    MissingSkinMatrices,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -82,17 +90,186 @@ pub struct Aabb {
     pub max: Vec3,
 }
 
+#[derive(Debug)]
+struct OptionalVertexAttribute<T> {
+    authored: Option<Vec<T>>,
+    default: T,
+    len: usize,
+    materialized_default: OnceLock<Vec<T>>,
+}
+
+impl<T: Clone> Clone for OptionalVertexAttribute<T> {
+    fn clone(&self) -> Self {
+        Self {
+            authored: self.authored.clone(),
+            default: self.default.clone(),
+            len: self.len,
+            materialized_default: self.materialized_default.clone(),
+        }
+    }
+}
+
+impl<T: PartialEq> PartialEq for OptionalVertexAttribute<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && (0..self.len).all(|index| self.value(index) == other.value(index))
+    }
+}
+
+impl<T> OptionalVertexAttribute<T> {
+    fn authored(values: Vec<T>, default: T) -> Self {
+        let len = values.len();
+        Self {
+            authored: Some(values),
+            default,
+            len,
+            materialized_default: OnceLock::new(),
+        }
+    }
+
+    fn absent(len: usize, default: T) -> Self {
+        Self {
+            authored: None,
+            default,
+            len,
+            materialized_default: OnceLock::new(),
+        }
+    }
+
+    fn value(&self, index: usize) -> Option<&T> {
+        if index >= self.len {
+            return None;
+        }
+        self.authored
+            .as_ref()
+            .and_then(|values| values.get(index))
+            .or(Some(&self.default))
+    }
+
+    fn authored_slice(&self) -> Option<&[T]> {
+        self.authored.as_deref()
+    }
+
+    #[cfg(test)]
+    fn stored_bytes(&self) -> usize {
+        self.authored
+            .as_ref()
+            .map_or(0, |values| values.len() * std::mem::size_of::<T>())
+    }
+}
+
+impl<T: Clone> OptionalVertexAttribute<T> {
+    fn as_compatibility_slice(&self) -> &[T] {
+        self.authored.as_deref().unwrap_or_else(|| {
+            self.materialized_default
+                .get_or_init(|| vec![self.default.clone(); self.len])
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct GeneratedTangentCache(Arc<OnceLock<Arc<[[f32; 4]]>>>);
+
+impl PartialEq for GeneratedTangentCache {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct TriangleBvhCache(Arc<OnceLock<Arc<TriangleBvh>>>);
+
+impl PartialEq for TriangleBvhCache {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl TriangleBvhCache {
+    fn get_or_init(&self, geometry: &GeometryDesc) -> (Arc<TriangleBvh>, bool) {
+        if let Some(cached) = self.0.get() {
+            return (Arc::clone(cached), true);
+        }
+        let cached = self.0.get_or_init(|| {
+            Arc::new(TriangleBvh::from_indexed(
+                geometry.vertices(),
+                geometry.indices(),
+            ))
+        });
+        (Arc::clone(cached), false)
+    }
+}
+
+impl GeneratedTangentCache {
+    fn get_or_init(&self, generate: impl FnOnce() -> Vec<[f32; 4]>) -> (Arc<[[f32; 4]]>, bool) {
+        if let Some(cached) = self.0.get() {
+            return (Arc::clone(cached), true);
+        }
+        let cached = self.0.get_or_init(|| Arc::<[[f32; 4]]>::from(generate()));
+        (Arc::clone(cached), false)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeometryDesc {
     topology: GeometryTopology,
     vertices: Vec<GeometryVertex>,
     indices: Vec<u32>,
-    vertex_colors: Vec<Color>,
-    tex_coords0: Vec<[f32; 2]>,
+    vertex_colors: OptionalVertexAttribute<Color>,
+    tex_coords0: OptionalVertexAttribute<[f32; 2]>,
     tangents: Option<Vec<[f32; 4]>>,
+    generated_tangent_cache: GeneratedTangentCache,
+    triangle_bvh_cache: TriangleBvhCache,
     morph_targets: Vec<GeometryMorphTarget>,
     skin: Option<GeometrySkin>,
     bounds: Aabb,
+}
+
+#[cfg(test)]
+mod pf07_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::sync::Arc;
+
+    #[test]
+    fn pf07_generated_model_tangent_cache_is_shared_and_geometry_equality_ignores_warmth() {
+        let geometry = GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![
+                GeometryVertex {
+                    position: Vec3::ZERO,
+                    normal: Vec3::Z,
+                },
+                GeometryVertex {
+                    position: Vec3::X,
+                    normal: Vec3::Z,
+                },
+                GeometryVertex {
+                    position: Vec3::Y,
+                    normal: Vec3::Z,
+                },
+            ],
+            vec![0, 1, 2],
+        )
+        .expect("triangle");
+        let cold_clone = geometry.clone();
+        let calls = Cell::new(0);
+        let generate = || {
+            calls.set(calls.get() + 1);
+            vec![[1.0, 0.0, 0.0, 1.0]]
+        };
+
+        let (first, first_hit) = geometry.cached_generated_tangents(generate);
+        let (second, second_hit) = cold_clone.cached_generated_tangents(generate);
+
+        assert!(!first_hit);
+        assert!(second_hit);
+        assert_eq!(calls.get(), 1);
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(
+            geometry, cold_clone,
+            "cache warmth is not geometry identity"
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -128,8 +305,6 @@ pub struct Primitive {
     attributes: [PrimitiveVertexAttributes; 3],
     render_material_slot: u32,
     depth_prepass_eligible: bool,
-    world_from_model: [f32; 16],
-    normal_from_model: [f32; 16],
 }
 
 impl GeometryDesc {
@@ -138,8 +313,7 @@ impl GeometryDesc {
         vertices: Vec<GeometryVertex>,
         indices: Vec<u32>,
     ) -> Result<Self, GeometryError> {
-        let vertex_colors = vec![Color::WHITE; vertices.len()];
-        Self::try_new_with_vertex_colors(topology, vertices, indices, vertex_colors)
+        Self::try_new_with_optional_vertex_attributes(topology, vertices, indices, None, None)
     }
 
     pub fn try_new_with_vertex_colors(
@@ -148,13 +322,12 @@ impl GeometryDesc {
         indices: Vec<u32>,
         vertex_colors: Vec<Color>,
     ) -> Result<Self, GeometryError> {
-        let tex_coords0 = vec![[0.0, 0.0]; vertices.len()];
-        Self::try_new_with_vertex_colors_and_tex_coords(
+        Self::try_new_with_optional_vertex_attributes(
             topology,
             vertices,
             indices,
-            vertex_colors,
-            tex_coords0,
+            Some(vertex_colors),
+            None,
         )
     }
 
@@ -165,16 +338,36 @@ impl GeometryDesc {
         vertex_colors: Vec<Color>,
         tex_coords0: Vec<[f32; 2]>,
     ) -> Result<Self, GeometryError> {
+        Self::try_new_with_optional_vertex_attributes(
+            topology,
+            vertices,
+            indices,
+            Some(vertex_colors),
+            Some(tex_coords0),
+        )
+    }
+
+    pub(crate) fn try_new_with_optional_vertex_attributes(
+        topology: GeometryTopology,
+        vertices: Vec<GeometryVertex>,
+        indices: Vec<u32>,
+        vertex_colors: Option<Vec<Color>>,
+        tex_coords0: Option<Vec<[f32; 2]>>,
+    ) -> Result<Self, GeometryError> {
         let Some(bounds) = Aabb::from_vertices(&vertices) else {
             return Err(GeometryError::EmptyVertices);
         };
-        if vertex_colors.len() != vertices.len() {
+        if let Some(vertex_colors) = vertex_colors.as_ref()
+            && vertex_colors.len() != vertices.len()
+        {
             return Err(GeometryError::InvalidVertexColorCount {
                 vertex_count: vertices.len(),
                 color_count: vertex_colors.len(),
             });
         }
-        if tex_coords0.len() != vertices.len() {
+        if let Some(tex_coords0) = tex_coords0.as_ref()
+            && tex_coords0.len() != vertices.len()
+        {
             return Err(GeometryError::InvalidTextureCoordinateCount {
                 vertex_count: vertices.len(),
                 tex_coord_count: tex_coords0.len(),
@@ -198,13 +391,22 @@ impl GeometryDesc {
                 });
             }
         }
+        let vertex_count = vertices.len();
         Ok(Self {
             topology,
             vertices,
             indices,
-            vertex_colors,
-            tex_coords0,
+            vertex_colors: vertex_colors.map_or_else(
+                || OptionalVertexAttribute::absent(vertex_count, Color::WHITE),
+                |values| OptionalVertexAttribute::authored(values, Color::WHITE),
+            ),
+            tex_coords0: tex_coords0.map_or_else(
+                || OptionalVertexAttribute::absent(vertex_count, [0.0, 0.0]),
+                |values| OptionalVertexAttribute::authored(values, [0.0, 0.0]),
+            ),
             tangents: None,
+            generated_tangent_cache: GeneratedTangentCache::default(),
+            triangle_bvh_cache: TriangleBvhCache::default(),
             morph_targets: Vec::new(),
             skin: None,
             bounds,
@@ -220,12 +422,28 @@ impl GeometryDesc {
     }
 
     pub fn polyline(points: &[Vec3]) -> Self {
-        assert!(points.len() >= 2, "polyline requires at least two points");
+        Self::try_polyline(points).expect("polyline requires at least two points")
+    }
+
+    pub fn try_polyline(points: &[Vec3]) -> Result<Self, GeometryError> {
+        if points.len() < 2 {
+            return Err(GeometryError::PolylineTooShort {
+                point_count: points.len(),
+            });
+        }
         let mut indices = Vec::with_capacity((points.len() - 1) * 2);
         for index in 0..points.len() as u32 - 1 {
             indices.extend_from_slice(&[index, index + 1]);
         }
-        Self::lines_from_positions(points.to_vec(), indices)
+        let vertices = points
+            .iter()
+            .copied()
+            .map(|position| GeometryVertex {
+                position,
+                normal: Vec3::ZERO,
+            })
+            .collect();
+        Self::try_new(GeometryTopology::Lines, vertices, indices)
     }
 
     pub fn arrow(start: Vec3, end: Vec3) -> Self {
@@ -297,11 +515,46 @@ impl GeometryDesc {
     }
 
     pub fn vertex_colors(&self) -> &[Color] {
-        &self.vertex_colors
+        self.vertex_colors.as_compatibility_slice()
     }
 
     pub fn tex_coords0(&self) -> &[[f32; 2]] {
-        &self.tex_coords0
+        self.tex_coords0.as_compatibility_slice()
+    }
+
+    pub(crate) fn authored_vertex_colors(&self) -> Option<&[Color]> {
+        self.vertex_colors.authored_slice()
+    }
+
+    pub(crate) fn authored_tex_coords0(&self) -> Option<&[[f32; 2]]> {
+        self.tex_coords0.authored_slice()
+    }
+
+    pub(crate) fn vertex_color_or_default(&self, index: usize) -> Color {
+        self.vertex_colors
+            .value(index)
+            .copied()
+            .unwrap_or(Color::WHITE)
+    }
+
+    pub(crate) fn tex_coord0_or_default(&self, index: usize) -> [f32; 2] {
+        self.tex_coords0.value(index).copied().unwrap_or([0.0, 0.0])
+    }
+
+    pub(crate) fn cached_generated_tangents(
+        &self,
+        generate: impl FnOnce() -> Vec<[f32; 4]>,
+    ) -> (Arc<[[f32; 4]]>, bool) {
+        self.generated_tangent_cache.get_or_init(generate)
+    }
+
+    pub(crate) fn cached_triangle_bvh(&self) -> (Arc<TriangleBvh>, bool) {
+        self.triangle_bvh_cache.get_or_init(self)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn optional_attribute_storage_bytes(&self) -> usize {
+        self.vertex_colors.stored_bytes() + self.tex_coords0.stored_bytes()
     }
 
     pub fn bounds(&self) -> Aabb {
@@ -330,6 +583,43 @@ fn sub(a: Vec3, b: Vec3) -> Vec3 {
 
 fn scale(value: Vec3, factor: f32) -> Vec3 {
     Vec3::new(value.x * factor, value.y * factor, value.z * factor)
+}
+
+#[cfg(test)]
+mod optional_attribute_tests {
+    use super::*;
+
+    #[test]
+    fn pf10_absent_optional_vertex_attributes_are_lazy_and_default_identically() {
+        let vertices = vec![
+            GeometryVertex {
+                position: Vec3::ZERO,
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(1.0, 0.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(0.0, 1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ];
+        let geometry = GeometryDesc::try_new_with_optional_vertex_attributes(
+            GeometryTopology::Triangles,
+            vertices,
+            vec![0, 1, 2],
+            None,
+            None,
+        )
+        .expect("valid geometry");
+
+        assert_eq!(geometry.optional_attribute_storage_bytes(), 0);
+        assert_eq!(geometry.vertex_color_or_default(2), Color::WHITE);
+        assert_eq!(geometry.tex_coord0_or_default(2), [0.0, 0.0]);
+        assert_eq!(geometry.vertex_colors(), [Color::WHITE; 3]);
+        assert_eq!(geometry.tex_coords0(), [[0.0, 0.0]; 3]);
+    }
 }
 
 fn distance(a: Vec3, b: Vec3) -> f32 {

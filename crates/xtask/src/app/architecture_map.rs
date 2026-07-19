@@ -62,6 +62,7 @@ pub(crate) const ARCHITECTURE_OWNER_MODULES: &[&str] = &[
     "platform",
     "viewer",
     "browser_probe",
+    "vocabulary",
     "crate-root",
     "tools",
 ];
@@ -181,6 +182,8 @@ pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
         "viewer"
     } else if path.starts_with("src/browser_probe") || path.starts_with("src/browser_proof") {
         "browser_probe"
+    } else if path == "src/vocabulary.rs" || path.starts_with("src/vocabulary/") {
+        "vocabulary"
     } else if path.starts_with("src/bin") || path.starts_with("src/schema_catalog") {
         "tools"
     } else {

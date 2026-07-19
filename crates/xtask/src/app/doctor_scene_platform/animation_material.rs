@@ -65,11 +65,14 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         findings,
         "ARCH-M3B-ANIMATION",
         "src/scene/import.rs",
-        &[
-            "clip.clip().rebind",
-            "resolve_import_skin_bindings",
-            "convert_animation_vec3",
-        ],
+        &["resolve_import_skin_bindings"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/scene/import/animation_bindings.rs",
+        &["rebind_imported_many", "convert_animation_vec3"],
     );
     require_contains(
         root,
@@ -194,8 +197,10 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
             "pub fn with_morph_targets",
             "pub fn morphed_vertices",
             "normal_deltas",
-            "pub fn new_with_normals",
+            "pub fn new_with_semantics",
             "pub fn normal_deltas",
+            "pub fn tangent_deltas",
+            "pub fn morphed_tangents",
             "InvalidMorphTargetVertexCount",
         ],
     );
@@ -224,7 +229,7 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         &[
             "read_morph_targets",
             "GeometryMorphTarget::new",
-            "GeometryMorphTarget::new_with_normals",
+            "GeometryMorphTarget::new_with_semantics",
             "normals.map(Vec3::from_array)",
             "read_joints",
             "read_weights",
@@ -279,7 +284,7 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         findings,
         "ARCH-M3B-ANIMATION",
         "src/render/prepare/primitives.rs",
-        &["skinned_vertices", "InvalidSkinGeometry"],
+        &["deformed_vertices", "InvalidSkinGeometry"],
     );
     require_contains(
         root,

@@ -1,4 +1,4 @@
-use super::instances::INSTANCE_HANDLE_GENERATION_BASE;
+use super::handles::{HandleKind, handle_kind};
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{AssetFetcher, NodeKey, SceneImport};
 
@@ -60,7 +60,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub(super) fn is_instance_root_handle(&self, handle: u64) -> bool {
-        handle / (1_u64 << 32) >= u64::from(INSTANCE_HANDLE_GENERATION_BASE)
+        handle_kind(handle) == Some(HandleKind::InstanceRoot)
     }
 
     pub(super) fn ensure_active_camera(&self) -> Result<(), SceneHostError> {

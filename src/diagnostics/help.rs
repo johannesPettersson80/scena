@@ -19,6 +19,7 @@ impl AssetError {
             Self::UnsupportedTextureFormat { .. } => {
                 "use a supported texture format such as PNG, JPEG, or WebP, or enable a decoder feature when one exists"
             }
+            Self::Ktx2ColorSpaceMismatch { help, .. } => help,
             Self::Cancelled { .. } => {
                 "retry the load with a fresh AssetLoadControl when the host still needs the asset"
             }
@@ -76,6 +77,9 @@ impl PrepareError {
             Self::GpuResourceUpload { .. } => {
                 "call Renderer::prepare again after fixing the browser/GPU resource state; render must not hide upload failures"
             }
+            Self::UnsupportedSampleCount { .. } => {
+                "choose an anti_aliasing sample count supported by the active GPU adapter, such as msaa4, then prepare again"
+            }
         }
     }
 }
@@ -115,6 +119,9 @@ impl LookupError {
             Self::NodeNotFound(_) => "use a NodeKey created by this Scene",
             Self::CannotRemoveRootNode(_) => {
                 "remove child nodes instead; the root is the permanent scene anchor"
+            }
+            Self::ImportFromDifferentScene => {
+                "use the Scene that originally instantiated this SceneImport"
             }
             Self::NodeNameNotFound { .. } => "call nodes_named to inspect available import names",
             Self::AmbiguousNodeName { .. } => {
@@ -162,6 +169,9 @@ impl LookupError {
             Self::NodeIsNotMesh { .. } => "check NodeKind before using mesh-only helpers",
             Self::NonInvertibleParentTransform { .. } => {
                 "use a finite non-zero parent scale before applying world-space placement helpers"
+            }
+            Self::InvalidTransform { .. } => {
+                "use finite translation, rotation, and scale components"
             }
             Self::GeometryNotFound { .. } => {
                 "call asset-aware helpers with the same Assets store that created or loaded the geometry"

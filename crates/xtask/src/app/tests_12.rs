@@ -316,7 +316,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("manifest fixture");
     fs::write(
         fixture_root.join("docs/feature-flags.md"),
-        "khronos-samples Khronos glTF sample-asset catalog `production-assets` enables `ktx2` + `meshopt` features = [\"production-assets\"]",
+        "khronos-samples Khronos glTF sample-asset catalog `production-assets` enables `ktx2` + `meshopt` cargo add scena --features production-assets",
     )
     .expect("feature flags fixture");
     fs::write(

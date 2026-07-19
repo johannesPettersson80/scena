@@ -1,11 +1,12 @@
 use super::super::prepare::TiledLightAssignment;
+use super::stats::GpuResourceStats;
 
 #[derive(Debug)]
 pub(super) struct LightAssignmentResources {
     pub(super) records: wgpu::Buffer,
     pub(super) tile_indices: wgpu::Buffer,
     pub(super) tiles: wgpu::Buffer,
-    pub(super) byte_len: u64,
+    allocated_byte_len: u64,
 }
 
 pub(super) fn create_light_assignment_resources(
@@ -29,7 +30,17 @@ pub(super) fn create_light_assignment_resources(
         records,
         tile_indices,
         tiles,
-        byte_len: (record_bytes.len() + tile_index_bytes.len() + tile_bytes.len()) as u64,
+        allocated_byte_len: record_bytes.len().max(4) as u64
+            + tile_index_bytes.len().max(4) as u64
+            + tile_bytes.len().max(4) as u64,
+    }
+}
+
+pub(super) fn resource_stats(resources: &LightAssignmentResources) -> GpuResourceStats {
+    GpuResourceStats {
+        buffers: 3,
+        approximate_gpu_memory_bytes: resources.allocated_byte_len,
+        ..GpuResourceStats::default()
     }
 }
 

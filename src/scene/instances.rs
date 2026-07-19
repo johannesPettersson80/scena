@@ -2,6 +2,7 @@ use crate::assets::{GeometryHandle, MaterialHandle};
 use crate::diagnostics::LookupError;
 use crate::material::Color;
 
+use super::transforms::validate_transform;
 use super::{InstanceSetKey, NodeKey, NodeKind, Scene, Transform};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -72,6 +73,7 @@ impl Scene {
         instance_set: InstanceSetKey,
         transform: Transform,
     ) -> Result<InstanceId, LookupError> {
+        let transform = validate_transform(transform)?;
         let id = self.instance_set_mut(instance_set)?.push(transform);
         self.structure_revision = self.structure_revision.saturating_add(1);
         Ok(id)
@@ -83,6 +85,7 @@ impl Scene {
         instance: InstanceId,
         transform: Transform,
     ) -> Result<(), LookupError> {
+        let transform = validate_transform(transform)?;
         if self
             .instance_set_mut(instance_set)?
             .set_transform(instance_set, instance, transform)?

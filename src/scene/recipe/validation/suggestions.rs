@@ -40,43 +40,7 @@ fn edit_distance(left: &str, right: &str) -> usize {
     previous[right_chars.len()]
 }
 
-pub(super) const ROOT_FIELDS: &[&str] = &[
-    "schema",
-    "imports",
-    "colors",
-    "geometries",
-    "morphs",
-    "skins",
-    "materials",
-    "nodes",
-    "instance_sets",
-    "particles",
-    "fonts",
-    "labels",
-    "clipping_planes",
-    "animations",
-    "cameras",
-    "lights",
-    "scene",
-    "render",
-    "expect",
-    "section_box",
-    "measurements",
-    "callouts",
-    "exploded_view",
-    "capture",
-    "metadata",
-];
-pub(super) const IMPORT_FIELDS: &[&str] = &[
-    "id",
-    "uri",
-    "optional",
-    "transform",
-    "expected_extent",
-    "material",
-    "edge_emphasis",
-];
-pub(super) const CAPTURE_FIELDS: &[&str] = &["width", "height"];
+pub(super) use crate::scene::recipe::field_model::{CAPTURE_FIELDS, IMPORT_FIELDS, ROOT_FIELDS};
 pub(super) const EXPECTED_EXTENT_FIELDS: &[&str] = &["min", "max", "unit"];
 pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
     "steps",
@@ -89,13 +53,5 @@ pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
     "timeline",
     "script",
 ];
-pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
-    "primitives",
-    "viewer_profile",
-    "environment",
-    "placements",
-    "anchors",
-    "connectors",
-    "bounds",
-    "named_states",
-];
+pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] =
+    &["primitives", "viewer_profile", "environment", "placements"];

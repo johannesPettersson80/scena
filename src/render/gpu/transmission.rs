@@ -1,6 +1,7 @@
 use super::super::RasterTarget;
 use super::material_bindings::MaterialTextureBindingMode;
 use super::pipeline::{MeshPipelineSet, create_unlit_pipeline_set};
+use super::stats::GpuResourceStats;
 
 #[derive(Debug)]
 pub(super) struct TransmissionResources {
@@ -12,6 +13,17 @@ pub(super) struct TransmissionResources {
     pub(super) placeholder_view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
     pub(super) pipelines: MeshPipelineSet,
+}
+
+pub(super) fn resource_stats(target: RasterTarget) -> GpuResourceStats {
+    GpuResourceStats {
+        textures: 2,
+        render_targets: 1,
+        pipelines: 2,
+        shader_modules: 2,
+        approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(target, 4, 1) + 4,
+        ..GpuResourceStats::default()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

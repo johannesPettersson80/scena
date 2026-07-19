@@ -72,6 +72,15 @@ mod scene_asset;
 mod skins;
 mod textures;
 mod transform;
+mod validation;
+
+struct GltfDocumentInput<'a> {
+    binary_chunk: Option<&'a [u8]>,
+    external_buffers: &'a BTreeMap<usize, Vec<u8>>,
+    external_images: &'a BTreeMap<AssetPath, Vec<u8>>,
+    provenance: AssetProvenance,
+    declarations: validation::ExtensionDeclarations,
+}
 
 impl SceneAsset {
     pub(super) fn from_gltf_bytes(
@@ -100,22 +109,27 @@ impl SceneAsset {
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let mut step_start = total_start;
 
-        let gltf = open_gltf_with_massage(&path, bytes)?;
+        let (gltf, declarations) = open_gltf_with_declarations(&path, bytes)?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("open_gltf_with_massage", step_start);
         }
         let blob = gltf.blob.clone();
         let provenance = gltf_asset_provenance(path.clone(), bytes, &gltf);
+        let mut transaction = storage.clone();
         let scene = Self::from_gltf_document(
             &path,
             &gltf,
-            blob.as_deref(),
-            external_buffers,
-            external_images,
-            provenance,
-            storage,
+            GltfDocumentInput {
+                binary_chunk: blob.as_deref(),
+                external_buffers,
+                external_images,
+                provenance,
+                declarations,
+            },
+            &mut transaction,
         )?;
+        *storage = transaction;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             log_gltf_step("from_gltf_document wrapper", step_start);
@@ -141,28 +155,24 @@ impl SceneAsset {
     fn from_gltf_document(
         path: &AssetPath,
         gltf: &Gltf,
-        binary_chunk: Option<&[u8]>,
-        external_buffers: &BTreeMap<usize, Vec<u8>>,
-        external_images: &BTreeMap<AssetPath, Vec<u8>>,
-        provenance: AssetProvenance,
+        input: GltfDocumentInput<'_>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
+        let GltfDocumentInput {
+            binary_chunk,
+            external_buffers,
+            external_images,
+            provenance,
+            declarations,
+        } = input;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let total_start = gltf_now_ms();
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let mut step_start = total_start;
 
         validate_gltf_version(path, gltf)?;
-        let extensions_used: Vec<String> = gltf
-            .document
-            .extensions_used()
-            .map(str::to_string)
-            .collect();
-        let extensions_required: Vec<String> = gltf
-            .document
-            .extensions_required()
-            .map(str::to_string)
-            .collect();
+        let extensions_used = declarations.used;
+        let extensions_required = declarations.required;
         for extension in &extensions_required {
             if !is_v1_required_gltf_extension(extension) {
                 return Err(AssetError::UnsupportedRequiredExtension {
@@ -188,7 +198,12 @@ impl SceneAsset {
         {
             step_start = log_gltf_step("resolve_buffers", step_start);
         }
-        meshopt::decode_meshopt_buffer_views(path, &gltf.document, &mut buffers)?;
+        meshopt::decode_meshopt_buffer_views(
+            path,
+            &gltf.document,
+            &extensions_required,
+            &mut buffers,
+        )?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("decode_meshopt_buffer_views", step_start);
@@ -399,29 +414,55 @@ pub(super) fn has_glb_magic(bytes: &[u8]) -> bool {
 /// arrays — the gltf crate's strict serde derive would otherwise reject
 /// those fixtures even though the spec considers them malformed.
 pub(super) fn open_gltf_with_massage(path: &AssetPath, bytes: &[u8]) -> Result<Gltf, AssetError> {
+    open_gltf_with_declarations(path, bytes).map(|(gltf, _)| gltf)
+}
+
+fn open_gltf_with_declarations(
+    path: &AssetPath,
+    bytes: &[u8],
+) -> Result<(Gltf, validation::ExtensionDeclarations), AssetError> {
+    validation::validate_document_structure(path, bytes)?;
+    let declarations = validation::extension_declarations(path, bytes)?;
+    for extension in &declarations.required {
+        if !is_v1_required_gltf_extension(extension) {
+            return Err(AssetError::UnsupportedRequiredExtension {
+                path: path.as_str().to_string(),
+                extension: extension.clone(),
+            });
+        }
+    }
     let parse = |slice: &[u8]| {
-        Gltf::from_slice_without_validation(slice).map_err(|error| AssetError::Parse {
+        Gltf::from_slice(slice).map_err(|error| AssetError::Parse {
             path: path.as_str().to_string(),
             reason: error.to_string(),
         })
     };
-    if has_glb_magic(bytes) {
-        return parse(bytes);
-    }
-    if let Some(massaged) = massage_json_for_gltf_crate(bytes) {
-        return parse(&massaged);
-    }
-    parse(bytes)
+    let gltf = match massage_json_for_gltf_crate(bytes) {
+        Some(massaged) => parse(&massaged)?,
+        None => parse(bytes)?,
+    };
+    Ok((gltf, declarations))
 }
 
-/// Pre-process JSON-form glTF to add empty `channels: []` and
-/// `samplers: []` arrays to any animation entry that omits them. The
-/// previous scena parser tolerated those omissions (a clip with just a
-/// `name` produced an empty `SceneAssetClip`); the gltf crate's
-/// strict serde derive rejects them. Returns `None` when no change is
-/// needed.
+/// Build the narrowly normalized validation input used by the upstream glTF
+/// crate. The exact compatibility transformations are:
+///
+/// - add empty animation `channels`/`samplers` arrays retained from Scena's
+///   previous empty-clip compatibility;
+/// - add an empty material-variant declaration when that extension object is
+///   empty; and
+/// - remove only Scena-owned required extensions that upstream 1.4.1 does not
+///   include in its validator allowlist. Their original declarations are
+///   preserved separately and checked by Scena before this copy is parsed.
+///
+/// All reference, graph, accessor, and schema validation still runs before
+/// production traversal. JSON and GLB inputs use the same normalization.
 pub(super) fn massage_json_for_gltf_crate(bytes: &[u8]) -> Option<Vec<u8>> {
-    let mut value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let glb = has_glb_magic(bytes)
+        .then(|| ::gltf::binary::Glb::from_slice(bytes).ok())
+        .flatten();
+    let json = glb.as_ref().map_or(bytes, |glb| glb.json.as_ref());
+    let mut value: serde_json::Value = serde_json::from_slice(json).ok()?;
     let mut changed = false;
 
     if let Some(animations) = value.get_mut("animations").and_then(|v| v.as_array_mut()) {
@@ -453,9 +494,37 @@ pub(super) fn massage_json_for_gltf_crate(bytes: &[u8]) -> Option<Vec<u8>> {
         changed = true;
     }
 
-    if changed {
-        serde_json::to_vec(&value).ok()
-    } else {
-        None
+    if let Some(required) = value
+        .get_mut("extensionsRequired")
+        .and_then(|value| value.as_array_mut())
+    {
+        let original_len = required.len();
+        required.retain(|extension| {
+            !extension.as_str().is_some_and(|extension| {
+                matches!(
+                    extension,
+                    "KHR_mesh_quantization"
+                        | "KHR_materials_variants"
+                        | "EXT_mesh_gpu_instancing"
+                        | "KHR_texture_basisu"
+                        | "EXT_meshopt_compression"
+                )
+            })
+        });
+        changed |= required.len() != original_len;
     }
+
+    changed.then(|| {
+        let json = serde_json::to_vec(&value).ok()?;
+        match glb {
+            Some(glb) => ::gltf::binary::Glb {
+                header: glb.header,
+                json: std::borrow::Cow::Owned(json),
+                bin: glb.bin,
+            }
+            .to_vec()
+            .ok(),
+            None => Some(json),
+        }
+    })?
 }

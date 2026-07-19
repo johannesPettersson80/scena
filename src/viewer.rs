@@ -22,7 +22,10 @@ use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
 use crate::material::Color;
 use crate::picking::Hit;
 use crate::platform::{PlatformSurface, SurfaceEvent};
-use crate::render::{Background, Profile, Quality, RenderMode, Renderer, RendererOptions};
+use crate::render::{
+    Background, HeadlessBackendSelectionReport, Profile, Quality, RenderMode, Renderer,
+    RendererOptions,
+};
 use crate::scene::{CameraKey, Scene, SceneImport, Transform, Vec3};
 
 type ViewerPickCallback = Box<dyn FnMut(std::result::Result<Option<Hit>, LookupError>) + 'static>;
@@ -36,6 +39,7 @@ pub struct FirstRender {
     import: SceneImport,
     outcome: RenderOutcome,
     diagnostics: Vec<Diagnostic>,
+    backend_selection_report: Option<HeadlessBackendSelectionReport>,
     load_progress_events: Vec<AssetLoadProgress>,
     camera_bookmarks: Vec<CameraBookmark>,
 }
@@ -46,6 +50,7 @@ pub struct HeadlessGltfViewer {
     assets: Assets,
     scene: Scene,
     renderer: Renderer,
+    backend_selection_report: Option<HeadlessBackendSelectionReport>,
     import: SceneImport,
     load_progress_events: Vec<AssetLoadProgress>,
     camera_bookmarks: Vec<CameraBookmark>,
@@ -57,7 +62,7 @@ pub struct HeadlessGltfViewerBuilder {
     path: AssetPath,
     width: u32,
     height: u32,
-    prefer_gpu: bool,
+    backend_policy: HeadlessBackendPolicy,
     common: ViewerCommonOptions,
 }
 
@@ -72,6 +77,13 @@ struct ViewerCommonOptions {
     background: Option<Background>,
     camera_bookmarks: Vec<CameraBookmark>,
     grid_floor: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeadlessBackendPolicy {
+    Cpu,
+    StrictGpu,
+    PreferGpu,
 }
 
 impl ViewerCommonOptions {
@@ -114,7 +126,7 @@ pub fn headless_gltf_viewer(path: impl Into<AssetPath>) -> HeadlessGltfViewerBui
         path: path.into(),
         width: 800,
         height: 600,
-        prefer_gpu: false,
+        backend_policy: HeadlessBackendPolicy::Cpu,
         common: ViewerCommonOptions::new(),
     }
 }
@@ -142,6 +154,11 @@ impl FirstRender {
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    /// Returns GPU selection evidence when a GPU policy was requested.
+    pub const fn backend_selection_report(&self) -> Option<&HeadlessBackendSelectionReport> {
+        self.backend_selection_report.as_ref()
     }
 
     pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
@@ -207,12 +224,20 @@ impl HeadlessGltfViewerBuilder {
         self
     }
 
-    /// Requests the native headless GPU renderer for the first render. When no
-    /// compatible GPU adapter is available, the builder falls back to the CPU
-    /// headless renderer; inspect [`FirstRender::renderer`] capabilities to see
-    /// which backend was actually used.
+    /// Requires the native headless GPU renderer for the first render.
+    ///
+    /// Adapter/device failure is returned to the caller; this policy never
+    /// falls back to CPU.
     pub const fn with_headless_gpu(mut self) -> Self {
-        self.prefer_gpu = true;
+        self.backend_policy = HeadlessBackendPolicy::StrictGpu;
+        self
+    }
+
+    /// Prefers the native headless GPU renderer and explicitly permits CPU
+    /// fallback. The resulting viewer/first-render exposes a typed backend
+    /// selection report with the original GPU build error.
+    pub const fn with_headless_prefer_gpu(mut self) -> Self {
+        self.backend_policy = HeadlessBackendPolicy::PreferGpu;
         self
     }
 

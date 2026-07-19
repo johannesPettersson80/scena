@@ -113,6 +113,7 @@ pub(super) fn diagnostics_json(diagnostics: &[Diagnostic]) -> serde_json::Value 
 pub(super) fn stats_json(stats: RendererStats) -> serde_json::Value {
     let mut object = serde_json::Map::new();
     object.insert("buffers".to_string(), json!(stats.buffers));
+    object.insert("gpu_textures".to_string(), json!(stats.gpu_textures));
     object.insert("textures".to_string(), json!(stats.textures));
     object.insert("materials".to_string(), json!(stats.materials));
     object.insert(

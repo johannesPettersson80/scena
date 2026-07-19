@@ -13,10 +13,10 @@ pub(super) fn cull_prepared_primitives(
     camera: Option<&CameraProjection>,
     target: RasterTarget,
     occlusion_enabled: bool,
-    _gpu_active: bool,
+    gpu_active: bool,
 ) -> CulledPrimitives {
     let frustum = cull_cpu_frustum(primitives, camera);
-    if !occlusion_enabled {
+    if !occlusion_enabled || !should_run_occlusion_prepass(frustum.visible.len(), gpu_active) {
         return frustum;
     }
     let Some(camera) = camera else {
@@ -46,7 +46,13 @@ pub(super) fn cull_cpu_frustum(
 }
 
 const OCCLUSION_BUFFER_MAX_DIMENSION: u32 = 256;
+const OCCLUSION_OVERLAP_TILE_DIMENSION: u32 = 16;
 const OCCLUSION_DEPTH_EPSILON: f32 = 1.0e-4;
+const CPU_OCCLUSION_MIN_PRIMITIVES: usize = 64;
+
+fn should_run_occlusion_prepass(primitive_count: usize, gpu_active: bool) -> bool {
+    !gpu_active && primitive_count >= CPU_OCCLUSION_MIN_PRIMITIVES
+}
 
 fn cull_cpu_occluded_primitives(
     primitives: Vec<PreparedPrimitive>,
@@ -65,6 +71,12 @@ fn cull_cpu_occluded_primitives(
         .map(|primitive| ProjectedPrimitive::from_prepared(primitive, camera, buffer_target))
         .collect::<Vec<_>>();
     if projected.iter().filter(|item| item.is_some()).count() < 2 {
+        return CulledPrimitives {
+            visible: primitives,
+            culled: 0,
+        };
+    }
+    if !has_projected_tile_overlap(&projected, buffer_target) {
         return CulledPrimitives {
             visible: primitives,
             culled: 0,
@@ -105,6 +117,44 @@ fn cull_cpu_occluded_primitives(
         visible,
         culled: culled_count,
     }
+}
+
+fn has_projected_tile_overlap(
+    projected: &[Option<ProjectedPrimitive>],
+    target: RasterTarget,
+) -> bool {
+    let width = target.width.max(1);
+    let height = target.height.max(1);
+    let mut occupied =
+        [false; (OCCLUSION_OVERLAP_TILE_DIMENSION * OCCLUSION_OVERLAP_TILE_DIMENSION) as usize];
+    for primitive in projected.iter().flatten() {
+        let min_tile_x = primitive
+            .min_x
+            .saturating_mul(OCCLUSION_OVERLAP_TILE_DIMENSION)
+            / width;
+        let max_tile_x = primitive
+            .max_x
+            .saturating_mul(OCCLUSION_OVERLAP_TILE_DIMENSION)
+            / width;
+        let min_tile_y = primitive
+            .min_y
+            .saturating_mul(OCCLUSION_OVERLAP_TILE_DIMENSION)
+            / height;
+        let max_tile_y = primitive
+            .max_y
+            .saturating_mul(OCCLUSION_OVERLAP_TILE_DIMENSION)
+            / height;
+        for tile_y in min_tile_y..=max_tile_y.min(OCCLUSION_OVERLAP_TILE_DIMENSION - 1) {
+            for tile_x in min_tile_x..=max_tile_x.min(OCCLUSION_OVERLAP_TILE_DIMENSION - 1) {
+                let index = (tile_y * OCCLUSION_OVERLAP_TILE_DIMENSION + tile_x) as usize;
+                if occupied[index] {
+                    return true;
+                }
+                occupied[index] = true;
+            }
+        }
+    }
+    false
 }
 
 fn occlusion_buffer_target(target: RasterTarget) -> RasterTarget {
@@ -299,7 +349,10 @@ mod tests {
     use crate::render::target::RasterTarget;
     use crate::scene::Vec3;
 
-    use super::cull_cpu_frustum;
+    use super::{
+        CPU_OCCLUSION_MIN_PRIMITIVES, ProjectedPrimitive, ScreenVertex, cull_cpu_frustum,
+        has_projected_tile_overlap, should_run_occlusion_prepass,
+    };
 
     #[test]
     fn cpu_frustum_culling_without_camera_keeps_world_space_primitives() {
@@ -347,6 +400,72 @@ mod tests {
 
         assert_eq!(result.visible, vec![visible, culled]);
         assert_eq!(result.culled, 0);
+    }
+
+    #[test]
+    fn pf10_occlusion_prepass_is_disabled_for_gpu_and_thresholded_for_cpu() {
+        assert!(!should_run_occlusion_prepass(10_000, true));
+        assert!(!should_run_occlusion_prepass(
+            CPU_OCCLUSION_MIN_PRIMITIVES - 1,
+            false
+        ));
+        assert!(should_run_occlusion_prepass(
+            CPU_OCCLUSION_MIN_PRIMITIVES,
+            false
+        ));
+    }
+
+    #[test]
+    fn pf10_occlusion_prepass_requires_projected_overlap() {
+        let target = RasterTarget {
+            width: 128,
+            height: 128,
+            backend: Backend::Headless,
+        };
+        let separated = [
+            projected_bounds(4, 11, 4, 11),
+            projected_bounds(20, 27, 4, 11),
+        ];
+        let overlapping = [
+            projected_bounds(4, 11, 4, 11),
+            projected_bounds(8, 15, 4, 11),
+        ];
+
+        assert!(!has_projected_tile_overlap(&separated, target));
+        assert!(has_projected_tile_overlap(&overlapping, target));
+    }
+
+    fn projected_bounds(
+        min_x: u32,
+        max_x: u32,
+        min_y: u32,
+        max_y: u32,
+    ) -> Option<ProjectedPrimitive> {
+        Some(ProjectedPrimitive {
+            vertices: [
+                ScreenVertex {
+                    x: min_x as f32,
+                    y: min_y as f32,
+                    depth: 0.5,
+                },
+                ScreenVertex {
+                    x: max_x as f32,
+                    y: min_y as f32,
+                    depth: 0.5,
+                },
+                ScreenVertex {
+                    x: min_x as f32,
+                    y: max_y as f32,
+                    depth: 0.5,
+                },
+            ],
+            min_x,
+            max_x,
+            min_y,
+            max_y,
+            area: 1.0,
+            min_depth: 0.5,
+        })
     }
 
     fn vertex(x: f32, y: f32, z: f32) -> Vertex {

@@ -79,7 +79,10 @@ pub(crate) fn check_xtask_module_split(root: &Path, findings: &mut Vec<Finding>)
             ));
         }
     }
-    if !app_text.contains("#[cfg(test)]\nmod tests_") {
+    if !rust_cfg_test_module_names(&app_text)
+        .iter()
+        .any(|name| name.starts_with("tests_"))
+    {
         findings.push(Finding::new(
             "ARCH-XTASK-SPLIT",
             "crates/xtask/src/app.rs must keep split test modules behind #[cfg(test)]",

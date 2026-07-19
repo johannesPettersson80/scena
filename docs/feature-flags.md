@@ -8,27 +8,24 @@ Add features with Cargo:
 cargo add scena --features controls,controls-winit
 ```
 
-or in `Cargo.toml`:
-
-```toml
-[dependencies]
-scena = { version = "1.4", features = ["controls", "controls-winit"] }
-```
+The `cargo add` form resolves the current compatible release and updates an
+existing dependency entry without pinning living documentation to an old
+package version.
 
 ## Features
 
 | Feature | Purpose |
 |---|---|
-| `controls` | platform-neutral orbit, pan, zoom, and focus controls |
-| `controls-winit` | native-host controls adapter support |
-| `controls-web` | browser-host controls adapter support |
+| `controls` | compatibility marker; platform-neutral orbit, pan, zoom, and focus controls are always compiled |
+| `controls-winit` | compatibility alias enabling `controls`; no `winit` dependency or hidden event loop is added |
+| `controls-web` | compatibility alias enabling `controls`; browser hosts translate DOM events explicitly |
 | `browser-probe` | browser/WASM rendered-output probe entry points; includes `viewer-element` so the browser proof package also verifies `<scena-viewer>` |
 | `demo-page` | browser demo page WASM exports |
+| `proof-harness` | proof-only demo controls and capture exports; enables `demo-page` |
 | `viewer-element` | `<scena-viewer>` custom-element registration surface |
 | `hot-reload` | native debounced asset-file watching for explicit reload loops |
 | `inspection` | scene inspection metadata and diagnostic output |
 | `scene-host` | generic native-testable and browser/WASM `SceneHost` facade over `Scene`, `Assets`, and `Renderer`; enables `inspection` |
-| `icc` | ICC/color-management support through `lcms2` |
 | `khronos-samples` | checked Khronos glTF sample-asset catalog and loader helpers |
 | `ktx2` | KTX2/Basis texture descriptor and decode support for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
@@ -45,20 +42,20 @@ requires `scene-host`, which enables `inspection`.
 
 Native viewer:
 
-```toml
-scena = { version = "1.4", features = ["controls", "controls-winit"] }
+```bash
+cargo add scena --features controls,controls-winit
 ```
 
 Browser viewer:
 
-```toml
-scena = { version = "1.4", features = ["controls", "controls-web"] }
+```bash
+cargo add scena --features controls,controls-web
 ```
 
 Asset-heavy viewer:
 
-```toml
-scena = { version = "1.4", features = ["production-assets"] }
+```bash
+cargo add scena --features production-assets
 ```
 
 Add `obj` separately when the application needs OBJ import in addition to
@@ -66,29 +63,42 @@ production glTF compression support.
 
 Sample-driven examples/tests:
 
-```toml
-scena = { version = "1.4", features = ["khronos-samples"] }
+```bash
+cargo add scena --features khronos-samples
 ```
 
 Diagnostic tooling:
 
-```toml
-scena = { version = "1.4", features = ["inspection"] }
+```bash
+cargo add scena --features inspection
 ```
 
 Browser host facade:
 
-```toml
-scena = { version = "1.4", features = ["scene-host"] }
+```bash
+cargo add scena --features scene-host
 ```
 
 Browser host with controls:
 
-```toml
-scena = { version = "1.4", features = ["scene-host", "controls-web"] }
+```bash
+cargo add scena --features scene-host,controls-web
 ```
 
 ## Default feature set
 
 The default feature set is intentionally small. Add only the integrations your
 application needs.
+
+PNG, JPEG, and WebP decoding is available without an opt-in feature because
+these are the baseline native image paths. KTX2/Basis remains optional behind
+`ktx2` (or the grouped `production-assets` profile), as does meshopt decoding.
+
+The machine-readable ownership registry at
+[`docs/specs/feature-ownership.json`](specs/feature-ownership.json) maps every
+non-default Cargo feature to its owner module, implementation call site,
+focused test, and documentation. `xtask doctor --full` rejects unmapped or
+unproven features. ICC conversion is not advertised: the former dependency-only
+flag was removed because it had no conversion call site, output metadata, or
+rendered proof. A future ICC feature must first define an `Assets`-owned,
+native/WASM-capable contract with those proofs.

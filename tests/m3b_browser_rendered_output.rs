@@ -11,16 +11,44 @@ use wasm_bindgen::{Clamped, JsCast};
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
+#[path = "support/q03_visual_metrics.rs"]
+mod q03_visual_metrics;
+use q03_visual_metrics::{difference_metrics, foreground_metrics};
+
 wasm_bindgen_test_configure!(run_in_browser);
+
+const CAMERA_DISTANCE_FOR_NDC_FIXTURE: f32 = 1.732_050_8;
 
 #[wasm_bindgen_test]
 fn m3b_browser_wasm_renders_morph_animation_to_canvas() {
-    let frame = render_morph_animation_frame();
-    assert!(nonblack_pixel_count(&frame) > 0);
-    assert_eq!(browser_canvas_roundtrip(&frame, 32, 32), frame);
+    let (base, sampled) = render_morph_animation_frames();
+    let base_metrics = foreground_metrics(&base, 32, 32);
+    let sampled_metrics = foreground_metrics(&sampled, 32, 32);
+    let delta = difference_metrics(&base, &sampled, 32, 32, 2);
+    assert!(nonblack_pixel_count(&base) > 0 && nonblack_pixel_count(&sampled) > 0);
+    assert!(
+        delta.changed_pixels >= 8
+            && base_metrics
+                .rect
+                .zip(sampled_metrics.rect)
+                .is_some_and(|(left, right)| {
+                    left != right
+                        || (base_metrics.centroid_x - sampled_metrics.centroid_x).abs() >= 0.25
+                        || (base_metrics.centroid_y - sampled_metrics.centroid_y).abs() >= 0.25
+                }),
+        "browser morph proof must measure a localized base-to-sampled pose change: base={base_metrics:?} sampled={sampled_metrics:?} delta={delta:?}"
+    );
+    assert!(
+        nonblack_pixel_count(&base) > 0
+            && difference_metrics(&base, &base, 32, 32, 2).changed_pixels == 0,
+        "a frozen morph stays nonblack but must fail the differential oracle"
+    );
+    for frame in [base, sampled] {
+        assert_eq!(browser_canvas_roundtrip(&frame, 32, 32), frame);
+    }
 }
 
-fn render_morph_animation_frame() -> Vec<u8> {
+fn render_morph_animation_frames() -> (Vec<u8>, Vec<u8>) {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
         (
             AssetPath::from("memory://browser/morph.gltf"),
@@ -37,17 +65,11 @@ fn render_morph_animation_frame() -> Vec<u8> {
     let import = scene
         .instantiate(&scene_asset)
         .expect("morph scene instantiates in browser proof");
-    let mixer = scene
-        .create_animation_mixer(&import, "MorphWeight")
-        .expect("morph mixer creates");
-    scene
-        .seek_animation(mixer, 1.0)
-        .expect("morph mixer samples");
     let camera = scene
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(scena::Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURE)),
         )
         .expect("camera inserts");
     let mut renderer = Renderer::headless(32, 32).expect("renderer builds in wasm");
@@ -56,8 +78,21 @@ fn render_morph_animation_frame() -> Vec<u8> {
         .expect("morph scene prepares in wasm");
     renderer
         .render(&scene, camera)
+        .expect("base morph scene renders in wasm");
+    let base = renderer.frame_rgba8().to_vec();
+    let mixer = scene
+        .create_animation_mixer(&import, "MorphWeight")
+        .expect("morph mixer creates");
+    scene
+        .seek_animation(mixer, 1.0)
+        .expect("morph mixer samples");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("sampled morph scene prepares in wasm");
+    renderer
+        .render(&scene, camera)
         .expect("morph scene renders in wasm");
-    renderer.frame_rgba8().to_vec()
+    (base, renderer.frame_rgba8().to_vec())
 }
 
 fn browser_canvas_roundtrip(frame: &[u8], width: u32, height: u32) -> Vec<u8> {
@@ -177,7 +212,7 @@ fn morph_weight_gltf() -> String {
             { "buffer": 0, "byteOffset": 86, "byteLength": 8 }
         ],
         "accessors": [
-            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 0.0] },
             { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" },
             { "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC3" },
             { "bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR" },

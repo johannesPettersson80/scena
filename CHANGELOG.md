@@ -4,8 +4,155 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+- Add asynchronous SceneHost browser capture and render-introspection methods
+  backed by renderer-owned WebGPU buffer mapping, while preserving the existing
+  synchronous CPU/WebGL2 methods.
+- Add machine-readable vocabulary and recipe-policy discovery, structured CLI
+  dispatch errors, and per-command success/error schema declarations in CLI
+  help.
+- Add authoritative field-level recipe discovery with types, required fields,
+  enums, ranges, defaults, deprecation flags, examples, and round-trip/invalid
+  fixtures; validate every CLI output declaration against real command
+  evidence and remove output families the commands never emit.
+- Add renderer-free `scena recipe build` with the typed build manifest,
+  effective policy, measured asset-fetch attempts, strict required-environment
+  validation, and zero renderer/GPU/prepare/render/capture instrumentation.
+- Add source-digest-bound `scena place --apply` output that updates persistent
+  recipe IDs in a complete canonical recipe and rejects stale source digests.
+- Add `scena recipe capture` for canonical front/top/right/isometric views,
+  bounded turntable and animation-clip sequences, per-frame camera/time/hash
+  metadata, descriptors, and deterministic PNG contact sheets.
+- Add deterministic CPU and opt-in native/WebGPU/WebGL2 semantic ID,
+  linear-depth, and world-normal AOVs with lifecycle-owned GPU targets,
+  portable RGBA8 packing/readback, browser parity artifacts, paletted PNG
+  output, explicit transparency/overlay exclusions, runtime-scoped
+  host identity, persistent recipe node/instance legend mapping, and the
+  `scena recipe aov` machine-readable workflow.
+- Add renderer-free typed recipe diffs and optional rendered aggregate diffs
+  with persistent node/instance attribution, explicit ambiguous edge and
+  excluded-surface accounting, and stable `scena diff` JSON/artifacts.
+- Add recipe-owned anchors, connectors and mates, authored/computed/imported
+  bounds, non-renderable group nodes, and inherited transform/tint/visibility
+  states. Persistent ids map through the build manifest, imported feature
+  aliases preserve source metadata, and malformed targets, bounds, connector
+  compatibility, snap, inheritance, or animation conflicts fail closed.
+- Accelerate asset-aware picking and CPU shadow visibility with deterministic
+  geometry-owned and per-prepare BVHs, including local-space mesh/instance
+  rays, deformation-safe rebuilds, and explicit traversal counters.
+- Make optional-feature claims enforceable with a machine-readable ownership
+  registry and doctor gate, remove the unimplemented dependency-only ICC flag,
+  require all-feature WASM compilation in CI/release lanes, and return an
+  explicit unsupported diagnostic for filesystem PNG writes on WASM.
+- Add live-render CLI SSIM acceptance coverage whose camera, material, and
+  geometry mutations must all fail the same reference threshold, and replace
+  the ignored out-of-repo Cardine quality fixture with a committed minimal
+  regression fixture.
+- Make remote-builder validation default to an explicit task-scoped snapshot,
+  add a checked-in preflight that reports the absent legacy shared checkout,
+  and doctor-enforce both manual agent-file bootstrap and review-provenance
+  corrections.
+
 ### Fixed
 
+- Bound CPU texture baking with adaptive 16x16-capped subdivision, reusable
+  scratch, and inactive transmission gates; cache generated model-space
+  tangents for static geometry while preserving nonuniform, mirrored, morph,
+  and skin deformation semantics.
+- Removed warm CPU-frame cloning of prepared primitive/stroke/label lists,
+  added shared immutable asset snapshots and lock-free inner texture sampling,
+  switched byte sRGB decoding to a bit-exact 256-entry LUT, and cached world
+  transforms plus inherited/camera visibility in one scene-owned top-down
+  revision pass.
+- Shared post-effect texture/depth pipeline layouts across compatible variants
+  and deduplicated the internal/surface FXAA shader module while retaining exact
+  prepared-resource accounting.
+- Replaced linear animation keyframe scans, instance-range deduplication,
+  draw-uniform lookup, and import animation rebinding with bounded indexed
+  paths; animation weights now reuse scene-owned storage, GPU vertex encoding
+  reuses prepared matrix inverses, and embedded data-URI texture identities use
+  bounded content digests instead of retaining base64 payloads as cache keys.
+- Reused renderer-owned GPU supersample, CPU reflection, SSR, and transmission
+  scratch with measured zero warm capacity growth; GPU prepares now skip the
+  redundant CPU occlusion prepass and small CPU scenes require a minimum
+  primitive threshold. Browser SceneHost also exposes `renderTyped()` while
+  preserving the existing JSON-string `render()` contract.
+- Replaced PF00 performance placeholders with measured asset-storage lock,
+  environment prefilter/BRDF sampling, bake-output byte, and first-render GPU
+  output-setting counters; all eight output settings now emit prepare/render
+  distributions and keep missing native-surface/browser hardware evidence
+  explicitly fail-closed.
+- Parallelized immutable native environment face/BRDF-row baking and CPU
+  triangle screen-bound preparation under one bounded worker policy, with
+  serial WASM/nested fallback. CPU row bands now retain source-ordered triangle
+  bins instead of rescanning every primitive, and render/bake metrics expose
+  worker, candidate, full-rescan, task, and warm storage-growth truth.
+- Added `scena recipe build` as a renderer-free load/validate/build-manifest
+  command. It retains the existing typed SceneHost ID/handle manifest, reports
+  effective asset policy and fetch activity, and proves zero renderer, GPU,
+  prepare, render, or capture construction for success and failure paths.
+- Added explicit present-only and synchronous native GPU readback modes,
+  removed unconditional render-time copy/map/wait work for attached surfaces,
+  gave resource-shaped output settings their own prepare revision, and moved
+  SSAO/DoF depth bind groups from render into prepared resource ownership;
+  ordered batch capture now pipelines asynchronous mapping through two
+  prepare-owned readback buffers.
+- Made required WebGPU and Linux native renderer lanes fail at their producers
+  on missing GPU work or CPU fallback, added hardware-adapter and
+  renderer-owned-readback validation for WebGPU, and confined
+  allow-unavailable behavior to explicitly diagnostic probes.
+- Replaced the M2 three-pixel/exact-hash visual oracle with tolerant
+  full-frame quadrant references and masked off/on proofs for direct light,
+  receiver shadows, IBL, AA, bloom, SSAO, OIT, and clipping, including
+  known-bad quadrant and erased-footprint mutations.
+- Added an always-on deterministic 256x256 live WaterBottle CPU reference test,
+  known-bad material/camera mutation rejection, and release staging that binds
+  the PNGs, exact command output, backend, commit, timestamp, metrics, and
+  checksums; contributor docs now distinguish that golden from the macOS GPU
+  lane's nonblack, histogram, and region checks.
+- Content-addressed embedded glTF/GLB texture identities and made decoded
+  texture provenance immutable, preventing same-index images from different
+  assets from aliasing in the cache.
+- Enabled maintained native WebP decoding in the baseline image pipeline and
+  expanded KTX2 material-role mismatch errors with actual/expected DFD color
+  primaries, transfer function, slot role, and repair guidance.
+- Repaired glTF deformation import for every legal quantized POSITION encoding,
+  cubic-spline morph weights, multi-primitive weight animation, sparse
+  normal/tangent morph targets, validated static imported clips, and normalized
+  skin weights.
+- Applied CPU normal maps through the authored or morphed tangent frame instead
+  of interpreting tangent-space samples as world-space normals.
+- Applied non-meter glTF units once at an import placement root so nested
+  authored scales, animation scale keys, anchors, and connectors retain correct
+  local semantics.
+- Rejected non-finite scene and camera-control transforms atomically, made
+  SceneHost transform batches preflight instance roots before mutation, and
+  moved orbit panning into camera right/up axes after orbiting.
+- Added explicit node, import, instance-root, and animation tags to SceneHost
+  handles, with exact wrong-namespace errors, per-kind stale generations, and
+  browser-safe encodings, preventing cross-kind handles from silently resolving
+  to unrelated objects.
+- Made presentation-timeline animation segments resolve clip bounds before
+  patch application, clamp omitted/oversized ends, reject invalid starts once,
+  hold terminal poses for one-shot mixers, and wrap repeat subranges stably.
+- Moved retained MSAA, depth-color, and post-processing GPU resource creation
+  entirely into prepare, added exact physical texture/resource inventories, and
+  made browser destruction polling distinguish submitted work from
+  callback-confirmed completion instead of fabricating success.
+- Made generated measurement and callout nodes one atomic owned closure, so
+  deleting either line/leader or label also removes its sibling, registry and
+  annotation state, and invalidates every affected SceneHost handle.
+- Rebuilt README/getting-started onboarding around framed, captured first-scene
+  and GLB programs, compile-gated every primary Rust snippet in CI, replaced
+  stale dependency pins with `cargo add`, and reconciled shipped renderer
+  feature statuses across the active roadmap.
+- Made asset-aware picking evaluate the same morph-then-skin vertex pose as
+  render and shadow preparation, with composed instance transforms and
+  documented world-distance, transformed-winding normal, and singular-scale
+  behavior instead of silently intersecting undeformed base geometry.
+- Made SceneHost and high-level viewer GPU-named constructors strict, added
+  explicitly named preferred-GPU constructors with typed backend-selection and
+  original-error reports, and required strict-constructor tests in CI/release
+  lanes so CPU fallback cannot masquerade as GPU proof.
 - Changed CAD edge-emphasis rendering to merge coincident imported mesh
   vertices by position before selecting visible edges, so duplicated
   triangulation diagonals no longer render as technical CAD lines.

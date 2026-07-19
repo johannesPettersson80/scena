@@ -10,6 +10,38 @@ use super::{AssetFetcher, AssetPath, Assets, EnvironmentDesc, EnvironmentHandle}
 use crate::diagnostics::AssetError;
 
 impl<F> Assets<F> {
+    /// Verifies that an explicit recipe environment source is fetchable under
+    /// the supplied byte policy without decoding or inserting GPU-facing
+    /// environment state.
+    #[cfg(feature = "scene-host")]
+    pub(crate) async fn validate_environment_source_with_options(
+        &self,
+        path: impl Into<AssetPath>,
+        options: AssetLoadOptions,
+    ) -> Result<(), AssetError>
+    where
+        F: AssetFetcher,
+    {
+        let path = path.into();
+        if !is_equirectangular_hdr_path(&path) {
+            return Err(AssetError::UnsupportedEnvironmentFormat {
+                path: path.as_str().to_owned(),
+                help: "use Radiance .hdr equirectangular input for the M2 environment path",
+            });
+        }
+        if let Some(source_bytes) = embedded_environment_bytes(&path)? {
+            check_fetch_byte_limit_after_fetch(
+                &path,
+                source_bytes.len(),
+                options.fetch_byte_limit(),
+            )?;
+            return Ok(());
+        }
+        check_fetch_byte_limit_before_fetch(&path, options.fetch_byte_limit())?;
+        let source_bytes = self.tracked_fetcher().fetch(&path).await?;
+        check_fetch_byte_limit_after_fetch(&path, source_bytes.len(), options.fetch_byte_limit())
+    }
+
     pub async fn load_environment(
         &self,
         path: impl Into<AssetPath>,
@@ -51,7 +83,7 @@ impl<F> Assets<F> {
                 environment_from_hdr_bytes(path.clone(), &source_bytes, sidecar)?
             } else {
                 check_fetch_byte_limit_before_fetch(&path, options.fetch_byte_limit())?;
-                match self.fetcher().fetch(&path).await {
+                match self.tracked_fetcher().fetch(&path).await {
                     Ok(source_bytes) => {
                         check_fetch_byte_limit_after_fetch(
                             &path,
@@ -76,6 +108,15 @@ impl<F> Assets<F> {
     }
 
     pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc> {
+        self.environment_snapshot(handle)
+            .map(|snapshot| snapshot.as_ref().clone())
+    }
+
+    /// Returns an immutable shared snapshot of an environment descriptor.
+    pub fn environment_snapshot(
+        &self,
+        handle: EnvironmentHandle,
+    ) -> Option<std::sync::Arc<EnvironmentDesc>> {
         self.storage().environments.get(handle).cloned()
     }
 
@@ -95,7 +136,9 @@ impl<F> Assets<F> {
         if let Some(handle) = storage.environment_lookup.get(&cache_key) {
             return *handle;
         }
-        let handle = storage.environments.insert(environment);
+        let handle = storage
+            .environments
+            .insert(std::sync::Arc::new(environment));
         storage.environment_lookup.insert(cache_key, handle);
         handle
     }
@@ -113,7 +156,7 @@ impl<F> Assets<F> {
         }
         let sidecar_path = sidecar_path_for_environment(environment_path);
         check_fetch_byte_limit_before_fetch(&sidecar_path, options.fetch_byte_limit())?;
-        match self.fetcher().fetch(&sidecar_path).await {
+        match self.tracked_fetcher().fetch(&sidecar_path).await {
             Ok(bytes) => {
                 check_fetch_byte_limit_after_fetch(
                     &sidecar_path,

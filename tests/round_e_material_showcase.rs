@@ -183,17 +183,20 @@ fn round_e_ibl_extension_gates_are_value_bounded_browser_metrics() {
 
     let proof_script = fs::read_to_string("scripts/probe_cloudflare_material_presets.mjs")
         .expect("Round E material proof script is readable");
+    let evaluator = fs::read_to_string("scripts/round_e_material_evaluator.cjs")
+        .expect("shared Round E material evaluator is readable");
+    let proof_sources = format!("{proof_script}\n{evaluator}");
     for required in [
         "anisotropy_aspect_ratio_ibl",
-        "ANISOTROPY_ASPECT_RATIO_MEASUREMENT_EPSILON",
-        "passed_anisotropy_aspect_ratio_ibl",
-        "brushed_steel anisotropy aspect ratio",
+        "ANISOTROPY_EPSILON",
+        "aspect + ANISOTROPY_EPSILON >= thresholds.brushed_steel.anisotropy_aspect_ratio_ibl",
+        "brushed_steel_anisotropy",
         "clearcoat_lobe_delta",
-        "passed_clearcoat_lobe_delta",
-        "clearcoat_plastic lobe delta",
+        "delta >= thresholds.clearcoat_plastic.clearcoat_lobe_delta",
+        "clearcoat_lobe",
     ] {
         assert!(
-            proof_script.contains(required),
+            proof_sources.contains(required),
             "Round E browser proof must enforce value-bounded IBL metric {required}"
         );
     }
@@ -497,15 +500,15 @@ fn public_showcase_probe_checks_visible_canvas_pixels() {
 
 #[test]
 fn browser_gpu_live_render_routes_postprocess_to_gpu_settings() {
-    let render_rs = include_str!("../src/render.rs");
+    let frame_rs = include_str!("../src/render/frame.rs");
     let draw_surface_rs = include_str!("../src/render/gpu/draw_surface.rs");
 
     assert!(
-        render_rs.contains("GpuPostSettings::new")
-            && render_rs.contains("self.stats.fxaa_passes = gpu_result.post_counts.fxaa")
+        frame_rs.contains("GpuPostSettings::new")
+            && frame_rs.contains("self.stats.fxaa_passes = gpu_result.post_counts.fxaa")
             && draw_surface_rs.contains("post_settings.without_fxaa()")
             && draw_surface_rs.contains("scena.browser.overlay_final_surface_pass")
-            && !render_rs.contains("fn cpu_frame_postprocess_applies"),
+            && !frame_rs.contains("fn cpu_frame_postprocess_applies"),
         "browser live WebGL2/WebGPU rendering must route post-processing through the GPU post \
          settings instead of the removed CPU frame postprocess gate"
     );

@@ -2,6 +2,7 @@ use super::super::RasterTarget;
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::pipeline::{DrawSideFilter, SCENA_FRONT_FACE};
+use super::stats::GpuResourceStats;
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 const DEPTH_PREPASS_SHADER: &str = r#"
@@ -362,6 +363,31 @@ impl DepthPrepassResources {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(super) const fn sample_count(&self) -> u32 {
         self.sample_count
+    }
+}
+
+pub(super) fn resource_stats(
+    resources: &DepthPrepassResources,
+    target: RasterTarget,
+) -> GpuResourceStats {
+    let color = u64::from(resources.color_texture.is_some());
+    let color_msaa = u64::from(resources.color_msaa_texture.is_some());
+    let texture_bytes = GpuResourceStats::target_bytes(target, 4, resources.sample_count);
+    let color_bytes = color.saturating_mul(GpuResourceStats::target_bytes(target, 4, 1));
+    let color_msaa_bytes = color_msaa.saturating_mul(GpuResourceStats::target_bytes(
+        target,
+        4,
+        resources.sample_count,
+    ));
+    GpuResourceStats {
+        textures: 1 + color + color_msaa,
+        render_targets: 1 + color + color_msaa,
+        pipelines: 2,
+        shader_modules: 1,
+        approximate_gpu_memory_bytes: texture_bytes
+            .saturating_add(color_bytes)
+            .saturating_add(color_msaa_bytes),
+        ..GpuResourceStats::default()
     }
 }
 

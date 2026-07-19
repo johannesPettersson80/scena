@@ -2,9 +2,9 @@
 
 use crate::diagnostics::RenderError;
 use crate::material::Color;
-#[cfg(feature = "browser-probe")]
+#[cfg(any(feature = "browser-probe", feature = "scene-host"))]
 use wasm_bindgen::JsValue;
-#[cfg(feature = "browser-probe")]
+#[cfg(any(feature = "browser-probe", feature = "scene-host"))]
 use wasm_bindgen_futures::JsFuture;
 
 use super::super::RasterTarget;
@@ -62,11 +62,17 @@ impl GpuDeviceState {
         Ok(GpuRenderResult::default())
     }
 
-    #[cfg(feature = "browser-probe")]
-    pub(in crate::render) async fn browser_probe_readback_rgba8(
+    #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
+    pub(in crate::render) async fn browser_readback_rgba8(
         &mut self,
         target: RasterTarget,
     ) -> Result<Option<Vec<u8>>, JsValue> {
+        if target.backend == crate::Backend::WebGl2 {
+            let canvas = self.browser_canvas.as_ref().ok_or_else(|| {
+                JsValue::from_str("renderer-owned WebGL2 readback requires its attached canvas")
+            })?;
+            return super::browser_readback::read_webgl2_canvas_rgba8(canvas, target).map(Some);
+        }
         let Some(resources) = self.resources.as_ref() else {
             return Ok(None);
         };
@@ -90,13 +96,22 @@ impl GpuDeviceState {
                 Err(error) => {
                     let _ = reject.call1(
                         &JsValue::UNDEFINED,
-                        &JsValue::from_str(&format!("browser proof readback failed: {error:?}")),
+                        &JsValue::from_str(&format!(
+                            "renderer-owned WebGPU readback failed: {error:?}"
+                        )),
                     );
                 }
             });
         });
         JsFuture::from(promise).await?;
         let mapped = slice.get_mapped_range();
+        let surface_copy_format = self.surface.as_ref().and_then(|surface| {
+            surface
+                .config
+                .usage
+                .contains(wgpu::TextureUsages::COPY_SRC)
+                .then_some(surface.config.format)
+        });
         let mut frame = vec![0; target.byte_len()];
         for row in 0..target.height as usize {
             let source_start = row * readback.padded_bytes_per_row as usize;
@@ -107,6 +122,14 @@ impl GpuDeviceState {
         }
         drop(mapped);
         readback.buffer.unmap();
+        if matches!(
+            surface_copy_format,
+            Some(wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb)
+        ) {
+            for pixel in frame.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+        }
         Ok(Some(frame))
     }
 }

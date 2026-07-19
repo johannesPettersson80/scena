@@ -1,7 +1,14 @@
 mod bundle_schema;
 mod lane_artifacts;
+mod required_gpu_parity;
 mod review_artifacts;
+mod round_e_material_results;
 mod stage_artifacts;
+mod stage_browser_parity;
+mod stage_provenance;
+mod stage_reviews;
+mod stage_visual_proofs;
+mod waterbottle_results;
 
 pub(crate) use bundle_schema::{
     REQUIRED_REVIEW_ROLES, check_release_artifact_bundle, check_release_review_artifacts,
@@ -19,6 +26,9 @@ pub(crate) use lane_artifacts::{
     release_lane_evidence, release_lane_expected_commands, release_lane_measured_command_records,
     release_lane_required_artifacts, run_release_lane_artifact,
 };
+pub(crate) use required_gpu_parity::{
+    browser_probe_release_proof_passes, required_browser_gpu_parity_passes,
+};
 pub(crate) use review_artifacts::{
     MIN_BENCHMARK_SAMPLE_COUNT, REQUIRED_BENCHMARK_ARTIFACT_SUFFIXES,
     REQUIRED_JSON_COMMIT_ARTIFACT_SUFFIXES, REQUIRED_JSON_TIMESTAMP_ARTIFACT_SUFFIXES,
@@ -35,6 +45,12 @@ pub(crate) use review_artifacts::{
     ReleaseFindingBlock, iterate_finding_blocks, parse_release_review_frontmatter,
     validate_release_review_report,
 };
+pub(crate) use stage_artifacts::validate_browser_backend_result;
 pub(crate) use stage_artifacts::{
-    run_stage_release_artifacts, stage_release_artifacts, utc_rfc3339_from_unix,
+    run_stage_release_artifacts, stage_release_artifacts, stage_release_artifacts_for_commit,
+    utc_rfc3339_from_unix,
+};
+pub(crate) use waterbottle_results::{
+    finalize_waterbottle_cpu_result, finalize_waterbottle_gpu_result,
+    validate_waterbottle_cpu_result,
 };

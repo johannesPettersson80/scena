@@ -4,13 +4,13 @@ const SHADER: &str = include_str!("ssao.wgsl");
 
 pub(super) fn create_pipeline(
     device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
+    pipeline_layout: &wgpu::PipelineLayout,
 ) -> wgpu::RenderPipeline {
     create_post_pipeline(
         device,
         "scena.gpu_post.ssao_pipeline",
         SHADER,
-        bind_group_layout,
+        pipeline_layout,
         wgpu::TextureFormat::Rgba8Unorm,
     )
 }
@@ -18,33 +18,11 @@ pub(super) fn create_pipeline(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn encode(
     encoder: &mut wgpu::CommandEncoder,
-    device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
-    uniform: &wgpu::Buffer,
     pipeline: &wgpu::RenderPipeline,
-    source_view: &wgpu::TextureView,
-    depth_view: &wgpu::TextureView,
+    bind_group: &wgpu::BindGroup,
     target_view: &wgpu::TextureView,
     draw_submissions: &mut u64,
 ) {
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("scena.gpu_post.ssao_bind_group"),
-        layout: bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(source_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: uniform.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(depth_view),
-            },
-        ],
-    });
     let color_attachment = Some(wgpu::RenderPassColorAttachment {
         view: target_view,
         depth_slice: None,
@@ -63,7 +41,7 @@ pub(super) fn encode(
         multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, &bind_group, &[]);
+    pass.set_bind_group(0, bind_group, &[]);
     pass.draw(0..3, 0..1);
     *draw_submissions = draw_submissions.saturating_add(1);
 }

@@ -14,9 +14,9 @@ fn agent_contract_fields_differ_across_distinct_scenes() {
         MaterialDesc::unlit(Color::TRANSPARENT).with_alpha_mode(AlphaMode::Blend),
         Vec3::new(0.0, 0.0, -2.0),
     );
-    let hidden = introspection_for_material(
+    let outside = introspection_for_material(
         MaterialDesc::unlit(Color::WHITE),
-        Vec3::new(f32::NAN, 0.0, -2.0),
+        Vec3::new(100.0, 0.0, -2.0),
     );
 
     assert_ne!(
@@ -24,17 +24,17 @@ fn agent_contract_fields_differ_across_distinct_scenes() {
         "transparent summary must be computed from scene materials, not a constant"
     );
     assert!(
-        hidden
+        transparent
             .reasons
             .iter()
-            .any(|reason| reason.code == "nan_transform" && !reason.affected_handles.is_empty()),
+            .any(|reason| reason.code == "alpha_zero" && !reason.affected_handles.is_empty()),
         "node-targeted failures must carry affected stable handles"
     );
     assert!(
-        hidden
+        outside
             .fixes
             .iter()
-            .any(|fix| fix.action == "set_transform" && fix.patch.is_some()),
+            .any(|fix| fix.action == "frame_bounds" && fix.patch.is_some()),
         "repairable render failures must carry an apply-ready patch"
     );
 }

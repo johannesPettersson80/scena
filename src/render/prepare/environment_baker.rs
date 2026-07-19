@@ -3,12 +3,24 @@ use std::f32::consts::PI;
 use crate::assets::ENVIRONMENT_CUBEMAP_FACE_NORMALS;
 use crate::scene::Vec3;
 
+#[cfg(not(target_arch = "wasm32"))]
+use rayon::prelude::*;
+
 use self::source_mips::{
     build_source_cubemap_mip_chain, sample_source_cubemap_lod, source_mip_resolution,
 };
 use super::super::pbr_brdf;
 
+mod brdf;
 mod source_mips;
+#[cfg(test)]
+use brdf::{
+    build_brdf_lut, build_brdf_lut_with_sample_count, hammersley_2d, source_mip_level_for_sample,
+};
+use brdf::{
+    build_brdf_lut_with_sample_count_profiled, integrate_ggx_specular, normalize_or_z,
+    sample_count_for_roughness,
+};
 
 /// Rust-owned image-based-lighting baker for scena's runtime and WASM paths.
 ///
@@ -51,23 +63,99 @@ pub(in crate::render) struct BakedEnvironmentIbl {
     pub(in crate::render) brdf_lut_size: u32,
 }
 
+/// Deterministic work counters from one environment IBL bake.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EnvironmentBakeMetrics {
+    /// Calls into the cubemap LOD sampler made by the GGX prefilter.
+    pub source_texture_samples: u64,
+    /// Hammersley samples evaluated while building the split-sum BRDF LUT.
+    pub brdf_integration_samples: u64,
+    /// RGBA texels emitted across all prefiltered cubemap faces and mips.
+    pub prefilter_output_texels: u64,
+    /// RG texels emitted into the split-sum BRDF LUT.
+    pub brdf_lut_texels: u64,
+    /// Bytes written to the cubemap and BRDF-LUT bake products.
+    pub output_bytes_written: u64,
+    /// Maximum bounded worker count selected by any bake stage.
+    pub parallel_workers: u64,
+    /// Independent face or row tasks made eligible for parallel execution.
+    pub parallel_tasks: u64,
+}
+
 pub(in crate::render) fn bake_environment_ibl(
     source_face_pixels: &[Vec<f32>; 6],
     request: EnvironmentIblBakeRequest,
 ) -> BakedEnvironmentIbl {
+    bake_environment_ibl_profiled(source_face_pixels, request).0
+}
+
+pub(in crate::render) fn bake_environment_ibl_profiled(
+    source_face_pixels: &[Vec<f32>; 6],
+    request: EnvironmentIblBakeRequest,
+) -> (BakedEnvironmentIbl, EnvironmentBakeMetrics) {
+    let task_count = request
+        .mip_count
+        .saturating_sub(1)
+        .saturating_mul(6)
+        .saturating_add(request.brdf_lut_size) as usize;
+    bake_environment_ibl_profiled_with_workers(
+        source_face_pixels,
+        request,
+        super::super::parallel::worker_count(task_count),
+    )
+}
+
+fn bake_environment_ibl_profiled_with_workers(
+    source_face_pixels: &[Vec<f32>; 6],
+    request: EnvironmentIblBakeRequest,
+    requested_workers: usize,
+) -> (BakedEnvironmentIbl, EnvironmentBakeMetrics) {
     let mip_count = request.mip_count.max(1);
     let brdf_lut_size = request.brdf_lut_size.max(1);
-    BakedEnvironmentIbl {
-        mips: prefilter_specular_cubemap_mips_with_quality(
-            source_face_pixels,
-            request.source_resolution.max(1),
-            mip_count,
-            request.quality,
-        ),
+    let mut metrics = EnvironmentBakeMetrics::default();
+    let workers = requested_workers
+        .max(1)
+        .min(super::super::parallel::worker_count(
+            mip_count
+                .saturating_sub(1)
+                .saturating_mul(6)
+                .saturating_add(brdf_lut_size) as usize,
+        ));
+    metrics.parallel_workers = workers as u64;
+    let mips = prefilter_specular_cubemap_mips_with_quality_profiled(
+        source_face_pixels,
+        request.source_resolution.max(1),
         mip_count,
-        brdf_lut: build_brdf_lut_with_sample_count(brdf_lut_size, request.brdf_sample_count),
+        request.quality,
+        workers,
+        &mut metrics,
+    );
+    let brdf_lut = build_brdf_lut_with_sample_count_profiled(
         brdf_lut_size,
-    }
+        request.brdf_sample_count,
+        workers,
+        &mut metrics,
+    );
+    metrics.output_bytes_written = metrics
+        .prefilter_output_texels
+        .saturating_mul(4)
+        .saturating_mul(std::mem::size_of::<f32>() as u64)
+        .saturating_add(
+            metrics
+                .brdf_lut_texels
+                .saturating_mul(2)
+                .saturating_mul(std::mem::size_of::<f32>() as u64),
+        );
+    (
+        BakedEnvironmentIbl {
+            mips,
+            mip_count,
+            brdf_lut,
+            brdf_lut_size,
+        },
+        metrics,
+    )
 }
 
 /// Builds the GGX-prefiltered specular cubemap mip chain (one face buffer
@@ -91,11 +179,30 @@ fn prefilter_specular_cubemap_mips(
     )
 }
 
+#[cfg(test)]
 fn prefilter_specular_cubemap_mips_with_quality(
     source_face_pixels: &[Vec<f32>; 6],
     resolution: u32,
     mip_count: u32,
     quality: EnvironmentIblBakeQuality,
+) -> Vec<[Vec<f32>; 6]> {
+    prefilter_specular_cubemap_mips_with_quality_profiled(
+        source_face_pixels,
+        resolution,
+        mip_count,
+        quality,
+        1,
+        &mut EnvironmentBakeMetrics::default(),
+    )
+}
+
+fn prefilter_specular_cubemap_mips_with_quality_profiled(
+    source_face_pixels: &[Vec<f32>; 6],
+    resolution: u32,
+    mip_count: u32,
+    quality: EnvironmentIblBakeQuality,
+    workers: usize,
+    metrics: &mut EnvironmentBakeMetrics,
 ) -> Vec<[Vec<f32>; 6]> {
     if mip_count == 0 {
         return Vec::new();
@@ -108,8 +215,18 @@ fn prefilter_specular_cubemap_mips_with_quality(
             source_face_pixels.clone()
         } else {
             let roughness = prefilter_roughness_for_mip(mip, mip_count);
-            prefilter_face_pixels(&source_mips, mip_resolution, roughness, quality)
+            prefilter_face_pixels(
+                &source_mips,
+                mip_resolution,
+                roughness,
+                quality,
+                workers,
+                metrics,
+            )
         };
+        metrics.prefilter_output_texels = metrics
+            .prefilter_output_texels
+            .saturating_add(u64::from(mip_resolution).pow(2).saturating_mul(6));
         mips.push(mip_faces);
     }
     mips
@@ -158,284 +275,87 @@ fn prefilter_face_pixels(
     mip_resolution: u32,
     roughness: f32,
     quality: EnvironmentIblBakeQuality,
+    workers: usize,
+    metrics: &mut EnvironmentBakeMetrics,
 ) -> [Vec<f32>; 6] {
+    #[cfg(target_arch = "wasm32")]
+    let _ = workers;
     let sample_count = sample_count_for_roughness(roughness, quality);
     let mut faces: [Vec<f32>; 6] =
         std::array::from_fn(|_| vec![0.0_f32; (mip_resolution as usize).pow(2) * 4]);
+    metrics.parallel_tasks = metrics.parallel_tasks.saturating_add(6);
+    #[cfg(not(target_arch = "wasm32"))]
+    if workers > 1 {
+        let sample_counts = faces
+            .par_iter_mut()
+            .enumerate()
+            .map(|(face_index, face_pixels)| {
+                fill_prefilter_face(
+                    source_mips,
+                    mip_resolution,
+                    roughness,
+                    sample_count,
+                    face_index,
+                    face_pixels,
+                )
+            })
+            .collect::<Vec<_>>();
+        metrics.source_texture_samples = metrics
+            .source_texture_samples
+            .saturating_add(sample_counts.into_iter().sum());
+        return faces;
+    }
     for (face_index, face_pixels) in faces.iter_mut().enumerate() {
-        for y in 0..mip_resolution {
-            for x in 0..mip_resolution {
-                let u = (x as f32 + 0.5) / mip_resolution as f32 * 2.0 - 1.0;
-                let v = (y as f32 + 0.5) / mip_resolution as f32 * 2.0 - 1.0;
-                let normal = cubemap_face_direction(face_index, u, v);
-                let prefiltered =
-                    integrate_ggx_specular(normal, roughness, sample_count, source_mips);
-                let pixel_index = ((y * mip_resolution + x) * 4) as usize;
-                face_pixels[pixel_index] = prefiltered.x;
-                face_pixels[pixel_index + 1] = prefiltered.y;
-                face_pixels[pixel_index + 2] = prefiltered.z;
-                face_pixels[pixel_index + 3] = 1.0;
-            }
-        }
+        metrics.source_texture_samples =
+            metrics
+                .source_texture_samples
+                .saturating_add(fill_prefilter_face(
+                    source_mips,
+                    mip_resolution,
+                    roughness,
+                    sample_count,
+                    face_index,
+                    face_pixels,
+                ));
     }
     faces
+}
+
+fn fill_prefilter_face(
+    source_mips: &[[Vec<f32>; 6]],
+    mip_resolution: u32,
+    roughness: f32,
+    sample_count: u32,
+    face_index: usize,
+    face_pixels: &mut [f32],
+) -> u64 {
+    let mut local_metrics = EnvironmentBakeMetrics::default();
+    for y in 0..mip_resolution {
+        for x in 0..mip_resolution {
+            let u = (x as f32 + 0.5) / mip_resolution as f32 * 2.0 - 1.0;
+            let v = (y as f32 + 0.5) / mip_resolution as f32 * 2.0 - 1.0;
+            let normal = cubemap_face_direction(face_index, u, v);
+            let prefiltered = integrate_ggx_specular(
+                normal,
+                roughness,
+                sample_count,
+                source_mips,
+                &mut local_metrics,
+            );
+            let pixel_index = ((y * mip_resolution + x) * 4) as usize;
+            face_pixels[pixel_index] = prefiltered.x;
+            face_pixels[pixel_index + 1] = prefiltered.y;
+            face_pixels[pixel_index + 2] = prefiltered.z;
+            face_pixels[pixel_index + 3] = 1.0;
+        }
+    }
+    local_metrics.source_texture_samples
 }
 
 /// Build the split-sum BRDF LUT — a 2D RG f32 texture indexed by
 /// `(N·V, roughness)`. Returned slice is `size * size * 2` floats laid
 /// out row-major. The shader computes specular as
 /// `prefiltered_radiance * (F0 * lut.x + lut.y)`.
-#[cfg(test)]
-fn build_brdf_lut(size: u32) -> Vec<f32> {
-    build_brdf_lut_with_sample_count(size, 1024)
-}
-
-fn build_brdf_lut_with_sample_count(size: u32, sample_count: u32) -> Vec<f32> {
-    let resolved_size = size.max(1);
-    let mut pixels = vec![0.0_f32; (resolved_size as usize).pow(2) * 2];
-    for y in 0..resolved_size {
-        let roughness = (y as f32 + 0.5) / resolved_size as f32;
-        for x in 0..resolved_size {
-            let n_dot_v = (x as f32 + 0.5) / resolved_size as f32;
-            let (scale, bias) = integrate_brdf_lut_cell(n_dot_v, roughness, sample_count);
-            let pixel_index = ((y * resolved_size + x) * 2) as usize;
-            pixels[pixel_index] = scale;
-            pixels[pixel_index + 1] = bias;
-        }
-    }
-    pixels
-}
-
-fn integrate_ggx_specular(
-    normal: Vec3,
-    roughness: f32,
-    sample_count: u32,
-    source_mips: &[[Vec<f32>; 6]],
-) -> Vec3 {
-    if sample_count == 0 {
-        return sample_source_cubemap_lod(source_mips, normal, 0.0);
-    }
-    let view = normal;
-    let source_resolution = source_mip_resolution(source_mips, 0);
-    let mut accumulated = Vec3::ZERO;
-    let mut total_weight = 0.0_f32;
-    for sample_index in 0..sample_count {
-        let sample = importance_sample_ggx(sample_index, sample_count, normal, roughness, view);
-        if sample.n_dot_l <= 0.0 {
-            continue;
-        }
-        let pdf = ggx_sample_pdf(sample.n_dot_h, sample.v_dot_h, roughness);
-        let source_mip =
-            source_mip_level_for_sample(roughness, sample_count, source_resolution, pdf);
-        let radiance = sample_source_cubemap_lod(source_mips, sample.direction, source_mip);
-        accumulated.x += radiance.x * sample.n_dot_l;
-        accumulated.y += radiance.y * sample.n_dot_l;
-        accumulated.z += radiance.z * sample.n_dot_l;
-        total_weight += sample.n_dot_l;
-    }
-    if total_weight <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let inverse = total_weight.recip();
-    Vec3::new(
-        accumulated.x * inverse,
-        accumulated.y * inverse,
-        accumulated.z * inverse,
-    )
-}
-
-fn integrate_brdf_lut_cell(n_dot_v: f32, roughness: f32, sample_count: u32) -> (f32, f32) {
-    if sample_count == 0 {
-        return (0.0, 0.0);
-    }
-    let view = Vec3::new(
-        (1.0 - n_dot_v * n_dot_v).max(0.0).sqrt(),
-        0.0,
-        n_dot_v.clamp(0.0, 1.0),
-    );
-    let normal = Vec3::new(0.0, 0.0, 1.0);
-    let mut scale = 0.0_f32;
-    let mut bias = 0.0_f32;
-    for sample_index in 0..sample_count {
-        let xi = hammersley_2d(sample_index, sample_count);
-        let half = importance_sample_ggx_local(xi, normal, roughness);
-        let v_dot_h = (view.x * half.x + view.y * half.y + view.z * half.z).max(0.0);
-        let light = reflect_vec3(view, half);
-        let n_dot_l = light.z.clamp(0.0, 1.0);
-        if n_dot_l <= 0.0 {
-            continue;
-        }
-        let n_dot_h = half.z.clamp(0.0, 1.0);
-        if n_dot_h <= 0.0 {
-            continue;
-        }
-        let alpha_roughness = pbr_brdf::alpha_roughness(roughness);
-        let visibility = pbr_brdf::ggx_visibility_correlated(n_dot_l, n_dot_v, alpha_roughness)
-            * v_dot_h
-            * n_dot_l
-            / n_dot_h.max(1e-4);
-        let fresnel = (1.0 - v_dot_h).clamp(0.0, 1.0).powi(5);
-        scale += (1.0 - fresnel) * visibility;
-        bias += fresnel * visibility;
-    }
-    (
-        4.0 * scale / sample_count as f32,
-        4.0 * bias / sample_count as f32,
-    )
-}
-
-fn importance_sample_ggx(
-    sample_index: u32,
-    sample_count: u32,
-    normal: Vec3,
-    roughness: f32,
-    view: Vec3,
-) -> GgxSample {
-    let xi = hammersley_2d(sample_index, sample_count);
-    let half_local = importance_sample_ggx_local(xi, Vec3::new(0.0, 0.0, 1.0), roughness);
-    let half_world = transform_local_to_world(half_local, normal);
-    let direction = reflect_vec3(view, half_world);
-    let n_dot_l =
-        (normal.x * direction.x + normal.y * direction.y + normal.z * direction.z).clamp(0.0, 1.0);
-    let n_dot_h = dot(normal, half_world).clamp(0.0, 1.0);
-    let v_dot_h = dot(view, half_world).clamp(0.0, 1.0);
-    GgxSample {
-        direction: normalize_or_z(direction),
-        n_dot_l,
-        n_dot_h,
-        v_dot_h,
-    }
-}
-
-fn importance_sample_ggx_local(xi: (f32, f32), normal_local: Vec3, roughness: f32) -> Vec3 {
-    let alpha = roughness * roughness;
-    let phi = 2.0 * PI * xi.0;
-    let cos_theta_squared = ((1.0 - xi.1) / (1.0 + (alpha * alpha - 1.0) * xi.1)).max(0.0);
-    let cos_theta = cos_theta_squared.sqrt();
-    let sin_theta = (1.0 - cos_theta_squared).max(0.0).sqrt();
-    let half_local = Vec3::new(sin_theta * phi.cos(), sin_theta * phi.sin(), cos_theta);
-    let dot = normal_local.x * half_local.x
-        + normal_local.y * half_local.y
-        + normal_local.z * half_local.z;
-    if dot >= 0.0 {
-        half_local
-    } else {
-        Vec3::new(-half_local.x, -half_local.y, -half_local.z)
-    }
-}
-
-fn transform_local_to_world(local: Vec3, normal: Vec3) -> Vec3 {
-    let up = if normal.z.abs() < 0.999 {
-        Vec3::new(0.0, 0.0, 1.0)
-    } else {
-        Vec3::new(1.0, 0.0, 0.0)
-    };
-    let tangent = normalize_or_z(cross(up, normal));
-    let bitangent = cross(normal, tangent);
-    Vec3::new(
-        local.x * tangent.x + local.y * bitangent.x + local.z * normal.x,
-        local.x * tangent.y + local.y * bitangent.y + local.z * normal.y,
-        local.x * tangent.z + local.y * bitangent.z + local.z * normal.z,
-    )
-}
-
-fn hammersley_2d(index: u32, count: u32) -> (f32, f32) {
-    let count_inv = (count.max(1) as f32).recip();
-    (
-        index as f32 * count_inv,
-        radical_inverse_van_der_corput(index),
-    )
-}
-
-fn radical_inverse_van_der_corput(mut bits: u32) -> f32 {
-    bits = bits.rotate_right(16);
-    bits = ((bits & 0x55555555) << 1) | ((bits & 0xAAAAAAAA) >> 1);
-    bits = ((bits & 0x33333333) << 2) | ((bits & 0xCCCCCCCC) >> 2);
-    bits = ((bits & 0x0F0F0F0F) << 4) | ((bits & 0xF0F0F0F0) >> 4);
-    bits = ((bits & 0x00FF00FF) << 8) | ((bits & 0xFF00FF00) >> 8);
-    bits as f32 * 2.328_306_4e-10
-}
-
-fn ggx_normal_distribution(n_dot_h: f32, roughness: f32) -> f32 {
-    pbr_brdf::ggx_normal_distribution(n_dot_h, pbr_brdf::alpha_roughness(roughness)).max(1e-6)
-}
-
-fn ggx_sample_pdf(n_dot_h: f32, v_dot_h: f32, roughness: f32) -> f32 {
-    let distribution = ggx_normal_distribution(n_dot_h, roughness);
-    (distribution * n_dot_h.clamp(0.0, 1.0) / (4.0 * v_dot_h.max(1e-4))).max(1e-6)
-}
-
-fn source_mip_level_for_sample(
-    roughness: f32,
-    sample_count: u32,
-    source_resolution: u32,
-    pdf: f32,
-) -> f32 {
-    if roughness <= 1e-4 || source_resolution <= 1 || sample_count == 0 {
-        return 0.0;
-    }
-    let resolution = source_resolution as f32;
-    // Khronos glTF IBL Sampler `computeLod`: filtered importance sampling
-    // chooses the source mip from the sample PDF and source cubemap texel
-    // count, independent of the output mip resolution.
-    let weighted_texel_count = 6.0 * resolution * resolution;
-    (0.5 * (weighted_texel_count / (sample_count as f32 * pdf.max(1e-6))).log2()).max(0.0)
-}
-
-fn reflect_vec3(view: Vec3, normal: Vec3) -> Vec3 {
-    let dot = dot(view, normal);
-    Vec3::new(
-        2.0 * dot * normal.x - view.x,
-        2.0 * dot * normal.y - view.y,
-        2.0 * dot * normal.z - view.z,
-    )
-}
-
-fn dot(a: Vec3, b: Vec3) -> f32 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-fn cross(a: Vec3, b: Vec3) -> Vec3 {
-    Vec3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
-}
-
-fn normalize_or_z(value: Vec3) -> Vec3 {
-    let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
-    if length <= f32::EPSILON || !length.is_finite() {
-        Vec3::new(0.0, 0.0, 1.0)
-    } else {
-        let inv = length.recip();
-        Vec3::new(value.x * inv, value.y * inv, value.z * inv)
-    }
-}
-
-/// Number of importance samples per pixel for a given roughness. Mip 0
-/// (roughness 0) needs no convolution and we route it through this
-/// table only for completeness; smoother surfaces converge at fewer
-/// samples while rougher surfaces benefit from many more.
-fn sample_count_for_roughness(roughness: f32, quality: EnvironmentIblBakeQuality) -> u32 {
-    let stepped = (roughness.clamp(0.0, 1.0) * 8.0).round() as u32;
-    match quality {
-        EnvironmentIblBakeQuality::Reference => match stepped {
-            0 => 32,
-            1 | 2 => 96,
-            3 | 4 => 192,
-            5 | 6 => 384,
-            _ => 768,
-        },
-        EnvironmentIblBakeQuality::InteractiveWebGl2 => match stepped {
-            0 => 16,
-            1 | 2 => 96,
-            3 | 4 => 128,
-            _ => 192,
-        },
-    }
-}
-
 fn cubemap_face_direction(face_index: usize, u: f32, v: f32) -> Vec3 {
     let normal = ENVIRONMENT_CUBEMAP_FACE_NORMALS[face_index.min(5)];
     let raw = match face_index {
@@ -689,5 +609,38 @@ mod tests {
                 "Hammersley sequence must produce unique 2D samples within {count}"
             );
         }
+    }
+
+    #[test]
+    fn pf09_parallel_environment_faces_and_rows_match_serial_bit_for_bit() {
+        let source = overbright_softbox_cubemap();
+        let request = EnvironmentIblBakeRequest {
+            source_resolution: 64,
+            mip_count: 5,
+            quality: EnvironmentIblBakeQuality::InteractiveWebGl2,
+            brdf_lut_size: 16,
+            brdf_sample_count: 64,
+        };
+
+        let (serial, serial_metrics) =
+            bake_environment_ibl_profiled_with_workers(&source, request, 1);
+        let (parallel, parallel_metrics) =
+            bake_environment_ibl_profiled_with_workers(&source, request, 4);
+
+        assert_eq!(parallel, serial, "parallel face/row work must be bit-exact");
+        assert_eq!(
+            parallel_metrics.source_texture_samples,
+            serial_metrics.source_texture_samples
+        );
+        assert_eq!(
+            parallel_metrics.brdf_integration_samples,
+            serial_metrics.brdf_integration_samples
+        );
+        assert_eq!(serial_metrics.parallel_workers, 1);
+        assert!(
+            parallel_metrics.parallel_workers > 1,
+            "the focused native proof must exercise bounded parallel work"
+        );
+        assert!(parallel_metrics.parallel_tasks >= 6 + 16);
     }
 }

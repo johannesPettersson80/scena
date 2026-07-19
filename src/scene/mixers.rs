@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 
 use crate::animation::{
     AnimationChannel, AnimationLoopMode, AnimationMixer, AnimationMixerKey, AnimationPlaybackState,
-    AnimationTarget,
+    AnimationTarget, AnimationUpdateMetrics,
 };
 use crate::diagnostics::AnimationError;
 
@@ -178,16 +178,39 @@ impl Scene {
         mixer: AnimationMixerKey,
         delta_seconds: f32,
     ) -> Result<(), AnimationError> {
+        self.update_animation_impl::<false>(mixer, delta_seconds)
+            .map(|_| ())
+    }
+
+    /// Advances one mixer and returns deterministic counters for the animation
+    /// sampling and payload-copy work performed by this update.
+    pub fn update_animation_profiled(
+        &mut self,
+        mixer: AnimationMixerKey,
+        delta_seconds: f32,
+    ) -> Result<AnimationUpdateMetrics, AnimationError> {
+        self.update_animation_impl::<true>(mixer, delta_seconds)
+    }
+
+    fn update_animation_impl<const PROFILE: bool>(
+        &mut self,
+        mixer: AnimationMixerKey,
+        delta_seconds: f32,
+    ) -> Result<AnimationUpdateMetrics, AnimationError> {
+        let mut metrics = AnimationUpdateMetrics::default();
         let (clip, time_seconds, was_playing) = {
             let mixer = self.animation_mixer_mut(mixer)?;
             let was_playing = mixer.state() == AnimationPlaybackState::Playing;
             mixer.advance(delta_seconds);
+            if PROFILE {
+                metrics.clip_clone_bytes = mixer.clip().cloned_payload_bytes();
+            }
             (mixer.clip().clone(), mixer.time_seconds(), was_playing)
         };
         if was_playing {
-            self.apply_animation_clip(&clip, time_seconds);
+            self.apply_animation_clip_impl::<PROFILE>(&clip, time_seconds, &mut metrics);
         }
-        Ok(())
+        Ok(metrics)
     }
 
     fn animation_mixer_mut(
@@ -205,10 +228,23 @@ impl Scene {
     }
 
     fn apply_animation_clip(&mut self, clip: &crate::animation::AnimationClip, time_seconds: f32) {
+        let mut ignored = AnimationUpdateMetrics::default();
+        self.apply_animation_clip_impl::<false>(clip, time_seconds, &mut ignored);
+    }
+
+    fn apply_animation_clip_impl<const PROFILE: bool>(
+        &mut self,
+        clip: &crate::animation::AnimationClip,
+        time_seconds: f32,
+        metrics: &mut AnimationUpdateMetrics,
+    ) {
         let mut transform_changed = false;
         for channel in clip.channels() {
+            if PROFILE {
+                metrics.channels_scanned = metrics.channels_scanned.saturating_add(1);
+            }
             transform_changed |= self
-                .apply_animation_channel(channel, time_seconds)
+                .apply_animation_channel::<PROFILE>(channel, time_seconds, metrics)
                 .transform_changed();
         }
         if transform_changed {
@@ -216,16 +252,39 @@ impl Scene {
         }
     }
 
-    fn apply_animation_channel(
+    fn apply_animation_channel<const PROFILE: bool>(
         &mut self,
         channel: &AnimationChannel,
         time_seconds: f32,
+        metrics: &mut AnimationUpdateMetrics,
     ) -> AppliedAnimationChange {
         if channel.target() == AnimationTarget::Weights {
-            let Some(weights) = channel.sample_weights(time_seconds) else {
-                return AppliedAnimationChange::None;
+            let node = channel.target_node();
+            let mut weights = self.morph_weights.remove(&node).unwrap_or_default();
+            let sampled = if PROFILE {
+                channel.sample_weights_into_profiled(
+                    time_seconds,
+                    &mut weights,
+                    &mut metrics.keyframe_intervals_tested,
+                )
+            } else {
+                channel.sample_weights_into(time_seconds, &mut weights)
             };
-            self.set_morph_weights_unchecked(channel.target_node(), weights);
+            if !sampled {
+                if !weights.is_empty() {
+                    self.morph_weights.insert(node, weights);
+                }
+                return AppliedAnimationChange::None;
+            }
+            if PROFILE {
+                metrics.weight_values_written = metrics
+                    .weight_values_written
+                    .saturating_add(weights.len() as u64);
+                metrics.weight_bytes_written = metrics.weight_bytes_written.saturating_add(
+                    (weights.len() as u64).saturating_mul(std::mem::size_of::<f32>() as u64),
+                );
+            }
+            self.set_morph_weights_unchecked(node, weights);
             return AppliedAnimationChange::None;
         }
 
@@ -236,19 +295,37 @@ impl Scene {
         let mut transform = before;
         match channel.target() {
             AnimationTarget::Translation => {
-                let Some(value) = channel.sample_vec3(time_seconds) else {
+                let value = if PROFILE {
+                    channel
+                        .sample_vec3_profiled(time_seconds, &mut metrics.keyframe_intervals_tested)
+                } else {
+                    channel.sample_vec3(time_seconds)
+                };
+                let Some(value) = value else {
                     return AppliedAnimationChange::None;
                 };
                 transform.translation = value;
             }
             AnimationTarget::Scale => {
-                let Some(value) = channel.sample_vec3(time_seconds) else {
+                let value = if PROFILE {
+                    channel
+                        .sample_vec3_profiled(time_seconds, &mut metrics.keyframe_intervals_tested)
+                } else {
+                    channel.sample_vec3(time_seconds)
+                };
+                let Some(value) = value else {
                     return AppliedAnimationChange::None;
                 };
                 transform.scale = value;
             }
             AnimationTarget::Rotation => {
-                let Some(value) = channel.sample_quat(time_seconds) else {
+                let value = if PROFILE {
+                    channel
+                        .sample_quat_profiled(time_seconds, &mut metrics.keyframe_intervals_tested)
+                } else {
+                    channel.sample_quat(time_seconds)
+                };
+                let Some(value) = value else {
                     return AppliedAnimationChange::None;
                 };
                 transform.rotation = value;

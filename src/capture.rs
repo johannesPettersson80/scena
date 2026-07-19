@@ -197,7 +197,6 @@ impl CaptureRgba8 {
         )
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn write_png(&self, path: impl AsRef<std::path::Path>) -> Result<(), CapturePngError> {
         png::write_png(path, self.to_png_bytes()?)
     }
@@ -259,6 +258,9 @@ pub fn capture_rgba8(
     renderer: &Renderer,
     options: CaptureOptions,
 ) -> Result<CaptureRgba8, CaptureError> {
+    renderer
+        .readback_frame_state()
+        .ok_or(CaptureError::NoRenderedFrame)?;
     let readback = renderer.read_pixels();
     let width = readback.width();
     let height = readback.height();

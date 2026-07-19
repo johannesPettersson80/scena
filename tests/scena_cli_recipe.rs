@@ -1401,6 +1401,84 @@ fn scena_recipe_invalid_fixtures_cover_landed_failure_families() {
     );
 }
 
+#[test]
+fn fr03_place_apply_emits_persistent_recipe_and_rejects_stale_source() {
+    let recipe = recipe_invalid_fixture_path("valid_for_commands.recipe.json");
+    let base_args = [
+        "place",
+        path_str(&recipe),
+        "--import",
+        "part",
+        "--verb",
+        "center",
+        "--target",
+        "1,2,3",
+    ];
+    let preview = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(base_args)
+        .output()
+        .expect("placement preview runs");
+    assert!(preview.status.success(), "stderr={}", stderr(&preview));
+    let preview = json_report(&preview);
+
+    let applied = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(base_args)
+        .arg("--apply")
+        .output()
+        .expect("placement apply runs");
+    assert!(applied.status.success(), "stderr={}", stderr(&applied));
+    let applied = json_report(&applied);
+    assert_eq!(applied["schema"], "scena.recipe_patch.v1");
+    assert_eq!(applied["ok"], true);
+    assert_eq!(applied["import_id"], "part");
+    assert_eq!(applied["transform"], preview["transform"]);
+    assert_eq!(
+        applied["updated_recipe"]["imports"][0]["transform"],
+        preview["transform"]
+    );
+    assert_eq!(
+        applied["semantic_changes"][0]["path"],
+        "$.imports[0].transform"
+    );
+    assert_eq!(applied["formatting_preserved"], false);
+    assert!(
+        Path::new(
+            applied["updated_recipe"]["imports"][0]["uri"]
+                .as_str()
+                .expect("updated import URI is a string")
+        )
+        .is_absolute(),
+        "portable complete recipe rebases source-relative import URIs"
+    );
+
+    let rebuilt = artifact_dir("fr03-place-apply").join("updated.recipe.json");
+    fs::write(
+        &rebuilt,
+        serde_json::to_vec_pretty(&applied["updated_recipe"]).expect("updated recipe serializes"),
+    )
+    .expect("updated recipe writes");
+    let validation = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&rebuilt)])
+        .output()
+        .expect("updated recipe validates");
+    assert!(
+        validation.status.success(),
+        "stderr={}",
+        stderr(&validation)
+    );
+
+    let stale = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(base_args)
+        .args(["--apply", "--expect-source-sha256", &"0".repeat(64)])
+        .output()
+        .expect("stale placement apply runs");
+    assert_eq!(stale.status.code(), Some(1));
+    let stale = json_report(&stale);
+    assert_eq!(stale["schema"], "scena.recipe_patch.v1");
+    assert_eq!(stale["ok"], false);
+    assert_diagnostic(&stale, "stale_source", "error");
+}
+
 #[cfg(feature = "scene-host")]
 #[test]
 fn scena_render_cli_applies_scene_setup_for_import_only_recipes() {
@@ -1721,6 +1799,106 @@ fn scena_recipe_render_verify_reports_reference_quality_failure() {
                 && reason["source"] == "quality"),
         "quality reference failure must also appear in compact reasons: {report:#}"
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_accepts_live_ssim_reference_and_rejects_scene_mutations() {
+    let dir = artifact_dir("recipe-render-live-ssim");
+    let baseline_recipe_path = dir.join("baseline.recipe.json");
+    let baseline_png_path = dir.join("baseline.png");
+    let baseline_recipe = authored_verification_recipe(json!({
+        "expect_bbox_fit": {
+            "min": 0.20,
+            "max": 0.95
+        }
+    }));
+    fs::write(
+        &baseline_recipe_path,
+        serde_json::to_string_pretty(&baseline_recipe).expect("baseline recipe serializes"),
+    )
+    .expect("baseline recipe writes");
+    let baseline_report =
+        run_recipe_render_verify(&baseline_recipe_path, &baseline_png_path, false);
+    assert_eq!(baseline_report["verification"]["ok"], true);
+
+    let live_reference_expectation = json!({
+        "expect_bbox_fit": {
+            "min": 0.20,
+            "max": 0.95
+        },
+        "expect_reference": [{
+            "id": "live-ssim-reference",
+            "image": "baseline.png",
+            "metric": "ssim",
+            "min_ssim": 0.99
+        }]
+    });
+    let accepted_recipe_path = dir.join("accepted.recipe.json");
+    let accepted_png_path = dir.join("accepted.png");
+    fs::write(
+        &accepted_recipe_path,
+        serde_json::to_string_pretty(&authored_verification_recipe(
+            live_reference_expectation.clone(),
+        ))
+        .expect("accepted recipe serializes"),
+    )
+    .expect("accepted recipe writes");
+    let accepted_report =
+        run_recipe_render_verify(&accepted_recipe_path, &accepted_png_path, false);
+    assert_eq!(accepted_report["verification"]["quality"]["ok"], true);
+
+    let baseline = decode_png_rgba8(&baseline_png_path);
+    let accepted = decode_png_rgba8(&accepted_png_path);
+    let accepted_ssim = scena::ssim_grayscale(
+        &accepted.rgba8,
+        &baseline.rgba8,
+        baseline.width,
+        baseline.height,
+    )
+    .expect("matching live renders have comparable dimensions");
+    assert!(
+        accepted_ssim >= 0.99,
+        "accepted live render SSIM {accepted_ssim} must meet the recipe threshold"
+    );
+
+    for (name, pointer, replacement) in [
+        ("camera", "/cameras/0/transform/eye", json!([0.8, 0.0, 2.0])),
+        ("material", "/colors/red", json!("#FFFFFF")),
+        (
+            "geometry",
+            "/geometries/0/primitive/size",
+            json!([0.18, 0.18, 0.08]),
+        ),
+    ] {
+        let mut mutated_recipe = authored_verification_recipe(live_reference_expectation.clone());
+        *mutated_recipe
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("{name} mutation pointer {pointer} exists")) = replacement;
+        let recipe_path = dir.join(format!("{name}.recipe.json"));
+        let png_path = dir.join(format!("{name}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&mutated_recipe)
+                .unwrap_or_else(|error| panic!("{name} mutation recipe serializes: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("{name} mutation recipe writes: {error}"));
+
+        let report = run_recipe_render_verify_expect_failure(&recipe_path, &png_path, false);
+        assert_quality_reason(&report, "reference_ssim_too_low", "live-ssim-reference");
+        let mutated = decode_png_rgba8(&png_path);
+        let observed_ssim = scena::ssim_grayscale(
+            &mutated.rgba8,
+            &baseline.rgba8,
+            baseline.width,
+            baseline.height,
+        )
+        .expect("mutated live render has comparable dimensions");
+        assert!(
+            observed_ssim < 0.99,
+            "{name} mutation SSIM {observed_ssim} must fail the same 0.99 threshold"
+        );
+    }
 }
 
 #[cfg(feature = "scene-host")]

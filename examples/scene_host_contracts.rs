@@ -1,10 +1,27 @@
 use serde_json::Value;
 
 use scena::{
-    AssetPath, Color, SceneHostAssetImportReportV1, SceneHostCameraState, SceneHostCore, Transform,
-    Vec3, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
+    AssetPath, Backend, Color, SceneHostAssetImportReportV1, SceneHostCameraState, SceneHostCore,
+    Transform, Vec3, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
     VisualPatchSelectionV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
 };
+
+// Compile-checked constructor examples. Proof-required callers use the strict
+// path; applications that permit CPU fallback opt in by name and retain the
+// typed selection report beside the selected backend capability report.
+#[allow(dead_code)]
+fn backend_selection_contracts() -> Result<(), Box<dyn std::error::Error>> {
+    let strict = SceneHostCore::headless_gpu(128, 128)?;
+    assert_eq!(strict.backend(), Backend::HeadlessGpu);
+
+    let (preferred, selection) = SceneHostCore::headless_prefer_gpu(128, 128)?;
+    assert_eq!(selection.selected_backend(), preferred.backend());
+    if selection.fallback_used() {
+        assert_eq!(preferred.backend(), Backend::Headless);
+        assert!(selection.gpu_error().is_some());
+    }
+    Ok(())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut host = SceneHostCore::headless(128, 128)?;

@@ -37,10 +37,15 @@ delta_e2000_max = 28.00
 
 [leather]
 texture_variance_min = 0.02
+# High-pass interior variance used by the shared live evaluator. Unlike the
+# legacy global standard deviation above, this rejects a flat material even
+# when silhouette shading and resampling edges remain.
+local_texture_variance_min = 0.015
 delta_e2000_max = 7.00
 
 [rubber]
 roughness_variance_min = 0.02
+local_texture_variance_min = 0.015
 delta_e2000_max = 21.00
 
 [satin]
@@ -50,3 +55,44 @@ delta_e2000_max = 6.00
 [global]
 neighbor_delta_e2000_min = 6.00
 reference_delta_e2000_max = 4.00
+
+# The deterministic CPU rasterizer evaluates the same material identities but
+# has no hardware derivative/sample footprint. These surface-specific floors
+# are pinned below the measured live CPU fixture and still reject the zeroed or
+# isotropic known-bad mutations exercised by the shared evaluator contract.
+[live_cpu_headless.brushed_steel]
+anisotropy_aspect_ratio_ibl = 1.30
+
+[live_cpu_headless.clearcoat_plastic]
+clearcoat_lobe_delta = 0.007
+
+[live_cpu_headless.leather]
+local_texture_variance_min = 0.006
+
+[live_cpu_headless.rubber]
+local_texture_variance_min = 0.006
+
+[live_cpu_headless.satin]
+sheen_width_min = 0.015
+
+# WebGL2 uses browser-cropped, foreground-normalized tiles. Eroding five pixels
+# from the live leather mask removes silhouette/edge contrast and leaves a
+# measured interior texture variance of 0.012; the 0.010 floor still rejects
+# the zero-variance known-bad mutation without treating edges as texture.
+[live_webgl2_chromium.leather]
+local_texture_variance_min = 0.010
+
+# WebGPU uses renderer-owned RGBA8 readback from the required Chromium lane.
+# These floors reflect its derivative/sample footprint while remaining above
+# the isotropic or zero-signal mutations in the evaluator contract.
+[live_webgpu_chromium.brushed_steel]
+anisotropy_aspect_ratio_ibl = 1.15
+
+[live_webgpu_chromium.leather]
+local_texture_variance_min = 0.003
+
+[live_webgpu_chromium.rubber]
+local_texture_variance_min = 0.004
+
+[live_webgpu_chromium.satin]
+sheen_width_min = 0.08

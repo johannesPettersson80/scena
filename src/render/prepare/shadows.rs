@@ -1,12 +1,19 @@
 use crate::assets::{Assets, MaterialHandle};
 use crate::diagnostics::PrepareError;
-use crate::geometry::{Aabb, GeometryDesc, GeometryTopology, GeometryVertex};
+use crate::geometry::{Aabb, GeometryDesc, GeometryTopology, GeometryVertex, TriangleBvh};
 use crate::scene::{NodeKey, Scene, Transform, Vec3};
 
 use super::DeformationInputs;
 use super::lighting::PreparedLights;
 use super::materials::render_material_slot;
 use super::transforms::{compose_transform, transform_position, transform_primitive};
+use crate::render::PrepareWorkCounter;
+
+mod cache;
+mod math;
+pub(super) use cache::ShadowVisibilityCache;
+use cache::shadow_triangle_signature;
+use math::{add_vec3, bounds_corners, cross_vec3, dot_vec3, scale_vec3, subtract_vec3};
 
 const SHADOW_OCCLUDED_VISIBILITY: f32 = 0.18;
 
@@ -17,11 +24,45 @@ pub(super) struct ShadowOccluder {
     c: Vec3,
 }
 
+pub(super) struct ShadowOccluderSet {
+    triangles: Vec<ShadowOccluder>,
+    bvh: TriangleBvh,
+    state_signature: u64,
+}
+
+impl Default for ShadowOccluderSet {
+    fn default() -> Self {
+        Self::new(Vec::new())
+    }
+}
+
+impl ShadowOccluderSet {
+    pub(super) fn new(triangles: Vec<ShadowOccluder>) -> Self {
+        let positions = triangles
+            .iter()
+            .map(|triangle| [triangle.a, triangle.b, triangle.c])
+            .collect::<Vec<_>>();
+        Self {
+            triangles,
+            bvh: TriangleBvh::from_triangles(&positions),
+            state_signature: shadow_triangle_signature(&positions),
+        }
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.triangles.is_empty()
+    }
+
+    pub(super) fn triangles(&self) -> &[ShadowOccluder] {
+        &self.triangles
+    }
+}
+
 pub(super) fn collect_shadow_occluders<F>(
     scene: &Scene,
     assets: Option<&Assets<F>>,
     origin_shift: Vec3,
-) -> Result<Vec<ShadowOccluder>, PrepareError> {
+) -> Result<ShadowOccluderSet, PrepareError> {
     let mut occluders = Vec::new();
 
     for (renderable, transform) in scene.renderables() {
@@ -37,7 +78,7 @@ pub(super) fn collect_shadow_occluders<F>(
     }
 
     let Some(assets) = assets else {
-        return Ok(occluders);
+        return Ok(ShadowOccluderSet::new(occluders));
     };
 
     for (node, mesh, transform) in scene.mesh_nodes() {
@@ -84,7 +125,7 @@ pub(super) fn collect_shadow_occluders<F>(
         }
     }
 
-    Ok(occluders)
+    Ok(ShadowOccluderSet::new(occluders))
 }
 
 pub(super) fn cpu_shadow_visibility_required(
@@ -169,29 +210,56 @@ pub(super) fn collect_shadow_projection_points<F>(
     Ok(points)
 }
 
-pub(super) fn directional_shadow_factor(
+pub(super) fn directional_shadow_factor_profiled(
     position: Vec3,
     lights: &PreparedLights,
-    occluders: &[ShadowOccluder],
+    occluders: &ShadowOccluderSet,
+    work: Option<&PrepareWorkCounter>,
 ) -> f32 {
     let Some(ray_direction) = lights.primary_shadow_ray_direction() else {
         return 1.0;
     };
-    let origin = add_vec3(position, scale_vec3(ray_direction, 0.01));
-    if occluders
-        .iter()
-        .any(|occluder| ray_intersects_triangle(origin, ray_direction, *occluder))
-    {
-        SHADOW_OCCLUDED_VISIBILITY
-    } else {
-        1.0
+    if let Some(work) = work {
+        work.record_shadow_ray();
     }
+    let origin = add_vec3(position, scale_vec3(ray_direction, 0.01));
+    let traversal =
+        occluders
+            .bvh
+            .any_ray_candidate(origin, ray_direction, f32::INFINITY, |triangle_index| {
+                if let Some(work) = work {
+                    work.record_ray_triangle_intersection_test();
+                }
+                ray_intersects_triangle(origin, ray_direction, occluders.triangles[triangle_index])
+            });
+    if let Some(work) = work {
+        work.record_bvh_node_bounds_tests(traversal.node_bounds_tests);
+    }
+    if traversal.hit {
+        return SHADOW_OCCLUDED_VISIBILITY;
+    }
+    1.0
 }
 
+#[cfg(test)]
 pub(super) fn area_shadow_factor(
     position: Vec3,
     lights: &PreparedLights,
     occluders: &[ShadowOccluder],
+) -> f32 {
+    area_shadow_factor_profiled(
+        position,
+        lights,
+        &ShadowOccluderSet::new(occluders.to_vec()),
+        None,
+    )
+}
+
+pub(super) fn area_shadow_factor_profiled(
+    position: Vec3,
+    lights: &PreparedLights,
+    occluders: &ShadowOccluderSet,
+    work: Option<&PrepareWorkCounter>,
 ) -> f32 {
     if occluders.is_empty() || !lights.has_area_lights() {
         return 1.0;
@@ -207,10 +275,28 @@ pub(super) fn area_shadow_factor(
         let direction = scale_vec3(to_light, distance.recip());
         let origin = add_vec3(position, scale_vec3(direction, 0.01));
         let max_distance = (distance - 0.02).max(0.0);
-        let occluded = occluders.iter().any(|occluder| {
-            ray_intersects_triangle_before(origin, direction, max_distance, *occluder)
-        });
-        visibility_sum += if occluded {
+        if let Some(work) = work {
+            work.record_area_light_sample();
+            work.record_shadow_ray();
+        }
+        let traversal =
+            occluders
+                .bvh
+                .any_ray_candidate(origin, direction, max_distance, |triangle_index| {
+                    if let Some(work) = work {
+                        work.record_ray_triangle_intersection_test();
+                    }
+                    ray_intersects_triangle_before(
+                        origin,
+                        direction,
+                        max_distance,
+                        occluders.triangles[triangle_index],
+                    )
+                });
+        if let Some(work) = work {
+            work.record_bvh_node_bounds_tests(traversal.node_bounds_tests);
+        }
+        visibility_sum += if traversal.hit {
             SHADOW_OCCLUDED_VISIBILITY
         } else {
             1.0
@@ -229,26 +315,13 @@ fn shadow_vertices(
     geometry: &GeometryDesc,
     deformation: DeformationInputs<'_>,
 ) -> Result<Vec<GeometryVertex>, PrepareError> {
-    let morphed_vertices = deformation
-        .morph_weights
-        .and_then(|weights| geometry.morphed_vertices(weights));
-    let base_vertices = morphed_vertices
-        .as_deref()
-        .unwrap_or_else(|| geometry.vertices());
-    match deformation.skin_matrices {
-        Some(matrices) => geometry
-            .skinned_vertices(base_vertices, matrices)
-            .map(|vertices| vertices.unwrap_or_else(|| base_vertices.to_vec()))
-            .map_err(|error| PrepareError::InvalidSkinGeometry {
-                node,
-                reason: format!("{error:?}"),
-            }),
-        None if geometry.skin().is_some() => Err(PrepareError::InvalidSkinGeometry {
+    geometry
+        .deformed_vertices(deformation.morph_weights, deformation.skin_matrices)
+        .map(|vertices| vertices.into_owned())
+        .map_err(|error| PrepareError::InvalidSkinGeometry {
             node,
-            reason: "skinned geometry is missing a scene skin binding".to_string(),
-        }),
-        None => Ok(base_vertices.to_vec()),
-    }
+            reason: format!("{error:?}"),
+        })
 }
 
 fn append_shadow_geometry(
@@ -436,21 +509,6 @@ fn append_transformed_bounds_points(
     }
 }
 
-fn bounds_corners(bounds: Aabb) -> [Vec3; 8] {
-    let min = bounds.min;
-    let max = bounds.max;
-    [
-        Vec3::new(min.x, min.y, min.z),
-        Vec3::new(max.x, min.y, min.z),
-        Vec3::new(min.x, max.y, min.z),
-        Vec3::new(max.x, max.y, min.z),
-        Vec3::new(min.x, min.y, max.z),
-        Vec3::new(max.x, min.y, max.z),
-        Vec3::new(min.x, max.y, max.z),
-        Vec3::new(max.x, max.y, max.z),
-    ]
-}
-
 fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
     let length = dot_vec3(value, value).sqrt();
     if length <= f32::EPSILON || !length.is_finite() {
@@ -497,35 +555,45 @@ fn ray_intersects_triangle_before(
     t > 0.001 && t < max_distance
 }
 
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
-}
-
-fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
-    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
-}
-
-fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::material::Color;
     use crate::scene::{AreaLight, AreaLightShape, Scene, Transform, Vec3};
+
+    #[test]
+    fn pf06_shadow_bvh_reduces_exact_triangle_tests_without_changing_visibility() {
+        let mut triangles = Vec::new();
+        for index in 0..4096 {
+            let x = 10.0 + index as f32 * 0.01;
+            triangles.push(ShadowOccluder {
+                a: Vec3::new(x, -0.1, 1.0),
+                b: Vec3::new(x + 0.005, -0.1, 1.0),
+                c: Vec3::new(x, 0.1, 1.0),
+            });
+        }
+        triangles.push(ShadowOccluder {
+            a: Vec3::new(-1.0, -1.0, 1.0),
+            b: Vec3::new(1.0, -1.0, 1.0),
+            c: Vec3::new(0.0, 1.0, 1.0),
+        });
+        let occluders = ShadowOccluderSet::new(triangles);
+        let mut scene = Scene::new();
+        scene
+            .directional_light(crate::DirectionalLight::default().with_shadows(true))
+            .add()
+            .expect("light");
+        let lights = PreparedLights::from_scene(&scene, Vec3::ZERO);
+        let work = PrepareWorkCounter::default();
+
+        let visibility =
+            directional_shadow_factor_profiled(Vec3::ZERO, &lights, &occluders, Some(&work));
+        let metrics = work.snapshot();
+
+        assert_eq!(visibility, SHADOW_OCCLUDED_VISIBILITY);
+        assert!(metrics.bvh_node_bounds_tests > 0);
+        assert!(metrics.ray_triangle_intersection_tests < 128, "{metrics:?}");
+    }
 
     #[test]
     fn shadow_projection_from_points_matches_triangle_vertices() {

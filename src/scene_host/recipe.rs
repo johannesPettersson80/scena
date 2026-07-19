@@ -5,18 +5,23 @@ use crate::AssetPath;
 use crate::assets::{AssetLoadOptions, DefaultAssetFetcher};
 use crate::diagnostics::AssetError;
 use crate::scene::recipe::{
-    RecipeBuildPolicy, SCENE_RECIPE_BUILD_SCHEMA_V1, SceneRecipeBuildImportV1,
+    RecipeBuildPolicy, RecipeBuildResultV1, SCENE_RECIPE_BUILD_SCHEMA_V1, SceneRecipeBuildImportV1,
     SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1,
     SceneRecipeBuildV1, SceneRecipeDiagnosticV1, build_diagnostic,
     parse_valid_scene_recipe_json_with_policy,
 };
 
 mod authoring;
+mod backend;
+mod diagnostic;
 mod host;
 mod import_presentation;
+mod manifest;
 mod overlays;
 mod policy;
 mod setup;
+mod spatial_state;
+mod types;
 
 use authoring::{
     AuthoredMaterialResources, AuthoredNodeResources, InstanceSetResources, LabelResources,
@@ -26,77 +31,63 @@ use authoring::{
     build_authored_materials, build_authored_morphs, build_authored_nodes,
     build_authored_particle_sets, build_authored_skins,
 };
-use host::recipe_headless_host;
+pub(super) use diagnostic::{error_diagnostic, scene_host_error_diagnostic};
+use host::{RecipeBackendPolicy, recipe_headless_host, recipe_manifest_host};
 use import_presentation::apply_import_presentation;
+use manifest::{RecipeBuildFailure, build_manifest, has_errors};
 use overlays::apply_recipe_overlays;
-use policy::{RecipeBuildBudget, RecipeTextureBudget, asset_policy_diagnostics};
-use setup::{apply_render_setup, apply_scene_setup, renderer_options_from_recipe};
-
-#[derive(Debug)]
-pub struct SceneHostRecipeBuild<F = DefaultAssetFetcher> {
-    pub host: SceneHostCore<F>,
-    pub manifest: SceneRecipeBuildV1,
-}
+use policy::{
+    RecipeBuildBudget, RecipeTextureBudget, asset_policy_diagnostics, recipe_policy_diagnostics,
+};
+use setup::{
+    apply_render_setup, apply_scene_setup, renderer_options_from_recipe,
+    validate_scene_setup_for_manifest,
+};
+use spatial_state::{SpatialBuildInputs, SpatialStateManifest, build_spatial_state};
+use types::RecipeBuildMode;
+pub use types::SceneHostRecipeBuild;
 
 impl SceneHostCore<DefaultAssetFetcher> {
-    pub async fn build_recipe_json(
-        recipe_path: impl AsRef<str>,
-        text: &str,
-        policy: RecipeBuildPolicy,
-    ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, SceneRecipeBuildV1> {
-        Self::build_recipe_json_with_backend(recipe_path, text, policy, false).await
-    }
-
-    pub async fn build_recipe_json_prefer_gpu(
-        recipe_path: impl AsRef<str>,
-        text: &str,
-        policy: RecipeBuildPolicy,
-    ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, SceneRecipeBuildV1> {
-        Self::build_recipe_json_with_backend(recipe_path, text, policy, true).await
-    }
-
     async fn build_recipe_json_with_backend(
         recipe_path: impl AsRef<str>,
         text: &str,
         policy: RecipeBuildPolicy,
-        prefer_gpu: bool,
+        backend_policy: RecipeBackendPolicy,
     ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, SceneRecipeBuildV1> {
+        Self::build_recipe_json_with_mode(
+            recipe_path,
+            text,
+            policy,
+            RecipeBuildMode::Host(backend_policy),
+        )
+        .await
+        .map_err(|failure| failure.manifest)
+    }
+
+    async fn build_recipe_json_with_mode(
+        recipe_path: impl AsRef<str>,
+        text: &str,
+        policy: RecipeBuildPolicy,
+        mode: RecipeBuildMode,
+    ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, RecipeBuildFailure> {
         let recipe_path = recipe_path.as_ref();
         let recipe = match parse_valid_scene_recipe_json_with_policy(text, &policy) {
             Ok(recipe) => recipe,
-            Err(report) => return Err(build_manifest(report.diagnostics, Vec::new())),
+            Err(report) => {
+                return Err(RecipeBuildFailure::before_host(build_manifest(
+                    report.diagnostics,
+                    Vec::new(),
+                )));
+            }
         };
 
-        let mut diagnostics = Vec::new();
+        let mut diagnostics = recipe_policy_diagnostics(&recipe, &policy);
         let mut skipped = Vec::new();
-        if recipe.imports.len() > policy.max_imports() {
-            diagnostics.push(error_diagnostic(
-                "$.imports",
-                "policy_violation",
-                format!(
-                    "recipe imports {} assets, exceeding RecipeBuildPolicy max_imports {}",
-                    recipe.imports.len(),
-                    policy.max_imports()
-                ),
-                "split the recipe or raise the operator-owned max_imports policy",
-            ));
-        }
-        if let Some(capture) = &recipe.capture {
-            let output_pixels = u64::from(capture.width) * u64::from(capture.height);
-            if output_pixels > policy.max_output_pixels() {
-                diagnostics.push(error_diagnostic(
-                    "$.capture",
-                    "policy_violation",
-                    format!(
-                        "capture requests {output_pixels} pixels, exceeding RecipeBuildPolicy max_output_pixels {}",
-                        policy.max_output_pixels()
-                    ),
-                    "lower capture width/height or raise the operator-owned max_output_pixels policy",
-                ));
-            }
-        }
         if has_errors(&diagnostics) {
-            return Err(build_manifest(diagnostics, skipped));
+            return Err(RecipeBuildFailure::before_host(build_manifest(
+                diagnostics,
+                skipped,
+            )));
         }
 
         let (width, height) = recipe
@@ -104,30 +95,48 @@ impl SceneHostCore<DefaultAssetFetcher> {
             .as_ref()
             .map(|capture| (capture.width, capture.height))
             .unwrap_or((800, 600));
-        let mut host = match recipe_headless_host(
-            width,
-            height,
-            renderer_options_from_recipe(recipe.render.as_ref()),
-            prefer_gpu,
-        ) {
+        let host_result = match mode {
+            RecipeBuildMode::Host(backend_policy) => recipe_headless_host(
+                width,
+                height,
+                renderer_options_from_recipe(recipe.render.as_ref()),
+                backend_policy,
+            ),
+            RecipeBuildMode::ManifestOnly => recipe_manifest_host(width, height),
+        };
+        let mut host = match host_result {
             Ok(host) => host,
             Err(error) => {
                 diagnostics.push(scene_host_error_diagnostic("$", "build_failed", error));
-                return Err(build_manifest(diagnostics, skipped));
+                return Err(RecipeBuildFailure::before_host(build_manifest(
+                    diagnostics,
+                    skipped,
+                )));
             }
         };
-        apply_render_setup(&mut host, recipe.render.as_ref(), &mut diagnostics);
+        if matches!(mode, RecipeBuildMode::Host(_)) {
+            apply_render_setup(&mut host, recipe.render.as_ref(), &mut diagnostics);
+        }
         if has_errors(&diagnostics) {
-            return Err(build_manifest(diagnostics, skipped));
+            return Err(RecipeBuildFailure::with_host(
+                build_manifest(diagnostics, skipped),
+                &host,
+            ));
         }
         let mut imports = Vec::new();
         let mut geometries = Vec::new();
         let mut materials = Vec::new();
         let mut fonts = Vec::new();
         let mut nodes = Vec::new();
+        let mut instances = Vec::new();
         let mut cameras = Vec::new();
         let mut lights = Vec::new();
         let mut animations = Vec::new();
+        let mut anchors = Vec::new();
+        let mut connectors = Vec::new();
+        let mut connections = Vec::new();
+        let mut bounds = Vec::new();
+        let mut named_states = Vec::new();
         let mut imported_node_keys = BTreeMap::new();
         let mut build_budget = RecipeBuildBudget::default();
         let mut texture_budget = RecipeTextureBudget::default();
@@ -376,10 +385,11 @@ impl SceneHostCore<DefaultAssetFetcher> {
                 build_budget: &mut build_budget,
             },
             &mut nodes,
+            &mut instances,
             &mut diagnostics,
         );
         let mut target_node_keys = node_keys.clone();
-        target_node_keys.extend(imported_node_keys);
+        target_node_keys.extend(imported_node_keys.clone());
         target_node_keys.extend(instance_set_keys);
         let particle_set_keys = build_authored_particle_sets(
             &policy,
@@ -407,6 +417,28 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut diagnostics,
         );
         target_node_keys.extend(label_keys);
+        build_spatial_state(
+            &mut host,
+            &recipe.colors,
+            &recipe.anchors,
+            &recipe.connectors,
+            &recipe.bounds,
+            &recipe.named_states,
+            SpatialBuildInputs {
+                node_keys: &target_node_keys,
+                imported_node_keys: &imported_node_keys,
+                import_handles: &import_handles,
+                imports: &imports,
+            },
+            SpatialStateManifest {
+                anchors: &mut anchors,
+                connectors: &mut connectors,
+                connections: &mut connections,
+                bounds: &mut bounds,
+                named_states: &mut named_states,
+            },
+            &mut diagnostics,
+        );
         build_authored_clipping_planes(&mut host, &recipe.clipping_planes, &mut diagnostics);
         build_authored_animations(
             &policy,
@@ -431,16 +463,32 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut lights,
             &mut diagnostics,
         );
-        apply_scene_setup(
-            &policy,
-            &mut host,
-            recipe_path,
-            &recipe.colors,
-            recipe.scene.as_ref(),
-            &mut texture_budget,
-            &mut diagnostics,
-        )
-        .await;
+        match mode {
+            RecipeBuildMode::Host(_) => {
+                apply_scene_setup(
+                    &policy,
+                    &mut host,
+                    recipe_path,
+                    &recipe.colors,
+                    recipe.scene.as_ref(),
+                    &mut texture_budget,
+                    &mut diagnostics,
+                )
+                .await
+            }
+            RecipeBuildMode::ManifestOnly => {
+                validate_scene_setup_for_manifest(
+                    &policy,
+                    &mut host,
+                    recipe_path,
+                    &recipe.colors,
+                    recipe.scene.as_ref(),
+                    &mut texture_budget,
+                    &mut diagnostics,
+                )
+                .await
+            }
+        }
         apply_recipe_overlays(&mut host, &recipe, &imports, &nodes, &mut diagnostics);
 
         let mut manifest = build_manifest(diagnostics, skipped);
@@ -449,41 +497,21 @@ impl SceneHostCore<DefaultAssetFetcher> {
         manifest.materials = materials;
         manifest.fonts = fonts;
         manifest.nodes = nodes;
+        manifest.instances = instances;
         manifest.cameras = cameras;
         manifest.lights = lights;
         manifest.animations = animations;
+        manifest.anchors = anchors;
+        manifest.connectors = connectors;
+        manifest.connections = connections;
+        manifest.bounds = bounds;
+        manifest.named_states = named_states;
         if manifest.ok && !has_errors(&manifest.diagnostics[authored_start..]) {
             Ok(SceneHostRecipeBuild { host, manifest })
         } else {
-            Err(manifest)
+            Err(RecipeBuildFailure::with_host(manifest, &host))
         }
     }
-}
-
-fn build_manifest(
-    diagnostics: Vec<SceneRecipeDiagnosticV1>,
-    skipped: Vec<SceneRecipeBuildSkippedV1>,
-) -> SceneRecipeBuildV1 {
-    SceneRecipeBuildV1 {
-        schema: SCENE_RECIPE_BUILD_SCHEMA_V1.to_owned(),
-        ok: !has_errors(&diagnostics),
-        imports: Vec::new(),
-        nodes: Vec::<SceneRecipeBuildTargetV1>::new(),
-        cameras: Vec::new(),
-        lights: Vec::new(),
-        animations: Vec::new(),
-        geometries: Vec::<SceneRecipeBuildResourceV1>::new(),
-        materials: Vec::new(),
-        fonts: Vec::new(),
-        diagnostics,
-        skipped,
-    }
-}
-
-fn has_errors(diagnostics: &[SceneRecipeDiagnosticV1]) -> bool {
-    diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.severity == "error")
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -834,26 +862,4 @@ mod tests {
         }
         bounds
     }
-}
-
-pub(super) fn scene_host_error_diagnostic(
-    path: impl Into<String>,
-    code: impl Into<String>,
-    error: SceneHostError,
-) -> SceneRecipeDiagnosticV1 {
-    error_diagnostic(
-        path,
-        code,
-        error.to_string(),
-        "fix the recipe input and retry",
-    )
-}
-
-pub(super) fn error_diagnostic(
-    path: impl Into<String>,
-    code: impl Into<String>,
-    message: impl Into<String>,
-    help: impl Into<String>,
-) -> SceneRecipeDiagnosticV1 {
-    build_diagnostic(code, "error", path, message, help, None, false)
 }

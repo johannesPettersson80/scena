@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::scene::recipe::field_model::PRIMITIVE_KINDS;
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{validate_known_fields, validate_required_id};
@@ -28,8 +29,6 @@ const PRIMITIVE_FIELDS: &[&str] = &[
     "end",
     "points",
 ];
-const SUPPORTED_PRIMITIVE_KINDS: &str =
-    "box, plane, sphere, cylinder, cone, disc, torus, wedge, line, polyline, arrow, grid, axes";
 const MESH_FIELDS: &[&str] = &[
     "topology",
     "positions",
@@ -286,7 +285,7 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             "error",
             format!("{path}.kind"),
             format!("primitive kind '{kind}' is not supported"),
-            format!("use one of: {SUPPORTED_PRIMITIVE_KINDS}"),
+            format!("use one of: {}", PRIMITIVE_KINDS.join(", ")),
             None,
             false,
         )),

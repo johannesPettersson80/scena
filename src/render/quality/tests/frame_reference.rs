@@ -45,90 +45,18 @@ fn baseline_quality_fixtures_cover_blank_blown_out_and_tiny_codes() {
 }
 
 #[test]
-#[ignore = "requires the Cardine terminal-block review renders from 2026-07-08"]
-fn cardine_terminal_block_review_images_fail_strict_baseline_quality_metrics() {
-    let root = cardine_broken_render_root();
+fn committed_minimal_product_quality_fixture_replaces_external_review_data() {
+    let width = 32;
+    let height = 32;
+    let overexposed_flat_product = solid_frame(width, height, [255, 255, 255, 255]);
     let strict_quality = strict_product_quality_expectation();
-    let cases = [
-        ReviewCase {
-            name: "rounded molded corner",
-            png_rel: "rounded-molded-corner/wall_rounded_housing_corner_blend_failed.feature.png",
-            report_rel: "rounded-molded-corner/wall_rounded_housing_corner_blend_failed.feature.render.report.json",
-            expected_failures: &[MetricFailure {
-                code: "clipped_highlight_fraction_too_high",
-                observed_key: "clipped_highlight_fraction",
-                threshold_key: "max_clipped_highlight_fraction",
-                direction: FailureDirection::GreaterThanThreshold,
-            }],
-        },
-        ReviewCase {
-            name: "slotted screw head",
-            png_rel: "slotted-screw-head/library_din_terminal_slotted_screw_head_v1.feature.png",
-            report_rel: "slotted-screw-head/library_din_terminal_slotted_screw_head_v1.feature.render.report.json",
-            expected_failures: &[
-                MetricFailure {
-                    code: "clipped_highlight_fraction_too_high",
-                    observed_key: "clipped_highlight_fraction",
-                    threshold_key: "max_clipped_highlight_fraction",
-                    direction: FailureDirection::GreaterThanThreshold,
-                },
-                MetricFailure {
-                    code: "subject_luminance_range_too_low",
-                    observed_key: "subject_luminance_range",
-                    threshold_key: "min_subject_luminance_range",
-                    direction: FailureDirection::LessThanThreshold,
-                },
-            ],
-        },
-        ReviewCase {
-            name: "product assembly",
-            png_rel: "product-assembly/library_din_rail_screw_terminal_block_v1.assembly.png",
-            report_rel: "product-assembly/library_din_rail_screw_terminal_block_v1.assembly.render.report.json",
-            expected_failures: &[MetricFailure {
-                code: "clipped_highlight_fraction_too_high",
-                observed_key: "clipped_highlight_fraction",
-                threshold_key: "max_clipped_highlight_fraction",
-                direction: FailureDirection::GreaterThanThreshold,
-            }],
-        },
-    ];
+    let report = evaluate_render_quality_rgba8(
+        quality_input(&overexposed_flat_product, width, height, 0.65, false, 0.72),
+        Some(&strict_quality),
+    );
 
-    for case in cases {
-        let png = decode_png_rgba8_file(&root.join(case.png_rel));
-        let source_report = read_review_report(&root.join(case.report_rel));
-        let region = review_subject_region(&source_report, png.width, png.height);
-        let quality = evaluate_render_quality_rgba8_region(
-            quality_input(
-                &png.rgba8,
-                png.width,
-                png.height,
-                review_f32(&source_report, &["introspection", "visible_pixel_fraction"]),
-                review_bool(
-                    &source_report,
-                    &["introspection", "framing", "tiny_in_frame"],
-                ),
-                review_f32(
-                    &source_report,
-                    &["introspection", "framing", "fit_fraction"],
-                ),
-            ),
-            region,
-            Some(&strict_quality),
-        );
-        assert!(
-            !quality.ok,
-            "{name} must fail strict baseline quality; report: {quality:#?}",
-            name = case.name
-        );
-        println!(
-            "{name} strict quality failures: {failures}",
-            name = case.name,
-            failures = failed_metric_summary(&quality)
-        );
-        for failure in case.expected_failures {
-            assert_metric_failure(&quality, case.name, failure);
-        }
-    }
+    assert_has_code(&report, "clipped_highlight_fraction_too_high");
+    assert_has_code(&report, "subject_luminance_range_too_low");
 }
 
 #[test]

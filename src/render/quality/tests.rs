@@ -1,7 +1,6 @@
 use super::*;
 use std::io::Cursor;
 use std::path::Path;
-use std::path::PathBuf;
 
 mod frame_reference;
 mod label;
@@ -296,26 +295,6 @@ fn assert_no_failed_checks(checks: &[RenderQualityCheckV1], context: &str) {
     );
 }
 
-struct ReviewCase {
-    name: &'static str,
-    png_rel: &'static str,
-    report_rel: &'static str,
-    expected_failures: &'static [MetricFailure],
-}
-
-struct MetricFailure {
-    code: &'static str,
-    observed_key: &'static str,
-    threshold_key: &'static str,
-    direction: FailureDirection,
-}
-
-#[derive(Clone, Copy)]
-enum FailureDirection {
-    GreaterThanThreshold,
-    LessThanThreshold,
-}
-
 fn write_ppm_crop_artifact(path: &str, rgba: &[u8], frame_width: u32, region: RenderQualityRegion) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
     if let Some(parent) = path.parent() {
@@ -368,167 +347,6 @@ fn decode_png_rgba8_file(path: &Path) -> DecodedPng {
         height: info.height,
         rgba8: buffer[..info.buffer_size()].to_vec(),
     }
-}
-
-fn cardine_broken_render_root() -> PathBuf {
-    std::env::var_os("CARDINE_BROKEN_RENDER_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-                "../cardine/library/components/din-rail-screw-terminal-block-v1/renders/cardine-only-review-20260708",
-            )
-        })
-}
-
-fn read_review_report(path: &Path) -> serde_json::Value {
-    let bytes = std::fs::read(path)
-        .unwrap_or_else(|err| panic!("review report reads at {}: {err}", path.display()));
-    let root: serde_json::Value = serde_json::from_slice(&bytes)
-        .unwrap_or_else(|err| panic!("review report parses at {}: {err}", path.display()));
-    root.pointer("/scena/recipe_render/result_json")
-        .unwrap_or_else(|| {
-            panic!(
-                "review report at {} has no /scena/recipe_render/result_json",
-                path.display()
-            )
-        })
-        .clone()
-}
-
-fn review_subject_region(
-    report: &serde_json::Value,
-    width: u32,
-    height: u32,
-) -> RenderQualityRegion {
-    let rect = report
-        .pointer("/introspection/content_bbox_css_px")
-        .expect("review report has content bbox");
-    let min_x = review_number(rect, "min_x").floor().max(0.0);
-    let min_y = review_number(rect, "min_y").floor().max(0.0);
-    let max_x = review_number(rect, "max_x")
-        .ceil()
-        .max(min_x)
-        .min(width as f64);
-    let max_y = review_number(rect, "max_y")
-        .ceil()
-        .max(min_y)
-        .min(height as f64);
-    let x = min_x as u32;
-    let y = min_y as u32;
-    RenderQualityRegion {
-        kind: "subject",
-        handle: None,
-        x: x.min(width),
-        y: y.min(height),
-        width: (max_x as u32).saturating_sub(x).max(1),
-        height: (max_y as u32).saturating_sub(y).max(1),
-    }
-}
-
-fn review_number(object: &serde_json::Value, key: &str) -> f64 {
-    object
-        .get(key)
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or_else(|| panic!("review report has numeric {key}"))
-}
-
-fn review_f32(report: &serde_json::Value, path: &[&str]) -> f32 {
-    let mut value = report;
-    for segment in path {
-        value = value
-            .get(*segment)
-            .unwrap_or_else(|| panic!("review report has path {}", path.join(".")));
-    }
-    value
-        .as_f64()
-        .unwrap_or_else(|| panic!("review report path {} is numeric", path.join("."))) as f32
-}
-
-fn review_bool(report: &serde_json::Value, path: &[&str]) -> bool {
-    let mut value = report;
-    for segment in path {
-        value = value
-            .get(*segment)
-            .unwrap_or_else(|| panic!("review report has path {}", path.join(".")));
-    }
-    value
-        .as_bool()
-        .unwrap_or_else(|| panic!("review report path {} is boolean", path.join(".")))
-}
-
-fn assert_metric_failure(report: &RenderQualityReportV1, case_name: &str, failure: &MetricFailure) {
-    let check = report
-        .checks
-        .iter()
-        .find(|check| check.code == failure.code && check.status == RenderQualityStatusV1::Failed)
-        .unwrap_or_else(|| {
-            panic!(
-                "{case_name} expected failed quality code {}; report: {report:#?}",
-                failure.code
-            )
-        });
-    let observed = check
-        .observed
-        .get(failure.observed_key)
-        .copied()
-        .unwrap_or_else(|| {
-            panic!(
-                "{case_name} expected observed metric {} in check {check:#?}",
-                failure.observed_key
-            )
-        });
-    let threshold = check
-        .threshold
-        .get(failure.threshold_key)
-        .copied()
-        .unwrap_or_else(|| {
-            panic!(
-                "{case_name} expected threshold metric {} in check {check:#?}",
-                failure.threshold_key
-            )
-        });
-    match failure.direction {
-        FailureDirection::GreaterThanThreshold => assert!(
-            observed > threshold,
-            "{case_name} expected {}={} > {}={}",
-            failure.observed_key,
-            observed,
-            failure.threshold_key,
-            threshold
-        ),
-        FailureDirection::LessThanThreshold => assert!(
-            observed < threshold,
-            "{case_name} expected {}={} < {}={}",
-            failure.observed_key,
-            observed,
-            failure.threshold_key,
-            threshold
-        ),
-    }
-}
-
-fn failed_metric_summary(report: &RenderQualityReportV1) -> String {
-    let mut parts = Vec::new();
-    for check in report
-        .checks
-        .iter()
-        .filter(|check| check.status == RenderQualityStatusV1::Failed)
-    {
-        let observed = check
-            .observed
-            .iter()
-            .next()
-            .map(|(key, value)| format!("{key}={value:.3}"))
-            .unwrap_or_else(|| "observed=<missing>".to_owned());
-        let threshold = check
-            .threshold
-            .iter()
-            .next()
-            .map(|(key, value)| format!("{key}={value:.3}"))
-            .unwrap_or_else(|| "threshold=<missing>".to_owned());
-        parts.push(format!("{}({observed}; {threshold})", check.code));
-    }
-    parts.join(", ")
 }
 
 fn read_ppm_fixture(path: impl AsRef<Path>) -> (Vec<u8>, u32, u32) {

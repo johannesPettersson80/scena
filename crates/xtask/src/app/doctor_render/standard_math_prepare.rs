@@ -24,7 +24,14 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
     for rel in [
         "src/render/gpu/output_shader.wgsl",
         "src/render/prepare.rs",
-        "src/render/prepare/lights.rs",
+        "src/render/prepare/lighting.rs",
+        "src/render/prepare/lighting/area.rs",
+        "src/render/prepare/lighting/counts.rs",
+        "src/render/prepare/lighting/gpu_uniform.rs",
+        "src/render/prepare/lighting/lobes.rs",
+        "src/render/prepare/lighting/ltc.rs",
+        "src/render/prepare/lighting/math.rs",
+        "src/render/prepare/lighting/tiled.rs",
         "src/render/prepare/materials.rs",
     ] {
         forbid_contains(

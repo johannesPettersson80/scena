@@ -341,6 +341,17 @@ fn finding_for_asset_error(error: &AssetError, fallback_path: &str) -> AssetDoct
             None,
             "Use PNG, JPEG, WebP, or a decoder-backed compressed texture feature supported by the build.",
         ),
+        AssetError::Ktx2ColorSpaceMismatch {
+            path,
+            material_slot,
+            ..
+        } => (
+            "ktx2_color_space_mismatch",
+            path.clone(),
+            Some(material_slot.clone()),
+            Some("KHR_texture_basisu".to_owned()),
+            "Re-encode the KTX2 DFD color primaries and transfer function for the material slot's color or non-color role.",
+        ),
         AssetError::Cancelled { path, .. } => (
             "asset_load_cancelled",
             path.clone(),

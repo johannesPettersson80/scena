@@ -18,6 +18,25 @@ different GPU adapters, driver limits, browser support, and texture limits.
 
 Query the renderer instead of hard-coding assumptions.
 
+## Backend selection is separate evidence
+
+Strict constructors (`Renderer::headless_gpu`, `SceneHostCore::headless_gpu`,
+`SceneHostCore::headless_gpu_with_fetcher`, and viewer
+`with_headless_gpu`) either return a GPU-backed object or a structured build
+error. They never return a CPU object under a GPU-sounding success result.
+
+Fallback is opt-in through `SceneHostCore::headless_prefer_gpu`,
+`headless_prefer_gpu_with_fetcher`, or viewer `with_headless_prefer_gpu`.
+Those paths return/expose `HeadlessBackendSelectionReport`, which records the
+requested backend, selected backend, whether fallback occurred, and the
+original `BuildError`. The selected renderer capability report still describes
+only the backend that was actually constructed; keep the selection report
+beside it when request/fallback provenance matters.
+
+Release and visual-proof lanes must use strict construction and assert the
+selected backend/capability row. A preferred-GPU result is application behavior,
+not GPU proof, even when its CPU output is otherwise valid.
+
 ## Capability states
 
 Capabilities are structured so applications can distinguish:
@@ -110,4 +129,6 @@ At startup:
 5. Render.
 
 When a requested capability is unavailable, show a clear message and choose a
-known fallback path.
+known, explicitly named fallback path. Do not infer constructor intent only
+from the selected capability row; retain the backend selection report when a
+preferred path was used.

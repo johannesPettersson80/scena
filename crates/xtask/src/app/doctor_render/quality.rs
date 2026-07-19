@@ -141,8 +141,25 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
         "src/render/gpu/post/dof.rs",
         &[
             "scena.gpu_post.depth_of_field_pipeline",
-            "scena.gpu_post.depth_of_field_bind_group",
             "scena.gpu_post.depth_of_field_pass",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/gpu/post/mod.rs",
+        &["depth_bind_group(resources, current)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/gpu/post/resources.rs",
+        &[
+            "scena.gpu_post.scene_depth_bind_group",
+            "scena.gpu_post.ping_depth_bind_group",
+            "scena.gpu_post.pong_depth_bind_group",
         ],
     );
     require_contains(

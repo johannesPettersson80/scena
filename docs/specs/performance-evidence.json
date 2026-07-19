@@ -1,0 +1,171 @@
+{
+  "schema": "scena.performance_evidence.v1",
+  "policy": {
+    "profile": "perf-test",
+    "minimum_sample_count": 100,
+    "allowed_regression_percent": 5.0,
+    "unmeasured_rows_pass_release": false,
+    "comparison": "before and after distributions must use the same commit-independent workload, builder, profile, toolchain, and cache state"
+  },
+  "current_measurement_bundle": {
+    "artifact": "target/gate-artifacts/pf00/performance-evidence.json",
+    "artifact_sha256": "7ca454c1aabf9b25a6f87a327c75fcd8fd0492f9570289e1a98dd595a3fa72fa",
+    "status": "measured",
+    "measurement_evidence": true,
+    "hardware_evidence": true,
+    "release_evidence": false,
+    "release_provenance": {
+      "status": "unavailable",
+      "reason": "the optimized distributions and separate Windows hardware proof are not bound to one exact source commit"
+    },
+    "environment_boundary": "CPU and GPU-API timing distributions were collected on the optimized Hetzner builder; the GPU-API rows identify llvmpipe and make no hardware-speed claim. Windows Intel Arc evidence independently proves native, WebGPU, and WebGL2 behavior, not timing portability."
+  },
+  "required_provenance": [
+    "profile",
+    "toolchain",
+    "cpu",
+    "gpu",
+    "driver",
+    "sample_count",
+    "warmup",
+    "commit",
+    "command",
+    "sidecar_cache_state",
+    "confidence",
+    "distribution"
+  ],
+  "workloads": [
+    {
+      "id": "one-node-transform-prepare-render",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/one-node-transform-prepare-render.json",
+      "artifact_sha256": "a357f7e8aaffcd5e112f05f743c2b1a39c45869d4d3e6458f7525c554980bbbb",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["headless-cpu", "native-gpu"],
+      "required_distributions": ["prepare_ms", "render_ms", "prepare_plus_render_ms"],
+      "required_counters": ["allocation_count", "allocation_bytes", "bytes_cloned_or_copied", "pipeline_creations", "shader_creations", "readbacks", "blocking_polls"]
+    },
+    {
+      "id": "shadow-scaling-directional-area",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/shadow-scaling-directional-area.json",
+      "artifact_sha256": "32b658ed78eca27e6407f09ac78743a2d96295a3d04744978de9fa442f4431e5",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["headless-cpu"],
+      "required_distributions": ["prepare_ms"],
+      "required_counters": ["ray_intersections", "shadow_rays", "area_light_samples", "allocation_bytes"]
+    },
+    {
+      "id": "pick-100k-triangle-deformed-undeformed",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/pick-100k-triangle-deformed-undeformed.json",
+      "artifact_sha256": "86cdbb705f5db1d01ace1f21ad22f4d264276bc6520af2f376e360e168cb647c",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["cpu-picking"],
+      "required_distributions": ["undeformed_pick_ms", "deformed_pick_ms"],
+      "required_counters": ["triangles_tested", "ray_intersections", "allocation_bytes", "bytes_cloned_or_copied"]
+    },
+    {
+      "id": "cpu-texture-bake-qualifying-nonqualifying",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/cpu-texture-bake-qualifying-nonqualifying.json",
+      "artifact_sha256": "eaecfbd6ec74bae7ed3d66154c31f22b3c69bf16c8004eeccd6d9d9c16106c59",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["headless-cpu"],
+      "required_distributions": ["qualifying_bake_ms", "nonqualifying_bake_ms"],
+      "required_counters": ["texture_samples", "subdivided_triangles_emitted", "shaded_vertices", "allocation_bytes", "bytes_cloned_or_copied"]
+    },
+    {
+      "id": "tangent-generation-static-deformed",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/tangent-generation-static-deformed.json",
+      "artifact_sha256": "ad5fb6f02de5639d035dcb836cceaa31245e5b83f278eabb1d65abc904042dfc",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["cpu-assets"],
+      "required_distributions": ["static_tangent_ms", "deformed_tangent_ms"],
+      "required_counters": ["triangles_processed", "vertices_written", "asset_storage_lock_acquisitions", "allocation_bytes", "bytes_cloned_or_copied"]
+    },
+    {
+      "id": "animation-many-channels-keyframes-weights",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/animation-many-channels-keyframes-weights.json",
+      "artifact_sha256": "5a1df33ac4c8eb0b5c8d1fc2bd92275460896fba07ec22c8797f408977eabf75",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["cpu-animation"],
+      "required_distributions": ["advance_ms"],
+      "required_counters": ["channels_scanned", "keyframes_searched", "weights_written", "allocation_bytes", "bytes_cloned_or_copied"]
+    },
+    {
+      "id": "environment-bake-cold-sidecar-hit",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/environment-bake-cold-sidecar-hit.json",
+      "artifact_sha256": "a281d86fa4fbf57d37cbec8978573c99fd58e08fe640760cd697e1cad97c79f0",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["cpu-assets"],
+      "required_distributions": ["cold_bake_ms", "sidecar_hit_ms"],
+      "required_counters": ["source_texture_samples", "brdf_integration_samples", "output_bytes_written", "allocation_bytes", "bytes_cloned_or_copied"]
+    },
+    {
+      "id": "native-present-capture-sync-async",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/native-present-capture-sync-async.json",
+      "artifact_sha256": "07ecacd96cb7f12ddbcf67bbfb4accf41df631a77cf4d8370e82d6225cc1d542",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["native-gpu"],
+      "required_distributions": ["present_only_ms", "synchronous_capture_ms", "asynchronous_capture_ms"],
+      "required_counters": ["readbacks", "blocking_polls", "bytes_copied", "allocation_bytes"]
+    },
+    {
+      "id": "gpu-first-render-output-settings",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/gpu-first-render-output-settings.json",
+      "artifact_sha256": "03bad686fe052b730bbd7ab049d03515d2520836d804c60ed403a6e030be5e46",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["native-gpu", "webgpu", "webgl2"],
+      "required_distributions": ["prepare_output_ms", "first_prepared_render_ms"],
+      "required_counters": ["pipeline_creations", "shader_creations", "texture_creations", "buffer_creations", "bind_group_creations", "readbacks", "blocking_polls"]
+    },
+    {
+      "id": "draw-uniform-indexing-many-unique-transforms",
+      "producer": "tests/m9_platform_release.rs::m9_pf00_representative_performance_artifact",
+      "artifact": "target/gate-artifacts/pf00/draw-uniform-indexing-many-unique-transforms.json",
+      "artifact_sha256": "b20768280ffcbb7c378abe3c73af0cee9ae6cdebe0be170e24f637e39d7d5499",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["cpu-gpu-encoding"],
+      "required_distributions": ["prepare_ms"],
+      "required_counters": ["unique_transforms", "draw_uniform_lookup_probes", "bytes_copied", "allocation_bytes"]
+    },
+    {
+      "id": "cpu-occlusion-prepass-benefit",
+      "producer": "tests/pf10_cpu_occlusion.rs::pf10_cpu_occlusion_benchmark_artifact",
+      "artifact": "target/gate-artifacts/pf10/cpu-occlusion-prepass-benefit.json",
+      "artifact_sha256": "9a1313c9c00972fc1a4b3dfe82f3b9eea883d37679f01162ed2448827ff9127b",
+      "status": "measured-nonrelease",
+      "measurement_evidence": true,
+      "release_evidence": false,
+      "lanes": ["headless-cpu"],
+      "required_distributions": ["disabled_prepare_plus_render_ms", "enabled_prepare_plus_render_ms"],
+      "required_counters": ["disabled_draw_calls", "enabled_draw_calls", "enabled_culled_objects"]
+    }
+  ]
+}

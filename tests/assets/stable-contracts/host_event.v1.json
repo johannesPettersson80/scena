@@ -7,7 +7,7 @@
       "y_css_px": 32.0,
       "hit": {
         "target": "node",
-        "handle": 4294967297,
+        "handle": 562950221856769,
         "distance": 2.5,
         "world_position": [0.0, 0.0, 0.0],
         "normal": [0.0, 0.0, 1.0]
@@ -20,7 +20,7 @@
       "phase": "entered",
       "hit": {
         "target": "node",
-        "handle": 4294967297,
+        "handle": 562950221856769,
         "distance": 2.5,
         "world_position": [0.0, 0.0, 0.0],
         "normal": null
@@ -29,7 +29,7 @@
     {
       "kind": "selection_changed",
       "previous": null,
-      "current": 4294967297
+      "current": 562950221856769
     },
     {
       "kind": "load_progress",
@@ -40,7 +40,7 @@
     },
     {
       "kind": "asset_loaded",
-      "import": 7,
+      "import": 1125900175278081,
       "asset_load_report": {
         "schema": "scena.asset_load_report.v1",
         "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
@@ -90,8 +90,8 @@
       "kind": "diagnostic",
       "code": "large_scene_precision_risk",
       "severity": "warning",
-      "node": 4294967297,
-      "message": "node handle 4294967297 is 20000.0 scene units from the origin; f32 transform precision may be visible",
+      "node": 562950221856769,
+      "message": "node handle 562950221856769 is 20000.0 scene units from the origin; f32 transform precision may be visible",
       "help": "use camera-relative rendering or an origin-shift policy for large-world scenes"
     },
     {

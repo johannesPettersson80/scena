@@ -299,12 +299,10 @@ surfaces the same remediation class through library diagnostics for importer
 and asset-review UIs.
 Visual proof: none (structured text errors; no rendered output)
 
-```rust
-AssetError::UnsupportedTextureFormat {
-    path: "albedo.webp".into(),
-    help: "Re-export with PNG/JPEG or use KTX2 through the ktx2 feature",
-}
-```
+Plain PNG, JPEG, and WebP image paths are native decoder inputs. An asset that
+uses `EXT_texture_webp` still receives explicit extension diagnostics because
+extension-selected texture-source rebinding is a distinct importer capability;
+it is not treated as proof that ordinary `.webp` bytes are unsupported.
 
 The official validator owns glTF spec compliance; scena owns actionable
 renderer guidance such as "this asset uses required clearcoat; CPU/reference
@@ -557,10 +555,10 @@ Library-first policy:
       `KHR_materials_volume`, `KHR_texture_basisu`, and
       `EXT_meshopt_compression`. Do not add ad-hoc JSON parsing for these.
 - [x] Use the already-bundled texture and compression libraries instead of
-      custom decoders: `image` / `png` for PNG/JPEG paths, optional `ktx2`
-      and `basisu_c_sys` for KTX2/Basis, and optional `meshopt` for mesh
-      compression. WebP remains policy-gated until decode/upload behavior is
-      explicitly proven.
+      custom decoders: `image` / `png` for PNG/JPEG/WebP paths, optional
+      `ktx2` and `basisu_c_sys` for KTX2/Basis, and optional `meshopt` for mesh
+      compression. `EXT_texture_webp` source rebinding remains a separate
+      deferred capability even though plain WebP bytes decode natively.
 - [x] Keep third-party assets source-tracked and reproducible:
       ambientCG / Poly Haven / Khronos sample assets preferred, CC0 or
       compatible licenses only, SHA-256 and source URL recorded, no
@@ -1358,21 +1356,23 @@ the rendered result is part of the contract.
   enough for roughness-0.28 metal, and M6 material-preset browser proof
   renders the expanded preset set through WebGL2/WebGPU.
 - **Clustered / tiled light culling.** Status:
-  **[deferred, later-performance]**. Not a Round E material-identity blocker;
-  reopen it when area lights or richer product scenes create concrete
-  many-light scaling pressure.
-  Babylon 9 made this baseline.
+  **[shipped]**. The renderer switches many-light scenes to screen-tiled
+  assignment while retaining the fixed uniform lane for small scenes. Round E
+  did not require it originally; the completed contract and proof now live in
+  `stunning-renders-and-performance.md` B2.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
   Visual proof: reference-image of the stress scene; not an ON/OFF gate.
 - **Area lights with LTC** (rect/disc/sphere). Status:
-  **[deferred, later-product-lighting]**. Physically plausible rect/disc/sphere
-  light shapes improve product-material lighting, but they are not a Round E
-  blocker unless the pinned material fixture explicitly depends on them.
+  **[shipped]**. Physically plausible rect/disc/sphere light shapes, fitted LTC
+  evaluation, and their source-backed proof are recorded in
+  `stunning-renders-and-performance.md` A3. They remain optional for the
+  historical Round E fixture.
   Visual proof: reference-image before/after per light shape.
 - **Screen-space reflections (SSR).** Status:
-  **[reopened, material-quality]**. Reopened under Round E for reflective
-  product-scene proof; not required to keep scalar `chrome()` honest.
+  **[shipped]**. Material and reflective-floor SSR, including CPU/GPU proof,
+  are recorded in `stunning-renders-and-performance.md` A2. SSR remains
+  optional for the historical Round E fixture.
   Visual proof: reference-image ON/OFF on a reflective-floor control.
 - **Order-independent transparency (OIT).** Status: **[shipped]** for
   the headless CPU / descriptor-backed weighted-blended baseline.
@@ -1974,12 +1974,13 @@ This round is active and must close before the public material demo is
 approved as a complete material showcase. It intentionally reopens the
 previously deferred renderer-quality items that complete glass, metal, fabric,
 and product-lighting proof actually depend on. It does not bundle every nice
-renderer feature into the material finish line: SSAO/contact grounding, SSR,
-MSAA/TAA, and physical glass stay here only where the fixture depends on them;
-LTC area lights, KTX2 cubemap delivery, and clustered/tiled culling stay later
-unless a fixture update makes one of them a hard dependency. Draco mesh
-compression remains removed from this checklist because it is not needed for
-the material proof.
+renderer feature into the material finish line: SSAO/contact grounding,
+MSAA/TAA, and physical glass stay here only where the fixture depends on them.
+SSR, LTC area lights, and clustered/tiled culling subsequently shipped under
+the independent source-backed contracts linked in §3.1; they remain optional
+for the historical Round E fixture. KTX2 cubemap delivery remains separate
+deferred work. Draco mesh compression remains removed from this checklist
+because it is not needed for the material proof.
 
 Internal visual review note: `demo/internal-material-spheres.html` is a
 developer/user review page for the requested twelve equal-size labeled spheres.
@@ -2228,22 +2229,20 @@ release-evidence gaps; larger renderer research lanes follow.
        **[not required by that fixture]**. The Round E fixture thresholds
        passed under its then-current AA path. Later renderer-quality work adds
        `msaa4`/`msaa8` plus `render.supersample` for agent-authored captures.
-12. - [ ] **Area lights with LTC** —
-       **[deferred, later-product-lighting]**. Product-material proof can
-       benefit from physically plausible rect/disc/sphere light shapes, but LTC
-       is not a Round E blocker unless the pinned fixture explicitly depends on
-       it. Requires lighting model, LUT/shader work, and before/after visual
-       proof.
+12. - [x] **Area lights with LTC** — **[shipped]**. Rect/disc/sphere authored
+       lights, fitted LTC shading, soft-shadow behavior, and before/after proof
+       are owned by `stunning-renders-and-performance.md` A3. The historical
+       Round E fixture does not require enabling them.
 13. - [ ] **KTX2 cubemap environment presets/grid** —
        **[deferred, material-support]**. Existing environment presets use
        checked HDR/fixture paths. Keep compressed cubemap presets out of Round E
        unless browser-efficient environment delivery becomes part of the
        material proof path. Requires real decode/upload/prefilter path plus a
        browser/demo grid.
-14. - [ ] **Clustered/tiled light culling** —
-       **[deferred, later-performance]**. Not a material-identity blocker. Reopen
-       it only after area-light semantics or many-light product scenes make the
-       scaling pressure concrete.
+14. - [x] **Clustered/tiled light culling** — **[shipped]**. Screen-tiled
+       assignment and late-light pixel proof are owned by
+       `stunning-renders-and-performance.md` B2. It is not a required toggle in
+       the historical material-identity fixture.
 
 ---
 
@@ -2756,11 +2755,13 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   proof, and three-asset side-by-side `<model-viewer>` comparison are all
   present.
 
-Roadmap status closeout pass (2026-05-20):
+Roadmap status closeout pass (2026-05-20; reconciled 2026-07-17):
 
-- Marked the remaining untagged §3.1 research lanes as `[deferred]`
-  instead of leaving them as implicit active gaps: clustered/tiled light
-  culling, LTC area lights, and SSR now point to future backend lanes.
+- The original pass classified three then-untagged §3.1 research lanes as
+  future work. That history is now superseded: clustered/tiled light culling,
+  LTC area lights, and SSR are shipped under
+  `stunning-renders-and-performance.md` B2, A3, and A2 respectively. KTX2
+  cubemap environment delivery remains the separate deferred item.
 - Renamed the §3.2 heading so `[ergonomic-gap]` appears only in legend or
   history text, not as an active section status.
 

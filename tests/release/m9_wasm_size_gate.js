@@ -1,6 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const {
+  attachReleaseArtifactProvenance,
+} = require("./release_artifact_provenance.js");
 
 const root = process.cwd();
 const input = path.join(root, "target", "m9-browser-pkg", "scena_bg.wasm");
@@ -60,8 +63,7 @@ execFileSync(bin("brotli-cli"), ["compress", "--quality", "11", optimized], {
   stdio: "inherit",
 });
 
-const artifact = {
-  schema: "scena.m9.wasm_size.v1",
+const artifact = attachReleaseArtifactProvenance({
   status: fs.statSync(compressed).size <= limitBytes ? "passed" : "failed",
   input,
   js_glue: jsGlue,
@@ -76,7 +78,17 @@ const artifact = {
   limit_bytes: limitBytes,
   wasm_opt_package: packageVersion("binaryen"),
   brotli_package: packageVersion("brotli-cli"),
-};
+}, {
+  root,
+  schema: "scena.m9.wasm_size.v1",
+  producer: "node tests/release/m9_wasm_size_gate.js",
+  sourcePaths: [
+    "Cargo.lock",
+    "package-lock.json",
+    "tests/release/m9_wasm_size_gate.js",
+    "tests/release/release_artifact_provenance.js",
+  ],
+});
 fs.writeFileSync(
   path.join(artifactDir, "m9-wasm-size.json"),
   `${JSON.stringify(artifact, null, 2)}\n`,

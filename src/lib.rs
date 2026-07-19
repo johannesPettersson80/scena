@@ -10,6 +10,11 @@
 //!
 //! [LLM app-builder guide]: https://github.com/johannesPettersson80/scena/blob/main/docs/guides/llm-app-builder.md
 
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+#[doc = include_str!("../docs/getting-started.md")]
+pub mod onboarding_doctests {}
+
 pub mod animation;
 pub mod assets;
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
@@ -34,11 +39,17 @@ pub mod scene_host;
 pub mod schema_catalog;
 pub mod viewer;
 pub mod viewer_element;
+pub mod vocabulary;
+
+#[cfg(feature = "scene-host")]
+pub(crate) use render::semantic_aov::{
+    RawSemanticAovCapture, RawSemanticAovError, RawSemanticAovExclusions,
+};
 
 pub use animation::{
     AnimationChannel, AnimationClip, AnimationClipKey, AnimationInterpolation, AnimationLoopMode,
     AnimationMixer, AnimationMixerKey, AnimationOutput, AnimationPlaybackState,
-    AnimationSourceChannel, AnimationSourceClip, AnimationTarget,
+    AnimationSourceChannel, AnimationSourceClip, AnimationTarget, AnimationUpdateMetrics,
 };
 #[cfg(target_arch = "wasm32")]
 pub use assets::BrowserAssetFetcher;
@@ -97,11 +108,12 @@ pub use controls::{
 pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,
     CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
-    CapabilityStatus, ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticContext,
-    DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier, ImportDiagnosticOverlay,
-    ImportDiagnosticOverlayKind, ImportError, InstantiateError, LookupError, NotPreparedReason,
-    OutputColorSpace, OutputStageStatus, PostProcessingDepthSourceV1, PostProcessingPassV1,
-    PostProcessingReportV1, PrepareError, RenderError, RenderOutcome, RendererStats,
+    CapabilityStatus, ChangeKind, DevicePoll, DevicePollStatus, Diagnostic, DiagnosticCode,
+    DiagnosticContext, DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier,
+    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
+    Ktx2ColorSpaceDfd, LookupError, NotPreparedReason, OutputColorSpace, OutputStageStatus,
+    PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1, PrepareError,
+    RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
@@ -111,7 +123,7 @@ pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
     DEFAULT_STROKE_WIDTH_PX, MaterialDesc, MaterialKind, TextureColorSpace, TextureTransform,
 };
-pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, Viewport};
+pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, PickingMetrics, Viewport};
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize, SurfaceViewport};
@@ -173,38 +185,53 @@ pub use render::visual_repair::{
 };
 pub use render::{
     AntiAliasing, AutoExposureConfig, AutoExposureResult, Background, DepthOfFieldConfig,
-    OffscreenTarget, OrderIndependentTransparencyConfig, PixelReadback, PostBloomConfig, Profile,
-    Quality, ReconstructionFilter, RenderMode, Renderer, RendererOptions,
+    HeadlessBackendSelectionReport, OffscreenTarget, OrderIndependentTransparencyConfig,
+    PixelReadback, PostBloomConfig, PrepareWorkMetrics, Profile, Quality, ReconstructionFilter,
+    RenderMode, RenderReadbackMode, RenderWorkMetrics, Renderer, RendererOptions,
     ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, Tonemapper,
     estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::recipe::{
-    RecipeBuildPolicy, SCENE_RECIPE_BUILD_SCHEMA_V1, SCENE_RECIPE_SCHEMA_V1,
-    SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1,
+    FIELD_MODEL_SCHEMA_V1, RECIPE_BUILD_RESULT_SCHEMA_V1, RECIPE_POLICY_SCHEMA_V1,
+    RecipeBuildExecutionV1, RecipeBuildPolicy, RecipeBuildPolicyBoolV1, RecipeBuildPolicyLimitV1,
+    RecipeBuildPolicyReportV1, RecipeBuildPolicyRootV1, RecipeBuildPolicyStringV1,
+    RecipeBuildResultV1, SCENE_RECIPE_BUILD_SCHEMA_V1, SCENE_RECIPE_DIFF_SCHEMA_V1,
+    SCENE_RECIPE_SCHEMA_V1, SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeAlphaModeV1,
+    SceneRecipeAnchorSourceV1, SceneRecipeAnchorV1, SceneRecipeAnimationChannelV1,
     SceneRecipeAnimationV1, SceneRecipeBackendExpectationV1, SceneRecipeBboxFitExpectationV1,
-    SceneRecipeBuildAnimationV1, SceneRecipeBuildImportV1, SceneRecipeBuildResourceV1,
-    SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1, SceneRecipeBuildV1,
-    SceneRecipeCalloutTargetV1, SceneRecipeCalloutV1, SceneRecipeCameraV1, SceneRecipeCaptureV1,
-    SceneRecipeClippingExpectationV1, SceneRecipeClippingPlaneV1, SceneRecipeColorExpectationV1,
-    SceneRecipeColorV1, SceneRecipeDiagnosticV1, SceneRecipeExpectV1, SceneRecipeExpectedExtentV1,
-    SceneRecipeExplodedViewModeV1, SceneRecipeExplodedViewV1, SceneRecipeFontV1,
-    SceneRecipeGeometryV1, SceneRecipeGroundedExpectationV1,
+    SceneRecipeBoundsSourceV1, SceneRecipeBoundsV1, SceneRecipeBuildAnchorV1,
+    SceneRecipeBuildAnimationV1, SceneRecipeBuildBoundsV1, SceneRecipeBuildConnectionV1,
+    SceneRecipeBuildConnectorV1, SceneRecipeBuildImportV1, SceneRecipeBuildInstanceV1,
+    SceneRecipeBuildNamedStateV1, SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1,
+    SceneRecipeBuildTargetV1, SceneRecipeBuildV1, SceneRecipeCalloutTargetV1, SceneRecipeCalloutV1,
+    SceneRecipeCameraV1, SceneRecipeCaptureV1, SceneRecipeClippingExpectationV1,
+    SceneRecipeClippingPlaneV1, SceneRecipeColorExpectationV1, SceneRecipeColorV1,
+    SceneRecipeConnectionParentingV1, SceneRecipeConnectionRollV1, SceneRecipeConnectorAlignmentV1,
+    SceneRecipeConnectorMateV1, SceneRecipeConnectorPolarityV1, SceneRecipeConnectorRollPolicyV1,
+    SceneRecipeConnectorSourceV1, SceneRecipeConnectorV1, SceneRecipeDiagnosticV1,
+    SceneRecipeDiffChangeKindV1, SceneRecipeDiffChangeV1, SceneRecipeDiffOptions,
+    SceneRecipeDiffReportV1, SceneRecipeDiffScopeV1, SceneRecipeExpectV1,
+    SceneRecipeExpectedExtentV1, SceneRecipeExplodedViewModeV1, SceneRecipeExplodedViewV1,
+    SceneRecipeFontV1, SceneRecipeGeometryV1, SceneRecipeGroundedExpectationV1,
     SceneRecipeHelperOcclusionExpectationV1, SceneRecipeImportV1, SceneRecipeInstanceSetV1,
     SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1, SceneRecipeLookAtTargetV1,
     SceneRecipeMaterialV1, SceneRecipeMeasurementV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1,
-    SceneRecipeMorphV1, SceneRecipeNodeLodV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
-    SceneRecipeParticleSetV1, SceneRecipeParticleV1, SceneRecipePickExpectationV1,
-    SceneRecipePrimitiveV1, SceneRecipeQualityAreaLightV1, SceneRecipeQualityContrastV1,
-    SceneRecipeQualityDepthOfFieldV1, SceneRecipeQualityExpectationV1,
-    SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1, SceneRecipeQualityGroundingV1,
-    SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1, SceneRecipeQualityReflectionV1,
-    SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1, SceneRecipeSectionBoxV1,
-    SceneRecipeSeparationExpectationV1, SceneRecipeSkinV1, SceneRecipeStateExpectationV1,
-    SceneRecipeTargetBoundsV1, SceneRecipeTargetFitExpectationV1, SceneRecipeTargetRegionV1,
-    SceneRecipeTargetV1, SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1,
-    SceneRecipeTransformExpectationV1, SceneRecipeTransformV1, SceneRecipeV1,
-    SceneRecipeValidationReportV1, SceneRecipeVisibleExpectationV1, parse_valid_scene_recipe_json,
-    parse_valid_scene_recipe_json_with_policy, recipe_too_large_report, validate_scene_recipe_json,
+    SceneRecipeMorphV1, SceneRecipeNamedStateV1, SceneRecipeNodeLodV1,
+    SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipeParticleSetV1,
+    SceneRecipeParticleV1, SceneRecipePickExpectationV1, SceneRecipePrimitiveV1,
+    SceneRecipeQualityAreaLightV1, SceneRecipeQualityContrastV1, SceneRecipeQualityDepthOfFieldV1,
+    SceneRecipeQualityExpectationV1, SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1,
+    SceneRecipeQualityGroundingV1, SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1,
+    SceneRecipeQualityReflectionV1, SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1,
+    SceneRecipeSectionBoxV1, SceneRecipeSeparationExpectationV1, SceneRecipeSkinV1,
+    SceneRecipeSpatialTargetV1, SceneRecipeStateExpectationV1, SceneRecipeStateTintV1,
+    SceneRecipeStateTransformV1, SceneRecipeStateVisibilityV1, SceneRecipeTargetBoundsV1,
+    SceneRecipeTargetFitExpectationV1, SceneRecipeTargetRegionV1, SceneRecipeTargetV1,
+    SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformExpectationV1,
+    SceneRecipeTransformV1, SceneRecipeV1, SceneRecipeValidationReportV1,
+    SceneRecipeVisibleExpectationV1, SchemaFieldModelV1, SchemaFieldV1, diff_scene_recipes,
+    parse_valid_scene_recipe_json, parse_valid_scene_recipe_json_with_policy,
+    recipe_too_large_report, scene_recipe_field_model_v1, validate_scene_recipe_json,
     validate_scene_recipe_json_with_policy, validate_scene_recipe_value,
     validate_scene_recipe_value_with_policy,
 };
@@ -232,12 +259,13 @@ pub use scene::{
     MeasurementOverlay, MeasurementOverlayReport, MeasurementReport, MeshBuilder, MeshNode,
     ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, Particle, ParticleSet,
     ParticleSetError, ParticleSetKey, PerspectiveCamera, PointLight, ProjectedPoint, Quat,
-    SCENE_ANNOTATION_PROJECTION_SCHEMA_V1, SCENE_PLACEMENT_RESULT_SCHEMA_V1, Scene,
-    SceneDirtyState, SceneImport, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
-    SceneSkinBinding, SceneTintSnapshot, SceneTintSnapshotEntry, SceneVisibilitySnapshot,
-    SceneVisibilitySnapshotEntry, ScreenRect, SectionBox, SourceCoordinateSystem, SourceUnits,
-    SpotLight, StudioLightingHandles, Transform, UnitFormat, Vec3,
-    placement_align_to_feature_transform, placement_center_transform,
+    SCENE_ANNOTATION_PROJECTION_SCHEMA_V1, SCENE_PLACEMENT_RESULT_SCHEMA_V1,
+    SCENE_RECIPE_PATCH_SCHEMA_V1, Scene, SceneDirtyState, SceneImport, ScenePlacementDiagnosticV1,
+    ScenePlacementResultV1, SceneRecipePatchResultV1, SceneRecipePatchSuccessInputV1,
+    SceneRecipeSemanticChangeV1, SceneSkinBinding, SceneTintSnapshot, SceneTintSnapshotEntry,
+    SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry, ScreenRect, SectionBox,
+    SourceCoordinateSystem, SourceUnits, SpotLight, StudioLightingHandles, Transform, UnitFormat,
+    Vec3, placement_align_to_feature_transform, placement_center_transform,
     placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
     placement_place_on_feature_transform,
 };
@@ -268,21 +296,23 @@ pub use scene_host::{
     ProductOptionV1, ProductOptionsV1, SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1,
     SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_GIZMO_DRAG_SCHEMA_V1,
     SCENE_HOST_GROUNDING_SCHEMA_V1, SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1,
-    SCENE_HOST_SECTION_BOX_SCHEMA_V1, SCENE_HOST_SUBTREE_SCHEMA_V1,
-    SCENE_HOST_VISUAL_STATE_SCHEMA_V1, SCENE_HOST_VISUAL_STATES_SCHEMA_V1,
-    SceneHostAnimationClipV1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
-    SceneHostAnimationPlayOptions, SceneHostAssetImportReportV1, SceneHostCalloutReportV1,
-    SceneHostCameraState, SceneHostClippingPlaneV1, SceneHostCore, SceneHostEasing, SceneHostError,
-    SceneHostErrorCode, SceneHostExplodedViewModeV1, SceneHostExplodedViewOptionsV1,
-    SceneHostGizmoAxisV1, SceneHostGizmoConstraintV1, SceneHostGizmoDragV1, SceneHostGizmoModeV1,
-    SceneHostGizmoRayV1, SceneHostGizmoSpaceV1, SceneHostGroundingFallbackV1,
-    SceneHostGroundingPathV1, SceneHostGroundingReportV1, SceneHostMeasurementLabelProjectionV1,
-    SceneHostMeasurementOverlayReportV1, SceneHostRecipeBuild, SceneHostSectionBoxReportV1,
-    SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1, SceneHostVisualStateSummaryV1,
-    SceneHostVisualStateV1, SceneHostVisualStatesReportV1, SceneSetupPreset,
-    VISUAL_PATCH_SCHEMA_V1, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
-    VisualPatchAppliedCountsV1, VisualPatchCameraEasedV1, VisualPatchEntryErrorV1,
-    VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
+    SCENE_HOST_SECTION_BOX_SCHEMA_V1, SCENE_HOST_SEMANTIC_AOV_SCHEMA_V1,
+    SCENE_HOST_SUBTREE_SCHEMA_V1, SCENE_HOST_VISUAL_STATE_SCHEMA_V1,
+    SCENE_HOST_VISUAL_STATES_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,
+    SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions, SceneHostAssetImportReportV1,
+    SceneHostCalloutReportV1, SceneHostCameraState, SceneHostClippingPlaneV1, SceneHostCore,
+    SceneHostEasing, SceneHostError, SceneHostErrorCode, SceneHostExplodedViewModeV1,
+    SceneHostExplodedViewOptionsV1, SceneHostGizmoAxisV1, SceneHostGizmoConstraintV1,
+    SceneHostGizmoDragV1, SceneHostGizmoModeV1, SceneHostGizmoRayV1, SceneHostGizmoSpaceV1,
+    SceneHostGroundingFallbackV1, SceneHostGroundingPathV1, SceneHostGroundingReportV1,
+    SceneHostMeasurementLabelProjectionV1, SceneHostMeasurementOverlayReportV1,
+    SceneHostRecipeBuild, SceneHostSectionBoxReportV1, SceneHostSemanticAovCaptureV1,
+    SceneHostSemanticAovExclusionsV1, SceneHostSemanticAovLegendEntryV1, SceneHostSubtreeNodeV1,
+    SceneHostSubtreeReportV1, SceneHostVisualStateSummaryV1, SceneHostVisualStateV1,
+    SceneHostVisualStatesReportV1, SceneSetupPreset, VISUAL_PATCH_SCHEMA_V1,
+    VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1, VisualPatchAppliedCountsV1,
+    VisualPatchCameraEasedV1, VisualPatchEntryErrorV1, VisualPatchHoverV1,
+    VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
     VisualPatchResultV1, VisualPatchRevisionDeltaV1, VisualPatchSectionBoxV1,
     VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTintV1, VisualPatchTransformEasedV1,
     VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1, host_event_kind_name,
@@ -311,6 +341,9 @@ pub use viewer_element::{
     ScenaViewerInspectorDiagnostic, ScenaViewerInspectorSnapshot, ScenaViewerKeyboardAction,
     ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantOption,
     ScenaViewerVariantSelection, layout_scena_viewer_annotations,
+};
+pub use vocabulary::{
+    VOCABULARY_SCHEMA_V1, VocabularyReportV1, VocabularyV1, vocabulary_report_v1, vocabulary_v1,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

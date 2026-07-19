@@ -4,16 +4,19 @@ use super::common::{DiagnosticPathExt, authored_color};
 use super::transform::{TransformResolutionInput, transform_from_recipe};
 use crate::assets::DefaultAssetFetcher;
 use crate::geometry::SkinningMatrix;
+use crate::scene::SceneSkinBinding;
 use crate::scene::recipe::{
     RecipeBuildPolicy, SceneRecipeBuildTargetV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1,
     SceneRecipeNodeV1,
 };
-use crate::scene::{MeshLodLevel, SceneSkinBinding};
 use crate::scene_host::SceneHostCore;
 use crate::{GeometryHandle, MaterialHandle, NodeKey};
 
 use super::super::error_diagnostic;
 use super::super::policy::RecipeBuildBudget;
+
+mod lod;
+use lod::resolve_lod_levels;
 
 pub(in crate::scene_host::recipe) fn build_authored_nodes(
     policy: &RecipeBuildPolicy,
@@ -48,33 +51,49 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
     let root_handle = host.root_handle();
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.nodes[{index}]");
-        let Some(geometry) = resources.geometries.get(&recipe.geometry).copied() else {
-            diagnostics.push(error_diagnostic(
-                &path,
-                "unknown_geometry_ref",
-                format!(
-                    "node '{}' references missing geometry '{}'",
-                    recipe.id, recipe.geometry
-                ),
-                "declare the geometry before the node",
-            ));
-            continue;
-        };
-        let Some(material) = resources.materials.get(&recipe.material).copied() else {
-            diagnostics.push(error_diagnostic(
-                &path,
-                "unknown_material_ref",
-                format!(
-                    "node '{}' references missing material '{}'",
-                    recipe.id, recipe.material
-                ),
-                "declare the material before the node",
-            ));
-            continue;
-        };
-        let Some(lod_levels) = resolve_lod_levels(recipe, resources.geometries, &path, diagnostics)
-        else {
-            continue;
+        let resolved_renderable = match (&recipe.geometry, &recipe.material) {
+            (Some(geometry_id), Some(material_id)) => {
+                let Some(geometry) = resources.geometries.get(geometry_id).copied() else {
+                    diagnostics.push(error_diagnostic(
+                        &path,
+                        "unknown_geometry_ref",
+                        format!(
+                            "node '{}' references missing geometry '{geometry_id}'",
+                            recipe.id
+                        ),
+                        "declare the geometry before the node",
+                    ));
+                    continue;
+                };
+                let Some(material) = resources.materials.get(material_id).copied() else {
+                    diagnostics.push(error_diagnostic(
+                        &path,
+                        "unknown_material_ref",
+                        format!(
+                            "node '{}' references missing material '{material_id}'",
+                            recipe.id
+                        ),
+                        "declare the material before the node",
+                    ));
+                    continue;
+                };
+                let Some(lod_levels) =
+                    resolve_lod_levels(recipe, resources.geometries, &path, diagnostics)
+                else {
+                    continue;
+                };
+                Some((geometry, material, lod_levels))
+            }
+            (None, None) => None,
+            _ => {
+                diagnostics.push(error_diagnostic(
+                    &path,
+                    "incomplete_node_renderable",
+                    "node geometry and material must be provided together",
+                    "add both fields or omit both for a group node",
+                ));
+                continue;
+            }
         };
         let parent = match &recipe.parent {
             Some(parent) => match node_keys.get(parent).copied() {
@@ -94,17 +113,20 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
             },
             None => root,
         };
-        let geometry_bounds = match host.assets.geometry(geometry) {
-            Some(geometry) => Some(geometry.bounds()),
-            None => {
-                diagnostics.push(error_diagnostic(
-                    &path,
-                    "geometry_bounds_missing",
-                    format!("node '{}' geometry could not be resolved", recipe.id),
-                    "declare a valid geometry before the node",
-                ));
-                continue;
-            }
+        let geometry_bounds = match resolved_renderable.as_ref() {
+            Some((geometry, _, _)) => match host.assets.geometry(*geometry) {
+                Some(geometry) => Some(geometry.bounds()),
+                None => {
+                    diagnostics.push(error_diagnostic(
+                        &path,
+                        "geometry_bounds_missing",
+                        format!("node '{}' geometry could not be resolved", recipe.id),
+                        "declare a valid geometry before the node",
+                    ));
+                    continue;
+                }
+            },
+            None => None,
         };
         let mut transform_nodes = resources.imported_nodes.clone();
         transform_nodes.extend(node_keys.clone());
@@ -124,13 +146,16 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
                 continue;
             }
         };
-        let node = match host
-            .scene
-            .mesh(geometry, material)
-            .parent(parent)
-            .transform(transform)
-            .add()
-        {
+        let node_result = match resolved_renderable.as_ref() {
+            Some((geometry, material, _)) => host
+                .scene
+                .mesh(*geometry, *material)
+                .parent(parent)
+                .transform(transform)
+                .add(),
+            None => host.scene.add_empty(parent, transform),
+        };
+        let node = match node_result {
             Ok(node) => node,
             Err(error) => {
                 diagnostics.push(error_diagnostic(
@@ -142,7 +167,9 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
                 continue;
             }
         };
-        if let Err(error) = host.scene.set_mesh_lods(node, lod_levels) {
+        if let Some((_, _, lod_levels)) = resolved_renderable
+            && let Err(error) = host.scene.set_mesh_lods(node, lod_levels)
+        {
             diagnostics.push(error_diagnostic(
                 &path,
                 "lod_create_failed",
@@ -160,7 +187,11 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
         manifest.push(SceneRecipeBuildTargetV1 {
             id: recipe.id.clone(),
             handle,
-            kind: "node".to_owned(),
+            kind: if recipe.geometry.is_some() {
+                "node".to_owned()
+            } else {
+                "group".to_owned()
+            },
             parent: Some(
                 host.node_handle_map
                     .get(&parent)
@@ -186,44 +217,6 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
         }
     }
     node_keys
-}
-
-fn resolve_lod_levels(
-    recipe: &SceneRecipeNodeV1,
-    geometries: &BTreeMap<String, GeometryHandle>,
-    path: &str,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) -> Option<Vec<MeshLodLevel>> {
-    let mut levels = Vec::new();
-    for (index, lod) in recipe.lods.iter().enumerate() {
-        let lod_path = format!("{path}.lods[{index}]");
-        let Some(geometry) = geometries.get(&lod.geometry).copied() else {
-            diagnostics.push(error_diagnostic(
-                &lod_path,
-                "unknown_geometry_ref",
-                format!(
-                    "LOD level for node '{}' references missing geometry '{}'",
-                    recipe.id, lod.geometry
-                ),
-                "declare the LOD geometry before the node",
-            ));
-            return None;
-        };
-        if !lod.max_screen_fraction.is_finite()
-            || lod.max_screen_fraction <= 0.0
-            || lod.max_screen_fraction > 1.0
-        {
-            diagnostics.push(error_diagnostic(
-                format!("{lod_path}.max_screen_fraction"),
-                "invalid_lod_threshold",
-                "LOD max_screen_fraction must be finite and in (0, 1]",
-                "use a fraction such as 0.15 for distant or small-on-screen geometry",
-            ));
-            return None;
-        }
-        levels.push(MeshLodLevel::new(lod.max_screen_fraction as f32, geometry));
-    }
-    Some(levels)
 }
 
 pub(in crate::scene_host::recipe) struct AuthoredNodeResources<'a> {
@@ -355,13 +348,21 @@ fn validate_morph_weight_count(
     recipe: &SceneRecipeNodeV1,
     geometries: &BTreeMap<String, GeometryHandle>,
 ) -> Result<(), Box<SceneRecipeDiagnosticV1>> {
-    let Some(handle) = geometries.get(&recipe.geometry).copied() else {
+    let Some(geometry_id) = recipe.geometry.as_deref() else {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "group_node_deformation",
+            format!("group node '{}' cannot declare morph weights", recipe.id),
+            "attach morph weights to a renderable node",
+        )));
+    };
+    let Some(handle) = geometries.get(geometry_id).copied() else {
         return Err(Box::new(error_diagnostic(
             "$",
             "unknown_geometry_ref",
             format!(
                 "node '{}' references missing geometry '{}'",
-                recipe.id, recipe.geometry
+                recipe.id, geometry_id
             ),
             "declare the geometry before the node",
         )));
@@ -372,7 +373,7 @@ fn validate_morph_weight_count(
             "geometry_missing",
             format!(
                 "node '{}' geometry '{}' could not be resolved",
-                recipe.id, recipe.geometry
+                recipe.id, geometry_id
             ),
             "declare a valid geometry before the node",
         )));
@@ -386,7 +387,7 @@ fn validate_morph_weight_count(
                 "node '{}' has {} morph weights but geometry '{}' has {target_count} morph targets",
                 recipe.id,
                 recipe.morph_weights.len(),
-                recipe.geometry
+                geometry_id
             ),
             "emit exactly one morph weight per target",
         )));
@@ -401,13 +402,21 @@ fn scene_skin_binding(
     geometries: &BTreeMap<String, GeometryHandle>,
     node_keys: &BTreeMap<String, NodeKey>,
 ) -> Result<SceneSkinBinding, Box<SceneRecipeDiagnosticV1>> {
-    let Some(handle) = geometries.get(&recipe.geometry).copied() else {
+    let Some(geometry_id) = recipe.geometry.as_deref() else {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "group_node_deformation",
+            format!("group node '{}' cannot declare a skin binding", recipe.id),
+            "attach skin data to a renderable node",
+        )));
+    };
+    let Some(handle) = geometries.get(geometry_id).copied() else {
         return Err(Box::new(error_diagnostic(
             "$",
             "unknown_geometry_ref",
             format!(
                 "node '{}' references missing geometry '{}'",
-                recipe.id, recipe.geometry
+                recipe.id, geometry_id
             ),
             "declare the geometry before the node",
         )));
@@ -418,7 +427,7 @@ fn scene_skin_binding(
             "geometry_missing",
             format!(
                 "node '{}' geometry '{}' could not be resolved",
-                recipe.id, recipe.geometry
+                recipe.id, geometry_id
             ),
             "declare a valid geometry before the node",
         )));
@@ -429,7 +438,7 @@ fn scene_skin_binding(
             "invalid_skin",
             format!(
                 "node '{}' declares skin_binding for non-skinned geometry '{}'",
-                recipe.id, recipe.geometry
+                recipe.id, geometry_id
             ),
             "remove skin_binding or use a skin-derived geometry",
         )));
@@ -460,7 +469,7 @@ fn scene_skin_binding(
             format!(
                 "node '{}' skin geometry '{}' references an influence index outside its {}-node binding",
                 recipe.id,
-                recipe.geometry,
+                geometry_id,
                 binding_nodes.len()
             ),
             "make skin influence indices reference entries in skin_binding",

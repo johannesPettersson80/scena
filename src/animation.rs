@@ -11,7 +11,13 @@ use crate::diagnostics::AnimationError;
 use crate::scene::{NodeKey, Quat, Vec3};
 
 mod sampling;
-use self::sampling::{sample_quat, sample_vec3, sample_weights};
+use self::sampling::{
+    sample_quat, sample_quat_profiled, sample_vec3, sample_vec3_profiled, sample_weights,
+    sample_weights_into, sample_weights_into_profiled,
+};
+mod validation;
+use self::validation::{validate_clip, validate_imported_clip, validate_imported_source_clip};
+mod mixer;
 
 new_key_type! {
     pub struct AnimationMixerKey;
@@ -98,6 +104,16 @@ pub struct AnimationMixer {
     import_live: Arc<AtomicBool>,
 }
 
+/// Deterministic work and payload-copy counters from one animation update.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AnimationUpdateMetrics {
+    pub channels_scanned: u64,
+    pub keyframe_intervals_tested: u64,
+    pub weight_values_written: u64,
+    pub weight_bytes_written: u64,
+    pub clip_clone_bytes: u64,
+}
+
 impl AnimationClipKey {
     pub(crate) fn fresh() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -147,6 +163,21 @@ impl AnimationClip {
         }
     }
 
+    fn imported(
+        key: AnimationClipKey,
+        name: Option<String>,
+        channels: Vec<AnimationChannel>,
+        duration_seconds: f32,
+    ) -> Result<Self, AnimationError> {
+        validate_imported_clip(&channels, duration_seconds)?;
+        Ok(Self {
+            key,
+            name,
+            channels,
+            duration_seconds,
+        })
+    }
+
     pub const fn key(&self) -> AnimationClipKey {
         self.key
     }
@@ -162,6 +193,40 @@ impl AnimationClip {
     pub const fn duration_seconds(&self) -> f32 {
         self.duration_seconds
     }
+
+    pub(crate) fn cloned_payload_bytes(&self) -> u64 {
+        let mut bytes = self.name.as_ref().map_or(0, |name| name.len() as u64);
+        bytes = bytes.saturating_add(
+            (self.channels.len() as u64)
+                .saturating_mul(std::mem::size_of::<AnimationChannel>() as u64),
+        );
+        for channel in &self.channels {
+            bytes = bytes.saturating_add(
+                (channel.input_seconds.len() as u64)
+                    .saturating_mul(std::mem::size_of::<f32>() as u64),
+            );
+            let output_bytes = match &channel.output {
+                AnimationOutput::Vec3(values) => {
+                    (values.len() as u64).saturating_mul(std::mem::size_of::<Vec3>() as u64)
+                }
+                AnimationOutput::Quat(values) => {
+                    (values.len() as u64).saturating_mul(std::mem::size_of::<Quat>() as u64)
+                }
+                AnimationOutput::Weights(values) => {
+                    let outer = (values.len() as u64)
+                        .saturating_mul(std::mem::size_of::<Vec<f32>>() as u64);
+                    values.iter().fold(outer, |total, weights| {
+                        total.saturating_add(
+                            (weights.len() as u64)
+                                .saturating_mul(std::mem::size_of::<f32>() as u64),
+                        )
+                    })
+                }
+            };
+            bytes = bytes.saturating_add(output_bytes);
+        }
+        bytes
+    }
 }
 
 impl AnimationSourceClip {
@@ -175,6 +240,19 @@ impl AnimationSourceClip {
             channels,
             duration_seconds,
         }
+    }
+
+    pub(crate) fn imported(
+        name: Option<String>,
+        channels: Vec<AnimationSourceChannel>,
+        duration_seconds: f32,
+    ) -> Result<Self, AnimationError> {
+        validate_imported_source_clip(&channels, duration_seconds)?;
+        Ok(Self {
+            name,
+            channels,
+            duration_seconds,
+        })
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -206,136 +284,32 @@ impl AnimationSourceClip {
             .collect();
         AnimationClip::new_unchecked(key, self.name.clone(), channels, self.duration_seconds)
     }
-}
 
-fn validate_clip(
-    channels: &[AnimationChannel],
-    duration_seconds: f32,
-) -> Result<(), AnimationError> {
-    if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
-        return Err(AnimationError::InvalidClip {
-            reason: "duration_seconds must be finite and positive".to_owned(),
-        });
-    }
-    if channels.is_empty() {
-        return Err(AnimationError::InvalidClip {
-            reason: "clip must contain at least one channel".to_owned(),
-        });
-    }
-    for (channel_index, channel) in channels.iter().enumerate() {
-        validate_channel(channel_index, channel, duration_seconds)?;
-    }
-    Ok(())
-}
-
-fn validate_channel(
-    channel_index: usize,
-    channel: &AnimationChannel,
-    duration_seconds: f32,
-) -> Result<(), AnimationError> {
-    if channel.input_seconds.is_empty() {
-        return Err(invalid_channel(channel_index, "times must not be empty"));
-    }
-    let mut previous = None;
-    for (time_index, time) in channel.input_seconds.iter().copied().enumerate() {
-        if !time.is_finite() || time < 0.0 {
-            return Err(invalid_channel(
-                channel_index,
-                format!("time[{time_index}] must be finite and non-negative"),
-            ));
-        }
-        if time > duration_seconds {
-            return Err(invalid_channel(
-                channel_index,
-                format!("time[{time_index}] exceeds clip duration"),
-            ));
-        }
-        if previous.is_some_and(|previous| time <= previous) {
-            return Err(invalid_channel(
-                channel_index,
-                format!("time[{time_index}] must be strictly increasing"),
-            ));
-        }
-        previous = Some(time);
-    }
-    let expected_values = if channel.interpolation == AnimationInterpolation::CubicSpline {
-        channel.input_seconds.len().saturating_mul(3)
-    } else {
-        channel.input_seconds.len()
-    };
-    match &channel.output {
-        AnimationOutput::Vec3(values) => {
-            if values.len() != expected_values {
-                return Err(invalid_channel(
-                    channel_index,
-                    format!("Vec3 output length must be {expected_values}"),
-                ));
-            }
-            if let Some(index) = values.iter().position(|value| !vec3_is_finite(*value)) {
-                return Err(invalid_channel(
-                    channel_index,
-                    format!("Vec3 output[{index}] must be finite"),
+    pub(crate) fn rebind_imported_many<F, G>(
+        &self,
+        key: AnimationClipKey,
+        mut map_nodes: F,
+        mut map_vec3: G,
+    ) -> Result<AnimationClip, AnimationError>
+    where
+        F: FnMut(usize, AnimationTarget) -> Vec<NodeKey>,
+        G: FnMut(AnimationTarget, Vec3) -> Vec3,
+    {
+        let mut channels = Vec::new();
+        for source in &self.channels {
+            let output = source.rebound_output(&mut map_vec3);
+            for target_node in map_nodes(source.source_node, source.target) {
+                channels.push(AnimationChannel::new(
+                    target_node,
+                    source.target,
+                    source.input_seconds.clone(),
+                    output.clone(),
+                    source.interpolation,
                 ));
             }
         }
-        AnimationOutput::Quat(values) => {
-            if values.len() != expected_values {
-                return Err(invalid_channel(
-                    channel_index,
-                    format!("Quat output length must be {expected_values}"),
-                ));
-            }
-            if let Some(index) = values.iter().position(|value| !quat_is_finite(*value)) {
-                return Err(invalid_channel(
-                    channel_index,
-                    format!("Quat output[{index}] must be finite"),
-                ));
-            }
-        }
-        AnimationOutput::Weights(values) => {
-            if values.len() != expected_values {
-                return Err(invalid_channel(
-                    channel_index,
-                    format!("Weights output length must be {expected_values}"),
-                ));
-            }
-            let Some(width) = values.first().map(Vec::len).filter(|width| *width > 0) else {
-                return Err(invalid_channel(
-                    channel_index,
-                    "weights output must contain at least one morph target",
-                ));
-            };
-            for (index, value) in values.iter().enumerate() {
-                if value.len() != width {
-                    return Err(invalid_channel(
-                        channel_index,
-                        format!("weights output[{index}] has inconsistent width"),
-                    ));
-                }
-                if value.iter().any(|component| !component.is_finite()) {
-                    return Err(invalid_channel(
-                        channel_index,
-                        format!("weights output[{index}] must be finite"),
-                    ));
-                }
-            }
-        }
+        AnimationClip::imported(key, self.name.clone(), channels, self.duration_seconds)
     }
-    Ok(())
-}
-
-fn invalid_channel(channel_index: usize, reason: impl Into<String>) -> AnimationError {
-    AnimationError::InvalidClip {
-        reason: format!("channel {channel_index}: {}", reason.into()),
-    }
-}
-
-fn quat_is_finite(value: Quat) -> bool {
-    value.x.is_finite() && value.y.is_finite() && value.z.is_finite() && value.w.is_finite()
-}
-
-fn vec3_is_finite(value: Vec3) -> bool {
-    value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
 }
 
 impl AnimationChannel {
@@ -375,6 +349,23 @@ impl AnimationChannel {
         )
     }
 
+    pub(crate) fn sample_vec3_profiled(
+        &self,
+        time_seconds: f32,
+        intervals_tested: &mut u64,
+    ) -> Option<Vec3> {
+        let AnimationOutput::Vec3(values) = &self.output else {
+            return None;
+        };
+        sample_vec3_profiled(
+            &self.input_seconds,
+            values,
+            self.interpolation,
+            time_seconds,
+            intervals_tested,
+        )
+    }
+
     pub fn sample_quat(&self, time_seconds: f32) -> Option<Quat> {
         let AnimationOutput::Quat(values) = &self.output else {
             return None;
@@ -387,6 +378,23 @@ impl AnimationChannel {
         )
     }
 
+    pub(crate) fn sample_quat_profiled(
+        &self,
+        time_seconds: f32,
+        intervals_tested: &mut u64,
+    ) -> Option<Quat> {
+        let AnimationOutput::Quat(values) = &self.output else {
+            return None;
+        };
+        sample_quat_profiled(
+            &self.input_seconds,
+            values,
+            self.interpolation,
+            time_seconds,
+            intervals_tested,
+        )
+    }
+
     pub fn sample_weights(&self, time_seconds: f32) -> Option<Vec<f32>> {
         let AnimationOutput::Weights(values) = &self.output else {
             return None;
@@ -396,6 +404,38 @@ impl AnimationChannel {
             values,
             self.interpolation,
             time_seconds,
+        )
+    }
+
+    pub(crate) fn sample_weights_into_profiled(
+        &self,
+        time_seconds: f32,
+        output: &mut Vec<f32>,
+        intervals_tested: &mut u64,
+    ) -> bool {
+        let AnimationOutput::Weights(values) = &self.output else {
+            return false;
+        };
+        sample_weights_into_profiled(
+            &self.input_seconds,
+            values,
+            self.interpolation,
+            time_seconds,
+            output,
+            intervals_tested,
+        )
+    }
+
+    pub(crate) fn sample_weights_into(&self, time_seconds: f32, output: &mut Vec<f32>) -> bool {
+        let AnimationOutput::Weights(values) = &self.output else {
+            return false;
+        };
+        sample_weights_into(
+            &self.input_seconds,
+            values,
+            self.interpolation,
+            time_seconds,
+            output,
         )
     }
 }
@@ -430,7 +470,21 @@ impl AnimationSourceChannel {
         F: FnMut(usize) -> Option<NodeKey>,
         G: FnMut(AnimationTarget, Vec3) -> Vec3,
     {
-        let output = match &self.output {
+        let output = self.rebound_output(map_vec3);
+        Some(AnimationChannel::new(
+            map_node(self.source_node)?,
+            self.target,
+            self.input_seconds.clone(),
+            output,
+            self.interpolation,
+        ))
+    }
+
+    fn rebound_output<G>(&self, map_vec3: &mut G) -> AnimationOutput
+    where
+        G: FnMut(AnimationTarget, Vec3) -> Vec3,
+    {
+        match &self.output {
             AnimationOutput::Vec3(values) => AnimationOutput::Vec3(
                 values
                     .iter()
@@ -440,99 +494,6 @@ impl AnimationSourceChannel {
             ),
             AnimationOutput::Quat(values) => AnimationOutput::Quat(values.clone()),
             AnimationOutput::Weights(values) => AnimationOutput::Weights(values.clone()),
-        };
-        Some(AnimationChannel::new(
-            map_node(self.source_node)?,
-            self.target,
-            self.input_seconds.clone(),
-            output,
-            self.interpolation,
-        ))
-    }
-}
-
-impl AnimationMixer {
-    pub fn new(clip: AnimationClip, import_live: Arc<AtomicBool>) -> Self {
-        Self {
-            clip,
-            state: AnimationPlaybackState::Stopped,
-            time_seconds: 0.0,
-            speed: 1.0,
-            loop_mode: AnimationLoopMode::Once,
-            import_live,
-        }
-    }
-
-    pub const fn state(&self) -> AnimationPlaybackState {
-        self.state
-    }
-
-    pub const fn time_seconds(&self) -> f32 {
-        self.time_seconds
-    }
-
-    pub const fn speed(&self) -> f32 {
-        self.speed
-    }
-
-    pub const fn loop_mode(&self) -> AnimationLoopMode {
-        self.loop_mode
-    }
-
-    pub fn clip(&self) -> &AnimationClip {
-        &self.clip
-    }
-
-    pub(crate) fn is_stale(&self) -> bool {
-        !self.import_live.load(Ordering::Acquire)
-    }
-
-    pub(crate) fn play(&mut self) {
-        self.state = AnimationPlaybackState::Playing;
-    }
-
-    pub(crate) fn pause(&mut self) {
-        self.state = AnimationPlaybackState::Paused;
-    }
-
-    pub(crate) fn stop(&mut self) {
-        self.state = AnimationPlaybackState::Stopped;
-        self.time_seconds = 0.0;
-    }
-
-    pub(crate) fn seek(&mut self, time_seconds: f32) {
-        self.time_seconds = self.clamp_or_wrap_time(time_seconds.max(0.0));
-    }
-
-    pub(crate) fn set_speed(&mut self, speed: f32) {
-        self.speed = if speed.is_finite() { speed } else { 1.0 };
-    }
-
-    pub(crate) fn set_loop_mode(&mut self, loop_mode: AnimationLoopMode) {
-        self.loop_mode = loop_mode;
-        self.time_seconds = self.clamp_or_wrap_time(self.time_seconds);
-    }
-
-    pub(crate) fn advance(&mut self, delta_seconds: f32) {
-        if self.state != AnimationPlaybackState::Playing {
-            return;
-        }
-        let delta = if delta_seconds.is_finite() {
-            delta_seconds.max(0.0)
-        } else {
-            0.0
-        };
-        self.time_seconds = self.clamp_or_wrap_time(self.time_seconds + delta * self.speed);
-    }
-
-    fn clamp_or_wrap_time(&self, time_seconds: f32) -> f32 {
-        let duration = self.clip.duration_seconds.max(0.0);
-        if duration <= f32::EPSILON {
-            return 0.0;
-        }
-        match self.loop_mode {
-            AnimationLoopMode::Once => time_seconds.clamp(0.0, duration),
-            AnimationLoopMode::Repeat => time_seconds.rem_euclid(duration),
         }
     }
 }

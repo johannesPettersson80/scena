@@ -2,7 +2,7 @@ use crate::assets::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 
-use super::transforms::{compose_transform, local_transform_from_world};
+use super::transforms::{compose_transform, local_transform_from_world, validate_transform};
 use super::view_math::{
     inverse_unit_quat, look_rotation, merge_optional_bounds, multiply_quat, normalize_or,
     positive_min, positive_or, subtract_vec3, transform_aabb, union_aabb,
@@ -448,6 +448,7 @@ impl Scene {
         node: NodeKey,
         world_transform: Transform,
     ) -> Result<Transform, LookupError> {
+        let world_transform = validate_transform(world_transform)?;
         let parent = self
             .nodes
             .get(node)
@@ -468,6 +469,7 @@ impl Scene {
         node: NodeKey,
         transform: Transform,
     ) -> Result<(), LookupError> {
+        let transform = validate_transform(transform)?;
         let node = self
             .nodes
             .get_mut(node)

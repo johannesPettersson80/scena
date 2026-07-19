@@ -1,4 +1,4 @@
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use super::prepare;
 use crate::scene::{CameraKey, ClippingPlane, SceneDirtyState, SectionBox};
@@ -12,14 +12,15 @@ pub(super) struct PreparedSceneState {
     pub(super) visibility_revision: u64,
     pub(super) environment_revision: u64,
     pub(super) target_revision: u64,
-    pub(super) retained_primitives: Vec<prepare::PreparedPrimitive>,
-    pub(super) primitives: Vec<prepare::PreparedPrimitive>,
-    pub(super) retained_strokes: Vec<prepare::PreparedStrokeSegment>,
-    pub(super) strokes: Vec<prepare::PreparedStrokeSegment>,
-    pub(super) retained_labels: prepare::PreparedLabelAtlas,
-    pub(super) labels: prepare::PreparedLabelAtlas,
-    pub(super) retained_instances: Vec<prepare::PreparedInstanceSet>,
-    pub(super) instances: Vec<prepare::PreparedInstanceSet>,
+    pub(super) output_resources_revision: u64,
+    pub(super) retained_primitives: Arc<[prepare::PreparedPrimitive]>,
+    pub(super) primitives: Arc<[prepare::PreparedPrimitive]>,
+    pub(super) retained_strokes: Arc<[prepare::PreparedStrokeSegment]>,
+    pub(super) strokes: Arc<[prepare::PreparedStrokeSegment]>,
+    pub(super) retained_labels: Arc<prepare::PreparedLabelAtlas>,
+    pub(super) labels: Arc<prepare::PreparedLabelAtlas>,
+    pub(super) retained_instances: Arc<[prepare::PreparedInstanceSet]>,
+    pub(super) instances: Arc<[prepare::PreparedInstanceSet]>,
     pub(super) clipping_planes: Vec<ClippingPlane>,
     pub(super) section_box: Option<SectionBox>,
 }

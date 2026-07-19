@@ -185,6 +185,58 @@ pub(super) fn transform_from_recipe(
     }
 }
 
+pub(in crate::scene_host::recipe) fn local_transform_from_recipe(
+    transform: Option<&SceneRecipeTransformV1>,
+) -> Result<Transform, Box<SceneRecipeDiagnosticV1>> {
+    let Some(transform) = transform else {
+        return Ok(Transform::IDENTITY);
+    };
+    match transform {
+        SceneRecipeTransformV1::Raw {
+            translation,
+            rotation,
+            scale,
+        } => {
+            let rotation = Quat::from_xyzw(
+                rotation[0] as f32,
+                rotation[1] as f32,
+                rotation[2] as f32,
+                rotation[3] as f32,
+            );
+            let length_sq = rotation.length_squared();
+            if !length_sq.is_finite() || length_sq <= f32::EPSILON {
+                return Err(Box::new(error_diagnostic(
+                    "$",
+                    "invalid_spatial_transform",
+                    "raw local transform rotation must be a finite non-zero quaternion",
+                    "use [0,0,0,1] for identity",
+                )));
+            }
+            Ok(Transform {
+                translation: vec3(*translation),
+                rotation: rotation.normalize(),
+                scale: vec3(*scale),
+            })
+        }
+        SceneRecipeTransformV1::Trs {
+            translation,
+            rotation_degrees,
+            scale,
+        } => Ok(Transform::IDENTITY
+            .with_translation(vec3(*translation))
+            .rotate_x_deg(rotation_degrees[0] as f32)
+            .rotate_y_deg(rotation_degrees[1] as f32)
+            .rotate_z_deg(rotation_degrees[2] as f32)
+            .with_scale(vec3(*scale))),
+        _ => Err(Box::new(error_diagnostic(
+            "$",
+            "invalid_spatial_transform",
+            "spatial frames and named states accept only raw or trs local transforms",
+            "use kind:raw or kind:trs",
+        ))),
+    }
+}
+
 trait TransformScaleExt {
     fn with_scale(self, scale: Vec3) -> Self;
 }

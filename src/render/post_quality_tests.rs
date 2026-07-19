@@ -10,6 +10,43 @@ use super::{
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
 #[test]
+fn gpu_post_chain_preserves_bloom_when_fxaa_follows() {
+    let Some((fxaa_only, fxaa_stats)) =
+        render_gpu_post_frame(32, 32, bloom_reference_scene, |renderer| {
+            renderer.set_anti_aliasing(AntiAliasing::Fxaa);
+            renderer.clear_bloom();
+            renderer.clear_screen_space_ambient_occlusion();
+        })
+    else {
+        return;
+    };
+    let Some((bloom_and_fxaa, combined_stats)) =
+        render_gpu_post_frame(32, 32, bloom_reference_scene, |renderer| {
+            renderer.set_anti_aliasing(AntiAliasing::Fxaa);
+            renderer.set_bloom(Some(PostBloomConfig::new(96, 0.65, 3)));
+            renderer.clear_screen_space_ambient_occlusion();
+        })
+    else {
+        return;
+    };
+
+    assert_eq!(fxaa_stats.fxaa_passes, 1);
+    assert_eq!(fxaa_stats.bloom_passes, 0);
+    assert_eq!(combined_stats.fxaa_passes, 1);
+    assert_eq!(combined_stats.bloom_passes, 1);
+    assert!(
+        bloom_and_fxaa != fxaa_only,
+        "bloom parameters must survive until the bloom pass executes when FXAA follows it"
+    );
+    let fxaa_halo = region_luma_sum_outside(&fxaa_only, 32, 32, 12..20, 12..20);
+    let combined_halo = region_luma_sum_outside(&bloom_and_fxaa, 32, 32, 12..20, 12..20);
+    assert!(
+        combined_halo > fxaa_halo + 1_000,
+        "bloom+FXAA must preserve bloom energy outside the emitter; fxaa={fxaa_halo} combined={combined_halo}"
+    );
+}
+
+#[test]
 fn gpu_post_passes_have_independent_quality_measurements() {
     let Some((baseline_edge, baseline_edge_stats)) =
         render_gpu_post_frame(32, 32, fxaa_edge_scene, |renderer| {

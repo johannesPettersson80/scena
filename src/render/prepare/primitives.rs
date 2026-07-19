@@ -1,5 +1,5 @@
 use crate::diagnostics::PrepareError;
-use crate::geometry::{GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex};
+use crate::geometry::{GeometryVertex, Primitive, PrimitiveVertexAttributes, Vertex};
 use crate::material::{MaterialDesc, MaterialKind};
 use crate::render::camera::CameraProjection;
 use crate::render::physical_transmission::{
@@ -8,8 +8,8 @@ use crate::render::physical_transmission::{
 use crate::scene::Vec3;
 
 use super::cpu_bake::{
-    CpuBakeCorner, baked_area_shadow_visibility, baked_shadow_visibility, cpu_texture_subdivisions,
-    push_material_pass_primitive, subdivided_cpu_corners,
+    CpuBakeCorner, baked_area_shadow_visibility_profiled, baked_shadow_visibility_profiled,
+    cpu_texture_subdivisions, push_material_pass_primitive, subdivided_cpu_corners,
 };
 use super::lighting::{MaterialShadingInput, material_color};
 use super::materials::{
@@ -21,40 +21,30 @@ use super::materials::{
     sheen_roughness_texture_sample, thickness_texture_sample, transmission_texture_sample,
 };
 use super::strokes;
-use super::tangents::{accumulate_vertex_tangents, authored_vertex_tangents};
+use super::tangents::{
+    TangentFrame, accumulate_vertex_tangents, authored_vertex_tangents, generate_model_tangents,
+    transform_model_tangents,
+};
 use super::transforms::{
     normal_from_model_matrix, transform_normal, transform_position, world_from_model_matrix,
 };
 use super::types::{
-    DeformationInputs, GeometryPrimitiveSource, PreparedMaterialReflection, PreparedPrimitive,
-    PrimitiveBakeParams, PrimitiveSinks,
+    DeformationInputs, GeometryPrimitiveSource, PreparedDrawTransform, PreparedMaterialReflection,
+    PreparedPrimitive, PrimitiveBakeParams, PrimitiveSinks,
 };
 
-pub(super) fn append_geometry_primitives<F>(
-    source: GeometryPrimitiveSource<'_, F>,
-    deformation: DeformationInputs<'_>,
-    params: PrimitiveBakeParams<'_>,
-    sinks: PrimitiveSinks<'_>,
-) -> Result<(), PrepareError> {
-    match source.geometry.topology() {
-        GeometryTopology::Triangles => {
-            append_triangle_primitives(source, deformation, params, sinks)
-        }
-        GeometryTopology::Lines => strokes::append_line_primitives(
-            source.node,
-            source.geometry,
-            source.material,
-            strokes::StrokeBakeInputs {
-                tint: source.tint,
-                params,
-                sinks,
-            },
-        ),
-    }
-}
+mod dispatch;
+mod material_helpers;
+pub(in crate::render) use dispatch::append_geometry_primitives;
+pub(in crate::render) use material_helpers::draw_uniform_tint;
+use material_helpers::{
+    average_texture_sample, brighter_color, camera_facing_double_sided_normal,
+    cpu_texture_sample_slot_count, material_reflection, material_transmission,
+    structural_vertex_tint, tinted_vertex_color, triangle_screen_edge_pixels, triangle_uv_span,
+};
 
-fn append_triangle_primitives<F>(
-    source: GeometryPrimitiveSource<'_, F>,
+fn append_triangle_primitives(
+    source: GeometryPrimitiveSource<'_>,
     deformation: DeformationInputs<'_>,
     params: PrimitiveBakeParams<'_>,
     mut sinks: PrimitiveSinks<'_>,
@@ -97,43 +87,92 @@ fn append_triangle_primitives<F>(
         (_, Some(tint)) if tint.a < 1.0 => super::materials::MaterialPass::Blend,
         (pass, _) => pass,
     };
-    let morphed_vertices = deformation
+    let deformed_vertices = source
+        .geometry
+        .deformed_vertices(deformation.morph_weights, deformation.skin_matrices)
+        .map_err(|error| PrepareError::InvalidSkinGeometry {
+            node: source.node,
+            reason: format!("{error:?}"),
+        })?;
+    if matches!(&deformed_vertices, std::borrow::Cow::Owned(_))
+        && let Some(work) = params.work
+    {
+        work.record_deformed_vertex_bytes(
+            (deformed_vertices.len() as u64)
+                .saturating_mul(std::mem::size_of::<GeometryVertex>() as u64),
+        );
+    }
+    let vertices = deformed_vertices.as_ref();
+    let tex_coords0 = source.geometry.authored_tex_coords0();
+    let morphed_tangents = deformation
         .morph_weights
-        .and_then(|weights| source.geometry.morphed_vertices(weights));
-    let base_vertices = morphed_vertices
-        .as_deref()
-        .unwrap_or_else(|| source.geometry.vertices());
-    let skinned_vertices = match deformation.skin_matrices {
-        Some(matrices) => source
-            .geometry
-            .skinned_vertices(base_vertices, matrices)
-            .map_err(|error| PrepareError::InvalidSkinGeometry {
-                node: source.node,
-                reason: format!("{error:?}"),
-            })?,
-        None if source.geometry.skin().is_some() => {
-            return Err(PrepareError::InvalidSkinGeometry {
-                node: source.node,
-                reason: "skinned geometry is missing a scene skin binding".to_string(),
+        .and_then(|weights| source.geometry.morphed_tangents(weights));
+    let vertex_tangents = authored_vertex_tangents(
+        morphed_tangents
+            .as_deref()
+            .or_else(|| source.geometry.tangents()),
+        vertices,
+        params.transform,
+    )
+    .unwrap_or_else(|| {
+        if matches!(&deformed_vertices, std::borrow::Cow::Borrowed(_)) {
+            let (model_tangents, cache_hit) = source.geometry.cached_generated_tangents(|| {
+                generate_model_tangents(vertices, source.geometry.indices(), tex_coords0)
             });
+            if let Some(work) = params.work {
+                work.record_generated_tangent_cache(cache_hit);
+                if !cache_hit {
+                    let vertex_count = vertices.len() as u64;
+                    work.record_generated_tangents(
+                        source.geometry.indices().len() / 3,
+                        vertices.len(),
+                        vertex_count
+                            .saturating_mul(std::mem::size_of::<Vec3>() as u64)
+                            .saturating_mul(2),
+                        vertex_count.saturating_mul(std::mem::size_of::<[f32; 4]>() as u64),
+                    );
+                }
+                work.record_tangent_output_bytes(
+                    (vertices.len() as u64)
+                        .saturating_mul(std::mem::size_of::<TangentFrame>() as u64),
+                );
+            }
+            return transform_model_tangents(&model_tangents, vertices, params.transform);
         }
-        None => None,
-    };
-    let vertices = skinned_vertices.as_deref().unwrap_or(base_vertices);
-    let tex_coords0 = source.geometry.tex_coords0();
-    let vertex_tangents =
-        authored_vertex_tangents(source.geometry.tangents(), vertices, params.transform)
-            .unwrap_or_else(|| {
-                accumulate_vertex_tangents(
-                    vertices,
-                    source.geometry.indices(),
-                    tex_coords0,
-                    params.transform,
-                    params.origin_shift,
-                )
-            });
+        if let Some(work) = params.work {
+            let vertex_count = vertices.len() as u64;
+            work.record_generated_tangents(
+                source.geometry.indices().len() / 3,
+                vertices.len(),
+                vertex_count
+                    .saturating_mul(std::mem::size_of::<Vec3>() as u64)
+                    .saturating_mul(2),
+                vertex_count.saturating_mul(std::mem::size_of::<TangentFrame>() as u64),
+            );
+        }
+        accumulate_vertex_tangents(
+            vertices,
+            source.geometry.indices(),
+            tex_coords0,
+            params.transform,
+            params.origin_shift,
+        )
+    });
     let world_from_model = world_from_model_matrix(params.transform, params.origin_shift);
     let normal_from_model = normal_from_model_matrix(params.transform);
+    let draw_transform = PreparedDrawTransform::shared(world_from_model, normal_from_model);
+    let render_material_slot =
+        render_material_slot(source.material_handle, params.backend_material_slots);
+    let backend_shaded_material = render_material_slot != 0;
+    let camera_position = params
+        .camera_projection
+        .map(CameraProjection::camera_position);
+    let transmissive = source.material.kind() == MaterialKind::PbrMetallicRoughness
+        && source.material.transmission_factor() > 0.001;
+    let textured_thickness = transmissive && source.material.thickness_factor() > 0.0;
+    let texture_samples_per_shaded_vertex = cpu_texture_sample_slot_count(source.material);
+    let material_reflection = material_reflection(source.material);
+    let mut subdivision_scratch = Vec::new();
 
     for triangle in source.geometry.indices().chunks_exact(3) {
         let position_a = transform_position(
@@ -157,47 +196,64 @@ fn append_triangle_primitives<F>(
             transform_normal(vertices[triangle[1] as usize].normal, params.transform);
         let geometric_normal_c =
             transform_normal(vertices[triangle[2] as usize].normal, params.transform);
-        let vertex_colors = source.geometry.vertex_colors();
-        let uv_a = tex_coords0[triangle[0] as usize];
-        let uv_b = tex_coords0[triangle[1] as usize];
-        let uv_c = tex_coords0[triangle[2] as usize];
+        let uv_a = source.geometry.tex_coord0_or_default(triangle[0] as usize);
+        let uv_b = source.geometry.tex_coord0_or_default(triangle[1] as usize);
+        let uv_c = source.geometry.tex_coord0_or_default(triangle[2] as usize);
         let tangent_a = vertex_tangents[triangle[0] as usize];
         let tangent_b = vertex_tangents[triangle[1] as usize];
         let tangent_c = vertex_tangents[triangle[2] as usize];
-        let render_material_slot =
-            render_material_slot(source.material_handle, params.backend_material_slots);
-        let backend_shaded_material = render_material_slot != 0;
-        let directional_shadow_visibility_a = baked_shadow_visibility(
+        let directional_shadow_visibility_a = baked_shadow_visibility_profiled(
             position_a,
             params.lights,
             params.shadow_occluders,
+            params.shadow_visibility_cache,
             backend_shaded_material,
+            params.work,
         );
-        let directional_shadow_visibility_b = baked_shadow_visibility(
+        let directional_shadow_visibility_b = baked_shadow_visibility_profiled(
             position_b,
             params.lights,
             params.shadow_occluders,
+            params.shadow_visibility_cache,
             backend_shaded_material,
+            params.work,
         );
-        let directional_shadow_visibility_c = baked_shadow_visibility(
+        let directional_shadow_visibility_c = baked_shadow_visibility_profiled(
             position_c,
             params.lights,
             params.shadow_occluders,
+            params.shadow_visibility_cache,
             backend_shaded_material,
+            params.work,
         );
-        let area_shadow_visibility_a =
-            baked_area_shadow_visibility(position_a, params.lights, params.shadow_occluders);
-        let area_shadow_visibility_b =
-            baked_area_shadow_visibility(position_b, params.lights, params.shadow_occluders);
-        let area_shadow_visibility_c =
-            baked_area_shadow_visibility(position_c, params.lights, params.shadow_occluders);
-        let camera_position = params
-            .camera_projection
-            .map(CameraProjection::camera_position);
+        let area_shadow_visibility_a = baked_area_shadow_visibility_profiled(
+            position_a,
+            params.lights,
+            params.shadow_occluders,
+            params.shadow_visibility_cache,
+            params.work,
+        );
+        let area_shadow_visibility_b = baked_area_shadow_visibility_profiled(
+            position_b,
+            params.lights,
+            params.shadow_occluders,
+            params.shadow_visibility_cache,
+            params.work,
+        );
+        let area_shadow_visibility_c = baked_area_shadow_visibility_profiled(
+            position_c,
+            params.lights,
+            params.shadow_occluders,
+            params.shadow_visibility_cache,
+            params.work,
+        );
         let shade_vertex = |corner: CpuBakeCorner| {
             if backend_shaded_material {
                 corner.vertex_color
             } else {
+                if let Some(work) = params.work {
+                    work.record_cpu_bake_shaded_vertex(texture_samples_per_shaded_vertex);
+                }
                 let geometric_normal = camera_facing_double_sided_normal(
                     corner.geometric_normal,
                     source.material.double_sided(),
@@ -205,47 +261,61 @@ fn append_triangle_primitives<F>(
                     camera_position,
                 );
                 let normal = normal_texture_sample(
-                    source.assets,
+                    source.textures,
                     source.material,
                     corner.uv,
                     geometric_normal,
+                    corner.tangent,
+                    corner.tangent_handedness,
                 );
                 let clearcoat_normal = clearcoat_normal_texture_sample(
-                    source.assets,
+                    source.textures,
                     source.material,
                     corner.uv,
                     normal,
+                    geometric_normal,
+                    corner.tangent,
+                    corner.tangent_handedness,
                 );
                 let base_color_texture = base_color_texture_sample(
-                    source.assets,
+                    source.textures,
                     source.material,
                     corner.uv,
                     params.backend_sampled_base_color_textures,
                 );
                 let metallic_roughness_texture =
-                    metallic_roughness_texture_sample(source.assets, source.material, corner.uv);
+                    metallic_roughness_texture_sample(source.textures, source.material, corner.uv);
                 let occlusion_texture =
-                    occlusion_texture_sample(source.assets, source.material, corner.uv);
+                    occlusion_texture_sample(source.textures, source.material, corner.uv);
                 let emissive_texture =
-                    emissive_texture_sample(source.assets, source.material, corner.uv);
+                    emissive_texture_sample(source.textures, source.material, corner.uv);
                 let clearcoat_texture =
-                    clearcoat_texture_sample(source.assets, source.material, corner.uv);
+                    clearcoat_texture_sample(source.textures, source.material, corner.uv);
                 let clearcoat_roughness_texture =
-                    clearcoat_roughness_texture_sample(source.assets, source.material, corner.uv);
+                    clearcoat_roughness_texture_sample(source.textures, source.material, corner.uv);
                 let sheen_color_texture =
-                    sheen_color_texture_sample(source.assets, source.material, corner.uv);
+                    sheen_color_texture_sample(source.textures, source.material, corner.uv);
                 let sheen_roughness_texture =
-                    sheen_roughness_texture_sample(source.assets, source.material, corner.uv);
+                    sheen_roughness_texture_sample(source.textures, source.material, corner.uv);
                 let anisotropy_texture =
-                    anisotropy_texture_sample(source.assets, source.material, corner.uv);
+                    anisotropy_texture_sample(source.textures, source.material, corner.uv);
                 let iridescence_texture =
-                    iridescence_texture_sample(source.assets, source.material, corner.uv);
-                let iridescence_thickness_texture =
-                    iridescence_thickness_texture_sample(source.assets, source.material, corner.uv);
-                let transmission_texture =
-                    transmission_texture_sample(source.assets, source.material, corner.uv);
-                let thickness_texture =
-                    thickness_texture_sample(source.assets, source.material, corner.uv);
+                    iridescence_texture_sample(source.textures, source.material, corner.uv);
+                let iridescence_thickness_texture = iridescence_thickness_texture_sample(
+                    source.textures,
+                    source.material,
+                    corner.uv,
+                );
+                let transmission_texture = if transmissive {
+                    transmission_texture_sample(source.textures, source.material, corner.uv)
+                } else {
+                    1.0
+                };
+                let thickness_texture = if textured_thickness {
+                    thickness_texture_sample(source.textures, source.material, corner.uv)
+                } else {
+                    1.0
+                };
                 let shade_with_normal = |normal, clearcoat_normal| {
                     material_color(
                         source.material,
@@ -295,7 +365,9 @@ fn append_triangle_primitives<F>(
                 tangent: tangent_a.tangent,
                 tangent_handedness: tangent_a.handedness,
                 vertex_color: tinted_vertex_color(
-                    vertex_colors[triangle[0] as usize],
+                    source
+                        .geometry
+                        .vertex_color_or_default(triangle[0] as usize),
                     structural_vertex_tint(source.tint),
                 ),
                 directional_shadow_visibility: directional_shadow_visibility_a,
@@ -308,7 +380,9 @@ fn append_triangle_primitives<F>(
                 tangent: tangent_b.tangent,
                 tangent_handedness: tangent_b.handedness,
                 vertex_color: tinted_vertex_color(
-                    vertex_colors[triangle[1] as usize],
+                    source
+                        .geometry
+                        .vertex_color_or_default(triangle[1] as usize),
                     structural_vertex_tint(source.tint),
                 ),
                 directional_shadow_visibility: directional_shadow_visibility_b,
@@ -321,24 +395,56 @@ fn append_triangle_primitives<F>(
                 tangent: tangent_c.tangent,
                 tangent_handedness: tangent_c.handedness,
                 vertex_color: tinted_vertex_color(
-                    vertex_colors[triangle[2] as usize],
+                    source
+                        .geometry
+                        .vertex_color_or_default(triangle[2] as usize),
                     structural_vertex_tint(source.tint),
                 ),
                 directional_shadow_visibility: directional_shadow_visibility_c,
                 area_shadow_visibility: area_shadow_visibility_c,
             },
         ];
-        let subdivisions = cpu_texture_subdivisions(source.material, backend_shaded_material);
-        let material_reflection = material_reflection(source.material);
-        for sub_triangle in subdivided_cpu_corners(corners, subdivisions) {
+        let subdivisions = cpu_texture_subdivisions(
+            source.material,
+            backend_shaded_material,
+            triangle_screen_edge_pixels(corners, params.camera_projection, params.target),
+            triangle_uv_span(corners),
+            source.textures.max_decoded_dimension() as f32,
+        );
+        let sub_triangles = subdivided_cpu_corners(corners, subdivisions, &mut subdivision_scratch);
+        if let Some(work) = params.work {
+            work.record_cpu_bake_triangles(
+                sub_triangles.len(),
+                (sub_triangles.len() as u64)
+                    .saturating_mul(std::mem::size_of::<[CpuBakeCorner; 3]>() as u64),
+            );
+        }
+        for sub_triangle in sub_triangles {
+            if let Some(work) = params.work {
+                let averaged_texture_samples = 3u64.saturating_mul(
+                    u64::from(transmissive && source.material.transmission_texture().is_some())
+                        .saturating_add(u64::from(
+                            textured_thickness && source.material.thickness_texture().is_some(),
+                        )),
+                );
+                work.record_texture_samples(averaged_texture_samples);
+            }
             let material_transmission = material_transmission(
                 source.material,
-                average_texture_sample(&sub_triangle, |uv| {
-                    transmission_texture_sample(source.assets, source.material, uv)
-                }),
-                average_texture_sample(&sub_triangle, |uv| {
-                    thickness_texture_sample(source.assets, source.material, uv)
-                }),
+                if transmissive {
+                    average_texture_sample(&sub_triangle, |uv| {
+                        transmission_texture_sample(source.textures, source.material, uv)
+                    })
+                } else {
+                    1.0
+                },
+                if textured_thickness {
+                    average_texture_sample(&sub_triangle, |uv| {
+                        thickness_texture_sample(source.textures, source.material, uv)
+                    })
+                } else {
+                    1.0
+                },
             );
             let primitive = Primitive::triangle_with_attributes(
                 sub_triangle.map(|corner| Vertex {
@@ -354,11 +460,15 @@ fn append_triangle_primitives<F>(
                 }),
             )
             .with_render_material_slot(render_material_slot);
-            let primitive = primitive.with_world_from_model(world_from_model, normal_from_model);
-            let primitive = PreparedPrimitive::new(
-                primitive,
-                Some(source.node),
-                draw_uniform_tint(source.tint),
+            let primitive = material_helpers::semantic_attribution(
+                PreparedPrimitive::new_with_draw_transform(
+                    primitive,
+                    Some(source.node),
+                    draw_uniform_tint(source.tint),
+                    Arc::clone(&draw_transform),
+                ),
+                source.instance,
+                material_pass,
             )
             .with_double_sided(source.material.double_sided())
             .with_material_reflection(material_reflection)
@@ -374,88 +484,4 @@ fn append_triangle_primitives<F>(
 
     Ok(())
 }
-
-fn material_reflection(material: &MaterialDesc) -> Option<PreparedMaterialReflection> {
-    if material.kind() != MaterialKind::PbrMetallicRoughness {
-        return None;
-    }
-    PreparedMaterialReflection::new(material.metallic_factor(), material.roughness_factor())
-}
-
-fn camera_facing_double_sided_normal(
-    normal: Vec3,
-    double_sided: bool,
-    position: Vec3,
-    camera_position: Option<Vec3>,
-) -> Vec3 {
-    let Some(camera_position) = camera_position.filter(|_| double_sided) else {
-        return normal;
-    };
-    if normal.dot(camera_position - position) < 0.0 {
-        -normal
-    } else {
-        normal
-    }
-}
-
-fn brighter_color(
-    left: crate::material::Color,
-    right: crate::material::Color,
-) -> crate::material::Color {
-    if relative_luminance(right) > relative_luminance(left) {
-        right
-    } else {
-        left
-    }
-}
-
-fn relative_luminance(color: crate::material::Color) -> f32 {
-    color
-        .r
-        .mul_add(0.2126, color.g.mul_add(0.7152, color.b * 0.0722))
-}
-
-fn material_transmission(
-    material: &MaterialDesc,
-    transmission_texture: f32,
-    thickness_texture: f32,
-) -> Option<PreparedPhysicalTransmission> {
-    if material.kind() != MaterialKind::PbrMetallicRoughness {
-        return None;
-    }
-    PreparedPhysicalTransmission::new(PreparedPhysicalTransmissionInput {
-        transmission: material.transmission_factor(),
-        transmission_texture,
-        ior: material.ior(),
-        thickness: material.thickness_factor(),
-        thickness_texture,
-        attenuation_color: material.attenuation_color(),
-        attenuation_distance: material.attenuation_distance(),
-        roughness: material.roughness_factor(),
-    })
-}
-
-fn average_texture_sample(
-    corners: &[CpuBakeCorner; 3],
-    mut sample: impl FnMut([f32; 2]) -> f32,
-) -> f32 {
-    (sample(corners[0].uv) + sample(corners[1].uv) + sample(corners[2].uv)) / 3.0
-}
-
-fn structural_vertex_tint(tint: Option<crate::material::Color>) -> Option<crate::material::Color> {
-    tint.filter(|tint| tint.a < 1.0)
-}
-
-pub(in crate::render) fn draw_uniform_tint(
-    tint: Option<crate::material::Color>,
-) -> crate::material::Color {
-    tint.filter(|tint| tint.a >= 1.0)
-        .unwrap_or(crate::material::Color::WHITE)
-}
-
-fn tinted_vertex_color(
-    color: crate::material::Color,
-    tint: Option<crate::material::Color>,
-) -> crate::material::Color {
-    tint.map_or(color, |tint| multiply_color(color, tint))
-}
+use std::sync::Arc;

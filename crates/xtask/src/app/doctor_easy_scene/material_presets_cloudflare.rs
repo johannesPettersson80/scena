@@ -81,7 +81,31 @@ pub(crate) fn check_round_e_cloudflare_material_proof(root: &Path, findings: &mu
         "round-e-cloudflare-material-proof",
         findings,
     );
-    require_json_str(&artifact, "/status", "pass", findings);
+    require_json_str(
+        &artifact,
+        "/schema",
+        "scena.q02.round_e_webgl2_material_proof.v1",
+        findings,
+    );
+    require_json_str(&artifact, "/status", "passed", findings);
+    require_json_str(
+        &artifact,
+        "/threshold_evaluator/proof_class",
+        "round-e-shared-material-threshold-evaluator",
+        findings,
+    );
+    require_json_str(
+        &artifact,
+        "/threshold_evaluator/surface",
+        "live-webgl2-chromium",
+        findings,
+    );
+    require_json_f64(
+        &artifact,
+        "/threshold_evaluator/evaluator_version",
+        1.0,
+        findings,
+    );
     require_json_bool(&artifact, "/cache_buster/bumped", true, findings);
     require_json_bool(&artifact, "/wasm/checksum_matches_build", true, findings);
     if artifact
@@ -300,20 +324,22 @@ fn validate_cloudflare_hard_material_metrics(
         "clearcoat_plastic.clearcoat_lobe_delta",
         findings,
     );
-    require_metric_min(
+    require_surface_metric_min(
         artifact,
         thresholds,
+        "live_webgl2_chromium",
         "leather",
-        "texture_variance",
-        "leather.texture_variance_min",
+        "local_texture_variance",
+        "local_texture_variance_min",
         findings,
     );
-    require_metric_min(
+    require_surface_metric_min(
         artifact,
         thresholds,
+        "live_webgl2_chromium",
         "rubber",
-        "roughness_variance",
-        "rubber.roughness_variance_min",
+        "local_texture_variance",
+        "local_texture_variance_min",
         findings,
     );
     require_metric_min(
@@ -332,17 +358,11 @@ fn validate_cloudflare_hard_material_metrics(
         "clear_glass.refraction_offset_min",
         findings,
     );
-    require_material_bool(
+    require_material_u64_min(
         artifact,
         "clear_glass",
-        "passed_physical_refraction",
-        findings,
-    );
-    require_material_str(
-        artifact,
-        "clear_glass",
-        "physical_refraction_status",
-        "measured",
+        "dark_target_pixel_count",
+        64,
         findings,
     );
     require_metric_min(
@@ -353,19 +373,23 @@ fn validate_cloudflare_hard_material_metrics(
         "frosted_glass.high_frequency_contrast_reduction_min",
         findings,
     );
-    require_material_bool(
-        artifact,
-        "frosted_glass",
-        "passed_high_frequency_contrast_reduction",
-        findings,
-    );
-    require_material_str(
-        artifact,
-        "frosted_glass",
-        "rough_transmission_status",
-        "measured",
-        findings,
-    );
+}
+
+fn require_surface_metric_min(
+    artifact: &Value,
+    thresholds: &str,
+    surface: &str,
+    preset: &str,
+    field: &str,
+    threshold_field: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let surface_key = format!("{surface}.{preset}.{threshold_field}");
+    let fallback_key = format!("{preset}.{threshold_field}");
+    let threshold = parse_threshold_value(thresholds, &surface_key)
+        .or_else(|| parse_threshold_value(thresholds, &fallback_key))
+        .unwrap_or(f32::INFINITY) as f64;
+    require_metric_minimum(artifact, preset, field, threshold, findings);
 }
 
 fn require_metric_min(
@@ -382,7 +406,7 @@ fn require_metric_min(
         .pointer(&format!("/per_material/{preset}/{field}"))
         .and_then(Value::as_f64)
         .unwrap_or(f64::NEG_INFINITY);
-    if value < threshold {
+    if value + 1e-6 < threshold {
         findings.push(Finding::new(
             "HONEST-MATERIAL-PRESETS",
             format!("{preset}.{field} {value:.3} is below committed threshold {threshold:.3}"),
@@ -404,7 +428,7 @@ fn require_metric_max(
         .pointer(&format!("/per_material/{preset}/{field}"))
         .and_then(Value::as_f64)
         .unwrap_or(f64::INFINITY);
-    if value > threshold {
+    if value - 1e-6 > threshold {
         findings.push(Finding::new(
             "HONEST-MATERIAL-PRESETS",
             format!("{preset}.{field} {value:.3} is above committed threshold {threshold:.3}"),
@@ -412,34 +436,40 @@ fn require_metric_max(
     }
 }
 
-fn require_material_bool(artifact: &Value, preset: &str, field: &str, findings: &mut Vec<Finding>) {
-    if artifact
+fn require_metric_minimum(
+    artifact: &Value,
+    preset: &str,
+    field: &str,
+    minimum: f64,
+    findings: &mut Vec<Finding>,
+) {
+    let value = artifact
         .pointer(&format!("/per_material/{preset}/{field}"))
-        .and_then(Value::as_bool)
-        != Some(true)
-    {
+        .and_then(Value::as_f64)
+        .unwrap_or(f64::NEG_INFINITY);
+    if value + 1e-6 < minimum {
         findings.push(Finding::new(
             "HONEST-MATERIAL-PRESETS",
-            format!("{preset}.{field} must be true in public Cloudflare proof"),
+            format!("{preset}.{field} {value:.3} is below required minimum {minimum:.3}"),
         ));
     }
 }
 
-fn require_material_str(
+fn require_material_u64_min(
     artifact: &Value,
     preset: &str,
     field: &str,
-    expected: &str,
+    minimum: u64,
     findings: &mut Vec<Finding>,
 ) {
-    if artifact
+    let value = artifact
         .pointer(&format!("/per_material/{preset}/{field}"))
-        .and_then(Value::as_str)
-        != Some(expected)
-    {
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if value < minimum {
         findings.push(Finding::new(
             "HONEST-MATERIAL-PRESETS",
-            format!("{preset}.{field} must be {expected} in public Cloudflare proof"),
+            format!("{preset}.{field} {value} is below required minimum {minimum}"),
         ));
     }
 }
@@ -482,7 +512,7 @@ fn material_delta_threshold(thresholds: &str, preset: &str) -> Option<f32> {
 }
 
 fn parse_threshold_value(thresholds: &str, key: &str) -> Option<f32> {
-    let (wanted_section, wanted_key) = key.split_once('.')?;
+    let (wanted_section, wanted_key) = key.rsplit_once('.')?;
     let mut section = "";
     for raw_line in thresholds.lines() {
         let line = raw_line

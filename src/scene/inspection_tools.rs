@@ -55,7 +55,7 @@ pub struct InspectionToolkitReport {
     pub helper_nodes: Vec<InspectionHelperReport>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct InspectionToolkitState {
     isolated_nodes: Vec<NodeKey>,
     hidden_by_isolate: BTreeSet<NodeKey>,

@@ -24,28 +24,11 @@ These are original rendered-output artifacts produced by `scena`.
 
 ## Easy Scene Setup
 
-The common model-viewer setup does not require hand-tuned camera constants:
-
-```rust
-let model = assets.load_scene("machine.glb").await?;
-let import = scene.instantiate(&model)?;
-let bounds = import.bounds_world(&scene).ok_or("model has no bounds")?;
-
-scene.add_studio_lighting()?;
-scene.add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))?;
-
-let framing = scene.frame_bounds(
-    camera,
-    bounds,
-    FramingOptions::new()
-        .three_quarter_front_right()
-        .fill(0.72)
-        .margin_px(48.0)
-        .viewport(width, height),
-)?;
-let controls = OrbitControls::from_framing(framing);
-renderer.set_auto_exposure(AutoExposureConfig::default());
-```
+The common model-viewer setup does not require hand-tuned camera constants.
+Load and instantiate the model, add studio lighting and a grid floor, call
+`Scene::frame_bounds` (or `Scene::frame_import`) with the active camera, create
+`OrbitControls::from_framing`, then prepare and render. The complete runnable
+workflow lives in the easy-scene guide rather than as an uncompiled excerpt.
 
 See [Easy scene setup](docs/guides/easy-scene-setup.md) for the full workflow,
 including connector mating and projected labels.
@@ -101,12 +84,8 @@ Add `scena` to a Rust application or library:
 cargo add scena
 ```
 
-Equivalent `Cargo.toml` entry:
-
-```toml
-[dependencies]
-scena = "1.5"
-```
+`cargo add` resolves the current compatible release and avoids a version number
+in this living document drifting behind the package metadata.
 
 Use a sibling checkout when developing `scena` and an application together:
 
@@ -141,12 +120,11 @@ Cargo features:
 
 | Feature | Purpose |
 |---|---|
-| `controls` | platform-neutral orbit, pan, zoom, and focus controls |
-| `controls-winit` | native-host control adapter support |
-| `controls-web` | browser-host control adapter support |
+| `controls` | compatibility marker; platform-neutral controls are always available |
+| `controls-winit` | compatibility alias enabling `controls`; hosts translate native events explicitly |
+| `controls-web` | compatibility alias enabling `controls`; hosts translate browser events explicitly |
 | `browser-probe` | browser/WASM proof entry points used by CI lanes |
 | `inspection` | scene inspection metadata for debugging, docs, and reproducible examples |
-| `icc` | ICC/color-management support through `lcms2` |
 | `ktx2` | KTX2/Basis texture descriptors for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
 | `obj` | OBJ import feature path |
@@ -161,29 +139,23 @@ frames. The shortest examples are `easy_model_viewer`, `camera_framing`,
 
 ## First scene
 
-```rust
-use scena::{
-    Assets, Color, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene, Transform,
-};
+```rust,no_run
+use scena::{Assets, Color, GeometryDesc, MaterialDesc, Renderer, Scene};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assets = Assets::new();
-    let cube = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let cube = assets.create_geometry(GeometryDesc::box_xyz(0.8, 0.5, 0.35));
     let material = assets.create_material(MaterialDesc::unlit(Color::BLUE));
 
-    let mut scene = Scene::new();
+    let (mut scene, camera) = Scene::with_default_camera()?;
     scene.mesh(cube, material).add()?;
-
-    let camera = scene.add_perspective_camera(
-        scene.root(),
-        PerspectiveCamera::standard(),
-        Transform::default(),
-    )?;
-    scene.set_active_camera(camera)?;
+    scene.frame_all_with_assets(camera, &assets)?;
 
     let mut renderer = Renderer::headless(320, 240)?;
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;
+    let capture = renderer.capture_rgba8(&scene, Default::default())?;
+    capture.write_png("first-scene.png")?;
 
     Ok(())
 }
@@ -222,6 +194,8 @@ the host receives structured results before drawing frames.
 - Convert units and coordinate systems explicitly.
 - Repair handedness and axis metadata before placement.
 - Snap objects by authored anchors and connectors without raw matrix math.
+- Declare recipe anchors, connector mates, group bounds, and inherited visual
+  states with persistent ids and a typed build-manifest mapping.
 - Render labels, helper geometry, layers, visibility masks, and helper-on-top views.
 - Use deterministic headless output for regression tests and generated documentation.
 
@@ -239,7 +213,7 @@ the host receives structured results before drawing frames.
 | Assets | glTF/GLB import, external buffers, cache/dedup/reload, source units, coordinate conversion, anchors, connectors, import-local lookup, retain policy, and stale-handle diagnostics |
 | Geometry | primitives, manual buffers, bounds, lines, wire/edge expansion, UV retention, CPU skinning, CPU morph targets, and instance sets |
 | Materials | unlit and metallic-roughness paths, texture descriptors, vertex colors, alpha modes, normal/occlusion/emissive/base-color slots, variants, ACES/sRGB output, and FXAA |
-| Rendering | headless CPU output, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, shadows, IBL, renderer-managed auto exposure, and release-lane proof artifacts |
+| Rendering | headless CPU output, typed recipe and conservatively attributed rendered diffs, deterministic semantic ID/depth/world-normal AOVs, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, shadows, IBL, renderer-managed auto exposure, and release-lane proof artifacts |
 | Easy viewer setup | projection-based `frame_bounds`, `add_studio_lighting`, matte `add_grid_floor`, world-to-screen projection, and authored connector mating |
 | Interaction | typed picking, hover/selection styling, cursor positions, platform-neutral controls, orbit focus from `FramingOutcome`, and independent hover/select/pointer-leave states |
 | Browser/WASM | wasm32 compile/package, browser WebGPU/WebGL2 proof lanes, attached-canvas probe paths, surface/context/device-loss event vocabulary, and size gates |

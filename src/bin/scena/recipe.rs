@@ -13,6 +13,12 @@ use verification::{RecipeVerificationInput, verify_recipe_expectations};
 
 #[path = "recipe/cad_inspection.rs"]
 mod cad_inspection;
+#[path = "recipe/capture_sequence.rs"]
+mod capture_sequence;
+#[path = "recipe/capture_shared.rs"]
+mod capture_shared;
+#[path = "recipe/semantic_aov.rs"]
+mod semantic_aov;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecipeRenderCommandArgs {
@@ -23,6 +29,47 @@ pub(crate) struct RecipeRenderCommandArgs {
     detail: bool,
     gpu: bool,
     max_imports: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecipeBuildCommandArgs {
+    recipe: PathBuf,
+    max_imports: Option<usize>,
+}
+
+pub(crate) fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, String> {
+    let args = RecipeBuildCommandArgs::parse(args)?;
+    let mut policy = scena::RecipeBuildPolicy::testing();
+    if let Some(max_imports) = args.max_imports {
+        policy = policy.with_max_imports(max_imports);
+    }
+    let recipe_text = match read_recipe_text(&args.recipe, &policy) {
+        Ok(text) => text,
+        Err(RecipeReadError::TooLarge(report)) => {
+            return json_outcome(
+                &report,
+                1,
+                "failed to serialize scene recipe validation report",
+            );
+        }
+        Err(RecipeReadError::Io(error)) => {
+            return Err(format!(
+                "failed to read recipe '{}': {error}",
+                args.recipe.display()
+            ));
+        }
+    };
+    let result = pollster::block_on(scena::SceneHostCore::build_recipe_manifest_json(
+        args.recipe.display().to_string(),
+        &recipe_text,
+        policy,
+    ));
+    let exit_code = if result.ok { 0 } else { 1 };
+    json_outcome(
+        &result,
+        exit_code,
+        "failed to serialize recipe build result",
+    )
 }
 
 pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
@@ -53,7 +100,7 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
     };
     let recipe_path = args.recipe.display().to_string();
     let build = if args.gpu {
-        pollster::block_on(scena::SceneHostCore::build_recipe_json_prefer_gpu(
+        pollster::block_on(scena::SceneHostCore::build_recipe_json_gpu(
             &recipe_path,
             &recipe_text,
             policy,
@@ -158,6 +205,14 @@ pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutco
     cad_inspection::run_recipe_inspect_cad_command(args)
 }
 
+pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, String> {
+    capture_sequence::run_recipe_capture_command(args)
+}
+
+pub(crate) fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, String> {
+    semantic_aov::run_recipe_aov_command(args)
+}
+
 impl RecipeRenderCommandArgs {
     fn parse(args: &[String]) -> Result<Self, String> {
         let Some(recipe) = args.first() else {
@@ -222,6 +277,38 @@ impl RecipeRenderCommandArgs {
     }
 }
 
+impl RecipeBuildCommandArgs {
+    fn parse(args: &[String]) -> Result<Self, String> {
+        let Some(recipe) = args.first() else {
+            return Err(recipe_build_usage());
+        };
+        let mut max_imports = None;
+        let mut index = 1;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--max-imports" => {
+                    max_imports = Some(parse_positive_usize(
+                        "--max-imports",
+                        flag_value(args, index, "--max-imports")?,
+                    )?);
+                    index += 2;
+                }
+                "--json" => index += 1,
+                flag => {
+                    return Err(format!(
+                        "unknown recipe build flag '{flag}'; {}",
+                        recipe_build_usage()
+                    ));
+                }
+            }
+        }
+        Ok(Self {
+            recipe: PathBuf::from(recipe),
+            max_imports,
+        })
+    }
+}
+
 fn parse_positive_usize(flag: &str, value: String) -> Result<usize, String> {
     let parsed = value
         .parse::<usize>()
@@ -241,4 +328,8 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, Strin
 fn recipe_render_usage() -> String {
     "usage: scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]"
         .to_owned()
+}
+
+fn recipe_build_usage() -> String {
+    "usage: scena recipe build <recipe.json> [--max-imports <n>]".to_owned()
 }

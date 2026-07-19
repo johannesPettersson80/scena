@@ -6,9 +6,12 @@ use crate::material_showcase::{
     MaterialShowcaseLighting, glass_background_target_bars, material_preset_showcase,
 };
 use crate::{
-    Aabb, Assets, Color, DirectionalLight, FramingOptions, GeometryDesc, LabelDesc, MaterialDesc,
-    Scene, Transform, Vec3,
+    Aabb, Assets, Color, DirectionalLight, FramingOptions, GeometryDesc, MaterialDesc, Scene,
+    Transform, Vec3,
 };
+
+const MATERIAL_PROOF_WIDTH: u32 = 512;
+const MATERIAL_PROOF_HEIGHT: u32 = 384;
 
 pub(in crate::browser_probe::workflows) async fn material_presets_scene()
 -> Result<WorkflowScene, JsValue> {
@@ -63,20 +66,6 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
                     preset.id
                 ))
             })?;
-        scene
-            .add_label(
-                scene.root(),
-                LabelDesc::new(preset.label)
-                    .with_color(Color::from_srgb_u8(225, 230, 238))
-                    .with_size(12.0),
-                Transform::at(preset.label_position()),
-            )
-            .map_err(|error| {
-                JsValue::from_str(&format!(
-                    "material-preset {} label failed: {error:?}",
-                    preset.id
-                ))
-            })?;
     }
     let needs_direct_light = material_preset_showcase()
         .iter()
@@ -99,10 +88,10 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
             camera,
             Aabb::new(Vec3::new(-1.18, -0.86, -0.24), Vec3::new(1.18, 0.82, 0.24)),
             FramingOptions::new()
-                .azimuth_elevation(-8.0, 6.0)
+                .azimuth_elevation(-18.0, 18.0)
                 .fill(0.82)
-                .margin_px(8.0)
-                .viewport(96, 96),
+                .margin_px(18.0)
+                .viewport(MATERIAL_PROOF_WIDTH, MATERIAL_PROOF_HEIGHT),
         )
         .map_err(|error| JsValue::from_str(&format!("material-preset frame failed: {error:?}")))?;
     let mut glass_pixel_probes = Vec::new();
@@ -112,7 +101,12 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
         };
         for (bar_index, bar) in glass_background_target_bars().iter().enumerate() {
             let Some(projected) = scene
-                .project_world_point(camera, target_position + bar.offset, 96, 96)
+                .project_world_point(
+                    camera,
+                    target_position + bar.offset,
+                    MATERIAL_PROOF_WIDTH,
+                    MATERIAL_PROOF_HEIGHT,
+                )
                 .map_err(|error| {
                     JsValue::from_str(&format!(
                         "material-preset {} glass probe projection failed: {error:?}",
@@ -126,8 +120,8 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
                 "preset": preset.id,
                 "bar_index": bar_index,
                 "expected": if bar.color == Color::WHITE { "bright" } else { "dark" },
-                "x_norm": round3(projected.x / 96.0),
-                "y_norm": round3(projected.y / 96.0),
+                "x_norm": round3(projected.x / MATERIAL_PROOF_WIDTH as f32),
+                "y_norm": round3(projected.y / MATERIAL_PROOF_HEIGHT as f32),
             }));
         }
     }
@@ -156,8 +150,10 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
             "webgl2_smooth_metal_sample_floor": 96,
             "glass_contract": "scene-color-ior-thickness-rough-blur-sorted-transparency",
             "glass_pixel_probes": glass_pixel_probes,
-            "glass_pixel_probe_viewport": [96, 96],
+            "glass_pixel_probe_viewport": [MATERIAL_PROOF_WIDTH, MATERIAL_PROOF_HEIGHT],
             "environment_path": "/demo/samples/environment/white_studio_03_1k.hdr",
+            "background": "neutral_gray",
+            "exposure_ev": 0.0,
         }),
     })
 }

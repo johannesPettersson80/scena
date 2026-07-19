@@ -1,6 +1,7 @@
 //! Asset fetchers, caches, glTF/GLB parsing, texture decoding, and asset handles.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
@@ -93,6 +94,7 @@ pub use texture::{
     TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
 };
 
+use self::fetch::TrackedAssetFetcher;
 use self::texture::{TextureCacheKey, validate_texture_source_format};
 
 new_key_type! {
@@ -160,16 +162,18 @@ pub struct Assets<F = DefaultAssetFetcher> {
     fetcher: F,
     retain_policy: RetainPolicy,
     storage: Arc<Mutex<AssetStorage>>,
+    storage_lock_acquisitions: Arc<AtomicU64>,
+    fetch_attempts: Arc<AtomicU64>,
     store_id: AssetStoreId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AssetStorage {
-    geometries: SlotMap<GeometryHandle, GeometryDesc>,
-    materials: SlotMap<MaterialHandle, MaterialDesc>,
+    geometries: SlotMap<GeometryHandle, Arc<GeometryDesc>>,
+    materials: SlotMap<MaterialHandle, Arc<MaterialDesc>>,
     material_sources: BTreeMap<MaterialHandle, AssetMaterialSource>,
-    textures: SlotMap<TextureHandle, TextureDesc>,
-    environments: SlotMap<EnvironmentHandle, EnvironmentDesc>,
+    textures: SlotMap<TextureHandle, Arc<TextureDesc>>,
+    environments: SlotMap<EnvironmentHandle, Arc<EnvironmentDesc>>,
     scene_lookup: BTreeMap<AssetPath, SceneAsset>,
     scene_load_telemetry: BTreeMap<AssetPath, load::AssetLoadTelemetry>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
@@ -216,6 +220,8 @@ impl<F> Assets<F> {
                 user_created_textures: std::collections::BTreeSet::new(),
                 user_created_environments: std::collections::BTreeSet::new(),
             })),
+            storage_lock_acquisitions: Arc::new(AtomicU64::new(0)),
+            fetch_attempts: Arc::new(AtomicU64::new(0)),
             store_id: AssetStoreId::next(),
         }
     }
@@ -230,6 +236,28 @@ impl<F> Assets<F> {
     /// Closes scena-api-ergonomics-reviewer F4.
     pub fn store_id(&self) -> AssetStoreId {
         self.store_id
+    }
+
+    /// Returns the cumulative number of times this store's mutex was acquired.
+    ///
+    /// This monotonic counter is intended for deterministic profiling. Take a
+    /// snapshot before and after an operation instead of resetting it; cloned
+    /// [`Assets`] values share both storage and this counter.
+    #[doc(hidden)]
+    pub fn storage_lock_acquisitions(&self) -> u64 {
+        self.storage_lock_acquisitions.load(Ordering::Relaxed)
+    }
+
+    /// Returns the cumulative number of source-byte fetch attempts made by
+    /// this asset store. Failed requests and glTF external resources count;
+    /// cache hits and embedded data do not.
+    #[doc(hidden)]
+    pub fn fetch_attempts(&self) -> u64 {
+        self.fetch_attempts.load(Ordering::Relaxed)
+    }
+
+    fn tracked_fetcher(&self) -> TrackedAssetFetcher<'_, F> {
+        TrackedAssetFetcher::new(&self.fetcher, &self.fetch_attempts)
     }
 
     /// Returns true when `handle` resolves to a live geometry descriptor in
@@ -270,7 +298,7 @@ impl<F> Assets<F> {
 
     pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle {
         let mut storage = self.storage();
-        let handle = storage.materials.insert(material.into());
+        let handle = storage.materials.insert(Arc::new(material.into()));
         storage
             .material_sources
             .insert(handle, AssetMaterialSource::user_created());
@@ -287,27 +315,29 @@ impl<F> Assets<F> {
         source_bytes: Option<&[u8]>,
     ) -> Result<TextureHandle, AssetError> {
         let mut storage = self.storage();
-        let handle = storage.textures.insert(TextureDesc::new_with_bytes(
-            path.into(),
-            color_space,
-            TextureSamplerDesc::default(),
-            source_format,
-            source_bytes,
-        )?);
+        let handle = storage
+            .textures
+            .insert(Arc::new(TextureDesc::new_with_bytes(
+                path.into(),
+                color_space,
+                TextureSamplerDesc::default(),
+                source_format,
+                source_bytes,
+            )?));
         storage.user_created_textures.insert(handle);
         Ok(handle)
     }
 
     pub fn create_geometry(&self, geometry: GeometryDesc) -> GeometryHandle {
         let mut storage = self.storage();
-        let handle = storage.geometries.insert(geometry);
+        let handle = storage.geometries.insert(Arc::new(geometry));
         storage.user_created_geometries.insert(handle);
         handle
     }
 
     pub fn create_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
         let mut storage = self.storage();
-        let handle = storage.environments.insert(environment);
+        let handle = storage.environments.insert(Arc::new(environment));
         storage.user_created_environments.insert(handle);
         handle
     }
@@ -340,6 +370,12 @@ impl<F> Assets<F> {
     /// let _ = assets.material(texture);
     /// ```
     pub fn material(&self, handle: MaterialHandle) -> Option<MaterialDesc> {
+        self.material_snapshot(handle)
+            .map(|snapshot| snapshot.as_ref().clone())
+    }
+
+    /// Returns an immutable shared snapshot of a material descriptor.
+    pub fn material_snapshot(&self, handle: MaterialHandle) -> Option<Arc<MaterialDesc>> {
         self.storage().materials.get(handle).cloned()
     }
 
@@ -361,6 +397,12 @@ impl<F> Assets<F> {
     /// let _ = assets.geometry(material);
     /// ```
     pub fn geometry(&self, handle: GeometryHandle) -> Option<GeometryDesc> {
+        self.geometry_snapshot(handle)
+            .map(|snapshot| snapshot.as_ref().clone())
+    }
+
+    /// Returns an immutable shared snapshot of a geometry descriptor.
+    pub fn geometry_snapshot(&self, handle: GeometryHandle) -> Option<Arc<GeometryDesc>> {
         self.storage().geometries.get(handle).cloned()
     }
 
@@ -396,25 +438,30 @@ impl<F> Assets<F> {
             let mut storage = self.storage();
             if let Some(handle) = storage.texture_lookup.get(&cache_key).copied() {
                 if source_bytes.is_some() {
-                    storage
-                        .textures
-                        .get_mut(handle)
-                        .ok_or_else(|| AssetError::Parse {
-                            path: path.as_str().to_string(),
-                            reason: "texture cache lookup pointed at a missing texture descriptor"
-                                .to_string(),
-                        })?
+                    let texture =
+                        storage
+                            .textures
+                            .get_mut(handle)
+                            .ok_or_else(|| AssetError::Parse {
+                                path: path.as_str().to_string(),
+                                reason:
+                                    "texture cache lookup pointed at a missing texture descriptor"
+                                        .to_string(),
+                            })?;
+                    Arc::make_mut(texture)
                         .decode_missing_pixels_from_bytes(source_bytes.as_deref())?;
                 }
                 handle
             } else {
-                let handle = storage.textures.insert(TextureDesc::new_with_bytes(
-                    path,
-                    color_space,
-                    cache_key.sampler,
-                    source_format,
-                    source_bytes.as_deref(),
-                )?);
+                let handle = storage
+                    .textures
+                    .insert(Arc::new(TextureDesc::new_with_bytes(
+                        path,
+                        color_space,
+                        cache_key.sampler,
+                        source_format,
+                        source_bytes.as_deref(),
+                    )?));
                 storage.texture_lookup.insert(cache_key, handle);
                 handle
             }
@@ -433,7 +480,30 @@ impl<F> Assets<F> {
     /// let _ = assets.texture(material);
     /// ```
     pub fn texture(&self, handle: TextureHandle) -> Option<TextureDesc> {
+        self.texture_snapshot(handle)
+            .map(|snapshot| snapshot.as_ref().clone())
+    }
+
+    /// Returns an immutable shared snapshot of a texture descriptor.
+    pub fn texture_snapshot(&self, handle: TextureHandle) -> Option<Arc<TextureDesc>> {
         self.storage().textures.get(handle).cloned()
+    }
+
+    pub(crate) fn texture_snapshots(
+        &self,
+        handles: impl IntoIterator<Item = TextureHandle>,
+    ) -> BTreeMap<TextureHandle, Arc<TextureDesc>> {
+        let storage = self.storage();
+        handles
+            .into_iter()
+            .filter_map(|handle| {
+                storage
+                    .textures
+                    .get(handle)
+                    .cloned()
+                    .map(|texture| (handle, texture))
+            })
+            .collect()
     }
 
     pub fn try_texture(&self, handle: TextureHandle) -> Result<TextureDesc, AssetError> {
@@ -453,6 +523,8 @@ impl<F> Assets<F> {
     }
 
     fn storage(&self) -> MutexGuard<'_, AssetStorage> {
+        self.storage_lock_acquisitions
+            .fetch_add(1, Ordering::Relaxed);
         self.storage
             .lock()
             .expect("asset storage mutex should not be poisoned")
@@ -477,7 +549,7 @@ impl<F> Assets<F> {
         if !texture_format_has_cpu_decoder(source_format) || path.as_str().starts_with("data:") {
             return Ok(None);
         }
-        match self.fetcher.fetch(path).await {
+        match self.tracked_fetcher().fetch(path).await {
             Ok(bytes) => Ok(Some(bytes)),
             Err(AssetError::NotFound { .. }) => {
                 warn_optional_texture_fetch_failed(path, "not found");
@@ -506,7 +578,7 @@ impl<F> Assets<F> {
 
         let image = self::texture::decode_browser_image_bitmap(&path, bytes).await?;
         if let Some(texture) = self.storage().textures.get_mut(handle) {
-            texture.set_browser_image(image);
+            Arc::make_mut(texture).set_browser_image(image);
         }
         Ok(())
     }
@@ -530,7 +602,7 @@ fn warn_optional_texture_fetch_failed(path: &AssetPath, reason: &str) {
 const fn texture_format_has_cpu_decoder(source_format: TextureSourceFormat) -> bool {
     matches!(
         source_format,
-        TextureSourceFormat::Png | TextureSourceFormat::Jpeg
+        TextureSourceFormat::Png | TextureSourceFormat::Jpeg | TextureSourceFormat::Webp
     ) || (matches!(source_format, TextureSourceFormat::Ktx2Basisu) && cfg!(feature = "ktx2"))
 }
 
@@ -549,5 +621,48 @@ impl From<&str> for AssetPath {
 impl From<String> for AssetPath {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn pf04_snapshot_cache_replacement_preserves_old_view_and_exposes_fresh_content() {
+        let assets = Assets::new();
+        let path = AssetPath::from("memory://snapshot-cache.png");
+        let descriptor = TextureDesc::new_with_bytes(
+            path,
+            TextureColorSpace::Srgb,
+            TextureSamplerDesc::default(),
+            TextureSourceFormat::Png,
+            None,
+        )
+        .expect("deferred PNG descriptor creates");
+        assert!(!descriptor.has_decoded_pixels());
+        let handle = assets.storage().textures.insert(Arc::new(descriptor));
+        let old = assets
+            .texture_snapshot(handle)
+            .expect("old snapshot resolves");
+
+        let source =
+            include_bytes!("../tests/assets/gltf/khronos/TextureTransformTest/Correct.png");
+        Arc::make_mut(
+            assets
+                .storage()
+                .textures
+                .get_mut(handle)
+                .expect("cached texture remains live"),
+        )
+        .decode_missing_pixels_from_bytes(Some(source))
+        .expect("cached texture decodes replacement pixels");
+        let fresh = assets
+            .texture_snapshot(handle)
+            .expect("fresh snapshot resolves");
+
+        assert!(!old.has_decoded_pixels());
+        assert!(fresh.has_decoded_pixels());
+        assert!(!Arc::ptr_eq(&old, &fresh));
     }
 }

@@ -535,10 +535,25 @@ fn require_markers(
         .unwrap_or(path)
         .display()
         .to_string();
-    let Ok(text) = fs::read_to_string(path) else {
+    let Ok(mut text) = fs::read_to_string(path) else {
         findings.push(Finding::new(rule, format!("{rel} must exist")));
         return;
     };
+    let relative_path = path.strip_prefix(root).unwrap_or(path);
+    if relative_path.extension().and_then(OsStr::to_str) == Some("rs")
+        && relative_path.file_name().and_then(OsStr::to_str) != Some("mod.rs")
+    {
+        let module_dir = relative_path.with_extension("");
+        for child in source_files(root)
+            .into_iter()
+            .filter(|candidate| candidate.starts_with(&module_dir))
+        {
+            if let Ok(child_text) = fs::read_to_string(root.join(child)) {
+                text.push('\n');
+                text.push_str(&child_text);
+            }
+        }
+    }
     for marker in markers {
         if !text.contains(marker) {
             findings.push(Finding::new(

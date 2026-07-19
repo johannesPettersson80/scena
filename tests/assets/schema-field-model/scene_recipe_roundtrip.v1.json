@@ -1,0 +1,30 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "geometries": [
+    {
+      "id": "box_geo",
+      "primitive": {
+        "kind": "box",
+        "size": [0.2, 0.2, 0.2]
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "box_mat",
+      "kind": "unlit",
+      "base_color": "#FFFFFF"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "box",
+      "geometry": "box_geo",
+      "material": "box_mat"
+    }
+  ],
+  "capture": {
+    "width": 320,
+    "height": 240
+  }
+}

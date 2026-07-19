@@ -6,7 +6,9 @@ use crate::scene::{ClippingPlane, SectionBox};
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
-use super::browser_readback::{BrowserReadbackPass, encode_browser_readback_pass};
+use super::browser_readback::{
+    BrowserReadbackPass, encode_browser_readback_pass, encode_texture_readback_copy,
+};
 use super::depth;
 use super::draw_common::{
     camera_position_uniform, identity_matrix, post_color_management_uniform, wgpu_clear_color,
@@ -51,16 +53,9 @@ impl GpuDeviceState {
                 .as_ref()
                 .is_some_and(|post| post::resources_match(post, target))
         {
-            resources.post = Some(post::create_resources(
-                &self.device,
-                target,
-                &resources.output_bind_group_layout,
-                &resources.material_bind_group_layout,
-                &resources.draw_bind_group_layout,
-                resources.texture_binding_mode,
-                resources.depth_compare,
-                Some(surface.config.format),
-            ));
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
         }
         let mut color_management = post_color_management_uniform(color_management, post_enabled);
         if let Some(reflections) = post_settings.reflections() {
@@ -93,147 +88,27 @@ impl GpuDeviceState {
                 clipping_control,
             }),
         );
-        let rebuild_depth_prepass = resources.depth_prepass.as_ref().and_then(|depth_prepass| {
-            (depth_prepass.depth_color_enabled() != post_settings.needs_depth_color())
-                .then(|| depth_prepass.reversed_z())
-        });
-        if let Some(reversed_z) = rebuild_depth_prepass {
-            resources.depth_prepass = Some(depth::create_depth_prepass_resources(
-                &self.device,
-                target,
-                reversed_z,
-                &resources.output_bind_group_layout,
-                &resources.draw_bind_group_layout,
-                post_settings.needs_depth_color(),
-                1,
-            ));
+        if resources
+            .depth_prepass
+            .as_ref()
+            .is_some_and(|depth_prepass| {
+                depth_prepass.depth_color_enabled() != post_settings.needs_depth_color()
+            })
+        {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
         }
         #[cfg(feature = "browser-probe")]
-        if let Some(readback) = resources.readback.as_ref() {
-            let mut encoder = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("scena.browser.proof_encoder"),
-                });
-            let mut draw_submissions = 0;
-            encode_shadow_caster_pass(
-                &mut encoder,
-                &resources.shadow_caster,
-                shadow::ShadowCasterPassInputs {
-                    vertex_buffer: &resources.vertex_buffer,
-                    instance_buffer: &resources.instance_buffer,
-                    draw_bind_group: &resources.draw_bind_group,
-                    draw_batches: &resources.draw_batches,
-                    instance_batches: &resources.instance_batches,
-                    identity_instance: resources.identity_instance,
-                    draw_submissions: &mut draw_submissions,
-                },
-            );
-            if let Some(depth_prepass) = &resources.depth_prepass {
-                depth::encode_depth_prepass(
-                    &mut encoder,
-                    depth_prepass,
-                    depth::DepthPrepassInputs {
-                        vertex_buffer: &resources.vertex_buffer,
-                        instance_buffer: &resources.instance_buffer,
-                        camera_bind_group: &resources.output_bind_group,
-                        draw_bind_group: &resources.draw_bind_group,
-                        draw_batches: &resources.draw_batches,
-                        instance_batches: &resources.instance_batches,
-                        identity_instance: resources.identity_instance,
-                        draw_submissions: &mut draw_submissions,
-                    },
-                );
-            }
-            let post_counts = if post_enabled {
-                let post_resources = resources.post.as_ref().expect("post resources exist");
-                encode_scene_color_passes(
-                    &mut encoder,
-                    SceneColorPasses {
-                        final_view: post::scene_view(post_resources),
-                        final_resolve_target: None,
-                        final_pipelines: post::scene_pipelines(post_resources, 1),
-                        depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
-                        vertex_buffer: &resources.vertex_buffer,
-                        instance_buffer: &resources.instance_buffer,
-                        output_bind_group: &resources.output_bind_group,
-                        opaque_output_bind_group: &resources.opaque_output_bind_group,
-                        draw_bind_group: &resources.draw_bind_group,
-                        material_resources: &resources.material_resources,
-                        draw_batches: &resources.draw_batches,
-                        instance_batches: &resources.instance_batches,
-                        identity_instance: resources.identity_instance,
-                        transmission_view: &resources.transmission.view,
-                        transmission_pipelines: resources.transmission.pipelines.refs(),
-                        force_scene_color_pass: post_settings.reflections().is_some(),
-                        clear_color: wgpu_clear_color(background_color),
-                        base_label: "scena.browser.proof_post_scene_pass",
-                        draw_submissions: &mut draw_submissions,
-                    },
-                );
-                let (output, counts) = post::encode_chain(
-                    &mut encoder,
-                    &self.device,
-                    &self.queue,
-                    post_resources,
-                    post_settings,
-                    resources.depth_prepass.as_ref(),
-                    &mut draw_submissions,
-                )?;
-                encode_overlay_passes(
-                    &mut encoder,
-                    OverlayPasses {
-                        view: post::output_view(post_resources, output),
-                        depth_view: None,
-                        output_bind_group: &resources.output_bind_group,
-                        draw_bind_group: &resources.draw_bind_group,
-                        stroke_resources: resources.strokes.as_ref(),
-                        stroke_pipeline: resources.strokes.as_ref().map(strokes::post_pipeline),
-                        label_resources: resources.labels.as_ref(),
-                        label_pipeline: resources.labels.as_ref().map(labels::post_pipeline),
-                        label: "scena.browser.proof_overlay_final_pass",
-                        draw_submissions: &mut draw_submissions,
-                    },
-                );
-                post::copy_output_to_buffer(
-                    &mut encoder,
-                    post_resources,
-                    output,
-                    &readback.buffer,
-                    readback.padded_bytes_per_row,
-                );
-                counts
-            } else {
-                encode_browser_readback_pass(
-                    &mut encoder,
-                    BrowserReadbackPass {
-                        target,
-                        readback,
-                        depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
-                        vertex_buffer: &resources.vertex_buffer,
-                        output_bind_group: &resources.output_bind_group,
-                        opaque_output_bind_group: &resources.opaque_output_bind_group,
-                        draw_bind_group: &resources.draw_bind_group,
-                        material_resources: &resources.material_resources,
-                        stroke_resources: resources.strokes.as_ref(),
-                        label_resources: resources.labels.as_ref(),
-                        draw_batches: &resources.draw_batches,
-                        instance_buffer: &resources.instance_buffer,
-                        instance_batches: &resources.instance_batches,
-                        identity_instance: resources.identity_instance,
-                        transmission: &resources.transmission,
-                        clear_color: wgpu_clear_color(background_color),
-                        draw_submissions: &mut draw_submissions,
-                    },
-                );
-                GpuPostPassCounts::default()
-            };
-            self.queue.submit(Some(encoder.finish()));
-            return Ok(GpuRenderResult {
-                submitted: true,
-                post_counts,
-                draw_submissions,
-            });
+        if let Some(result) = super::draw_surface_probe::render_browser_probe(
+            &self.device,
+            &self.queue,
+            resources,
+            target,
+            background_color,
+            post_settings,
+        )? {
+            return Ok(result);
         }
         let surface_output = match surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(output)
@@ -278,6 +153,41 @@ impl GpuDeviceState {
                     draw_batches: &resources.draw_batches,
                     instance_batches: &resources.instance_batches,
                     identity_instance: resources.identity_instance,
+                    draw_submissions: &mut draw_submissions,
+                },
+            );
+        }
+        let surface_readback = resources
+            .readback
+            .as_ref()
+            .filter(|_| surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC));
+        if !post_enabled
+            && surface_readback.is_none()
+            && let Some(readback) = resources.readback.as_ref()
+        {
+            // Encode the independent capture pass before the visible surface
+            // color pass. Both consume the prepared depth prepass; encoding
+            // capture after surface color can reuse depth written for the
+            // presented frame and reject every repeated fragment.
+            encode_browser_readback_pass(
+                &mut encoder,
+                BrowserReadbackPass {
+                    target,
+                    readback,
+                    depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
+                    vertex_buffer: &resources.vertex_buffer,
+                    instance_buffer: &resources.instance_buffer,
+                    output_bind_group: &resources.output_bind_group,
+                    opaque_output_bind_group: &resources.opaque_output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
+                    material_resources: &resources.material_resources,
+                    stroke_resources: resources.strokes.as_ref(),
+                    label_resources: resources.labels.as_ref(),
+                    draw_batches: &resources.draw_batches,
+                    instance_batches: &resources.instance_batches,
+                    identity_instance: resources.identity_instance,
+                    transmission: &resources.transmission,
+                    clear_color: wgpu_clear_color(background_color),
                     draw_submissions: &mut draw_submissions,
                 },
             );
@@ -340,13 +250,19 @@ impl GpuDeviceState {
         }
         let post_counts = if post_enabled {
             let post_resources = resources.post.as_ref().expect("post resources exist");
-            let bloom_fxaa_to_surface = post_settings
-                .uses_fxaa()
+            let renderer_readback = surface_readback
+                .is_none()
+                .then_some(resources.readback.as_ref())
+                .flatten();
+            let bloom_fxaa_to_surface = (renderer_readback.is_none() && post_settings.uses_fxaa())
                 .then(|| post_settings.bloom())
                 .flatten();
-            let render_fxaa_to_surface =
-                post_settings.uses_fxaa() && bloom_fxaa_to_surface.is_none();
-            let chain_settings = if bloom_fxaa_to_surface.is_some() {
+            let render_fxaa_to_surface = renderer_readback.is_none()
+                && post_settings.uses_fxaa()
+                && bloom_fxaa_to_surface.is_none();
+            let chain_settings = if renderer_readback.is_some() {
+                post_settings
+            } else if bloom_fxaa_to_surface.is_some() {
                 post_settings.without_bloom_and_fxaa()
             } else if render_fxaa_to_surface {
                 post_settings.without_fxaa()
@@ -355,13 +271,36 @@ impl GpuDeviceState {
             };
             let (output, mut counts) = post::encode_chain(
                 &mut encoder,
-                &self.device,
                 &self.queue,
                 post_resources,
                 chain_settings,
                 resources.depth_prepass.as_ref(),
                 &mut draw_submissions,
             )?;
+            if let Some(readback) = renderer_readback {
+                encode_overlay_passes(
+                    &mut encoder,
+                    OverlayPasses {
+                        view: post::output_view(post_resources, output),
+                        depth_view: None,
+                        output_bind_group: &resources.output_bind_group,
+                        draw_bind_group: &resources.draw_bind_group,
+                        stroke_resources: resources.strokes.as_ref(),
+                        stroke_pipeline: resources.strokes.as_ref().map(strokes::post_pipeline),
+                        label_resources: resources.labels.as_ref(),
+                        label_pipeline: resources.labels.as_ref().map(labels::post_pipeline),
+                        label: "scena.browser.capture_overlay_final_pass",
+                        draw_submissions: &mut draw_submissions,
+                    },
+                );
+                post::copy_output_to_buffer(
+                    &mut encoder,
+                    post_resources,
+                    output,
+                    &readback.buffer,
+                    readback.padded_bytes_per_row,
+                );
+            }
             if let Some(bloom_config) = bloom_fxaa_to_surface {
                 let Some(surface_bloom_fxaa_pipeline) =
                     post::surface_bloom_fxaa_pipeline(post_resources)
@@ -417,70 +356,64 @@ impl GpuDeviceState {
                     &mut draw_submissions,
                 );
             }
-            let stroke_pipeline = match resources.strokes.as_ref() {
-                Some(stroke_resources) => Some(strokes::surface_pipeline(stroke_resources).ok_or(
-                    RenderError::GpuResourcesNotPrepared {
-                        backend: target.backend,
+            if renderer_readback.is_none() {
+                let stroke_pipeline = match resources.strokes.as_ref() {
+                    Some(stroke_resources) => {
+                        Some(strokes::surface_pipeline(stroke_resources).ok_or(
+                            RenderError::GpuResourcesNotPrepared {
+                                backend: target.backend,
+                            },
+                        )?)
+                    }
+                    None => None,
+                };
+                let label_pipeline = match resources.labels.as_ref() {
+                    Some(label_resources) => {
+                        Some(labels::surface_pipeline(label_resources).ok_or(
+                            RenderError::GpuResourcesNotPrepared {
+                                backend: target.backend,
+                            },
+                        )?)
+                    }
+                    None => None,
+                };
+                encode_overlay_passes(
+                    &mut encoder,
+                    OverlayPasses {
+                        view: &surface_view,
+                        depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
+                        output_bind_group: &resources.output_bind_group,
+                        draw_bind_group: &resources.draw_bind_group,
+                        stroke_resources: resources.strokes.as_ref(),
+                        stroke_pipeline,
+                        label_resources: resources.labels.as_ref(),
+                        label_pipeline,
+                        label: "scena.browser.overlay_final_surface_pass",
+                        draw_submissions: &mut draw_submissions,
                     },
-                )?),
-                None => None,
-            };
-            let label_pipeline = match resources.labels.as_ref() {
-                Some(label_resources) => Some(labels::surface_pipeline(label_resources).ok_or(
-                    RenderError::GpuResourcesNotPrepared {
-                        backend: target.backend,
-                    },
-                )?),
-                None => None,
-            };
-            encode_overlay_passes(
-                &mut encoder,
-                OverlayPasses {
-                    view: &surface_view,
-                    depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
-                    output_bind_group: &resources.output_bind_group,
-                    draw_bind_group: &resources.draw_bind_group,
-                    stroke_resources: resources.strokes.as_ref(),
-                    stroke_pipeline,
-                    label_resources: resources.labels.as_ref(),
-                    label_pipeline,
-                    label: "scena.browser.overlay_final_surface_pass",
-                    draw_submissions: &mut draw_submissions,
-                },
-            );
+                );
+            }
+            if let Some(readback) = surface_readback {
+                encode_texture_readback_copy(
+                    &mut encoder,
+                    &surface_output.texture,
+                    readback,
+                    target,
+                );
+            }
             self.queue.submit(Some(encoder.finish()));
             surface_output.present();
             return Ok(GpuRenderResult {
                 submitted: true,
                 post_counts: counts,
                 draw_submissions,
+                ..GpuRenderResult::default()
             });
         } else {
             GpuPostPassCounts::default()
         };
-        if !post_enabled && let Some(readback) = resources.readback.as_ref() {
-            encode_browser_readback_pass(
-                &mut encoder,
-                BrowserReadbackPass {
-                    target,
-                    readback,
-                    depth_view: None,
-                    vertex_buffer: &resources.vertex_buffer,
-                    instance_buffer: &resources.instance_buffer,
-                    output_bind_group: &resources.output_bind_group,
-                    opaque_output_bind_group: &resources.opaque_output_bind_group,
-                    draw_bind_group: &resources.draw_bind_group,
-                    material_resources: &resources.material_resources,
-                    stroke_resources: resources.strokes.as_ref(),
-                    label_resources: resources.labels.as_ref(),
-                    draw_batches: &resources.draw_batches,
-                    instance_batches: &resources.instance_batches,
-                    identity_instance: resources.identity_instance,
-                    transmission: &resources.transmission,
-                    clear_color: wgpu_clear_color(background_color),
-                    draw_submissions: &mut draw_submissions,
-                },
-            );
+        if let Some(readback) = surface_readback {
+            encode_texture_readback_copy(&mut encoder, &surface_output.texture, readback, target);
         }
         self.queue.submit(Some(encoder.finish()));
         surface_output.present();
@@ -488,6 +421,7 @@ impl GpuDeviceState {
             submitted: true,
             post_counts,
             draw_submissions,
+            ..GpuRenderResult::default()
         })
     }
 }

@@ -1,8 +1,12 @@
 use crate::render::prepare::{PreparedInstanceSet, PreparedPrimitive, PreparedStrokeSegment};
+use crate::render::semantic_aov::GpuSemanticAttribution;
 
 use super::instancing::{self, InstanceDrawBatch};
 use super::strokes::StrokeDrawBatch;
-use super::vertices::{self, DrawUniformValue, PrimitiveDrawBatch, encode_vertices};
+use super::vertices::{
+    self, DrawUniformIndexMetrics, DrawUniformInterner, DrawUniformValue, PrimitiveDrawBatch,
+    encode_vertices_iter,
+};
 
 pub(super) struct EncodedDrawResources {
     pub(super) draw_batches: Vec<PrimitiveDrawBatch>,
@@ -12,6 +16,7 @@ pub(super) struct EncodedDrawResources {
     pub(super) instance_count: usize,
     pub(super) identity_instance: u32,
     pub(super) stroke_batches: Vec<StrokeDrawBatch>,
+    pub(super) draw_uniform_index_metrics: DrawUniformIndexMetrics,
 }
 
 pub(super) fn encode_retained_vertices(
@@ -20,13 +25,20 @@ pub(super) fn encode_retained_vertices(
 ) -> Vec<u8> {
     let retained_instance_primitives = retained_instances
         .iter()
-        .flat_map(|set| set.primitives().iter().cloned());
-    let all_retained_primitives = retained_primitives
-        .iter()
-        .cloned()
-        .chain(retained_instance_primitives)
-        .collect::<Vec<_>>();
-    encode_vertices(&all_retained_primitives)
+        .flat_map(|set| set.primitives().iter());
+    let primitive_count = retained_primitives.len().saturating_add(
+        retained_instances
+            .iter()
+            .map(|set| set.primitives().len())
+            .sum::<usize>(),
+    );
+    encode_vertices_iter(
+        retained_primitives
+            .iter()
+            .chain(retained_instance_primitives),
+        primitive_count,
+    )
+    .0
 }
 
 pub(super) fn retained_instance_buffer_capacity(
@@ -63,11 +75,22 @@ pub(super) fn encode_draw_resources(
     draw_primitives: &[PreparedPrimitive],
     draw_instances: &[PreparedInstanceSet],
     draw_strokes: &[PreparedStrokeSegment],
+    semantic_attribution: Option<&GpuSemanticAttribution>,
 ) -> EncodedDrawResources {
-    let (draw_batches, mut draw_uniforms) = vertices::encode_draw_batches(draw_primitives);
+    let mut interner = DrawUniformInterner::default();
+    let draw_batches = vertices::encode_draw_batches_indexed_with_semantics(
+        draw_primitives,
+        &mut interner,
+        semantic_attribution,
+    );
     let (instance_bytes, instance_batches, instance_count, identity_instance) =
-        instancing::encode_instance_draw_state(draw_instances, &mut draw_uniforms);
-    let stroke_batches = super::strokes::create_draw_batches(draw_strokes, &mut draw_uniforms);
+        instancing::encode_instance_draw_state_with_semantics(
+            draw_instances,
+            &mut interner,
+            semantic_attribution,
+        );
+    let stroke_batches = super::strokes::create_draw_batches(draw_strokes, &mut interner);
+    let (draw_uniforms, draw_uniform_index_metrics) = interner.finish();
     EncodedDrawResources {
         draw_batches,
         draw_uniforms,
@@ -76,5 +99,6 @@ pub(super) fn encode_draw_resources(
         instance_count,
         identity_instance,
         stroke_batches,
+        draw_uniform_index_metrics,
     }
 }

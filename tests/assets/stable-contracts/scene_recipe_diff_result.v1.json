@@ -1,0 +1,62 @@
+{
+  "schema": "scena.scene_recipe_diff_result.v1",
+  "equal": false,
+  "before": "before.recipe.json",
+  "after": "after.recipe.json",
+  "structural": {
+    "schema": "scena.scene_recipe_diff.v1",
+    "equal": false,
+    "numeric_tolerance": 0.000001,
+    "changes": [
+      {
+        "scope": "node",
+        "id": "machine",
+        "kind": "modified",
+        "fields": ["transform.translation[0]"]
+      }
+    ]
+  },
+  "visual": {
+    "aggregate": {
+      "schema": "scena.capture_baseline.v1",
+      "status": "failed"
+    },
+    "attribution": {
+      "summary": {
+        "changed_pixels": 128,
+        "attributed_pixels": 104,
+        "ambiguous_pixels": 20,
+        "unattributed_pixels": 4
+      },
+      "semantics": {
+        "anti_aliased_edges": "ambiguous",
+        "transparent_and_excluded_surfaces": "unattributed_or_ambiguous"
+      },
+      "regions": [
+        {
+          "classification": "attributed",
+          "reason": "same_persistent_identity",
+          "pixel_count": 104,
+          "before": {
+            "persistent_identity": {
+              "kind": "recipe_node",
+              "node_id": "machine"
+            }
+          },
+          "after": {
+            "persistent_identity": {
+              "kind": "recipe_node",
+              "node_id": "machine"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "execution": {
+    "renderer_constructions": 2,
+    "prepare_calls": 2,
+    "render_calls": 2,
+    "capture_constructions": 2
+  }
+}

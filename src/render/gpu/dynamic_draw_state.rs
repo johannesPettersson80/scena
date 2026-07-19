@@ -2,22 +2,64 @@ use super::instancing::INSTANCE_BYTE_LEN;
 use super::output;
 use super::resource_encoding::encode_draw_resources;
 use super::{GpuDeviceState, GpuPreparedResources};
-use crate::render::RasterTarget;
 use crate::render::prepare::{
     PreparedGpuLightUniform, PreparedInstanceSet, PreparedPrimitive, PreparedStrokeSegment,
 };
+use crate::render::{PrepareWorkCounter, RasterTarget};
+
+pub(in crate::render) struct DynamicDrawStateUpdate<'a> {
+    pub(in crate::render) target: RasterTarget,
+    pub(in crate::render) light_uniform: PreparedGpuLightUniform,
+    pub(in crate::render) light_from_world: [f32; 16],
+    pub(in crate::render) primitives: &'a [PreparedPrimitive],
+    pub(in crate::render) instances: &'a [PreparedInstanceSet],
+    pub(in crate::render) strokes: &'a [PreparedStrokeSegment],
+    pub(in crate::render) semantic_aov_capture_enabled: bool,
+    pub(in crate::render) label_quad_count: usize,
+    pub(in crate::render) work: Option<&'a PrepareWorkCounter>,
+}
 
 impl GpuDeviceState {
     pub(in crate::render) fn update_dynamic_draw_state(
         &mut self,
-        target: RasterTarget,
-        light_uniform: PreparedGpuLightUniform,
-        light_from_world: [f32; 16],
-        draw_primitives: &[PreparedPrimitive],
-        draw_instances: &[PreparedInstanceSet],
-        draw_strokes: &[PreparedStrokeSegment],
+        update: DynamicDrawStateUpdate<'_>,
     ) -> Result<(), &'static str> {
-        let encoded = encode_draw_resources(draw_primitives, draw_instances, draw_strokes);
+        let DynamicDrawStateUpdate {
+            target,
+            light_uniform,
+            light_from_world,
+            primitives: draw_primitives,
+            instances: draw_instances,
+            strokes: draw_strokes,
+            semantic_aov_capture_enabled,
+            label_quad_count,
+            work,
+        } = update;
+        let semantic_attribution = semantic_aov_capture_enabled
+            .then(|| {
+                crate::render::semantic_aov::build_gpu_semantic_attribution(
+                    draw_primitives,
+                    draw_instances,
+                    draw_strokes.len(),
+                    label_quad_count,
+                )
+            })
+            .transpose()
+            .map_err(|_| "semantic AOV palette exhausted")?;
+        let encoded = encode_draw_resources(
+            draw_primitives,
+            draw_instances,
+            draw_strokes,
+            semantic_attribution.as_ref(),
+        );
+        if let Some(work) = work {
+            work.record_draw_uniform_indexing(
+                encoded.draw_uniforms.len(),
+                encoded.draw_uniform_index_metrics.lookup_probes,
+                (encoded.draw_uniforms.len() as u64)
+                    .saturating_mul(output::DRAW_UNIFORM_ENTRY_STRIDE),
+            );
+        }
         let Some(resources) = self.resources.as_mut() else {
             return Err("no GPU resources");
         };
@@ -41,6 +83,11 @@ impl GpuDeviceState {
         resources.identity_instance = encoded.identity_instance;
         if let Some(strokes) = resources.strokes.as_mut() {
             strokes.batches = encoded.stroke_batches;
+        }
+        if let (Some(resources), Some(attribution)) =
+            (resources.semantic_aov.as_mut(), semantic_attribution)
+        {
+            super::semantic_aov::update_attribution(resources, attribution);
         }
         resources.light_uniform = light_uniform;
         resources.light_from_world = light_from_world;

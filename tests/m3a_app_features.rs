@@ -393,9 +393,32 @@ fn scene_import_clip_lookups_are_import_local_and_stale() {
             "asset": { "version": "2.0" },
             "nodes": [{ "name": "Root" }],
             "animations": [
-                { "name": "Spin" },
-                { "name": "Pulse" },
-                { "name": "Spin" }
+                {
+                    "name": "Spin",
+                    "samplers": [{ "input": 0, "output": 1 }],
+                    "channels": [{ "sampler": 0, "target": { "node": 0, "path": "translation" } }]
+                },
+                {
+                    "name": "Pulse",
+                    "samplers": [{ "input": 0, "output": 1 }],
+                    "channels": [{ "sampler": 0, "target": { "node": 0, "path": "translation" } }]
+                },
+                {
+                    "name": "Spin",
+                    "samplers": [{ "input": 0, "output": 1 }],
+                    "channels": [{ "sampler": 0, "target": { "node": 0, "path": "translation" } }]
+                }
+            ],
+            "buffers": [
+                { "byteLength": 16, "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAA==" }
+            ],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 4 },
+                { "buffer": 0, "byteOffset": 4, "byteLength": 12 }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 1, "type": "SCALAR" },
+                { "bufferView": 1, "componentType": 5126, "count": 1, "type": "VEC3" }
             ]
         }"#,
     ));
@@ -550,6 +573,8 @@ fn gltf_required_texture_transform_and_mesh_quantization_are_realized() {
                     "componentType": 5122,
                     "count": 3,
                     "type": "VEC3",
+                    "min": [-32767, -32767, 0],
+                    "max": [32767, 32767, 0],
                     "normalized": true
                 },
                 {
@@ -982,7 +1007,9 @@ fn gltf_loader_fetches_external_buffers_relative_to_scene_path() {
                         "bufferView": 0,
                         "componentType": 5126,
                         "count": 3,
-                        "type": "VEC3"
+                        "type": "VEC3",
+                        "min": [-0.5, -0.5, 0.0],
+                        "max": [0.5, 0.5, 0.0]
                     },
                     {
                         "bufferView": 1,
@@ -1070,7 +1097,9 @@ fn gltf_loader_preserves_multi_primitive_meshes_as_child_mesh_nodes() {
                     "bufferView": 0,
                     "componentType": 5126,
                     "count": 3,
-                    "type": "VEC3"
+                    "type": "VEC3",
+                    "min": [-0.5, -0.5, 0.0],
+                    "max": [0.5, 0.5, 0.0]
                 },
                 {
                     "bufferView": 1,
@@ -1226,11 +1255,11 @@ fn import_options_apply_gltf_node_transforms_and_source_units() {
             .expect("root exists")
             .transform()
             .translation,
-        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(100.0, 0.0, 0.0),
     );
     assert_vec3_near(
         scene.node(root).expect("root exists").transform().scale,
-        Vec3::new(0.02, 0.02, 0.02),
+        Vec3::new(2.0, 2.0, 2.0),
     );
     assert_vec3_near(
         scene
@@ -1238,7 +1267,32 @@ fn import_options_apply_gltf_node_transforms_and_source_units() {
             .expect("child exists")
             .transform()
             .translation,
-        Vec3::new(0.0, 0.5, 0.25),
+        Vec3::new(0.0, 50.0, 25.0),
+    );
+
+    let unit_root = import.roots()[0];
+    assert_ne!(unit_root, root);
+    assert_vec3_near(
+        scene
+            .node(unit_root)
+            .expect("centimeter import unit root exists")
+            .transform()
+            .scale,
+        Vec3::new(0.01, 0.01, 0.01),
+    );
+    assert_vec3_near(
+        scene
+            .world_transform(root)
+            .expect("root world transform resolves")
+            .translation,
+        Vec3::new(1.0, 0.0, 0.0),
+    );
+    assert_vec3_near(
+        scene
+            .world_transform(child)
+            .expect("child world transform resolves")
+            .translation,
+        Vec3::new(1.0, 1.0, 0.5),
     );
 
     let mut z_up_scene = Scene::new();
@@ -1358,7 +1412,9 @@ fn scene_import_exposes_named_pivots_and_diagnostic_overlays() {
                         "bufferView": 0,
                         "componentType": 5126,
                         "count": 3,
-                        "type": "VEC3"
+                        "type": "VEC3",
+                        "min": [-0.5, -0.5, 0.0],
+                        "max": [0.5, 0.5, 0.0]
                     },
                     {
                         "bufferView": 1,
@@ -1965,7 +2021,7 @@ fn minimal_glb_triangle_scene() -> Vec<u8> {
                 {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 0.0] }},
                 {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ],
             "materials": [

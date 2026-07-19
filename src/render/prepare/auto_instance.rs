@@ -4,7 +4,7 @@ use crate::material::MaterialKind;
 use crate::scene::{Scene, Vec3};
 
 use super::lighting::PreparedLights;
-use super::materials::validate_material_texture_handles;
+use super::materials::{PreparedMaterialTextures, validate_material_texture_handles};
 use super::primitives::append_geometry_primitives;
 use super::shadows;
 use super::transforms;
@@ -13,7 +13,7 @@ use super::types::{
     PreparedStrokeSegment, PrimitiveBakeParams, PrimitiveSinks,
 };
 use super::{PreparedEnvironmentLighting, draw_uniform_tint};
-use crate::render::{RasterTarget, camera::CameraProjection};
+use crate::render::{PrepareWorkCounter, RasterTarget, camera::CameraProjection};
 
 const MIN_AUTO_INSTANCE_GROUP_SIZE: usize = 4;
 
@@ -38,11 +38,13 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
     assets: Option<&Assets<F>>,
     origin_shift: Vec3,
     lights: &PreparedLights,
-    shadow_occluders: &[shadows::ShadowOccluder],
+    shadow_occluders: &shadows::ShadowOccluderSet,
+    shadow_visibility_cache: &shadows::ShadowVisibilityCache,
     camera_projection: Option<&CameraProjection>,
     backend_sampled_base_color_textures: &[TextureHandle],
     backend_material_slots: &[crate::assets::MaterialHandle],
     environment_lighting: PreparedEnvironmentLighting,
+    work: Option<&PrepareWorkCounter>,
     instances: &mut Vec<PreparedInstanceSet>,
     strokes: &mut Vec<PreparedStrokeSegment>,
 ) -> Result<Vec<crate::scene::NodeKey>, PrepareError> {
@@ -82,18 +84,20 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
         .filter(|group| group.candidates.len() >= MIN_AUTO_INSTANCE_GROUP_SIZE)
     {
         let source_node = group.candidates[0].node;
-        let geometry = assets
-            .geometry(group.geometry)
-            .ok_or(PrepareError::GeometryNotFound {
-                node: source_node,
-                geometry: group.geometry,
-            })?;
-        let material = assets
-            .material(group.material)
-            .ok_or(PrepareError::MaterialNotFound {
-                node: source_node,
-                material: group.material,
-            })?;
+        let geometry =
+            assets
+                .geometry_snapshot(group.geometry)
+                .ok_or(PrepareError::GeometryNotFound {
+                    node: source_node,
+                    geometry: group.geometry,
+                })?;
+        let material =
+            assets
+                .material_snapshot(group.material)
+                .ok_or(PrepareError::MaterialNotFound {
+                    node: source_node,
+                    material: group.material,
+                })?;
         if matches!(
             material.kind(),
             MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge
@@ -101,6 +105,7 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
             continue;
         }
         validate_material_texture_handles(source_node, group.material, &material, assets)?;
+        let material_textures = PreparedMaterialTextures::new(assets, &material);
 
         let mut retained = Vec::new();
         let mut instance_strokes = Vec::new();
@@ -108,10 +113,11 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
         append_geometry_primitives(
             GeometryPrimitiveSource {
                 node: source_node,
+                instance: None,
                 material_handle: group.material,
                 geometry: &geometry,
                 material: &material,
-                assets,
+                textures: &material_textures,
                 tint: None,
             },
             DeformationInputs::default(),
@@ -122,10 +128,12 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
                 origin_shift,
                 lights,
                 shadow_occluders,
+                shadow_visibility_cache,
                 camera_projection,
                 backend_sampled_base_color_textures,
                 backend_material_slots,
                 environment_lighting: environment_lighting.clone(),
+                work,
             },
             PrimitiveSinks {
                 primitives: &mut retained,

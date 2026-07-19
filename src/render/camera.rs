@@ -128,6 +128,28 @@ impl CameraProjection {
         }
     }
 
+    #[cfg_attr(not(feature = "scene-host"), allow(dead_code))]
+    pub(super) fn interpolation_weights(
+        &self,
+        vertices: [ProjectedVertex; 3],
+        affine: [f32; 3],
+    ) -> [f32; 3] {
+        if !matches!(self.camera, Camera::Perspective(_)) {
+            return affine;
+        }
+        let weighted = [
+            affine[0] / vertices[0].view_depth,
+            affine[1] / vertices[1].view_depth,
+            affine[2] / vertices[2].view_depth,
+        ];
+        let sum = weighted[0] + weighted[1] + weighted[2];
+        if !sum.is_finite() || sum.abs() <= f32::EPSILON {
+            affine
+        } else {
+            [weighted[0] / sum, weighted[1] / sum, weighted[2] / sum]
+        }
+    }
+
     pub(super) fn depth_buffer_for_camera_distance(&self, depth: f32) -> Option<f32> {
         if !depth.is_finite() {
             return None;

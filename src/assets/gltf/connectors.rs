@@ -68,6 +68,23 @@ impl SceneAssetConnector {
     pub(crate) fn invalid_reason(&self) -> Option<&str> {
         self.invalid_reason.as_deref()
     }
+
+    #[cfg(test)]
+    pub(crate) fn invalid_for_transaction_test(reason: &str) -> Self {
+        Self {
+            name: "invalid-connector".to_owned(),
+            kind: None,
+            allowed_mates: Vec::new(),
+            tags: BTreeSet::new(),
+            snap_tolerance: None,
+            clearance_hint: None,
+            roll_policy: ConnectorRollPolicy::Preserve,
+            polarity: None,
+            metadata: None,
+            transform: Transform::IDENTITY,
+            invalid_reason: Some(reason.to_owned()),
+        }
+    }
 }
 
 pub(super) fn parse_node_connectors(node: &Node) -> Vec<SceneAssetConnector> {

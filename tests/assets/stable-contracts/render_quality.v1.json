@@ -15,7 +15,7 @@
       "severity": "error",
       "region": {
         "kind": "label",
-        "handle": 4294967299,
+        "handle": 562950221856771,
         "rect_css_px": {
           "min_x": 12.0,
           "min_y": 20.0,
@@ -40,7 +40,7 @@
       "severity": "error",
       "region": {
         "kind": "line",
-        "handle": 4294967300,
+        "handle": 562950221856772,
         "rect_css_px": {
           "min_x": 20.0,
           "min_y": 36.0,
@@ -141,7 +141,7 @@
       "severity": "error",
       "region": {
         "kind": "reflection_target",
-        "handle": 4294967302,
+        "handle": 562950221856774,
         "rect_css_px": {
           "min_x": 42.0,
           "min_y": 28.0,
@@ -168,7 +168,7 @@
       "severity": "error",
       "region": {
         "kind": "area_light_shadow_target",
-        "handle": 4294967301,
+        "handle": 562950221856773,
         "rect_css_px": {
           "min_x": 32.0,
           "min_y": 64.0,
@@ -199,7 +199,7 @@
       "severity": "error",
       "region": {
         "kind": "contact_shadow_target",
-        "handle": 4294967302,
+        "handle": 562950221856774,
         "rect_css_px": {
           "min_x": 58.0,
           "min_y": 44.0,

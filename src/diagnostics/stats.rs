@@ -1,6 +1,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RendererStats {
     pub buffers: u64,
+    /// Live texture allocations owned by the active prepared GPU resource set.
+    /// Unlike `textures`, this is a physical backend allocation count.
+    pub gpu_textures: u64,
     pub textures: u64,
     pub materials: u64,
     pub material_bindings: u64,

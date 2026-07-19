@@ -288,7 +288,7 @@ async function renderWorkflowIntoCanvas(canvas, backend, workflow) {
   const rendererReadback =
     result.renderer_readback && result.renderer_readback.pixel_statistics;
   const useRendererReadback =
-    backend === "webgpu" && rendererReadback && rendererReadback.nonblack > 0;
+    rendererReadback && rendererReadback.nonblack > 0;
   const pixelStatistics = useRendererReadback ? rendererReadback : readback.pixels;
   result.workflow = workflow;
   result.pixels = pixelStatistics;
@@ -840,9 +840,9 @@ window.scenaViewerMobileA11yProbe = async function scenaViewerMobileA11yProbe() 
 
 function createCanvas(backend, workflow = "triangle") {
   const canvas = document.createElement("canvas");
-  const squareProofSize = workflow === "pbr-material-presets" ? 96 : 64;
-  canvas.width = squareProofSize;
-  canvas.height = squareProofSize;
+  const materialProof = workflow === "pbr-material-presets";
+  canvas.width = materialProof ? 512 : 64;
+  canvas.height = materialProof ? 384 : 64;
   canvas.dataset.backend = backend;
   canvas.dataset.workflow = workflow;
   document.body.appendChild(canvas);
@@ -1135,7 +1135,7 @@ async function runProbe(backend, workflow, render) {
   const rendererReadback =
     result.renderer_readback && result.renderer_readback.pixel_statistics;
   const useRendererReadback =
-    backend === "webgpu" && rendererReadback && rendererReadback.nonblack > 0;
+    rendererReadback && rendererReadback.nonblack > 0;
   const pixelStatistics = useRendererReadback ? rendererReadback : readback.pixels;
   result.workflow = workflow;
   result.canvas_output_color_space = probeCanvasOutputColorSpace(backend, canvas);
@@ -1168,9 +1168,22 @@ async function runProbe(backend, workflow, render) {
     result.benchmark_metrics &&
     result.benchmark_metrics.idle_render_skipped === true &&
     result.benchmark_metrics.high_instance_primitives > 0;
+  const parityOk =
+    backend !== "webgl2" ||
+    workflow !== "triangle" ||
+    (result.parity &&
+      result.parity.schema === "scena.m6.cpu_webgl2_parity.v1" &&
+      result.parity.status === "passed" &&
+      result.parity.cpu_frame &&
+      result.parity.cpu_frame.source === "renderer-owned-cpu-frame" &&
+      result.parity.gpu_frame &&
+      result.parity.gpu_frame.source === "renderer-owned-gpu-copy" &&
+      result.parity.known_bad_mutation &&
+      result.parity.known_bad_mutation.rejected === true);
   result.status =
     result.draw_calls > 0 &&
     result.gpu_submissions > 0 &&
+    parityOk &&
     (benchmarkOk || (result.pixels && result.pixels.nonblack > 0))
       ? "passed"
       : "failed";

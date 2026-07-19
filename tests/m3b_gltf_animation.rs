@@ -90,6 +90,13 @@ fn mixer_controls_rebind_translation_channels_to_import_local_nodes() {
             .expect("first animated node exists")
             .transform()
             .translation,
+        Vec3::new(0.5, 0.0, 0.0),
+    );
+    assert_vec3_near(
+        scene
+            .world_transform(first_target)
+            .expect("first animated world transform resolves")
+            .translation,
         Vec3::new(0.005, 0.0, 0.0),
     );
     assert_vec3_near(
@@ -113,6 +120,13 @@ fn mixer_controls_rebind_translation_channels_to_import_local_nodes() {
             .expect("first animated node exists")
             .transform()
             .translation,
+        Vec3::new(0.5, 0.0, 0.0),
+    );
+    assert_vec3_near(
+        scene
+            .world_transform(first_target)
+            .expect("paused animated world transform resolves")
+            .translation,
         Vec3::new(0.005, 0.0, 0.0),
     );
 
@@ -127,6 +141,13 @@ fn mixer_controls_rebind_translation_channels_to_import_local_nodes() {
             .node(first_target)
             .expect("first animated node exists")
             .transform()
+            .translation,
+        Vec3::new(1.0, 0.0, 0.0),
+    );
+    assert_vec3_near(
+        scene
+            .world_transform(first_target)
+            .expect("seeked animated world transform resolves")
             .translation,
         Vec3::new(0.01, 0.0, 0.0),
     );
@@ -278,16 +299,17 @@ fn gltf_animation_supports_rotation_scale_weights_and_normalizes_quaternions() {
     let weighted = import.node("Weighted").expect("weighted node resolves");
     let clip = import.clip("Targets").expect("targets clip resolves");
 
+    let channels = clip
+        .channels()
+        .iter()
+        .map(|channel| (channel.target_node(), channel.target()))
+        .collect::<Vec<_>>();
+    assert_eq!(channels[0], (rotating, AnimationTarget::Rotation));
+    assert_eq!(channels[1], (scaling, AnimationTarget::Scale));
+    assert_eq!(channels[2].1, AnimationTarget::Weights);
     assert_eq!(
-        clip.channels()
-            .iter()
-            .map(|channel| (channel.target_node(), channel.target()))
-            .collect::<Vec<_>>(),
-        vec![
-            (rotating, AnimationTarget::Rotation),
-            (scaling, AnimationTarget::Scale),
-            (weighted, AnimationTarget::Weights),
-        ]
+        channels[2].0, weighted,
+        "a single-primitive morph mesh keeps the source node as its renderable"
     );
 
     let mixer = scene
@@ -318,6 +340,12 @@ fn gltf_animation_supports_rotation_scale_weights_and_normalizes_quaternions() {
             .transform()
             .scale,
         Vec3::new(2.0, 3.0, 4.0),
+    );
+    assert_eq!(
+        scene
+            .morph_weights(channels[2].0)
+            .expect("weight channel targets morphable renderable"),
+        &[1.0]
     );
 }
 
@@ -862,7 +890,7 @@ fn morph_weight_gltf() -> String {
             { "buffer": 0, "byteOffset": 86, "byteLength": 8 }
         ],
         "accessors": [
-            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 0.0] },
             { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" },
             { "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC3" },
             { "bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR" },
@@ -923,7 +951,7 @@ fn morph_normal_gltf() -> String {
             { "buffer": 0, "byteOffset": 114, "byteLength": 36 }
         ],
         "accessors": [
-            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 0.0] },
             { "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3" },
             { "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" },
             { "bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC3" },
@@ -1082,7 +1110,7 @@ fn skinned_hierarchy_gltf() -> String {
             { "buffer": 0, "byteOffset": 186, "byteLength": 24 }
         ],
         "accessors": [
-            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.0, 0.0] },
             { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" },
             { "bufferView": 2, "componentType": 5123, "count": 3, "type": "VEC4" },
             { "bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC4" },
@@ -1139,7 +1167,18 @@ fn animated_targets_gltf() -> String {
             { "name": "Root", "children": [1, 2, 3] },
             { "name": "Rotating" },
             { "name": "Scaling" },
-            { "name": "Weighted" }
+            { "name": "Weighted", "mesh": 0 }
+        ],
+        "meshes": [
+            {
+                "primitives": [
+                    {
+                        "attributes": { "POSITION": 4 },
+                        "targets": [ { "POSITION": 5 } ]
+                    }
+                ],
+                "weights": [0.0]
+            }
         ],
         "animations": [
             {
@@ -1157,19 +1196,23 @@ fn animated_targets_gltf() -> String {
             }
         ],
         "buffers": [
-            { "byteLength": 72, "uri": "targets.bin" }
+            { "byteLength": 208, "uri": "targets.bin" }
         ],
         "bufferViews": [
             { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
-            { "buffer": 0, "byteOffset": 8, "byteLength": 32 },
-            { "buffer": 0, "byteOffset": 40, "byteLength": 24 },
-            { "buffer": 0, "byteOffset": 64, "byteLength": 8 }
+            { "buffer": 0, "byteOffset": 8, "byteLength": 96 },
+            { "buffer": 0, "byteOffset": 104, "byteLength": 24 },
+            { "buffer": 0, "byteOffset": 128, "byteLength": 8 },
+            { "buffer": 0, "byteOffset": 136, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 172, "byteLength": 36 }
         ],
         "accessors": [
             { "bufferView": 0, "componentType": 5126, "count": 2, "type": "SCALAR" },
-            { "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC4" },
+            { "bufferView": 1, "componentType": 5126, "count": 6, "type": "VEC4" },
             { "bufferView": 2, "componentType": 5126, "count": 2, "type": "VEC3" },
-            { "bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR" }
+            { "bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR" },
+            { "bufferView": 4, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 0.0] },
+            { "bufferView": 5, "componentType": 5126, "count": 3, "type": "VEC3" }
         ]
     }"#
     .to_string()
@@ -1179,11 +1222,21 @@ fn animated_targets_buffer() -> Vec<u8> {
     let mut bytes = Vec::new();
     for value in [
         0.0_f32, 1.0, // input times
-        0.0, 0.0, 0.0, 1.0, // first rotation
-        0.0, 0.0, 2.0, 0.0, // second rotation deliberately non-normalized
+        0.0, 0.0, 0.0, 0.0, // first rotation in tangent
+        0.0, 0.0, 0.0, 1.0, // first rotation value
+        0.0, 0.0, 0.0, 0.0, // first rotation out tangent
+        0.0, 0.0, 0.0, 0.0, // second rotation in tangent
+        0.0, 0.0, 2.0, 0.0, // second rotation value, deliberately non-normalized
+        0.0, 0.0, 0.0, 0.0, // second rotation out tangent
         1.0, 1.0, 1.0, // first scale
         2.0, 3.0, 4.0, // second scale
         0.0, 1.0, // weights
+        0.0, 0.0, 0.0, // position 0
+        1.0, 0.0, 0.0, // position 1
+        0.0, 1.0, 0.0, // position 2
+        0.0, 0.0, 0.0, // morph delta 0
+        0.0, 0.0, 0.0, // morph delta 1
+        0.0, 0.0, 1.0, // morph delta 2
     ] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }

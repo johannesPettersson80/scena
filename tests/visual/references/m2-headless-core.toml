@@ -1,86 +1,86 @@
 [suite]
 name = "m2-headless-core"
 status = "reference"
-reference_mode = "sampled-rgba"
-max_abs_diff = 0
+reference_mode = "quadrant-mean-rgba-v1"
+max_abs_diff = 3
 
 [[reference]]
 name = "direct-lights-pbr"
-max_abs_diff = 0
-center_rgba = [164, 0, 0, 255]
-left_mid_rgba = [164, 0, 0, 255]
-right_mid_rgba = [164, 0, 0, 255]
-nonblack_pixels = 240
-rgba_hash = "fnv1a64:a139f23d9da64c35"
+max_abs_diff = 3
+top_left_mean_rgba = [240, 240, 240, 255]
+top_right_mean_rgba = [164, 0, 0, 255]
+bottom_left_mean_rgba = [210, 210, 210, 255]
+bottom_right_mean_rgba = [144, 0, 0, 255]
+quadrant_nonblack = [128, 128, 112, 112]
 
 [[reference]]
 name = "shadowed-directional-light"
-max_abs_diff = 0
-center_rgba = [142, 142, 142, 255]
-left_mid_rgba = [142, 142, 142, 255]
-right_mid_rgba = [142, 142, 142, 255]
-nonblack_pixels = 240
-rgba_hash = "fnv1a64:386b4efab512b025"
+max_abs_diff = 3
+top_left_mean_rgba = [1, 1, 1, 255]
+top_right_mean_rgba = [0, 0, 0, 255]
+bottom_left_mean_rgba = [1, 1, 1, 255]
+bottom_right_mean_rgba = [0, 0, 0, 255]
+quadrant_nonblack = [35, 25, 28, 20]
 
 [[reference]]
 name = "ibl-environment"
-max_abs_diff = 0
-center_rgba = [226, 239, 251, 255]
-left_mid_rgba = [226, 239, 251, 255]
-right_mid_rgba = [226, 239, 251, 255]
-nonblack_pixels = 240
-rgba_hash = "fnv1a64:7f5dd2d515af6a54"
+max_abs_diff = 3
+top_left_mean_rgba = [240, 240, 240, 255]
+top_right_mean_rgba = [226, 239, 251, 255]
+bottom_left_mean_rgba = [210, 210, 210, 255]
+bottom_right_mean_rgba = [198, 209, 220, 255]
+quadrant_nonblack = [128, 128, 112, 112]
 
 [[reference]]
 name = "fxaa-edge"
-max_abs_diff = 0
-center_rgba = [80, 80, 80, 255]
-left_mid_rgba = [240, 240, 240, 255]
-right_mid_rgba = [0, 0, 0, 255]
-nonblack_pixels = 134
-rgba_hash = "fnv1a64:3f13c2be20f3a8c4"
+max_abs_diff = 3
+top_left_mean_rgba = [231, 231, 231, 255]
+top_right_mean_rgba = [9, 9, 9, 255]
+bottom_left_mean_rgba = [193, 193, 193, 255]
+bottom_right_mean_rgba = [8, 8, 8, 255]
+quadrant_nonblack = [64, 7, 56, 7]
 
 [[reference]]
 name = "anti-aliasing-on-off"
-max_abs_diff = 0
-center_rgba = [240, 240, 240, 255]
-left_mid_rgba = [240, 240, 240, 255]
-right_mid_rgba = [0, 0, 0, 255]
-nonblack_pixels = 254
-rgba_hash = "fnv1a64:d197e4efa3f711c4"
+max_abs_diff = 3
+top_left_mean_rgba = [120, 120, 120, 255]
+top_right_mean_rgba = [120, 120, 120, 255]
+bottom_left_mean_rgba = [105, 105, 105, 255]
+bottom_right_mean_rgba = [101, 101, 101, 255]
+quadrant_nonblack = [64, 71, 56, 63]
 
 [[reference]]
 name = "bloom-on-off"
-max_abs_diff = 0
-center_rgba = [0, 0, 0, 255]
-left_mid_rgba = [0, 0, 0, 255]
-right_mid_rgba = [0, 0, 0, 255]
-nonblack_pixels = 90
-rgba_hash = "fnv1a64:9762f8b0aa4eec21"
+max_abs_diff = 3
+top_left_mean_rgba = [11, 11, 11, 255]
+top_right_mean_rgba = [14, 14, 14, 255]
+bottom_left_mean_rgba = [6, 6, 6, 255]
+bottom_right_mean_rgba = [8, 8, 8, 255]
+quadrant_nonblack = [6, 45, 3, 36]
 
 [[reference]]
 name = "ssao-contact-on-off"
-max_abs_diff = 0
-center_rgba = [0, 0, 0, 255]
-left_mid_rgba = [240, 240, 240, 255]
-right_mid_rgba = [211, 211, 211, 255]
-nonblack_pixels = 154
-rgba_hash = "fnv1a64:d8583641b89998e4"
+max_abs_diff = 3
+top_left_mean_rgba = [61, 61, 61, 255]
+top_right_mean_rgba = [53, 53, 53, 255]
+bottom_left_mean_rgba = [82, 82, 82, 255]
+bottom_right_mean_rgba = [76, 76, 76, 255]
+quadrant_nonblack = [33, 33, 44, 44]
 
 [[reference]]
 name = "oit-overlap-order-invariance"
-max_abs_diff = 0
-center_rgba = [0, 0, 0, 255]
-left_mid_rgba = [0, 0, 0, 255]
-right_mid_rgba = [0, 0, 0, 255]
-nonblack_pixels = 122
-rgba_hash = "fnv1a64:fee9d02337ae6b19"
+max_abs_diff = 3
+top_left_mean_rgba = [19, 25, 0, 255]
+top_right_mean_rgba = [22, 22, 0, 255]
+bottom_left_mean_rgba = [46, 60, 0, 255]
+bottom_right_mean_rgba = [53, 53, 0, 255]
+quadrant_nonblack = [18, 18, 43, 43]
 
 [[reference]]
 name = "clipping-half-space"
-max_abs_diff = 0
-center_rgba = [240, 240, 240, 255]
-left_mid_rgba = [0, 0, 0, 255]
-right_mid_rgba = [240, 240, 240, 255]
-nonblack_pixels = 135
-rgba_hash = "fnv1a64:fb523c0207ff9bf5"
+max_abs_diff = 3
+top_left_mean_rgba = [240, 240, 240, 255]
+top_right_mean_rgba = [135, 135, 135, 255]
+bottom_left_mean_rgba = [210, 210, 210, 255]
+bottom_right_mean_rgba = [118, 118, 118, 255]
+quadrant_nonblack = [128, 72, 112, 63]

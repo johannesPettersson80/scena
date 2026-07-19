@@ -2,7 +2,6 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io::Cursor;
 
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 use super::CaptureError;
@@ -65,6 +64,15 @@ pub(super) fn write_png(path: impl AsRef<Path>, bytes: Vec<u8>) -> Result<(), Ca
     std::fs::write(path, bytes).map_err(|error| CapturePngError::Io {
         path: path.display().to_string(),
         reason: error.to_string(),
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(super) fn write_png(path: impl AsRef<Path>, _bytes: Vec<u8>) -> Result<(), CapturePngError> {
+    Err(CapturePngError::Io {
+        path: path.as_ref().display().to_string(),
+        reason: "filesystem PNG writing is unsupported on wasm32; use to_png_bytes() or the browser capture API"
+            .to_owned(),
     })
 }
 

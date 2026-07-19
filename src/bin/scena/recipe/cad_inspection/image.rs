@@ -4,6 +4,10 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
+use crate::scena_recipe::capture_shared::{
+    RgbaFrameRef, compose_contact_sheet_rgba8, write_png_rgba8,
+};
+
 #[derive(Debug, Clone)]
 pub(super) struct RgbaImage {
     width: u32,
@@ -135,31 +139,18 @@ pub(super) fn postprocess_json(metrics: PostprocessMetrics, width: u32, height: 
 }
 
 pub(super) fn write_contact_sheet(images: &[RgbaImage], path: &Path) -> Result<(), String> {
-    let first = images
-        .first()
-        .ok_or_else(|| "contact sheet requires at least one image".to_owned())?;
-    let tile_width = first.width;
-    let tile_height = first.height;
-    let width = tile_width * images.len() as u32;
-    let height = tile_height;
-    let mut sheet = vec![10_u8; (width * height * 4) as usize];
-    for alpha in sheet.chunks_exact_mut(4).map(|pixel| &mut pixel[3]) {
-        *alpha = 255;
-    }
-    for (tile, image) in images.iter().enumerate() {
-        if image.width != tile_width || image.height != tile_height {
-            return Err("contact sheet images must share dimensions".to_owned());
-        }
-        let x_offset = tile as u32 * tile_width;
-        for y in 0..tile_height {
-            for x in 0..tile_width {
-                let src = ((y * tile_width + x) * 4) as usize;
-                let dst = ((y * width + x + x_offset) * 4) as usize;
-                sheet[dst..dst + 4].copy_from_slice(&image.rgba8[src..src + 4]);
-            }
-        }
-    }
-    write_png_rgba8(path, width, height, &sheet)
+    let frames = images
+        .iter()
+        .map(|image| RgbaFrameRef {
+            width: image.width,
+            height: image.height,
+            rgba8: &image.rgba8,
+        })
+        .collect::<Vec<_>>();
+    let columns = u32::try_from(frames.len())
+        .map_err(|_| "CAD contact sheet frame count exceeds u32".to_owned())?;
+    let sheet = compose_contact_sheet_rgba8(&frames, columns, [10, 10, 10, 255])?;
+    write_png_rgba8(path, sheet.width, sheet.height, &sheet.rgba8)
 }
 
 fn foreground_mask(image: &RgbaImage) -> Vec<bool> {
@@ -273,22 +264,4 @@ fn read_png_rgba8(path: &Path) -> Result<RgbaImage, String> {
         height: info.height,
         rgba8,
     })
-}
-
-fn write_png_rgba8(path: &Path, width: u32, height: u32, rgba8: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("failed to create '{}': {error}", parent.display()))?;
-    }
-    let file = fs::File::create(path)
-        .map_err(|error| format!("failed to create PNG '{}': {error}", path.display()))?;
-    let mut encoder = png::Encoder::new(file, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder
-        .write_header()
-        .map_err(|error| format!("failed to write PNG header '{}': {error}", path.display()))?;
-    writer
-        .write_image_data(rgba8)
-        .map_err(|error| format!("failed to write PNG '{}': {error}", path.display()))
 }

@@ -29,13 +29,13 @@ fn log_texture_step(path: &AssetPath, label: &str, start_ms: f64) -> f64 {
 #[path = "texture_image_decode.rs"]
 mod texture_image_decode;
 #[path = "texture_ktx2.rs"]
-mod texture_ktx2;
+pub(super) mod texture_ktx2;
 #[path = "texture_limits.rs"]
 mod texture_limits;
 #[path = "texture_source.rs"]
 mod texture_source;
 
-use texture_image_decode::{decode_jpeg_rgba8, decode_png_rgba8};
+use texture_image_decode::{decode_jpeg_rgba8, decode_png_rgba8, decode_webp_rgba8};
 use texture_ktx2::decode_ktx2_basisu_rgba8;
 #[cfg(all(
     feature = "ktx2",
@@ -296,28 +296,51 @@ impl TextureDesc {
         &mut self,
         source_bytes: Option<&[u8]>,
     ) -> Result<(), AssetError> {
-        if let Some(bytes) = source_bytes {
-            self.provenance = AssetProvenance::from_source_bytes(self.path.clone(), bytes);
-        }
-        #[cfg(target_arch = "wasm32")]
-        if browser_native_decode_format(self.source_format) {
-            if self.encoded_source_bytes.is_none() {
-                self.encoded_source_bytes =
-                    resolve_texture_source_bytes(&self.path, self.source_format, source_bytes)?
-                        .map(Arc::from);
+        let Some(source_bytes) = source_bytes else {
+            return Ok(());
+        };
+        let incoming_provenance =
+            AssetProvenance::from_source_bytes(self.path.clone(), source_bytes);
+        if self.has_source_payload() {
+            if self.provenance != incoming_provenance {
+                return Err(AssetError::Parse {
+                    path: self.path.as_str().to_string(),
+                    reason: "texture cache identity collision: incoming source bytes do not match \
+                             the immutable provenance of the already-decoded pixels"
+                        .to_string(),
+                });
             }
             return Ok(());
         }
-        if self.pixels.is_none() {
-            self.pixels = decode_texture_pixels(
-                &self.path,
-                self.color_space,
-                self.source_format,
-                source_bytes,
-            )?
-            .map(Arc::new);
+        #[cfg(target_arch = "wasm32")]
+        if browser_native_decode_format(self.source_format) {
+            self.encoded_source_bytes = Some(Arc::from(source_bytes));
+            self.provenance = incoming_provenance;
+            return Ok(());
         }
+        let pixels = decode_texture_pixels(
+            &self.path,
+            self.color_space,
+            self.source_format,
+            Some(source_bytes),
+        )?
+        .map(Arc::new);
+        self.pixels = pixels;
+        self.provenance = incoming_provenance;
         Ok(())
+    }
+
+    fn has_source_payload(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.pixels.is_some()
+                || self.encoded_source_bytes.is_some()
+                || self.browser_image.is_some()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.pixels.is_some()
+        }
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -510,7 +533,7 @@ fn decode_texture_pixels(
     let pixels = match source_format {
         TextureSourceFormat::Png => decode_png_rgba8(path, &bytes).map(Some),
         TextureSourceFormat::Jpeg => decode_jpeg_rgba8(path, &bytes).map(Some),
-        TextureSourceFormat::Webp => Ok(None),
+        TextureSourceFormat::Webp => decode_webp_rgba8(path, &bytes).map(Some),
         TextureSourceFormat::Ktx2Basisu => {
             decode_ktx2_basisu_rgba8(path, &bytes, color_space).map(Some)
         }

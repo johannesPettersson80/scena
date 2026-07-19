@@ -2,6 +2,9 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
+pub(super) use crate::scena_recipe::capture_sequence::view::subject_bounds;
+use crate::scena_recipe::capture_sequence::view::{CanonicalView, SubjectBounds};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ViewKind {
     BroadFace,
@@ -15,12 +18,6 @@ pub(super) struct CameraSpec {
     pub(super) target: scena::Vec3,
     pub(super) up: scena::Vec3,
     pub(super) fov_degrees: f64,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct SubjectBounds {
-    pub(super) min: scena::Vec3,
-    pub(super) max: scena::Vec3,
 }
 
 impl ViewKind {
@@ -39,49 +36,6 @@ impl ViewKind {
             Self::Overview => "diagonal overview for silhouette and depth context",
         }
     }
-}
-
-impl SubjectBounds {
-    fn union(self, other: Self) -> Self {
-        Self {
-            min: scena::Vec3::new(
-                self.min.x.min(other.min.x),
-                self.min.y.min(other.min.y),
-                self.min.z.min(other.min.z),
-            ),
-            max: scena::Vec3::new(
-                self.max.x.max(other.max.x),
-                self.max.y.max(other.max.y),
-                self.max.z.max(other.max.z),
-            ),
-        }
-    }
-
-    fn center(self) -> scena::Vec3 {
-        (self.min + self.max) * 0.5
-    }
-
-    pub(super) fn extent(self) -> scena::Vec3 {
-        (self.max - self.min).abs()
-    }
-
-    fn radius(self) -> f32 {
-        self.extent().length() * 0.5
-    }
-}
-
-pub(super) fn subject_bounds(
-    inspection: &scena::SceneInspectionReportV1,
-) -> Result<SubjectBounds, String> {
-    let mut bounds: Option<SubjectBounds> = None;
-    for draw in &inspection.draw_list {
-        let draw_bounds = transform_bounds(draw.local_bounds, draw.world_transform);
-        bounds = Some(match bounds {
-            Some(existing) => existing.union(draw_bounds),
-            None => draw_bounds,
-        });
-    }
-    bounds.ok_or_else(|| "recipe has no drawable geometry to inspect".to_owned())
 }
 
 pub(super) fn camera_for(kind: ViewKind, bounds: SubjectBounds) -> CameraSpec {
@@ -105,13 +59,14 @@ pub(super) fn camera_for(kind: ViewKind, bounds: SubjectBounds) -> CameraSpec {
             }
         }
         ViewKind::TopFeatures => {
-            let dir = scena::Vec3::Y;
+            let canonical = CanonicalView::Top;
+            let dir = canonical.ideal_eye_direction();
             let fov_degrees: f64 = 22.0;
             let distance = camera_distance(radius, fov_degrees, 1.25);
             CameraSpec {
                 eye: center + dir * distance + scena::Vec3::Z * (radius * 0.04),
                 target: center,
-                up: -scena::Vec3::Z,
+                up: canonical.screen_up(),
                 fov_degrees,
             }
         }
@@ -264,32 +219,6 @@ pub(super) fn rewrite_relative_imports(
 
 pub(super) fn vec3_json(value: scena::Vec3) -> Value {
     json!([value.x, value.y, value.z])
-}
-
-fn transform_bounds(bounds: scena::Aabb, transform: scena::Transform) -> SubjectBounds {
-    let corners = [
-        scena::Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
-        scena::Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
-        scena::Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
-        scena::Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
-        scena::Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
-        scena::Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
-        scena::Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
-        scena::Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
-    ];
-    let first = transform_point(corners[0], transform);
-    let mut min = first;
-    let mut max = first;
-    for corner in corners.into_iter().skip(1) {
-        let point = transform_point(corner, transform);
-        min = scena::Vec3::new(min.x.min(point.x), min.y.min(point.y), min.z.min(point.z));
-        max = scena::Vec3::new(max.x.max(point.x), max.y.max(point.y), max.z.max(point.z));
-    }
-    SubjectBounds { min, max }
-}
-
-fn transform_point(point: scena::Vec3, transform: scena::Transform) -> scena::Vec3 {
-    transform.translation + transform.rotation * (point * transform.scale)
 }
 
 fn camera_distance(radius: f32, fov_degrees: f64, scale: f32) -> f32 {

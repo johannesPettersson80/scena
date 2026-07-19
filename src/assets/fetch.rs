@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::diagnostics::AssetError;
 
@@ -11,6 +12,31 @@ pub trait AssetFetcher {
         Self: 'a;
 
     fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a>;
+}
+
+/// Per-`Assets` wrapper that counts every source-byte request, including
+/// failed requests and external-resource requests made during glTF loading.
+pub(super) struct TrackedAssetFetcher<'a, F> {
+    inner: &'a F,
+    attempts: &'a AtomicU64,
+}
+
+impl<'a, F> TrackedAssetFetcher<'a, F> {
+    pub(super) const fn new(inner: &'a F, attempts: &'a AtomicU64) -> Self {
+        Self { inner, attempts }
+    }
+}
+
+impl<F: AssetFetcher> AssetFetcher for TrackedAssetFetcher<'_, F> {
+    type Future<'a>
+        = F::Future<'a>
+    where
+        Self: 'a;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        self.attempts.fetch_add(1, Ordering::Relaxed);
+        self.inner.fetch(path)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

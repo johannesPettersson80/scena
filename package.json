@@ -14,7 +14,12 @@
   },
   "scripts": {
     "browser:m6": "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    "browser:q02-materials": "node tests/browser/m6_rust_wasm_renderer_probe.js --q02-material-only",
+    "test:required-gpu-parity": "node tests/browser/required_gpu_parity_test.js && node tests/browser/pf01_output_toggle_validation_test.js",
+    "test:pf01-output-toggle-validation": "node tests/browser/pf01_output_toggle_validation_test.js",
     "browser:scene-host-proof": "node tests/browser/scene_host_browser_proof.js",
+    "browser:pf01-output-toggle": "node tests/browser/pf01_output_toggle.js",
+    "browser:fr06-semantic-aov": "node tests/browser/fr06_semantic_aov.js",
     "cloudflare:demo": "node scripts/probe_cloudflare_demo.js",
     "cloudflare:materials": "node scripts/probe_cloudflare_material_presets.mjs",
     "demo:build": "node scripts/build_demo_wasm.js",

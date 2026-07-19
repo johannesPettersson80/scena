@@ -451,7 +451,7 @@ pub(super) fn parse_materials(
             {
                 log_material_step("material total", material_start);
             }
-            let handle = storage.materials.insert(desc);
+            let handle = storage.materials.insert(std::sync::Arc::new(desc));
             storage.material_sources.insert(
                 handle,
                 AssetMaterialSource::source_material(

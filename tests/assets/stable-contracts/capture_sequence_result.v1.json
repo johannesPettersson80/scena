@@ -1,0 +1,165 @@
+{
+  "schema": "scena.capture_sequence_result.v1",
+  "ok": true,
+  "source_recipe": "examples/terminal.recipe.json",
+  "output_dir": "target/gate-artifacts/capture-sequence-terminal",
+  "coordinate_convention": {
+    "handedness": "right_handed",
+    "world_up": "+Y",
+    "front_look_direction": "-Z",
+    "right_look_direction": "-X",
+    "top_look_direction": "near_-Y",
+    "top_screen_up": "-Z",
+    "top_pole_offset_degrees": 1.0,
+    "isometric_eye_octant": "+X,+Y,+Z"
+  },
+  "canonical_view_order": [
+    "front",
+    "top",
+    "right",
+    "isometric"
+  ],
+  "subject_bounds": {
+    "min": [-0.12, -0.06, -0.04],
+    "max": [0.12, 0.06, 0.04],
+    "extent": [0.24, 0.12, 0.08],
+    "center": [0.0, 0.0, 0.0],
+    "radius": 0.14
+  },
+  "sequence_encoding": "png_frames_and_contact_sheet",
+  "video_encoding": {
+    "status": "not_requested",
+    "reason": "core capture emits deterministic PNG frames; hosts may encode GIF/video externally without changing frame semantics"
+  },
+  "frames": [
+    {
+      "index": 0,
+      "kind": "canonical_view",
+      "label": "front",
+      "png": "target/gate-artifacts/capture-sequence-terminal/000-front.png",
+      "descriptor_json": "target/gate-artifacts/capture-sequence-terminal/000-front.capture.json",
+      "camera": {
+        "target": [0.0, 0.0, 0.0],
+        "distance": 0.5,
+        "yaw_radians": 0.0,
+        "pitch_radians": 0.0
+      },
+      "capture": {
+        "schema": "scena.capture.v1",
+        "width": 160,
+        "height": 120,
+        "pixel_format": "rgba8",
+        "payload": {
+          "kind": "rgba8",
+          "byte_length": 76800,
+          "fnv1a64": "0123456789abcdef"
+        }
+      },
+      "canonical_view": {
+        "id": "front",
+        "purpose": "look from +Z toward the framed target with +Y screen-up"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "turntable",
+      "label": "turntable-000",
+      "png": "target/gate-artifacts/capture-sequence-terminal/001-turntable-000.png",
+      "descriptor_json": "target/gate-artifacts/capture-sequence-terminal/001-turntable-000.capture.json",
+      "camera": {
+        "target": [0.0, 0.0, 0.0],
+        "distance": 0.5,
+        "yaw_radians": 0.0,
+        "pitch_radians": 0.34906584
+      },
+      "capture": {
+        "schema": "scena.capture.v1",
+        "width": 160,
+        "height": 120,
+        "pixel_format": "rgba8",
+        "payload": {
+          "kind": "rgba8",
+          "byte_length": 76800,
+          "fnv1a64": "123456789abcdef0"
+        }
+      },
+      "turntable": {
+        "sample_index": 0,
+        "sample_count": 4,
+        "yaw_radians": 0.0,
+        "pitch_degrees": 20.0
+      }
+    },
+    {
+      "index": 2,
+      "kind": "clip",
+      "label": "clip-open-002",
+      "png": "target/gate-artifacts/capture-sequence-terminal/002-clip-open-002.png",
+      "descriptor_json": "target/gate-artifacts/capture-sequence-terminal/002-clip-open-002.capture.json",
+      "camera": {
+        "target": [0.0, 0.0, 0.0],
+        "distance": 0.5,
+        "yaw_radians": 0.7853982,
+        "pitch_radians": 0.6154797
+      },
+      "capture": {
+        "schema": "scena.capture.v1",
+        "width": 160,
+        "height": 120,
+        "pixel_format": "rgba8",
+        "payload": {
+          "kind": "rgba8",
+          "byte_length": 76800,
+          "fnv1a64": "23456789abcdef01"
+        }
+      },
+      "clip": {
+        "name": "open",
+        "sample_index": 2,
+        "sample_count": 3,
+        "time_seconds": 1.0,
+        "duration_seconds": 1.0
+      }
+    }
+  ],
+  "contact_sheet": {
+    "png": "target/gate-artifacts/capture-sequence-terminal/capture-contact-sheet.png",
+    "width": 480,
+    "height": 120,
+    "columns": 3,
+    "tile_max_dimension": 192,
+    "resampling": "nearest",
+    "tiles": [
+      {
+        "index": 0,
+        "label": "front",
+        "kind": "canonical_view",
+        "x": 0,
+        "y": 0,
+        "width": 160,
+        "height": 120,
+        "capture_payload_fnv1a64": "0123456789abcdef"
+      },
+      {
+        "index": 1,
+        "label": "turntable-000",
+        "kind": "turntable",
+        "x": 160,
+        "y": 0,
+        "width": 160,
+        "height": 120,
+        "capture_payload_fnv1a64": "123456789abcdef0"
+      },
+      {
+        "index": 2,
+        "label": "clip-open-002",
+        "kind": "clip",
+        "x": 320,
+        "y": 0,
+        "width": 160,
+        "height": 120,
+        "capture_payload_fnv1a64": "23456789abcdef01"
+      }
+    ]
+  }
+}

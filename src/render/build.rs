@@ -252,6 +252,10 @@ impl Renderer {
             depth_frame: (!has_gpu).then(|| vec![f32::INFINITY; target.pixel_len()]),
             cpu_supersample_linear_frame: Vec::new(),
             cpu_supersample_depth_frame: Vec::new(),
+            cpu_material_reflection_scratch: Vec::new(),
+            cpu_effect_rgba8_scratch: Vec::new(),
+            cpu_row_band_bins: super::cpu_render::CpuRowBandBins::default(),
+            gpu_supersample_frame: Vec::new(),
             stats: RendererStats {
                 target_width: width,
                 target_height: height,
@@ -262,6 +266,8 @@ impl Renderer {
             gpu,
             output: OutputTransform::default(),
             anti_aliasing: anti_aliasing_for_quality(quality),
+            cpu_occlusion_culling: true,
+            semantic_aov_capture_enabled: options.semantic_aov_capture(),
             supersample_factor: 1,
             reconstruction_filter: super::ReconstructionFilter::Box,
             order_independent_transparency: None,
@@ -276,6 +282,7 @@ impl Renderer {
             render_generation: 0,
             last_rendered_generation: None,
             last_rendered_frame: None,
+            last_readback_frame: None,
             surface_lost: None,
             context_lost: None,
             device_lost: None,
@@ -286,7 +293,9 @@ impl Renderer {
             last_auto_exposure: None,
             environment_revision: 0,
             target_revision: 0,
+            output_resources_revision: 0,
             prepare_telemetry: Default::default(),
+            last_render_work_metrics: super::RenderWorkMetrics::default(),
             #[cfg(test)]
             depth_prepass_enabled_for_test: true,
             #[cfg(not(target_arch = "wasm32"))]

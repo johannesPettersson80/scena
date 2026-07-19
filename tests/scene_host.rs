@@ -1276,10 +1276,10 @@ fn scene_host_instanced_url_routes_root_handle_mutations_and_inspection() {
     let parent_error = host
         .add_empty(Some(roots[0]), Transform::IDENTITY, Some("bad-parent"))
         .expect_err("instance roots are not scene-graph parents");
-    assert!(matches!(
+    assert_eq!(
         parent_error.code(),
-        SceneHostErrorCode::NodeHandleNotFound | SceneHostErrorCode::StaleNodeHandle
-    ));
+        SceneHostErrorCode::WrongHandleNamespace
+    );
 
     let report: serde_json::Value =
         serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
@@ -2526,9 +2526,11 @@ fn scene_host_animation_boundary_rejects_invalid_public_inputs() {
 
     host.remove_import(import).expect("import removes");
     let stale = host
-        .advance(0.1)
+        .pause_animation(mixer)
         .expect_err("stale mixer handle is typed after import removal");
     assert_eq!(stale.code(), SceneHostErrorCode::StaleAnimationHandle);
+    host.advance(0.1)
+        .expect("removed import mixers are no longer ticked");
 }
 
 #[test]
@@ -2680,8 +2682,12 @@ fn scene_host_advance_applies_mixers_before_transitions_so_transition_wins() {
 fn scene_host_core_rejects_missing_and_stale_handles_with_structured_errors() {
     let mut host = SceneHostCore::headless(64, 64).expect("host builds");
     let root = host.root_handle();
-    let stale_root = root + (1_u64 << 32);
-    let missing_slot = (1_u64 << 32) + 65_535;
+    let stale_root = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("stale"))
+        .expect("stale candidate inserts");
+    host.remove_node(stale_root)
+        .expect("stale candidate removes");
+    let missing_slot = root + 65_534;
 
     let stale_transform = host
         .set_transform(stale_root, Transform::IDENTITY)
@@ -2706,7 +2712,7 @@ fn scene_host_core_rejects_missing_and_stale_handles_with_structured_errors() {
         .expect_err("node handle cannot be used as import handle");
     assert_eq!(
         missing_import.code(),
-        SceneHostErrorCode::ImportHandleNotFound
+        SceneHostErrorCode::WrongHandleNamespace
     );
 }
 

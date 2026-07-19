@@ -42,6 +42,7 @@ pub struct RendererOptions {
     quality: Option<Quality>,
     render_mode: Option<RenderMode>,
     output_color_space: OutputColorSpace,
+    semantic_aov_capture: bool,
 }
 
 impl RendererOptions {
@@ -65,6 +66,14 @@ impl RendererOptions {
         self
     }
 
+    /// Retains lifecycle-owned GPU targets and readback buffers for semantic
+    /// ID, linear-depth, and world-normal capture. CPU semantic capture does
+    /// not require this opt-in.
+    pub const fn with_semantic_aov_capture(mut self, enabled: bool) -> Self {
+        self.semantic_aov_capture = enabled;
+        self
+    }
+
     pub const fn profile(self) -> Profile {
         self.profile
     }
@@ -79,6 +88,10 @@ impl RendererOptions {
 
     pub const fn output_color_space(self) -> OutputColorSpace {
         self.output_color_space
+    }
+
+    pub const fn semantic_aov_capture(self) -> bool {
+        self.semantic_aov_capture
     }
 }
 
@@ -97,6 +110,20 @@ impl Renderer {
 
     pub fn output_color_space(&self) -> OutputColorSpace {
         self.output_color_space
+    }
+
+    pub const fn semantic_aov_capture_enabled(&self) -> bool {
+        self.semantic_aov_capture_enabled
+    }
+
+    /// Changes whether the next GPU `prepare()` builds semantic AOV targets.
+    /// Resource creation remains explicit in prepare and never occurs inside
+    /// render or capture.
+    pub fn set_semantic_aov_capture_enabled(&mut self, enabled: bool) {
+        if self.semantic_aov_capture_enabled != enabled {
+            self.semantic_aov_capture_enabled = enabled;
+            self.mark_output_resources_changed();
+        }
     }
 
     pub fn exposure_ev(&self) -> f32 {
@@ -119,6 +146,25 @@ impl Renderer {
         self.anti_aliasing
     }
 
+    /// Returns whether the CPU prepare path may run its coarse occlusion
+    /// prepass. GPU prepares never use the CPU prepass.
+    pub const fn cpu_occlusion_culling(&self) -> bool {
+        self.cpu_occlusion_culling
+    }
+
+    /// Enables or disables the CPU occlusion prepass.
+    ///
+    /// This is a performance policy only; disabling it must not change
+    /// rendered pixels. The setting invalidates prepared state because it can
+    /// change the retained primitive list.
+    pub fn set_cpu_occlusion_culling(&mut self, enabled: bool) {
+        if self.cpu_occlusion_culling != enabled {
+            self.cpu_occlusion_culling = enabled;
+            self.target_revision = self.target_revision.saturating_add(1);
+            self.clear_rendered_frame();
+        }
+    }
+
     pub fn supersample_factor(&self) -> u32 {
         self.supersample_factor
     }
@@ -130,7 +176,7 @@ impl Renderer {
     pub fn set_anti_aliasing(&mut self, anti_aliasing: AntiAliasing) {
         if self.anti_aliasing != anti_aliasing {
             self.anti_aliasing = anti_aliasing;
-            self.mark_output_changed();
+            self.mark_output_resources_changed();
         }
     }
 
@@ -191,7 +237,7 @@ impl Renderer {
     ) {
         if self.screen_space_ambient_occlusion != config {
             self.screen_space_ambient_occlusion = config;
-            self.mark_output_changed();
+            self.mark_output_resources_changed();
         }
     }
 
@@ -206,7 +252,7 @@ impl Renderer {
     pub fn set_screen_space_reflections(&mut self, config: Option<ScreenSpaceReflectionConfig>) {
         if self.screen_space_reflections != config {
             self.screen_space_reflections = config;
-            self.mark_output_changed();
+            self.mark_output_resources_changed();
         }
     }
 
@@ -221,7 +267,7 @@ impl Renderer {
     pub fn set_depth_of_field(&mut self, config: Option<DepthOfFieldConfig>) {
         if self.depth_of_field != config {
             self.depth_of_field = config;
-            self.mark_output_changed();
+            self.mark_output_resources_changed();
         }
     }
 
@@ -232,7 +278,7 @@ impl Renderer {
     pub fn set_bloom(&mut self, bloom: Option<PostBloomConfig>) {
         if self.bloom != bloom {
             self.bloom = bloom;
-            self.mark_output_changed();
+            self.mark_output_resources_changed();
         }
     }
 
@@ -301,5 +347,17 @@ impl Renderer {
     pub(super) fn mark_output_changed(&mut self) {
         self.render_generation = self.render_generation.saturating_add(1);
         self.clear_rendered_frame();
+    }
+
+    fn mark_output_resources_changed(&mut self) {
+        if self.gpu.is_some() {
+            self.output_resources_revision = self.output_resources_revision.saturating_add(1);
+        }
+        self.mark_output_changed();
+    }
+
+    /// Revision of output settings that own prepared GPU resources.
+    pub const fn output_resources_revision(&self) -> u64 {
+        self.output_resources_revision
     }
 }

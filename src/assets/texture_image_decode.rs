@@ -20,7 +20,14 @@ pub(super) fn decode_jpeg_rgba8(
     decode_via_image_crate(path, bytes, image::ImageFormat::Jpeg)
 }
 
-/// Delegate PNG/JPEG decode to the `image` crate with decode limits so
+pub(super) fn decode_webp_rgba8(
+    path: &AssetPath,
+    bytes: &[u8],
+) -> Result<TexturePixels, AssetError> {
+    decode_via_image_crate(path, bytes, image::ImageFormat::WebP)
+}
+
+/// Delegate maintained image codecs to the `image` crate with decode limits so
 /// malformed headers cannot be the first allocation guard.
 fn decode_via_image_crate(
     path: &AssetPath,

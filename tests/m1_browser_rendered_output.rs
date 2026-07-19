@@ -10,6 +10,8 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
+const CAMERA_DISTANCE_FOR_NDC_FIXTURE: f32 = 1.732_050_8;
+
 #[wasm_bindgen_test]
 fn m1_browser_wasm_renders_color_and_alpha_to_canvas() {
     let (mut scene, camera) = scene_with_fullscreen_primitives(vec![
@@ -26,7 +28,7 @@ fn m1_browser_wasm_renders_color_and_alpha_to_canvas() {
         .expect("scene renders in wasm");
     assert_eq!(
         center_pixel(renderer.frame_rgba8(), 4, 4),
-        [158, 0, 159, 255]
+        [188, 0, 188, 255]
     );
 
     let canvas = browser_canvas(4, 4);
@@ -42,7 +44,7 @@ fn m1_browser_wasm_renders_color_and_alpha_to_canvas() {
         .expect("browser canvas readback succeeds")
         .data()
         .to_vec();
-    assert_eq!(center_pixel(&readback, 4, 4), [158, 0, 159, 255]);
+    assert_eq!(center_pixel(&readback, 4, 4), [188, 0, 188, 255]);
 }
 
 #[wasm_bindgen_test]
@@ -115,7 +117,7 @@ fn scene_with_camera() -> (Scene, scena::CameraKey) {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURE)),
         )
         .expect("camera inserts");
     scene

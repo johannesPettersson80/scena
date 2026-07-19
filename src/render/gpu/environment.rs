@@ -4,6 +4,7 @@ use super::output::create_output_bind_group;
 use super::shadow::{
     self, ShadowCasterResources, create_shadow_caster_resources, create_shadow_sampler,
 };
+use super::stats::GpuResourceStats;
 
 /// Bundles the per-frame group-0 GPU resources that are shared by every
 /// render pass: shadow caster (texture + pipeline + active flag), shadow
@@ -18,6 +19,44 @@ pub(super) struct OutputResources {
     pub(super) brdf_lut_texture: wgpu::Texture,
     pub(super) output_bind_group: wgpu::BindGroup,
     pub(super) opaque_output_bind_group: wgpu::BindGroup,
+}
+
+pub(super) fn resource_stats(
+    directional_shadow_map_resolution: Option<u32>,
+    environment_lighting: &PreparedEnvironmentLighting,
+) -> GpuResourceStats {
+    let shadow_edge = u64::from(directional_shadow_map_resolution.unwrap_or(1).max(1));
+    let (cubemap_bytes, brdf_lut_bytes) = environment_lighting
+        .cubemap()
+        .map(|cubemap| {
+            let cubemap_bytes = (0..cubemap.mip_count)
+                .map(|mip| {
+                    let edge = u64::from((cubemap.resolution >> mip).max(1));
+                    edge.saturating_mul(edge)
+                        .saturating_mul(6)
+                        .saturating_mul(8)
+                })
+                .sum::<u64>();
+            let lut_edge = u64::from(cubemap.brdf_lut_size.max(1));
+            (
+                cubemap_bytes,
+                lut_edge.saturating_mul(lut_edge).saturating_mul(8),
+            )
+        })
+        .unwrap_or((6 * 8, 8));
+    GpuResourceStats {
+        textures: 3,
+        render_targets: 1,
+        pipelines: 1,
+        bind_groups: 4,
+        shader_modules: 1,
+        approximate_gpu_memory_bytes: shadow_edge
+            .saturating_mul(shadow_edge)
+            .saturating_mul(4)
+            .saturating_add(cubemap_bytes)
+            .saturating_add(brdf_lut_bytes),
+        ..GpuResourceStats::default()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

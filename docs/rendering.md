@@ -8,6 +8,18 @@ The core rule is:
 create or update scene/assets -> prepare -> render
 ```
 
+## Semantic AOVs
+
+Scena can capture node/instance ID, linear camera-depth, and world-normal AOVs
+from prepared state. CPU headless capture is deterministic and allocation-free
+after prepare. GPU capture is opt-in so ordinary rendering pays no attachment,
+pipeline, or readback cost: set the option before prepare, then use the
+SceneHost GPU capture API. Native/headless GPU, WebGPU, and WebGL2 share the
+same 24-bit ID/depth packing and exclusion semantics; WebGL2 uses a portable
+RGBA8 MRT plus byte-preserving canvas readback. See
+[`semantic-aov-v1.md`](specs/semantic-aov-v1.md) for identity, transparency,
+sampling, persistence, and proof rules.
+
 ## Cameras
 
 Scenes can contain perspective and orthographic cameras. Applications select an
@@ -336,6 +348,15 @@ only for visual proof or when a host wants exact unfiltered pixels:
 renderer.set_anti_aliasing(scena::AntiAliasing::None);
 renderer.set_anti_aliasing(scena::AntiAliasing::Fxaa);
 renderer.set_anti_aliasing(scena::AntiAliasing::Msaa4);
+```
+
+CPU rendering enables a conservative occlusion prepass only when at least 64
+prepared primitives have overlapping projected tiles. GPU backends never run
+that CPU prepass. A host with its own workload measurements can opt out without
+changing pixels:
+
+```rust
+renderer.set_cpu_occlusion_culling(false);
 ```
 
 For offline or hero captures, use `Renderer::set_supersample_factor(2)`,

@@ -72,7 +72,7 @@ pub(crate) fn cloudflare_material_proof_rejects_values_outside_committed_thresho
         fixture_root.join("target/gate-artifacts/round-e-cloudflare-material-proof.json"),
         r#"{
           "proof_class": "round-e-cloudflare-material-proof",
-          "status": "pass",
+          "status": "passed",
           "fixture": {
             "environment_hdr_path": "demo/samples/environment/white_studio_03_1k.hdr",
             "environment_hdr_sha256": "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b",
@@ -119,18 +119,125 @@ pub(crate) fn cloudflare_material_proof_rejects_values_outside_committed_thresho
 }
 
 #[test]
+pub(crate) fn cloudflare_material_proof_accepts_shared_evaluator_schema_and_metrics() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/round-e-shared-evaluator");
+    write_round_e_threshold_fixture(&fixture_root);
+    fs::create_dir_all(fixture_root.join("target/gate-artifacts"))
+        .expect("cloudflare proof artifact dir");
+    let mut per_material = serde_json::Map::new();
+    for preset in ROUND_E_CLOUDFLARE_TEST_PRESETS {
+        per_material.insert(
+            (*preset).to_string(),
+            json!({
+                "delta_e2000_vs_reference": 0.0,
+                "reference_delta_gate": "hard",
+                "passed_reference_delta": true,
+            }),
+        );
+    }
+    per_material["chrome"]
+        .as_object_mut()
+        .expect("chrome metrics")
+        .extend([
+            ("specular_dynamic_range".into(), json!(3.0)),
+            ("luminance_p05".into(), json!(40.0)),
+            ("luminance_p99".into(), json!(240.0)),
+        ]);
+    per_material["brushed_steel"]
+        .as_object_mut()
+        .expect("brushed steel metrics")
+        .insert("anisotropy_aspect_ratio_ibl".into(), json!(2.0));
+    per_material["clearcoat_plastic"]
+        .as_object_mut()
+        .expect("clearcoat metrics")
+        .insert("clearcoat_lobe_delta".into(), json!(0.05));
+    for preset in ["leather", "rubber"] {
+        per_material[preset]
+            .as_object_mut()
+            .expect("texture metrics")
+            .insert("local_texture_variance".into(), json!(0.02));
+    }
+    per_material["satin"]
+        .as_object_mut()
+        .expect("satin metrics")
+        .insert("sheen_width".into(), json!(0.20));
+    per_material["clear_glass"]
+        .as_object_mut()
+        .expect("clear glass metrics")
+        .extend([
+            ("dark_target_pixel_count".into(), json!(64)),
+            ("refraction_offset_px".into(), json!(4.0)),
+        ]);
+    per_material["frosted_glass"]
+        .as_object_mut()
+        .expect("frosted glass metrics")
+        .insert("high_frequency_contrast_reduction".into(), json!(0.50));
+    let neighbor_pairs = [
+        ("metal", "rough_metal"),
+        ("metal", "chrome"),
+        ("chrome", "plastic"),
+        ("clearcoat_plastic", "plastic"),
+        ("clear_glass", "frosted_glass"),
+        ("rubber", "plastic"),
+    ]
+    .into_iter()
+    .map(|(left, right)| json!({"pair": [left, right], "delta_e2000": 6.0, "passed": true}))
+    .collect::<Vec<_>>();
+    let artifact = json!({
+        "schema": "scena.q02.round_e_webgl2_material_proof.v1",
+        "proof_class": "round-e-cloudflare-material-proof",
+        "status": "passed",
+        "threshold_evaluator": {
+            "proof_class": "round-e-shared-material-threshold-evaluator",
+            "evaluator_version": 1,
+            "surface": "live-webgl2-chromium",
+        },
+        "fixture": {
+            "environment_hdr_path": "demo/samples/environment/white_studio_03_1k.hdr",
+            "environment_hdr_sha256": "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b",
+            "tonemapper": "model-viewer-neutral-reference",
+            "output_color_space": "srgb",
+            "exposure_ev": 0.0,
+            "webgl2_smooth_metal_sample_floor": 96,
+        },
+        "cache_buster": {"bumped": true},
+        "wasm": {"checksum_matches_build": true},
+        "per_material": per_material,
+        "neighbor_pairs": neighbor_pairs,
+        "errors": [],
+    });
+    fs::write(
+        fixture_root.join("target/gate-artifacts/round-e-cloudflare-material-proof.json"),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&artifact).expect("proof JSON")
+        ),
+    )
+    .expect("cloudflare proof artifact");
+    let mut findings = Vec::new();
+
+    crate::app::doctor_easy_scene::material_presets_cloudflare::check_round_e_cloudflare_material_proof(
+        &fixture_root,
+        &mut findings,
+    );
+
+    assert_eq!(findings, Vec::new());
+}
+
+#[test]
 pub(crate) fn cloudflare_material_proof_fails_closed_on_reference_delta() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let script = fs::read_to_string(root.join("scripts/probe_cloudflare_material_presets.mjs"))
         .expect("cloudflare material proof script");
+    let evaluator = fs::read_to_string(root.join("scripts/round_e_material_evaluator.cjs"))
+        .expect("shared material evaluator");
 
     assert!(
-        script.contains("Public material approval must fail closed"),
-        "public material proof must document why reference DeltaE is a hard gate",
-    );
-    assert!(
-        script.contains("return true;"),
-        "public material proof must not leave reference DeltaE in diagnostic-only mode",
+        script.contains("requireReferenceDelta: true")
+            && script.contains("reference_delta_gate: \"hard\"")
+            && script.contains("status: errors.length === 0 ? \"passed\" : \"failed\""),
+        "public material proof must invoke the shared evaluator with a hard reference gate",
     );
     assert!(
         script.contains("https://scena-demo.pages.dev/proof/?sample=material-presets")
@@ -138,9 +245,10 @@ pub(crate) fn cloudflare_material_proof_fails_closed_on_reference_delta() {
         "public material proof must target the proof harness, not the landing page"
     );
     assert!(
-        script.contains("metrics.reference_delta_gate === \"hard\"")
-            && script.contains("!metrics.passed_reference_delta"),
-        "public material proof must turn failed reference DeltaE into a script failure",
+        evaluator.contains("requireReferenceDelta && !metrics.passed_reference_delta")
+            && evaluator.contains("error(errors, \"reference_delta\"")
+            && evaluator.contains("status: errors.length === 0 ? \"pass\" : \"fail\""),
+        "shared material evaluator must turn failed reference DeltaE into an evaluation failure",
     );
     assert!(
         script.contains("!cacheProof.bumped")
@@ -243,6 +351,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         "tests/geometry_generated_uvs.rs",
         "tests/round_e_source_backed_material_presets.rs",
         "scripts/probe_cloudflare_material_presets.mjs",
+        "scripts/round_e_material_evaluator.cjs",
         "scripts/build_demo_wasm.js",
         "demo/proof/index.html",
         "demo/internal-material-spheres.html",
@@ -437,10 +546,12 @@ delta_e2000_max = 4.00
 
 [leather]
 texture_variance_min = 0.02
+local_texture_variance_min = 0.015
 delta_e2000_max = 4.00
 
 [rubber]
 roughness_variance_min = 0.02
+local_texture_variance_min = 0.015
 delta_e2000_max = 4.00
 
 [satin]
@@ -450,6 +561,9 @@ delta_e2000_max = 4.00
 [global]
 neighbor_delta_e2000_min = 6.00
 reference_delta_e2000_max = 4.00
+
+[live_webgl2_chromium.leather]
+local_texture_variance_min = 0.010
 "#,
     )
     .expect("round e thresholds");

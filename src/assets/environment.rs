@@ -303,6 +303,28 @@ impl EnvironmentDesc {
         self
     }
 
+    /// Attaches a precomputed sidecar after verifying that it belongs to this
+    /// environment's exact source payload.
+    #[doc(hidden)]
+    pub fn with_prefilter_sidecar(
+        mut self,
+        sidecar: EnvironmentPrefilterSidecar,
+    ) -> Result<Self, AssetError> {
+        let source_sha256 = self.source_sha256().ok_or_else(|| AssetError::Parse {
+            path: self.source_path().as_str().to_string(),
+            reason: "environment sidecar attachment requires source SHA-256".to_string(),
+        })?;
+        if sidecar.source_sha256_hex() != source_sha256 {
+            return Err(AssetError::Parse {
+                path: self.source_path().as_str().to_string(),
+                reason: "environment sidecar source SHA-256 does not match the environment"
+                    .to_string(),
+            });
+        }
+        self.prefilter_sidecar = Some(std::sync::Arc::new(sidecar));
+        Ok(self)
+    }
+
     pub(crate) fn from_equirectangular_hdr_sidecar_bytes(
         path: impl Into<AssetPath>,
         source_bytes: &[u8],

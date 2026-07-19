@@ -37,6 +37,7 @@ mod tests {
 pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {
     json!({
         "buffers": stats.buffers,
+        "gpu_textures": stats.gpu_textures,
         "textures": stats.textures,
         "materials": stats.materials,
         "material_bindings": stats.material_bindings,

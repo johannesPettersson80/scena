@@ -1,6 +1,7 @@
 use super::scena_args::PlaceCommandArgs;
 use super::scena_input::{RecipeReadError, read_recipe_text, resolve_recipe_asset_uri};
 use super::scena_output::{CliOutcome, json_outcome};
+use sha2::{Digest, Sha256};
 
 mod authored_features;
 
@@ -113,8 +114,141 @@ pub(crate) fn run_place_command(args: &[String]) -> Result<CliOutcome, String> {
             .with_suggestion("center"),
         ),
     };
+    if args.apply {
+        return emit_recipe_patch(&args, &text, recipe, result);
+    }
     let exit_code = if result.ok { 0 } else { 1 };
     json_outcome(&result, exit_code, "failed to serialize placement result")
+}
+
+fn emit_recipe_patch(
+    args: &PlaceCommandArgs,
+    source_text: &str,
+    mut recipe: scena::SceneRecipeV1,
+    placement: scena::ScenePlacementResultV1,
+) -> Result<CliOutcome, String> {
+    let source_sha256 = sha256_hex(source_text.as_bytes());
+    let source_path = args.recipe.display().to_string();
+    if let Some(expected) = args.expected_source_sha256.as_deref()
+        && expected != source_sha256
+    {
+        let report = scena::SceneRecipePatchResultV1::failure(
+            source_path,
+            source_sha256.clone(),
+            args.import_id.clone(),
+            placement.verb,
+            scena::ScenePlacementDiagnosticV1::new(
+                "stale_source",
+                "$",
+                format!("recipe source digest changed; expected {expected}, found {source_sha256}"),
+                "reload the recipe, recompute placement, and apply against the new digest",
+            ),
+        );
+        return json_outcome(&report, 1, "failed to serialize recipe patch result");
+    }
+    let Some(transform) = placement.transform else {
+        let report = scena::SceneRecipePatchResultV1::failure(
+            source_path,
+            source_sha256,
+            args.import_id.clone(),
+            placement.verb,
+            placement.diagnostics.into_iter().next().unwrap_or_else(|| {
+                scena::ScenePlacementDiagnosticV1::new(
+                    "placement_failed",
+                    "$.imports",
+                    "placement failed without a transform",
+                    "fix the placement diagnostics and retry",
+                )
+            }),
+        );
+        return json_outcome(&report, 1, "failed to serialize recipe patch result");
+    };
+    let Some((import_index, import)) = recipe
+        .imports
+        .iter_mut()
+        .enumerate()
+        .find(|(_, import)| import.id == args.import_id)
+    else {
+        return Err("validated placement import disappeared before patch emission".to_owned());
+    };
+    let previous_transform = import.transform;
+    import.transform = Some(transform);
+    rebase_recipe_resource_uris(&source_path, &mut recipe);
+    let updated_recipe = serde_json::to_value(&recipe)
+        .map_err(|error| format!("failed to serialize updated recipe: {error}"))?;
+    let report = scena::SceneRecipePatchResultV1::success(scena::SceneRecipePatchSuccessInputV1 {
+        source_path,
+        source_sha256,
+        import_id: args.import_id.clone(),
+        verb: placement.verb,
+        previous_transform,
+        transform,
+        updated_recipe,
+        semantic_change: scena::SceneRecipeSemanticChangeV1::transform(
+            format!("$.imports[{import_index}].transform"),
+            previous_transform,
+            transform,
+        ),
+    });
+    json_outcome(&report, 0, "failed to serialize recipe patch result")
+}
+
+fn rebase_recipe_resource_uris(recipe_path: &str, recipe: &mut scena::SceneRecipeV1) {
+    for import in &mut recipe.imports {
+        rebase_resource_uri(recipe_path, &mut import.uri);
+    }
+    for font in &mut recipe.fonts {
+        rebase_resource_uri(recipe_path, &mut font.uri);
+    }
+    if let Some(uri) = recipe
+        .scene
+        .as_mut()
+        .and_then(|scene| scene.environment.as_mut())
+        .and_then(|environment| environment.uri.as_mut())
+    {
+        rebase_resource_uri(recipe_path, uri);
+    }
+    for material in &mut recipe.materials {
+        rebase_texture_slot(recipe_path, &mut material.base_color_texture);
+        rebase_texture_slot(recipe_path, &mut material.normal_texture);
+        rebase_texture_slot(recipe_path, &mut material.metallic_roughness_texture);
+        rebase_texture_slot(recipe_path, &mut material.occlusion_texture);
+        rebase_texture_slot(recipe_path, &mut material.emissive_texture);
+        rebase_texture_slot(recipe_path, &mut material.clearcoat_texture);
+        rebase_texture_slot(recipe_path, &mut material.clearcoat_roughness_texture);
+        rebase_texture_slot(recipe_path, &mut material.clearcoat_normal_texture);
+        rebase_texture_slot(recipe_path, &mut material.sheen_color_texture);
+        rebase_texture_slot(recipe_path, &mut material.sheen_roughness_texture);
+        rebase_texture_slot(recipe_path, &mut material.anisotropy_texture);
+        rebase_texture_slot(recipe_path, &mut material.iridescence_texture);
+        rebase_texture_slot(recipe_path, &mut material.iridescence_thickness_texture);
+        rebase_texture_slot(recipe_path, &mut material.transmission_texture);
+        rebase_texture_slot(recipe_path, &mut material.thickness_texture);
+    }
+}
+
+fn rebase_texture_slot(recipe_path: &str, slot: &mut Option<scena::SceneRecipeTextureSlotV1>) {
+    if let Some(slot) = slot {
+        rebase_resource_uri(recipe_path, &mut slot.uri);
+    }
+}
+
+fn rebase_resource_uri(recipe_path: &str, uri: &mut String) {
+    let resolved = resolve_recipe_asset_uri(recipe_path, uri);
+    *uri = if resolved.contains("://") || resolved.starts_with("data:") {
+        resolved
+    } else {
+        std::fs::canonicalize(&resolved)
+            .map(|path| path.display().to_string())
+            .unwrap_or(resolved)
+    };
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 struct PlacementRuntime {

@@ -52,18 +52,30 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
     assert_reason(&workflow, "unsupported_workflow", None);
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_rejects_non_ascii_hex_without_unwinding() {
+    let text = serde_json::to_string(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {"bad": "€abc"}
+    }))
+    .expect("Unicode recipe serializes");
+    let result = std::panic::catch_unwind(|| {
+        pollster::block_on(scena::SceneHostCore::build_recipe_json(
+            "memory://unicode-color.recipe.json",
+            &text,
+            scena::RecipeBuildPolicy::testing(),
+        ))
+    });
+    let report = result
+        .expect("recipe build validation must not unwind")
+        .expect_err("non-ASCII hex must reject recipe build");
+    assert_build_reason(&report, "invalid_color", "$.colors.bad");
+}
+
 #[test]
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
-    for section in [
-        "primitives",
-        "viewer_profile",
-        "environment",
-        "placements",
-        "named_states",
-        "anchors",
-        "connectors",
-        "bounds",
-    ] {
+    for section in ["primitives", "viewer_profile", "environment", "placements"] {
         let mut recipe = json!({
             "schema": "scena.scene_recipe.v1",
             "imports": [
@@ -271,6 +283,14 @@ fn scene_recipe_build_routes_ergonomic_fields_through_rust_helpers() {
         "camera.framing/lens should create and activate the authored camera: {:#?}",
         build.manifest.cameras
     );
+    assert!(
+        build.backend_selection_report().is_none(),
+        "CPU recipe construction must not fabricate GPU selection evidence"
+    );
+    let scena::SceneHostRecipeBuild {
+        host: _,
+        manifest: _,
+    } = build;
 }
 
 #[test]
@@ -827,6 +847,35 @@ fn scene_recipe_rejects_inert_bevel_knobs() {
     assert!(!report.ok);
     assert_reason_at(&report, "unsupported_feature", "$.geometries[0].primitive");
     assert_reason_at(&report, "invalid_primitive", "$.geometries[1].primitive");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_polyline_validation_and_build_reject_zero_or_one_point() {
+    for points in [json!([]), json!([[0.0, 0.0, 0.0]])] {
+        let value = json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [{
+                "id": "rail",
+                "primitive": {"kind": "polyline", "points": points}
+            }]
+        });
+        let validation = scena::validate_scene_recipe_value(value.clone());
+        assert_reason_at(
+            &validation,
+            "invalid_points",
+            "$.geometries[0].primitive.points",
+        );
+
+        let text = serde_json::to_string(&value).expect("polyline recipe serializes");
+        let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+            "memory://short-polyline.recipe.json",
+            &text,
+            scena::RecipeBuildPolicy::testing(),
+        ))
+        .expect_err("short polyline recipe must not build");
+        assert_build_reason(&build, "invalid_points", "$.geometries[0].primitive.points");
+    }
 }
 
 #[test]

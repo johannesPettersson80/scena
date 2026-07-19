@@ -10,6 +10,149 @@ use web_sys::HtmlCanvasElement;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
+#[cfg(feature = "browser-probe")]
+#[wasm_bindgen_test(async)]
+async fn m6_cpu_webgl2_parity_requires_cpu_and_gpu_renderer_owned_frames() {
+    let canvas = browser_canvas(64, 64);
+    let report = scena::browser_probe::m6_render_webgl2_probe(canvas)
+        .await
+        .expect("CPU/WebGL2 parity probe runs");
+    let report: serde_json::Value =
+        serde_json::from_str(&report).expect("CPU/WebGL2 parity report is JSON");
+    let parity = report
+        .get("parity")
+        .expect("browser probe includes CPU/WebGL2 parity evidence");
+
+    assert_eq!(
+        parity.get("schema").and_then(serde_json::Value::as_str),
+        Some("scena.m6.cpu_webgl2_parity.v1")
+    );
+    assert_eq!(
+        parity.get("status").and_then(serde_json::Value::as_str),
+        Some("passed"),
+        "CPU/WebGL2 parity report failed: codes={:?}, metrics={:#}",
+        parity.get("failure_codes"),
+        parity.get("metrics").unwrap_or(&serde_json::Value::Null),
+    );
+    let cpu_frame = parity.get("cpu_frame").expect("parity has a CPU frame");
+    let gpu_frame = parity.get("gpu_frame").expect("parity has a GPU frame");
+    assert_eq!(
+        cpu_frame.get("source").and_then(serde_json::Value::as_str),
+        Some("renderer-owned-cpu-frame")
+    );
+    assert_eq!(
+        gpu_frame.get("source").and_then(serde_json::Value::as_str),
+        Some("renderer-owned-gpu-copy")
+    );
+    assert_eq!(cpu_frame.get("width"), gpu_frame.get("width"));
+    assert_eq!(cpu_frame.get("height"), gpu_frame.get("height"));
+    assert!(
+        cpu_frame
+            .get("rgba8_base64")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|rgba| !rgba.is_empty())
+            && gpu_frame
+                .get("rgba8_base64")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|rgba| !rgba.is_empty()),
+        "parity must carry both renderer-owned RGBA8 frame inputs"
+    );
+
+    let normalization = parity
+        .get("normalization")
+        .expect("parity declares frame normalization");
+    assert_eq!(
+        normalization
+            .get("row_origin")
+            .and_then(serde_json::Value::as_str),
+        Some("top-left")
+    );
+    assert_eq!(
+        normalization
+            .get("transfer")
+            .and_then(serde_json::Value::as_str),
+        Some("srgb8")
+    );
+    assert_eq!(
+        normalization
+            .get("alpha")
+            .and_then(serde_json::Value::as_str),
+        Some("straight-opaque")
+    );
+    assert_eq!(
+        normalization
+            .get("dimensions")
+            .and_then(serde_json::Value::as_str),
+        Some("exact")
+    );
+
+    let metrics = parity.get("metrics").expect("parity records metrics");
+    assert!(
+        metrics
+            .get("rmse")
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|value| value <= 0.08)
+    );
+    assert!(
+        metrics
+            .get("ssim")
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|value| value >= 0.93)
+    );
+    assert!(
+        metrics
+            .get("p95_channel_delta")
+            .and_then(serde_json::Value::as_u64)
+            .is_some_and(|value| value <= 24)
+    );
+    assert!(
+        metrics
+            .get("mean_channel_delta")
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|value| value <= 6.0)
+    );
+    assert!(
+        metrics
+            .get("foreground_iou")
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|value| value >= 0.90)
+    );
+
+    let mutation = parity
+        .get("known_bad_mutation")
+        .expect("parity records a deliberately perturbed GPU fixture output");
+    assert_eq!(
+        mutation.get("kind").and_then(serde_json::Value::as_str),
+        Some("gpu-center-channel-perturbation")
+    );
+    assert_eq!(
+        mutation
+            .get("rejected")
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+    assert!(
+        mutation
+            .get("failure_codes")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|codes| !codes.is_empty()),
+        "the perturbed GPU frame must fail the same parity evaluator"
+    );
+}
+
+#[wasm_bindgen_test]
+fn wasm_recipe_validation_rejects_non_ascii_hex_without_runtime_abort() {
+    let report = scena::validate_scene_recipe_json(
+        r#"{"schema":"scena.scene_recipe.v1","colors":{"bad":"€abc"}}"#,
+    );
+    assert!(!report.ok);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "invalid_color" && diagnostic.path == "$.colors.bad"
+    }));
+    let json = serde_json::to_string(&report).expect("WASM validation report serializes");
+    assert!(serde_json::from_str::<serde_json::Value>(&json).is_ok());
+}
+
 #[wasm_bindgen_test(async)]
 async fn m6_webgl2_attached_canvas_is_not_hard_disabled() {
     let canvas = browser_canvas(32, 32);

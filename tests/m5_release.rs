@@ -1,13 +1,14 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use scena::{
     AnimationError, AssetError, Backend, BuildError, Color, GeometryDesc, ImportError,
     InstantiateError, LookupError, MaterialDesc, NotPreparedReason, PerspectiveCamera,
     PrepareError, Primitive, RenderError, Renderer, Scene, Transform, Vec3,
 };
+use sha2::{Digest, Sha256};
 
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -128,8 +129,9 @@ fn m5_public_api_baseline_names_frozen_contracts() {
 
     let artifact = root().join("target/gate-artifacts/m5-public-api-freeze.json");
     fs::create_dir_all(artifact.parent().expect("artifact has parent")).expect("artifact dir");
-    fs::write(
-        artifact,
+    write_release_artifact(
+        &artifact,
+        "m5-public-api-freeze",
         serde_json::json!({
             "gate": "m5-public-api-freeze",
             "status": "passed",
@@ -164,10 +166,16 @@ fn m5_public_api_baseline_names_frozen_contracts() {
                 "Aabb::union",
                 "OrbitControls::from_framing"
             ]
-        })
-        .to_string(),
+        }),
     )
     .expect("public api artifact is written");
+
+    let artifact: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root().join("target/gate-artifacts/m5-public-api-freeze.json"))
+            .expect("public api artifact is readable"),
+    )
+    .expect("public api artifact is valid JSON");
+    assert_release_artifact_provenance(&artifact, "m5-public-api-freeze");
 }
 
 #[test]
@@ -279,12 +287,15 @@ fn m5_benchmark_report_writes_required_scene_rows() {
         "rows": rows,
     });
     let artifact = root().join("target/gate-artifacts/m5-benchmarks.json");
-    fs::create_dir_all(artifact.parent().expect("artifact has parent")).expect("artifact dir");
-    fs::write(
-        artifact,
-        serde_json::to_string_pretty(&report).expect("report serializes"),
+    write_release_artifact(&artifact, "m5-benchmarks", report.clone())
+        .expect("benchmark artifact is written");
+
+    let artifact: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root().join("target/gate-artifacts/m5-benchmarks.json"))
+            .expect("benchmark artifact is readable"),
     )
-    .expect("benchmark artifact is written");
+    .expect("benchmark artifact is valid JSON");
+    assert_release_artifact_provenance(&artifact, "m5-benchmarks");
 
     for name in [
         "static-viewer",
@@ -303,6 +314,217 @@ fn m5_benchmark_report_writes_required_scene_rows() {
             "missing benchmark row {name}"
         );
     }
+}
+
+fn assert_release_artifact_provenance(artifact: &serde_json::Value, gate: &str) {
+    assert_eq!(artifact["schema"], format!("scena.{gate}.v1"));
+    assert_eq!(artifact["producer"], "cargo test --test m5_release");
+    assert_eq!(
+        artifact["producing_command"], "cargo test --test m5_release",
+        "{gate} must record the exact producing command"
+    );
+    assert!(
+        artifact["toolchain"]
+            .as_str()
+            .is_some_and(|toolchain| toolchain.starts_with("rustc ")),
+        "{gate} must record its Rust toolchain"
+    );
+    assert!(
+        artifact["profile"]
+            .as_str()
+            .is_some_and(|profile| !profile.is_empty()),
+        "{gate} must record its build profile"
+    );
+    assert_eq!(
+        artifact["sample_count"].as_u64(),
+        Some(1),
+        "{gate} records one deterministic release-gate observation"
+    );
+    assert!(
+        artifact["commit_sha"].as_str().is_some_and(
+            |commit| commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+        ),
+        "{gate} must record an exact source commit"
+    );
+    assert!(
+        artifact["timestamp_unix_seconds"].as_u64().is_some(),
+        "{gate} must record its generation time"
+    );
+    let checksums = artifact["source_checksums"]
+        .as_array()
+        .expect("release artifact source checksums are an array");
+    assert!(
+        checksums.iter().any(|entry| {
+            entry["path"] == "tests/m5_release.rs"
+                && entry["sha256"]
+                    .as_str()
+                    .is_some_and(|hash| hash.len() == 64 && hash != "0".repeat(64))
+        }),
+        "{gate} must bind its producer source"
+    );
+    assert_eq!(
+        artifact["payload_sha256"],
+        release_payload_sha256(artifact),
+        "{gate} payload hash must bind all other artifact content"
+    );
+}
+
+fn release_payload_sha256(value: &serde_json::Value) -> String {
+    let mut payload = value.clone();
+    payload
+        .as_object_mut()
+        .expect("release artifact is a JSON object")
+        .remove("payload_sha256");
+    let serialized = serde_json::to_vec(&payload).expect("release artifact serializes");
+    let normalized = serde_json::from_slice::<serde_json::Value>(&serialized)
+        .expect("release artifact normalizes");
+    Sha256::digest(serde_json::to_vec(&normalized).expect("normalized release artifact serializes"))
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn write_release_artifact(
+    path: &Path,
+    gate: &str,
+    mut artifact: serde_json::Value,
+) -> Result<(), String> {
+    let object = artifact
+        .as_object_mut()
+        .ok_or_else(|| format!("{gate} release artifact must be a JSON object"))?;
+    object.insert(
+        "schema".to_string(),
+        serde_json::Value::String(format!("scena.{gate}.v1")),
+    );
+    object.insert(
+        "producer".to_string(),
+        serde_json::Value::String("cargo test --test m5_release".to_string()),
+    );
+    object.insert(
+        "producing_command".to_string(),
+        serde_json::Value::String("cargo test --test m5_release".to_string()),
+    );
+    object.insert(
+        "toolchain".to_string(),
+        serde_json::Value::String(release_toolchain()?),
+    );
+    object.insert(
+        "profile".to_string(),
+        serde_json::Value::String(release_profile()),
+    );
+    object.insert("sample_count".to_string(), serde_json::Value::from(1));
+    object.insert(
+        "commit_sha".to_string(),
+        serde_json::Value::String(release_commit_sha()?),
+    );
+    object.insert(
+        "timestamp_unix_seconds".to_string(),
+        serde_json::Value::from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|error| format!("system clock precedes Unix epoch: {error}"))?
+                .as_secs(),
+        ),
+    );
+    object.insert(
+        "source_checksums".to_string(),
+        serde_json::json!([
+            {
+                "path": "Cargo.lock",
+                "sha256": sha256_hex(&root().join("Cargo.lock"))?,
+            },
+            {
+                "path": "tests/m5_release.rs",
+                "sha256": sha256_hex(&root().join("tests/m5_release.rs"))?,
+            }
+        ]),
+    );
+    let payload_sha256 = release_payload_sha256(&artifact);
+    artifact
+        .as_object_mut()
+        .expect("release artifact object was checked")
+        .insert(
+            "payload_sha256".to_string(),
+            serde_json::Value::String(payload_sha256),
+        );
+
+    fs::create_dir_all(
+        path.parent()
+            .ok_or_else(|| format!("release artifact {} has no parent", path.display()))?,
+    )
+    .map_err(|error| format!("failed to create {} parent: {error}", path.display()))?;
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&artifact)
+            .map_err(|error| format!("failed to serialize {gate}: {error}"))?,
+    )
+    .map_err(|error| format!("failed to write {}: {error}", path.display()))
+}
+
+fn release_toolchain() -> Result<String, String> {
+    let output = Command::new("rustc")
+        .arg("--version")
+        .output()
+        .map_err(|error| format!("failed to query release artifact Rust toolchain: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "release artifact Rust toolchain query failed with status {}",
+            output.status
+        ));
+    }
+    let toolchain = String::from_utf8(output.stdout)
+        .map_err(|error| format!("rustc --version emitted invalid UTF-8: {error}"))?
+        .trim()
+        .to_string();
+    if toolchain.is_empty() {
+        return Err("rustc --version emitted a blank toolchain".to_string());
+    }
+    Ok(toolchain)
+}
+
+fn release_profile() -> String {
+    std::env::var("SCENA_RELEASE_PROFILE").unwrap_or_else(|_| {
+        if cfg!(debug_assertions) {
+            "test-unoptimized".to_string()
+        } else {
+            "test-optimized".to_string()
+        }
+    })
+}
+
+fn release_commit_sha() -> Result<String, String> {
+    let candidate = std::env::var("SCENA_RELEASE_COMMIT")
+        .ok()
+        .or_else(|| std::env::var("GITHUB_SHA").ok())
+        .or_else(|| {
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(root())
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .map(|commit| commit.trim().to_string())
+        })
+        .ok_or_else(|| {
+            "release artifacts require SCENA_RELEASE_COMMIT, GITHUB_SHA, or a Git checkout"
+                .to_string()
+        })?;
+    if candidate.len() != 40 || !candidate.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!(
+            "release artifact commit must be exactly 40 hexadecimal characters, got {candidate:?}"
+        ));
+    }
+    Ok(candidate.to_ascii_lowercase())
+}
+
+fn sha256_hex(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("failed to read source {}: {error}", path.display()))?;
+    Ok(Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn benchmark_resource_free_static_viewer() -> serde_json::Value {
@@ -465,6 +687,24 @@ fn benchmark_row(
         "p95_frame_ms": frame_ms,
         "draw_calls": draw_calls,
         "skipped": skipped,
-        "allocation_bytes": 0,
+        "allocation_bytes": {
+            "status": "unavailable",
+            "reason": "M5 benchmark allocation bytes are not instrumented; use the M9/PF00 allocation-byte benchmark rows",
+        },
     })
+}
+
+#[test]
+fn pf00_m5_benchmark_rows_never_fabricate_allocation_bytes() {
+    let row = benchmark_row("pf00-contract", Backend::Headless, 1.0, 1, false);
+    assert_eq!(
+        row["allocation_bytes"]["status"], "unavailable",
+        "M5 must mark unmeasured allocation bytes unavailable instead of fabricating zero: {row:#}"
+    );
+    assert!(
+        row["allocation_bytes"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("not instrumented")),
+        "unavailable metric needs an actionable reason: {row:#}"
+    );
 }

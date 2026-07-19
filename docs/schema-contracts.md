@@ -77,9 +77,12 @@ Requires a new version:
 Wire reports must not serialize raw `NodeKey`, `CameraKey`, `MaterialHandle`,
 `GeometryHandle`, or other slotmap/internal handles.
 
-When a report is emitted by `SceneHost`, the host's generation-checked `u64`
-node handle namespace is authoritative. The same handle must be accepted by host
-mutation APIs and appear in host-backed inspection reports.
+When a report is emitted by `SceneHost`, the host's kind-tagged,
+generation-checked `u64` handle namespaces are authoritative. The same node
+handle must be accepted by node mutation APIs and appear in host-backed
+inspection reports. Import, instance-root, and animation handles have distinct
+tags and must be passed only to compatible APIs. All valid values remain exact
+JavaScript integers; consumers must still treat their representation as opaque.
 
 Standalone native reports may allocate deterministic report-local handles. Those
 IDs are stable only within that report unless a caller supplies an explicit
@@ -752,11 +755,15 @@ Topology helpers on `SceneInspectionReportV1`:
 ### `scena.capture.v1`
 
 Produced by `capture_rgba8`, `Renderer::capture_rgba8`, viewer `capture()`
-helpers, and `SceneHost.captureJson()`. Represented by `CaptureDescriptor`.
+helpers, and `SceneHost.captureJson()` / `SceneHost.captureJsonAsync()`.
+Represented by `CaptureDescriptor`.
 PNG helpers such as `CaptureRgba8::to_png_bytes`,
 `CaptureRgba8::write_png`, `Renderer::capture_png_bytes`,
 `Renderer::capture_png`, SceneHost `capture_png_bytes`, and browser
-`capturePng()` delegate to the same descriptor-bound capture object.
+`capturePng()` and `capturePngAsync()` delegate to the same descriptor-bound
+capture object. The async browser methods are required for WebGPU buffer
+mapping and return the same descriptor/payload shapes as their synchronous
+WebGL2-compatible counterparts.
 
 Required top-level fields:
 
@@ -774,9 +781,10 @@ Required top-level fields:
 - `pixels`
 
 Large RGBA8 bytes are returned outside JSON through `CaptureRgba8::rgba8` or
-the browser `capture().rgba8` typed array. PNG bytes are returned outside JSON
-through native byte vectors/files or browser `capturePng().png`. JSON carries
-byte length, dimensions, format, and FNV-1a hash metadata.
+the browser `capture().rgba8` / awaited `captureAsync().rgba8` typed array. PNG
+bytes are returned outside JSON through native byte vectors/files or browser
+`capturePng().png` / awaited `capturePngAsync().png`. JSON carries byte length,
+dimensions, format, and FNV-1a hash metadata.
 
 The descriptor binds to the renderer's last rendered frame state. If scene
 revisions or the active camera changed after `render()` and before `capture()`,
@@ -1251,8 +1259,9 @@ The current v1 recipe slice supports:
   a coupled GPU volume scene because absorption only changes pixels when
   transmission, thickness, finite attenuation distance, and attenuation color
   are active together.
-- `nodes[]` authored renderables with stable caller `id`, geometry/material
-  references, optional manifest `name`, parent hierarchy, tags, visibility,
+- `nodes[]` authored renderables or non-renderable group nodes with stable
+  caller `id`. Renderables provide geometry/material together; groups omit
+  both. All nodes accept optional manifest `name`, parent hierarchy, tags, visibility,
   layer mask, render group, tint, and optional `raw`, `trs`, `look_at`,
   `center`, `ground`, `fit_to_size`, `place_on`, or `align_to_anchor`
   transform. `place_on` and `look_at` may reference authored nodes declared
@@ -1264,6 +1273,18 @@ The current v1 recipe slice supports:
   `(0, 1]` threshold, otherwise it uses the node's base geometry. This switches
   among explicitly-authored geometry resources and never fabricates or silently
   simplifies meshes.
+- `anchors[]`, `connectors[]`, `bounds[]`, and `named_states[]` follow the
+  accepted contract in `docs/specs/recipe-spatial-state-v1.md`. Every row has
+  a persistent recipe id. Targets are closed `node`, `import_root`, or exact
+  `import_node` objects; authored positions and bounds are scene meters in
+  glTF Y-up right-handed axes. Imported anchor/connector aliases preserve
+  converted source-unit and coordinate metadata. Connector mates run through
+  `Scene::connect_by_key` and fail with structured compatibility, handedness,
+  scale, or snap diagnostics. Authored bounds may attach only to empty group
+  nodes and never replace geometry/asset bounds. Named states contain only
+  transforms, tints, and visibility, use acyclic single inheritance, reject
+  animation-transform conflicts, and apply at most one active state after
+  mating.
 - `instance_sets[]` authored instance-set nodes with stable caller `id`,
   geometry/material references, optional parent and root transform, and
   per-instance stable ids with transform, opaque tint, and visibility. Hidden
@@ -1391,8 +1412,7 @@ The current v1 recipe slice supports:
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `primitives`,
-`skins`, `morphs`, `particles`, `anchors`, `connectors`, `bounds`, and
-`named_states` emit
+`viewer_profile`, `environment`, and `placements` emit
 `unsupported_feature` until the feature slice that owns them implements the
 section. Workflow fields such as
 `steps`, `sequence`, `loop`, `branch`, `timeline`, and `script` emit
@@ -1405,14 +1425,25 @@ with `code`, `severity`, JSON `path`, `message`, `help`, optional
 distance, for example `importe` suggests `imports`.
 
 `scena.scene_recipe_build.v1` is emitted by `SceneHostCore::build_recipe_json`.
-It maps caller-authored recipe ids to the stable SceneHost handles that later
-patch, overlay, verification, and interaction calls use. Import entries contain
-the caller `id`, resolved `uri`, stable `import_handle`, `root_handles`,
+It maps caller-authored recipe ids to runtime-scoped SceneHost handles that later
+patch, overlay, verification, and interaction calls use within that host
+generation. These handles are stable for that live host, not persistence IDs.
+Import entries contain the caller `id`, resolved `uri`, `import_handle`, `root_handles`,
 `primary_root`, and `nodes_by_path`. Path keys use the shared namespace
 `<import_id>:/<path>`; `<import_id>:/` names the primary import root and named
 glTF children are included when their authored path is unambiguous. `nodes`,
 `cameras`, `lights`, and `animations` are targetable manifest entries with
 stable handles.
+`anchors`, `connectors`, `connections`, `bounds`, and `named_states` map each
+persistent feature id to its resolved target, source provenance, units, and
+outcome. Runtime node handles are explicitly build-scoped; the manifest marks
+feature identity as `persistent_recipe_id`. Connection rows report the source
+and target recipe ids plus measured snap distance. Bounds rows report source,
+local/world space, finite min/max, and `scene_meters`. Named-state rows report
+inheritance, active selection, resolved channel counts, and status.
+The additive `instances` rows preserve each authored instance `id` and owning
+`set_id` beside its runtime-scoped `set_handle` and `instance_id`; semantic AOV
+legends use this mapping without relabeling a runtime handle as durable storage.
 Authored mesh nodes, instance-set nodes, label nodes, and cameras include their
 recipe ids and stable handles in the same targetable lists as imported node
 handles. `geometries`, `materials`, and `fonts` are non-targetable resources
@@ -1421,6 +1452,22 @@ font entries report the loaded font resource kind.
 `RecipeBuildPolicy` is operator-owned configuration, not part of the authored
 recipe schema, and fail-closed policy or required-load failures appear as
 deterministic build diagnostics.
+
+`scena.recipe_build_result.v1` is emitted by
+`scena recipe build <recipe.json> [--max-imports <n>]`. It nests the existing
+`scena.scene_recipe_build.v1` manifest, the effective
+`scena.recipe_policy.v1`, and execution counters. This command constructs only
+assets, scene graph state, build budgets, and SceneHost handle tables; it does
+not construct a `Renderer`, GPU context, prepared resources, rendered frame, or
+capture. Imports, external glTF resources, decoded texture sources, and
+explicit/preset environments are resolved under the reported policy; required
+environment URIs are checked for real source availability without creating a
+renderer. A denied URI is rejected before fetch. `asset_fetches` is a measured
+per-store attempt counter: successful and failed source-byte requests count,
+including external resources and optional sidecar probes, while cache hits and
+embedded bytes do not. Attempted missing resources emit deterministic build
+diagnostics. The command is not a render preview and intentionally does not use
+ambiguous `--dry-run` wording.
 
 `expect` is additive recipe sugar over existing verification contracts. Color
 expectations compile to `scena.appearance_expectation.v1`, pick expectations
@@ -1440,6 +1487,79 @@ Top-level `ok` is true only when build, introspection, and verification are
 all true. If build fails before a frame exists, `capture` and `introspection`
 are `null` rather than fabricated.
 
+### `scena.capture_sequence_result.v1`
+
+Produced by `scena recipe capture <recipe.json> --out-dir <dir>`. The default
+canonical order is front, top, right, isometric in a right-handed, +Y-up world:
+front looks from +Z, right from +X, and top uses the closest stable orbit state
+to +Y (a one-degree pole offset) with -Z as screen-up. The isometric camera
+occupies the +X,+Y,+Z eye octant. `--views none` suppresses
+canonical frames. `--turntable <n>` samples evenly spaced yaw angles at a fixed
+20-degree pitch. `--clip <name> --frames <n>` resolves an authored recipe
+animation or imported clip and samples the inclusive `[0,duration]` interval.
+The combined canonical, turntable, and clip frame count is bounded to 360.
+
+One `SceneHostCore` is constructed and reused for the entire sequence. Every
+frame follows the normal `set_camera -> prepare -> render -> capture` lifecycle;
+clip frames seek through the host animation API before prepare. Each frame row
+records its index, kind, label, PNG and descriptor paths, complete camera state,
+capture payload hash, and canonical-view, turntable, or clip/time metadata. The
+contact-sheet rows retain the same index, label, kind, tile bounds, and payload
+hash, so an agent can map a review tile back to the exact source frame.
+
+The stable core output is deterministic full-resolution PNG frames plus a PNG
+contact sheet. Contact-sheet tiles use nearest-neighbor thumbnails capped at
+192 pixels on their longest edge, so a bounded 360-frame sequence does not
+retain 360 full-resolution RGBA buffers merely to compose the sheet; tile rows
+still report the original frame payload hash.
+GIF and video containers are deliberately outside renderer ownership: use an
+external GIF/video encoder over the numbered frames without changing sampling
+semantics. `video_encoding.status` and `reason` keep that boundary explicit.
+The stable fixture lives at
+`tests/assets/stable-contracts/capture_sequence_result.v1.json`.
+
+### `scena.semantic_aov_result.v1`
+
+Produced by `scena recipe aov <recipe.json> --out-dir <dir> [--passes
+id,depth,normal]`. CPU v1 emits deterministic paletted RGBA8 node/instance IDs,
+16-bit grayscale linear camera-distance depth, and RGBA8 world normals from one
+prepared SceneHost state. Palette index zero is transparent background. Every
+other palette entry has a legend row containing a runtime-scoped host node
+handle, optional runtime instance identity, and a persistent recipe node or
+instance ID when the build manifest owns one. Runtime handles are explicitly not persistence identifiers.
+
+The report pins single-center sampling, nearest-opaque-fragment occlusion,
+camera-space depth in scene meters, world-normal encoding, and the absence of
+MSAA/post-process resolve. Alpha-blended/transmissive geometry, strokes, labels,
+particles, helpers, and overlays remain background and are counted in
+`exclusions`; v1 never silently attributes them. The complete normative
+contract is `docs/specs/semantic-aov-v1.md`, and the stable fixture is
+`tests/assets/stable-contracts/semantic_aov_result.v1.json`.
+
+### `scena.scene_recipe_diff_result.v1`
+
+Produced by `scena diff <before.recipe.json> <after.recipe.json>`. The default
+mode is renderer-free and reports typed material, node, camera, and recipe-level
+changes with stable IDs, add/remove/modify/reorder kinds, field paths, and an
+explicit numeric tolerance. Generic arbitrary-JSON diffing is intentionally
+outside renderer ownership.
+
+`--render --out-dir <dir>` additionally renders both recipes through the same
+CPU SceneHost lifecycle, reuses `scena.capture_baseline.v1` for the aggregate
+RGBA8 comparison, and writes `before.png`, `after.png`, `diff.png`, and the
+complete result JSON. Changed color pixels are sampled against each recipe's
+semantic ID AOV and grouped by persistent recipe node, imported-node, or
+authored-instance candidate. The summary is an exact partition:
+`changed_pixels = attributed_pixels + ambiguous_pixels + unattributed_pixels`.
+
+Attribution is deliberately conservative: anti-aliased identity edges are ambiguous;
+different before/after identity candidates are ambiguous; and zero-ID pixels
+are unattributed background or an excluded transparent, transmission, stroke,
+label, particle, helper, or overlay surface. The report does not claim causal
+attribution for those surfaces or for post-processing. No competitive uniqueness claim
+is made without a dated, source-backed cross-product matrix. The stable fixture
+is `tests/assets/stable-contracts/scene_recipe_diff_result.v1.json`.
+
 `scena validate-recipe <recipe.json>` first runs shape validation without
 rendering, then loads declared assets far enough to validate asset presence and
 optional `expected_extent` scale sanity. Missing or unloadable assets emit an
@@ -1453,6 +1573,8 @@ The stable fixtures live at
 `tests/assets/stable-contracts/scene_recipe_validation.v1.json`; the build
 manifest fixture lives at
 `tests/assets/stable-contracts/scene_recipe_build.v1.json`; the combined
+renderer-free build fixture lives at
+`tests/assets/stable-contracts/recipe_build_result.v1.json`; the combined
 render/verify fixture lives at
 `tests/assets/stable-contracts/recipe_render_result.v1.json`. `scena
 validate-recipe <recipe.json>` emits validation JSON on stdout and exits
@@ -1500,6 +1622,26 @@ placement JSON on stdout and a non-zero exit.
 The stable fixture lives at
 `tests/assets/stable-contracts/placement_result.v1.json`.
 
+### `scena.recipe_patch.v1`
+
+Produced by adding `--apply` to `scena place`. The default placement command
+remains a side-effect-free preview. Apply mode is also filesystem-safe: it
+emits a complete canonical `updated_recipe` document rather than editing the
+source in place. The patch is addressed by persistent recipe import ID, never
+by a transient SceneHost handle, and includes the previous/new transform plus
+a semantic JSON-path change summary. `formatting_preserved=false` explicitly
+states that canonical JSON output does not promise source whitespace or key
+order.
+
+`source_sha256` binds the result to the exact input. Callers that pass
+`--expect-source-sha256 <hex>` receive an `ok=false` `stale_source` diagnostic
+when the file changed, before any updated document is emitted. Applying the
+reported transform and rebuilding must produce the same transform as the
+placement preview.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/recipe_patch.v1.json`.
+
 ### `scena.schema_catalog.v1` and `scena.schema_entry.v1`
 
 Produced by `schema_catalog_v1`, `schema_entry_report_v1`, and the `scena`
@@ -1515,9 +1657,88 @@ entry, a representative valid example parsed from that contract's fixture, and
 schema names fail closed with a non-zero exit code and a near-miss suggestion
 when one is available.
 
+For `scena.scene_recipe.v1`, `schema get` also includes an authoritative
+`scena.field_model.v1` table. Each row names a JSON path and exposes its type,
+requiredness, closed enum values, numeric bounds, default when one exists,
+deprecation state, and examples. The model is owned by
+`scene/recipe/field_model`; recipe root/import/capture field acceptance and the
+render/primitive closed vocabularies consume the same constants, so discovery
+does not scrape or hand-copy validator help text. Round-trip and invalid
+fixtures live under `tests/assets/schema-field-model/`.
+
 The stable fixtures live at
 `tests/assets/stable-contracts/schema_catalog.v1.json` and
 `tests/assets/stable-contracts/schema_entry.v1.json`.
+
+### `scena.field_model.v1`
+
+The versioned nested field-discovery contract returned by `schema get` for
+contracts that publish field-level authoring guidance. `contract` identifies
+the modeled public schema and `fields[]` carries path-level constraints. Empty
+or absent enum/range/default members mean no narrower constraint is promised;
+they must not be inferred from the representative example.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/field_model.v1.json`.
+
+### `scena.vocab.v1`
+
+Produced by `vocabulary_report_v1` and the `scena vocab list` / `scena vocab
+get <name>` commands. Each closed vocabulary has a stable name, integer
+version, owning module, and ordered value list. Renderer backends, recipe
+material kinds, placement verbs, alpha modes, texture color spaces, cameras,
+and lights are discoverable without scraping help text.
+
+The stable fixture lives at `tests/assets/stable-contracts/vocab.v1.json`.
+
+### `scena.recipe_policy.v1`
+
+Produced by `RecipeBuildPolicy::to_schema_report` and `scena policy recipe`.
+The report exposes the effective network switch, URI schemes, canonical local
+roots, and every recipe/resource/output limit. Every value carries its source;
+the standalone discovery command reports `compiled_default`, while commands
+that add operator overrides must report those overrides in their own result
+policy block rather than implying that a recipe changed policy.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/recipe_policy.v1.json`.
+
+`scena.recipe_patch.v1` returns a complete canonical recipe rather than a
+format-preserving text edit. Before serialization, relative import, font,
+environment, and material-texture URIs are resolved against the source recipe,
+so writing `updated_recipe` at a different path preserves resource identity.
+The only reported semantic change is the recipe-ID-selected transform; URI
+rebasing is semantic-preserving canonicalization.
+
+### CLI discovery and errors
+
+`scena.cli_help.v1` retains the stable command strings and adds one
+`command_contracts` row per command. Each row declares non-empty `emits.success`
+and `emits.error` schema sets. Command-specific reports remain on stdout;
+dispatch and argument failures that cannot produce one use
+`scena.cli_error.v1` on stderr. Fatal stdout write failures remain the distinct
+`scena.cli_io_error.v1` contract.
+
+The declarations are checked against a command/schema/outcome evidence matrix.
+Every non-`cli_error` row names a real CLI integration fixture, while a fast
+live matrix executes argument failures for every command and polymorphic
+recipe/load failures for the commands that can return them. The matrix also
+guards against advertising internal build reports that are actually wrapped by
+`recipe_render_result`, or `asset_doctor` results on commands whose real path
+returns `cli_error`.
+
+The schema catalog is authoritative for public CLI/library JSON. CI, browser,
+benchmark, review, and release proof payloads not listed in the public catalog
+are internal gate artifacts, even when they carry a versioned schema string;
+their authorities are the owning files under `docs/specs/`, release staging,
+or test lanes. Moving one into a public command requires adding a catalog row,
+stable fixture, documentation, and compatibility checks.
+
+The `scena.asset_doctor.v1` error shape is intentionally polymorphic across
+`inspect`, `render`, and `diagnose`: asset-load failure before the requested
+operation emits the same doctor report and a non-zero exit, while successful
+operations emit their command-specific inspection/introspection/diagnosis
+schemas. Machine help declares both possibilities.
 
 All `scena` CLI commands write stable JSON to stdout. Human-readable command
 errors use stderr only when no contract report can be produced. Asset-loading
@@ -1613,6 +1834,17 @@ Actions can apply a direct `VisualPatchV1`, apply a stored
 existing host animation mixer as an animation clip. Animation actions use
 `VisualPatchV1.animation_time` with `mode: "seek"`; hosts create and own the
 mixer before the timeline references it.
+
+Animation segments are resolved and validated against the bound mixer before
+any action is emitted. A missing `end_seconds` means the clip duration; an
+explicit end beyond the duration is clamped to the duration; and a
+`start_seconds` beyond the duration rejects the whole timeline seek before
+patch application. A zero-duration imported static clip accepts only start
+zero and always samples zero. `Once` mixers sample the inclusive end and hold
+that exact terminal pose. `Repeat` mixers sample the half-open `[start,end)`
+segment and wrap exact or floating-point-near boundaries to `start`. Invalid
+segments are top-level `InvalidInput` errors, not repeated per-entry
+`failed[]` rows on every host tick.
 
 `timeline_patch` includes actions whose `at_seconds` is less than or equal to
 the requested time and flattens them into one deterministic last-wins patch.

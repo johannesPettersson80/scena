@@ -1,0 +1,11 @@
+{
+  "schema": "scena.vocab.v1",
+  "vocabularies": [
+    {
+      "name": "placement_verbs",
+      "version": 1,
+      "owner": "scene/recipe/placement",
+      "values": ["center", "ground", "fit_to_size", "look_at", "align_to_anchor", "place_on"]
+    }
+  ]
+}

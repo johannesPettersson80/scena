@@ -14,6 +14,12 @@
       "fixture_path": "tests/assets/stable-contracts/schema_entry.v1.json"
     },
     {
+      "schema": "scena.field_model.v1",
+      "owner_module": "scene/recipe/field_model",
+      "summary": "Authoritative field types, requiredness, enums, ranges, defaults, deprecations, and examples.",
+      "fixture_path": "tests/assets/stable-contracts/field_model.v1.json"
+    },
+    {
       "schema": "scena.capability_report.v1",
       "owner_module": "diagnostics",
       "summary": "Renderer capability status and diagnostics.",
@@ -183,6 +189,13 @@
       "fixture_path": "tests/assets/stable-contracts/scene_recipe_build.v1.json"
     },
     {
+      "schema": "scena.recipe_build_result.v1",
+      "owner_module": "scene_host",
+      "summary": "Renderer-free recipe build manifest with effective policy and execution counters.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/recipe_build_result.v1.json"
+    },
+    {
       "schema": "scena.recipe_render_result.v1",
       "owner_module": "bin/scena",
       "summary": "One-command recipe build, render, introspection, and verification result.",
@@ -195,6 +208,33 @@
       "summary": "CAD inspection preset report binding principal-face renders, post-process presentation metrics, and a contact sheet.",
       "feature_flag": "scene-host",
       "fixture_path": "tests/assets/stable-contracts/cad_inspection_result.v1.json"
+    },
+    {
+      "schema": "scena.capture_sequence_result.v1",
+      "owner_module": "bin/scena/recipe/capture_sequence",
+      "summary": "Canonical-view, turntable, and animation-clip PNG capture sequence with per-frame camera and timing metadata.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/capture_sequence_result.v1.json"
+    },
+    {
+      "schema": "scena.semantic_aov_result.v1",
+      "owner_module": "bin/scena/recipe/semantic_aov",
+      "summary": "Deterministic semantic ID, linear-depth, and world-normal images with runtime-scoped and persistent identity legend.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/semantic_aov_result.v1.json"
+    },
+    {
+      "schema": "scena.scene_recipe_diff.v1",
+      "owner_module": "scene/recipe/diff",
+      "summary": "Renderer-free structural recipe diff with persistent semantic identity and numeric tolerance.",
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe_diff.v1.json"
+    },
+    {
+      "schema": "scena.scene_recipe_diff_result.v1",
+      "owner_module": "bin/scena/diff",
+      "summary": "Typed recipe semantic changes plus optional aggregate rendered diff and conservative persistent-identity attribution.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe_diff_result.v1.json"
     },
     {
       "schema": "scena.placement_result.v1",
@@ -300,6 +340,55 @@
       "summary": "SceneHost event batch for pick, hover, load, diagnostic, capture, and surface events.",
       "feature_flag": "scene-host",
       "fixture_path": "tests/assets/stable-contracts/host_event.v1.json"
+    },
+    {
+      "schema": "scena.release.findings.v1",
+      "owner_module": "xtask/release",
+      "summary": "Independent release-review findings register bound to one source commit."
+    },
+    {
+      "schema": "scena.release.staging.v1",
+      "owner_module": "xtask/release",
+      "summary": "Release artifact staging metadata kept separate from source evidence provenance."
+    },
+    {
+      "schema": "scena.recipe_patch.v1",
+      "owner_module": "scene/recipe",
+      "summary": "Source-digest-bound placement update with complete canonical recipe and semantic change summary.",
+      "fixture_path": "tests/assets/stable-contracts/recipe_patch.v1.json"
+    },
+    {
+      "schema": "scena.vocab.v1",
+      "owner_module": "vocabulary",
+      "summary": "Closed renderer and recipe vocabularies with stable owners and versions.",
+      "fixture_path": "tests/assets/stable-contracts/vocab.v1.json"
+    },
+    {
+      "schema": "scena.recipe_policy.v1",
+      "owner_module": "scene/recipe",
+      "summary": "Effective recipe sandbox roots, URI/network policy, limits, and value sources.",
+      "fixture_path": "tests/assets/stable-contracts/recipe_policy.v1.json"
+    },
+    {
+      "schema": "scena.cli_error.v1",
+      "owner_module": "bin/scena",
+      "summary": "Structured CLI dispatch and argument error emitted on stderr.",
+      "fixture_path": "tests/assets/stable-contracts/cli_error.v1.json"
+    },
+    {
+      "schema": "scena.cli_io_error.v1",
+      "owner_module": "bin/scena",
+      "summary": "Structured fatal CLI stdout write failure report emitted on stderr."
+    },
+    {
+      "schema": "scena.cli_help.v1",
+      "owner_module": "bin/scena",
+      "summary": "Machine-readable scena CLI command, option, and guide discovery."
+    },
+    {
+      "schema": "scena.cli_version.v1",
+      "owner_module": "bin/scena",
+      "summary": "Machine-readable package version, commit, and compiled feature report."
     }
   ]
 }

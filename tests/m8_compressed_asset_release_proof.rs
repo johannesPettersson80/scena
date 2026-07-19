@@ -398,7 +398,7 @@ fn render_material_native_gpu<F: AssetFetcher>(
         .add()
         .map_err(|error| format!("{label} mesh insert failed: {error:?}"))?;
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
+        .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
         .add()
         .map_err(|error| format!("{label} light insert failed: {error:?}"))?;
     let camera = scene
@@ -465,7 +465,6 @@ fn material_for_slot(slot: &str, texture: scena::TextureHandle) -> MaterialDesc 
             .with_emissive_texture(texture),
         _ => unreachable!("unknown material slot {slot}"),
     }
-    .with_double_sided(true)
 }
 
 fn render_material<F: AssetFetcher>(assets: &Assets<F>, material: MaterialDesc) -> Vec<u8> {
@@ -482,7 +481,11 @@ fn render_material<F: AssetFetcher>(assets: &Assets<F>, material: MaterialDesc) 
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
+    scene
+        .frame_all_with_assets(camera, assets)
+        .expect("material proof geometry frames");
     let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+    renderer.set_environment(assets.default_environment());
     renderer
         .prepare_with_assets(&mut scene, assets)
         .expect("scene prepares");
@@ -491,11 +494,7 @@ fn render_material<F: AssetFetcher>(assets: &Assets<F>, material: MaterialDesc) 
 }
 
 fn assert_material_role_frame(frame: &[u8], label: &str) {
-    if label == "normal" {
-        assert_visible_frame(frame, label);
-    } else {
-        assert_non_degenerate_frame(frame, label);
-    }
+    assert_non_degenerate_frame(frame, label);
 }
 
 fn assert_non_degenerate_frame(frame: &[u8], label: &str) {
@@ -522,24 +521,36 @@ fn assert_visible_frame(frame: &[u8], label: &str) {
 }
 
 fn assert_ktx2_normal_texture_affects_cpu_preview_pixels() {
-    let flat = render_center_rgb_for_ktx2_normal_texture([128, 128, 255, 255]);
-    let inverted = render_center_rgb_for_ktx2_normal_texture([128, 128, 0, 255]);
-    let flat_luma = flat.iter().map(|channel| u16::from(*channel)).sum::<u16>();
-    let inverted_luma = inverted
-        .iter()
-        .map(|channel| u16::from(*channel))
-        .sum::<u16>();
+    let (flat, flat_decoded) = render_frame_for_ktx2_normal_texture([128, 128, 255, 255]);
+    let (inverted, inverted_decoded) = render_frame_for_ktx2_normal_texture([128, 128, 0, 255]);
     assert_ne!(
-        flat, inverted,
-        "KTX2 normal texture pixels must affect CPU preview lighting instead of being silently ignored"
+        flat_decoded, inverted_decoded,
+        "KTX2 normal fixtures must decode to distinct tangent-space normals"
     );
+    let differing_pixels = flat
+        .chunks_exact(4)
+        .zip(inverted.chunks_exact(4))
+        .filter(|(flat, inverted)| flat[..3] != inverted[..3])
+        .count();
+    let max_channel_delta = flat
+        .iter()
+        .zip(&inverted)
+        .map(|(flat, inverted)| flat.abs_diff(*inverted))
+        .max()
+        .unwrap_or(0);
+    assert!(
+        differing_pixels > 16 && max_channel_delta > 8,
+        "KTX2 normal texture pixels must materially affect CPU preview lighting instead of being silently ignored; differing_pixels={differing_pixels}, max_channel_delta={max_channel_delta}, decoded flat={flat_decoded:?}, decoded inverted={inverted_decoded:?}"
+    );
+    let flat_luma = frame_rgb_sum(&flat);
+    let inverted_luma = frame_rgb_sum(&inverted);
     assert!(
         flat_luma > inverted_luma,
-        "front-facing KTX2 normal map should receive more directional light than an inverted normal, flat={flat:?}, inverted={inverted:?}"
+        "front-facing KTX2 normal map should receive more total directional light than an inverted normal, flat_luma={flat_luma}, inverted_luma={inverted_luma}"
     );
 }
 
-fn render_center_rgb_for_ktx2_normal_texture(pixel: [u8; 4]) -> [u8; 3] {
+fn render_frame_for_ktx2_normal_texture(pixel: [u8; 4]) -> (Vec<u8>, [u8; 3]) {
     let path = format!(
         "memory://ktx2-normal-{}-{}-{}.ktx2",
         pixel[0], pixel[1], pixel[2]
@@ -550,9 +561,22 @@ fn render_center_rgb_for_ktx2_normal_texture(pixel: [u8; 4]) -> [u8; 3] {
     )]));
     let normal = pollster::block_on(assets.load_texture(path, TextureColorSpace::Linear))
         .expect("KTX2 normal texture loads");
+    let texture = assets
+        .texture(normal)
+        .expect("KTX2 texture descriptor exists");
+    let (_, _, decoded) = texture
+        .decoded_rgba8()
+        .expect("KTX2 texture has decoded RGBA8 pixels");
+    let decoded_rgb = [decoded[0], decoded[1], decoded[2]];
     let frame = render_material(&assets, material_for_slot("normal", normal));
-    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
-    [frame[center], frame[center + 1], frame[center + 2]]
+    (frame, decoded_rgb)
+}
+
+fn frame_rgb_sum(frame: &[u8]) -> u64 {
+    frame
+        .chunks_exact(4)
+        .map(|pixel| u64::from(pixel[0]) + u64::from(pixel[1]) + u64::from(pixel[2]))
+        .sum()
 }
 
 fn ext_mesh_gpu_instancing_triangle_gltf() -> String {
@@ -877,12 +901,16 @@ fn meshopt_gltf_from_views(views: Vec<MeshoptView>) -> String {
     for (index, view) in views.iter().enumerate() {
         let encoded_len = view.encoded.len();
         encoded.extend_from_slice(&view.encoded);
+        let decoded_stride = if view.semantic == "INDICES" {
+            String::new()
+        } else {
+            format!(",\n                \"byteStride\": {}", view.stride)
+        };
         buffer_views.push_str(&format!(
             r#"{{
                 "buffer": 0,
                 "byteOffset": {decoded_offset},
-                "byteLength": {decoded_len},
-                "byteStride": {stride},
+                "byteLength": {decoded_len}{decoded_stride},
                 "extensions": {{
                     "EXT_meshopt_compression": {{
                         "buffer": 1,

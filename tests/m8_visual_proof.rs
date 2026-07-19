@@ -128,17 +128,20 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
             );
         }
         if artifact.name == "m8-iridescence-material-feature" {
-            let off = max_rgb_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
-            let on = max_rgb_in_region(
+            let off_average =
+                average_rgb_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
+            let on_average = average_rgb_in_region(
                 &artifact.rgba,
                 artifact.width,
                 artifact.width / 2,
                 artifact.width,
             );
             assert!(
-                on[2] > off[2] && on[2] >= on[0],
-                "iridescence visual proof must add a thickness-driven colored lobe; \
-                 off={off:?} on={on:?}"
+                on_average[2] - on_average[0] > off_average[2] - off_average[0] + 2.0
+                    && on_average[2] > on_average[1]
+                    && on_average[1] > on_average[0],
+                "iridescence visual proof must shift the average material response toward a thickness-driven blue lobe without relying on saturated maxima; \
+                 off_average={off_average:?} on_average={on_average:?}"
             );
         }
         if artifact.name == "m8-dispersion-material-feature" {
@@ -946,7 +949,7 @@ fn textured_material_gltf() -> String {
                 {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.65, -0.65, 0.0], "max": [0.65, 0.65, 0.0] }},
                 {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
                 {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
@@ -992,6 +995,22 @@ fn max_rgb_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> [u16; 3
         }
     }
     max_rgb
+}
+
+fn average_rgb_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> [f32; 3] {
+    let height = rgba.len() as u32 / width / 4;
+    let mut total = [0_u64; 3];
+    let mut count = 0_u64;
+    for y in 0..height {
+        for x in min_x..max_x {
+            let pixel = pixel_at(rgba, width, x, y);
+            for (channel, sum) in total.iter_mut().enumerate() {
+                *sum += u64::from(pixel[channel]);
+            }
+            count += 1;
+        }
+    }
+    total.map(|sum| sum as f32 / count as f32)
 }
 
 fn rgb_sum(value: [u16; 3]) -> u16 {

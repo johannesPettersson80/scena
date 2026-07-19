@@ -4,13 +4,13 @@ const SHADER: &str = include_str!("bloom.wgsl");
 
 pub(super) fn create_pipeline(
     device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
+    pipeline_layout: &wgpu::PipelineLayout,
 ) -> wgpu::RenderPipeline {
     create_post_pipeline(
         device,
         "scena.gpu_post.bloom_pipeline",
         SHADER,
-        bind_group_layout,
+        pipeline_layout,
         wgpu::TextureFormat::Rgba8Unorm,
     )
 }

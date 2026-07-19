@@ -33,32 +33,29 @@ impl ImportOptions {
     }
 
     pub(super) fn convert_transform(self, transform: Transform) -> Transform {
-        let unit_scale = self.source_units.meters_per_unit();
         let converted_basis = self
             .source_coordinate_system
             .convert_connector_transform(transform);
         Transform {
             translation: self
                 .source_coordinate_system
-                .convert_vec3(scale_vec3(transform.translation, unit_scale)),
+                .convert_vec3(transform.translation),
             rotation: converted_basis.rotation,
-            scale: self
-                .source_coordinate_system
-                .convert_scale(scale_vec3(transform.scale, unit_scale)),
+            scale: self.source_coordinate_system.convert_scale(transform.scale),
         }
     }
 
     pub(super) fn convert_animation_vec3(self, target: AnimationTarget, value: Vec3) -> Vec3 {
-        let unit_scale = self.source_units.meters_per_unit();
         match target {
-            AnimationTarget::Translation => self
-                .source_coordinate_system
-                .convert_vec3(scale_vec3(value, unit_scale)),
-            AnimationTarget::Scale => self
-                .source_coordinate_system
-                .convert_scale(scale_vec3(value, unit_scale)),
+            AnimationTarget::Translation => self.source_coordinate_system.convert_vec3(value),
+            AnimationTarget::Scale => self.source_coordinate_system.convert_scale(value),
             AnimationTarget::Rotation | AnimationTarget::Weights => value,
         }
+    }
+
+    pub(super) fn unit_root_transform(self) -> Option<Transform> {
+        (self.source_units != SourceUnits::Meters)
+            .then(|| Transform::IDENTITY.scale_by(self.source_units.meters_per_unit()))
     }
 }
 
@@ -135,10 +132,6 @@ impl SourceCoordinateSystem {
             )),
         }
     }
-}
-
-const fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
-    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
 }
 
 fn multiply_quat(left: Quat, right: Quat) -> Quat {

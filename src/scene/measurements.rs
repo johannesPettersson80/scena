@@ -5,7 +5,10 @@ use crate::diagnostics::LookupError;
 use crate::geometry::{Aabb, GeometryDesc, GeometryTopology, GeometryVertex};
 use crate::material::{Color, MaterialDesc};
 
-use super::{LabelDesc, LabelKey, NodeKey, Scene, Transform, Vec3};
+use super::{
+    LabelDesc, LabelKey, NodeKey, Scene, Transform, Vec3, overlay_ownership::OverlayOwner,
+    transaction::SceneTransaction,
+};
 
 const MEASUREMENT_LABEL_OFFSET_FRACTION: f32 = 0.20;
 const MEASUREMENT_LABEL_OFFSET_MIN_WORLD: f32 = 0.012;
@@ -290,6 +293,12 @@ impl Scene {
                 label_node,
             },
         );
+        let owner = OverlayOwner::Measurement(report.id.clone());
+        self.register_overlay_node(line_node, owner.clone());
+        if let Some(label_node) = label_node {
+            self.register_overlay_node(label_node, owner);
+        }
+        self.assert_overlay_ownership_invariant();
         Ok(MeasurementOverlayReport {
             id: report.id,
             kind: report.kind,
@@ -315,24 +324,33 @@ impl Scene {
     }
 
     pub fn clear_measurement_overlay(&mut self, id: &str) -> bool {
-        let Some(measurement) = self.measurements.remove(id) else {
+        let Some(measurement) = self.measurements.get(id).cloned() else {
             return false;
         };
-        remove_generated_node_if_live(self, measurement.line_node);
-        if let Some(label_node) = measurement.label_node {
-            remove_generated_node_if_live(self, label_node);
+        let mut nodes = vec![measurement.line_node];
+        nodes.extend(measurement.label_node);
+        let live_nodes = nodes
+            .iter()
+            .copied()
+            .filter(|node| self.node(*node).is_some())
+            .collect::<Vec<_>>();
+        let mut transaction = SceneTransaction::new(self);
+        transaction.scene().measurements.remove(id);
+        for node in nodes {
+            transaction.scene().unregister_overlay_node(node);
         }
+        transaction.scene().remove_nodes_unchecked(&live_nodes);
+        transaction.scene().assert_overlay_ownership_invariant();
+        transaction.commit();
         true
     }
 }
 
 impl SceneMeasurementOverlayState {
-    #[cfg(feature = "scene-host")]
     pub const fn line_node(&self) -> NodeKey {
         self.line_node
     }
 
-    #[cfg(feature = "scene-host")]
     pub const fn label_node(&self) -> Option<NodeKey> {
         self.label_node
     }
@@ -343,12 +361,6 @@ impl SceneMeasurementOverlayState {
     ) -> bool {
         removed.contains(&self.line_node)
             || self.label_node.is_some_and(|node| removed.contains(&node))
-    }
-}
-
-fn remove_generated_node_if_live(scene: &mut Scene, node: NodeKey) {
-    if scene.node(node).is_some() {
-        let _ = scene.remove_node(node);
     }
 }
 

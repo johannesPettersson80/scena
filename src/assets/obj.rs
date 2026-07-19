@@ -10,7 +10,7 @@ impl<F: AssetFetcher> Assets<F> {
         path: impl Into<AssetPath>,
     ) -> Result<GeometryHandle, AssetError> {
         let path = path.into();
-        let bytes = self.fetcher.fetch(&path).await?;
+        let bytes = self.tracked_fetcher().fetch(&path).await?;
         let source = std::str::from_utf8(&bytes).map_err(|error| AssetError::Parse {
             path: path.as_str().to_string(),
             reason: format!("expected UTF-8 OBJ source: {error}"),

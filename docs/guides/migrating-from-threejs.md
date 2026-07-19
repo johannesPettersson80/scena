@@ -201,11 +201,14 @@ let cursor = CursorPosition::physical(x, y);
 scene.pick_and_select_with_assets(camera, cursor, viewport, &assets)?;
 ```
 
-Picking uses camera rays and world-space triangles. Use `pick_with_assets` for the normal
+Picking uses camera rays and world-space triangles in the current rendered pose: morph,
+then skin, then node/instance transforms. Use `pick_with_assets` for the normal
 `scene.mesh(...)`/glTF workflow, or `pick_and_select_with_assets`/`pick_and_hover_with_assets`
-when UI state should update in one call. Plain `pick` exists for legacy primitive
+when UI state should update in one call. Distances are world-space camera-ray distances;
+normals follow transformed winding, including reversal under negative scale. Collapsed
+singular-scale triangles are not hittable. Plain `pick` exists for legacy primitive
 renderables. A miss should be treated as a diagnostic problem only after camera framing,
-layer masks, and visibility are checked.
+layer masks, visibility, and the current deformation pose are checked.
 
 ## Materials And Current Limits
 

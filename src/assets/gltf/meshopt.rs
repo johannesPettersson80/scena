@@ -18,12 +18,16 @@ const MAX_MESHOPT_DECODED_BYTES: usize = 256 * 1024 * 1024;
 pub(super) fn decode_meshopt_buffer_views(
     path: &AssetPath,
     document: &Document,
+    extensions_required: &[String],
     buffers: &mut ResolvedGltfBuffers,
 ) -> Result<(), AssetError> {
     #[cfg(not(feature = "meshopt"))]
-    let required = document
-        .extensions_required()
+    let required = extensions_required
+        .iter()
         .any(|extension| extension == EXTENSION);
+
+    #[cfg(feature = "meshopt")]
+    let _ = extensions_required;
 
     for view in document.views() {
         let Some(extension) = view.extension_value(EXTENSION) else {

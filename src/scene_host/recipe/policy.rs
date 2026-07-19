@@ -1,13 +1,47 @@
 use super::error_diagnostic;
 use crate::assets::{AssetLoadReport, DefaultAssetFetcher, SceneAsset, TextureHandle};
 use crate::material::MaterialDesc;
-use crate::scene::recipe::{RecipeBuildPolicy, SceneRecipeDiagnosticV1};
+use crate::scene::recipe::{RecipeBuildPolicy, SceneRecipeDiagnosticV1, SceneRecipeV1};
 use crate::scene_host::SceneHostCore;
 use crate::{GeometryHandle, MaterialHandle};
 
 #[path = "policy/budget.rs"]
 mod budget;
 pub(in crate::scene_host::recipe) use budget::{RecipeBuildBudget, RecipeTextureBudget};
+
+pub(super) fn recipe_policy_diagnostics(
+    recipe: &SceneRecipeV1,
+    policy: &RecipeBuildPolicy,
+) -> Vec<SceneRecipeDiagnosticV1> {
+    let mut diagnostics = Vec::new();
+    if recipe.imports.len() > policy.max_imports() {
+        diagnostics.push(error_diagnostic(
+            "$.imports",
+            "policy_violation",
+            format!(
+                "recipe imports {} assets, exceeding RecipeBuildPolicy max_imports {}",
+                recipe.imports.len(),
+                policy.max_imports()
+            ),
+            "split the recipe or raise the operator-owned max_imports policy",
+        ));
+    }
+    if let Some(capture) = &recipe.capture {
+        let output_pixels = u64::from(capture.width) * u64::from(capture.height);
+        if output_pixels > policy.max_output_pixels() {
+            diagnostics.push(error_diagnostic(
+                "$.capture",
+                "policy_violation",
+                format!(
+                    "capture requests {output_pixels} pixels, exceeding RecipeBuildPolicy max_output_pixels {}",
+                    policy.max_output_pixels()
+                ),
+                "lower capture width/height or raise the operator-owned max_output_pixels policy",
+            ));
+        }
+    }
+    diagnostics
+}
 
 pub(super) fn asset_policy_diagnostics(
     policy: &RecipeBuildPolicy,

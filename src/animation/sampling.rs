@@ -8,11 +8,32 @@ pub(super) fn sample_vec3(
     interpolation: AnimationInterpolation,
     time_seconds: f32,
 ) -> Option<Vec3> {
+    let mut ignored = 0;
+    sample_vec3_impl::<false>(times, values, interpolation, time_seconds, &mut ignored)
+}
+
+pub(super) fn sample_vec3_profiled(
+    times: &[f32],
+    values: &[Vec3],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<Vec3> {
+    sample_vec3_impl::<true>(times, values, interpolation, time_seconds, intervals_tested)
+}
+
+fn sample_vec3_impl<const PROFILE: bool>(
+    times: &[f32],
+    values: &[Vec3],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<Vec3> {
     if times.is_empty() || values.is_empty() {
         return None;
     }
     if interpolation == AnimationInterpolation::CubicSpline {
-        return sample_cubic_vec3(times, values, time_seconds);
+        return sample_cubic_vec3::<PROFILE>(times, values, time_seconds, intervals_tested);
     }
     if time_seconds <= times[0] {
         return values.first().copied();
@@ -20,23 +41,19 @@ pub(super) fn sample_vec3(
     if time_seconds >= *times.last()? {
         return values.last().copied();
     }
-    for index in 0..times.len().saturating_sub(1) {
-        let start = times[index];
-        let end = times[index + 1];
-        if time_seconds <= end {
-            let left = *values.get(index)?;
-            let right = *values.get(index + 1)?;
-            return Some(match interpolation {
-                AnimationInterpolation::Step => left,
-                AnimationInterpolation::Linear => {
-                    let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
-                    lerp_vec3(left, right, amount)
-                }
-                AnimationInterpolation::CubicSpline => unreachable!("handled before loop"),
-            });
+    let index = keyframe_segment::<PROFILE>(times, time_seconds, intervals_tested)?;
+    let start = times[index];
+    let end = times[index + 1];
+    let left = *values.get(index)?;
+    let right = *values.get(index + 1)?;
+    Some(match interpolation {
+        AnimationInterpolation::Step => left,
+        AnimationInterpolation::Linear => {
+            let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
+            lerp_vec3(left, right, amount)
         }
-    }
-    values.last().copied()
+        AnimationInterpolation::CubicSpline => unreachable!("handled before lookup"),
+    })
 }
 
 pub(super) fn sample_quat(
@@ -45,11 +62,32 @@ pub(super) fn sample_quat(
     interpolation: AnimationInterpolation,
     time_seconds: f32,
 ) -> Option<Quat> {
+    let mut ignored = 0;
+    sample_quat_impl::<false>(times, values, interpolation, time_seconds, &mut ignored)
+}
+
+pub(super) fn sample_quat_profiled(
+    times: &[f32],
+    values: &[Quat],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<Quat> {
+    sample_quat_impl::<true>(times, values, interpolation, time_seconds, intervals_tested)
+}
+
+fn sample_quat_impl<const PROFILE: bool>(
+    times: &[f32],
+    values: &[Quat],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<Quat> {
     if times.is_empty() || values.is_empty() {
         return None;
     }
     if interpolation == AnimationInterpolation::CubicSpline {
-        return sample_cubic_quat(times, values, time_seconds);
+        return sample_cubic_quat::<PROFILE>(times, values, time_seconds, intervals_tested);
     }
     if time_seconds <= times[0] {
         return values.first().copied().map(normalize_quat);
@@ -57,23 +95,19 @@ pub(super) fn sample_quat(
     if time_seconds >= *times.last()? {
         return values.last().copied().map(normalize_quat);
     }
-    for index in 0..times.len().saturating_sub(1) {
-        let start = times[index];
-        let end = times[index + 1];
-        if time_seconds <= end {
-            let left = normalize_quat(*values.get(index)?);
-            let right = normalize_quat(*values.get(index + 1)?);
-            return Some(match interpolation {
-                AnimationInterpolation::Step => left,
-                AnimationInterpolation::Linear => {
-                    let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
-                    slerp_quat(left, right, amount)
-                }
-                AnimationInterpolation::CubicSpline => unreachable!("handled before loop"),
-            });
+    let index = keyframe_segment::<PROFILE>(times, time_seconds, intervals_tested)?;
+    let start = times[index];
+    let end = times[index + 1];
+    let left = normalize_quat(*values.get(index)?);
+    let right = normalize_quat(*values.get(index + 1)?);
+    Some(match interpolation {
+        AnimationInterpolation::Step => left,
+        AnimationInterpolation::Linear => {
+            let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
+            slerp_quat(left, right, amount)
         }
-    }
-    values.last().copied().map(normalize_quat)
+        AnimationInterpolation::CubicSpline => unreachable!("handled before lookup"),
+    })
 }
 
 pub(super) fn sample_weights(
@@ -82,37 +116,115 @@ pub(super) fn sample_weights(
     interpolation: AnimationInterpolation,
     time_seconds: f32,
 ) -> Option<Vec<f32>> {
+    let mut ignored = 0;
+    sample_weights_impl::<false>(times, values, interpolation, time_seconds, &mut ignored)
+}
+
+pub(super) fn sample_weights_into(
+    times: &[f32],
+    values: &[Vec<f32>],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    output: &mut Vec<f32>,
+) -> bool {
+    let mut ignored = 0;
+    sample_weights_into_impl::<false>(
+        times,
+        values,
+        interpolation,
+        time_seconds,
+        output,
+        &mut ignored,
+    )
+}
+
+pub(super) fn sample_weights_into_profiled(
+    times: &[f32],
+    values: &[Vec<f32>],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    output: &mut Vec<f32>,
+    intervals_tested: &mut u64,
+) -> bool {
+    sample_weights_into_impl::<true>(
+        times,
+        values,
+        interpolation,
+        time_seconds,
+        output,
+        intervals_tested,
+    )
+}
+
+fn sample_weights_impl<const PROFILE: bool>(
+    times: &[f32],
+    values: &[Vec<f32>],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<Vec<f32>> {
+    let mut output = Vec::new();
+    sample_weights_into_impl::<PROFILE>(
+        times,
+        values,
+        interpolation,
+        time_seconds,
+        &mut output,
+        intervals_tested,
+    )
+    .then_some(output)
+}
+
+fn sample_weights_into_impl<const PROFILE: bool>(
+    times: &[f32],
+    values: &[Vec<f32>],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+    output: &mut Vec<f32>,
+    intervals_tested: &mut u64,
+) -> bool {
     if times.is_empty() || values.is_empty() {
-        return None;
+        return false;
     }
     if interpolation == AnimationInterpolation::CubicSpline {
-        return sample_cubic_weights(times, values, time_seconds);
+        return sample_cubic_weights_into::<PROFILE>(
+            times,
+            values,
+            time_seconds,
+            output,
+            intervals_tested,
+        );
     }
     if time_seconds <= times[0] {
-        return values.first().cloned();
+        return replace_output(output, values.first());
     }
-    if time_seconds >= *times.last()? {
-        return values.last().cloned();
+    let Some(last_time) = times.last() else {
+        return false;
+    };
+    if time_seconds >= *last_time {
+        return replace_output(output, values.last());
     }
-    for index in 0..times.len().saturating_sub(1) {
-        let start = times[index];
-        let end = times[index + 1];
-        if time_seconds <= end {
-            let left = values.get(index)?;
-            let right = values.get(index + 1)?;
-            if interpolation == AnimationInterpolation::Step {
-                return Some(left.clone());
-            }
-            let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
-            return Some(
-                left.iter()
-                    .zip(right)
-                    .map(|(left, right)| left + (right - left) * amount)
-                    .collect(),
-            );
-        }
+    let Some(index) = keyframe_segment::<PROFILE>(times, time_seconds, intervals_tested) else {
+        return false;
+    };
+    let Some(left) = values.get(index) else {
+        return false;
+    };
+    if interpolation == AnimationInterpolation::Step {
+        return replace_output(output, Some(left));
     }
-    values.last().cloned()
+    let Some(right) = values.get(index + 1) else {
+        return false;
+    };
+    let amount =
+        ((time_seconds - times[index]) / (times[index + 1] - times[index])).clamp(0.0, 1.0);
+    output.clear();
+    output.extend(
+        left.iter()
+            .zip(right)
+            .map(|(left, right)| left + (right - left) * amount),
+    );
+    true
 }
 
 fn lerp_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
@@ -123,7 +235,12 @@ fn lerp_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
     )
 }
 
-fn sample_cubic_vec3(times: &[f32], values: &[Vec3], time_seconds: f32) -> Option<Vec3> {
+fn sample_cubic_vec3<const PROFILE: bool>(
+    times: &[f32],
+    values: &[Vec3],
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<Vec3> {
     if values.len() < times.len().saturating_mul(3) {
         return None;
     }
@@ -133,25 +250,26 @@ fn sample_cubic_vec3(times: &[f32], values: &[Vec3], time_seconds: f32) -> Optio
     if time_seconds >= *times.last()? {
         return values.get((times.len() - 1) * 3 + 1).copied();
     }
-    for index in 0..times.len().saturating_sub(1) {
-        let start = times[index];
-        let end = times[index + 1];
-        if time_seconds <= end {
-            let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
-            return Some(cubic_vec3(
-                *values.get(index * 3 + 1)?,
-                *values.get(index * 3 + 2)?,
-                *values.get((index + 1) * 3)?,
-                *values.get((index + 1) * 3 + 1)?,
-                end - start,
-                amount,
-            ));
-        }
-    }
-    values.get((times.len() - 1) * 3 + 1).copied()
+    let index = keyframe_segment::<PROFILE>(times, time_seconds, intervals_tested)?;
+    let start = times[index];
+    let end = times[index + 1];
+    let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
+    Some(cubic_vec3(
+        *values.get(index * 3 + 1)?,
+        *values.get(index * 3 + 2)?,
+        *values.get((index + 1) * 3)?,
+        *values.get((index + 1) * 3 + 1)?,
+        end - start,
+        amount,
+    ))
 }
 
-fn sample_cubic_quat(times: &[f32], values: &[Quat], time_seconds: f32) -> Option<Quat> {
+fn sample_cubic_quat<const PROFILE: bool>(
+    times: &[f32],
+    values: &[Quat],
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<Quat> {
     if values.len() < times.len().saturating_mul(3) {
         return None;
     }
@@ -164,53 +282,101 @@ fn sample_cubic_quat(times: &[f32], values: &[Quat], time_seconds: f32) -> Optio
             .copied()
             .map(normalize_quat);
     }
-    for index in 0..times.len().saturating_sub(1) {
-        let start = times[index];
-        let end = times[index + 1];
-        if time_seconds <= end {
-            let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
-            return Some(normalize_quat(cubic_quat(
-                *values.get(index * 3 + 1)?,
-                *values.get(index * 3 + 2)?,
-                *values.get((index + 1) * 3)?,
-                *values.get((index + 1) * 3 + 1)?,
-                end - start,
-                amount,
-            )));
-        }
-    }
-    values
-        .get((times.len() - 1) * 3 + 1)
-        .copied()
-        .map(normalize_quat)
+    let index = keyframe_segment::<PROFILE>(times, time_seconds, intervals_tested)?;
+    let start = times[index];
+    let end = times[index + 1];
+    let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
+    Some(normalize_quat(cubic_quat(
+        *values.get(index * 3 + 1)?,
+        *values.get(index * 3 + 2)?,
+        *values.get((index + 1) * 3)?,
+        *values.get((index + 1) * 3 + 1)?,
+        end - start,
+        amount,
+    )))
 }
 
-fn sample_cubic_weights(times: &[f32], values: &[Vec<f32>], time_seconds: f32) -> Option<Vec<f32>> {
+fn sample_cubic_weights_into<const PROFILE: bool>(
+    times: &[f32],
+    values: &[Vec<f32>],
+    time_seconds: f32,
+    output: &mut Vec<f32>,
+    intervals_tested: &mut u64,
+) -> bool {
     if values.len() < times.len().saturating_mul(3) {
-        return None;
+        return false;
     }
     if time_seconds <= times[0] {
-        return values.get(1).cloned();
+        return replace_output(output, values.get(1));
     }
-    if time_seconds >= *times.last()? {
-        return values.get((times.len() - 1) * 3 + 1).cloned();
+    let Some(last_time) = times.last() else {
+        return false;
+    };
+    if time_seconds >= *last_time {
+        return replace_output(output, values.get((times.len() - 1) * 3 + 1));
     }
-    for index in 0..times.len().saturating_sub(1) {
-        let start = times[index];
-        let end = times[index + 1];
-        if time_seconds <= end {
-            let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
-            return Some(cubic_weights(
-                values.get(index * 3 + 1)?,
-                values.get(index * 3 + 2)?,
-                values.get((index + 1) * 3)?,
-                values.get((index + 1) * 3 + 1)?,
-                end - start,
-                amount,
-            ));
+    let Some(index) = keyframe_segment::<PROFILE>(times, time_seconds, intervals_tested) else {
+        return false;
+    };
+    let start = times[index];
+    let end = times[index + 1];
+    let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
+    let (Some(p0), Some(out_tangent0), Some(in_tangent1), Some(p1)) = (
+        values.get(index * 3 + 1),
+        values.get(index * 3 + 2),
+        values.get((index + 1) * 3),
+        values.get((index + 1) * 3 + 1),
+    ) else {
+        return false;
+    };
+    cubic_weights_into(
+        output,
+        p0,
+        out_tangent0,
+        in_tangent1,
+        p1,
+        end - start,
+        amount,
+    );
+    true
+}
+
+#[inline]
+fn record_interval<const PROFILE: bool>(intervals_tested: &mut u64) {
+    if PROFILE {
+        *intervals_tested = intervals_tested.saturating_add(1);
+    }
+}
+
+fn keyframe_segment<const PROFILE: bool>(
+    times: &[f32],
+    time_seconds: f32,
+    intervals_tested: &mut u64,
+) -> Option<usize> {
+    if times.len() < 2 {
+        return None;
+    }
+    let mut left = 0;
+    let mut right = times.len();
+    while left < right {
+        record_interval::<PROFILE>(intervals_tested);
+        let middle = left + (right - left) / 2;
+        if times[middle] <= time_seconds {
+            left = middle + 1;
+        } else {
+            right = middle;
         }
     }
-    values.get((times.len() - 1) * 3 + 1).cloned()
+    Some(left.saturating_sub(1).min(times.len() - 2))
+}
+
+fn replace_output(output: &mut Vec<f32>, values: Option<&Vec<f32>>) -> bool {
+    let Some(values) = values else {
+        return false;
+    };
+    output.clear();
+    output.extend_from_slice(values);
+    true
 }
 
 fn cubic_vec3(
@@ -256,22 +422,21 @@ fn cubic_quat(
     Quat::from_xyzw(components[0], components[1], components[2], components[3])
 }
 
-fn cubic_weights(
+fn cubic_weights_into(
+    output: &mut Vec<f32>,
     p0: &[f32],
     out_tangent0: &[f32],
     in_tangent1: &[f32],
     p1: &[f32],
     delta_seconds: f32,
     amount: f32,
-) -> Vec<f32> {
-    p0.iter()
-        .zip(out_tangent0)
-        .zip(in_tangent1)
-        .zip(p1)
-        .map(|(((p0, out_tangent0), in_tangent1), p1)| {
+) {
+    output.clear();
+    output.extend(p0.iter().zip(out_tangent0).zip(in_tangent1).zip(p1).map(
+        |(((p0, out_tangent0), in_tangent1), p1)| {
             cubic_scalar(*p0, *out_tangent0, *in_tangent1, *p1, delta_seconds, amount)
-        })
-        .collect()
+        },
+    ));
 }
 
 fn cubic_components<const N: usize>(
@@ -409,5 +574,73 @@ mod tests {
             (sampled.x - 0.5).abs() < 0.02,
             "zero-tangent Hermite midpoint should land halfway, got {sampled:?}"
         );
+    }
+
+    #[test]
+    fn pf10_profiled_keyframe_lookup_is_logarithmic_for_linear_and_cubic_channels() {
+        const KEY_COUNT: usize = 65_536;
+        let times = (0..KEY_COUNT).map(|index| index as f32).collect::<Vec<_>>();
+        let vec3_values = times
+            .iter()
+            .map(|time| Vec3::new(*time, -*time, time * 0.5))
+            .collect::<Vec<_>>();
+        let mut cubic_values = Vec::with_capacity(KEY_COUNT * 3);
+        for value in &vec3_values {
+            cubic_values.extend_from_slice(&[Vec3::ZERO, *value, Vec3::ZERO]);
+        }
+
+        let mut linear_probes = 0;
+        let linear = sample_vec3_profiled(
+            &times,
+            &vec3_values,
+            AnimationInterpolation::Linear,
+            48_123.5,
+            &mut linear_probes,
+        )
+        .expect("linear sample");
+        let mut cubic_probes = 0;
+        let cubic = sample_vec3_profiled(
+            &times,
+            &cubic_values,
+            AnimationInterpolation::CubicSpline,
+            48_123.5,
+            &mut cubic_probes,
+        )
+        .expect("cubic sample");
+
+        assert!(
+            (linear.x - 48_123.5).abs() < 0.01,
+            "linear parity: {linear:?}"
+        );
+        assert!((cubic.x - 48_123.5).abs() < 0.01, "cubic parity: {cubic:?}");
+        assert!(
+            linear_probes <= 17,
+            "linear lookup must be O(log K), got {linear_probes}"
+        );
+        assert!(
+            cubic_probes <= 17,
+            "cubic lookup must be O(log K), got {cubic_probes}"
+        );
+    }
+
+    #[test]
+    fn pf10_weight_sampling_reuses_caller_owned_output_storage() {
+        let times = [0.0, 1.0, 2.0];
+        let values = vec![vec![0.0, 1.0], vec![0.5, 0.5], vec![1.0, 0.0]];
+        let mut output = Vec::with_capacity(8);
+        let original_capacity = output.capacity();
+        let mut probes = 0;
+
+        assert!(sample_weights_into_profiled(
+            &times,
+            &values,
+            AnimationInterpolation::Linear,
+            1.5,
+            &mut output,
+            &mut probes,
+        ));
+        assert_eq!(output, [0.75, 0.25]);
+        assert_eq!(output.capacity(), original_capacity);
+        assert!(probes <= 2);
     }
 }

@@ -21,6 +21,7 @@ struct VertexIn {
     @location(12) instance_normal_2: vec4<f32>,
     @location(13) instance_normal_3: vec4<f32>,
     @location(14) instance_tint: vec4<f32>,
+    @location(15) instance_semantic_id: vec4<f32>,
 };
 
 struct VertexOut {
@@ -32,6 +33,7 @@ struct VertexOut {
     @location(4) tangent: vec4<f32>,
     @location(5) shadow_visibility: f32,
     @location(6) instance_tint: vec4<f32>,
+    @location(7) semantic_id: vec4<f32>,
 };
 
 struct LightingUniform {
@@ -70,6 +72,7 @@ struct DrawUniform {
     world_from_model: mat4x4<f32>,
     normal_from_model: mat4x4<f32>,
     tint: vec4<f32>,
+    semantic_id: vec4<f32>,
 };
 
 struct MaterialUniform {
@@ -296,7 +299,58 @@ fn vs_main(in: VertexIn) -> VertexOut {
     out.tangent = vec4<f32>((normal_from_model * vec4<f32>(in.tangent.xyz, 0.0)).xyz, in.tangent.w);
     out.shadow_visibility = clamp(in.shadow_visibility, 0.0, 1.0);
     out.instance_tint = in.instance_tint;
+    out.semantic_id = select(draw.semantic_id, in.instance_semantic_id, in.instance_semantic_id.a > 0.5);
     return out;
+}
+
+struct SemanticOutput {
+    @location(0) id: vec4<f32>,
+    @location(1) depth: vec4<f32>,
+    @location(2) normal: vec4<f32>,
+};
+
+fn encode_semantic_depth(view_depth: f32) -> vec4<f32> {
+    let near = camera.viewport_near_far.z;
+    let far = camera.viewport_near_far.w;
+    let normalized = clamp((view_depth - near) / max(far - near, 0.000001), 0.0, 1.0);
+    let code = floor(1.0 + normalized * 16777214.0 + 0.5);
+    let red = code - floor(code / 256.0) * 256.0;
+    let green_code = floor(code / 256.0);
+    let green = green_code - floor(green_code / 256.0) * 256.0;
+    let blue = floor(code / 65536.0);
+    return vec4<f32>(red, green, blue, 255.0) / 255.0;
+}
+
+@fragment
+fn fs_semantic(in: VertexOut) -> SemanticOutput {
+    if in.semantic_id.a < 0.5 || clipped_by_scene(in.world_position) {
+        discard;
+    }
+    let scaled_uv = in.tex_coord0 * material.base_color_uv_offset_scale.zw;
+    let transformed_uv = vec2<f32>(
+        scaled_uv.x * material.base_color_uv_rotation.y - scaled_uv.y * material.base_color_uv_rotation.x,
+        scaled_uv.x * material.base_color_uv_rotation.x + scaled_uv.y * material.base_color_uv_rotation.y,
+    ) + material.base_color_uv_offset_scale.xy;
+    let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv);
+    let base = in.color * material.base_color_factor * base_color_sample * draw.tint * in.instance_tint;
+    if material.metallic_roughness_alpha.z > 0.0 && base.a < material.metallic_roughness_alpha.z {
+        discard;
+    }
+    let view_position = camera.view_from_world * vec4<f32>(in.world_position, 1.0);
+    let view_depth = -view_position.z;
+    if view_depth <= 0.0 {
+        discard;
+    }
+    var world_normal = vec3<f32>(0.0);
+    let normal_length = length(in.normal);
+    if normal_length > 0.000001 {
+        world_normal = in.normal / normal_length;
+    }
+    var output: SemanticOutput;
+    output.id = in.semantic_id;
+    output.depth = encode_semantic_depth(view_depth);
+    output.normal = vec4<f32>(world_normal * 0.5 + vec3<f32>(0.5), 1.0);
+    return output;
 }
 
 @fragment
@@ -631,6 +685,56 @@ fn area_light_radiance(index: u32, sample_position: vec3<f32>, world_position: v
         distance_attenuation(to_light, range);
 }
 
+fn ltc_accumulate_area_light(
+    index: u32,
+    base: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    clearcoat_normal: vec3<f32>,
+    clearcoat_factor: f32,
+    clearcoat_roughness: f32,
+    sheen_color: vec3<f32>,
+    sheen_roughness: f32,
+    world_tangent: vec3<f32>,
+    tangent_handedness: f32,
+    anisotropy_strength: f32,
+    anisotropy_rotation: f32,
+    anisotropy_direction: vec2<f32>,
+    iridescence_factor: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
+    dispersion_factor: f32,
+    dispersion_ior: f32,
+    world_position: vec3<f32>,
+    area_shadow_visibility: f32,
+) -> vec3<f32> {
+    var shaded = ltc_area_light_specular_contribution(
+        index,
+        base,
+        metallic,
+        roughness,
+        normal,
+        view,
+        world_position,
+        area_shadow_visibility,
+    );
+    for (var sample = 0u; sample < AREA_LIGHT_SAMPLE_COUNT; sample = sample + 1u) {
+        let sample_position = area_light_sample_position(index, sample);
+        let to_light = sample_position - world_position;
+        let incoming = normalize(to_light);
+        let radiance = area_light_radiance(index, sample_position, world_position) * area_shadow_visibility;
+        shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+        shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+        shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+        shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+        shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
+        shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+    }
+    return shaded;
+}
+
 fn pbr_punctual_lighting(
     base: vec3<f32>,
     metallic: f32,
@@ -724,31 +828,27 @@ fn pbr_punctual_lighting(
         }
     }
     let area_count = min(u32(camera.lighting.light_counts.w), MAX_GPU_AREA_LIGHTS);
-    for (var i = 0u; i < MAX_GPU_AREA_LIGHTS; i = i + 1u) {
-        if i < area_count {
-            shaded += ltc_area_light_specular_contribution(
-                i,
-                base,
-                metallic,
-                roughness,
-                normal,
-                view,
-                world_position,
-                area_shadow_visibility,
-            );
-            for (var sample = 0u; sample < AREA_LIGHT_SAMPLE_COUNT; sample = sample + 1u) {
-                let sample_position = area_light_sample_position(i, sample);
-                let to_light = sample_position - world_position;
-                let incoming = normalize(to_light);
-                let radiance = area_light_radiance(i, sample_position, world_position) * area_shadow_visibility;
-                shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-                shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-                shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-                shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-                shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-                shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
-            }
-        }
+    // Keep the two supported area-light indices literal. ANGLE's D3D11
+    // backend otherwise tries and fails to unroll this large nested LTC loop.
+    if area_count > 0u {
+        shaded += ltc_accumulate_area_light(0u,
+            base, metallic, roughness, normal, view,
+            clearcoat_normal, clearcoat_factor, clearcoat_roughness,
+            sheen_color, sheen_roughness, world_tangent, tangent_handedness,
+            anisotropy_strength, anisotropy_rotation, anisotropy_direction,
+            iridescence_factor, iridescence_ior, iridescence_thickness,
+            dispersion_factor, dispersion_ior, world_position, area_shadow_visibility,
+        );
+    }
+    if area_count > 1u {
+        shaded += ltc_accumulate_area_light(1u,
+            base, metallic, roughness, normal, view,
+            clearcoat_normal, clearcoat_factor, clearcoat_roughness,
+            sheen_color, sheen_roughness, world_tangent, tangent_handedness,
+            anisotropy_strength, anisotropy_rotation, anisotropy_direction,
+            iridescence_factor, iridescence_ior, iridescence_thickness,
+            dispersion_factor, dispersion_ior, world_position, area_shadow_visibility,
+        );
     }
     return shaded;
 }

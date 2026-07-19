@@ -1,12 +1,11 @@
 use std::collections::BTreeSet;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use serde::{Deserialize, Serialize};
 
 use self::bounds::union_optional;
 use self::diagnostic_overlays::diagnostic_overlay;
-use self::handedness::reject_unproven_left_handed_mesh_import;
 use self::instancing::instanced_bounds;
 use self::types::{ImportBuild, ImportedNode, PendingSkinBinding, mesh_node_kind};
 use self::units::convert_marker_units;
@@ -15,11 +14,12 @@ use super::transforms::compose_transform;
 use super::{
     ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, NodeKey, NodeKind, Scene, Transform,
 };
-use crate::animation::{AnimationClip, AnimationClipKey};
+use crate::animation::AnimationClip;
 use crate::assets::SceneAsset;
 use crate::diagnostics::{ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, InstantiateError};
 
 mod accessors;
+mod animation_bindings;
 mod bounds;
 mod diagnostic_overlays;
 mod handedness;
@@ -28,7 +28,10 @@ mod instantiate;
 mod load;
 mod lookups;
 mod options;
+mod prevalidation;
 mod skin_bindings;
+#[cfg(test)]
+mod transaction_tests;
 mod types;
 mod units;
 mod variants;
@@ -43,6 +46,7 @@ pub struct SceneImport {
     diagnostic_overlays: Vec<ImportDiagnosticOverlay>,
     source_units: SourceUnits,
     source_coordinate_system: SourceCoordinateSystem,
+    scene_identity: Weak<()>,
     live: Arc<AtomicBool>,
     // Phase 2B step 3: KHR_materials_variants runtime state.
     pub(super) material_variants: Vec<String>,
@@ -131,22 +135,29 @@ pub enum SourceCoordinateSystem {
 }
 
 impl Scene {
-    fn instantiate_with_parent(
+    fn instantiate_with_parent_validated(
         &mut self,
         parent: NodeKey,
         scene_asset: &SceneAsset,
         options: ImportOptions,
     ) -> Result<SceneImport, InstantiateError> {
-        reject_unproven_left_handed_mesh_import(scene_asset, options)?;
         let nodes = scene_asset.nodes();
         let mut child_indices = BTreeSet::new();
         for node in nodes {
             child_indices.extend(node.children().iter().copied());
         }
 
-        let roots = (0..nodes.len())
+        let source_roots = (0..nodes.len())
             .filter(|index| !child_indices.contains(index))
             .collect::<Vec<_>>();
+        let unit_root = (!source_roots.is_empty())
+            .then(|| options.unit_root_transform())
+            .flatten()
+            .map(|transform| {
+                self.insert_node(parent, NodeKind::Empty, transform)
+                    .expect("validated import parent accepts the unit root")
+            });
+        let source_parent = unit_root.unwrap_or(parent);
         let mut import = SceneImport {
             roots: Vec::new(),
             records: Vec::new(),
@@ -156,13 +167,14 @@ impl Scene {
             diagnostic_overlays: Vec::new(),
             source_units: options.source_units(),
             source_coordinate_system: options.source_coordinate_system(),
+            scene_identity: Arc::downgrade(&self.identity),
             live: Arc::new(AtomicBool::new(true)),
             material_variants: scene_asset.material_variants().to_vec(),
             active_variant: Arc::new(Mutex::new(None)),
             variant_records: Vec::new(),
         };
         let mut pending_skin_bindings = Vec::new();
-        for source_index in roots {
+        for source_index in source_roots {
             let mut build = ImportBuild {
                 scene_asset,
                 options,
@@ -176,37 +188,26 @@ impl Scene {
             };
             let node = self.instantiate_scene_asset_node(
                 source_index,
-                parent,
+                source_parent,
                 None,
-                None,
+                unit_root,
                 Transform::IDENTITY,
                 &mut build,
             )?;
-            import.roots.push(node);
+            if unit_root.is_none() {
+                import.roots.push(node);
+            }
+        }
+        if let Some(unit_root) = unit_root {
+            import.roots.push(unit_root);
         }
         self.resolve_import_skin_bindings(
             scene_asset,
             &import.records,
             pending_skin_bindings.as_slice(),
         )?;
-        import.clips = scene_asset
-            .clips()
-            .iter()
-            .map(|clip| {
-                let rebased = clip.clip().rebind(
-                    AnimationClipKey::fresh(),
-                    |source_index| {
-                        import
-                            .records
-                            .iter()
-                            .find(|record| record.source_index == source_index)
-                            .map(|record| record.node)
-                    },
-                    |target, value| options.convert_animation_vec3(target, value),
-                );
-                ImportClip { clip: rebased }
-            })
-            .collect();
+        import.clips =
+            animation_bindings::rebind_import_clips(scene_asset, &import.records, options)?;
         Ok(import)
     }
 
@@ -329,9 +330,18 @@ impl Scene {
             ([], None) => self.insert_node(parent, NodeKind::Empty, transform),
         }
         .expect("import parent was inserted by this scene");
+        let morph_nodes = match meshes {
+            [] => Vec::new(),
+            [_] => vec![node],
+            [_, _, ..] => self
+                .node(node)
+                .map(|parent| parent.children().to_vec())
+                .unwrap_or_default(),
+        };
         build.records.push(ImportedNode {
             source_index,
             node,
+            morph_nodes,
             parent: imported_parent,
             name: source_node.name().map(str::to_string),
             bounds,
@@ -430,13 +440,13 @@ impl Scene {
         let mut connector_names = BTreeSet::new();
         for connector in source_node.connectors() {
             if let Some(reason) = connector.invalid_reason() {
-                return Err(InstantiateError::InvalidAnchorExtras {
+                return Err(InstantiateError::InvalidConnectorExtras {
                     node: source_node.name().unwrap_or("<unnamed>").to_string(),
                     reason: reason.to_string(),
                 });
             }
             if !connector_names.insert(connector.name()) {
-                return Err(InstantiateError::InvalidAnchorExtras {
+                return Err(InstantiateError::InvalidConnectorExtras {
                     node: source_node.name().unwrap_or("<unnamed>").to_string(),
                     reason: format!("duplicate connector '{}'", connector.name()),
                 });

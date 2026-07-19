@@ -1,4 +1,4 @@
-use crate::diagnostics::{AdapterLimitsReport, GpuAdapterReport};
+use crate::diagnostics::{AdapterLimitsReport, DevicePollStatus, GpuAdapterReport};
 
 use super::GpuDeviceState;
 
@@ -50,25 +50,70 @@ impl GpuDeviceState {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(in crate::render) fn poll_device(&mut self) -> (u64, bool) {
+    pub(in crate::render) fn poll_device(&mut self) -> (u64, DevicePollStatus) {
         let pending = self.pending_destructions;
-        let gpu_polled = self
+        let confirmed = self
             .device
             .poll(wgpu::PollType::wait_indefinitely())
             .is_ok();
-        if gpu_polled {
+        if confirmed {
             self.pending_destructions = 0;
         }
         (
             pending.saturating_sub(self.pending_destructions),
-            gpu_polled,
+            if confirmed {
+                DevicePollStatus::Confirmed
+            } else {
+                DevicePollStatus::Unsupported
+            },
         )
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(in crate::render) fn poll_device(&mut self) -> (u64, bool) {
-        let pending = self.pending_destructions;
-        self.pending_destructions = 0;
-        (pending, true)
+    pub(in crate::render) fn poll_device(&mut self) -> (u64, DevicePollStatus) {
+        use std::sync::atomic::Ordering;
+
+        // wgpu-core's WebGL backend dispatches queue-completion callbacks from
+        // an explicit poll/submit boundary. WebGPU's browser backend may
+        // resolve the callback from its Promise instead, so this non-blocking
+        // poll is safe for both paths and never fabricates completion.
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        let confirmed = self
+            .confirmed_destructions
+            .swap(0, Ordering::AcqRel)
+            .min(self.pending_destructions)
+            .min(self.submitted_destructions);
+        self.pending_destructions = self.pending_destructions.saturating_sub(confirmed);
+        self.submitted_destructions = self.submitted_destructions.saturating_sub(confirmed);
+
+        let unsubmitted = self
+            .pending_destructions
+            .saturating_sub(self.submitted_destructions);
+        if unsubmitted > 0 {
+            let completion = std::sync::Arc::clone(&self.confirmed_destructions);
+            self.submitted_destructions = self.submitted_destructions.saturating_add(unsubmitted);
+            let encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("scena.resource_destruction_completion"),
+                });
+            let command_buffer = encoder.finish();
+            command_buffer.on_submitted_work_done(move || {
+                completion.fetch_add(unsubmitted, Ordering::Release);
+            });
+            // A concrete empty command buffer creates a real submission/fence
+            // without render work or retained resources. Attaching the
+            // callback to that submission makes completion backend-agnostic.
+            self.queue.submit(std::iter::once(command_buffer));
+        }
+
+        let status = if confirmed > 0 {
+            DevicePollStatus::Confirmed
+        } else if self.submitted_destructions > 0 {
+            DevicePollStatus::Submitted
+        } else {
+            DevicePollStatus::Automatic
+        };
+        (confirmed, status)
     }
 }

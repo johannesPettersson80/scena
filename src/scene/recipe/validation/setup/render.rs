@@ -1,5 +1,9 @@
 use serde_json::Value;
 
+use crate::scene::recipe::field_model::{
+    ANTI_ALIASING_MODES, RECONSTRUCTION_FILTERS, RENDER_PROFILES, RENDER_QUALITIES, TONEMAPPERS,
+};
+
 use super::{
     SceneRecipeDiagnosticV1, diagnostic, validate_finite_number_optional, validate_known_fields,
     validate_non_negative_number_required, validate_u8, validate_u8_max,
@@ -56,21 +60,21 @@ pub(in crate::scene::recipe::validation) fn validate_render_setup(
     super::validate_enum(
         "$.render.profile",
         object.get("profile"),
-        &["auto", "quality", "balanced", "compatibility", "industrial"],
+        RENDER_PROFILES,
         "invalid_render_setting",
         diagnostics,
     );
     super::validate_enum(
         "$.render.quality",
         object.get("quality"),
-        &["low", "medium", "high"],
+        RENDER_QUALITIES,
         "invalid_render_setting",
         diagnostics,
     );
     super::validate_enum(
         "$.render.anti_aliasing",
         object.get("anti_aliasing"),
-        &["none", "fxaa", "msaa4", "msaa8"],
+        ANTI_ALIASING_MODES,
         "invalid_render_setting",
         diagnostics,
     );
@@ -78,14 +82,14 @@ pub(in crate::scene::recipe::validation) fn validate_render_setup(
     super::validate_enum(
         "$.render.reconstruction",
         object.get("reconstruction"),
-        &["box", "tent", "gaussian"],
+        RECONSTRUCTION_FILTERS,
         "invalid_render_setting",
         diagnostics,
     );
     super::validate_enum(
         "$.render.tonemapper",
         object.get("tonemapper"),
-        &["standard", "aces", "pbr_neutral"],
+        TONEMAPPERS,
         "invalid_render_setting",
         diagnostics,
     );

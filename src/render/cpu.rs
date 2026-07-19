@@ -129,6 +129,24 @@ pub(super) fn primitive_needs_physical_transmission(primitive: &PreparedPrimitiv
     primitive.material_transmission().is_some()
 }
 
+pub(super) fn primitive_screen_row_bounds(
+    primitive: &PreparedPrimitive,
+    target: RasterTarget,
+    camera: &CameraProjection,
+) -> Option<(u32, u32)> {
+    let [a, b, c] = primitive.vertices();
+    let a = ScreenVertex::from_vertex(*a, target, camera)?;
+    let b = ScreenVertex::from_vertex(*b, target, camera)?;
+    let c = ScreenVertex::from_vertex(*c, target, camera)?;
+    let min = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
+    let max =
+        a.y.max(b.y)
+            .max(c.y)
+            .ceil()
+            .min(target.height.saturating_sub(1) as f32) as u32;
+    (min <= max).then_some((min, max))
+}
+
 pub(super) fn draw_primitive_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,

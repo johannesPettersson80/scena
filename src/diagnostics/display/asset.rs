@@ -40,6 +40,23 @@ impl fmt::Display for AssetError {
                 formatter,
                 "texture {path} uses an unsupported format: {help}"
             ),
+            Self::Ktx2ColorSpaceMismatch {
+                path,
+                material_slot,
+                dfd,
+                help,
+            } => write!(
+                formatter,
+                "KTX2 texture {path} has a DFD color-space mismatch for material slot \
+                 {material_slot}: got colorPrimaries={actual_primaries}, \
+                 transferFunction={actual_transfer}; expected \
+                 colorPrimaries={expected_primaries}, transferFunction={expected_transfer}. \
+                 {help}",
+                actual_primaries = dfd.actual_primaries,
+                actual_transfer = dfd.actual_transfer,
+                expected_primaries = dfd.expected_primaries,
+                expected_transfer = dfd.expected_transfer,
+            ),
             Self::Cancelled { path, help } => {
                 write!(formatter, "asset load for {path} was cancelled: {help}")
             }

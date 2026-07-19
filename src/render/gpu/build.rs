@@ -30,6 +30,10 @@ pub(in crate::render) async fn request_headless_gpu(
         queue,
         surface: None,
         pending_destructions: 0,
+        #[cfg(target_arch = "wasm32")]
+        submitted_destructions: 0,
+        #[cfg(target_arch = "wasm32")]
+        confirmed_destructions: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         resources: None,
         output_color_space: OutputColorSpace::Srgb,
         display_p3_canvas_configured: false,
@@ -156,6 +160,7 @@ impl GpuDeviceState {
         {
             config.alpha_mode = wgpu::CompositeAlphaMode::Opaque;
         }
+        enable_scene_host_surface_readback(&mut config, &capabilities);
         surface.configure(&self.device, &config);
         if effective_size != size {
             canvas.set_width(effective_size.width);
@@ -225,6 +230,7 @@ async fn request_gpu_for_surface(
     {
         config.alpha_mode = wgpu::CompositeAlphaMode::Opaque;
     }
+    enable_scene_host_surface_readback(&mut config, &capabilities);
     surface.configure(&device, &config);
 
     Ok(GpuDeviceState {
@@ -234,12 +240,39 @@ async fn request_gpu_for_surface(
         queue,
         surface: Some(GpuSurfaceState { surface, config }),
         pending_destructions: 0,
+        #[cfg(target_arch = "wasm32")]
+        submitted_destructions: 0,
+        #[cfg(target_arch = "wasm32")]
+        confirmed_destructions: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         resources: None,
         output_color_space,
         display_p3_canvas_configured: false,
         #[cfg(target_arch = "wasm32")]
         browser_canvas: None,
     })
+}
+
+fn enable_scene_host_surface_readback(
+    config: &mut wgpu::SurfaceConfiguration,
+    capabilities: &wgpu::SurfaceCapabilities,
+) {
+    #[cfg(all(
+        target_arch = "wasm32",
+        feature = "scene-host",
+        not(feature = "browser-probe")
+    ))]
+    if capabilities.usages.contains(wgpu::TextureUsages::COPY_SRC)
+        && matches!(
+            config.format,
+            wgpu::TextureFormat::Rgba8Unorm
+                | wgpu::TextureFormat::Rgba8UnormSrgb
+                | wgpu::TextureFormat::Bgra8Unorm
+                | wgpu::TextureFormat::Bgra8UnormSrgb
+        )
+    {
+        config.usage |= wgpu::TextureUsages::COPY_SRC;
+    }
+    let _ = (config, capabilities);
 }
 
 pub(super) fn clamp_surface_size_to_adapter_limits(

@@ -178,10 +178,15 @@ fn ltc_integrate_transformed_quad(vertices: array<vec3<f32>, 4>, two_sided: bool
     if clipped.count == 0u {
         return 0.0;
     }
-    let vertex_count = min(clipped.count + 1u, 5u);
-    for (var i = 0u; i < vertex_count; i = i + 1u) {
-        clipped.vertices[i] = ltc_safe_normalize(clipped.vertices[i], vec3<f32>(0.0, 0.0, 1.0));
-    }
+    // Keep these indices literal. ANGLE's D3D11 backend forces the former
+    // runtime-bounded local-array loop to unroll, but the generated HLSL loop
+    // cannot be unrolled and fails with X3511 before the first material draw.
+    // Entries outside the clipped polygon are never consumed below.
+    clipped.vertices[0] = ltc_safe_normalize(clipped.vertices[0], vec3<f32>(0.0, 0.0, 1.0));
+    clipped.vertices[1] = ltc_safe_normalize(clipped.vertices[1], vec3<f32>(0.0, 0.0, 1.0));
+    clipped.vertices[2] = ltc_safe_normalize(clipped.vertices[2], vec3<f32>(0.0, 0.0, 1.0));
+    clipped.vertices[3] = ltc_safe_normalize(clipped.vertices[3], vec3<f32>(0.0, 0.0, 1.0));
+    clipped.vertices[4] = ltc_safe_normalize(clipped.vertices[4], vec3<f32>(0.0, 0.0, 1.0));
     var sum = ltc_integrate_edge(clipped.vertices[0], clipped.vertices[1]) +
         ltc_integrate_edge(clipped.vertices[1], clipped.vertices[2]) +
         ltc_integrate_edge(clipped.vertices[2], clipped.vertices[3]);

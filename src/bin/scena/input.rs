@@ -87,10 +87,10 @@ pub(crate) async fn scene_host_from_resolved_recipe(
     input: &ResolvedSceneInput,
     width: u32,
     height: u32,
-    prefer_gpu: bool,
+    use_gpu: bool,
 ) -> Result<scena::SceneHostCore, String> {
     Ok(
-        scene_host_build_from_resolved_recipe(input, width, height, prefer_gpu)
+        scene_host_build_from_resolved_recipe(input, width, height, use_gpu)
             .await?
             .host,
     )
@@ -101,7 +101,7 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
     input: &ResolvedSceneInput,
     width: u32,
     height: u32,
-    prefer_gpu: bool,
+    use_gpu: bool,
 ) -> Result<scena::SceneHostRecipeBuild, String> {
     let recipe = input
         .recipe
@@ -111,8 +111,8 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
     let recipe_text = serde_json::to_string(recipe)
         .map_err(|error| format!("failed to serialize scene recipe for build: {error}"))?;
     let policy = scena::RecipeBuildPolicy::testing();
-    let mut build = if prefer_gpu {
-        scena::SceneHostCore::build_recipe_json_prefer_gpu(recipe_path, &recipe_text, policy).await
+    let mut build = if use_gpu {
+        scena::SceneHostCore::build_recipe_json_gpu(recipe_path, &recipe_text, policy).await
     } else {
         scena::SceneHostCore::build_recipe_json(recipe_path, &recipe_text, policy).await
     }
@@ -139,10 +139,10 @@ pub(crate) fn viewer_builder(
     width: u32,
     height: u32,
     transform: Option<scena::Transform>,
-    prefer_gpu: bool,
+    use_gpu: bool,
 ) -> scena::HeadlessGltfViewerBuilder {
     let builder = scena::headless_gltf_viewer(asset).size(width, height);
-    let builder = if prefer_gpu {
+    let builder = if use_gpu {
         builder.with_headless_gpu()
     } else {
         builder

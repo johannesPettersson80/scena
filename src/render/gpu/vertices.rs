@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
 use crate::geometry::{PrimitiveVertexAttributes, Vertex};
 use crate::render::prepare::PreparedPrimitive;
 use crate::render::prepare::transforms::{
-    invert_matrix4, unbake_normal_to_model_space, unbake_position_to_model_space,
+    unbake_normal_to_model_space, unbake_position_to_model_space,
 };
+use crate::render::semantic_aov::GpuSemanticAttribution;
 
 pub(super) const VERTEX_BYTE_LEN: usize = 17 * std::mem::size_of::<f32>();
 pub(super) const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 6] = [
@@ -46,6 +49,7 @@ pub(super) struct PrimitiveDrawBatch {
     pub(super) draw_uniform_index: u32,
     pub(super) depth_prepass_eligible: bool,
     pub(super) double_sided: bool,
+    pub(super) semantic_eligible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -53,6 +57,74 @@ pub(super) struct DrawUniformValue {
     pub(super) world_from_model: [f32; 16],
     pub(super) normal_from_model: [f32; 16],
     pub(super) tint: crate::material::Color,
+    pub(super) semantic_id: [f32; 4],
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct DrawUniformIndexMetrics {
+    pub(super) lookup_probes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct DrawUniformKey {
+    world_from_model: [u32; 16],
+    normal_from_model: [u32; 16],
+    tint: [u32; 4],
+    semantic_id: [u32; 4],
+}
+
+impl From<DrawUniformValue> for DrawUniformKey {
+    fn from(value: DrawUniformValue) -> Self {
+        Self {
+            world_from_model: value.world_from_model.map(f32::to_bits),
+            normal_from_model: value.normal_from_model.map(f32::to_bits),
+            tint: [
+                value.tint.r.to_bits(),
+                value.tint.g.to_bits(),
+                value.tint.b.to_bits(),
+                value.tint.a.to_bits(),
+            ],
+            semantic_id: value.semantic_id.map(f32::to_bits),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub(super) struct DrawUniformInterner {
+    values: Vec<DrawUniformValue>,
+    indices: HashMap<DrawUniformKey, u32>,
+    metrics: DrawUniformIndexMetrics,
+}
+
+impl DrawUniformInterner {
+    pub(super) fn intern(&mut self, value: DrawUniformValue) -> u32 {
+        self.metrics.lookup_probes = self.metrics.lookup_probes.saturating_add(1);
+        let key = DrawUniformKey::from(value);
+        if let Some(index) = self.indices.get(&key) {
+            return *index;
+        }
+        let index = self.values.len() as u32;
+        self.values.push(value);
+        self.indices.insert(key, index);
+        index
+    }
+
+    pub(super) fn finish(mut self) -> (Vec<DrawUniformValue>, DrawUniformIndexMetrics) {
+        if self.values.is_empty() {
+            self.intern(DrawUniformValue {
+                world_from_model: identity_matrix4(),
+                normal_from_model: identity_matrix4(),
+                tint: crate::material::Color::WHITE,
+                semantic_id: [0.0; 4],
+            });
+        }
+        (self.values, self.metrics)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct GpuVertexEncodeMetrics {
+    pub(super) matrix_inversions: u64,
 }
 
 /// Writes the prepared primitives as MODEL-SPACE vertex bytes for GPU upload.
@@ -63,14 +135,33 @@ pub(super) struct DrawUniformValue {
 /// `world_from_model` from the dynamic-offset draw uniform, yielding the
 /// same world-space position as the CPU path. Phase 1A.2 closure for
 /// scena-wgpu-architect F2.
+#[cfg(test)]
 pub(super) fn encode_vertices(primitives: &[PreparedPrimitive]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(primitives.len() * 3 * VERTEX_BYTE_LEN);
+    encode_vertices_profiled(primitives).0
+}
+
+#[cfg(test)]
+pub(super) fn encode_vertices_profiled(
+    primitives: &[PreparedPrimitive],
+) -> (Vec<u8>, GpuVertexEncodeMetrics) {
+    encode_vertices_iter(primitives.iter(), primitives.len())
+}
+
+pub(super) fn encode_vertices_iter<'a>(
+    primitives: impl IntoIterator<Item = &'a PreparedPrimitive>,
+    primitive_count: usize,
+) -> (Vec<u8>, GpuVertexEncodeMetrics) {
+    let mut bytes = Vec::with_capacity(primitive_count * 3 * VERTEX_BYTE_LEN);
     for prepared in primitives {
+        if let Some(model_vertices) = prepared.model_vertices() {
+            for model in model_vertices {
+                encode_vertex(&mut bytes, model.vertex, model.attributes);
+            }
+            continue;
+        }
         let primitive = prepared.primitive();
-        let world_from_model = primitive.world_from_model();
-        let normal_from_model = primitive.normal_from_model();
-        let position_inverse = invert_matrix4(&world_from_model);
-        let normal_inverse = invert_matrix4(&normal_from_model);
+        let position_inverse = prepared.world_to_model();
+        let normal_inverse = prepared.model_from_normal();
         for (vertex, attributes) in primitive
             .vertices()
             .iter()
@@ -103,26 +194,51 @@ pub(super) fn encode_vertices(primitives: &[PreparedPrimitive]) -> Vec<u8> {
             encode_vertex(&mut bytes, model_vertex, model_attributes);
         }
     }
-    bytes
+    (bytes, GpuVertexEncodeMetrics::default())
 }
 
+#[cfg(test)]
 pub(super) fn encode_draw_batches(
     primitives: &[PreparedPrimitive],
 ) -> (Vec<PrimitiveDrawBatch>, Vec<DrawUniformValue>) {
+    let (batches, uniforms, _) = encode_draw_batches_profiled(primitives);
+    (batches, uniforms)
+}
+
+#[cfg(test)]
+pub(super) fn encode_draw_batches_profiled(
+    primitives: &[PreparedPrimitive],
+) -> (
+    Vec<PrimitiveDrawBatch>,
+    Vec<DrawUniformValue>,
+    DrawUniformIndexMetrics,
+) {
+    let mut interner = DrawUniformInterner::default();
+    let batches = encode_draw_batches_indexed_with_semantics(primitives, &mut interner, None);
+    let (uniforms, metrics) = interner.finish();
+    (batches, uniforms, metrics)
+}
+
+pub(super) fn encode_draw_batches_indexed_with_semantics(
+    primitives: &[PreparedPrimitive],
+    interner: &mut DrawUniformInterner,
+    attribution: Option<&GpuSemanticAttribution>,
+) -> Vec<PrimitiveDrawBatch> {
     let mut batches: Vec<PrimitiveDrawBatch> = Vec::new();
-    let mut draw_uniforms: Vec<DrawUniformValue> = Vec::new();
     for primitive in primitives {
         let start_vertex = primitive.original_vertex_offset();
         let material_slot = primitive.render_material_slot();
         let depth_prepass_eligible = primitive.depth_prepass_eligible();
         let double_sided = primitive.double_sided();
+        let semantic_eligible = primitive.semantic_opaque() && primitive.source_node().is_some();
         let draw_uniform_index =
-            draw_uniform_index_for(&mut draw_uniforms, draw_uniform_value_for(primitive));
+            interner.intern(draw_uniform_value_for_semantics(primitive, attribution));
         if let Some(last) = batches.last_mut()
             && last.material_slot == material_slot
             && last.draw_uniform_index == draw_uniform_index
             && last.depth_prepass_eligible == depth_prepass_eligible
             && last.double_sided == double_sided
+            && last.semantic_eligible == semantic_eligible
             && last.start_vertex.saturating_add(last.vertex_count) == start_vertex
         {
             last.vertex_count = last.vertex_count.saturating_add(3);
@@ -135,19 +251,20 @@ pub(super) fn encode_draw_batches(
             draw_uniform_index,
             depth_prepass_eligible,
             double_sided,
+            semantic_eligible,
         });
     }
-    if draw_uniforms.is_empty() {
-        draw_uniforms.push(DrawUniformValue {
-            world_from_model: identity_matrix4(),
-            normal_from_model: identity_matrix4(),
-            tint: crate::material::Color::WHITE,
-        });
-    }
-    (batches, draw_uniforms)
+    batches
 }
 
 pub(super) fn draw_uniform_value_for(primitive: &PreparedPrimitive) -> DrawUniformValue {
+    draw_uniform_value_for_semantics(primitive, None)
+}
+
+pub(super) fn draw_uniform_value_for_semantics(
+    primitive: &PreparedPrimitive,
+    attribution: Option<&GpuSemanticAttribution>,
+) -> DrawUniformValue {
     // F8 fallback: when world_from_model is singular (zero scale on an
     // axis), encode_vertices keeps the world-baked vertex unchanged. To
     // avoid the GPU shader re-multiplying that already-world-space vertex
@@ -157,12 +274,12 @@ pub(super) fn draw_uniform_value_for(primitive: &PreparedPrimitive) -> DrawUnifo
     // degenerate primitives).
     let raw_world_from_model = primitive.world_from_model();
     let raw_normal_from_model = primitive.normal_from_model();
-    let world_from_model = if invert_matrix4(&raw_world_from_model).is_some() {
+    let world_from_model = if primitive.world_to_model().is_some() {
         raw_world_from_model
     } else {
         identity_matrix4()
     };
-    let normal_from_model = if invert_matrix4(&raw_normal_from_model).is_some() {
+    let normal_from_model = if primitive.model_from_normal().is_some() {
         raw_normal_from_model
     } else {
         identity_matrix4()
@@ -171,22 +288,26 @@ pub(super) fn draw_uniform_value_for(primitive: &PreparedPrimitive) -> DrawUnifo
         world_from_model,
         normal_from_model,
         tint: primitive.tint(),
+        semantic_id: attribution
+            .and_then(|attribution| {
+                primitive.source_node().map(|node| {
+                    palette_rgba_f32(attribution.palette_index(node, primitive.source_instance()))
+                })
+            })
+            .unwrap_or([0.0; 4]),
     }
 }
 
-pub(super) fn draw_uniform_index_for(
-    draw_uniforms: &mut Vec<DrawUniformValue>,
-    value: DrawUniformValue,
-) -> u32 {
-    match draw_uniforms
-        .iter()
-        .position(|candidate| *candidate == value)
-    {
-        Some(existing) => existing as u32,
-        None => {
-            draw_uniforms.push(value);
-            (draw_uniforms.len() - 1) as u32
-        }
+pub(super) fn palette_rgba_f32(index: u32) -> [f32; 4] {
+    if index == 0 {
+        [0.0; 4]
+    } else {
+        [
+            (index & 0xff) as f32 / 255.0,
+            ((index >> 8) & 0xff) as f32 / 255.0,
+            ((index >> 16) & 0xff) as f32 / 255.0,
+            1.0,
+        ]
     }
 }
 
@@ -225,7 +346,8 @@ mod tests {
     use super::*;
     use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
     use crate::material::Color;
-    use crate::scene::Vec3;
+    use crate::render::prepare::PreparedDrawTransform;
+    use crate::scene::{NodeKey, Vec3};
 
     #[test]
     fn gpu_vertex_stream_carries_normals_and_texcoord0() {
@@ -319,6 +441,7 @@ mod tests {
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
                     double_sided: false,
+                    semantic_eligible: true,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 6,
@@ -327,6 +450,7 @@ mod tests {
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
                     double_sided: false,
+                    semantic_eligible: true,
                 },
             ],
             "GPU draw encoding must preserve prepared per-material slots instead of drawing \
@@ -342,20 +466,13 @@ mod tests {
     #[test]
     fn gpu_draw_batches_split_when_world_from_model_differs() {
         let first = prepared(Primitive::unlit_triangle().with_render_material_slot(1), 0);
-        let translated = prepared(
-            Primitive::unlit_triangle()
-                .with_render_material_slot(1)
-                .with_world_from_model(
-                    [
-                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 0.0,
-                        1.0,
-                    ],
-                    [
-                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                        1.0,
-                    ],
-                ),
+        let translated = prepared_with_transform(
+            Primitive::unlit_triangle().with_render_material_slot(1),
             3,
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 0.0, 1.0,
+            ],
+            identity_matrix4(),
         );
 
         let (batches, draw_uniforms) = encode_draw_batches(&[first, translated]);
@@ -444,6 +561,7 @@ mod tests {
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
                     double_sided: false,
+                    semantic_eligible: true,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 3,
@@ -452,6 +570,7 @@ mod tests {
                     draw_uniform_index: 0,
                     depth_prepass_eligible: false,
                     double_sided: false,
+                    semantic_eligible: true,
                 },
             ],
             "eligible triangles and ineligible helper strokes must not merge into one draw batch; the depth pass needs to skip the helper stroke while the color pass still draws it",
@@ -481,6 +600,7 @@ mod tests {
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
                     double_sided: false,
+                    semantic_eligible: true,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 3,
@@ -489,6 +609,7 @@ mod tests {
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
                     double_sided: true,
+                    semantic_eligible: true,
                 },
             ],
             "single- and double-sided triangles need separate GPU draw batches so the encoder can use the culling pipeline for only the single-sided draws",
@@ -496,8 +617,81 @@ mod tests {
         assert_eq!(draw_uniforms.len(), 1);
     }
 
+    #[test]
+    fn pf10_unique_draw_uniform_indexing_is_near_linear_and_bitwise_stable() {
+        const COUNT: usize = 4_096;
+        let primitives = (0..COUNT)
+            .map(|index| {
+                let mut world = identity_matrix4();
+                world[12] = f32::from_bits(index as u32);
+                prepared_with_transform(
+                    Primitive::unlit_triangle(),
+                    (index * 3) as u32,
+                    world,
+                    identity_matrix4(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let (batches, uniforms, metrics) = encode_draw_batches_profiled(&primitives);
+        assert_eq!(batches.len(), COUNT);
+        assert_eq!(uniforms.len(), COUNT);
+        assert!(
+            metrics.lookup_probes <= COUNT as u64 * 2,
+            "stable bitwise indexing must scale near-linearly, got {} probes for {COUNT} uniforms",
+            metrics.lookup_probes
+        );
+        assert_eq!(uniforms[1].world_from_model[12].to_bits(), 1);
+    }
+
+    #[test]
+    fn pf10_gpu_vertex_encoding_reuses_prepared_matrix_inverses() {
+        let prepared = prepared_with_transform(
+            Primitive::unlit_triangle(),
+            0,
+            [
+                2.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 5.0, 6.0, 7.0, 1.0,
+            ],
+            [
+                0.5,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0 / 3.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.25,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            ],
+        );
+
+        let (_bytes, metrics) = encode_vertices_profiled(&[prepared]);
+        assert_eq!(
+            metrics.matrix_inversions, 0,
+            "GPU encoding must consume inverses carried by prepared primitives"
+        );
+    }
+
     fn prepared(primitive: Primitive, original_vertex_offset: u32) -> PreparedPrimitive {
-        PreparedPrimitive::new(primitive, None, Color::WHITE)
+        PreparedPrimitive::new(primitive, Some(NodeKey::default()), Color::WHITE)
             .with_original_vertex_offset(original_vertex_offset)
+    }
+
+    fn prepared_with_transform(
+        primitive: Primitive,
+        original_vertex_offset: u32,
+        world_from_model: [f32; 16],
+        normal_from_model: [f32; 16],
+    ) -> PreparedPrimitive {
+        prepared(primitive, original_vertex_offset).with_draw_transform(
+            PreparedDrawTransform::shared(world_from_model, normal_from_model),
+        )
     }
 }

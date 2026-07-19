@@ -1,0 +1,114 @@
+{
+  "schema": "scena.feature_ownership.v1",
+  "features": [
+    {
+      "name": "controls",
+      "owner": "controls",
+      "kind": "compatibility-marker",
+      "implementation": { "path": "src/controls.rs", "token": "pub struct OrbitControls" },
+      "test": { "path": "tests/m4_performance_platform.rs", "token": "orbit_controls_are_platform_neutral_pointer_actions" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`controls`" }
+    },
+    {
+      "name": "controls-winit",
+      "owner": "controls",
+      "kind": "compatibility-alias",
+      "implementation": { "path": "Cargo.toml", "token": "controls-winit = [\"controls\"]" },
+      "test": { "path": "tests/m4_performance_platform.rs", "token": "orbit_controls_are_platform_neutral_pointer_actions" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`controls-winit`" }
+    },
+    {
+      "name": "controls-web",
+      "owner": "controls",
+      "kind": "compatibility-alias",
+      "implementation": { "path": "Cargo.toml", "token": "controls-web = [\"controls\"]" },
+      "test": { "path": "tests/m4_performance_platform.rs", "token": "orbit_controls_are_platform_neutral_pointer_actions" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`controls-web`" }
+    },
+    {
+      "name": "browser-probe",
+      "owner": "browser_probe",
+      "implementation": { "path": "src/lib.rs", "token": "feature = \"browser-probe\"" },
+      "test": { "path": "tests/m6_browser_renderer_parity.rs", "token": "m6_cpu_webgl2_parity_requires_cpu_and_gpu_renderer_owned_frames" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`browser-probe`" }
+    },
+    {
+      "name": "demo-page",
+      "owner": "demo_page",
+      "implementation": { "path": "src/lib.rs", "token": "feature = \"demo-page\"" },
+      "test": { "path": "tests/round_e_material_showcase.rs", "token": "demo_tick_does_not_dirty_camera_controls_when_nothing_changed" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`demo-page`" }
+    },
+    {
+      "name": "proof-harness",
+      "owner": "demo_page",
+      "implementation": { "path": "src/demo_page/controls.rs", "token": "feature = \"proof-harness\"" },
+      "test": { "path": "tests/round_e_material_showcase.rs", "token": "public_and_proof_wasm_bundles_are_split" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`proof-harness`" }
+    },
+    {
+      "name": "viewer-element",
+      "owner": "viewer_element",
+      "implementation": { "path": "src/viewer_element.rs", "token": "feature = \"viewer-element\"" },
+      "test": { "path": "tests/scena_viewer_element.rs", "token": "scena_viewer_attributes_parse_model_viewer_style_surface" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`viewer-element`" }
+    },
+    {
+      "name": "inspection",
+      "owner": "diagnostics",
+      "implementation": { "path": "src/lib.rs", "token": "feature = \"inspection\"" },
+      "test": { "path": "tests/m7_threejs_ergonomics.rs", "token": "m7_scene_inspection_feature_reports_reproducible_metadata" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`inspection`" }
+    },
+    {
+      "name": "scene-host",
+      "owner": "scene_host",
+      "implementation": { "path": "src/lib.rs", "token": "feature = \"scene-host\"" },
+      "test": { "path": "tests/scene_host.rs", "token": "scene_host_core_constructs_poses_inspects_picks_and_frames_with_one_handle_namespace" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`scene-host`" }
+    },
+    {
+      "name": "hot-reload",
+      "owner": "assets",
+      "implementation": { "path": "src/assets.rs", "token": "feature = \"hot-reload\"" },
+      "test": { "path": "tests/round_d_asset_hot_reload.rs", "token": "asset_hot_reload_watcher_reports_debounced_file_change_and_reload_updates_retained_asset" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`hot-reload`" }
+    },
+    {
+      "name": "khronos-samples",
+      "owner": "assets",
+      "implementation": { "path": "src/assets.rs", "token": "feature = \"khronos-samples\"" },
+      "test": { "path": "tests/round_c_khronos_samples.rs", "token": "khronos_sample_catalog_exposes_manifest_metadata_and_package_budget" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`khronos-samples`" }
+    },
+    {
+      "name": "ktx2",
+      "owner": "assets",
+      "implementation": { "path": "src/assets/texture_ktx2.rs", "token": "feature = \"ktx2\"" },
+      "test": { "path": "tests/m8_assets_materials_ecosystem.rs", "token": "m8_ktx2_basisu_feature_decodes_basisu_ktx2_rgba_pixels" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`ktx2`" }
+    },
+    {
+      "name": "meshopt",
+      "owner": "assets",
+      "implementation": { "path": "src/assets/gltf/meshopt.rs", "token": "feature = \"meshopt\"" },
+      "test": { "path": "tests/m8_assets_materials_ecosystem.rs", "token": "m8_meshopt_feature_decodes_required_compressed_buffer_views" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`meshopt`" }
+    },
+    {
+      "name": "obj",
+      "owner": "assets",
+      "implementation": { "path": "src/assets.rs", "token": "feature = \"obj\"" },
+      "test": { "path": "tests/m3a_app_features.rs", "token": "obj_feature_load_geometry_parses_triangle_faces" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`obj`" }
+    },
+    {
+      "name": "production-assets",
+      "owner": "assets",
+      "kind": "feature-composition",
+      "implementation": { "path": "Cargo.toml", "token": "production-assets = [\"ktx2\", \"meshopt\"]" },
+      "test": { "path": "tests/production_asset_profile.rs", "token": "production_asset_profile_enables_compressed_asset_decoders_without_default_bloat" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`production-assets`" }
+    }
+  ]
+}

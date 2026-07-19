@@ -62,6 +62,32 @@ pub(crate) fn doctor_rejects_m3a_scene_import_missing_module_export_regression()
 }
 
 #[test]
+pub(crate) fn doctor_rejects_unchecked_production_gltf_parse_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/m3a-scene-import-unchecked-parse");
+    let gltf_path = fixture_root.join("src/assets/gltf.rs");
+    fs::create_dir_all(gltf_path.parent().expect("glTF source parent")).expect("fixture dir");
+    fs::write(
+        &gltf_path,
+        "fn open(bytes: &[u8]) { let _ = Gltf::from_slice_without_validation(bytes); }\n",
+    )
+    .expect("glTF source fixture");
+    let mut findings = Vec::new();
+
+    check_m3a_scene_import_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-M3A-SCENE-IMPORT"
+                && finding.message.contains("from_slice_without_validation")
+                && finding.message.contains("forbidden")
+        }),
+        "doctor must reject unchecked production glTF parsing: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_release_publish_dry_run_helper_missing_strict_mode_regression() {
     // RELEASE-PUBLISH-DRY-RUN-RECORD: scripts/release_publish_dry_run.sh
     // must declare `set -euo pipefail` so a failed git rev-parse /
@@ -233,6 +259,70 @@ pub(crate) fn doctor_rejects_m6_browser_renderer_probe_missing_cargo_dep_regress
         }),
         "doctor must reject Cargo.toml that drops the browser-probe / \
          wgpu-backed M6 browser renderer probe gate: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn doctor_rejects_browser_release_probe_without_provenance_contract() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/m6-browser-probe-missing-provenance");
+    let probe = fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js");
+    fs::create_dir_all(probe.parent().expect("probe fixture parent")).expect("fixture dir");
+    fs::write(&probe, "// browser probe without release provenance\n").expect("probe fixture");
+    let mut findings = Vec::new();
+
+    check_m6_browser_renderer_probe(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "VISUAL-BROWSER-M6"
+                && finding.message.contains("attachReleaseArtifactProvenance")
+        }),
+        "doctor must reject a browser release producer that can emit unattributed JSON: \
+         {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn doctor_rejects_wasm_size_gate_without_provenance_contract() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/m9-wasm-size-missing-provenance");
+    let gate = fixture_root.join("tests/release/m9_wasm_size_gate.js");
+    fs::create_dir_all(gate.parent().expect("gate fixture parent")).expect("fixture dir");
+    fs::write(&gate, "// wasm size gate without release provenance\n").expect("gate fixture");
+    let mut findings = Vec::new();
+
+    check_m9_ci_release_lanes(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-CI-M9"
+                && finding.message.contains("attachReleaseArtifactProvenance")
+        }),
+        "doctor must reject a WASM-size release producer that can emit unattributed JSON: \
+         {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn doctor_rejects_release_workflow_without_independent_review_bundle() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/release-workflow-missing-review-bundle");
+    let workflow = fixture_root.join(".github/workflows/release.yml");
+    fs::create_dir_all(workflow.parent().expect("workflow fixture parent")).expect("fixture dir");
+    fs::write(&workflow, "name: release without review evidence\n").expect("workflow fixture");
+    let mut findings = Vec::new();
+
+    check_m9_ci_release_lanes(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-CI-M9" && finding.message.contains("SCENA_REVIEW_BUNDLE_URL")
+        }),
+        "doctor must reject a publish workflow with no independently supplied review bundle: \
+         {findings:?}",
     );
 }
 

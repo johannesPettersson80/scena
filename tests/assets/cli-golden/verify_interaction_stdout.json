@@ -33,9 +33,9 @@
         "events": [
           "hover"
         ],
-        "handle": 4294967299,
+        "handle": 562950221856771,
         "hit": true,
-        "hover_handle": 4294967299
+        "hover_handle": 562950221856771
       }
     },
     {
@@ -60,10 +60,10 @@
         "events": [
           "selection_changed"
         ],
-        "handle": 4294967299,
+        "handle": 562950221856771,
         "hit": true,
-        "hover_handle": 4294967299,
-        "selection_handle": 4294967299
+        "hover_handle": 562950221856771,
+        "selection_handle": 562950221856771
       }
     }
   ],

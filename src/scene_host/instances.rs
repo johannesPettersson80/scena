@@ -7,8 +7,6 @@ use crate::{
     SceneHostInstanceSetInspectionV1, Transform,
 };
 
-pub(super) const INSTANCE_HANDLE_GENERATION_BASE: u32 = 1_000_000;
-
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct HostInstanceBinding {
     pub(super) entries: Vec<HostInstanceEntry>,
@@ -132,7 +130,16 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         handle: u64,
         transform: Transform,
     ) -> Result<(), SceneHostError> {
-        let binding = self.instance_binding(handle)?.clone();
+        let binding = self.preflight_instance_root_transform(handle)?;
+        self.set_preflighted_instance_root_transform(handle, &binding, transform)
+    }
+
+    pub(super) fn set_preflighted_instance_root_transform(
+        &mut self,
+        handle: u64,
+        binding: &HostInstanceBinding,
+        transform: Transform,
+    ) -> Result<(), SceneHostError> {
         if binding.root_transform == transform {
             return Ok(());
         }
@@ -255,6 +262,43 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 })
             })
             .collect()
+    }
+
+    pub(super) fn preflight_instance_root_transform(
+        &self,
+        handle: u64,
+    ) -> Result<HostInstanceBinding, SceneHostError> {
+        let binding = self.instance_binding(handle)?.clone();
+        for entry in &binding.entries {
+            if self.scene.node(entry.set_node).is_none() {
+                return Err(SceneHostError::new(
+                    SceneHostErrorCode::NodeHandleNotFound,
+                    format!(
+                        "instance root {handle} references missing set node {:?}",
+                        entry.set_node
+                    ),
+                ));
+            }
+            let Some(instance_set) = self.scene.instance_set(entry.set) else {
+                return Err(SceneHostError::new(
+                    SceneHostErrorCode::NodeHandleNotFound,
+                    format!(
+                        "instance root {handle} references missing instance set {:?}",
+                        entry.set
+                    ),
+                ));
+            };
+            if !instance_set.contains(entry.instance) {
+                return Err(SceneHostError::new(
+                    SceneHostErrorCode::NodeHandleNotFound,
+                    format!(
+                        "instance root {handle} references missing instance {:?}",
+                        entry.instance
+                    ),
+                ));
+            }
+        }
+        Ok(binding)
     }
 
     fn instance_binding(&self, handle: u64) -> Result<&HostInstanceBinding, SceneHostError> {

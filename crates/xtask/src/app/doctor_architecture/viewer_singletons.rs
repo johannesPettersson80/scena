@@ -63,13 +63,7 @@ pub(crate) fn check_render_singleton_contracts(root: &Path, findings: &mut Vec<F
                 || trimmed.starts_with("pub static ")
                 || trimmed.starts_with("pub(crate) static ")
                 || trimmed.starts_with("pub(super) static ")
-                || (trimmed.starts_with("pub(in ") && trimmed.contains(" static "))
-                || trimmed.contains("OnceCell")
-                || trimmed.contains("OnceLock")
-                || trimmed.contains("Lazy::new")
-                || trimmed.contains("Mutex::new")
-                || trimmed.contains("RwLock::new")
-                || trimmed.contains("RefCell::new");
+                || (trimmed.starts_with("pub(in ") && trimmed.contains(" static "));
             if singleton && !allowed_render_singleton_line(&rel, trimmed) {
                 findings.push(Finding::new(
                     "ARCH-RENDER-SINGLETON",

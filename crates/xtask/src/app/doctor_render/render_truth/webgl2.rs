@@ -20,7 +20,7 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "src/render/gpu/prepare_resources.rs",
         &[
             "encode_retained_vertices(retained_primitives, retained_instances)",
-            "encode_draw_resources(draw_primitives, draw_instances, draw_strokes)",
+            "encode_draw_resources(",
             "create_output_bind_group_layout",
             "create_material_bind_group_layout",
             "create_unlit_pipeline",
@@ -33,8 +33,10 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/resource_encoding.rs",
         &[
-            "encode_vertices(&all_retained_primitives)",
-            "vertices::encode_draw_batches(draw_primitives)",
+            "encode_vertices_iter(",
+            ".chain(retained_instance_primitives)",
+            "vertices::encode_draw_batches_indexed_with_semantics(",
+            "let (draw_uniforms, draw_uniform_index_metrics) = interner.finish()",
         ],
     );
     require_contains(
@@ -140,6 +142,41 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "textureSample(base_color_texture, base_color_sampler, transformed_uv)",
             "instance_normal_0",
             "@location(14) instance_tint",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/area_ltc.wgsl",
+        &["for (var i = 0u; i < vertex_count; i = i + 1u)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/area_ltc.wgsl",
+        &[
+            "clipped.vertices[0] = ltc_safe_normalize",
+            "clipped.vertices[4] = ltc_safe_normalize",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/output_shader_texture_2d.wgsl",
+        &["for (var i = 0u; i < MAX_GPU_AREA_LIGHTS; i = i + 1u)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/output_shader_texture_2d.wgsl",
+        &[
+            "fn ltc_accumulate_area_light(",
+            "ltc_accumulate_area_light(0u,",
+            "ltc_accumulate_area_light(1u,",
         ],
     );
     require_contains(

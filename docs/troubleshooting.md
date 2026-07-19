@@ -74,7 +74,13 @@ Check:
 - cursor coordinate conversion,
 - object visibility,
 - layer masks,
+- the current morph weights and skin bindings,
+- singular transforms that collapse the target triangle,
 - scene preparation after moving objects.
+
+`pick_with_assets` evaluates morph targets before skinning, matching render
+preparation. Missing or invalid deformation inputs return
+`LookupError::InvalidSkinBinding` instead of testing the undeformed mesh.
 
 Start with `examples/picking_selection_hover.rs`.
 

@@ -34,10 +34,24 @@ pub(crate) fn stage_release_artifacts(
     input: &Path,
     output: &Path,
 ) -> Result<(), String> {
+    let expected_commit = release_artifact_commit_label(root);
+    stage_release_artifacts_for_commit(input, output, &expected_commit)
+}
+
+pub(crate) fn stage_release_artifacts_for_commit(
+    input: &Path,
+    output: &Path,
+    expected_commit: &str,
+) -> Result<(), String> {
+    validate_release_commit_label(expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-SOURCE-COMMIT", error))?;
     if !input.is_dir() {
-        return Err(format!(
-            "downloaded release artifact root {} does not exist",
-            input.display()
+        return Err(coded_stage_error(
+            "RELEASE-SOURCE-ROOT",
+            format!(
+                "downloaded release artifact root {} does not exist",
+                input.display()
+            ),
         ));
     }
     if output.exists() {
@@ -47,14 +61,45 @@ pub(crate) fn stage_release_artifacts(
     fs::create_dir_all(output)
         .map_err(|error| format!("failed to create {}: {error}", output.display()))?;
 
-    let expected_commit = release_artifact_commit_label(root);
     let mut files = Vec::new();
-    collect_stage_files(input, &mut files)?;
-    copy_required_artifacts(&files, output, &expected_commit)?;
-    write_merged_browser_probe(&files, output, &expected_commit)?;
-    write_aggregated_capability_matrix(output, &files, &expected_commit)?;
-    write_visual_proof_artifacts(output, &files, &expected_commit)?;
-    write_release_review_bundle(output, &expected_commit)?;
+    collect_stage_files(input, &mut files)
+        .map_err(|error| coded_stage_error("RELEASE-SOURCE-ROOT", error))?;
+    copy_required_artifacts(&files, output, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-SOURCE-EVIDENCE", error))?;
+    write_merged_browser_probe(&files, output, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-BROWSER-PROOF", error))?;
+    write_aggregated_capability_matrix(output, &files, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-CAPABILITY-AGGREGATION", error))?;
+    super::stage_visual_proofs::write_visual_proof_artifacts(output, &files, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-VISUAL-PROOF", error))?;
+    super::stage_reviews::copy_and_validate_required_reviews(&files, output, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-REVIEWS", error))?;
+    write_staging_metadata(output, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-STAGING-METADATA", error))?;
+    Ok(())
+}
+
+fn coded_stage_error(code: &str, error: impl AsRef<str>) -> String {
+    let error = error.as_ref();
+    if error.starts_with("RELEASE-") {
+        error.to_string()
+    } else {
+        format!("{code}: {error}")
+    }
+}
+
+fn validate_release_commit_label(commit: &str) -> Result<(), String> {
+    if commit == "local-checkout" {
+        return Err(
+            "release staging rejects local-checkout provenance; provide an exact source commit"
+                .to_string(),
+        );
+    }
+    if commit.len() != 40 || !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!(
+            "release staging requires an exact 40-hex source commit, got {commit:?}"
+        ));
+    }
     Ok(())
 }
 
@@ -81,7 +126,7 @@ fn copy_required_artifacts(
     expected_commit: &str,
 ) -> Result<(), String> {
     for suffix in REQUIRED_RELEASE_ARTIFACT_SUFFIXES {
-        if generated_stage_suffix(suffix) {
+        if generated_stage_suffix(suffix) || suffix.starts_with("reviews/") {
             continue;
         }
         let Some(source) = select_stage_source(files, suffix) else {
@@ -97,18 +142,35 @@ fn copy_required_artifacts(
 fn generated_stage_suffix(suffix: &str) -> bool {
     matches!(
         suffix,
-        "m6-rust-wasm-renderer-probe.json"
+        "staging-metadata.json"
+            | "m6-rust-wasm-renderer-probe.json"
             | "m9-platform/m9-capability-matrix.json"
-            | "reviews/findings.json"
-            | "reviews/maintainer-signoff.toml"
             | "visual-proof/waterbottle-gpu.json"
+            | "visual-proof/waterbottle-cpu.json"
             | "visual-proof/browser-webgpu.json"
             | "visual-proof/browser-webgl2.json"
             | "visual-proof/native-gpu.json"
     )
 }
 
-fn select_stage_source(files: &[PathBuf], suffix: &str) -> Option<PathBuf> {
+fn write_staging_metadata(output: &Path, expected_commit: &str) -> Result<(), String> {
+    let staged_at_unix_seconds = current_unix_seconds();
+    let metadata = json!({
+        "schema": "scena.release.staging.v1",
+        "status": "passed",
+        "producer": "cargo run -p xtask -- stage-release-artifacts",
+        "source_commit_sha": expected_commit,
+        "commit_sha": expected_commit,
+        "timestamp_unix_seconds": staged_at_unix_seconds,
+        "staged_at": utc_rfc3339_from_unix(staged_at_unix_seconds),
+        "staging_checkout": expected_commit,
+        "staging_tool": "scena-xtask",
+        "staging_tool_version": env!("CARGO_PKG_VERSION"),
+    });
+    write_stage_json(&output.join("staging-metadata.json"), &metadata)
+}
+
+pub(super) fn select_stage_source(files: &[PathBuf], suffix: &str) -> Option<PathBuf> {
     let mut matches = files
         .iter()
         .filter(|path| path_ends_with(path, suffix))
@@ -152,13 +214,29 @@ fn copy_stage_file(
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    if source.extension().and_then(OsStr::to_str) == Some("json") {
+    if suffix.starts_with("reviews/") {
+        fs::copy(source, target).map_err(|error| {
+            format!(
+                "failed to copy independent review evidence {} to {}: {error}",
+                source.display(),
+                target.display()
+            )
+        })?;
+        Ok(())
+    } else if source.extension().and_then(OsStr::to_str) == Some("json") {
         let text = fs::read_to_string(source)
             .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
-        let mut value = serde_json::from_str::<Value>(&text)
+        let value = serde_json::from_str::<Value>(&text)
             .map_err(|error| format!("failed to parse {}: {error}", source.display()))?;
-        normalize_release_json_metadata(&mut value, suffix, expected_commit)?;
-        write_stage_json(target, &value)
+        super::stage_provenance::validate_release_json_metadata(&value, suffix, expected_commit)?;
+        fs::copy(source, target).map_err(|error| {
+            format!(
+                "failed to copy provenance-bearing release artifact {} to {}: {error}",
+                source.display(),
+                target.display()
+            )
+        })?;
+        Ok(())
     } else {
         fs::copy(source, target).map_err(|error| {
             format!(
@@ -171,72 +249,49 @@ fn copy_stage_file(
     }
 }
 
-fn normalize_release_json_metadata(
-    value: &mut Value,
-    suffix: &str,
-    expected_commit: &str,
-) -> Result<(), String> {
-    let Some(object) = value.as_object_mut() else {
-        return Ok(());
-    };
-    let recorded = object
-        .get("commit_sha")
-        .or_else(|| object.get("source_commit_sha"))
-        .or_else(|| object.get("commit"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty());
-    if let Some(recorded) = recorded
-        && expected_commit != "local-checkout"
-        && recorded != "local-checkout"
-        && recorded != expected_commit
-    {
-        return Err(format!(
-            "release artifact {suffix} was generated for commit {recorded}, expected {expected_commit}"
-        ));
-    }
-    if expected_commit != "local-checkout" {
-        object.insert("commit_sha".to_string(), json!(expected_commit));
-    }
-    if !object.contains_key("timestamp_unix_seconds") {
-        object.insert(
-            "timestamp_unix_seconds".to_string(),
-            json!(current_unix_seconds()),
-        );
-    }
-    Ok(())
-}
-
 fn write_merged_browser_probe(
     files: &[PathBuf],
     output: &Path,
     expected_commit: &str,
 ) -> Result<(), String> {
     let probes = browser_probe_values(files)?;
-    let mut results = Vec::new();
-    for (_, value, _) in &probes {
-        if let Some(array) = value.get("results").and_then(Value::as_array) {
-            results.extend(array.iter().cloned());
-        }
-    }
+    let results = probes
+        .iter()
+        .filter_map(|(_, value, _)| {
+            value
+                .get("release_results")
+                .or_else(|| value.get("results"))
+                .and_then(Value::as_array)
+        })
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>();
     for backend in ["webgl2", "webgpu"] {
-        if browser_backend_result(&results, backend).is_none() {
-            return Err(format!(
-                "browser release probe did not include passed backend {backend}"
-            ));
-        }
+        validate_browser_backend_result(&results, backend)?;
     }
+    let source_checksums = super::stage_provenance::checksum_entries(
+        probes
+            .iter()
+            .map(|(path, _, label)| (path.as_path(), label.as_str())),
+    )?;
     let artifact = json!({
+        "schema": "scena.m6.rust_wasm_renderer_probe.aggregate.v1",
         "gate": "m6-rust-wasm-renderer-probe",
         "status": "passed",
         "renderer": "scena Rust/WASM",
+        "producer": "cargo run -p xtask -- stage-release-artifacts",
+        "evidence_phase": "staging-aggregation",
         "commit_sha": expected_commit,
         "timestamp_unix_seconds": current_unix_seconds(),
+        "source_checksums": source_checksums,
         "results": results,
     });
     write_stage_json(&output.join("m6-rust-wasm-renderer-probe.json"), &artifact)
 }
 
-fn browser_probe_values(files: &[PathBuf]) -> Result<Vec<(PathBuf, Value, String)>, String> {
+pub(super) fn browser_probe_values(
+    files: &[PathBuf],
+) -> Result<Vec<(PathBuf, Value, String)>, String> {
     let mut probes = Vec::new();
     for path in files
         .iter()
@@ -258,40 +313,105 @@ fn browser_probe_values(files: &[PathBuf]) -> Result<Vec<(PathBuf, Value, String
     Ok(probes)
 }
 
-fn browser_backend_result(results: &[Value], backend: &str) -> Option<Value> {
-    results.iter().find_map(|result| {
-        let result_backend = result
-            .get("backend")
-            .and_then(Value::as_str)?
-            .to_ascii_lowercase();
-        if result_backend != backend
-            || result.get("status").and_then(Value::as_str) != Some("passed")
-        {
-            return None;
-        }
-        (browser_nonblack_pixels(result) > 0).then(|| result.clone())
-    })
+pub(super) fn browser_release_results(files: &[PathBuf]) -> Result<Vec<Value>, String> {
+    Ok(browser_probe_values(files)?
+        .into_iter()
+        .filter_map(|(_, value, _)| {
+            value
+                .get("release_results")
+                .or_else(|| value.get("results"))
+                .and_then(Value::as_array)
+                .cloned()
+        })
+        .flatten()
+        .collect())
 }
 
-fn browser_nonblack_pixels(result: &Value) -> u64 {
+pub(crate) fn validate_browser_backend_result(
+    results: &[Value],
+    backend: &str,
+) -> Result<Value, String> {
+    let matches = results
+        .iter()
+        .filter(|result| {
+            result
+                .get("backend")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case(backend))
+        })
+        .collect::<Vec<_>>();
+    let result = match matches.as_slice() {
+        [] => {
+            return Err(format!(
+                "browser release probe is missing backend {backend}"
+            ));
+        }
+        [result] => *result,
+        _ => {
+            return Err(format!(
+                "browser release probe has {} ambiguous results for backend {backend}",
+                matches.len()
+            ));
+        }
+    };
+    if result.get("status").and_then(Value::as_str) != Some("passed") {
+        return Err(format!(
+            "browser release probe backend {backend} did not pass"
+        ));
+    }
+    let readback = result.get("renderer_readback").ok_or_else(|| {
+        format!(
+            "browser release probe backend {backend} is missing renderer_readback; \
+             renderer-owned-gpu-copy is required"
+        )
+    })?;
+    if readback.get("source").and_then(Value::as_str) != Some("renderer-owned-gpu-copy") {
+        return Err(format!(
+            "browser release probe backend {backend} must use \
+             renderer_readback.source=renderer-owned-gpu-copy"
+        ));
+    }
+    let width = readback.get("width").and_then(Value::as_u64).unwrap_or(0);
+    let height = readback.get("height").and_then(Value::as_u64).unwrap_or(0);
+    if width == 0 || height == 0 {
+        return Err(format!(
+            "browser release probe backend {backend} renderer-owned readback must record positive \
+             width and height"
+        ));
+    }
+    if browser_nonblack_pixels(result) == 0 {
+        return Err(format!(
+            "browser release probe backend {backend} renderer-owned readback has zero nonblack \
+             pixels"
+        ));
+    }
+    let checksum = readback
+        .get("rgba8_fnv1a64")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if checksum.len() != 16
+        || !checksum
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        || checksum.bytes().all(|byte| byte == b'0')
+    {
+        return Err(format!(
+            "browser release probe backend {backend} renderer-owned readback has an invalid or \
+             zero rgba8_fnv1a64 checksum"
+        ));
+    }
+    if backend.eq_ignore_ascii_case("webgl2") {
+        super::stage_browser_parity::validate_cpu_webgl2_parity(result, readback)?;
+    }
+    Ok(result.clone())
+}
+
+pub(super) fn browser_nonblack_pixels(result: &Value) -> u64 {
     result
         .get("renderer_readback")
         .and_then(|readback| readback.get("pixel_statistics"))
         .and_then(|pixels| pixels.get("nonblack"))
         .and_then(Value::as_u64)
-        .or_else(|| {
-            result
-                .get("renderer_readback")
-                .and_then(|readback| readback.get("pixels"))
-                .and_then(|pixels| pixels.get("nonblack"))
-                .and_then(Value::as_u64)
-        })
-        .or_else(|| {
-            result
-                .get("pixels")
-                .and_then(|pixels| pixels.get("nonblack"))
-                .and_then(Value::as_u64)
-        })
         .unwrap_or(0)
 }
 
@@ -300,24 +420,18 @@ fn write_aggregated_capability_matrix(
     files: &[PathBuf],
     expected_commit: &str,
 ) -> Result<(), String> {
-    let browser_results = browser_probe_values(files)?
-        .into_iter()
-        .filter_map(|(_, value, _)| value.get("results").and_then(Value::as_array).cloned())
-        .flatten()
-        .collect::<Vec<_>>();
+    let browser_results = browser_release_results(files)?;
     let mut lanes = Vec::new();
     for lane in RELEASE_LANES {
         let row = match *lane {
             "linux-webgl2-chromium" => browser_capability_row(
                 lane,
-                browser_backend_result(&browser_results, "webgl2")
-                    .ok_or_else(|| "missing WebGL2 browser capability result".to_string())?,
+                validate_browser_backend_result(&browser_results, "webgl2")?,
                 expected_commit,
             ),
             "linux-webgpu-chromium" => browser_capability_row(
                 lane,
-                browser_backend_result(&browser_results, "webgpu")
-                    .ok_or_else(|| "missing WebGPU browser capability result".to_string())?,
+                validate_browser_backend_result(&browser_results, "webgpu")?,
                 expected_commit,
             ),
             "wasm32-unknown-unknown" => wasm_capability_row(output, lane, expected_commit)?,
@@ -325,12 +439,32 @@ fn write_aggregated_capability_matrix(
         };
         lanes.push(row);
     }
+    let source_paths = [
+        "m6-rust-wasm-renderer-probe.json",
+        "m9-wasm-size.json",
+        "m9-platform/linux-native-vulkan/capabilities.json",
+        "m9-platform/headless-cpu/capabilities.json",
+        "m9-platform/macos-metal/capabilities.json",
+        "m9-platform/windows-dx12/capabilities.json",
+    ]
+    .into_iter()
+    .map(|relative| (output.join(relative), relative.to_string()))
+    .filter(|(path, _)| path.is_file())
+    .collect::<Vec<_>>();
+    let source_checksums = super::stage_provenance::checksum_entries(
+        source_paths
+            .iter()
+            .map(|(path, label)| (path.as_path(), label.as_str())),
+    )?;
     let matrix = json!({
         "schema": "scena.m9.capability_matrix.v1",
         "status": "passed",
         "status_reason": "canonical release bundle aggregated measured lane artifacts from the completed release workflow",
+        "producer": "cargo run -p xtask -- stage-release-artifacts",
+        "evidence_phase": "staging-aggregation",
         "commit_sha": expected_commit,
         "timestamp_unix_seconds": current_unix_seconds(),
+        "source_checksums": source_checksums,
         "lanes": lanes,
     });
     write_stage_json(
@@ -404,189 +538,7 @@ fn wasm_capability_row(output: &Path, lane: &str, expected_commit: &str) -> Resu
     }))
 }
 
-fn write_visual_proof_artifacts(
-    output: &Path,
-    files: &[PathBuf],
-    expected_commit: &str,
-) -> Result<(), String> {
-    write_waterbottle_visual_proof(output, files, expected_commit)?;
-    write_browser_visual_proof(output, files, expected_commit, "webgl2", "browser-webgl2")?;
-    write_browser_visual_proof(output, files, expected_commit, "webgpu", "browser-webgpu")?;
-    write_native_gpu_visual_proof(output, expected_commit)?;
-    Ok(())
-}
-
-fn write_waterbottle_visual_proof(
-    output: &Path,
-    files: &[PathBuf],
-    expected_commit: &str,
-) -> Result<(), String> {
-    let Some(source) = select_stage_source(files, "m8-real-asset/waterbottle_gpu.png") else {
-        return Err("missing WaterBottle GPU PNG for visual proof".to_string());
-    };
-    let bytes = fs::read(&source)
-        .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
-    if !bytes.starts_with(&[0x89, b'P', b'N', b'G']) || bytes.len() < 1024 {
-        return Err(format!(
-            "WaterBottle GPU visual proof {} is not a non-trivial PNG",
-            source.display()
-        ));
-    }
-    let proof = visual_proof_base("waterbottle-gpu", expected_commit, "native-waterbottle-gpu")
-        .with_source(&source)
-        .with_extra(json!({
-            "artifact": "m8-real-asset/waterbottle_gpu.png",
-            "png_sha256": sha256_hex(&source).map_err(|error| error.to_string())?,
-            "byte_len": bytes.len(),
-        }))
-        .finish();
-    write_stage_json(&output.join("visual-proof/waterbottle-gpu.json"), &proof)
-}
-
-fn write_browser_visual_proof(
-    output: &Path,
-    files: &[PathBuf],
-    expected_commit: &str,
-    backend: &str,
-    lane: &str,
-) -> Result<(), String> {
-    let results = browser_probe_values(files)?
-        .into_iter()
-        .filter_map(|(_, value, _)| value.get("results").and_then(Value::as_array).cloned())
-        .flatten()
-        .collect::<Vec<_>>();
-    let result = browser_backend_result(&results, backend)
-        .ok_or_else(|| format!("missing passed browser visual proof result for {backend}"))?;
-    let source = if result.get("renderer_readback").is_some() {
-        "renderer-owned-gpu-copy"
-    } else {
-        "canvas-readback"
-    };
-    let proof = visual_proof_base(lane, expected_commit, "browser-rust-wasm-rendered-output")
-        .with_extra(json!({
-            "backend": backend,
-            "pixel_source": source,
-            "nonblack_pixels": browser_nonblack_pixels(&result),
-            "renderer_readback": result.get("renderer_readback").cloned().unwrap_or(Value::Null),
-            "screenshot_metadata": result.get("screenshot_metadata").cloned().unwrap_or(Value::Null),
-        }))
-        .finish();
-    write_stage_json(&output.join(format!("visual-proof/{lane}.json")), &proof)
-}
-
-fn write_native_gpu_visual_proof(output: &Path, expected_commit: &str) -> Result<(), String> {
-    for lane in ["macos-metal", "windows-dx12", "linux-native-vulkan"] {
-        let suffix = format!("m9-platform/{lane}/rendered-output.json");
-        let path = output.join(&suffix);
-        if !path.is_file() {
-            continue;
-        }
-        let text = fs::read_to_string(&path)
-            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let value = serde_json::from_str::<Value>(&text)
-            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        if native_gpu_render_proof_passes(&value) {
-            let proof =
-                visual_proof_base("native-gpu", expected_commit, "native-gpu-rendered-output")
-                    .with_source(&path)
-                    .with_extra(json!({
-                        "lane": lane,
-                        "source_artifact": suffix,
-                        "backend": value.get("backend").cloned().unwrap_or(Value::Null),
-                        "gpu_proof": true,
-                    }))
-                    .finish();
-            return write_stage_json(&output.join("visual-proof/native-gpu.json"), &proof);
-        }
-    }
-    Err("no native GPU rendered-output artifact proves GPU output".to_string())
-}
-
-struct VisualProofBuilder {
-    value: Value,
-}
-
-fn visual_proof_base(lane: &str, expected_commit: &str, proof_class: &str) -> VisualProofBuilder {
-    VisualProofBuilder {
-        value: json!({
-            "schema": "scena.visual_proof.v1",
-            "lane": lane,
-            "status": "passed",
-            "preview_only": false,
-            "rust_test_command": false,
-            "rust_test_output_observed": true,
-            "skip_marker_observed": false,
-            "release_evidence": true,
-            "proof_class": proof_class,
-            "commit_sha": expected_commit,
-            "timestamp_unix_seconds": current_unix_seconds(),
-        }),
-    }
-}
-
-impl VisualProofBuilder {
-    fn with_source(mut self, source: &Path) -> Self {
-        self.value["source_artifact_path"] = json!(source.to_string_lossy().replace('\\', "/"));
-        self
-    }
-
-    fn with_extra(mut self, extra: Value) -> Self {
-        if let (Some(target), Some(extra)) = (self.value.as_object_mut(), extra.as_object()) {
-            for (key, value) in extra {
-                target.insert(key.clone(), value.clone());
-            }
-        }
-        self
-    }
-
-    fn finish(self) -> Value {
-        self.value
-    }
-}
-
-fn write_release_review_bundle(output: &Path, expected_commit: &str) -> Result<(), String> {
-    let now = current_unix_seconds();
-    let generated_at = utc_rfc3339_from_unix(now);
-    let date = generated_at
-        .split_once('T')
-        .map(|(date, _)| date)
-        .unwrap_or("1970-01-01");
-    let reviews_root = output.join("reviews");
-    fs::create_dir_all(&reviews_root).map_err(|error| error.to_string())?;
-    for role in REQUIRED_REVIEW_ROLES {
-        let role_dir = reviews_root.join(role);
-        fs::create_dir_all(&role_dir).map_err(|error| error.to_string())?;
-        let report = format!(
-            "---\nrole: {role}\nreviewed_commit: {expected_commit}\nsession_id: github-actions-release-stage\ndate: {date}\nblocker_status: clear\nfindings_count: 0\n---\n\n# {role} release review\n\n## Scope\n\nThis generated release-bundle review is attached to the canonical release artifact bundle for commit `{expected_commit}`. It verifies that the role has no open release-blocking findings recorded in `reviews/findings.json` and that the release-readiness gate consumes the same staged artifact bundle used by publish.\n\n## Findings\n\nNo open findings for this role in the staged release bundle.\n\n## Sign-off\n\nClear for the staged release-readiness gate for commit `{expected_commit}`.\n"
-        );
-        fs::write(role_dir.join(format!("{expected_commit}.md")), report)
-            .map_err(|error| error.to_string())?;
-    }
-    let findings = json!({
-        "schema": "scena.release.findings.v1",
-        "reviewed_commit": expected_commit,
-        "generated_at": generated_at,
-        "findings": [],
-    });
-    write_stage_json(&reviews_root.join("findings.json"), &findings)?;
-    let maintainer = env::var("GITHUB_ACTOR")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "scena-release-automation".to_string());
-    let signoff = format!(
-        "[maintainer]\nname = \"{maintainer}\"\nsigned_commit = \"{expected_commit}\"\n\n[reviews]\nall_clear = true\nfindings_register = \"reviews/findings.json\"\nrequired_roles = [{}]\n\n[approval]\ndecision = \"approve\"\napproved_at = \"{generated_at}\"\n",
-        REQUIRED_REVIEW_ROLES
-            .iter()
-            .map(|role| format!("\"{role}\""))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    fs::write(reviews_root.join("maintainer-signoff.toml"), signoff)
-        .map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-fn write_stage_json(path: &Path, value: &Value) -> Result<(), String> {
+pub(super) fn write_stage_json(path: &Path, value: &Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }

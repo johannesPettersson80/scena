@@ -108,6 +108,36 @@ See:
 
 ## Supported asset features
 
+### Quantized geometry, morphs, animation, and skins
+
+`KHR_mesh_quantization` POSITION accessors accept every extension-defined
+signed or unsigned BYTE/SHORT representation, including non-normalized integer
+`POSITION` values whose dequantization is carried by the node transform.
+Malformed or unsupported integer NORMAL encodings fail with a semantic-specific
+asset error instead of being treated as an absent normal stream.
+
+Morph import preserves target order even when a target omits POSITION, carries
+optional normal and tangent deltas into render preparation, and fans an animated
+weight channel out to every renderable primitive of a multi-primitive mesh.
+Normal-map sampling transforms tangent-space values through the morphed tangent
+frame before lighting.
+
+Imported animation validation permits the glTF static case of a one-key clip at
+time zero while rejecting empty, non-finite, duplicate/non-monotonic, or
+shape-mismatched channels. Imported U8, U16, and floating-point skin vectors
+must contain finite, non-negative, non-zero-sum skin weights; valid vectors are
+renormalized to sum to one after decoding.
+
+### Import unit boundary
+
+Non-meter imports carry `meters_per_unit()` on one synthetic placement root returned by
+`SceneImport::roots()`. Source node translations, authored scales, instance transforms,
+and animation scale keys stay in their source-local or dimensionless form below that
+root, preventing unit factors from compounding through nested hierarchies. Inherited
+anchor/connector locals stay in import units; explicitly unit-tagged anchors are converted
+once into import-unit locals and retain their authored unit metadata. Marker locals must
+not be pre-converted to meters before the placement root is composed.
+
 ## Materials and textures
 
 `scena` supports common material workflows:
@@ -137,8 +167,33 @@ See:
   GPU shader/material channel-spread shading,
 - material variants.
 
-KTX2/Basis and meshopt support are available through feature flags. See
-[Feature flags](feature-flags.md).
+PNG, JPEG, and WebP image paths decode natively without an opt-in feature.
+Embedded glTF/GLB image bytes use a content-addressed in-memory path, so two
+assets cannot alias merely because both images have the same document-local
+index; a reused cache entry also keeps immutable source provenance. KTX2/Basis
+and meshopt support are available through feature flags. See [Feature
+flags](feature-flags.md).
+
+Plain `.webp` image URIs and embedded `image/webp` buffer views use the native
+WebP decoder. `EXT_texture_webp` texture-source rebinding remains deferred:
+export a plain PNG, JPEG, or WebP source URI, or use `KHR_texture_basisu` with
+the `ktx2` feature, when a texture depends on extension-selected fallback
+rebinding.
+
+### Shared descriptor snapshots
+
+The existing `Assets::geometry`, `material`, `texture`, and `environment`
+getters remain clone-returning for compatibility. Hot paths can instead use
+the matching `*_snapshot` accessor to receive an `Arc` to the immutable
+descriptor stored by `Assets`. Repeated snapshot resolution for an unchanged
+handle shares the same allocation, including the texture's sampler and decoded
+pixel storage.
+
+A snapshot is a stable view of the descriptor revision from which it was
+resolved. After `reload_scene` and `Scene::replace_import`, discard old handles
+and snapshots, resolve them from the replacement `SceneAsset`, and call
+`Renderer::prepare` again. The replacement boundary intentionally does not
+mutate a previously returned `Arc` behind the caller's back.
 
 Draco mesh compression is intentionally not decoder-backed yet. On native and
 browser targets, optional `KHR_draco_mesh_compression` reports structured

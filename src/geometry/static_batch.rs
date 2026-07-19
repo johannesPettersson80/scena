@@ -21,10 +21,15 @@ impl GeometryDesc {
             return source.clone();
         }
 
-        let mut vertices = Vec::with_capacity(source.vertices.len() * transforms.len());
-        let mut indices = Vec::with_capacity(source.indices.len() * transforms.len());
-        let mut vertex_colors = Vec::with_capacity(source.vertex_colors.len() * transforms.len());
-        let mut tex_coords0 = Vec::with_capacity(source.tex_coords0.len() * transforms.len());
+        let transform_count = transforms.len();
+        let mut vertices = Vec::with_capacity(source.vertices.len() * transform_count);
+        let mut indices = Vec::with_capacity(source.indices.len() * transform_count);
+        let mut vertex_colors = source
+            .authored_vertex_colors()
+            .map(|colors| Vec::with_capacity(colors.len().saturating_mul(transform_count)));
+        let mut tex_coords0 = source
+            .authored_tex_coords0()
+            .map(|tex_coords| Vec::with_capacity(tex_coords.len().saturating_mul(transform_count)));
         let mut tangents = source
             .tangents
             .as_ref()
@@ -36,8 +41,16 @@ impl GeometryDesc {
                 normal: rotate_vec3(transform.rotation, vertex.normal),
             }));
             indices.extend(source.indices.iter().map(|index| base + *index));
-            vertex_colors.extend(source.vertex_colors.iter().copied());
-            tex_coords0.extend(source.tex_coords0.iter().copied());
+            if let (Some(target), Some(source_colors)) =
+                (&mut vertex_colors, source.authored_vertex_colors())
+            {
+                target.extend_from_slice(source_colors);
+            }
+            if let (Some(target), Some(source_tex_coords)) =
+                (&mut tex_coords0, source.authored_tex_coords0())
+            {
+                target.extend_from_slice(source_tex_coords);
+            }
             if let (Some(target), Some(source_tangents)) = (&mut tangents, &source.tangents) {
                 target.extend(source_tangents.iter().map(|tangent| {
                     let rotated = rotate_vec3(
@@ -49,7 +62,7 @@ impl GeometryDesc {
             }
         }
 
-        let geometry = Self::try_new_with_vertex_colors_and_tex_coords(
+        let geometry = Self::try_new_with_optional_vertex_attributes(
             source.topology,
             vertices,
             indices,

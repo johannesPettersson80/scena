@@ -1,4 +1,7 @@
-use crate::assets::{Assets, MaterialHandle, TextureHandle};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use crate::assets::{Assets, MaterialHandle, TextureDesc, TextureHandle};
 use crate::diagnostics::PrepareError;
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind, TextureTransform};
 use crate::scene::{NodeKey, Vec3};
@@ -8,6 +11,46 @@ pub(super) enum MaterialPass {
     Opaque,
     Blend,
     Mask { cutoff: f32 },
+}
+
+pub(super) trait TextureSampleSource {
+    fn sample_texture(&self, handle: TextureHandle, uv: [f32; 2]) -> Option<Color>;
+}
+
+impl<F> TextureSampleSource for Assets<F> {
+    fn sample_texture(&self, handle: TextureHandle, uv: [f32; 2]) -> Option<Color> {
+        Assets::sample_texture(self, handle, uv)
+    }
+}
+
+pub(super) struct PreparedMaterialTextures {
+    textures: BTreeMap<TextureHandle, Arc<TextureDesc>>,
+}
+
+impl PreparedMaterialTextures {
+    pub(super) fn new<F>(assets: &Assets<F>, material: &MaterialDesc) -> Self {
+        let handles = material_texture_slots(material).map(|(_, handle)| handle);
+        Self {
+            textures: assets.texture_snapshots(handles),
+        }
+    }
+
+    pub(super) fn max_decoded_dimension(&self) -> u32 {
+        self.textures
+            .values()
+            .filter_map(|texture| texture.decoded_dimensions())
+            .map(|(width, height)| width.max(height))
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+impl TextureSampleSource for PreparedMaterialTextures {
+    fn sample_texture(&self, handle: TextureHandle, uv: [f32; 2]) -> Option<Color> {
+        self.textures
+            .get(&handle)
+            .and_then(|texture| texture.sample_bilinear(uv))
+    }
 }
 
 pub(super) fn material_pass(
@@ -60,7 +103,7 @@ pub(super) fn validate_material_texture_handles(
 }
 
 pub(super) fn base_color_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
     backend_sampled_base_color_textures: &[TextureHandle],
@@ -80,7 +123,7 @@ pub(super) fn base_color_texture_sample(
 }
 
 pub(super) fn emissive_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> Color {
@@ -96,28 +139,35 @@ pub(super) fn emissive_texture_sample(
 }
 
 pub(super) fn normal_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
-    fallback: Vec3,
+    geometric_normal: Vec3,
+    tangent: Vec3,
+    tangent_handedness: f32,
 ) -> Vec3 {
     let Some(texture) = material.normal_texture() else {
-        return fallback;
+        return geometric_normal;
     };
     let Some(sample) = assets.sample_texture(
         texture,
         transform_texture_uv(uv, material.normal_texture_transform()),
     ) else {
-        return fallback;
+        return geometric_normal;
     };
-    normal_from_sample(sample, material.normal_scale(), fallback)
+    tangent_space_normal_from_sample(sample, material.normal_scale())
+        .map(|normal| tangent_space_to_world(normal, geometric_normal, tangent, tangent_handedness))
+        .unwrap_or(geometric_normal)
 }
 
 pub(super) fn clearcoat_normal_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
     fallback: Vec3,
+    geometric_normal: Vec3,
+    tangent: Vec3,
+    tangent_handedness: f32,
 ) -> Vec3 {
     let Some(texture) = material.clearcoat_normal_texture() else {
         return fallback;
@@ -128,27 +178,57 @@ pub(super) fn clearcoat_normal_texture_sample(
     ) else {
         return fallback;
     };
-    normal_from_sample(sample, material.clearcoat_normal_scale(), fallback)
+    tangent_space_normal_from_sample(sample, material.clearcoat_normal_scale())
+        .map(|normal| tangent_space_to_world(normal, geometric_normal, tangent, tangent_handedness))
+        .unwrap_or(fallback)
 }
 
-fn normal_from_sample(sample: Color, scale: f32, fallback: Vec3) -> Vec3 {
+fn tangent_space_normal_from_sample(sample: Color, scale: f32) -> Option<Vec3> {
     let scale = if scale.is_finite() {
         scale.max(0.0)
     } else {
         1.0
     };
+    let normal = Vec3::new(
+        sample.r.mul_add(2.0, -1.0) * scale,
+        sample.g.mul_add(2.0, -1.0) * scale,
+        sample.b.mul_add(2.0, -1.0),
+    );
+    let length = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+    (length > f32::EPSILON && length.is_finite())
+        .then(|| Vec3::new(normal.x / length, normal.y / length, normal.z / length))
+}
+
+fn tangent_space_to_world(
+    tangent_space: Vec3,
+    geometric_normal: Vec3,
+    tangent: Vec3,
+    tangent_handedness: f32,
+) -> Vec3 {
+    let handedness = if tangent_handedness < 0.0 { -1.0 } else { 1.0 };
+    let bitangent = Vec3::new(
+        geometric_normal.y * tangent.z - geometric_normal.z * tangent.y,
+        geometric_normal.z * tangent.x - geometric_normal.x * tangent.z,
+        geometric_normal.x * tangent.y - geometric_normal.y * tangent.x,
+    );
     normalize_or(
         Vec3::new(
-            sample.r.mul_add(2.0, -1.0) * scale,
-            sample.g.mul_add(2.0, -1.0) * scale,
-            sample.b.mul_add(2.0, -1.0),
+            tangent.x * tangent_space.x
+                + bitangent.x * handedness * tangent_space.y
+                + geometric_normal.x * tangent_space.z,
+            tangent.y * tangent_space.x
+                + bitangent.y * handedness * tangent_space.y
+                + geometric_normal.y * tangent_space.z,
+            tangent.z * tangent_space.x
+                + bitangent.z * handedness * tangent_space.y
+                + geometric_normal.z * tangent_space.z,
         ),
-        fallback,
+        geometric_normal,
     )
 }
 
 pub(super) fn metallic_roughness_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> (f32, f32) {
@@ -165,7 +245,7 @@ pub(super) fn metallic_roughness_texture_sample(
 }
 
 pub(super) fn occlusion_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {
@@ -182,7 +262,7 @@ pub(super) fn occlusion_texture_sample(
 }
 
 pub(super) fn clearcoat_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {
@@ -199,7 +279,7 @@ pub(super) fn clearcoat_texture_sample(
 }
 
 pub(super) fn clearcoat_roughness_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {
@@ -216,7 +296,7 @@ pub(super) fn clearcoat_roughness_texture_sample(
 }
 
 pub(super) fn sheen_color_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> Color {
@@ -232,7 +312,7 @@ pub(super) fn sheen_color_texture_sample(
 }
 
 pub(super) fn sheen_roughness_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {
@@ -249,7 +329,7 @@ pub(super) fn sheen_roughness_texture_sample(
 }
 
 pub(super) fn anisotropy_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> Vec3 {
@@ -272,7 +352,7 @@ pub(super) fn anisotropy_texture_sample(
 }
 
 pub(super) fn iridescence_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {
@@ -289,7 +369,7 @@ pub(super) fn iridescence_texture_sample(
 }
 
 pub(super) fn iridescence_thickness_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {
@@ -306,7 +386,7 @@ pub(super) fn iridescence_thickness_texture_sample(
 }
 
 pub(super) fn transmission_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {
@@ -323,7 +403,7 @@ pub(super) fn transmission_texture_sample(
 }
 
 pub(super) fn thickness_texture_sample(
-    assets: &Assets<impl Sized>,
+    assets: &impl TextureSampleSource,
     material: &MaterialDesc,
     uv: [f32; 2],
 ) -> f32 {

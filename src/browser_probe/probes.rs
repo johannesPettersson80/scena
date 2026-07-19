@@ -339,7 +339,7 @@ async fn rebuild_after_surface_loss(
         .render(scene, camera)
         .map_err(|error| JsValue::from_str(&format!("final render failed: {error:?}")))?;
     let renderer_readback = renderer
-        .browser_probe_readback_rgba8()
+        .browser_readback_rgba8()
         .await?
         .map(|readback| renderer_readback_json(&readback));
     Ok(LifecycleFinal {

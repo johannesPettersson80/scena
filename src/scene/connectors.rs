@@ -15,6 +15,7 @@ mod magnet;
 mod metadata;
 mod options;
 mod parenting;
+mod registry;
 mod roll;
 mod scale;
 mod solving;
@@ -261,6 +262,10 @@ impl ConnectorFrame {
             None => true,
         }
     }
+
+    pub(super) fn import_retirement_name(&self) -> Option<Option<String>> {
+        self.import_live.as_ref().map(|_| self.name.clone())
+    }
 }
 
 impl ConnectionPreview {
@@ -323,18 +328,6 @@ impl Scene {
         let key = self.connectors.insert(connector);
         self.structure_revision = self.structure_revision.saturating_add(1);
         Ok(key)
-    }
-
-    pub fn connector(&self, connector: ConnectorKey) -> Result<&ConnectorFrame, ConnectionError> {
-        let frame = self
-            .connectors
-            .get(connector)
-            .ok_or(ConnectionError::MissingConnector { connector })?;
-        validate_connector_live(frame, Some(connector))?;
-        if !self.nodes.contains_key(frame.node) {
-            return Err(ConnectionError::NodeNotFound(frame.node));
-        }
-        Ok(frame)
     }
 
     pub fn connector_named(&self, name: &str) -> Result<ConnectorKey, ConnectionError> {

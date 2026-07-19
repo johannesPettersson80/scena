@@ -241,19 +241,22 @@ fn round_e_reference_generator_uses_source_backed_texture_assets() {
 fn round_e_material_proof_isolates_target_component_for_reference_delta() {
     let script = fs::read_to_string("scripts/probe_cloudflare_material_presets.mjs")
         .expect("Round E material proof script must exist");
+    let evaluator = fs::read_to_string("scripts/round_e_material_evaluator.cjs")
+        .expect("shared Round E material evaluator must exist");
+    let proof_sources = format!("{script}\n{evaluator}");
 
     for required in [
         "centeredForegroundComponent(",
-        "isolateCenterComponent: !preset.includes(\"glass\")",
-        "glassTransmissionRegion",
-        "rough_transmission_region",
-        "const edgeOptions = { region: glassTransmissionRegion }",
-        "path.join(outDir, \"clear_glass.png\"),",
-        "reference_delta_gate === \"hard\"",
+        "const isolateCenterComponent = !preset.includes(\"glass\")",
+        "GLASS_TRANSMISSION_REGION",
+        "sobelEdgeEnergy(tiles.clear_glass)",
+        "darkTargetOffset(tiles.clear_glass)",
+        "reference_delta_gate: \"hard\"",
+        "evaluateRoundEMaterialTiles",
         "DEFAULT_URL = \"https://scena-demo.pages.dev/proof/?sample=material-presets\"",
     ] {
         assert!(
-            script.contains(required),
+            proof_sources.contains(required),
             "Round E material proof must keep hard reference deltas focused on the target \
              material component and the deployed proof harness. Missing {required}."
         );

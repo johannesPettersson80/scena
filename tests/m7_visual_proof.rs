@@ -8,6 +8,10 @@ use scena::{
     OrbitControls, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
 };
 
+#[path = "support/q03_visual_metrics.rs"]
+mod q03_visual_metrics;
+use q03_visual_metrics::{difference_metrics, masked_metrics};
+
 #[test]
 fn m7_headless_visual_artifacts_cover_ergonomics_workflows() {
     let artifact_dir = artifact_dir();
@@ -15,9 +19,20 @@ fn m7_headless_visual_artifacts_cover_ergonomics_workflows() {
     let connector_before = render_connector_connection(false);
     let connector_after = render_connector_connection(true);
 
-    assert_ne!(
-        connector_before.rgba, connector_after.rgba,
-        "connector before/after proof must show a rendered placement change"
+    assert_eq!(
+        evaluate_connector_displacement(&connector_before, &connector_after),
+        Vec::<&'static str>::new(),
+        "connector before/after proof must measure the source part moving right by the solved placement magnitude"
+    );
+    assert!(
+        nonblack_pixel_count(&connector_before.rgba) > 0
+            && nonblack_pixel_count(&connector_after.rgba) > 0,
+        "the old nonblack oracle accepts both directions of connector movement"
+    );
+    assert!(
+        evaluate_connector_displacement(&connector_after, &connector_before)
+            .contains(&"connector_direction"),
+        "reversing connector movement must fail the direction oracle"
     );
 
     for artifact in [
@@ -49,6 +64,37 @@ fn m7_headless_visual_artifacts_cover_ergonomics_workflows() {
             &artifact.rgba,
         );
     }
+}
+
+fn evaluate_connector_displacement(
+    before: &VisualArtifact,
+    after: &VisualArtifact,
+) -> Vec<&'static str> {
+    let mut errors = Vec::new();
+    let source_color = |pixel: &[u8]| {
+        pixel[0] > 80
+            && pixel[0] > pixel[1].saturating_add(35)
+            && pixel[0] > pixel[2].saturating_add(35)
+    };
+    let before_source = masked_metrics(&before.rgba, before.width, before.height, source_color);
+    let after_source = masked_metrics(&after.rgba, after.width, after.height, source_color);
+    let delta_x = after_source.centroid_x - before_source.centroid_x;
+    let delta_y = after_source.centroid_y - before_source.centroid_y;
+    if delta_x <= 4.0 {
+        errors.push("connector_direction");
+    }
+    if delta_x > 24.0 || delta_y.abs() > 3.0 {
+        errors.push("connector_magnitude");
+    }
+    let frame_delta = difference_metrics(&before.rgba, &after.rgba, before.width, before.height, 2);
+    if before_source.pixel_count < 8
+        || after_source.pixel_count < 8
+        || frame_delta.changed_pixels < 16
+        || frame_delta.changed_pixels >= before.width as usize * before.height as usize / 2
+    {
+        errors.push("connector_localized_change");
+    }
+    errors
 }
 
 fn render_first_render() -> VisualArtifact {

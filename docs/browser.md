@@ -35,6 +35,8 @@ data, and then request prepare/render/inspection explicitly.
 `SceneHost` is push-driven. It does not own a `requestAnimationFrame` loop:
 the embedding page creates or updates nodes, calls `setTransform` or
 `setTransforms`, then calls `prepare()` and `render()` at the cadence it owns.
+`renderTyped()` returns the same outcome fields as a native JavaScript object;
+the existing `render()` method continues returning JSON text for compatibility.
 Camera controls may still update camera state when the host wires them, but
 scene state is not advanced by an internal loop.
 
@@ -70,7 +72,9 @@ Construction and lookup stay domain-neutral:
 - `nodeHandleByName(importHandle, name)`
 - `setTag`, `clearTag`, and `findByTag`
 
-Frame operations use one host handle namespace:
+Frame operations use the node-target handle family. Ordinary nodes and
+instance roots have distinct encoded kinds; only operations documented for
+instance roots accept both:
 
 - `setTransform`
 - `setTransforms` with a JSON array of `{ node, translation, rotation, scale }`
@@ -96,9 +100,9 @@ Frame operations use one host handle namespace:
 - `nodeWorldBoundsJson`
 - `pick(x, y)`
 - `inspectJson`
-- `renderIntrospectionJson(detail)`
+- `renderIntrospectionJson(detail)` and `renderIntrospectionJsonAsync(detail)`
 - `annotationProjectionsJson`
-- `capture()` and `captureJson()`
+- `capture()`, `captureJson()`, and the WebGPU-safe async capture family
 - `handleSurfaceContextLost(recoverable)` and
   `handleSurfaceContextRestored()`
 - `setCameraEased(target, yawRadians, pitchRadians, distance,
@@ -165,6 +169,12 @@ reports preserve warnings and resource-status rows from the original load.
 `Uint8Array`. `capturePng()` returns `descriptorJson` plus a PNG `Uint8Array`
 encoded from the same descriptor-bound capture, without relying on canvas
 `toDataURL` as the only path. `captureJson()` returns only the descriptor JSON.
+Those synchronous methods remain available for CPU/WebGL2 compatibility. A
+WebGPU canvas requires asynchronous buffer mapping, so use `await
+captureAsync()`, `await capturePngAsync()`, or `await captureJsonAsync()` for
+portable browser capture. They return the same shapes and descriptor. Likewise,
+use `await renderIntrospectionJsonAsync(detail)` for WebGPU introspection; the
+synchronous introspection method remains the WebGL2-compatible entrypoint.
 The descriptor uses schema `scena.capture.v1` and records dimensions, payload
 length/hash, rendered scene revision counters, active camera
 transform/projection, viewport/DPR, backend capabilities, auto-frame metadata
@@ -174,6 +184,22 @@ instead of serializing stale proof metadata. CPU-headless captures are
 deterministic for the same scene state. Browser GPU captures bind pixels to
 revision counters and backend/capability metadata; they do not claim
 cross-machine byte identity.
+
+Semantic AOV capture is an explicit, separately retained GPU path. Enable it
+before prepare, then await the capture:
+
+```js
+host.setSemanticAovCaptureEnabled(true);
+host.prepare();
+const aov = await host.captureSemanticAovs();
+```
+
+The result contains `metadataJson`, `idIndices`, `depthMeters`,
+`worldNormals`, `idRgba8`, and `normalRgba8`. WebGPU uses asynchronous GPU
+buffer mapping; WebGL2 uses a byte-preserving surface blit and canvas readback.
+Run `npm run browser:fr06-semantic-aov` for deterministic repeat and
+WebGPU/WebGL2 parity artifacts. Builder SwiftShader output is functional proof,
+not a substitute for the required real-GPU lane.
 
 `renderIntrospectionJson(detail)` captures the current browser canvas pixels
 and returns `scena.render_introspection.v1` JSON through the same
@@ -410,5 +436,14 @@ Browser integrations should forward relevant events to the renderer:
 - context restore.
 
 After surface changes or recovery, call `prepare()` before rendering again.
+
+The same rule applies after MSAA or post-processing settings change. Browser
+prepare creates the complete output resource set or returns a structured
+unsupported-sample-count error; render does not silently downgrade or allocate
+missing targets. Resource retirement is asynchronous: an initial device poll
+can report `Submitted`, and hosts that need destruction proof must yield to the
+browser rendering loop (for example, `requestAnimationFrame`) and poll until
+`Confirmed`. Merely returning to JavaScript or observing `Automatic` does not
+prove callback completion.
 
 See [Lifecycle](lifecycle.md).

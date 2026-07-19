@@ -11,9 +11,17 @@ fn backend_shaded_materials_skip_cpu_shadow_visibility_bake() {
     let scene = Scene::new();
     let lights = PreparedLights::from_scene(&scene, Vec3::ZERO);
     let position = Vec3::new(0.0, 0.0, 0.0);
+    let occluders = shadows::ShadowOccluderSet::default();
+    let cache = shadows::ShadowVisibilityCache::new(&lights, &occluders);
 
-    assert_eq!(baked_shadow_visibility(position, &lights, &[], true), 1.0);
-    assert_eq!(baked_shadow_visibility(position, &lights, &[], false), 1.0);
+    assert_eq!(
+        baked_shadow_visibility(position, &lights, &occluders, &cache, true),
+        1.0
+    );
+    assert_eq!(
+        baked_shadow_visibility(position, &lights, &occluders, &cache, false),
+        1.0
+    );
 }
 
 #[test]

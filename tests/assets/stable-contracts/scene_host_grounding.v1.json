@@ -1,9 +1,9 @@
 {
   "schema": "scena.scene_host_grounding.v1",
-  "target": 4294967298,
+  "target": 562950221856770,
   "floor_handles": [
-    4294967299,
-    4294967300
+    562950221856771,
+    562950221856772
   ],
   "floor_receiver": true,
   "ssao_enabled": true,

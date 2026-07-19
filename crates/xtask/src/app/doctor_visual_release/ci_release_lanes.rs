@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 
 pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
+    check_workflow_action_pins(root, findings);
     require_contains(
         root,
         findings,
@@ -14,7 +15,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "macos-metal",
             "windows-dx12",
             "headless-4k-performance",
-            "dtolnay/rust-toolchain@1.93.1",
+            "dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1",
             "components: rustfmt, clippy",
             "node-version: \"20.20.0\"",
             "PLAYWRIGHT_VERSION: \"1.59.1\"",
@@ -26,23 +27,24 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "wasm-pack build --release --target web --out-dir target/m9-browser-pkg . --features browser-probe",
             "npm run wasm:size",
             "Platform parity gates",
-            "cargo fmt --check",
-            "cargo clippy --all-targets -- -D warnings",
+            "cargo fmt --all --check",
+            "cargo clippy --workspace --all-targets -- -D warnings",
+            "cargo test -p xtask",
+            "cargo test -p xtask -- --list | grep -Fqx 'app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact: test'",
+            "cargo test -p xtask app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact -- --exact",
             "cargo test --test m9_platform_release",
             "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
             "m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact",
             "SCENA_BROWSER_BACKENDS: webgl2",
             "SCENA_BROWSER_BACKENDS: webgpu",
-            "SCENA_BROWSER_ALLOW_UNAVAILABLE: \"1\"",
             "cargo run -p xtask -- doctor --full",
-            "premerge-release-readiness",
+            "premerge-release-evidence-integrity",
             "Download release lane artifacts",
-            "Release readiness drift check",
-            "actions/download-artifact@v4",
+            "Validate source evidence while independent reviews remain external",
+            "RELEASE-REVIEWS-MISSING:",
+            "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0",
             "target/release-artifacts",
-            "stage-release-artifacts target/release-artifacts target/gate-artifacts",
-            "SCENA_RELEASE_ARTIFACT_ROOT: target/gate-artifacts",
-            "cargo run -p xtask -- release-readiness",
+            "cargo run -p xtask -- stage-release-artifacts",
             "RUSTDOCFLAGS: \"-D warnings\"",
             "cargo doc --no-deps --all-features",
             "release-lane-artifact",
@@ -55,7 +57,11 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
         findings,
         "RELEASE-CI-M9",
         ".github/workflows/ci.yml",
-        &["if-no-files-found: ignore", "merge-multiple: true"],
+        &[
+            "if-no-files-found: ignore",
+            "merge-multiple: true",
+            "SCENA_BROWSER_ALLOW_UNAVAILABLE",
+        ],
     );
     forbid_contains(
         root,
@@ -82,15 +88,24 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "gh release create",
             "cargo run -p xtask -- release-readiness",
             "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
-            "actions/download-artifact@v4",
+            "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0",
             "SCENA_RELEASE_ARTIFACT_ROOT",
             "Stage release artifacts for readiness",
             "stage-release-artifacts target/release-artifacts target/gate-artifacts",
             "SCENA_BROWSER_BACKENDS: webgl2",
             "SCENA_BROWSER_BACKENDS: webgpu",
             "components: rustfmt, clippy",
+            "cargo fmt --all --check",
+            "cargo clippy --workspace --all-targets -- -D warnings",
+            "cargo test -p xtask",
+            "cargo test -p xtask -- --list | grep -Fqx 'app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact: test'",
+            "cargo test -p xtask app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact -- --exact",
             "needs:",
             "release-lane-artifact",
+            "SCENA_REVIEW_BUNDLE_URL",
+            "SCENA_REVIEW_BUNDLE_SHA256",
+            "scripts/install_release_review_bundle.py",
+            "target/release-artifacts/release-review-evidence",
         ],
     );
     require_contains(
@@ -119,6 +134,65 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "m6RenderWebgpuProbe",
             "feature_enabled_probe_exports_present",
             "WASM size gate must measure the browser-probe renderer bundle",
+            "attachReleaseArtifactProvenance",
+            "node tests/release/m9_wasm_size_gate.js",
+            "tests/release/release_artifact_provenance.js",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "tests/release/release_artifact_provenance.js",
+        &[
+            "SCENA_RELEASE_COMMIT",
+            "GITHUB_SHA",
+            "source_checksums",
+            "createHash(\"sha256\")",
+            "exactly 40 hexadecimal characters",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "tests/m5_release.rs",
+        &[
+            "write_release_artifact",
+            "cargo test --test m5_release",
+            "SCENA_RELEASE_COMMIT",
+            "GITHUB_SHA",
+            "source_checksums",
+            "tests/m5_release.rs",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "tests/examples_visual_proof.rs",
+        &[
+            "scena.examples_visual.frame_bounds.v1",
+            "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object -- --exact",
+            "SCENA_RELEASE_COMMIT",
+            "GITHUB_SHA",
+            "source_checksums",
+            "camera_framing_frame_bounds.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "scripts/install_release_review_bundle.py",
+        &[
+            "install_review_bundle",
+            "SHA256_RE",
+            "unsafe archive path",
+            "archive links are forbidden",
+            "outside reviews/",
+            "reviews/findings.json",
+            "reviews/maintainer-signoff.toml",
         ],
     );
     require_contains(
@@ -338,6 +412,10 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "missing_lane_capability",
             "missing-lane-artifact",
             "no factory capability constants are accepted as platform proof",
+            "m9_release_json_writer_attaches_source_provenance",
+            "cargo test --test m9_platform_release",
+            "source_checksums",
+            "tests/m9_platform_release.rs",
         ],
     );
     forbid_contains(

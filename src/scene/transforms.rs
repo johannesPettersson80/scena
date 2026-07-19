@@ -8,6 +8,7 @@ impl Scene {
         node: NodeKey,
         transform: Transform,
     ) -> Result<(), LookupError> {
+        let transform = validate_transform(transform)?;
         let node = self
             .nodes
             .get_mut(node)
@@ -23,10 +24,11 @@ impl Scene {
         &mut self,
         transforms: &[(NodeKey, Transform)],
     ) -> Result<(), LookupError> {
-        for (node, _) in transforms {
+        for (node, transform) in transforms {
             if !self.nodes.contains_key(*node) {
                 return Err(LookupError::NodeNotFound(*node));
             }
+            validate_transform(*transform)?;
         }
 
         let mut changed = false;
@@ -48,22 +50,21 @@ impl Scene {
     }
 
     pub fn world_transform(&self, node: NodeKey) -> Option<Transform> {
-        let mut chain = Vec::new();
-        let mut current = node;
-        loop {
-            let node = self.nodes.get(current)?;
-            chain.push(node.transform);
-            let Some(parent) = node.parent else {
-                break;
-            };
-            current = parent;
-        }
-        Some(
-            chain
-                .into_iter()
-                .rev()
-                .fold(Transform::IDENTITY, compose_transform),
-        )
+        self.resolved_node_state(node)
+            .map(|resolved| resolved.world_transform)
+    }
+}
+
+pub(super) fn validate_transform(transform: Transform) -> Result<Transform, LookupError> {
+    if transform.translation.is_finite()
+        && transform.rotation.is_finite()
+        && transform.scale.is_finite()
+    {
+        Ok(transform)
+    } else {
+        Err(LookupError::InvalidTransform {
+            reason: "translation, rotation, and scale must contain only finite values",
+        })
     }
 }
 

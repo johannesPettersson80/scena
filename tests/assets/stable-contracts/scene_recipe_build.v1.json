@@ -5,96 +5,112 @@
     {
       "id": "part",
       "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
-      "import_handle": 4294967297,
+      "import_handle": 1125900175278081,
       "root_handles": [
-        4294967299
+        562950221856771
       ],
-      "primary_root": 4294967299,
+      "primary_root": 562950221856771,
       "nodes_by_path": {
-        "part:/": 4294967299,
-        "part:/ColoredTriangle": 4294967299
+        "part:/": 562950221856771,
+        "part:/ColoredTriangle": 562950221856771
       }
     }
   ],
   "nodes": [
     {
       "id": "part.edge_emphasis.0.0",
-      "handle": 4294967300,
+      "handle": 562950221856772,
       "kind": "generated_overlay",
-      "parent": 4294967299
+      "parent": 562950221856771
     },
     {
       "id": "plate",
-      "handle": 4294967301,
+      "handle": 562950221856773,
       "kind": "node",
-      "parent": 4294967297,
+      "parent": 562950221856769,
       "name": "CAD plate"
     },
     {
       "id": "tri_joint",
-      "handle": 4294967302,
+      "handle": 562950221856774,
       "kind": "node",
-      "parent": 4294967297
+      "parent": 562950221856769
     },
     {
       "id": "tri_deformed",
-      "handle": 4294967303,
+      "handle": 562950221856775,
       "kind": "node",
-      "parent": 4294967297
+      "parent": 562950221856769
     },
     {
       "id": "plate_instances",
-      "handle": 4294967304,
+      "handle": 562950221856776,
       "kind": "instance_set",
-      "parent": 4294967297
+      "parent": 562950221856769
     },
     {
       "id": "status_particles",
-      "handle": 4294967305,
+      "handle": 562950221856777,
       "kind": "particle_set",
-      "parent": 4294967297
+      "parent": 562950221856769
     },
     {
       "id": "status_label",
-      "handle": 4294967306,
+      "handle": 562950221856778,
       "kind": "label",
-      "parent": 4294967297,
+      "parent": 562950221856769,
       "name": "OK"
+    }
+  ],
+  "instances": [
+    {
+      "set_id": "plate_instances",
+      "id": "visible-copy",
+      "set_handle": 562950221856776,
+      "instance_id": 1,
+      "identity_scope": "runtime_scoped"
+    },
+    {
+      "set_id": "plate_instances",
+      "id": "hidden-copy",
+      "set_handle": 562950221856776,
+      "instance_id": 2,
+      "identity_scope": "runtime_scoped"
     }
   ],
   "cameras": [
     {
       "id": "main",
-      "handle": 4294967307,
+      "handle": 562950221856779,
       "kind": "camera",
-      "parent": 4294967297,
+      "parent": 562950221856769,
       "active": true
     }
   ],
   "lights": [
     {
       "id": "key",
-      "handle": 4294967308,
+      "handle": 562950221856780,
       "kind": "light",
-      "parent": 4294967297
+      "parent": 562950221856769
     },
     {
       "id": "fill",
-      "handle": 4294967309,
+      "handle": 562950221856781,
       "kind": "light",
-      "parent": 4294967297
+      "parent": 562950221856769
     },
     {
       "id": "rim",
-      "handle": 4294967310,
+      "handle": 562950221856782,
       "kind": "light",
-      "parent": 4294967297
+      "parent": 562950221856769
     }
   ],
   "animations": [
     {
       "id": "plate_slide",
-      "handle": 25769803777,
+      "handle": 2251800082120705,
       "duration_seconds": 1.0,
       "channel_count": 1
     }

@@ -8,8 +8,11 @@ mod camera;
 mod capture;
 mod composition;
 mod connectors;
+mod construction;
 mod core;
 mod core_handles;
+#[cfg(test)]
+mod core_tests;
 mod error;
 mod events;
 mod exploded_view;
@@ -30,6 +33,7 @@ mod product_options;
 mod recipe;
 mod reporting;
 mod section_box;
+mod semantic_aov;
 mod subtree;
 mod transforms;
 mod transitions;
@@ -125,6 +129,10 @@ pub use reporting::{
 };
 pub use section_box::{
     SCENE_HOST_SECTION_BOX_SCHEMA_V1, SceneHostClippingPlaneV1, SceneHostSectionBoxReportV1,
+};
+pub use semantic_aov::{
+    SCENE_HOST_SEMANTIC_AOV_SCHEMA_V1, SceneHostSemanticAovCaptureV1,
+    SceneHostSemanticAovExclusionsV1, SceneHostSemanticAovLegendEntryV1, palette_rgba8,
 };
 pub use visual_patch::{
     VISUAL_PATCH_SCHEMA_V1, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,

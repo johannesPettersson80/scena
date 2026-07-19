@@ -2,6 +2,7 @@
 
 mod dropped_file;
 mod material_variant;
+mod parity;
 mod probes;
 mod report;
 mod workflows;
@@ -14,10 +15,10 @@ use web_sys::HtmlCanvasElement;
 use workflows::{build_workflow_scene, scene_with_triangle};
 
 use crate::{
-    ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetFetcher, Assets, Backend, CameraKey, EnvironmentHandle,
-    FlyControls, FollowControls, OrbitControlAction, OrbitControls, OutputColorSpace,
-    PerspectiveCamera, PixelReadback, PlatformSurface, PointerEvent, Renderer, RendererOptions,
-    Scene, Transform, Vec3, fnv1a64_hex, sample_rgba8,
+    ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetFetcher, Assets, Backend, Background, CameraKey,
+    EnvironmentHandle, FlyControls, FollowControls, OrbitControlAction, OrbitControls,
+    OutputColorSpace, PerspectiveCamera, PixelReadback, PlatformSurface, PointerEvent, Renderer,
+    RendererOptions, Scene, Transform, Vec3, fnv1a64_hex, sample_rgba8,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -306,6 +307,20 @@ async fn render_scene_with_options<F: AssetFetcher>(
 ) -> Result<String, JsValue> {
     let width = canvas.width();
     let height = canvas.height();
+    let cpu_parity_frame = if backend == Backend::WebGl2 && workflow == "triangle" {
+        let mut cpu_renderer = Renderer::headless_with_options(width, height, renderer_options)
+            .map_err(|error| JsValue::from_str(&format!("CPU parity build failed: {error:?}")))?;
+        configure_probe_renderer(&mut cpu_renderer, &metadata, environment);
+        cpu_renderer
+            .prepare_with_assets(scene, assets)
+            .map_err(|error| JsValue::from_str(&format!("CPU parity prepare failed: {error:?}")))?;
+        cpu_renderer
+            .render(scene, camera)
+            .map_err(|error| JsValue::from_str(&format!("CPU parity render failed: {error:?}")))?;
+        Some(cpu_renderer.read_pixels())
+    } else {
+        None
+    };
     let surface = match backend {
         Backend::WebGl2 => PlatformSurface::browser_webgl2_canvas_element(canvas, width, height),
         Backend::WebGpu => PlatformSurface::browser_webgpu_canvas_element(canvas, width, height),
@@ -319,9 +334,7 @@ async fn render_scene_with_options<F: AssetFetcher>(
     let mut renderer = Renderer::from_surface_async_with_options(surface, renderer_options)
         .await
         .map_err(|error| JsValue::from_str(&format!("build failed: {error:?}")))?;
-    if let Some(environment) = environment {
-        renderer.set_environment(environment);
-    }
+    configure_probe_renderer(&mut renderer, &metadata, environment);
 
     renderer
         .prepare_with_assets(scene, assets)
@@ -329,12 +342,14 @@ async fn render_scene_with_options<F: AssetFetcher>(
     let outcome = renderer
         .render(scene, camera)
         .map_err(|error| JsValue::from_str(&format!("render failed: {error:?}")))?;
-    let renderer_readback = renderer
-        .browser_probe_readback_rgba8()
-        .await?
-        .map(|readback| renderer_readback_json(&readback));
+    let renderer_readback = renderer.browser_readback_rgba8().await?;
+    let parity = cpu_parity_frame
+        .as_ref()
+        .map(|cpu| parity::cpu_webgl2_report(cpu, renderer_readback.as_ref()));
+    let renderer_readback = renderer_readback.as_ref().map(renderer_readback_json);
     let stats = renderer.stats();
     let capabilities = renderer.capabilities();
+    let adapter = renderer.gpu_adapter_report();
 
     Ok(json!({
         "schema": "scena.m6.browser_renderer_probe.v1",
@@ -346,6 +361,7 @@ async fn render_scene_with_options<F: AssetFetcher>(
         "requested_output_color_space": format!("{:?}", renderer.output_color_space()),
         "backend": format!("{:?}", capabilities.backend),
         "gpu_device": capabilities.gpu_device,
+        "adapter": adapter,
         "surface_attached": capabilities.surface_attached,
         "width": outcome.width,
         "height": outcome.height,
@@ -357,8 +373,25 @@ async fn render_scene_with_options<F: AssetFetcher>(
         "prepared_pipelines": stats.pipelines,
         "prepared_bind_groups": stats.bind_groups,
         "renderer_readback": renderer_readback,
+        "parity": parity,
     })
     .to_string())
+}
+
+fn configure_probe_renderer(
+    renderer: &mut Renderer,
+    metadata: &serde_json::Value,
+    environment: Option<EnvironmentHandle>,
+) {
+    if let Some(environment) = environment {
+        renderer.set_environment(environment);
+    }
+    if metadata.get("background").and_then(|value| value.as_str()) == Some("neutral_gray") {
+        renderer.set_background(Background::NeutralGray);
+    }
+    if let Some(exposure_ev) = metadata.get("exposure_ev").and_then(|value| value.as_f64()) {
+        renderer.set_exposure_ev(exposure_ev as f32);
+    }
 }
 
 fn camera_translation(scene: &Scene, camera: CameraKey) -> Result<Vec3, JsValue> {

@@ -7,8 +7,9 @@ use crate::scene::Vec3;
 
 use super::super::pbr_brdf;
 use super::environment_baker::{
-    EnvironmentIblBakeQuality, EnvironmentIblBakeRequest, bake_environment_ibl,
-    prefilter_lod_for_roughness, sample_prefiltered_cubemap_lod,
+    EnvironmentBakeMetrics, EnvironmentIblBakeQuality, EnvironmentIblBakeRequest,
+    bake_environment_ibl, bake_environment_ibl_profiled, prefilter_lod_for_roughness,
+    sample_prefiltered_cubemap_lod,
 };
 use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
 
@@ -363,6 +364,15 @@ pub fn precompute_environment_sidecar(
     environment: &EnvironmentDesc,
     profile: EnvironmentSidecarProfile,
 ) -> Result<EnvironmentPrefilterSidecar, AssetError> {
+    precompute_environment_sidecar_profiled(environment, profile).map(|(sidecar, _metrics)| sidecar)
+}
+
+/// Precomputes an environment sidecar and returns deterministic bake-work counters.
+#[doc(hidden)]
+pub fn precompute_environment_sidecar_profiled(
+    environment: &EnvironmentDesc,
+    profile: EnvironmentSidecarProfile,
+) -> Result<(EnvironmentPrefilterSidecar, EnvironmentBakeMetrics), AssetError> {
     let render_profile = match profile {
         EnvironmentSidecarProfile::InteractiveWebGl2 => {
             EnvironmentLightingProfile::InteractiveWebGl2
@@ -385,7 +395,7 @@ pub fn precompute_environment_sidecar(
         })?;
     let resolution = faces.resolution();
     let source_pixels = faces.build_face_pixels_rgba32f();
-    let baked = bake_environment_ibl(
+    let (baked, metrics) = bake_environment_ibl_profiled(
         &source_pixels,
         EnvironmentIblBakeRequest {
             source_resolution: resolution,
@@ -398,7 +408,7 @@ pub fn precompute_environment_sidecar(
     let diffuse_rgb = environment
         .preview_irradiance_rgb()
         .unwrap_or_else(|| faces.lambertian_irradiance());
-    EnvironmentPrefilterSidecar::new(
+    let sidecar = EnvironmentPrefilterSidecar::new(
         profile,
         source_sha,
         resolution,
@@ -406,7 +416,8 @@ pub fn precompute_environment_sidecar(
         baked.brdf_lut,
         baked.brdf_lut_size,
         diffuse_rgb,
-    )
+    )?;
+    Ok((sidecar, metrics))
 }
 
 pub(in crate::render) fn collect_environment_lighting(

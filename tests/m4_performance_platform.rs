@@ -570,20 +570,22 @@ fn cpu_occlusion_culling_drops_fully_hidden_opaque_triangle() {
             Transform::default(),
         )
         .expect("front triangle inserts");
-    scene
-        .add_renderable(
-            scene.root(),
-            vec![colored_triangle(
-                [
-                    Vec3::new(-0.2, -0.2, -0.2),
-                    Vec3::new(0.2, -0.2, -0.2),
-                    Vec3::new(0.0, 0.2, -0.2),
-                ],
-                Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
-            )],
-            Transform::default(),
-        )
-        .expect("hidden back triangle inserts");
+    for _ in 0..63 {
+        scene
+            .add_renderable(
+                scene.root(),
+                vec![colored_triangle(
+                    [
+                        Vec3::new(-0.2, -0.2, -0.2),
+                        Vec3::new(0.2, -0.2, -0.2),
+                        Vec3::new(0.0, 0.2, -0.2),
+                    ],
+                    Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
+                )],
+                Transform::default(),
+            )
+            .expect("hidden back triangle inserts");
+    }
     let mut renderer = Renderer::headless(96, 96).expect("renderer builds");
 
     renderer.prepare(&mut scene).expect("prepare succeeds");
@@ -593,7 +595,7 @@ fn cpu_occlusion_culling_drops_fully_hidden_opaque_triangle() {
         outcome.draw_calls, 1,
         "fully hidden back triangle should be removed before draw"
     );
-    assert_eq!(renderer.stats().culled_objects, 1);
+    assert_eq!(renderer.stats().culled_objects, 63);
     assert_eq!(
         count_red_pixels(renderer.frame_rgba8()),
         0,

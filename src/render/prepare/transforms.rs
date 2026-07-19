@@ -39,10 +39,7 @@ pub(super) fn prepared_primitive(
     transform: Transform,
     origin_shift: Vec3,
 ) -> Primitive {
-    let world_from_model = world_from_model_matrix(transform, origin_shift);
-    let normal_from_model = normal_from_model_matrix(transform);
     transform_primitive(primitive, transform, origin_shift)
-        .with_world_from_model(world_from_model, normal_from_model)
 }
 
 /// Returns the model-space position of a world-baked vertex by applying the

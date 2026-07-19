@@ -123,6 +123,66 @@ pub(crate) const ALLOWED_CONTEXT_TYPES: &[&str] = &[
     "DiagnosticContext",
 ];
 
+pub(crate) fn check_cli_output_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "CLI-MACHINE-OUTPUT",
+        "src/bin/scena/process_output_shared.rs",
+        &[
+            "write_stdout_line",
+            "io::BufWriter",
+            "scena.cli_io_error.v1",
+            "serde_json::json!",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "CLI-MACHINE-OUTPUT",
+        "src/bin/scena.rs",
+        &["write_stdout_line", "io::ErrorKind::BrokenPipe"],
+    );
+    require_contains(
+        root,
+        findings,
+        "CLI-MACHINE-OUTPUT",
+        "src/bin/scena-convert.rs",
+        &[
+            "write_stdout_line",
+            "io::ErrorKind::BrokenPipe",
+            "serde_json::to_string",
+        ],
+    );
+    for path in [
+        "src/bin/scena.rs",
+        "src/bin/scena-convert.rs",
+        "src/bin/scena/process_output_shared.rs",
+    ] {
+        forbid_contains(
+            root,
+            findings,
+            "CLI-MACHINE-OUTPUT",
+            path,
+            &["println!(", "print!("],
+        );
+    }
+    forbid_contains(
+        root,
+        findings,
+        "CLI-MACHINE-OUTPUT",
+        "src/bin/scena-convert.rs",
+        &["json_escape", ".replace('\\\\', \"\\\\\\\\\")"],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "CLI-MACHINE-OUTPUT",
+        "src/bin/scena/process_output_shared.rs",
+        &["\\\"schema\\\""],
+    );
+}
+
 pub(crate) fn require_files(
     root: &Path,
     findings: &mut Vec<Finding>,

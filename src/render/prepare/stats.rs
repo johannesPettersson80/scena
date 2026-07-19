@@ -98,11 +98,22 @@ const fn uses_fixed_gpu_light_uniforms(backend: Backend) -> bool {
     )
 }
 
+#[cfg(test)]
 pub(in crate::render) fn collect_depth_prepass_stats(
     primitives: &[PreparedPrimitive],
     backend: Backend,
 ) -> PreparedDepthStats {
-    let eligible_draws = depth_prepass_eligible_draws(primitives);
+    collect_depth_prepass_stats_iter(primitives.iter(), backend)
+}
+
+pub(in crate::render) fn collect_depth_prepass_stats_iter<'a>(
+    primitives: impl IntoIterator<Item = &'a PreparedPrimitive>,
+    backend: Backend,
+) -> PreparedDepthStats {
+    let eligible_draws = primitives
+        .into_iter()
+        .filter(|primitive| primitive.depth_prepass_eligible())
+        .count();
     if eligible_draws < DEPTH_PREPASS_MIN_PRIMITIVES || !depth_prepass_backend_supported(backend) {
         PreparedDepthStats::default()
     } else {
@@ -113,13 +124,6 @@ pub(in crate::render) fn collect_depth_prepass_stats(
             reversed_z: capabilities.reversed_z_depth == CapabilityStatus::Supported,
         }
     }
-}
-
-fn depth_prepass_eligible_draws(primitives: &[PreparedPrimitive]) -> usize {
-    primitives
-        .iter()
-        .filter(|primitive| primitive.depth_prepass_eligible())
-        .count()
 }
 
 const fn depth_prepass_backend_supported(backend: Backend) -> bool {

@@ -44,6 +44,7 @@ pub(super) fn append_particle_primitives(
                     Some(node),
                     Color::WHITE,
                 )
+                .without_semantic_attribution()
                 .with_double_sided(true),
             );
             primitives.push(
@@ -56,6 +57,7 @@ pub(super) fn append_particle_primitives(
                     Some(node),
                     Color::WHITE,
                 )
+                .without_semantic_attribution()
                 .with_double_sided(true),
             );
         }

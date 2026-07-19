@@ -76,7 +76,8 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
         "src/render/prepare/cpu_bake.rs",
         &[
             "pub(super) fn baked_shadow_visibility",
-            "directional_shadow_factor(position",
+            "shadow_visibility_cache.directional(position, work",
+            "directional_shadow_factor_profiled(position, lights, shadow_occluders, work)",
         ],
     );
     require_contains(
@@ -98,7 +99,7 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
             "triangle_shader_samples_directional_shadow_map_in_fragment",
         ],
     );
-    require_contains(
+    require_rust_test_functions(
         root,
         findings,
         "ARCH-DIRECTIONAL-SHADOW",
@@ -107,9 +108,14 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
             "shadowed_directional_light_is_opt_in_and_single_owner",
             "directional_shadow_receiver_pixels_are_darkened_by_caster",
             "headless_gpu_directional_shadow_visibility_darkens_receiver_when_available",
-            "with_shadows(true)",
-            "MultipleShadowedDirectionalLights",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECTIONAL-SHADOW",
+        "tests/m2_lighting_depth_clipping.rs",
+        &["with_shadows(true)", "MultipleShadowedDirectionalLights"],
     );
     require_contains(
         root,
@@ -263,14 +269,14 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
         root,
         findings,
         "ARCH-SHADOW-MAP",
-        "src/render/gpu/stats.rs",
+        "src/render/gpu/environment.rs",
         &[
-            "shadow_maps: u64",
-            "shadow_map_resolution: Option<u32>",
-            "depth_prepass_passes: u64",
-            "textures: 1 + material_texture_count + shadow_maps + depth_prepass_passes + transmission_textures",
-            "render_targets: 1 + shadow_maps + depth_prepass_passes + transmission_render_targets",
-            "estimates_single_shadow_map_resource_counters",
+            "pub(super) fn resource_stats(",
+            "directional_shadow_map_resolution: Option<u32>",
+            "let shadow_edge =",
+            "textures: 3",
+            "render_targets: 1",
+            "shadow_edge",
         ],
     );
     require_contains(
@@ -332,10 +338,10 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         "src/render/prepare/stats.rs",
         &[
             "pub(in crate::render) struct PreparedDepthStats",
-            "pub(in crate::render) fn collect_depth_prepass_stats(",
+            "pub(in crate::render) fn collect_depth_prepass_stats_iter",
             "backend: Backend",
             "DEPTH_PREPASS_MIN_PRIMITIVES: usize = 1",
-            "fn depth_prepass_eligible_draws",
+            ".filter(|primitive| primitive.depth_prepass_eligible())",
             "fn depth_prepass_backend_supported",
             "primitive.depth_prepass_eligible()",
             "passes: 1",
@@ -362,7 +368,8 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         "ARCH-DEPTH-PREPASS",
         "src/render/prepare_lifecycle.rs",
         &[
-            "let mut depth_primitives = primitives.clone();",
+            "prepare::collect_depth_prepass_stats_iter(",
+            ".flat_map(|set| set.primitives().iter())",
             "self.stats.depth_prepass_passes = depth_stats.passes",
             "self.stats.depth_prepass_draws = depth_stats.draws",
             "backend_material_slots",
@@ -416,11 +423,12 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-DEPTH-PREPASS",
-        "src/render/gpu/stats.rs",
+        "src/render/gpu/depth.rs",
         &[
-            "depth_prepass_passes: u64",
-            "depth_prepass_bytes",
-            "estimates_depth_prepass_resource_counters",
+            "pub(super) fn resource_stats(",
+            "textures: 1 + color + color_msaa",
+            "render_targets: 1 + color + color_msaa",
+            "GpuResourceStats::target_bytes",
         ],
     );
     require_contains(

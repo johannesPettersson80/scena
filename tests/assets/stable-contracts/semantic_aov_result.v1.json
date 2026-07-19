@@ -1,0 +1,78 @@
+{
+  "schema": "scena.semantic_aov_result.v1",
+  "ok": true,
+  "source_recipe": "examples/semantic.recipe.json",
+  "output_dir": "target/semantic-aov",
+  "width": 96,
+  "height": 72,
+  "semantics": {
+    "identity": "node_plus_optional_instance",
+    "primitive_identity": "not_encoded_v1",
+    "identity_scope": "runtime_scoped",
+    "background": {
+      "palette_index": 0,
+      "rgba8": [0, 0, 0, 0]
+    },
+    "transparency": "excluded_and_counted",
+    "strokes_labels_overlays": "excluded_and_counted",
+    "sample_pattern": "single_center_sample",
+    "msaa_resolve": "not_applied",
+    "occlusion": "nearest_opaque_fragment",
+    "depth": {
+      "raw_convention": "linear_camera_distance_scene_meters",
+      "units": "scene_meters",
+      "background_raw": "positive_infinity",
+      "png_encoding": "linear_near_far_gray16_zero_background",
+      "near": 0.01,
+      "far": 1000.0
+    },
+    "normal": {
+      "coordinate_space": "world",
+      "png_encoding": "normal_times_half_plus_half_rgba8",
+      "background": [0, 0, 0, 0]
+    }
+  },
+  "images": {
+    "id": {
+      "png": "target/semantic-aov/id.png",
+      "encoding": "rgba8_palette",
+      "raw_fnv1a64": "1234567890abcdef",
+      "png_bytes": 128
+    },
+    "depth": {
+      "png": "target/semantic-aov/depth.png",
+      "encoding": "gray16",
+      "raw_fnv1a64": "234567890abcdef1",
+      "png_bytes": 128
+    },
+    "normal": {
+      "png": "target/semantic-aov/normal.png",
+      "encoding": "rgba8",
+      "raw_fnv1a64": "34567890abcdef12",
+      "png_bytes": 128
+    }
+  },
+  "legend": [{
+    "palette_index": 1,
+    "rgba8": [1, 0, 0, 255],
+    "runtime_identity": {
+      "scope": "runtime_scoped",
+      "node_handle": 72057594037927937,
+      "instance_handle": null,
+      "instance_id": null
+    },
+    "persistent_identity": {
+      "kind": "recipe_node",
+      "node_id": "body"
+    }
+  }],
+  "exclusions": {
+    "transparent_triangle_count": 0,
+    "overlay_triangle_count": 0,
+    "unattributed_triangle_count": 0,
+    "stroke_segment_count": 0,
+    "label_quad_count": 0,
+    "gpu_instance_record_count": 0
+  },
+  "report": "target/semantic-aov/semantic-aov-result.json"
+}

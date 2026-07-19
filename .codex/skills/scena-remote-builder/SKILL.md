@@ -10,7 +10,9 @@ description: Use when compiling scena, running cargo fmt/clippy/test/doc/doctor/
 Use the Hetzner CPU builder for heavy Rust compilation and test gates.
 
 - SSH alias: `scena-builder`
-- Remote repo path: `/home/johannes/projects/scena`
+- Shared checkout observation path: `/home/johannes/projects/scena`. The maintained builder
+  currently reports this path missing; do not assume or provision it as part of validation.
+- Default validation path: `$HOME/.cache/codex-worktrees/scena-<task-slug>`.
 - Remote user: `johannes`
 - Purpose: cargo compile, fmt, clippy, tests, docs, doctor, publish dry-run, and CPU/headless
   proof.
@@ -26,31 +28,19 @@ allowed.
 
 ## Sync Rule
 
-Before a remote gate, make the remote checkout match the exact work being validated.
-
-For a clean branch already pushed to GitHub:
-
-```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && git fetch origin && git checkout <branch> && git pull --ff-only'
-```
-
-For local uncommitted work:
-
-1. Check local and remote status.
-2. If the remote project checkout is clean and on the intended branch, mirror the local
-   working tree to that checkout, keeping the remote `.git` and build cache intact:
+Before every remote sync and cargo gate, run the checked-in preflight from the local
+canonical checkout:
 
 ```bash
-git status --short --branch
-ssh scena-builder 'git -C "$HOME/projects/scena" status --short --branch'
-rsync -az --delete --exclude .git --exclude target ./ scena-builder:~/projects/scena/
+ssh scena-builder 'bash -s -- <task-slug>' < scripts/scena_remote_builder_preflight.sh
 ```
 
-After syncing, remote `git status --short --branch` should show the same relevant working
-tree changes as the local checkout.
+The preflight performs the mandatory disk report, emits
+`shared_checkout_status=missing` when the former shared path is absent, and always emits an
+unambiguous `validation_mode=isolated`, `validation_path=...`, and `cargo_target_dir=...`.
+It does not create, delete, or overwrite remote state.
 
-If the remote project checkout is dirty, on the wrong branch, or being used by another
-agent, do **not** overwrite it. Use an isolated validation copy instead:
+Use the emitted task-scoped destination:
 
 ```bash
 ssh scena-builder 'mkdir -p "$HOME/.cache/codex-worktrees"'
@@ -58,23 +48,27 @@ rsync -az --delete --exclude .git --exclude target ./ scena-builder:~/.cache/cod
 ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && <focused-or-scoped-command>'
 ```
 
-Pair each isolated copy with a task-scoped target cache such as
-`$HOME/.cache/codex-targets/scena-<task-slug>`. Report both paths in the validation ledger.
+After the tree sync, manually copy root `AGENTS.md` and the complete `.codex/skills/**`
+directory from the canonical checkout to the destination. Verify both sides with
+`sha256sum` before any edit or gate. A normal rsync, clone, or branch operation never
+substitutes for this explicit bootstrap. Pair the snapshot with
+`CARGO_TARGET_DIR=$HOME/.cache/codex-targets/scena-<task-slug>` and report both paths.
 Clean only that isolated copy and target cache when they are no longer needed.
 
 ## Mandatory Disk Preflight
 
-Before every remote sync or cargo gate, check builder disk pressure. This is not optional:
-late linker failures from full target caches waste long gate runs.
+The checked-in preflight above is mandatory before every remote sync or cargo gate. It
+includes this disk-pressure inspection; the inline equivalent is retained only for initial
+recovery if the script cannot be read:
 
 ```bash
-ssh scena-builder 'df -hT "$HOME" "$HOME/.cache" /tmp && du -sh "$HOME/.cache/codex-targets" "$HOME/projects/scena/target" 2>/dev/null || true'
+ssh scena-builder 'df -hT "$HOME" "$HOME/.cache" /tmp && du -sh "$HOME/.cache/codex-targets" 2>/dev/null || true'
 ```
 
 Use a task-scoped target cache for validation, for example:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" CARGO_PROFILE_TEST_DEBUG=0 cargo test'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" CARGO_PROFILE_TEST_DEBUG=0 cargo test'
 ```
 
 If the preflight shows low free space, or a gate fails with `No space left on device`,
@@ -143,19 +137,19 @@ Keep a short validation ledger in the handoff:
 Run gates through SSH from the local machine:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo check --all-targets'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo build --all-targets'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D warnings'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo check --all-targets'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo build --all-targets'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo fmt --check'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo clippy --all-targets -- -D warnings'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo test'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo run -p xtask -- doctor --full'
 ```
 
 Release-ready handoff, or any task explicitly asking for full release proof, also requires:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo publish --dry-run'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo publish --dry-run'
 ```
 
 ## Reporting Proof
@@ -164,8 +158,7 @@ Report:
 
 - command run
 - remote host alias and repo path
-- whether the command ran in `$HOME/projects/scena` or an isolated copy under
-  `$HOME/.cache/codex-worktrees`
+- the preflight's shared-checkout status and isolated `validation_path`
 - task-scoped `CARGO_TARGET_DIR` when one was used
 - pass/fail status and timing when available
 - remote git status and HEAD when relevant

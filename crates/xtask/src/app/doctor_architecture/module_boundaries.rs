@@ -17,6 +17,7 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
             "`picking`",
             "`diagnostics`",
             "`platform`",
+            "`vocabulary`",
             "No hidden asset fetch, shader compile, or first-time GPU upload inside `render()`",
             "Host-owned convenience facade exceptions",
             "`HeadlessGltfViewer` and `InteractiveGltfViewer` are the v1.0 host-owned convenience",
@@ -86,7 +87,7 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
             "self.configure_surface(target);",
             "self.release_prepared_resources();",
             "encode_retained_vertices(retained_primitives, retained_instances)",
-            "encode_draw_resources(draw_primitives, draw_instances, draw_strokes)",
+            "encode_draw_resources(",
             "create_material_resources",
             "material_slots",
         ],
@@ -97,9 +98,10 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         "ARCH-RENDER-LIFECYCLE",
         "src/render/gpu/resource_encoding.rs",
         &[
-            "let all_retained_primitives = retained_primitives",
-            "encode_vertices(&all_retained_primitives)",
-            "vertices::encode_draw_batches(draw_primitives)",
+            "let retained_instance_primitives = retained_instances",
+            ".chain(retained_instance_primitives)",
+            "encode_vertices_iter(",
+            "vertices::encode_draw_batches_indexed_with_semantics(",
         ],
     );
     require_contains(

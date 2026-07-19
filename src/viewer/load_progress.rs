@@ -34,21 +34,42 @@ impl HeadlessGltfViewerBuilder {
         apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
         apply_viewer_lighting(&mut scene, self.common.lighting)?;
 
-        let mut renderer = if self.prefer_gpu {
-            Renderer::headless_gpu_with_options(
-                self.width,
-                self.height,
-                self.common.renderer_options,
-            )
-            .or_else(|_gpu_error| {
+        let (mut renderer, backend_selection_report) = match self.backend_policy {
+            super::HeadlessBackendPolicy::Cpu => (
                 Renderer::headless_with_options(
                     self.width,
                     self.height,
                     self.common.renderer_options,
-                )
-            })?
-        } else {
-            Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?
+                )?,
+                None,
+            ),
+            super::HeadlessBackendPolicy::StrictGpu => (
+                Renderer::headless_gpu_with_options(
+                    self.width,
+                    self.height,
+                    self.common.renderer_options,
+                )?,
+                Some(crate::HeadlessBackendSelectionReport::gpu()),
+            ),
+            super::HeadlessBackendPolicy::PreferGpu => {
+                match Renderer::headless_gpu_with_options(
+                    self.width,
+                    self.height,
+                    self.common.renderer_options,
+                ) {
+                    Ok(renderer) => (renderer, Some(crate::HeadlessBackendSelectionReport::gpu())),
+                    Err(gpu_error) => (
+                        Renderer::headless_with_options(
+                            self.width,
+                            self.height,
+                            self.common.renderer_options,
+                        )?,
+                        Some(crate::HeadlessBackendSelectionReport::cpu_fallback(
+                            gpu_error,
+                        )),
+                    ),
+                }
+            }
         };
         apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
@@ -63,6 +84,7 @@ impl HeadlessGltfViewerBuilder {
             assets,
             scene,
             renderer,
+            backend_selection_report,
             import,
             load_progress_events,
             camera_bookmarks: self.common.camera_bookmarks,
@@ -81,6 +103,7 @@ impl HeadlessGltfViewerBuilder {
             assets,
             scene,
             renderer,
+            backend_selection_report,
             import,
             load_progress_events,
             camera_bookmarks,
@@ -90,6 +113,7 @@ impl HeadlessGltfViewerBuilder {
             assets,
             scene,
             renderer,
+            backend_selection_report,
             import,
             outcome,
             diagnostics,
@@ -103,6 +127,11 @@ impl HeadlessGltfViewer {
     /// Asset loading progress observed while building this viewer.
     pub fn load_progress_events(&self) -> &[AssetLoadProgress] {
         &self.load_progress_events
+    }
+
+    /// Returns GPU selection evidence when a GPU policy was requested.
+    pub const fn backend_selection_report(&self) -> Option<&crate::HeadlessBackendSelectionReport> {
+        self.backend_selection_report.as_ref()
     }
 }
 

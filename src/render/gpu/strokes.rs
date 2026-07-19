@@ -1,7 +1,8 @@
 use crate::render::prepare::PreparedStrokeSegment;
 
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
-use super::vertices::DrawUniformValue;
+use super::stats::GpuResourceStats;
+use super::vertices::{DrawUniformInterner, DrawUniformValue};
 
 const FINAL_SHADER: &str = include_str!("strokes.wgsl");
 const ENCODED_SHADER: &str = concat!(
@@ -63,6 +64,20 @@ pub(super) struct StrokeResources {
     #[allow(dead_code)]
     post_pipeline: wgpu::RenderPipeline,
     pub(super) batches: Vec<StrokeDrawBatch>,
+}
+
+pub(super) fn resource_stats(resources: &StrokeResources) -> GpuResourceStats {
+    let surface_pipelines = u64::from(resources.surface_pipeline.is_some())
+        + u64::from(resources.surface_flat_pipeline.is_some());
+    let pipelines = 3 + surface_pipelines;
+    GpuResourceStats {
+        buffers: 2,
+        pipelines,
+        shader_modules: pipelines,
+        approximate_gpu_memory_bytes: (QUAD_VERTICES.len() * QUAD_VERTEX_BYTE_LEN) as u64
+            + (resources.instance_capacity * INSTANCE_BYTE_LEN).max(4) as u64,
+        ..GpuResourceStats::default()
+    }
 }
 
 pub(super) struct StrokePass<'a> {
@@ -182,7 +197,7 @@ pub(super) fn create_resources(
 
 pub(super) fn create_draw_batches(
     strokes: &[PreparedStrokeSegment],
-    draw_uniforms: &mut Vec<DrawUniformValue>,
+    draw_uniforms: &mut DrawUniformInterner,
 ) -> Vec<StrokeDrawBatch> {
     let mut batches: Vec<StrokeDrawBatch> = Vec::new();
     for stroke in strokes {
@@ -356,21 +371,16 @@ const fn shader_for_format(format: wgpu::TextureFormat) -> &'static str {
 }
 
 fn draw_uniform_index(
-    draw_uniforms: &mut Vec<DrawUniformValue>,
+    draw_uniforms: &mut DrawUniformInterner,
     stroke: &PreparedStrokeSegment,
 ) -> u32 {
     let value = DrawUniformValue {
         world_from_model: stroke.world_from_model(),
         normal_from_model: identity_matrix4(),
         tint: stroke.tint(),
+        semantic_id: [0.0; 4],
     };
-    match draw_uniforms.iter().position(|existing| *existing == value) {
-        Some(existing) => existing as u32,
-        None => {
-            draw_uniforms.push(value);
-            (draw_uniforms.len() - 1) as u32
-        }
-    }
+    draw_uniforms.intern(value)
 }
 
 fn encode_quad_vertices() -> Vec<u8> {

@@ -183,11 +183,7 @@ pub(crate) fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<F
         root,
         findings,
         "tests/visual/fixtures/m2-headless-core.toml",
-        &[
-            "direct-lights-pbr",
-            "shadowed-directional-light",
-            "ibl-environment",
-        ],
+        &["fxaa-edge"],
     );
     require_contains(
         root,
@@ -201,8 +197,11 @@ pub(crate) fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<F
             "encoding = \"srgb8\"",
             "artifact_dir = \"target/gate-artifacts/m2-visual\"",
             "reference = \"tests/visual/references/m2-headless-core.toml\"",
-            "reference_mode = \"sampled-rgba\"",
-            "max_abs_diff = 0",
+            "reference_mode = \"quadrant-mean-rgba-v1\"",
+            "max_abs_diff = 3",
+            "proof_class = \"paired-effect-footprint\"",
+            "pair = \"receiver-without-caster-left-receiver-with-caster-right\"",
+            "spatial_mask = [30, 30, 50, 50]",
             "name = \"direct-lights-pbr\"",
             "name = \"shadowed-directional-light\"",
             "name = \"ibl-environment\"",
@@ -218,11 +217,11 @@ pub(crate) fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<F
         &[
             "[suite]",
             "status = \"reference\"",
-            "max_abs_diff = 0",
-            "center_rgba = [164, 0, 0, 255]",
-            "center_rgba = [80, 80, 80, 255]",
-            "nonblack_pixels = 154",
-            "rgba_hash = \"fnv1a64:d8583641b89998e4\"",
+            "reference_mode = \"quadrant-mean-rgba-v1\"",
+            "max_abs_diff = 3",
+            "top_left_mean_rgba = [240, 240, 240, 255]",
+            "top_right_mean_rgba = [164, 0, 0, 255]",
+            "quadrant_nonblack = [128, 128, 112, 112]",
         ],
     );
     require_contains(
@@ -240,6 +239,10 @@ pub(crate) fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<F
             "validate_shadowed_directional_light",
             "validate_ibl_environment",
             "validate_clipping_half_space",
+            "q05_reference_oracle_rejects_quadrant_corruption_outside_legacy_samples",
+            "q05_effect_footprint_masks_reject_erased_effect_regions",
+            "quadrant_reference_matches",
+            "effect_pair_failures",
         ],
     );
     require_contains(
@@ -329,7 +332,7 @@ pub(crate) fn check_m1_browser_rendered_output(root: &Path, findings: &mut Vec<F
             "MaterialDesc::edge",
             "put_image_data",
             "get_image_data",
-            "[158, 0, 159, 255]",
+            "[188, 0, 188, 255]",
         ],
     );
     require_contains(

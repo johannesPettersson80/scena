@@ -1,0 +1,85 @@
+name: Hardware GPU evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_performance:
+        description: "Collect the full PF00 representative performance distributions"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardware-gpu-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-browser-gpu:
+    name: Native, WebGPU, and WebGL2 hardware proof
+    runs-on: [self-hosted, linux, x64, gpu, scena-gpu]
+    timeout-minutes: 180
+    env:
+      RUST_TOOLCHAIN: "1.93.1"
+      SCENA_REQUIRE_HARDWARE_GPU: "1"
+      SCENA_REQUIRE_PARITY: "1"
+      SCENA_BROWSER_BACKENDS: webgpu,webgl2
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.20.0"
+          cache: npm
+      - name: Verify hardware-runner prerequisites
+        shell: bash
+        run: |
+          test -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}"
+          command -v vulkaninfo
+          vulkaninfo --summary
+      - name: Install pinned browser proof tools
+        run: |
+          npm ci
+          npx playwright install chromium
+          cargo install wasm-pack --version 0.14.0 --locked
+      - name: Required GPU evaluator contract
+        run: npm run test:required-gpu-parity
+      - name: PF01 native rendered output toggle
+        env:
+          SCENA_HARDWARE_PROOF_COMMAND: SCENA_REQUIRE_HARDWARE_GPU=1 cargo test --test pf01_output_toggle pf01_native_gpu_output_toggle_renders_off_on_off_without_lazy_resources -- --exact --nocapture
+        run: cargo test --test pf01_output_toggle pf01_native_gpu_output_toggle_renders_off_on_off_without_lazy_resources -- --exact --nocapture
+      - name: PF01 PF02 attached native surface present-only proof
+        env:
+          SCENA_HARDWARE_PROOF_COMMAND: SCENA_REQUIRE_HARDWARE_GPU=1 cargo run --example native_surface_hardware_proof
+        run: cargo run --example native_surface_hardware_proof
+      - name: FR06 native semantic AOV hardware parity
+        run: cargo test --features scene-host --test fr06_semantic_aov fr06_headless_gpu_semantic_aov_matches_cpu_center_truth -- --exact --nocapture
+      - name: PF01 browser hardware output toggles
+        run: npm run browser:pf01-output-toggle
+      - name: FR06 browser hardware semantic AOV parity
+        run: npm run browser:fr06-semantic-aov
+      - name: Validate complete hardware proof set
+        run: >-
+          node tests/release/windows_complete_hardware_proof_validation.js .
+          target/gate-artifacts/windows-complete-hardware-proof/proof-summary.json
+      - name: PF00 representative performance distributions
+        if: inputs.run_performance
+        env:
+          SCENA_RUN_PF00_BENCHMARK: "1"
+          SCENA_BENCHMARK_PROFILE: perf-test
+          SCENA_BENCHMARK_COMMAND: SCENA_RUN_PF00_BENCHMARK=1 cargo test --profile perf-test --test m9_platform_release m9_pf00_representative_performance_artifact -- --exact --nocapture --test-threads=1
+        run: cargo test --profile perf-test --test m9_platform_release m9_pf00_representative_performance_artifact -- --exact --nocapture --test-threads=1
+      - name: Hardware evidence doctor
+        run: cargo run -p xtask -- doctor --full
+      - name: Upload hardware evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: hardware-gpu-evidence-${{ github.run_id }}
+          path: target/gate-artifacts/**
+          if-no-files-found: error

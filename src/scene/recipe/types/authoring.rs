@@ -232,8 +232,10 @@ pub struct SceneRecipeTextureSlotV1 {
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeNodeV1 {
     pub id: String,
-    pub geometry: String,
-    pub material: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

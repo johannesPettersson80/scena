@@ -110,3 +110,29 @@ fn round_json_numbers(value: &mut serde_json::Value, digits: u8) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::json_outcome;
+
+    #[test]
+    fn machine_json_round_trips_all_controls_and_unicode() {
+        let controls = (0_u8..=0x1f).map(char::from).collect::<String>();
+        let value = format!("before-{controls}-€-after");
+        let outcome = json_outcome(
+            &serde_json::json!({"ok": false, "value": &value}),
+            1,
+            "control fixture serializes",
+        )
+        .expect("machine JSON serializes");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&outcome.stdout).expect("machine output is valid JSON");
+        assert_eq!(parsed["value"], value);
+        assert!(
+            !outcome
+                .stdout
+                .bytes()
+                .any(|byte| byte < 0x20 && byte != b'\n')
+        );
+    }
+}

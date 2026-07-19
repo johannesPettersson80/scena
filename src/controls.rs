@@ -239,6 +239,9 @@ impl OrbitControls {
     }
 
     pub fn handle_pointer(&mut self, event: PointerEvent) -> OrbitControlAction {
+        if !pointer_event_is_finite(event) {
+            return OrbitControlAction::None;
+        }
         match event.kind {
             PointerEventKind::Pressed => match event.button {
                 Some(PointerButton::Primary) => {
@@ -258,8 +261,7 @@ impl OrbitControls {
                 OrbitControlAction::Orbit
             }
             PointerEventKind::Moved if self.panning => {
-                self.target.x -= event.delta.0 * PAN_UNITS_PER_PIXEL * self.distance;
-                self.target.y += event.delta.1 * PAN_UNITS_PER_PIXEL * self.distance;
+                self.apply_pan_delta(event.delta);
                 OrbitControlAction::Pan
             }
             PointerEventKind::Wheel => {
@@ -277,6 +279,9 @@ impl OrbitControls {
     }
 
     pub fn handle_touch(&mut self, event: TouchEvent) -> OrbitControlAction {
+        if !touch_event_is_finite(event) {
+            return OrbitControlAction::None;
+        }
         match event.kind {
             TouchEventKind::Started => {
                 self.orbiting = true;
@@ -366,6 +371,15 @@ impl OrbitControls {
     fn apply_zoom_delta(&mut self, delta: f32) {
         let zoom = (1.0 + delta * ZOOM_SCALE).max(0.05);
         self.distance = self.clamp_distance((self.distance * zoom).max(MIN_DISTANCE));
+    }
+
+    fn apply_pan_delta(&mut self, delta: (f32, f32)) {
+        let (yaw_sin, yaw_cos) = self.yaw_radians.sin_cos();
+        let (pitch_sin, pitch_cos) = self.pitch_radians.sin_cos();
+        let view_right = Vec3::new(yaw_cos, 0.0, -yaw_sin);
+        let view_up = Vec3::new(-yaw_sin * pitch_sin, pitch_cos, -yaw_cos * pitch_sin);
+        let units_per_pixel = PAN_UNITS_PER_PIXEL * self.distance;
+        self.target += (-view_right * delta.0 + view_up * delta.1) * units_per_pixel;
     }
 
     fn clamp_distance(&self, distance: f32) -> f32 {
@@ -475,6 +489,23 @@ const PAN_UNITS_PER_PIXEL: f32 = 0.001;
 const ZOOM_SCALE: f32 = 0.1;
 const MIN_DISTANCE: f32 = 0.001;
 const MAX_PITCH_RADIANS: f32 = 1.553_343;
+
+fn pointer_event_is_finite(event: PointerEvent) -> bool {
+    event.position.0.is_finite()
+        && event.position.1.is_finite()
+        && event.delta.0.is_finite()
+        && event.delta.1.is_finite()
+        && event.scroll_delta.is_finite()
+}
+
+fn touch_event_is_finite(event: TouchEvent) -> bool {
+    event.position.0.is_finite()
+        && event.position.1.is_finite()
+        && event.delta.0.is_finite()
+        && event.delta.1.is_finite()
+        && event.pinch_delta.is_finite()
+}
+
 fn sanitize_distance_limit(value: f32, fallback: f32) -> f32 {
     if value.is_finite() && value > 0.0 {
         value

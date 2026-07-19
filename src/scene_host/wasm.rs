@@ -1,10 +1,15 @@
 use wasm_bindgen::prelude::*;
 
 use super::inputs::vec3_array_from_slice;
-use super::wasm_capture::capture_descriptor_json;
+use super::wasm_capture::{capture_descriptor_json, capture_png_js, capture_rgba8_js};
 use super::wasm_readback::browser_canvas_rgba8;
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
-use crate::{Assets, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
+
+mod support;
+pub(super) use support::js_error;
+use support::{
+    BrowserBackend, build_from_canvas, render_outcome_js, render_outcome_json, surface_from_canvas,
+};
 
 #[wasm_bindgen]
 pub struct SceneHost {
@@ -289,11 +294,88 @@ impl SceneHost {
         self.core.prepare().map_err(js_error)
     }
 
+    #[wasm_bindgen(js_name = setSemanticAovCaptureEnabled)]
+    pub fn set_semantic_aov_capture_enabled(&mut self, enabled: bool) {
+        self.core.set_semantic_aov_capture_enabled(enabled);
+    }
+
+    #[wasm_bindgen(js_name = captureSemanticAovs)]
+    pub async fn capture_semantic_aovs(&mut self) -> Result<JsValue, JsValue> {
+        let capture = self
+            .core
+            .capture_semantic_aovs_gpu_async()
+            .await
+            .map_err(js_error)?;
+        let metadata = serde_json::json!({
+            "schema": capture.schema,
+            "width": capture.width,
+            "height": capture.height,
+            "identity_scope": capture.identity_scope,
+            "sample_pattern": capture.sample_pattern,
+            "depth_convention": capture.depth_convention,
+            "normal_space": capture.normal_space,
+            "near": capture.near,
+            "far": capture.far,
+            "legend": capture.legend,
+            "exclusions": capture.exclusions,
+        });
+        let metadata_json = serde_json::to_string(&metadata).map_err(|error| {
+            js_error(SceneHostError::new(
+                SceneHostErrorCode::Capture,
+                error.to_string(),
+            ))
+        })?;
+        let normals = capture
+            .world_normals
+            .iter()
+            .flat_map(|normal| normal.iter().copied())
+            .collect::<Vec<_>>();
+        let object = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("metadataJson"),
+            &JsValue::from_str(&metadata_json),
+        );
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("idIndices"),
+            &js_sys::Uint32Array::from(capture.id_indices.as_slice()),
+        );
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("depthMeters"),
+            &js_sys::Float32Array::from(capture.depth_meters.as_slice()),
+        );
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("worldNormals"),
+            &js_sys::Float32Array::from(normals.as_slice()),
+        );
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("idRgba8"),
+            &js_sys::Uint8Array::from(capture.id_rgba8().as_slice()),
+        );
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("normalRgba8"),
+            &js_sys::Uint8Array::from(capture.normal_rgba8().as_slice()),
+        );
+        Ok(object.into())
+    }
+
     pub fn render(&mut self) -> Result<String, JsValue> {
         self.core
             .render()
             .map(render_outcome_json)
             .map_err(js_error)
+    }
+
+    /// Returns the render outcome as a native JavaScript object. The existing
+    /// `render()` JSON-string contract remains available for compatibility.
+    #[wasm_bindgen(js_name = renderTyped)]
+    pub fn render_typed(&mut self) -> Result<JsValue, JsValue> {
+        self.core.render().map(render_outcome_js).map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = readPixels)]
@@ -308,37 +390,45 @@ impl SceneHost {
     #[wasm_bindgen(js_name = capture)]
     pub fn capture(&self) -> Result<JsValue, JsValue> {
         let capture = self.capture_rgba8_for_wasm().map_err(js_error)?;
-        let descriptor_json = capture_descriptor_json(&capture).map_err(js_error)?;
-        let object = js_sys::Object::new();
-        let rgba8 = js_sys::Uint8Array::from(capture.rgba8.as_slice());
-        let _ = js_sys::Reflect::set(
-            &object,
-            &JsValue::from_str("descriptorJson"),
-            &JsValue::from_str(&descriptor_json),
-        );
-        let _ = js_sys::Reflect::set(&object, &JsValue::from_str("rgba8"), &rgba8);
-        Ok(object.into())
+        capture_rgba8_js(&capture).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = captureAsync)]
+    pub async fn capture_async(&mut self) -> Result<JsValue, JsValue> {
+        let capture = self
+            .capture_rgba8_for_wasm_async()
+            .await
+            .map_err(js_error)?;
+        capture_rgba8_js(&capture).map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = capturePng)]
     pub fn capture_png(&self) -> Result<JsValue, JsValue> {
         let capture = self.capture_rgba8_for_wasm().map_err(js_error)?;
-        let descriptor_json = capture_descriptor_json(&capture).map_err(js_error)?;
-        let png_bytes = capture.to_png_bytes().map_err(js_error)?;
-        let object = js_sys::Object::new();
-        let png = js_sys::Uint8Array::from(png_bytes.as_slice());
-        let _ = js_sys::Reflect::set(
-            &object,
-            &JsValue::from_str("descriptorJson"),
-            &JsValue::from_str(&descriptor_json),
-        );
-        let _ = js_sys::Reflect::set(&object, &JsValue::from_str("png"), &png);
-        Ok(object.into())
+        capture_png_js(&capture).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = capturePngAsync)]
+    pub async fn capture_png_async(&mut self) -> Result<JsValue, JsValue> {
+        let capture = self
+            .capture_rgba8_for_wasm_async()
+            .await
+            .map_err(js_error)?;
+        capture_png_js(&capture).map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = captureJson)]
     pub fn capture_json(&self) -> Result<String, JsValue> {
         self.core.capture_json().map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = captureJsonAsync)]
+    pub async fn capture_json_async(&mut self) -> Result<String, JsValue> {
+        let capture = self
+            .capture_rgba8_for_wasm_async()
+            .await
+            .map_err(js_error)?;
+        capture_descriptor_json(&capture).map_err(js_error)
     }
 
     pub fn pick(&mut self, x: f32, y: f32) -> Result<Option<u64>, JsValue> {
@@ -449,90 +539,4 @@ impl SceneHost {
         self.browser_canvas = Some(browser_canvas);
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum BrowserBackend {
-    WebGpu,
-    WebGl2,
-}
-
-async fn build_from_canvas(
-    backend: BrowserBackend,
-    canvas: web_sys::HtmlCanvasElement,
-    logical_width: f32,
-    logical_height: f32,
-    device_pixel_ratio: f32,
-) -> Result<SceneHost, JsValue> {
-    let browser_canvas = canvas.clone();
-    let (surface, viewport) = surface_from_canvas(
-        backend,
-        canvas,
-        logical_width,
-        logical_height,
-        device_pixel_ratio,
-    )?;
-    let renderer = Renderer::from_surface_async(surface)
-        .await
-        .map_err(js_error)?;
-    let core = SceneHostCore::from_renderer(Assets::new(), renderer, viewport).map_err(js_error)?;
-    Ok(SceneHost {
-        core,
-        browser_canvas: Some(browser_canvas),
-    })
-}
-
-fn surface_from_canvas(
-    backend: BrowserBackend,
-    canvas: web_sys::HtmlCanvasElement,
-    logical_width: f32,
-    logical_height: f32,
-    device_pixel_ratio: f32,
-) -> Result<(PlatformSurface, SurfaceViewport), JsValue> {
-    let viewport = SurfaceViewport::new(logical_width, logical_height, device_pixel_ratio)
-        .ok_or_else(|| {
-            js_error(SceneHostError::new(
-                super::SceneHostErrorCode::InvalidViewport,
-                format!(
-                    "invalid viewport {logical_width}x{logical_height} at DPR {device_pixel_ratio}"
-                ),
-            ))
-        })?;
-    let size = viewport.physical_size();
-    let surface = match backend {
-        BrowserBackend::WebGpu => {
-            PlatformSurface::browser_webgpu_canvas_element(canvas, size.width, size.height)
-        }
-        BrowserBackend::WebGl2 => {
-            PlatformSurface::browser_webgl2_canvas_element(canvas, size.width, size.height)
-        }
-    };
-    Ok((surface, viewport))
-}
-
-fn render_outcome_json(outcome: RenderOutcome) -> String {
-    serde_json::json!({
-        "width": outcome.width,
-        "height": outcome.height,
-        "draw_calls": outcome.draw_calls,
-        "primitives": outcome.primitives,
-        "skipped": outcome.skipped,
-    })
-    .to_string()
-}
-
-pub(super) fn js_error(error: impl Into<SceneHostError>) -> JsValue {
-    let error = error.into();
-    let object = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(
-        &object,
-        &JsValue::from_str("code"),
-        &JsValue::from_str(&format!("{:?}", error.code())),
-    );
-    let _ = js_sys::Reflect::set(
-        &object,
-        &JsValue::from_str("message"),
-        &JsValue::from_str(error.message()),
-    );
-    object.into()
 }

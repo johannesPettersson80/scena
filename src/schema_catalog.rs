@@ -1,14 +1,19 @@
+use crate::scene::recipe::SchemaFieldModelV1;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 mod agent_smoke;
+mod entries;
 mod fixtures;
+mod reports;
+
+use entries::SchemaEntryRow;
 
 pub use agent_smoke::{
     AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AgentSmokeTemplateCommandV1, AgentSmokeTemplateFileV1,
     AgentSmokeTemplateV1,
 };
 pub use fixtures::nearest_schema_name;
+pub use reports::{schema_catalog_entry, schema_catalog_v1};
 
 pub const SCHEMA_CATALOG_SCHEMA_V1: &str = "scena.schema_catalog.v1";
 pub const SCHEMA_ENTRY_SCHEMA_V1: &str = "scena.schema_entry.v1";
@@ -37,19 +42,8 @@ pub struct SchemaEntryReportV1 {
     pub example: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invalid_example: Option<serde_json::Value>,
-}
-
-pub fn schema_catalog_v1() -> SchemaCatalogV1 {
-    SchemaCatalogV1 {
-        schema: SCHEMA_CATALOG_SCHEMA_V1.to_owned(),
-        entries: schema_catalog_entries(),
-    }
-}
-
-pub fn schema_catalog_entry(schema: &str) -> Option<SchemaCatalogEntryV1> {
-    schema_catalog_entries()
-        .into_iter()
-        .find(|entry| entry.schema == schema)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_model: Option<SchemaFieldModelV1>,
 }
 
 pub fn schema_entry_report_v1(schema: &str) -> Option<SchemaEntryReportV1> {
@@ -61,21 +55,9 @@ pub fn schema_entry_report_v1(schema: &str) -> Option<SchemaEntryReportV1> {
         schema: SCHEMA_ENTRY_SCHEMA_V1.to_owned(),
         entry,
         example,
-        invalid_example: invalid_example_for_schema(schema),
+        invalid_example: reports::invalid_example_for_schema(schema),
+        field_model: reports::field_model_for_schema(schema),
     })
-}
-
-fn invalid_example_for_schema(schema: &str) -> Option<serde_json::Value> {
-    match schema {
-        "scena.scene_recipe.v1" => Some(json!({
-            "schema": "scena.scene_recipe.v1",
-            "importe": [{
-                "id": "part",
-                "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
-            }]
-        })),
-        _ => None,
-    }
 }
 
 fn schema_catalog_entries() -> Vec<SchemaCatalogEntryV1> {
@@ -89,14 +71,6 @@ fn schema_catalog_entries() -> Vec<SchemaCatalogEntryV1> {
             fixture_path: row.fixture_path.map(str::to_owned),
         })
         .collect()
-}
-
-struct SchemaEntryRow {
-    schema: &'static str,
-    owner_module: &'static str,
-    summary: &'static str,
-    feature_flag: Option<&'static str>,
-    fixture_path: Option<&'static str>,
 }
 
 fn schema_entry_rows() -> &'static [SchemaEntryRow] {
@@ -114,6 +88,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             summary: "Single schema catalog entry with a representative example.",
             feature_flag: None,
             fixture_path: Some("tests/assets/stable-contracts/schema_entry.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: crate::FIELD_MODEL_SCHEMA_V1,
+            owner_module: "scene/recipe/field_model",
+            summary: "Authoritative field types, requiredness, enums, ranges, defaults, deprecations, and examples.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/field_model.v1.json"),
         },
         SchemaEntryRow {
             schema: "scena.capability_report.v1",
@@ -291,6 +272,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/scene_recipe_build.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.recipe_build_result.v1",
+            owner_module: "scene_host",
+            summary: "Renderer-free recipe build manifest with effective policy and execution counters.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/recipe_build_result.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.recipe_render_result.v1",
             owner_module: "bin/scena",
             summary: "One-command recipe build, render, introspection, and verification result.",
@@ -303,6 +291,34 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             summary: "CAD inspection preset report binding principal-face renders, post-process presentation metrics, and a contact sheet.",
             feature_flag: Some("scene-host"),
             fixture_path: Some("tests/assets/stable-contracts/cad_inspection_result.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.capture_sequence_result.v1",
+            owner_module: "bin/scena/recipe/capture_sequence",
+            summary: "Canonical-view, turntable, and animation-clip PNG capture sequence with per-frame camera and timing metadata.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/capture_sequence_result.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.semantic_aov_result.v1",
+            owner_module: "bin/scena/recipe/semantic_aov",
+            summary: "Deterministic semantic ID, linear-depth, and world-normal images with runtime-scoped and persistent identity legend.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/semantic_aov_result.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.scene_recipe_diff.v1",
+            owner_module: "scene/recipe/diff",
+            summary: "Renderer-free structural recipe diff with persistent semantic identity and numeric tolerance.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/scene_recipe_diff.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.scene_recipe_diff_result.v1",
+            owner_module: "bin/scena/diff",
+            summary: "Typed recipe semantic changes plus optional aggregate rendered diff and conservative persistent-identity attribution.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/scene_recipe_diff_result.v1.json"),
         },
         SchemaEntryRow {
             schema: "scena.placement_result.v1",
@@ -419,6 +435,69 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             summary: "SceneHost event batch for pick, hover, load, diagnostic, capture, and surface events.",
             feature_flag: Some("scene-host"),
             fixture_path: Some("tests/assets/stable-contracts/host_event.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.release.findings.v1",
+            owner_module: "xtask/release",
+            summary: "Independent release-review findings register bound to one source commit.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.release.staging.v1",
+            owner_module: "xtask/release",
+            summary: "Release artifact staging metadata kept separate from source evidence provenance.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.recipe_patch.v1",
+            owner_module: "scene/recipe",
+            summary: "Source-digest-bound placement update with complete canonical recipe and semantic change summary.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/recipe_patch.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.vocab.v1",
+            owner_module: "vocabulary",
+            summary: "Closed renderer and recipe vocabularies with stable owners and versions.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/vocab.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.recipe_policy.v1",
+            owner_module: "scene/recipe",
+            summary: "Effective recipe sandbox roots, URI/network policy, limits, and value sources.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/recipe_policy.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.cli_error.v1",
+            owner_module: "bin/scena",
+            summary: "Structured CLI dispatch and argument error emitted on stderr.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/cli_error.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.cli_io_error.v1",
+            owner_module: "bin/scena",
+            summary: "Structured fatal CLI stdout write failure report emitted on stderr.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.cli_help.v1",
+            owner_module: "bin/scena",
+            summary: "Machine-readable scena CLI command, option, and guide discovery.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.cli_version.v1",
+            owner_module: "bin/scena",
+            summary: "Machine-readable package version, commit, and compiled feature report.",
+            feature_flag: None,
+            fixture_path: None,
         },
     ]
 }

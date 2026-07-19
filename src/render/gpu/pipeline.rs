@@ -7,6 +7,10 @@ use super::output::{
 };
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
+#[cfg_attr(
+    all(target_arch = "wasm32", not(feature = "browser-probe")),
+    allow(dead_code)
+)]
 pub(super) const BYTES_PER_PIXEL: u32 = 4;
 pub(super) const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 /// WGPU evaluates front-face winding before viewport conversion; prepared

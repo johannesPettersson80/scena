@@ -9,6 +9,7 @@ impl GeometryDesc {
             });
         }
         self.tangents = Some(tangents);
+        self.generated_tangent_cache = Default::default();
         Ok(self)
     }
 

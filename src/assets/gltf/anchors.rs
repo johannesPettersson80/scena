@@ -45,6 +45,18 @@ impl SceneAssetAnchor {
     pub(crate) fn invalid_reason(&self) -> Option<&str> {
         self.invalid_reason.as_deref()
     }
+
+    #[cfg(test)]
+    pub(crate) fn invalid_for_transaction_test(reason: &str) -> Self {
+        Self {
+            name: "invalid-anchor".to_owned(),
+            tags: BTreeSet::new(),
+            label: None,
+            source_units: None,
+            transform: Transform::IDENTITY,
+            invalid_reason: Some(reason.to_owned()),
+        }
+    }
 }
 
 pub(super) fn parse_node_anchors(node: &Node) -> Vec<SceneAssetAnchor> {

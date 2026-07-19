@@ -2,6 +2,55 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::scene::recipe::RecipeBuildPolicyReportV1;
+
+use super::spatial_state::SceneRecipeSpatialTargetV1;
+
+pub const RECIPE_BUILD_RESULT_SCHEMA_V1: &str = "scena.recipe_build_result.v1";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecipeBuildExecutionV1 {
+    pub asset_fetches: u64,
+    pub renderer_constructions: u64,
+    pub gpu_context_constructions: u64,
+    pub prepare_calls: u64,
+    pub render_calls: u64,
+    pub capture_constructions: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecipeBuildResultV1 {
+    pub schema: String,
+    pub ok: bool,
+    pub build: SceneRecipeBuildV1,
+    pub policy: RecipeBuildPolicyReportV1,
+    pub execution: RecipeBuildExecutionV1,
+}
+
+impl RecipeBuildResultV1 {
+    #[cfg(feature = "scene-host")]
+    pub(crate) fn manifest_only(
+        build: SceneRecipeBuildV1,
+        policy: RecipeBuildPolicyReportV1,
+        asset_fetches: u64,
+    ) -> Self {
+        Self {
+            schema: RECIPE_BUILD_RESULT_SCHEMA_V1.to_owned(),
+            ok: build.ok,
+            build,
+            policy,
+            execution: RecipeBuildExecutionV1 {
+                asset_fetches,
+                renderer_constructions: 0,
+                gpu_context_constructions: 0,
+                prepare_calls: 0,
+                render_calls: 0,
+                capture_constructions: 0,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneRecipeValidationReportV1 {
     pub schema: String,
@@ -15,16 +64,94 @@ pub struct SceneRecipeBuildV1 {
     pub ok: bool,
     pub imports: Vec<SceneRecipeBuildImportV1>,
     pub nodes: Vec<SceneRecipeBuildTargetV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instances: Vec<SceneRecipeBuildInstanceV1>,
     pub cameras: Vec<SceneRecipeBuildTargetV1>,
     pub lights: Vec<SceneRecipeBuildTargetV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub animations: Vec<SceneRecipeBuildAnimationV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anchors: Vec<SceneRecipeBuildAnchorV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connectors: Vec<SceneRecipeBuildConnectorV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connections: Vec<SceneRecipeBuildConnectionV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bounds: Vec<SceneRecipeBuildBoundsV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub named_states: Vec<SceneRecipeBuildNamedStateV1>,
     pub geometries: Vec<SceneRecipeBuildResourceV1>,
     pub materials: Vec<SceneRecipeBuildResourceV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fonts: Vec<SceneRecipeBuildResourceV1>,
     pub diagnostics: Vec<SceneRecipeDiagnosticV1>,
     pub skipped: Vec<SceneRecipeBuildSkippedV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildAnchorV1 {
+    pub id: String,
+    pub identity_scope: String,
+    pub source: String,
+    pub target: SceneRecipeSpatialTargetV1,
+    pub node_handle: u64,
+    pub source_units: String,
+    pub source_coordinate_system: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildConnectorV1 {
+    pub id: String,
+    pub identity_scope: String,
+    pub source: String,
+    pub target: SceneRecipeSpatialTargetV1,
+    pub node_handle: u64,
+    pub source_units: String,
+    pub source_coordinate_system: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildConnectionV1 {
+    pub source: String,
+    pub target: String,
+    pub status: String,
+    pub snap_distance_scene_meters: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildBoundsV1 {
+    pub id: String,
+    pub identity_scope: String,
+    pub target: SceneRecipeSpatialTargetV1,
+    pub source: String,
+    pub space: String,
+    pub units: String,
+    pub min: [f32; 3],
+    pub max: [f32; 3],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildNamedStateV1 {
+    pub id: String,
+    pub identity_scope: String,
+    pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inherited_from: Option<String>,
+    pub transform_count: usize,
+    pub tint_count: usize,
+    pub visibility_count: usize,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildInstanceV1 {
+    pub set_id: String,
+    pub id: String,
+    pub set_handle: u64,
+    pub instance_id: u64,
+    pub identity_scope: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

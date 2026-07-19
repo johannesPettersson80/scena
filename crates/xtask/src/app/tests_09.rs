@@ -270,6 +270,7 @@ pub(crate) fn release_lane_artifact_uses_required_file_evidence_not_command_reco
 pub(crate) fn release_lane_artifact_consumes_measured_command_records() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-release-lane-command-record-test");
+    write_release_lane_source_fixture(&fixture_root);
     let lane = "linux-native-vulkan";
     let command_dir = fixture_root.join("target/gate-artifacts/release-lanes");
     fs::create_dir_all(&command_dir).expect("command record dir");
@@ -310,6 +311,7 @@ pub(crate) fn release_lane_artifact_consumes_measured_command_records() {
 pub(crate) fn release_lane_artifact_status_requires_native_gpu_content_proof() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-release-lane-content-test");
+    write_release_lane_source_fixture(&fixture_root);
     let lane = "macos-metal";
     let lane_dir = fixture_root.join(format!("target/gate-artifacts/m9-platform/{lane}"));
     fs::create_dir_all(&lane_dir).expect("lane artifact dir");
@@ -349,6 +351,7 @@ pub(crate) fn release_lane_artifact_status_requires_native_gpu_content_proof() {
 pub(crate) fn release_lane_artifact_status_requires_browser_probe_passed_status() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-release-lane-browser-content-test");
+    write_release_lane_source_fixture(&fixture_root);
     let artifact_dir = fixture_root.join("target/gate-artifacts");
     let command_dir = artifact_dir.join("release-lanes");
     fs::create_dir_all(&command_dir).expect("command record dir");
@@ -385,6 +388,7 @@ pub(crate) fn release_lane_artifact_status_requires_browser_probe_passed_status(
 pub(crate) fn release_lane_artifact_supports_separate_headless_cpu_proof_lane() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-headless-cpu-lane-test");
+    write_release_lane_source_fixture(&fixture_root);
     let lane_dir = fixture_root.join("target/gate-artifacts/m9-platform/headless-cpu");
     fs::create_dir_all(&lane_dir).expect("headless lane artifact dir");
     fs::write(
@@ -412,6 +416,14 @@ pub(crate) fn release_lane_artifact_supports_separate_headless_cpu_proof_lane() 
         b"{}",
     )
     .expect("feature matrix benchmarks");
+    crate::app::tests_24::write_q01_cpu_proof_fixture(
+        &fixture_root.join("target/gate-artifacts"),
+        "0123456789abcdef0123456789abcdef01234567",
+    );
+    crate::app::tests_26::write_q02_release_proof_fixtures(
+        &fixture_root,
+        "0123456789abcdef0123456789abcdef01234567",
+    );
 
     let artifact = release_lane_artifact(&fixture_root, "headless-cpu")
         .expect("headless release lane artifact builds");
@@ -428,6 +440,20 @@ pub(crate) fn release_lane_artifact_supports_separate_headless_cpu_proof_lane() 
                 .is_some_and(|path| path.contains("headless-cpu/rendered-output.json"))),
         "headless CPU lane must have its own rendered-output artifact",
     );
+}
+
+fn write_release_lane_source_fixture(root: &Path) {
+    let workflow_dir = root.join(".github/workflows");
+    fs::create_dir_all(&workflow_dir).expect("release-lane workflow fixture dir");
+    fs::write(root.join("Cargo.lock"), b"# release-lane fixture\n")
+        .expect("release-lane Cargo.lock fixture");
+    fs::write(workflow_dir.join("ci.yml"), b"# release-lane fixture\n")
+        .expect("release-lane CI fixture");
+    fs::write(
+        workflow_dir.join("release.yml"),
+        b"# release-lane fixture\n",
+    )
+    .expect("release-lane release workflow fixture");
 }
 
 #[test]
@@ -499,4 +525,101 @@ pub(crate) fn m8_assets_materials_contracts_are_source_enforced() {
     check_m8_assets_materials_contracts(&root, &mut findings);
 
     assert_eq!(findings, Vec::new());
+}
+
+#[test]
+pub(crate) fn c03_texture_doctor_rejects_index_only_embedded_cache_identity() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/c03-index-only-texture-cache");
+    let files = [
+        "Cargo.toml",
+        "src/assets.rs",
+        "src/assets/gltf/textures.rs",
+        "src/assets/texture.rs",
+        "src/assets/texture_image_decode.rs",
+        "src/assets/texture_ktx2.rs",
+        "src/assets/doctor.rs",
+        "src/diagnostics.rs",
+        "src/diagnostics/display/asset.rs",
+        "src/diagnostics/help.rs",
+        "tests/c03_texture_identity.rs",
+        "docs/assets.md",
+        "docs/feature-flags.md",
+        "docs/checklists/next-release-easy-use-and-state-of-the-art.md",
+    ];
+    for relative in files {
+        let source = root.join(relative);
+        let destination = fixture_root.join(relative);
+        fs::create_dir_all(destination.parent().expect("C03 fixture parent"))
+            .expect("C03 fixture directory");
+        fs::copy(source, destination).expect("copy C03 doctor fixture file");
+    }
+    let texture_import = fixture_root.join("src/assets/gltf/textures.rs");
+    let source = fs::read_to_string(&texture_import).expect("read C03 texture importer fixture");
+    fs::write(
+        &texture_import,
+        source.replace("memory:image-sha256-", "memory:image-index-"),
+    )
+    .expect("mutate embedded texture identity");
+    let mut findings = Vec::new();
+
+    check_c03_texture_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ASSETS-C03"
+                && finding.message.contains("src/assets/gltf/textures.rs")
+                && finding.message.contains("memory:image-sha256-")
+        }),
+        "doctor must reject index-only embedded texture identity: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn c04_deformation_doctor_rejects_cubic_weight_stride_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/c04-cubic-weight-stride");
+    let files = [
+        "src/assets/gltf/animation.rs",
+        "src/assets/gltf/meshes.rs",
+        "src/animation.rs",
+        "src/scene/import.rs",
+        "src/scene/import/types.rs",
+        "src/geometry/morph.rs",
+        "src/render/prepare/primitives.rs",
+        "src/render/prepare/materials.rs",
+        "tests/c04_gltf_deformation_contracts.rs",
+        "docs/assets.md",
+    ];
+    for relative in files {
+        let source = root.join(relative);
+        let destination = fixture_root.join(relative);
+        fs::create_dir_all(destination.parent().expect("C04 fixture parent"))
+            .expect("C04 fixture directory");
+        fs::copy(source, destination).expect("copy C04 doctor fixture file");
+    }
+    let animation_import = fixture_root.join("src/assets/gltf/animation.rs");
+    let source = fs::read_to_string(&animation_import).expect("read C04 animation fixture");
+    fs::write(
+        &animation_import,
+        source.replace(
+            "chunk_size = targets_per_keyframe",
+            "chunk_size = targets_per_keyframe * stride_factor",
+        ),
+    )
+    .expect("mutate cubic weight stride");
+    let mut findings = Vec::new();
+
+    check_c04_deformation_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ASSETS-C04"
+                && finding.message.contains("src/assets/gltf/animation.rs")
+                && finding
+                    .message
+                    .contains("chunk_size = targets_per_keyframe")
+        }),
+        "doctor must reject cubic morph-weight stride regression: {findings:?}",
+    );
 }

@@ -180,6 +180,80 @@ pub(crate) fn significant_line_count_counts_product_code_after_test_modules() {
 }
 
 #[test]
+pub(crate) fn external_cfg_test_module_is_excluded_from_production_size_gate() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/external-cfg-test-module");
+    let owner = fixture_root.join("src/render/quality.rs");
+    let tests = fixture_root.join("src/render/quality/tests.rs");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(tests.parent().expect("external test fixture parent"))
+        .expect("external test fixture dir");
+    fs::write(&owner, "#[cfg(test)]\nmod tests;\n").expect("external test owner fixture");
+    let mut source = String::new();
+    for index in 0..=MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE {
+        source.push_str(&format!("fn test_helper_{index}() {{}}\n"));
+    }
+    fs::write(&tests, source).expect("external test module fixture");
+    let mut findings = Vec::new();
+
+    check_solid_kiss(&fixture_root, &mut findings);
+
+    assert!(
+        !findings.iter().any(|finding| {
+            finding.rule == "ARCH-KISS-SIZE"
+                && finding.message.contains("src/render/quality/tests.rs")
+        }),
+        "an external module reachable only through #[cfg(test)] is not production code: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn external_non_test_module_remains_in_production_size_gate() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/external-production-module");
+    let owner = fixture_root.join("src/render/quality.rs");
+    let module = fixture_root.join("src/render/quality/large.rs");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(module.parent().expect("external module fixture parent"))
+        .expect("external module fixture dir");
+    fs::write(&owner, "mod large;\n").expect("external module owner fixture");
+    let mut source = String::new();
+    for index in 0..=MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE {
+        source.push_str(&format!("fn production_helper_{index}() {{}}\n"));
+    }
+    fs::write(&module, source).expect("external production module fixture");
+    let mut findings = Vec::new();
+
+    check_solid_kiss(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-KISS-SIZE"
+                && finding.message.contains("src/render/quality/large.rs")
+        }),
+        "an ordinary external module remains production code: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn architecture_m5_contract_does_not_require_generated_gate_artifacts() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/m5-source-only-architecture");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(&fixture_root).expect("M5 source-only fixture root");
+    let mut findings = Vec::new();
+
+    check_m5_release_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.message.contains("target/gate-artifacts")),
+        "architecture mode must validate source contracts, not ignored generated artifacts: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn prepare_asset_contracts_are_source_enforced() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let mut findings = Vec::new();

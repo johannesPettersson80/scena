@@ -1,5 +1,6 @@
 use std::error;
 use std::fmt;
+use std::sync::OnceLock;
 
 use palette::Srgb;
 use serde::{Deserialize, Serialize};
@@ -137,10 +138,10 @@ impl Color {
     /// Convenient for porting designer-supplied byte triples. The channels are
     /// converted to linear space before being stored.
     pub fn from_srgb_u8(r: u8, g: u8, b: u8) -> Self {
-        Self::from_srgb(
-            f32::from(r) / 255.0,
-            f32::from(g) / 255.0,
-            f32::from(b) / 255.0,
+        Self::from_linear_rgb(
+            srgb_u8_to_linear(r),
+            srgb_u8_to_linear(g),
+            srgb_u8_to_linear(b),
         )
     }
 
@@ -210,15 +211,35 @@ impl Color {
     }
 }
 
+fn srgb_u8_to_linear(channel: u8) -> f32 {
+    static LUT: OnceLock<[f32; 256]> = OnceLock::new();
+    LUT.get_or_init(|| {
+        std::array::from_fn(|index| {
+            let srgb = index as f32 / 255.0;
+            Srgb::new(srgb, srgb, srgb).into_linear().red
+        })
+    })[usize::from(channel)]
+}
+
 fn parse_hex_srgb_value(value: &str) -> Result<Color, ColorParseError> {
-    let r = parse_hex_channel(&value[0..2])?;
-    let g = parse_hex_channel(&value[2..4])?;
-    let b = parse_hex_channel(&value[4..6])?;
+    let bytes = value.as_bytes();
+    if bytes.len() != 6 || !bytes.iter().all(u8::is_ascii_hexdigit) {
+        return Err(ColorParseError::InvalidHexSrgb);
+    }
+    let r = parse_hex_channel(bytes[0], bytes[1])?;
+    let g = parse_hex_channel(bytes[2], bytes[3])?;
+    let b = parse_hex_channel(bytes[4], bytes[5])?;
     Ok(Color::from_srgb_u8(r, g, b))
 }
 
-fn parse_hex_channel(value: &str) -> Result<u8, ColorParseError> {
-    u8::from_str_radix(value, 16).map_err(|_| ColorParseError::InvalidHexSrgb)
+fn parse_hex_channel(high: u8, low: u8) -> Result<u8, ColorParseError> {
+    let nibble = |byte: u8| match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(ColorParseError::InvalidHexSrgb),
+    };
+    Ok((nibble(high)? << 4) | nibble(low)?)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,3 +256,25 @@ impl fmt::Display for ColorParseError {
 }
 
 impl error::Error for ColorParseError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pf04_pf05_contract_srgb_u8_lut_is_bit_exact_for_every_byte() {
+        for channel in u8::MIN..=u8::MAX {
+            let expected = Color::from_srgb(
+                f32::from(channel) / 255.0,
+                f32::from(channel) / 255.0,
+                f32::from(channel) / 255.0,
+            )
+            .r;
+            assert_eq!(
+                srgb_u8_to_linear(channel).to_bits(),
+                expected.to_bits(),
+                "sRGB byte {channel} must retain exact transfer behavior"
+            );
+        }
+    }
+}

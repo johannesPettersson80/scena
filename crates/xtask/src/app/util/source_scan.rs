@@ -43,7 +43,14 @@ pub(crate) fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
         &["Scene", "Assets", "Renderer", "SceneImport"],
     );
 
+    let cfg_test_only = cfg_test_only_module_roots(root);
     for rel in source_files(root) {
+        if cfg_test_only.iter().any(|test_root| {
+            rel.as_path() == test_root.as_path()
+                || rel.starts_with(test_module_child_directory(test_root))
+        }) {
+            continue;
+        }
         let path = root.join(&rel);
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
@@ -73,6 +80,41 @@ pub(crate) fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
                 ));
             }
         }
+    }
+}
+
+fn cfg_test_only_module_roots(root: &Path) -> BTreeSet<PathBuf> {
+    let sources = source_files(root);
+    let mut roots = BTreeSet::new();
+    for owner in &sources {
+        let Ok(text) = fs::read_to_string(root.join(owner)) else {
+            continue;
+        };
+        let module_dir = if owner.file_name().and_then(OsStr::to_str) == Some("mod.rs") {
+            owner.parent().unwrap_or(Path::new("src")).to_path_buf()
+        } else {
+            owner.with_extension("")
+        };
+        for name in rust_cfg_test_module_names(&text) {
+            let flat = module_dir.join(format!("{name}.rs"));
+            if root.join(&flat).is_file() {
+                roots.insert(flat);
+                continue;
+            }
+            let nested = module_dir.join(name).join("mod.rs");
+            if root.join(&nested).is_file() {
+                roots.insert(nested);
+            }
+        }
+    }
+    roots
+}
+
+fn test_module_child_directory(test_root: &Path) -> PathBuf {
+    if test_root.file_name().and_then(OsStr::to_str) == Some("mod.rs") {
+        test_root.parent().unwrap_or(test_root).to_path_buf()
+    } else {
+        test_root.with_extension("")
     }
 }
 
@@ -168,6 +210,35 @@ pub(crate) fn strip_rust_visibility(line: &str) -> &str {
     rest
 }
 
+pub(crate) fn rust_cfg_test_module_names(text: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let mut cfg_test = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
+        if trimmed == "#[cfg(test)]" {
+            cfg_test = true;
+            continue;
+        }
+        if cfg_test {
+            let item = strip_rust_visibility(trimmed);
+            if let Some(rest) = item.strip_prefix("mod ") {
+                let name = rest
+                    .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                    .next()
+                    .unwrap_or_default();
+                if !name.is_empty() {
+                    names.insert(name.to_owned());
+                }
+            }
+        }
+        cfg_test = false;
+    }
+    names
+}
+
 pub(crate) fn is_catch_all_type_name(name: &str) -> bool {
     if ALLOWED_CONTEXT_TYPES.contains(&name) {
         return false;
@@ -199,6 +270,16 @@ pub(crate) fn forbid_contains_path(
 ) {
     let path = root.join(rel);
     let Ok(text) = fs::read_to_string(&path) else {
+        if rel
+            .to_str()
+            .is_some_and(crate::app::doctor_docs::is_retired_internal_doc)
+        {
+            return;
+        }
+        findings.push(Finding::new(
+            rule,
+            format!("could not read {} for forbidden-text scan", rel.display()),
+        ));
         return;
     };
 

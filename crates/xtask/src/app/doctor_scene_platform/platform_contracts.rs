@@ -1,5 +1,12 @@
 use crate::app::prelude::*;
 pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    check_c06_finite_atomic_contracts(root, findings);
+    check_c07_handle_namespace_contracts(root, findings);
+    check_c08_presentation_timeline_contracts(root, findings);
+    check_c09_gpu_resource_lifecycle_contracts(root, findings);
+    check_c10_overlay_ownership_contracts(root, findings);
+    check_c12_deformed_picking_contracts(root, findings);
+    check_c13_strict_gpu_construction_contracts(root, findings);
     check_scene_host_input_validation_contracts(root, findings);
     check_phase1_appearance_dirty_contracts(root, findings);
     require_contains(
@@ -370,7 +377,11 @@ fn check_phase1_appearance_dirty_contracts(root: &Path, findings: &mut Vec<Findi
         findings,
         "ARCH-APPEARANCE-DIRTY",
         "src/render/gpu/draw_uniform.rs",
-        &["DRAW_UNIFORM_ENTRY_SIZE: u64 = 144", "value.tint"],
+        &[
+            "DRAW_UNIFORM_ENTRY_SIZE: u64 = 160",
+            "value.tint",
+            "value.semantic_id",
+        ],
     );
     require_contains(
         root,

@@ -142,7 +142,7 @@ struct DepthOfFieldSourceCapture {
 fn render_depth_of_field_source_capture(
     recipe: &scena::SceneRecipeV1,
     recipe_path: &Path,
-    prefer_gpu: bool,
+    use_gpu: bool,
 ) -> Result<DepthOfFieldSourceCapture, String> {
     let mut source_recipe = recipe.clone();
     if let Some(render) = source_recipe.render.as_mut() {
@@ -151,8 +151,8 @@ fn render_depth_of_field_source_capture(
     let recipe_text = serde_json::to_string(&source_recipe)
         .map_err(|error| format!("failed to serialize no-DoF baseline recipe: {error}"))?;
     let recipe_path_text = recipe_path.display().to_string();
-    let build = if prefer_gpu {
-        pollster::block_on(scena::SceneHostCore::build_recipe_json_prefer_gpu(
+    let build = if use_gpu {
+        pollster::block_on(scena::SceneHostCore::build_recipe_json_gpu(
             &recipe_path_text,
             &recipe_text,
             scena::RecipeBuildPolicy::testing(),

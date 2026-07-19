@@ -27,6 +27,10 @@ pub(super) fn validate_global_ids(
         "animations",
         "cameras",
         "lights",
+        "anchors",
+        "connectors",
+        "bounds",
+        "named_states",
     ] {
         collect_array_ids(section, object.get(section), &mut ids, diagnostics);
     }

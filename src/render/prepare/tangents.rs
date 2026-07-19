@@ -17,7 +17,7 @@ pub(super) struct TangentFrame {
 pub(super) fn accumulate_vertex_tangents(
     vertices: &[GeometryVertex],
     indices: &[u32],
-    tex_coords0: &[[f32; 2]],
+    tex_coords0: Option<&[[f32; 2]]>,
     transform: Transform,
     origin_shift: Vec3,
 ) -> Vec<TangentFrame> {
@@ -66,10 +66,74 @@ pub(super) fn accumulate_vertex_tangents(
     adapter.output
 }
 
+pub(super) fn generate_model_tangents(
+    vertices: &[GeometryVertex],
+    indices: &[u32],
+    tex_coords0: Option<&[[f32; 2]]>,
+) -> Vec<[f32; 4]> {
+    accumulate_vertex_tangents(
+        vertices,
+        indices,
+        tex_coords0,
+        Transform::IDENTITY,
+        Vec3::ZERO,
+    )
+    .into_iter()
+    .map(|frame| {
+        [
+            frame.tangent.x,
+            frame.tangent.y,
+            frame.tangent.z,
+            frame.handedness,
+        ]
+    })
+    .collect()
+}
+
+pub(super) fn transform_model_tangents(
+    tangents: &[[f32; 4]],
+    vertices: &[GeometryVertex],
+    transform: Transform,
+) -> Vec<TangentFrame> {
+    let direction_transform = Transform {
+        translation: Vec3::ZERO,
+        ..transform
+    };
+    let handedness_scale = if transform.scale.x * transform.scale.y * transform.scale.z < 0.0 {
+        -1.0
+    } else {
+        1.0
+    };
+    vertices
+        .iter()
+        .zip(tangents.iter().copied())
+        .map(|(vertex, tangent)| {
+            let normal = transform_normal(vertex.normal, transform);
+            let transformed = transform_position(
+                Vec3::new(tangent[0], tangent[1], tangent[2]),
+                direction_transform,
+                Vec3::ZERO,
+            );
+            let orthogonal = subtract_vec3(
+                transformed,
+                scale_vec3(normal, dot_vec3(transformed, normal)),
+            );
+            TangentFrame {
+                tangent: normalize_or(orthogonal, fallback_tangent(normal)),
+                handedness: if tangent[3] * handedness_scale < 0.0 {
+                    -1.0
+                } else {
+                    1.0
+                },
+            }
+        })
+        .collect()
+}
+
 struct MikktspaceAdapter<'a> {
     positions: Vec<Vec3>,
     normals: Vec<Vec3>,
-    tex_coords0: &'a [[f32; 2]],
+    tex_coords0: Option<&'a [[f32; 2]]>,
     indices: &'a [u32],
     output: Vec<TangentFrame>,
     face_count: usize,
@@ -101,7 +165,10 @@ impl<'a> bevy_mikktspace::Geometry for MikktspaceAdapter<'a> {
     }
 
     fn tex_coord(&self, face: usize, vert: usize) -> [f32; 2] {
-        self.tex_coords0[self.vertex_index(face, vert)]
+        self.tex_coords0
+            .and_then(|tex_coords| tex_coords.get(self.vertex_index(face, vert)))
+            .copied()
+            .unwrap_or([0.0, 0.0])
     }
 
     fn set_tangent(
@@ -324,7 +391,7 @@ mod tests {
         let tangents = accumulate_vertex_tangents(
             &vertices,
             &[0, 1, 2, 0, 3, 4],
-            &tex_coords,
+            Some(&tex_coords),
             Transform::IDENTITY,
             Vec3::ZERO,
         );
@@ -357,7 +424,7 @@ mod tests {
         let tangents = accumulate_vertex_tangents(
             &vertices,
             &[0, 1, 2],
-            &mirrored_uvs,
+            Some(&mirrored_uvs),
             Transform::IDENTITY,
             Vec3::ZERO,
         );
@@ -367,6 +434,59 @@ mod tests {
             tangents[0].handedness, -1.0,
             "mirrored UV islands must flip tangent-space bitangent handedness"
         );
+    }
+
+    #[test]
+    fn pf07_cached_model_tangents_match_nonuniform_world_generation() {
+        let vertices = [
+            GeometryVertex {
+                position: Vec3::ZERO,
+                normal: Vec3::Z,
+            },
+            GeometryVertex {
+                position: Vec3::X,
+                normal: Vec3::Z,
+            },
+            GeometryVertex {
+                position: Vec3::Y,
+                normal: Vec3::Z,
+            },
+        ];
+        let indices = [0, 1, 2];
+        let uvs = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let transform = Transform {
+            scale: Vec3::new(3.0, 0.5, 2.0),
+            ..Transform::IDENTITY
+        };
+
+        let model = generate_model_tangents(&vertices, &indices, Some(&uvs));
+        let cached = transform_model_tangents(&model, &vertices, transform);
+        let direct =
+            accumulate_vertex_tangents(&vertices, &indices, Some(&uvs), transform, Vec3::ZERO);
+
+        assert_eq!(cached.len(), direct.len());
+        for (cached, direct) in cached.iter().zip(&direct) {
+            assert_vec3_near(cached.tangent, direct.tangent);
+            assert_eq!(cached.handedness, direct.handedness);
+        }
+    }
+
+    #[test]
+    fn pf07_cached_model_tangents_flip_handedness_for_mirrored_instances() {
+        let vertices = [GeometryVertex {
+            position: Vec3::ZERO,
+            normal: Vec3::Z,
+        }];
+        let model = [[1.0, 0.0, 0.0, 1.0]];
+        let mirrored = Transform {
+            scale: Vec3::new(-1.0, 1.0, 1.0),
+            ..Transform::IDENTITY
+        };
+
+        let transformed = transform_model_tangents(&model, &vertices, mirrored);
+
+        assert_eq!(transformed[0].handedness, -1.0);
+        assert!(dot_vec3(transformed[0].tangent, Vec3::Z).abs() < 0.0001);
     }
 
     #[test]
@@ -419,7 +539,7 @@ mod tests {
         let in_tree = accumulate_vertex_tangents(
             &vertices,
             &indices,
-            &tex_coords,
+            Some(&tex_coords),
             Transform::IDENTITY,
             Vec3::ZERO,
         );
@@ -455,7 +575,7 @@ mod tests {
         let tangents = accumulate_vertex_tangents(
             &vertices,
             &[0, 1, 2],
-            &collapsed_uvs,
+            Some(&collapsed_uvs),
             Transform::IDENTITY,
             Vec3::ZERO,
         );

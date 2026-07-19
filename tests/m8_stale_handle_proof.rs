@@ -284,7 +284,7 @@ fn coloured_triangle_gltf(base_color: [f32; 4]) -> String {
                 {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 0.0] }},
                 {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
         }}"#,

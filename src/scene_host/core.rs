@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use super::camera::controls_from_scene_camera;
 use super::events::{HostEventQueue, HostEventV1};
-use super::handles::HandleTable;
+use super::handles::{HandleKind, HandleTable};
 use super::inputs::validate_transform;
-use super::instances::{HostInstanceBinding, INSTANCE_HANDLE_GENERATION_BASE};
+use super::instances::HostInstanceBinding;
 use super::product_options::ProductOptionsV1;
 use super::reporting::{diagnostics_json, stats_json};
 use super::transitions::HostTransitions;
@@ -12,19 +12,44 @@ use super::visual_states::SceneHostVisualStateV1;
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::Color;
 use crate::{
-    Aabb, AssetFetcher, AssetPath, Assets, Backend, DefaultAssetFetcher, ImportOptions,
-    OrbitControls, RenderOutcome, Renderer, Scene, SceneImport, SurfaceEvent, SurfaceViewport,
-    Transform, Vec3,
+    Aabb, AssetFetcher, AssetPath, Assets, Backend, DefaultAssetFetcher,
+    HeadlessBackendSelectionReport, ImportOptions, OrbitControls, RenderOutcome, Renderer, Scene,
+    SceneImport, SurfaceEvent, SurfaceViewport, Transform, Vec3,
 };
 use crate::{AnimationMixerKey, CameraKey, InstanceId, NodeKey, SceneImportInspectionV1};
 
-const ANIMATION_HANDLE_GENERATION_BASE: u32 = 6;
+#[derive(Debug)]
+pub(super) enum RendererSlot {
+    Active(Renderer),
+    ManifestOnly,
+}
+
+impl std::ops::Deref for RendererSlot {
+    type Target = Renderer;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Active(renderer) => renderer,
+            Self::ManifestOnly => unreachable!("manifest-only recipe state never renders"),
+        }
+    }
+}
+
+impl std::ops::DerefMut for RendererSlot {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Active(renderer) => renderer,
+            Self::ManifestOnly => unreachable!("manifest-only recipe state never renders"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) assets: Assets<F>,
     pub(super) scene: Scene,
-    pub(super) renderer: Renderer,
+    pub(super) renderer: RendererSlot,
+    pub(super) backend_selection_report: Option<HeadlessBackendSelectionReport>,
     pub(super) viewport: SurfaceViewport,
     pub(super) active_camera: CameraKey,
     pub(super) camera_controls: OrbitControls,
@@ -43,46 +68,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     next_byte_asset: u64,
 }
 
-impl SceneHostCore<DefaultAssetFetcher> {
-    pub fn headless(width: u32, height: u32) -> Result<Self, SceneHostError> {
-        Self::headless_with_fetcher(DefaultAssetFetcher::default(), width, height)
-    }
-
-    pub fn headless_gpu(width: u32, height: u32) -> Result<Self, SceneHostError> {
-        Self::headless_gpu_with_fetcher(DefaultAssetFetcher::default(), width, height)
-    }
-}
-
 impl<F: AssetFetcher> SceneHostCore<F> {
-    pub fn headless_with_fetcher(
-        fetcher: F,
-        width: u32,
-        height: u32,
-    ) -> Result<Self, SceneHostError> {
-        let viewport = SurfaceViewport::new(width as f32, height as f32, 1.0).ok_or_else(|| {
-            SceneHostError::new(
-                SceneHostErrorCode::InvalidViewport,
-                format!("invalid viewport {width}x{height} at DPR 1"),
-            )
-        })?;
-        Self::from_renderer(
-            Assets::with_fetcher(fetcher),
-            Renderer::headless(width, height)?,
-            viewport,
-        )
-    }
-
-    pub fn headless_gpu_with_fetcher(
-        fetcher: F,
-        width: u32,
-        height: u32,
-    ) -> Result<Self, SceneHostError> {
-        let viewport = headless_viewport(width, height)?;
-        let renderer = Renderer::headless_gpu(width, height)
-            .or_else(|_gpu_error| Renderer::headless(width, height))?;
-        Self::from_renderer(Assets::with_fetcher(fetcher), renderer, viewport)
-    }
-
     pub fn from_renderer(
         assets: Assets<F>,
         renderer: Renderer,
@@ -94,14 +80,52 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         let mut host = Self {
             assets,
             scene,
-            renderer,
+            renderer: RendererSlot::Active(renderer),
+            backend_selection_report: None,
             viewport,
             active_camera,
             camera_controls,
-            node_handles: HandleTable::new(),
-            import_handles: HandleTable::new(),
-            instance_handles: HandleTable::with_generation_base(INSTANCE_HANDLE_GENERATION_BASE),
-            animation_handles: HandleTable::with_generation_base(ANIMATION_HANDLE_GENERATION_BASE),
+            node_handles: HandleTable::new(HandleKind::Node),
+            import_handles: HandleTable::new(HandleKind::Import),
+            instance_handles: HandleTable::new(HandleKind::InstanceRoot),
+            animation_handles: HandleTable::new(HandleKind::Animation),
+            transitions: HostTransitions::default(),
+            events: HostEventQueue::default(),
+            last_diagnostic_events: Vec::new(),
+            node_handle_map: BTreeMap::new(),
+            instance_handle_map: BTreeMap::new(),
+            section_box_helper: None,
+            visual_states: BTreeMap::new(),
+            product_options: ProductOptionsV1::empty(),
+            next_byte_asset: 1,
+        };
+        let root = host.scene.root();
+        host.register_node(root);
+        if let Some(camera_node) = host.scene.camera_node(active_camera) {
+            host.register_node(camera_node);
+        }
+        Ok(host)
+    }
+
+    pub(super) fn for_manifest_build(
+        assets: Assets<F>,
+        viewport: SurfaceViewport,
+    ) -> Result<Self, SceneHostError> {
+        let mut scene = Scene::new();
+        let active_camera = scene.add_default_camera()?;
+        let camera_controls = controls_from_scene_camera(&scene, active_camera, Vec3::ZERO)?;
+        let mut host = Self {
+            assets,
+            scene,
+            renderer: RendererSlot::ManifestOnly,
+            backend_selection_report: None,
+            viewport,
+            active_camera,
+            camera_controls,
+            node_handles: HandleTable::new(HandleKind::Node),
+            import_handles: HandleTable::new(HandleKind::Import),
+            instance_handles: HandleTable::new(HandleKind::InstanceRoot),
+            animation_handles: HandleTable::new(HandleKind::Animation),
             transitions: HostTransitions::default(),
             events: HostEventQueue::default(),
             last_diagnostic_events: Vec::new(),
@@ -130,6 +154,21 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 
     pub fn renderer(&self) -> &Renderer {
         &self.renderer
+    }
+
+    pub(super) fn recipe_max_clipping_planes(&self) -> usize {
+        match &self.renderer {
+            RendererSlot::Active(renderer) => {
+                renderer
+                    .capability_report()
+                    .capabilities()
+                    .max_clipping_planes as usize
+            }
+            RendererSlot::ManifestOnly => {
+                crate::Capabilities::for_backend(crate::Backend::Headless).max_clipping_planes
+                    as usize
+            }
+        }
     }
 
     pub fn root_handle(&self) -> u64 {
@@ -373,7 +412,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             return self.remove_instance_root(node);
         }
         let node_key = self.resolve_node(node)?;
-        let removed = self.scene.subtree_nodes(node_key)?;
+        let removed = self.scene.node_removal_closure(node_key)?;
         self.scene.remove_node(node_key)?;
         self.invalidate_instance_bindings_for_nodes(&removed);
         self.invalidate_node_handles(&removed);
@@ -387,6 +426,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             removed.extend(self.scene.subtree_nodes(*root)?);
         }
         self.scene.remove_import(&import_snapshot)?;
+        self.invalidate_stale_animation_handles();
         self.invalidate_node_handles(&removed);
         self.import_handles.remove(
             import,
@@ -502,13 +542,4 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             })
             .collect()
     }
-}
-
-fn headless_viewport(width: u32, height: u32) -> Result<SurfaceViewport, SceneHostError> {
-    SurfaceViewport::new(width as f32, height as f32, 1.0).ok_or_else(|| {
-        SceneHostError::new(
-            SceneHostErrorCode::InvalidViewport,
-            format!("invalid viewport {width}x{height} at DPR 1"),
-        )
-    })
 }

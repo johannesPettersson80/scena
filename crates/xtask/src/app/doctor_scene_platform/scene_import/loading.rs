@@ -81,13 +81,32 @@ pub(crate) fn check_m3a_loading_contracts(root: &Path, findings: &mut Vec<Findin
             "pub(super) fn external_buffer_paths",
             "pub(super) fn external_image_paths",
             "open_gltf_with_massage",
-            "Gltf::from_slice_without_validation",
+            "mod validation;",
+            "validation::validate_document_structure",
+            "Gltf::from_slice",
             "parse_punctual_lights",
             "parse_gltf_clips",
             "parse_node_anchors",
             "parse_node_connectors",
             "from_gltf_transform",
             "UnsupportedRequiredExtension",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/gltf.rs",
+        &["Gltf::from_slice_without_validation"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/gltf/validation.rs",
+        &[
+            "pub(super) fn validate_document_structure",
+            "fn validate_node_graph",
         ],
     );
     require_contains(

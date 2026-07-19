@@ -262,6 +262,7 @@ fn append_line_segment(
             Some(node),
             draw_uniform_tint(style.tint),
         )
+        .without_semantic_attribution()
         .without_gpu_triangle_path(),
     );
     primitives.push(
@@ -284,6 +285,7 @@ fn append_line_segment(
             Some(node),
             draw_uniform_tint(style.tint),
         )
+        .without_semantic_attribution()
         .without_gpu_triangle_path(),
     );
 }

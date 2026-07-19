@@ -1,0 +1,15 @@
+{
+  "schema": "scena.scene_recipe_diff.v1",
+  "equal": false,
+  "numeric_tolerance": 0.000001,
+  "changes": [
+    {
+      "scope": "node",
+      "id": "machine",
+      "kind": "modified",
+      "fields": [
+        "transform.translation[0]"
+      ]
+    }
+  ]
+}

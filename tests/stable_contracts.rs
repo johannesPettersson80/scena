@@ -111,6 +111,26 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.schema_entry.v1",
         ),
         (
+            "tests/assets/stable-contracts/field_model.v1.json",
+            "scena.field_model.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/recipe_patch.v1.json",
+            "scena.recipe_patch.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/vocab.v1.json",
+            "scena.vocab.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/recipe_policy.v1.json",
+            "scena.recipe_policy.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/cli_error.v1.json",
+            "scena.cli_error.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_inspection.v1.json",
             "scena.scene_inspection.v1",
         ),
@@ -199,12 +219,32 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.scene_recipe_build.v1",
         ),
         (
+            "tests/assets/stable-contracts/recipe_build_result.v1.json",
+            "scena.recipe_build_result.v1",
+        ),
+        (
             "tests/assets/stable-contracts/recipe_render_result.v1.json",
             "scena.recipe_render_result.v1",
         ),
         (
             "tests/assets/stable-contracts/cad_inspection_result.v1.json",
             "scena.cad_inspection_result.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/capture_sequence_result.v1.json",
+            "scena.capture_sequence_result.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/semantic_aov_result.v1.json",
+            "scena.semantic_aov_result.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_recipe_diff.v1.json",
+            "scena.scene_recipe_diff.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_recipe_diff_result.v1.json",
+            "scena.scene_recipe_diff_result.v1",
         ),
         (
             "tests/assets/stable-contracts/placement_result.v1.json",
@@ -325,6 +365,20 @@ fn schema_entry_golden_matches_live_schema_serialization() {
 fn scene_recipe_build_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneRecipeBuildV1>(
         "tests/assets/stable-contracts/scene_recipe_build.v1.json",
+    );
+}
+
+#[test]
+fn scene_recipe_diff_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneRecipeDiffReportV1>(
+        "tests/assets/stable-contracts/scene_recipe_diff.v1.json",
+    );
+}
+
+#[test]
+fn recipe_build_result_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::RecipeBuildResultV1>(
+        "tests/assets/stable-contracts/recipe_build_result.v1.json",
     );
 }
 

@@ -11,6 +11,10 @@ use scena::{
     OffscreenTarget, PerspectiveCamera, Primitive, Renderer, Scene, Transform, Vec3, Viewport,
 };
 
+#[path = "support/q03_visual_metrics.rs"]
+mod q03_visual_metrics;
+use q03_visual_metrics::{difference_metrics, foreground_metrics};
+
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
 fn ndc_fixture_camera_transform() -> Transform {
@@ -22,12 +26,69 @@ fn m3a_headless_visual_artifacts_cover_import_interaction_instances_labels_and_r
     let artifact_dir = artifact_dir();
     fs::create_dir_all(&artifact_dir).expect("artifact directory can be created");
 
+    let import = render_glb_model_viewer();
+    let interaction_base = render_picking_selection_path(false);
+    let interaction_selected = render_picking_selection_path(true);
+    let instances = render_instancing_path(&[-0.35, 0.35], "m3a-instancing");
+    let removed_half = render_instancing_path(&[-0.35], "m3a-instancing-removed-half");
+    let labels = render_label_path();
+    let readback = render_offscreen_readback_path();
+
+    let errors = evaluate_m3a_feature_specific_truth(
+        &import,
+        &interaction_base,
+        &interaction_selected,
+        &instances,
+        &labels,
+        &readback,
+    );
+    assert!(
+        errors.is_empty(),
+        "M3A feature-specific metrics failed {errors:?}: selection base={:?} selected={:?} delta={:?}; labels={:?}",
+        foreground_metrics(
+            &interaction_base.rgba,
+            interaction_base.width,
+            interaction_base.height,
+        ),
+        foreground_metrics(
+            &interaction_selected.rgba,
+            interaction_selected.width,
+            interaction_selected.height,
+        ),
+        difference_metrics(
+            &interaction_base.rgba,
+            &interaction_selected.rgba,
+            interaction_base.width,
+            interaction_base.height,
+            2,
+        ),
+        foreground_metrics(&labels.rgba, labels.width, labels.height),
+    );
+    assert!(
+        nonblack_pixel_count(&removed_half.rgba) > 0,
+        "the old nonblack oracle would accept the removed-half instance mutation"
+    );
+    assert!(
+        evaluate_m3a_feature_specific_truth(
+            &import,
+            &interaction_base,
+            &interaction_selected,
+            &removed_half,
+            &labels,
+            &readback,
+        )
+        .contains(&"instance_component_count"),
+        "feature-specific truth must reject removing half the instances"
+    );
+
     for artifact in [
-        render_glb_model_viewer(),
-        render_picking_selection_path(),
-        render_instancing_path(),
-        render_label_path(),
-        render_offscreen_readback_path(),
+        import,
+        interaction_base,
+        interaction_selected,
+        instances,
+        removed_half,
+        labels,
+        readback,
     ] {
         assert!(
             nonblack_pixel_count(&artifact.rgba) > 0,
@@ -42,6 +103,75 @@ fn m3a_headless_visual_artifacts_cover_import_interaction_instances_labels_and_r
             &artifact.rgba,
         );
     }
+}
+
+fn evaluate_m3a_feature_specific_truth(
+    import: &VisualArtifact,
+    interaction_base: &VisualArtifact,
+    interaction_selected: &VisualArtifact,
+    instances: &VisualArtifact,
+    labels: &VisualArtifact,
+    readback: &VisualArtifact,
+) -> Vec<&'static str> {
+    let mut errors = Vec::new();
+    let import_metrics = foreground_metrics(&import.rgba, import.width, import.height);
+    let import_rect = import_metrics.rect.expect("import frame is nonempty");
+    if import_metrics.component_count != 1
+        || import_rect.width() < 12
+        || import_rect.height() < 12
+        || !(8.0..=24.0).contains(&import_metrics.centroid_x)
+        || !(8.0..=24.0).contains(&import_metrics.centroid_y)
+    {
+        errors.push("import_projected_region");
+    }
+
+    let base_metrics = foreground_metrics(
+        &interaction_base.rgba,
+        interaction_base.width,
+        interaction_base.height,
+    );
+    let selected_metrics = foreground_metrics(
+        &interaction_selected.rgba,
+        interaction_selected.width,
+        interaction_selected.height,
+    );
+    if base_metrics.component_count != 1
+        || selected_metrics.component_count != 1
+        || selected_metrics
+            .rect
+            .is_none_or(|rect| rect.width() < 12 || rect.height() < 12)
+    {
+        errors.push("selection_projected_region");
+    }
+
+    let instance_metrics = foreground_metrics(&instances.rgba, instances.width, instances.height);
+    if instance_metrics.component_count != 2
+        || instance_metrics
+            .rect
+            .is_none_or(|rect| rect.width() < 16 || rect.height() < 6)
+    {
+        errors.push("instance_component_count");
+    }
+
+    let label_metrics = foreground_metrics(&labels.rgba, labels.width, labels.height);
+    if label_metrics.component_count != 1
+        || !(64..=128).contains(&label_metrics.pixel_count)
+        || label_metrics
+            .rect
+            .is_none_or(|rect| rect.width() < 8 || rect.height() < 4)
+    {
+        errors.push("label_projected_region");
+    }
+
+    let readback_metrics = foreground_metrics(&readback.rgba, readback.width, readback.height);
+    if readback_metrics.component_count != 1
+        || readback_metrics
+            .rect
+            .is_none_or(|rect| rect.width() < 12 || rect.height() < 12)
+    {
+        errors.push("readback_projected_region");
+    }
+    errors
 }
 
 fn render_glb_model_viewer() -> VisualArtifact {
@@ -74,7 +204,7 @@ fn render_glb_model_viewer() -> VisualArtifact {
     render_scene_with_assets("m3a-glb-model-viewer", scene, camera, &assets)
 }
 
-fn render_picking_selection_path() -> VisualArtifact {
+fn render_picking_selection_path(selected: bool) -> VisualArtifact {
     let mut scene = Scene::new();
     let camera = scene
         .add_perspective_camera(
@@ -99,16 +229,30 @@ fn render_picking_selection_path() -> VisualArtifact {
         .expect("pick path succeeds")
         .expect("pick path produces a hit");
     assert!(matches!(hit.target(), HitTarget::Node(hit_node) if hit_node == node));
-    scene
-        .interaction_mut()
-        .set_hover(Some(HitTarget::Node(node)));
-    scene
-        .interaction_mut()
-        .set_primary_selection(Some(HitTarget::Node(node)));
-    render_scene("m3a-picking-selection", scene, camera)
+    if selected {
+        scene
+            .interaction_mut()
+            .set_hover(Some(HitTarget::Node(node)));
+        scene
+            .interaction_mut()
+            .set_primary_selection(Some(HitTarget::Node(node)));
+        assert!(matches!(
+            scene.interaction().primary_selection(),
+            Some(HitTarget::Node(selected_node)) if selected_node == node
+        ));
+    }
+    render_scene(
+        if selected {
+            "m3a-picking-selection"
+        } else {
+            "m3a-picking-base"
+        },
+        scene,
+        camera,
+    )
 }
 
-fn render_instancing_path() -> VisualArtifact {
+fn render_instancing_path(instance_x: &[f32], name: &'static str) -> VisualArtifact {
     let assets = Assets::new();
     let geometry = assets.create_geometry(
         GeometryDesc::try_new(
@@ -144,7 +288,7 @@ fn render_instancing_path() -> VisualArtifact {
     let set = scene
         .add_instance_set(scene.root(), geometry, material, Transform::default())
         .expect("instance set inserts");
-    for x in [-0.35, 0.35] {
+    for &x in instance_x {
         scene
             .push_instance(
                 set,
@@ -155,7 +299,7 @@ fn render_instancing_path() -> VisualArtifact {
             )
             .expect("instance inserts");
     }
-    render_scene_with_assets("m3a-instancing", scene, camera, &assets)
+    render_scene_with_assets(name, scene, camera, &assets)
 }
 
 fn render_label_path() -> VisualArtifact {
@@ -200,7 +344,13 @@ fn render_offscreen_readback_path() -> VisualArtifact {
         .expect("offscreen renderer builds");
     renderer.prepare(&mut scene).expect("scene prepares");
     renderer.render(&scene, camera).expect("scene renders");
+    let surface_frame = renderer.frame_rgba8().to_vec();
     let readback = renderer.read_pixels();
+    assert_eq!(
+        readback.rgba8(),
+        surface_frame.as_slice(),
+        "offscreen readback must exactly preserve the renderer-owned surface frame"
+    );
     VisualArtifact {
         name: "m3a-offscreen-readback",
         width: readback.width(),
@@ -321,7 +471,14 @@ fn minimal_glb_triangle_scene() -> Vec<u8> {
                 {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
             ],
             "accessors": [
-                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{
+                    "bufferView": 0,
+                    "componentType": 5126,
+                    "count": 3,
+                    "type": "VEC3",
+                    "min": [-0.5, -0.5, 0.0],
+                    "max": [0.5, 0.5, 0.0]
+                }},
                 {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ],
             "materials": [

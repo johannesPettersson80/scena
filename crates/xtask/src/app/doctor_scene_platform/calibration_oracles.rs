@@ -29,6 +29,7 @@ const PAIRED_CALIBRATION_SWEEPS: &[(&str, &str, &[&str])] = &[
 const NON_CALIBRATION_SWEEPS: &[&str] = &[
     "tests/dynamic_transform_parity.rs",
     "tests/m6_browser_renderer_parity.rs",
+    "tests/pf08_texture_bake_parity.rs",
 ];
 
 /// Meta-rule: every `*_parity` sweep must either be paired with an external

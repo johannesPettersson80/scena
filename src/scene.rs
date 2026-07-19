@@ -1,6 +1,6 @@
 //! Scene graph, typed keys, transforms, bounds, anchors, clipping, and queries.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 use std::sync::{Arc, Weak};
@@ -16,6 +16,7 @@ use crate::picking::InteractionContext;
 
 mod anchors;
 mod annotations;
+mod bounds;
 mod builders;
 mod callouts;
 mod camera;
@@ -40,13 +41,16 @@ mod measurements;
 mod mixers;
 mod morphs;
 mod origin;
+mod overlay_ownership;
 mod particles;
 mod picking;
 mod placement;
 pub mod recipe;
 mod removal;
 mod render_nodes;
+mod resolved_cache;
 mod skinning;
+mod transaction;
 mod transforms;
 mod view;
 pub(crate) mod view_math;
@@ -104,11 +108,13 @@ pub use measurements::{
 };
 pub use particles::{Particle, ParticleSet, ParticleSetError};
 pub use placement::{
-    SCENE_PLACEMENT_RESULT_SCHEMA_V1, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
-    placement_align_to_feature_transform, placement_center_transform,
+    SCENE_PLACEMENT_RESULT_SCHEMA_V1, SCENE_RECIPE_PATCH_SCHEMA_V1, ScenePlacementDiagnosticV1,
+    ScenePlacementResultV1, SceneRecipePatchResultV1, SceneRecipePatchSuccessInputV1,
+    SceneRecipeSemanticChangeV1, placement_align_to_feature_transform, placement_center_transform,
     placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
     placement_place_on_feature_transform,
 };
+pub use resolved_cache::ResolvedSceneCacheStats;
 pub use skinning::SceneSkinBinding;
 
 new_key_type! {
@@ -123,6 +129,10 @@ new_key_type! {
     pub struct ConnectorKey;
 }
 
+fn slot_index<K: slotmap::Key>(key: K) -> u32 {
+    key.data().as_ffi() as u32
+}
+
 #[derive(Debug)]
 pub struct Scene {
     identity: Arc<()>,
@@ -134,10 +144,13 @@ pub struct Scene {
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
     anchors: SlotMap<AnchorKey, AnchorFrame>,
+    retired_anchors: BTreeMap<u32, (AnchorKey, Option<String>)>,
     annotations: BTreeMap<String, AnnotationAnchor>,
     callouts: BTreeMap<String, callouts::SceneCalloutState>,
     measurements: BTreeMap<String, measurements::SceneMeasurementOverlayState>,
+    overlay_owners: BTreeMap<NodeKey, overlay_ownership::OverlayOwner>,
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
+    retired_connectors: BTreeMap<u32, (ConnectorKey, Option<String>)>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
     section_box: Option<clipping::SceneSectionBoxState>,
@@ -156,6 +169,7 @@ pub struct Scene {
     transform_revision: u64,
     appearance_revision: u64,
     visibility_revision: u64,
+    resolved_cache: RefCell<resolved_cache::ResolvedSceneCache>,
     not_sync: PhantomData<Cell<()>>,
 }
 
@@ -216,10 +230,13 @@ impl Scene {
             animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
             anchors: SlotMap::with_key(),
+            retired_anchors: BTreeMap::new(),
             annotations: BTreeMap::new(),
             callouts: BTreeMap::new(),
             measurements: BTreeMap::new(),
+            overlay_owners: BTreeMap::new(),
             connectors: SlotMap::with_key(),
+            retired_connectors: BTreeMap::new(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),
             section_box: None,
@@ -238,6 +255,7 @@ impl Scene {
             transform_revision: 0,
             appearance_revision: 0,
             visibility_revision: 0,
+            resolved_cache: RefCell::new(resolved_cache::ResolvedSceneCache::default()),
             not_sync: PhantomData,
         }
     }
@@ -374,6 +392,7 @@ impl Scene {
         kind: NodeKind,
         transform: Transform,
     ) -> Result<NodeKey, LookupError> {
+        let transform = transforms::validate_transform(transform)?;
         if !self.nodes.contains_key(parent) {
             return Err(LookupError::NodeNotFound(parent));
         }

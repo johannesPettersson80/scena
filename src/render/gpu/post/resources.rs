@@ -1,11 +1,11 @@
 use super::super::super::RasterTarget;
 use super::super::material_bindings::MaterialTextureBindingMode;
 use super::super::pipeline::{GPU_COLOR_FORMAT, create_unlit_pipeline_set};
-use super::types::PostResources;
+use super::super::stats::GpuResourceStats;
+use super::types::{POST_UNIFORM_BYTE_LEN, POST_UNIFORM_SLOT_COUNT, PostResources};
 use super::{blit, bloom, bloom_fxaa, dof, fxaa, ssao, ssr};
 
 pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const POST_UNIFORM_BYTE_LEN: u64 = 32;
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::render::gpu) fn create_resources(
@@ -17,6 +17,7 @@ pub(in crate::render::gpu) fn create_resources(
     texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
     surface_format: Option<wgpu::TextureFormat>,
+    depth_color_view: Option<&wgpu::TextureView>,
 ) -> PostResources {
     let scene = create_post_texture(device, target, "scena.gpu_post.scene_encoded_srgb");
     let ping = create_post_texture(device, target, "scena.gpu_post.ping");
@@ -25,6 +26,12 @@ pub(in crate::render::gpu) fn create_resources(
         label: Some("scena.gpu_post.uniform"),
         size: POST_UNIFORM_BYTE_LEN,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let uniform_staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("scena.gpu_post.uniform_staging"),
+        size: POST_UNIFORM_BYTE_LEN * POST_UNIFORM_SLOT_COUNT,
+        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     let texture_bind_group_layout =
@@ -89,6 +96,16 @@ pub(in crate::render::gpu) fn create_resources(
                 },
             ],
         });
+    let texture_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("scena.gpu_post.texture_pipeline_layout"),
+        bind_group_layouts: &[Some(&texture_bind_group_layout)],
+        immediate_size: 0,
+    });
+    let depth_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("scena.gpu_post.depth_pipeline_layout"),
+        bind_group_layouts: &[Some(&ssao_bind_group_layout)],
+        immediate_size: 0,
+    });
     let texture_bind_groups = [
         create_texture_bind_group(
             device,
@@ -112,6 +129,34 @@ pub(in crate::render::gpu) fn create_resources(
             "scena.gpu_post.pong_bind_group",
         ),
     ];
+    let depth_texture_bind_groups = depth_color_view.map(|depth_view| {
+        [
+            create_depth_texture_bind_group(
+                device,
+                &ssao_bind_group_layout,
+                &scene.1,
+                depth_view,
+                &uniform,
+                "scena.gpu_post.scene_depth_bind_group",
+            ),
+            create_depth_texture_bind_group(
+                device,
+                &ssao_bind_group_layout,
+                &ping.1,
+                depth_view,
+                &uniform,
+                "scena.gpu_post.ping_depth_bind_group",
+            ),
+            create_depth_texture_bind_group(
+                device,
+                &ssao_bind_group_layout,
+                &pong.1,
+                depth_view,
+                &uniform,
+                "scena.gpu_post.pong_depth_bind_group",
+            ),
+        ]
+    });
     let scene_pipelines = create_unlit_pipeline_set(
         device,
         POST_COLOR_FORMAT,
@@ -133,19 +178,18 @@ pub(in crate::render::gpu) fn create_resources(
         4,
     );
     let output_blit_pipeline =
-        blit::create_srgb_pipeline(device, &texture_bind_group_layout, GPU_COLOR_FORMAT);
+        blit::create_srgb_pipeline(device, &texture_pipeline_layout, GPU_COLOR_FORMAT);
     let surface_blit_pipeline = surface_format
-        .map(|format| blit::create_surface_pipeline(device, &texture_bind_group_layout, format));
-    let surface_fxaa_pipeline = surface_format
-        .map(|format| fxaa::create_surface_pipeline(device, &texture_bind_group_layout, format));
+        .map(|format| blit::create_surface_pipeline(device, &texture_pipeline_layout, format));
     let surface_bloom_fxaa_pipeline = surface_format.map(|format| {
-        bloom_fxaa::create_surface_pipeline(device, &texture_bind_group_layout, format)
+        bloom_fxaa::create_surface_pipeline(device, &texture_pipeline_layout, format)
     });
-    let fxaa_pipeline = fxaa::create_pipeline(device, &texture_bind_group_layout);
-    let ssr_pipeline = ssr::create_pipeline(device, &texture_bind_group_layout);
-    let bloom_pipeline = bloom::create_pipeline(device, &texture_bind_group_layout);
-    let ssao_pipeline = ssao::create_pipeline(device, &ssao_bind_group_layout);
-    let depth_of_field_pipeline = dof::create_pipeline(device, &ssao_bind_group_layout);
+    let (fxaa_pipeline, surface_fxaa_pipeline) =
+        fxaa::create_pipelines(device, &texture_pipeline_layout, surface_format);
+    let ssr_pipeline = ssr::create_pipeline(device, &texture_pipeline_layout);
+    let bloom_pipeline = bloom::create_pipeline(device, &texture_pipeline_layout);
+    let ssao_pipeline = ssao::create_pipeline(device, &depth_pipeline_layout);
+    let depth_of_field_pipeline = dof::create_pipeline(device, &depth_pipeline_layout);
 
     PostResources {
         target,
@@ -156,8 +200,9 @@ pub(in crate::render::gpu) fn create_resources(
         pong_texture: pong.0,
         pong_view: pong.1,
         uniform,
-        ssao_bind_group_layout,
+        uniform_staging,
         texture_bind_groups,
+        depth_texture_bind_groups,
         scene_pipelines,
         scene_msaa4_pipelines,
         scene_msaa8_pipelines: None,
@@ -170,6 +215,32 @@ pub(in crate::render::gpu) fn create_resources(
         bloom_pipeline,
         ssao_pipeline,
         depth_of_field_pipeline,
+    }
+}
+
+pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuResourceStats {
+    let mesh_pipelines = 4 + u64::from(resources.scene_msaa8_pipelines.is_some()) * 2;
+    let optional_surface_pipelines = u64::from(resources.surface_blit_pipeline.is_some())
+        + u64::from(resources.surface_fxaa_pipeline.is_some())
+        + u64::from(resources.surface_bloom_fxaa_pipeline.is_some());
+    let pipelines = mesh_pipelines + optional_surface_pipelines + 6;
+    let shader_modules = pipelines - u64::from(resources.surface_fxaa_pipeline.is_some());
+    GpuResourceStats {
+        buffers: 2,
+        textures: 3,
+        render_targets: 3,
+        pipelines,
+        bind_groups: resources.texture_bind_groups.len() as u64
+            + resources
+                .depth_texture_bind_groups
+                .as_ref()
+                .map_or(0, |groups| groups.len() as u64),
+        shader_modules,
+        approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(resources.target, 4, 1)
+            .saturating_mul(3)
+            .saturating_add(POST_UNIFORM_BYTE_LEN)
+            .saturating_add(POST_UNIFORM_BYTE_LEN.saturating_mul(POST_UNIFORM_SLOT_COUNT)),
+        ..GpuResourceStats::default()
     }
 }
 
@@ -216,6 +287,34 @@ fn create_texture_bind_group(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: uniform.as_entire_binding(),
+            },
+        ],
+    })
+}
+
+fn create_depth_texture_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    source_view: &wgpu::TextureView,
+    depth_view: &wgpu::TextureView,
+    uniform: &wgpu::Buffer,
+    label: &'static str,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(source_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(depth_view),
             },
         ],
     })

@@ -4,6 +4,7 @@
 //! reading).
 
 use ::gltf::Document;
+use ::gltf::accessor::Dimensions;
 use ::gltf::animation::Interpolation as GltfInterpolation;
 use ::gltf::animation::Property as GltfProperty;
 use ::gltf::animation::util::ReadOutputs;
@@ -35,13 +36,16 @@ pub(super) fn parse_gltf_clips(
                 .iter()
                 .flat_map(|channel| channel.input_seconds().iter().copied())
                 .fold(0.0_f32, f32::max);
-            Ok(SceneAssetClip {
-                clip: AnimationSourceClip::new(
-                    animation.name().map(str::to_string),
-                    channels,
-                    duration_seconds,
-                ),
-            })
+            let clip = AnimationSourceClip::imported(
+                animation.name().map(str::to_string),
+                channels,
+                duration_seconds,
+            )
+            .map_err(|error| AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: format!("invalid glTF animation: {error}"),
+            })?;
+            Ok(SceneAssetClip { clip })
         })
         .collect()
 }
@@ -60,6 +64,26 @@ fn parse_channel(
         GltfProperty::MorphTargetWeights => AnimationTarget::Weights,
     };
     let sampler = channel.sampler();
+    let expected_dimensions = match target_property {
+        AnimationTarget::Translation | AnimationTarget::Scale => Dimensions::Vec3,
+        AnimationTarget::Rotation => Dimensions::Vec4,
+        AnimationTarget::Weights => Dimensions::Scalar,
+    };
+    if sampler.output().dimensions() != expected_dimensions {
+        let property = match target_property {
+            AnimationTarget::Translation => "translation",
+            AnimationTarget::Rotation => "rotation",
+            AnimationTarget::Scale => "scale",
+            AnimationTarget::Weights => "weights",
+        };
+        return Err(AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: format!(
+                "glTF {property} animation output must use {expected_dimensions:?}, found {:?}",
+                sampler.output().dimensions(),
+            ),
+        });
+    }
     let interpolation = match sampler.interpolation() {
         GltfInterpolation::Linear => AnimationInterpolation::Linear,
         GltfInterpolation::Step => AnimationInterpolation::Step,
@@ -133,7 +157,7 @@ fn collect_weight_keyframes(
             reason: "animation weights output declares zero morph targets per keyframe".to_string(),
         });
     }
-    let chunk_size = targets_per_keyframe * stride_factor;
+    let chunk_size = targets_per_keyframe;
     Ok(AnimationOutput::Weights(
         raw.chunks_exact(chunk_size).map(<[f32]>::to_vec).collect(),
     ))

@@ -1,10 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
-use crate::diagnostics::RenderError;
-
-#[cfg(not(target_arch = "wasm32"))]
 use super::super::RasterTarget;
 #[cfg(not(target_arch = "wasm32"))]
-use super::pipeline::{GPU_COLOR_FORMAT, UnlitPipelines};
+use super::pipeline::UnlitPipelines;
 #[cfg(not(target_arch = "wasm32"))]
 use super::{GpuPreparedResources, MsaaColorResources};
 
@@ -22,36 +19,6 @@ pub(super) fn offscreen_pipelines_for_sample_count(
             .refs(),
         _ => resources.offscreen_pipelines.refs(),
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) fn ensure_offscreen_msaa8_pipelines(
-    adapter: &wgpu::Adapter,
-    device: &wgpu::Device,
-    resources: &mut GpuPreparedResources,
-    target: RasterTarget,
-) -> Result<(), RenderError> {
-    if resources.offscreen_msaa8_pipelines.is_some() {
-        return Ok(());
-    }
-    if !texture_format_supports_sample_count(device, adapter, GPU_COLOR_FORMAT, 8) {
-        return Err(RenderError::UnsupportedSampleCount {
-            backend: target.backend,
-            requested: 8,
-            maximum: max_supported_sample_count(device, adapter, &[GPU_COLOR_FORMAT]),
-        });
-    }
-    resources.offscreen_msaa8_pipelines = Some(super::pipeline::create_unlit_pipeline_set(
-        device,
-        GPU_COLOR_FORMAT,
-        &resources.output_bind_group_layout,
-        &resources.material_bind_group_layout,
-        &resources.draw_bind_group_layout,
-        resources.texture_binding_mode,
-        resources.depth_compare,
-        8,
-    ));
-    Ok(())
 }
 
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
@@ -91,18 +58,12 @@ pub(super) fn texture_format_supports_sample_count(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) fn ensure_msaa_color_resources(
+pub(super) fn create_msaa_color_resources(
     device: &wgpu::Device,
-    resources: &mut GpuPreparedResources,
     target: RasterTarget,
     format: wgpu::TextureFormat,
     sample_count: u32,
-) {
-    if resources.msaa_color.as_ref().is_some_and(|msaa| {
-        msaa.target == target && msaa.format == format && msaa.sample_count == sample_count
-    }) {
-        return;
-    }
+) -> MsaaColorResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.headless_gpu.msaa_color"),
         size: wgpu::Extent3d {
@@ -118,11 +79,11 @@ pub(super) fn ensure_msaa_color_resources(
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    resources.msaa_color = Some(MsaaColorResources {
+    MsaaColorResources {
         target,
         format,
         sample_count,
         texture,
         view,
-    });
+    }
 }

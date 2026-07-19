@@ -91,7 +91,6 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
             "MATERIAL_UNIFORM_BYTE_LEN",
             "create_material_bind_group_layout",
             "create_material_resources",
-            "material_texture_byte_len",
             "Vec<MaterialTextureResources>",
             "binding: 2",
             "scena.material.base_color",
@@ -101,6 +100,17 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
             "scena.material.emissive",
             "scena.material.fallback_base_color",
             "texture_byte_len",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/materials/resource_stats.rs",
+        &[
+            "material_texture_byte_len",
+            "material_texture_count",
+            "GpuResourceStats",
         ],
     );
     require_contains(

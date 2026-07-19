@@ -261,7 +261,8 @@ impl<F: AssetFetcher> Assets<F> {
 
         check_cancelled(&path, control)?;
         check_fetch_byte_limit_before_fetch(&path, options.fetch_byte_limit())?;
-        let bytes = self.fetcher.fetch(&path).await?;
+        let fetcher = self.tracked_fetcher();
+        let bytes = fetcher.fetch(&path).await?;
         check_fetch_byte_limit_after_fetch(&path, bytes.len(), options.fetch_byte_limit())?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
@@ -284,7 +285,7 @@ impl<F: AssetFetcher> Assets<F> {
         }
         let external_resources = fetch_scene_external_resources(
             ExternalResourceFetchInputs {
-                fetcher: &self.fetcher,
+                fetcher: &fetcher,
                 scene_path: &path,
                 scene_bytes: bytes.len(),
                 external_paths,
@@ -357,7 +358,7 @@ impl<F: AssetFetcher> Assets<F> {
         for (handle, path, bytes) in requests {
             let image = super::texture::decode_browser_image_bitmap(&path, bytes).await?;
             if let Some(texture) = self.storage().textures.get_mut(handle) {
-                texture.set_browser_image(image);
+                std::sync::Arc::make_mut(texture).set_browser_image(image);
             }
         }
         Ok(())

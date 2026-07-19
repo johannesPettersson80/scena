@@ -19,7 +19,10 @@ pub(crate) use asset_matrix::{
     check_gltf_asset_matrix_contract, check_tangent_generation_dependency_contracts,
     collect_text_binary_asset_findings, looks_like_text_fixture,
 };
-pub(crate) use assets_materials::check_m8_assets_materials_contracts;
+pub(crate) use assets_materials::{
+    check_c03_texture_contracts, check_c04_deformation_contracts, check_c05_unit_contracts,
+    check_m8_assets_materials_contracts,
+};
 pub(crate) use ergonomics::check_m7_ergonomics_contracts;
 pub(crate) use manifest_helpers::{
     backtick_values, contains_placeholder, expected_result_is_explicit, first_backtick_value,

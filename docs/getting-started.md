@@ -10,12 +10,8 @@ Add the library:
 cargo add scena
 ```
 
-Equivalent `Cargo.toml` entry:
-
-```toml
-[dependencies]
-scena = "1.5"
-```
+`cargo add` resolves the current compatible release and avoids a version number
+in this living guide drifting behind the package metadata.
 
 Install the bundled CLI tool when you need it:
 
@@ -48,29 +44,23 @@ cargo check --examples
 
 ## Create a first scene
 
-```rust
-use scena::{
-    Assets, Color, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene, Transform,
-};
+```rust,no_run
+use scena::{Assets, Color, GeometryDesc, MaterialDesc, Renderer, Scene};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assets = Assets::new();
-    let cube = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let cube = assets.create_geometry(GeometryDesc::box_xyz(0.8, 0.5, 0.35));
     let material = assets.create_material(MaterialDesc::unlit(Color::BLUE));
 
-    let mut scene = Scene::new();
+    let (mut scene, camera) = Scene::with_default_camera()?;
     scene.mesh(cube, material).add()?;
-
-    let camera = scene.add_perspective_camera(
-        scene.root(),
-        PerspectiveCamera::standard(),
-        Transform::default(),
-    )?;
-    scene.set_active_camera(camera)?;
+    scene.frame_all_with_assets(camera, &assets)?;
 
     let mut renderer = Renderer::headless(320, 240)?;
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;
+    let capture = renderer.capture_rgba8(&scene, Default::default())?;
+    capture.write_png("first-scene.png")?;
 
     Ok(())
 }
@@ -83,13 +73,36 @@ then render prepared frames.
 
 Use `Assets` to load the asset and `Scene` to instantiate it:
 
-```rust
-let mut assets = scena::Assets::new();
-let asset = assets.load_scene("assets/model.glb")?;
+```rust,no_run
+use scena::{Assets, Renderer, Scene};
 
-let mut scene = scena::Scene::new();
-let import = scene.instantiate(&asset)?;
-scene.frame_import(import)?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "assets/model.glb".to_owned());
+    let assets = Assets::new();
+    let asset = pollster::block_on(assets.load_scene(path.as_str())).map_err(|error| {
+        std::io::Error::other(format!("failed to load GLB {path:?}: {error}"))
+    })?;
+
+    let mut scene = Scene::new();
+    let import = scene.instantiate(&asset).map_err(|error| {
+        std::io::Error::other(format!("failed to instantiate GLB {path:?}: {error}"))
+    })?;
+    let camera = scene.add_default_camera().map_err(|error| {
+        std::io::Error::other(format!("failed to add the model-viewer camera: {error}"))
+    })?;
+    scene.frame_import(camera, &import).map_err(|error| {
+        std::io::Error::other(format!("failed to frame GLB {path:?}: {error}"))
+    })?;
+
+    let mut renderer = Renderer::headless(640, 480)?;
+    renderer.prepare_with_assets(&mut scene, &assets)?;
+    renderer.render_active(&scene)?;
+    let capture = renderer.capture_rgba8(&scene, Default::default())?;
+    capture.write_png("model.png")?;
+    Ok(())
+}
 ```
 
 The exact helper you choose depends on the example workflow. Start with
@@ -99,8 +112,11 @@ The exact helper you choose depends on the example workflow. Start with
 
 Use headless rendering when you need deterministic output in tests or CI:
 
-```rust
-let mut renderer = scena::Renderer::headless(1280, 720)?;
+```rust,no_run
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _renderer = scena::Renderer::headless(1280, 720)?;
+    Ok(())
+}
 ```
 
 Use native or browser examples when your application owns a window or canvas:

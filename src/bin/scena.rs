@@ -1,10 +1,17 @@
 use std::env;
+use std::io;
 use std::process;
+
+#[path = "scena/process_output_shared.rs"]
+mod process_output;
 
 #[path = "scena/args.rs"]
 mod scena_args;
 #[path = "scena/browser_proof.rs"]
 mod scena_browser_proof;
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+#[path = "scena/diff.rs"]
+mod scena_diff;
 #[path = "scena/doctor.rs"]
 mod scena_doctor;
 #[cfg(feature = "inspection")]
@@ -18,6 +25,8 @@ mod scena_input;
 mod scena_output;
 #[path = "scena/place.rs"]
 mod scena_place;
+#[path = "scena/policy.rs"]
+mod scena_policy;
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 #[path = "scena/recipe.rs"]
 mod scena_recipe;
@@ -37,19 +46,38 @@ mod scena_verify_animation;
 #[cfg(feature = "scene-host")]
 #[path = "scena/verify_interaction.rs"]
 mod scena_verify_interaction;
+#[path = "scena/vocab.rs"]
+mod scena_vocab;
 
 use scena_output::{CliOutcome, apply_output_format, parse_output_format_args, success};
 
 fn main() {
     match run(env::args().skip(1).collect()) {
         Ok(outcome) => {
-            println!("{}", outcome.stdout);
+            if let Err(error) = process_output::write_stdout_line(&outcome.stdout) {
+                if error.kind() == io::ErrorKind::BrokenPipe {
+                    return;
+                }
+                process_output::write_stdout_error(&error);
+                process::exit(process_output::IO_ERROR_EXIT_CODE);
+            }
             if outcome.exit_code != 0 {
                 process::exit(outcome.exit_code);
             }
         }
         Err(error) => {
-            eprintln!("{error}");
+            let code = if error.starts_with("unknown command") {
+                "invalid_command"
+            } else {
+                "invalid_arguments"
+            };
+            let report = serde_json::json!({
+                "schema": "scena.cli_error.v1",
+                "ok": false,
+                "code": code,
+                "message": error,
+            });
+            process_output::write_stderr_line(&report.to_string());
             process::exit(2);
         }
     }
@@ -71,15 +99,34 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, subcommand, schema] if command == "schema" && subcommand == "get" => {
             scena_schema::run_schema_get_command(schema)
         }
+        [command, subcommand] if command == "vocab" && subcommand == "list" => {
+            scena_vocab::run_vocab_list_command()
+        }
+        [command, subcommand, name] if command == "vocab" && subcommand == "get" => {
+            scena_vocab::run_vocab_get_command(name)
+        }
+        [command, subcommand] if command == "policy" && subcommand == "recipe" => {
+            scena_policy::run_recipe_policy_command()
+        }
         [command, rest @ ..] if command == "validate-recipe" => {
             scena_validate_recipe::run_validate_recipe_command(rest)
         }
         [command, rest @ ..] if command == "place" => scena_place::run_place_command(rest),
+        [command, rest @ ..] if command == "diff" => run_diff_command(rest),
         [command, subcommand, rest @ ..] if command == "recipe" && subcommand == "render" => {
             run_recipe_render_command(rest)
         }
+        [command, subcommand, rest @ ..] if command == "recipe" && subcommand == "build" => {
+            run_recipe_build_command(rest)
+        }
         [command, subcommand, rest @ ..] if command == "recipe" && subcommand == "inspect-cad" => {
             run_recipe_inspect_cad_command(rest)
+        }
+        [command, subcommand, rest @ ..] if command == "recipe" && subcommand == "capture" => {
+            run_recipe_capture_command(rest)
+        }
+        [command, subcommand, rest @ ..] if command == "recipe" && subcommand == "aov" => {
+            run_recipe_aov_command(rest)
         }
         [command, subcommand, rest @ ..] if command == "examples" && subcommand == "agent" => {
             run_examples_agent_command(rest)
@@ -103,10 +150,15 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         }
         _ => Err(
             "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
+             'vocab list', 'vocab get <name>', 'policy recipe', \
              'validate-recipe <recipe.json>', \
              'place <recipe.json> --import <id> --verb <verb>', \
+             'diff <before.recipe.json> <after.recipe.json> [--render --out-dir <dir>]', \
+             'recipe build <recipe.json> [--max-imports <n>]', \
              'recipe render <recipe.json> --introspect --verify --out <png>', \
              'recipe inspect-cad <recipe.json> --out-dir <dir>', \
+             'recipe capture <recipe.json> --out-dir <dir> [--views front,top,right,isometric|none] [--turntable <frames>] [--clip <name> --frames <n>] [--gpu] [--max-imports <n>]', \
+             'recipe aov <recipe.json> --out-dir <dir> [--passes id,depth,normal] [--max-imports <n>]', \
              'examples agent [get] <template> [--out <dir>]', \
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
@@ -122,6 +174,16 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
     }?;
     apply_output_format(&mut outcome, output_format)?;
     Ok(outcome)
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_diff::run_diff_command(args)
+}
+
+#[cfg(not(all(feature = "inspection", feature = "scene-host")))]
+fn run_diff_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err("diff requires building the scena binary with the 'scene-host' feature".to_owned())
 }
 
 fn version_json() -> String {
@@ -144,6 +206,16 @@ fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
     scena_recipe::run_recipe_render_command(args)
 }
 
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_recipe::run_recipe_build_command(args)
+}
+
+#[cfg(not(all(feature = "inspection", feature = "scene-host")))]
+fn run_recipe_build_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err("recipe build requires building the scena binary with the 'scene-host' feature".to_string())
+}
+
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
 fn run_recipe_render_command(_args: &[String]) -> Result<CliOutcome, String> {
     Err(
@@ -163,6 +235,29 @@ fn run_recipe_inspect_cad_command(_args: &[String]) -> Result<CliOutcome, String
         "recipe inspect-cad requires building the scena binary with the 'scene-host' feature"
             .to_string(),
     )
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_recipe::run_recipe_capture_command(args)
+}
+
+#[cfg(not(all(feature = "inspection", feature = "scene-host")))]
+fn run_recipe_capture_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err(
+        "recipe capture requires building the scena binary with the 'scene-host' feature"
+            .to_string(),
+    )
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_recipe::run_recipe_aov_command(args)
+}
+
+#[cfg(not(all(feature = "inspection", feature = "scene-host")))]
+fn run_recipe_aov_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err("recipe aov requires building the scena binary with the 'scene-host' feature".to_owned())
 }
 
 #[cfg(feature = "inspection")]

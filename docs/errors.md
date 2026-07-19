@@ -42,6 +42,8 @@ as preparing again after stale renderer state.
 | Problem | Recovery |
 |---|---|
 | Render called before prepare | call `prepare()` and render again |
+| Unsupported GPU sample count | choose a supported anti-aliasing mode; the renderer rejects it during `prepare()` before any render-time fallback |
+| GPU destruction still `Submitted` | yield to the browser event loop and poll again until `DevicePollStatus::Confirmed`; do not treat submission as completion |
 | Scene changed after prepare | call `prepare()` again |
 | Surface resized | forward the surface event, then prepare again |
 | Missing asset file | fix path or fetcher configuration |
@@ -49,11 +51,14 @@ as preparing again after stale renderer state.
 | Unsupported required glTF extension | enable the relevant feature or choose an asset variant without that required extension |
 | Missing named node or anchor | inspect imported names and paths |
 | Removing the scene root | remove child nodes instead; the root is the permanent scene anchor |
+| `LookupError::InvalidTransform` | provide only finite translation, rotation, and scale components; the rejected mutation is an atomic no-op |
 | Stale host node handle | refresh the handle through import path, tag lookup, picking, or inspection |
 | Stale host import handle | instantiate or load the asset again, then resolve fresh roots and node handles |
+| Wrong SceneHost handle namespace | pass the handle back to the API family that created it; do not pass import, instance-root, or animation handles to node/import/animation-only APIs interchangeably |
 | Browser backend unavailable | choose another backend or show a capability message |
 | Capture invalid DPR | update the stored viewport/DPR before capture |
 | Capture before render | call `prepare()` and `render()` before `capture()` |
+| Synchronous capture on WebGPU | await `captureAsync()`, `capturePngAsync()`, `captureJsonAsync()`, or `renderIntrospectionJsonAsync()` so GPU-buffer mapping can complete |
 | Capture stale render | render again after mutating the scene or active camera |
 | Capture auto-frame projection failure | frame the active camera to the bounds, use valid bounds, or capture without auto-frame metadata |
 
@@ -61,12 +66,21 @@ as preparing again after stale renderer state.
 the browser/native host facade. The host still returns structured errors; it
 does not silently drop capture metadata.
 
-`SceneHostErrorCode::NodeHandleNotFound`,
-`SceneHostErrorCode::ImportHandleNotFound`,
-`SceneHostErrorCode::StaleNodeHandle`, and
-`SceneHostErrorCode::StaleImportHandle` are stable host-handle failures. They
-distinguish fabricated handles, wrong handle namespaces, and generation-stale
-handles after removal.
+SceneHost handles carry an explicit node, import, instance-root, or animation
+kind tag plus a per-kind slot generation. `SceneHostErrorCode::WrongHandleNamespace`
+means a structurally valid handle was passed to a resolver for a different
+kind. `NodeHandleNotFound`, `ImportHandleNotFound`, and
+`AnimationHandleNotFound` mean that the requested kind is malformed or has no
+allocated slot. `StaleNodeHandle`, `StaleImportHandle`, and
+`StaleAnimationHandle` mean that the slot existed but the supplied generation
+was removed or superseded. Instance roots use the node stale/not-found codes
+because the documented node-target mutation APIs accept both ordinary nodes
+and instance roots, but their encoded kind remains distinct.
+
+Handle values are opaque: applications must not decode tags, slots, or
+generations. All valid encodings stay within the exact JavaScript integer range
+(`2^53 - 1`) for browser and JSON transport. A slot whose generation space is
+exhausted is retired rather than issuing a previously used handle again.
 
 ## Diagnostics
 

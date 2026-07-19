@@ -74,6 +74,7 @@ pub(crate) fn require_visual_proof_artifact_file(
             format!("visual proof artifact {suffix} observed a skip marker; skipped visual proof is not release evidence"),
         ));
     }
+    super::typed_visual_proof::require_typed_visual_proof_contract(path, suffix, &value, findings);
 }
 
 pub(crate) fn reject_stale_json_timestamp(path: &Path, suffix: &str, findings: &mut Vec<Finding>) {

@@ -10,7 +10,35 @@ use super::prepare_retained::{
     filter_retained_primitives_for_scene, filter_retained_strokes_for_scene,
     next_gpu_vertex_offset, prepared_instance_count, retained_template_covers_visible_sources,
 };
-use super::{Renderer, culling, gpu, prepare, validate_target_size};
+use super::{
+    PrepareWorkCounter, PrepareWorkMetrics, Renderer, culling, gpu, prepare, validate_target_size,
+};
+
+mod support;
+
+fn gpu_triangle_primitives<'a>(
+    primitives: &'a [prepare::PreparedPrimitive],
+    work: Option<&PrepareWorkCounter>,
+) -> Cow<'a, [prepare::PreparedPrimitive]> {
+    if primitives
+        .iter()
+        .all(prepare::PreparedPrimitive::gpu_triangle_path)
+    {
+        return Cow::Borrowed(primitives);
+    }
+    let filtered = primitives
+        .iter()
+        .filter(|primitive| primitive.gpu_triangle_path())
+        .cloned()
+        .collect::<Vec<_>>();
+    if let Some(work) = work {
+        work.record_prepared_list_copy_bytes(
+            (filtered.len() as u64)
+                .saturating_mul(std::mem::size_of::<prepare::PreparedPrimitive>() as u64),
+        );
+    }
+    Cow::Owned(filtered)
+}
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn prepare_now_ms() -> f64 {
@@ -62,7 +90,17 @@ fn prepare_logging_enabled() -> bool {
 
 impl Renderer {
     pub fn prepare(&mut self, scene: &mut Scene) -> Result<(), PrepareError> {
-        self.prepare_inner::<()>(scene, None)
+        self.prepare_inner::<()>(scene, None, None)
+    }
+
+    /// Prepares a scene while collecting deterministic CPU/GPU work counters.
+    pub fn prepare_profiled(
+        &mut self,
+        scene: &mut Scene,
+    ) -> Result<PrepareWorkMetrics, PrepareError> {
+        let work = PrepareWorkCounter::default();
+        self.prepare_inner::<()>(scene, None, Some(&work))?;
+        Ok(work.snapshot())
     }
 
     pub fn prepare_with_assets<F>(
@@ -70,13 +108,31 @@ impl Renderer {
         scene: &mut Scene,
         assets: &Assets<F>,
     ) -> Result<(), PrepareError> {
-        self.prepare_inner(scene, Some(assets))
+        self.prepare_inner(scene, Some(assets), None)
+    }
+
+    /// Prepares with assets while collecting deterministic CPU work counters.
+    pub fn prepare_with_assets_profiled<F>(
+        &mut self,
+        scene: &mut Scene,
+        assets: &Assets<F>,
+    ) -> Result<PrepareWorkMetrics, PrepareError> {
+        let work = PrepareWorkCounter::default();
+        let lock_count_before = assets.storage_lock_acquisitions();
+        self.prepare_inner(scene, Some(assets), Some(&work))?;
+        work.record_asset_storage_locks(
+            assets
+                .storage_lock_acquisitions()
+                .saturating_sub(lock_count_before),
+        );
+        Ok(work.snapshot())
     }
 
     fn prepare_inner<F>(
         &mut self,
         scene: &mut Scene,
         assets: Option<&Assets<F>>,
+        work: Option<&PrepareWorkCounter>,
     ) -> Result<(), PrepareError> {
         let total_start = prepare_now_ms();
         let mut step_start = total_start;
@@ -124,6 +180,13 @@ impl Renderer {
             self.target.backend,
         );
         let environment_count = u64::from(environment_desc.is_some());
+        let output_plan = gpu::GpuOutputPlan::new(
+            self.anti_aliasing,
+            self.bloom.is_some(),
+            self.screen_space_ambient_occlusion.is_some(),
+            self.screen_space_reflections.is_some(),
+            self.depth_of_field.is_some(),
+        );
         let active_camera_projection = scene
             .active_camera()
             .and_then(|camera| camera::CameraProjection::from_scene(scene, camera, target).ok());
@@ -164,23 +227,32 @@ impl Renderer {
             {
                 match prepare::collect_dynamic_light_from_world(scene, assets) {
                     Ok(light_from_world) => {
+                        let semantic_label_quad_count = self
+                            .prepared
+                            .as_ref()
+                            .map(|prepared| prepared.labels.quads().len())
+                            .unwrap_or(0);
+                        let semantic_aov_capture_enabled = self.semantic_aov_capture_enabled;
                         if let Some(gpu) = &mut self.gpu {
-                            match gpu.update_dynamic_draw_state(
+                            match gpu.update_dynamic_draw_state(gpu::DynamicDrawStateUpdate {
                                 target,
-                                gpu_light_uniform,
+                                light_uniform: gpu_light_uniform,
                                 light_from_world,
-                                &dynamic_primitives,
-                                &dynamic_instances,
-                                &dynamic_strokes,
-                            ) {
+                                primitives: &dynamic_primitives,
+                                instances: &dynamic_instances,
+                                strokes: &dynamic_strokes,
+                                semantic_aov_capture_enabled,
+                                label_quad_count: semantic_label_quad_count,
+                                work,
+                            }) {
                                 Ok(()) => {
                                     if let Some(prepared) = self.prepared.as_mut() {
                                         prepared.transform_revision = scene.transform_revision();
                                         prepared.appearance_revision = scene.appearance_revision();
                                         prepared.visibility_revision = scene.visibility_revision();
-                                        prepared.primitives = dynamic_primitives;
-                                        prepared.strokes = dynamic_strokes;
-                                        prepared.instances = dynamic_instances;
+                                        prepared.primitives = Arc::from(dynamic_primitives);
+                                        prepared.strokes = Arc::from(dynamic_strokes);
+                                        prepared.instances = Arc::from(dynamic_instances);
                                     }
                                     self.stats.instances = self
                                         .prepared
@@ -218,7 +290,7 @@ impl Renderer {
             .iter()
             .filter_map(|slot| slot.base_color.as_ref().map(|texture| texture.handle))
             .collect::<Vec<_>>();
-        let prepared_scene = prepare::collect_prepared_primitives(
+        let prepared_scene = prepare::collect_prepared_primitives_profiled(
             target,
             screen_space_scale,
             scene,
@@ -227,6 +299,7 @@ impl Renderer {
             &backend_sampled_base_color_textures,
             &backend_material_handles,
             environment_lighting.clone(),
+            work,
         )?;
         self.prepare_telemetry.prepared_primitive_collections = self
             .prepare_telemetry
@@ -240,41 +313,46 @@ impl Renderer {
             prepared_scene.primitives,
             active_camera_projection.as_ref(),
             target,
-            scene.clipping_planes().planes().is_empty() && scene.section_box().is_none(),
+            self.cpu_occlusion_culling
+                && scene.clipping_planes().planes().is_empty()
+                && scene.section_box().is_none(),
             self.gpu.is_some(),
         );
-        let retained_primitives = assign_original_vertex_offsets(culled_primitives.visible);
-        let primitives = filter_retained_primitives_for_scene(scene, &retained_primitives)
-            .unwrap_or_else(|| retained_primitives.clone());
-        let retained_strokes = assign_original_stroke_indices(prepared_scene.strokes);
-        let strokes = filter_retained_strokes_for_scene(scene, &retained_strokes)
-            .unwrap_or_else(|| retained_strokes.clone());
-        let retained_labels = assign_original_label_quad_indices(prepared_scene.labels);
-        let labels = filter_retained_labels_for_scene(scene, &retained_labels)
-            .unwrap_or_else(|| retained_labels.clone());
-        let retained_instances = assign_original_instance_vertex_offsets(
+        let mut retained_primitives = assign_original_vertex_offsets(culled_primitives.visible);
+        if let Some(work) = work {
+            work.record_prepared_geometry_storage(prepare::share_model_space_vertex_buffer(
+                &mut retained_primitives,
+            ));
+        } else {
+            prepare::share_model_space_vertex_buffer(&mut retained_primitives);
+        }
+        let retained_primitives: Arc<[prepare::PreparedPrimitive]> = Arc::from(retained_primitives);
+        let primitives = Arc::clone(&retained_primitives);
+        let retained_strokes: Arc<[prepare::PreparedStrokeSegment]> =
+            Arc::from(assign_original_stroke_indices(prepared_scene.strokes));
+        let strokes = Arc::clone(&retained_strokes);
+        let retained_labels = Arc::new(assign_original_label_quad_indices(prepared_scene.labels));
+        let labels = Arc::clone(&retained_labels);
+        let mut retained_instances = assign_original_instance_vertex_offsets(
             prepared_scene.instances,
             next_gpu_vertex_offset(&retained_primitives),
         );
-        let instances = filter_retained_instances_for_scene(scene, &retained_instances)
-            .unwrap_or_else(|| retained_instances.clone());
-        let gpu_retained_primitives = retained_primitives
-            .iter()
-            .filter(|primitive| primitive.gpu_triangle_path())
-            .cloned()
-            .collect::<Vec<_>>();
-        let gpu_primitives = primitives
-            .iter()
-            .filter(|primitive| primitive.gpu_triangle_path())
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut depth_primitives = primitives.clone();
-        depth_primitives.extend(
-            instances
+        for set in &mut retained_instances {
+            let storage = prepare::share_model_space_vertex_buffer(set.primitives_mut());
+            if let Some(work) = work {
+                work.record_prepared_geometry_storage(storage);
+            }
+        }
+        let retained_instances: Arc<[prepare::PreparedInstanceSet]> = Arc::from(retained_instances);
+        let instances = Arc::clone(&retained_instances);
+        let gpu_retained_primitives = gpu_triangle_primitives(&retained_primitives, work);
+        let gpu_primitives = gpu_triangle_primitives(&primitives, work);
+        let depth_stats = prepare::collect_depth_prepass_stats_iter(
+            primitives
                 .iter()
-                .flat_map(|set| set.primitives().iter().cloned()),
+                .chain(instances.iter().flat_map(|set| set.primitives().iter())),
+            target.backend,
         );
-        let depth_stats = prepare::collect_depth_prepass_stats(&depth_primitives, target.backend);
         #[cfg(test)]
         let depth_stats = if self.depth_prepass_enabled_for_test {
             depth_stats
@@ -290,11 +368,12 @@ impl Renderer {
             &backend_material_slots,
         );
         step_start = log_prepare_step("cull + stats", step_start);
+        let semantic_aov_capture_enabled = self.semantic_aov_capture_enabled;
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(
                 target,
-                &gpu_retained_primitives,
-                &gpu_primitives,
+                gpu_retained_primitives.as_ref(),
+                gpu_primitives.as_ref(),
                 &retained_instances,
                 &instances,
                 &retained_strokes,
@@ -308,8 +387,20 @@ impl Renderer {
                 &backend_material_slots,
                 &environment_lighting,
                 &tiled_light_assignment,
+                semantic_aov_capture_enabled,
+                output_plan,
+                work,
             )?;
             let stats = gpu.prepared_resource_stats();
+            if let Some(work) = work {
+                work.record_gpu_resource_creations(
+                    stats.buffers,
+                    stats.textures,
+                    stats.pipelines,
+                    stats.bind_groups,
+                    stats.shader_modules,
+                );
+            }
             let pending_destructions = gpu.pending_destructions();
             self.apply_gpu_resource_stats(stats, pending_destructions, logical_stats.textures);
             self.prepare_telemetry.static_gpu_resource_rebuilds = self
@@ -329,6 +420,7 @@ impl Renderer {
             visibility_revision: scene.visibility_revision(),
             environment_revision: self.environment_revision,
             target_revision: self.target_revision,
+            output_resources_revision: self.output_resources_revision,
             retained_primitives,
             primitives,
             retained_strokes,
@@ -352,158 +444,6 @@ impl Renderer {
         log_prepare_step("prepare_inner total", total_start);
         Ok(())
     }
-
-    fn prepare_target(&self) -> Result<super::RasterTarget, ()> {
-        let scale = if self.gpu.is_some()
-            && self.target.backend == crate::diagnostics::Backend::HeadlessGpu
-        {
-            self.supersample_factor
-        } else {
-            1
-        };
-        super::target::validate_supersample_target(self.target, scale).map_err(|_| ())
-    }
-
-    fn screen_space_prepare_scale(&self) -> f32 {
-        if self.gpu.is_none() || self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
-            self.supersample_factor.max(1) as f32
-        } else {
-            1.0
-        }
-    }
-
-    pub(super) fn dynamic_gpu_prepare_rejection_reason(
-        &self,
-        scene: &Scene,
-        backend_material_handles: &[crate::assets::MaterialHandle],
-    ) -> Option<&'static str> {
-        let Some(prepared) = self.prepared.as_ref() else {
-            return Some("no prepared template");
-        };
-        if !prepared.scene.ptr_eq(&scene.identity()) {
-            return Some("scene identity changed");
-        }
-        if prepared.structure_revision != scene.structure_revision() {
-            return Some("structure revision changed");
-        }
-        if prepared.environment_revision != self.environment_revision {
-            return Some("environment revision changed");
-        }
-        if prepared.target_revision != self.target_revision {
-            return Some("target revision changed");
-        }
-        if prepared.transform_revision == scene.transform_revision() {
-            return None;
-        }
-        if scene.model_nodes().next().is_some() {
-            return Some("model nodes present");
-        }
-        if scene.label_nodes().next().is_some() {
-            return Some("label nodes present");
-        }
-        if scene
-            .mesh_nodes()
-            .any(|(node, _mesh, _transform)| scene.skin_binding(node).is_some())
-        {
-            return Some("skinned joints may have moved");
-        }
-        if prepare::gpu_tiled_light_assignment_required(scene) {
-            return Some("tiled light assignment may have moved");
-        }
-        if scene
-            .mesh_nodes()
-            .any(|(_node, mesh, _transform)| !backend_material_handles.contains(&mesh.material()))
-        {
-            return Some("moving mesh missing GPU material slot");
-        }
-        if !prepared
-            .primitives
-            .iter()
-            .all(|primitive| !primitive.gpu_triangle_path() || primitive.depth_prepass_eligible())
-        {
-            return Some("non-opaque primitive present");
-        }
-        None
-    }
-
-    fn reencode_retained_draws(
-        &self,
-        scene: &Scene,
-    ) -> Option<(
-        Vec<prepare::PreparedPrimitive>,
-        Vec<prepare::PreparedStrokeSegment>,
-        Vec<prepare::PreparedInstanceSet>,
-    )> {
-        let prepared = self.prepared.as_ref()?;
-        if !retained_template_covers_visible_sources(
-            scene,
-            &prepared.retained_primitives,
-            &prepared.retained_strokes,
-            &prepared.retained_labels,
-            &prepared.retained_instances,
-        ) {
-            return None;
-        }
-        let primitives =
-            filter_retained_primitives_for_scene(scene, &prepared.retained_primitives)?
-                .into_iter()
-                .filter(prepare::PreparedPrimitive::gpu_triangle_path)
-                .collect();
-        let strokes = filter_retained_strokes_for_scene(scene, &prepared.retained_strokes)?;
-        let instances = filter_retained_instances_for_scene(scene, &prepared.retained_instances)?;
-        let labels = filter_retained_labels_for_scene(scene, &prepared.retained_labels)?;
-        if !labels.is_empty() {
-            return None;
-        }
-        Some((primitives, strokes, instances))
-    }
-
-    fn apply_prepare_stats(
-        &mut self,
-        logical_stats: prepare::PreparedLogicalResourceStats,
-        environment_prepare_stats: prepare::PreparedEnvironmentStats,
-        lighting_stats: prepare::PreparedLightingStats,
-        depth_stats: prepare::PreparedDepthStats,
-        culled_objects: u64,
-        backend_material_slots: &[prepare::PreparedMaterialSlot],
-    ) {
-        self.stats.materials = logical_stats.materials;
-        self.stats.material_bindings = logical_stats.material_bindings;
-        self.stats.material_texture_bindings = logical_stats.material_texture_bindings;
-        self.stats.material_sampler_bindings = logical_stats.material_sampler_bindings;
-        self.stats.material_textures_missing_decoded_pixels =
-            logical_stats.material_textures_missing_decoded_pixels;
-        self.stats.material_batch_layers =
-            prepare::compute_material_batch_plan(backend_material_slots).layer_count;
-        self.stats.environments = logical_stats.environments;
-        self.stats.environment_cubemaps = environment_prepare_stats.cubemaps;
-        self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes;
-        self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts;
-        self.stats.live_logical_handles = logical_stats.live_logical_handles;
-        self.stats.shadow_maps = lighting_stats.shadow_maps;
-        self.stats.depth_prepass_passes = depth_stats.passes;
-        self.stats.depth_prepass_draws = depth_stats.draws;
-        self.stats.directional_shadow_map_resolution =
-            lighting_stats.directional_shadow_map_resolution;
-        self.stats.directional_shadow_pcf_kernel = lighting_stats.directional_shadow_pcf_kernel;
-        self.stats.culled_objects = culled_objects;
-    }
-
-    fn apply_gpu_resource_stats(
-        &mut self,
-        stats: gpu::GpuResourceStats,
-        pending_destructions: u64,
-        logical_texture_count: u64,
-    ) {
-        self.stats.buffers = stats.buffers;
-        self.stats.textures = logical_texture_count;
-        self.stats.render_targets = stats.render_targets;
-        self.stats.pipelines = stats.pipelines;
-        self.stats.bind_groups = stats.bind_groups;
-        self.stats.shader_modules = stats.shader_modules;
-        self.stats.pending_destructions = pending_destructions;
-        self.stats.material_bind_groups = stats.material_bind_groups;
-        self.stats.approximate_gpu_memory_bytes =
-            (stats.approximate_gpu_memory_bytes > 0).then_some(stats.approximate_gpu_memory_bytes);
-    }
 }
+use std::borrow::Cow;
+use std::sync::Arc;

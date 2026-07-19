@@ -10,8 +10,63 @@ The authoritative API reference is generated on docs.rs:
 
 Use this page as the conceptual map.
 
+## GPU resource lifecycle invariant
+
+`prepare()` owns GPU resource creation. Output settings that change the resource
+shape, including MSAA and post-processing, invalidate the prepared state and
+must be followed by another `prepare()` before `render()`. A successful prepare
+creates every retained buffer, texture, render target, pipeline, and bind group;
+`render()` neither lazily creates output resources nor changes their reported
+inventory. Unsupported sample counts fail from prepare with
+`PrepareError::UnsupportedSampleCount`.
+
+Resource-shaped setting changes advance `Renderer::output_resources_revision()`.
+Rendering stale output state returns
+`NotPreparedReason::OutputSettingsChanged`; it is distinct from a surface or
+target resize. Native attached surfaces use present-only rendering by default,
+while headless GPU rendering keeps synchronous pixel readback for compatibility.
+Call `render_with_readback_mode(..., RenderReadbackMode::PresentOnly)` when a
+native render loop explicitly wants no copy/map/wait, or select
+`RenderReadbackMode::Synchronous` when `frame_rgba8()` must be current before the
+call returns. Managed auto exposure keeps synchronous readback when its native
+GPU luminance input requires it. Browser proof capture remains asynchronous.
+After a present-only GPU frame, typed capture returns `CaptureError::NoRenderedFrame`
+instead of relabeling stale CPU bytes as a fresh capture.
+For ordered multi-frame native capture,
+`Renderer::render_batch_with_async_readback(scene, cameras)` alternates two
+prepared readback buffers. It submits the next copy/map before resolving the
+oldest occupied slot, returns owned `PixelReadback` values in camera-input
+order, and leaves the final returned frame in `frame_rgba8()`.
+
+`RendererStats::textures` counts logical texture handles, while
+`RendererStats::gpu_textures` counts physical texture allocations owned by the
+active prepared GPU resource set. `render_targets` is a classified subset of
+those physical textures, not an additional destruction count. Shader modules
+report prepare-time compilation inputs and are not retained destruction
+objects. Pending destruction therefore counts retained buffers, physical
+textures, pipelines, and bind groups exactly once.
+
+`wgpu::PipelineCache` is intentionally deferred as a later backend-portability
+decision. It is not used as a substitute for the prepare/render lifecycle: all
+required resource creation must already be absent from `render()`.
+
+`Renderer::poll_device()` reports typed completion through `DevicePollStatus`.
+Native GPU polling returns `DevicePollStatus::Confirmed` only after the device
+confirms completion. In browsers, `DevicePollStatus::Submitted` means a real
+`queue.on_submitted_work_done` callback is outstanding; only a later
+`DevicePollStatus::Confirmed` retires those pending destruction records.
+The renderer performs a non-blocking device poll so wgpu's WebGL backend can
+dispatch that callback and submits a concrete empty command buffer whose
+completion callback is tied to its real queue fence; neither operation blocks
+the browser event loop, creates retained resources, or records a rendered frame.
+`Automatic` and `Unsupported` never fabricate completion, and the compatibility
+`gpu_polled` boolean is true only for `Confirmed`.
+
 Additive public API changes in Unreleased:
 
+- `RenderReadbackMode`, `Renderer::render_with_readback_mode`,
+  `Renderer::render_batch_with_async_readback`, and
+  `Renderer::output_resources_revision`
 - `VISUAL_PATCH_SCHEMA_V1` (gated behind `scene-host`)
 - `VisualPatchV1`, `VisualPatchTransformV1`, `VisualPatchTintV1`,
   `VisualPatchVisibilityV1`, `VisualPatchTransformEasedV1`,
@@ -83,7 +138,13 @@ Additive public API changes in Unreleased:
 - `SCHEMA_CATALOG_SCHEMA_V1`, `SCHEMA_ENTRY_SCHEMA_V1`,
   `SchemaCatalogV1`, `SchemaCatalogEntryV1`, `SchemaEntryReportV1`,
   `schema_catalog_v1`, `schema_catalog_entry`, `schema_entry_report_v1`,
-  and `nearest_schema_name`
+  and `nearest_schema_name`; `vocabulary_report_v1` / `vocabulary_v1` expose
+  closed renderer and recipe vocabularies, and
+  `RecipeBuildPolicy::to_schema_report` exposes the effective sandbox and
+  limits used by recipe commands
+- `SceneRecipePatchResultV1` is the source-digest-bound, persistent recipe-ID
+  placement update returned by `scena place --apply`; it carries a complete
+  canonical updated recipe and makes no formatting-preservation promise
 - `CameraState`, `CameraBookmark`, `CameraFlyTo`, `CameraTransitionError`,
   `TransitionEasing`, `OrbitControls::camera_state`, and
   `OrbitControls::fly_to`
@@ -185,8 +246,14 @@ Additive public API changes in Unreleased:
 - The `scena` binary with `schema list`, `schema get <schema>`,
   `validate-recipe <recipe.json>`, `place <recipe.json> --import <id>
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`,
+  `recipe build <recipe.json> [--max-imports <n>]`,
   `recipe render <recipe.json> --introspect --verify --out <png>`,
-  `recipe inspect-cad <recipe.json> --out-dir <dir>`, and,
+  `recipe inspect-cad <recipe.json> --out-dir <dir>`,
+  `recipe capture <recipe.json> --out-dir <dir> [--views
+  front,top,right,isometric|none] [--turntable <frames>] [--clip <name>
+  --frames <n>]`, `recipe aov <recipe.json> --out-dir <dir> [--passes
+  id,depth,normal]`, `diff <before.recipe.json> <after.recipe.json>
+  [--numeric-tolerance <n>] [--render --out-dir <dir>]`, and,
   when built with `inspection`, asset-or-recipe-input
   `render --introspect`, `inspect`, `diagnose --visibility`, and
   `repair --from <report.json>`, and
@@ -194,6 +261,19 @@ Additive public API changes in Unreleased:
 - `scena browser-proof [scene-host|m6] [--backend webgl2] [--dry-run]`
   for a machine-readable wrapper over the wasm-pack + Playwright browser lanes;
   the M6 lane rebuilds its browser-probe package before running Playwright
+- `SCENE_HOST_SEMANTIC_AOV_SCHEMA_V1`, `SceneHostSemanticAovCaptureV1`,
+  `SceneHostSemanticAovLegendEntryV1`,
+  `SceneHostSemanticAovExclusionsV1`,
+  `SceneHostCore::capture_semantic_aovs`,
+  `SceneHostCore::capture_semantic_aovs_gpu`,
+  `SceneHostCore::set_semantic_aov_capture_enabled`, and `palette_rgba8` for
+  deterministic CPU or opt-in GPU ID/depth/world-normal output with
+  runtime-scoped host identity (gated behind `scene-host`). WASM exposes
+  `setSemanticAovCaptureEnabled` and async `captureSemanticAovs` with typed ID,
+  depth, normal, and RGBA arrays on WebGPU and WebGL2.
+- `SceneRecipeBuildInstanceV1` and additive
+  `SceneRecipeBuildV1::instances` rows mapping persistent authored instance IDs
+  to runtime-scoped set/instance identity
 
 Additive public API changes in 1.7.0:
 
@@ -229,10 +309,25 @@ Additive public API changes in 1.7.0:
 - `Scene::clear_callout`
 - `Scene::world_distance`
 - `Scene::node_world_bounds`
+- `Scene::set_authored_node_bounds`
+- `Scene::node_local_bounds`
 - `Node::tint`
 - `Scene::remove_node`
 - `Scene::remove_import`
 - `Scene::remove_tag`
+
+Transform mutation invariant:
+
+- every public scene transform insertion or mutation rejects non-finite translation,
+  rotation, or scale components with `LookupError::InvalidTransform` before changing scene
+  state or a revision;
+- `Scene::set_transforms` and SceneHost transform batches preflight the complete batch before
+  applying any node or instance-root update, and a rejected batch does not cancel active
+  transitions;
+- orbit pointer/touch events containing non-finite positions or deltas are no-ops, and the
+  next finite event can continue the gesture;
+- orbit pan follows camera view-right/view-up at the current yaw and pitch, matching the
+  established drag signs at yaw zero instead of using fixed world X/Y axes.
 - `SceneAsset::primitive_count`
 - `SceneAsset::bounds`
 - `SceneAsset::geometry_summary`
@@ -298,17 +393,23 @@ Additive public API changes in 1.7.0:
   `summarize_pixel_readback`, and `auto_frame_metadata`
 
 The `scene-host` feature also exports a WASM `SceneHost` wrapper on
-`wasm32`. Its node handles are opaque `u64` values owned by the host. The same
-handle values are used for construction, transform updates, picking, and
-`inspectJson()` output. Phase 3 also exports real `capture()` /
-`captureJson()` and `capturePng()` methods that return `scena.capture.v1`
-metadata for the latest rendered RGBA8 frame; these are not placeholders.
+`wasm32`. Its node, import, instance-root, and animation handles are opaque
+kind-tagged `u64` values owned by the host and kept within JavaScript's exact
+integer range. A node handle has the same value across construction, transform
+updates, picking, and `inspectJson()` output; different handle kinds are not
+interchangeable. Phase 3 also exports real `capture()` /
+`captureJson()` and `capturePng()` methods, plus WebGPU-safe `captureAsync()`,
+`captureJsonAsync()`, and `capturePngAsync()` methods, that return
+`scena.capture.v1` metadata for the latest rendered RGBA8 frame; these are not
+placeholders. Use the async family when the browser backend is WebGPU because
+mapped GPU-buffer readback cannot complete synchronously.
 Capture descriptors are bound to the renderer's last rendered scene/camera
 state and fail with `CaptureError::StaleRender` if the scene is mutated before
 capture. PNG helpers delegate to `CaptureRgba8`, so viewer, renderer,
 SceneHost, and browser captures use the same descriptor-bound byte path.
-`renderIntrospectionJson(detail)` returns `scena.render_introspection.v1` over
-the same browser canvas readback path, so agent/browser hosts can fail closed
+`renderIntrospectionJson(detail)` and the WebGPU-safe
+`renderIntrospectionJsonAsync(detail)` return `scena.render_introspection.v1`
+over the same browser capture readback path, so agent/browser hosts can fail closed
 on empty, offscreen, or culled frames without inventing a JavaScript-only
 visibility report.
 Browser hosts can also call `handleSurfaceContextLost(recoverable)` and
@@ -339,6 +440,19 @@ SceneHost/WASM callers use `add_node_callout` / `add_world_callout` or
 The returned `anchor_id` is the annotation ID reported by
 `annotation_projections_json()` and remains compatible with the 0.1C `labels`
 visual-patch channel; there is no parallel host text-update model.
+
+Generated overlay ownership invariant:
+
+- measurement line/label nodes and callout leader/label nodes have exactly one
+  scene-owned overlay owner;
+- removing either generated child with `Scene::remove_node` removes the
+  complete owned overlay closure atomically, including its sibling, registry
+  entry, and any callout annotation, while leaving the anchor target intact;
+- SceneHost invalidates every handle in that closure, so subsequent use of
+  either generated child returns `SceneHostErrorCode::StaleNodeHandle`;
+- use `clear_measurement_overlay` or `clear_callout` when the overlay ID is the
+  natural removal key; these operations enforce the same ownership invariant.
+
 Labels use an embedded TrueType font by default with `LabelDesc::new`, or an
 explicit TrueType/OpenType face with `LabelFontFace::from_truetype_bytes`,
 `LabelDesc::truetype`, or recipe `fonts[]` plus label `font`. Labels support
@@ -604,6 +718,7 @@ Renderer features:
 - `Renderer::clear_bloom`
 - `PostBloomConfig`
 - `Renderer::set_anti_aliasing`
+- `Renderer::set_cpu_occlusion_culling`
 - `Renderer::set_supersample_factor`
 - `Renderer::set_reconstruction_filter`
 - `AntiAliasing`
@@ -780,6 +895,18 @@ Common renderer calls:
 - `Renderer::capability_report`
 - `Renderer::gpu_adapter_report`
 
+GPU construction names are literal. `Renderer::headless_gpu` and
+`SceneHostCore::headless_gpu[_with_fetcher]` are strict and propagate adapter or
+device failure. `SceneHostCore::headless_prefer_gpu[_with_fetcher]` is the
+explicit fallback-capable contract and returns `HeadlessBackendSelectionReport`
+with requested/selected backends and the original GPU `BuildError`. The
+high-level viewer mirrors this split with `with_headless_gpu` versus
+`with_headless_prefer_gpu`; preferred construction exposes the same report.
+Recipe hosts mirror it with `build_recipe_json_gpu` versus
+`build_recipe_json_prefer_gpu`; the latter exposes the selection report through
+`SceneHostRecipeBuild::backend_selection_report` without changing the result
+type's public field shape. Release proof must use the strict forms.
+
 Common scene interaction calls:
 
 - `Scene::pick_with_assets`
@@ -791,6 +918,35 @@ Common scene interaction calls:
 - `Scene::add_grid_floor`
 - `Scene::add_studio_lighting`
 - `Scene::with_default_camera()`
+
+### Picking result semantics
+
+`Scene::pick_with_assets` intersects the same current vertex pose used by
+render preparation: morph targets are evaluated first, skinning second, and
+node plus instance transforms last. It never silently falls back to base
+vertices when a skin binding is missing or invalid.
+
+`Hit::distance` is measured in world-space units along the normalized camera
+ray. `Hit::world_position` is the corresponding world-space intersection.
+`Hit::normal` is the normalized geometric normal derived from transformed
+triangle winding, so negative scale reverses it and nonuniform scale changes it
+according to the transformed face. A singular transform is permitted as scene
+state, but any triangle it collapses to zero area is not hittable. Invalid
+deformation data returns `LookupError::InvalidSkinBinding`.
+
+Static triangle geometry owns a clone-shared, deterministic model-space BVH.
+Picking inverse-transforms one world ray into mesh/instance local space, rejects
+the mesh bounds first, and transforms only candidate triangles for final
+world-space distance and winding-normal truth. Nonuniform and negative scale
+are supported; singular transforms fail closed. Morph/skin poses never reuse
+the static BVH: they rebuild from the current deformed positions. CPU shadow
+prepare builds one world-space BVH from the current transformed/deformed
+occluders, so transform, instance, morph, skin, and light changes cannot reuse
+stale visibility. Repeated indexed corners share a prepare-scoped visibility
+cache keyed by the exact deformed world-position bits plus deterministic light
+and occluder-state signatures; the cache is discarded before the next prepare.
+`PickingMetrics` and `PrepareWorkMetrics` separate BVH bounds work, cache
+hits/misses, and exact ray/triangle tests for scaling evidence.
 
 Common public event and output types:
 
@@ -930,6 +1086,14 @@ UIs can show the same actionable remediation used by the asset doctor.
 
 Use capability reports when selecting optional effects or platform-specific
 paths. Use stats for testing, diagnostics, and performance visibility.
+Native CPU rendering bounds deterministic parallel work to eight workers and
+also respects Rayon's process-level `RAYON_NUM_THREADS` setting. Work invoked
+from an existing Rayon worker and all WASM rendering remain serial to avoid
+nested oversubscription. `RenderWorkMetrics` reports the selected CPU worker
+count, row-binned triangle candidates versus the former full-band rescan count,
+and retained-bin capacity growth. Environment bake metrics similarly report
+eligible face/row tasks and the bounded worker count; output ordering and float
+bits are identical to the one-worker path.
 `RendererStats::draw_calls` and `RendererStats::primitives` are deprecated
 aliases of `RendererStats::triangles` and retain their historical triangle-count
 meaning until the next schema version. Use `RendererStats::gpu_draw_submissions`

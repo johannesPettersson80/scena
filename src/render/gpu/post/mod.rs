@@ -20,12 +20,16 @@ mod ssr;
 mod tests;
 mod types;
 
-pub(super) use resources::create_resources;
+pub(super) use resources::{create_resources, resource_stats};
 pub(in crate::render::gpu) use types::PostResources;
-pub(in crate::render) use types::{GpuPostPassCounts, GpuPostSettings};
-use types::{PostChainOutput, PostTextureSlot};
+pub(in crate::render) use types::{GpuOutputPlan, GpuPostPassCounts, GpuPostSettings};
+use types::{POST_UNIFORM_BYTE_LEN, PostChainOutput, PostTextureSlot, PostUniformSlot};
 
-#[cfg(any(not(target_arch = "wasm32"), feature = "browser-probe"))]
+#[cfg(any(
+    not(target_arch = "wasm32"),
+    feature = "browser-probe",
+    feature = "scene-host"
+))]
 #[allow(unused_imports)]
 pub(super) use copy::copy_output_to_buffer;
 
@@ -105,7 +109,6 @@ pub(super) fn output_view(
 
 pub(super) fn encode_chain(
     encoder: &mut wgpu::CommandEncoder,
-    device: &wgpu::Device,
     queue: &wgpu::Queue,
     resources: &PostResources,
     settings: GpuPostSettings,
@@ -118,8 +121,10 @@ pub(super) fn encode_chain(
 
     if let Some(config) = settings.reflections {
         write_uniform(
+            encoder,
             queue,
             resources,
+            PostUniformSlot::Reflections,
             [
                 resources.target.width as f32,
                 resources.target.height as f32,
@@ -150,8 +155,10 @@ pub(super) fn encode_chain(
             });
         };
         write_uniform(
+            encoder,
             queue,
             resources,
+            PostUniformSlot::AmbientOcclusion,
             [
                 resources.target.width as f32,
                 resources.target.height as f32,
@@ -163,19 +170,15 @@ pub(super) fn encode_chain(
                 0.0,
             ],
         );
-        let Some(depth_color_view) = depth_prepass.color_view() else {
+        let Some(_depth_color_view) = depth_prepass.color_view() else {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: resources.target.backend,
             });
         };
         ssao::encode(
             encoder,
-            device,
-            &resources.ssao_bind_group_layout,
-            &resources.uniform,
             &resources.ssao_pipeline,
-            view(resources, current),
-            depth_color_view,
+            depth_bind_group(resources, current)?,
             view(resources, next),
             draw_submissions,
         );
@@ -191,8 +194,10 @@ pub(super) fn encode_chain(
             });
         };
         write_uniform(
+            encoder,
             queue,
             resources,
+            PostUniformSlot::DepthOfField,
             [
                 resources.target.width as f32,
                 resources.target.height as f32,
@@ -204,19 +209,15 @@ pub(super) fn encode_chain(
                 0.0,
             ],
         );
-        let Some(depth_color_view) = depth_prepass.color_view() else {
+        let Some(_depth_color_view) = depth_prepass.color_view() else {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: resources.target.backend,
             });
         };
         dof::encode(
             encoder,
-            device,
-            &resources.ssao_bind_group_layout,
-            &resources.uniform,
             &resources.depth_of_field_pipeline,
-            view(resources, current),
-            depth_color_view,
+            depth_bind_group(resources, current)?,
             view(resources, next),
             draw_submissions,
         );
@@ -227,8 +228,10 @@ pub(super) fn encode_chain(
 
     if let Some(config) = settings.bloom {
         write_uniform(
+            encoder,
             queue,
             resources,
+            PostUniformSlot::Bloom,
             [
                 resources.target.width as f32,
                 resources.target.height as f32,
@@ -254,8 +257,10 @@ pub(super) fn encode_chain(
 
     if settings.anti_aliasing.uses_post_fxaa() {
         write_uniform(
+            encoder,
             queue,
             resources,
+            PostUniformSlot::Fxaa,
             [
                 resources.target.width as f32,
                 resources.target.height as f32,
@@ -309,8 +314,10 @@ pub(super) fn encode_fxaa_to_view(
     draw_submissions: &mut u64,
 ) {
     write_uniform(
+        encoder,
         queue,
         resources,
+        PostUniformSlot::Surface,
         [
             resources.target.width as f32,
             resources.target.height as f32,
@@ -339,8 +346,10 @@ pub(super) fn encode_bloom_fxaa_to_view(
     inputs: BloomFxaaToViewInputs<'_>,
 ) {
     write_uniform(
+        encoder,
         queue,
         resources,
+        PostUniformSlot::Surface,
         [
             resources.target.width as f32,
             resources.target.height as f32,
@@ -395,23 +404,36 @@ pub(super) fn create_post_pipeline(
     device: &wgpu::Device,
     label: &'static str,
     shader_source: &'static str,
-    bind_group_layout: &wgpu::BindGroupLayout,
+    pipeline_layout: &wgpu::PipelineLayout,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    let shader = create_post_shader(device, label, shader_source);
+    create_post_pipeline_with_shader(device, label, &shader, pipeline_layout, format)
+}
+
+pub(super) fn create_post_shader(
+    device: &wgpu::Device,
+    label: &'static str,
+    shader_source: &'static str,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
         source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("scena.gpu_post.pipeline_layout"),
-        bind_group_layouts: &[Some(bind_group_layout)],
-        immediate_size: 0,
-    });
+    })
+}
+
+pub(super) fn create_post_pipeline_with_shader(
+    device: &wgpu::Device,
+    label: &'static str,
+    shader: &wgpu::ShaderModule,
+    pipeline_layout: &wgpu::PipelineLayout,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
-        layout: Some(&pipeline_layout),
+        layout: Some(pipeline_layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[],
@@ -420,7 +442,7 @@ pub(super) fn create_post_pipeline(
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some("fs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
@@ -434,8 +456,26 @@ pub(super) fn create_post_pipeline(
     })
 }
 
-fn write_uniform(queue: &wgpu::Queue, resources: &PostResources, values: [f32; 8]) {
-    queue.write_buffer(&resources.uniform, 0, bytemuck::cast_slice(&values));
+fn write_uniform(
+    encoder: &mut wgpu::CommandEncoder,
+    queue: &wgpu::Queue,
+    resources: &PostResources,
+    slot: PostUniformSlot,
+    values: [f32; 8],
+) {
+    let offset = slot.byte_offset();
+    queue.write_buffer(
+        &resources.uniform_staging,
+        offset,
+        bytemuck::cast_slice(&values),
+    );
+    encoder.copy_buffer_to_buffer(
+        &resources.uniform_staging,
+        offset,
+        &resources.uniform,
+        0,
+        POST_UNIFORM_BYTE_LEN,
+    );
 }
 
 fn view(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::TextureView {
@@ -452,6 +492,22 @@ fn bind_group(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::BindGr
         PostTextureSlot::Ping => &resources.texture_bind_groups[1],
         PostTextureSlot::Pong => &resources.texture_bind_groups[2],
     }
+}
+
+fn depth_bind_group(
+    resources: &PostResources,
+    slot: PostTextureSlot,
+) -> Result<&wgpu::BindGroup, RenderError> {
+    let groups = resources.depth_texture_bind_groups.as_ref().ok_or(
+        RenderError::GpuResourcesNotPrepared {
+            backend: resources.target.backend,
+        },
+    )?;
+    Ok(match slot {
+        PostTextureSlot::Scene => &groups[0],
+        PostTextureSlot::Ping => &groups[1],
+        PostTextureSlot::Pong => &groups[2],
+    })
 }
 
 #[allow(dead_code)]

@@ -5,6 +5,48 @@ use crate::render::{
     AntiAliasing, PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig,
 };
 
+pub(super) const POST_UNIFORM_BYTE_LEN: u64 = std::mem::size_of::<[f32; 8]>() as u64;
+pub(super) const POST_UNIFORM_SLOT_COUNT: u64 = 6;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::render) struct GpuOutputPlan {
+    sample_count: u32,
+    post_enabled: bool,
+    depth_color_enabled: bool,
+}
+
+impl GpuOutputPlan {
+    pub(in crate::render) const fn new(
+        anti_aliasing: AntiAliasing,
+        bloom: bool,
+        ambient_occlusion: bool,
+        reflections: bool,
+        depth_of_field: bool,
+    ) -> Self {
+        Self {
+            sample_count: anti_aliasing.gpu_sample_count(),
+            post_enabled: anti_aliasing.uses_post_fxaa()
+                || bloom
+                || ambient_occlusion
+                || reflections
+                || depth_of_field,
+            depth_color_enabled: ambient_occlusion || depth_of_field,
+        }
+    }
+
+    pub(in crate::render::gpu) const fn sample_count(self) -> u32 {
+        self.sample_count
+    }
+
+    pub(in crate::render::gpu) const fn post_enabled(self) -> bool {
+        self.post_enabled
+    }
+
+    pub(in crate::render::gpu) const fn depth_color_enabled(self) -> bool {
+        self.depth_color_enabled
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(in crate::render) struct GpuPostPassCounts {
     pub(in crate::render) screen_space_reflections: u64,
@@ -111,8 +153,9 @@ pub(in crate::render::gpu) struct PostResources {
     pub(in crate::render::gpu) pong_texture: wgpu::Texture,
     pub(in crate::render::gpu) pong_view: wgpu::TextureView,
     pub(in crate::render::gpu) uniform: wgpu::Buffer,
-    pub(in crate::render::gpu) ssao_bind_group_layout: wgpu::BindGroupLayout,
+    pub(in crate::render::gpu) uniform_staging: wgpu::Buffer,
     pub(in crate::render::gpu) texture_bind_groups: [wgpu::BindGroup; 3],
+    pub(in crate::render::gpu) depth_texture_bind_groups: Option<[wgpu::BindGroup; 3]>,
     pub(in crate::render::gpu) scene_pipelines: MeshPipelineSet,
     pub(in crate::render::gpu) scene_msaa4_pipelines: MeshPipelineSet,
     pub(in crate::render::gpu) scene_msaa8_pipelines: Option<MeshPipelineSet>,
@@ -148,5 +191,22 @@ impl PostTextureSlot {
             Self::Scene | Self::Pong => Self::Ping,
             Self::Ping => Self::Pong,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
+pub(super) enum PostUniformSlot {
+    Reflections = 0,
+    AmbientOcclusion = 1,
+    DepthOfField = 2,
+    Bloom = 3,
+    Fxaa = 4,
+    Surface = 5,
+}
+
+impl PostUniformSlot {
+    pub(super) const fn byte_offset(self) -> u64 {
+        self as u64 * POST_UNIFORM_BYTE_LEN
     }
 }

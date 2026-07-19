@@ -892,6 +892,28 @@ mod tests {
     }
 
     #[test]
+    fn webgl2_area_lights_avoid_angle_d3d11_forced_unroll_failures() {
+        let module = wgpu::naga::front::wgsl::parse_str(GPU_TRIANGLE_SHADER_TEXTURE_2D)
+            .expect("WebGL2 material shader must parse as WGSL");
+        wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(),
+            wgpu::naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("WebGL2 material shader must pass Naga validation");
+        assert!(
+            !GPU_TRIANGLE_SHADER_TEXTURE_2D
+                .contains("for (var i = 0u; i < vertex_count; i = i + 1u)")
+                && !GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("for (var i = 0u; i < MAX_GPU_AREA_LIGHTS; i = i + 1u)")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("ltc_accumulate_area_light(0u,")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("ltc_accumulate_area_light(1u,"),
+            "WebGL2 LTC lighting must use constant-index expansion for the two loops that ANGLE's \
+             D3D11 backend otherwise forces, and fails, to unroll (HLSL X3511)"
+        );
+    }
+
+    #[test]
     fn triangle_shader_avoids_pow_in_hot_pbr_fragment_paths() {
         for (name, shader) in [
             ("texture_2d_array", GPU_TRIANGLE_SHADER),

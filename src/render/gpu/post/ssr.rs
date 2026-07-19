@@ -4,13 +4,13 @@ const SHADER: &str = include_str!("ssr.wgsl");
 
 pub(super) fn create_pipeline(
     device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
+    pipeline_layout: &wgpu::PipelineLayout,
 ) -> wgpu::RenderPipeline {
     create_post_pipeline(
         device,
         "scena.gpu_post.ssr_pipeline",
         SHADER,
-        bind_group_layout,
+        pipeline_layout,
         wgpu::TextureFormat::Rgba8Unorm,
     )
 }

@@ -19,6 +19,8 @@ use crate::{
 };
 
 mod grid;
+mod render_options;
+use render_options::*;
 
 pub(super) fn renderer_options_from_recipe(
     render: Option<&SceneRecipeRenderV1>,
@@ -104,6 +106,53 @@ pub(super) async fn apply_scene_setup(
     texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
+    apply_scene_setup_with_renderer(
+        policy,
+        host,
+        recipe_path,
+        colors,
+        scene,
+        texture_budget,
+        diagnostics,
+        true,
+    )
+    .await;
+}
+
+/// Resolves and loads scene-level recipe resources for a manifest build while
+/// deliberately avoiding every renderer mutation.
+pub(super) async fn validate_scene_setup_for_manifest(
+    policy: &RecipeBuildPolicy,
+    host: &mut SceneHostCore<DefaultAssetFetcher>,
+    recipe_path: &str,
+    colors: &BTreeMap<String, SceneRecipeColorV1>,
+    scene: Option<&SceneRecipeSceneV1>,
+    texture_budget: &mut RecipeTextureBudget,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    apply_scene_setup_with_renderer(
+        policy,
+        host,
+        recipe_path,
+        colors,
+        scene,
+        texture_budget,
+        diagnostics,
+        false,
+    )
+    .await;
+}
+
+async fn apply_scene_setup_with_renderer(
+    policy: &RecipeBuildPolicy,
+    host: &mut SceneHostCore<DefaultAssetFetcher>,
+    recipe_path: &str,
+    colors: &BTreeMap<String, SceneRecipeColorV1>,
+    scene: Option<&SceneRecipeSceneV1>,
+    texture_budget: &mut RecipeTextureBudget,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+    apply_renderer: bool,
+) {
     let Some(scene) = scene else {
         return;
     };
@@ -120,12 +169,14 @@ pub(super) async fn apply_scene_setup(
             preset,
             texture_budget,
             diagnostics,
+            apply_renderer,
         )
         .await;
     }
     if let Some(background) = &scene.background {
         match background_from_recipe(colors, background) {
-            Ok(background) => host.renderer.set_background(background),
+            Ok(background) if apply_renderer => host.renderer.set_background(background),
+            Ok(_) => {}
             Err(diagnostic) => diagnostics.push(*diagnostic),
         }
     }
@@ -137,10 +188,12 @@ pub(super) async fn apply_scene_setup(
             environment,
             texture_budget,
             diagnostics,
+            apply_renderer,
         )
         .await;
     }
-    if let Some(grid) = &scene.grid
+    if apply_renderer
+        && let Some(grid) = &scene.grid
         && grid.enabled
     {
         apply_grid(host, colors, grid, diagnostics);
@@ -155,8 +208,11 @@ async fn apply_scene_preset(
     preset: SceneSetupPreset,
     texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+    apply_renderer: bool,
 ) {
-    host.apply_scene_setup_preset_renderer(preset);
+    if apply_renderer {
+        host.apply_scene_setup_preset_renderer(preset);
+    }
     if scene.environment.is_none() {
         apply_environment_preset(
             policy,
@@ -166,128 +222,14 @@ async fn apply_scene_preset(
             preset.environment(),
             texture_budget,
             diagnostics,
+            apply_renderer,
         )
         .await;
     }
-    if scene.grid.is_none() {
+    if apply_renderer && scene.grid.is_none() {
         let options = grid_options_under_scene_bounds(host, preset.grid_options());
         add_grid_floor_with_options(host, options, preset_grid_reflection(preset), diagnostics);
     }
-}
-
-fn profile_from_recipe(value: &str) -> Profile {
-    match value {
-        "quality" => Profile::Quality,
-        "balanced" => Profile::Balanced,
-        "compatibility" => Profile::Compatibility,
-        "industrial" => Profile::Industrial,
-        _ => Profile::Auto,
-    }
-}
-
-fn quality_from_recipe(value: &str) -> Quality {
-    match value {
-        "low" => Quality::Low,
-        "high" => Quality::High,
-        _ => Quality::Medium,
-    }
-}
-
-fn anti_aliasing_from_recipe(value: &str) -> AntiAliasing {
-    match value {
-        "none" => AntiAliasing::None,
-        "msaa4" => AntiAliasing::Msaa4,
-        "msaa8" => AntiAliasing::Msaa8,
-        _ => AntiAliasing::Fxaa,
-    }
-}
-
-fn reconstruction_from_recipe(value: &str) -> ReconstructionFilter {
-    match value {
-        "tent" => ReconstructionFilter::Tent,
-        "gaussian" => ReconstructionFilter::Gaussian,
-        _ => ReconstructionFilter::Box,
-    }
-}
-
-fn tonemapper_from_recipe(value: &str) -> Tonemapper {
-    match value {
-        "standard" => Tonemapper::Standard,
-        "aces" => Tonemapper::Aces,
-        _ => Tonemapper::PbrNeutral,
-    }
-}
-
-fn bloom_from_recipe(value: SceneRecipeBloomV1) -> PostBloomConfig {
-    PostBloomConfig::new(
-        value.threshold_srgb,
-        value.intensity as f32,
-        value.radius_px,
-    )
-}
-
-fn ssao_from_recipe(value: SceneRecipeSsaoV1) -> ScreenSpaceAmbientOcclusionConfig {
-    ScreenSpaceAmbientOcclusionConfig::new(
-        value.radius_px,
-        value.intensity as f32,
-        value.depth_threshold as f32,
-    )
-}
-
-fn ssr_from_recipe(value: SceneRecipeScreenSpaceReflectionsV1) -> ScreenSpaceReflectionConfig {
-    ScreenSpaceReflectionConfig::new(
-        value.strength as f32,
-        value.roughness as f32,
-        value.horizon_fraction as f32,
-        value.fade as f32,
-    )
-}
-
-fn dof_from_recipe(value: SceneRecipeDepthOfFieldV1) -> DepthOfFieldConfig {
-    DepthOfFieldConfig::new(
-        value.focus_distance as f32,
-        value.aperture_f_stop as f32,
-        value.radius_px,
-    )
-}
-
-fn auto_exposure_from_recipe(
-    value: &SceneRecipeAutoExposureV1,
-) -> Result<AutoExposureConfig, Box<SceneRecipeDiagnosticV1>> {
-    let (preset, min_ev, max_ev, highlight_percentile, highlight_target_luminance) = match value {
-        SceneRecipeAutoExposureV1::Preset(preset) => (preset.as_str(), None, None, None, None),
-        SceneRecipeAutoExposureV1::Config {
-            preset,
-            min_ev,
-            max_ev,
-            highlight_percentile,
-            highlight_target_luminance,
-        } => (
-            preset.as_str(),
-            *min_ev,
-            *max_ev,
-            *highlight_percentile,
-            *highlight_target_luminance,
-        ),
-    };
-    let mut config = AutoExposureConfig::from_preset_name(preset).ok_or_else(|| {
-        Box::new(error_diagnostic(
-            "$.render.auto_exposure",
-            "invalid_render_setting",
-            format!("auto exposure preset '{preset}' is not supported"),
-            format!(
-                "use one of: {}",
-                AutoExposureConfig::PRESET_NAMES.join(", ")
-            ),
-        ))
-    })?;
-    if let (Some(min_ev), Some(max_ev)) = (min_ev, max_ev) {
-        config = config.with_ev_range(min_ev as f32, max_ev as f32);
-    }
-    if let (Some(percentile), Some(target)) = (highlight_percentile, highlight_target_luminance) {
-        config = config.with_highlight_guard(percentile as f32, target as f32);
-    }
-    Ok(config)
 }
 
 fn background_from_recipe(
@@ -333,6 +275,7 @@ async fn apply_environment(
     environment: &SceneRecipeEnvironmentV1,
     texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+    apply_renderer: bool,
 ) {
     if let Some(preset) = environment.preset.as_deref() {
         let Some(preset) = EnvironmentPreset::from_recipe_name(preset) else {
@@ -357,15 +300,19 @@ async fn apply_environment(
             preset,
             texture_budget,
             diagnostics,
+            apply_renderer,
         )
         .await;
         return;
     }
     match environment.kind.as_deref().unwrap_or("") {
-        "none" => host.renderer.clear_environment(),
+        "none" if apply_renderer => host.renderer.clear_environment(),
+        "none" => {}
         "default" => {
-            let handle = host.assets.default_environment();
-            host.renderer.set_environment(handle);
+            if apply_renderer {
+                let handle = host.assets.default_environment();
+                host.renderer.set_environment(handle);
+            }
         }
         "uri" => {
             let Some(uri) = environment.uri.as_deref() else {
@@ -389,15 +336,25 @@ async fn apply_environment(
                     return;
                 }
             };
-            match host
-                .assets
-                .load_environment_with_options(
-                    AssetPath::from(resolved.as_str()),
-                    AssetLoadOptions::default().with_fetch_byte_limit(policy.fetch_byte_limit()),
-                )
-                .await
-            {
-                Ok(handle) => host.renderer.set_environment(handle),
+            let options =
+                AssetLoadOptions::default().with_fetch_byte_limit(policy.fetch_byte_limit());
+            let load = if apply_renderer {
+                host.assets
+                    .load_environment_with_options(AssetPath::from(resolved.as_str()), options)
+                    .await
+                    .map(Some)
+            } else {
+                host.assets
+                    .validate_environment_source_with_options(
+                        AssetPath::from(resolved.as_str()),
+                        options,
+                    )
+                    .await
+                    .map(|()| None)
+            };
+            match load {
+                Ok(Some(handle)) => host.renderer.set_environment(handle),
+                Ok(None) => {}
                 Err(error) if environment.optional => diagnostics.push(error_diagnostic(
                     "$.scene.environment",
                     "optional_environment_skipped",
@@ -429,6 +386,7 @@ async fn apply_environment_preset(
     preset: EnvironmentPreset,
     texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+    apply_renderer: bool,
 ) {
     let metadata = preset.metadata();
     let uri = metadata.source_path();
@@ -448,7 +406,8 @@ async fn apply_environment_preset(
         )
         .await
     {
-        Ok(handle) => host.renderer.set_environment(handle),
+        Ok(handle) if apply_renderer => host.renderer.set_environment(handle),
+        Ok(_) => {}
         Err(error) => diagnostics.push(error_diagnostic(
             diagnostic_path,
             "environment_load_failed",

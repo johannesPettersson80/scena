@@ -1,0 +1,124 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::{NodeKey, Scene};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum OverlayOwner {
+    Callout(String),
+    Measurement(String),
+}
+
+impl Scene {
+    pub(super) fn register_overlay_node(&mut self, node: NodeKey, owner: OverlayOwner) {
+        let previous = self.overlay_owners.insert(node, owner);
+        debug_assert!(
+            previous.is_none(),
+            "generated overlay node acquired two owners"
+        );
+    }
+
+    pub(super) fn unregister_overlay_node(&mut self, node: NodeKey) {
+        self.overlay_owners.remove(&node);
+    }
+
+    pub(super) fn expand_overlay_removal_closure(&self, removed: &mut Vec<NodeKey>) {
+        let mut seen = removed.iter().copied().collect::<BTreeSet<_>>();
+        loop {
+            let owners = removed
+                .iter()
+                .filter_map(|node| self.overlay_owners.get(node))
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let mut changed = false;
+            for owner in owners {
+                for node in self.owned_overlay_nodes(&owner) {
+                    if !self.nodes.contains_key(node) || !seen.insert(node) {
+                        continue;
+                    }
+                    if let Ok(subtree) = self.subtree_nodes(node) {
+                        for descendant in subtree {
+                            if seen.insert(descendant) {
+                                removed.push(descendant);
+                            }
+                        }
+                    }
+                    removed.push(node);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+    }
+
+    pub(super) fn assert_overlay_ownership_invariant(&self) {
+        debug_assert!(
+            self.overlay_ownership_invariant().is_ok(),
+            "generated overlay ownership registry is inconsistent: {:?}",
+            self.overlay_ownership_invariant().err()
+        );
+    }
+
+    fn owned_overlay_nodes(&self, owner: &OverlayOwner) -> Vec<NodeKey> {
+        match owner {
+            OverlayOwner::Callout(id) => self
+                .callouts
+                .get(id)
+                .map(|state| vec![state.leader_line_node(), state.label_node()])
+                .unwrap_or_default(),
+            OverlayOwner::Measurement(id) => self
+                .measurements
+                .get(id)
+                .map(|state| {
+                    let mut nodes = vec![state.line_node()];
+                    nodes.extend(state.label_node());
+                    nodes
+                })
+                .unwrap_or_default(),
+        }
+    }
+
+    fn overlay_ownership_invariant(&self) -> Result<(), String> {
+        let mut expected = BTreeMap::new();
+        for (id, callout) in &self.callouts {
+            if !self.annotations.contains_key(id) {
+                return Err(format!("callout {id:?} has no annotation anchor"));
+            }
+            let owner = OverlayOwner::Callout(id.clone());
+            record_live_owner(
+                self,
+                &mut expected,
+                callout.leader_line_node(),
+                owner.clone(),
+            )?;
+            record_live_owner(self, &mut expected, callout.label_node(), owner)?;
+        }
+        for (id, measurement) in &self.measurements {
+            let owner = OverlayOwner::Measurement(id.clone());
+            record_live_owner(self, &mut expected, measurement.line_node(), owner.clone())?;
+            if let Some(label) = measurement.label_node() {
+                record_live_owner(self, &mut expected, label, owner)?;
+            }
+        }
+        if expected != self.overlay_owners {
+            return Err("generated overlay nodes and owner registry differ".to_owned());
+        }
+        Ok(())
+    }
+}
+
+fn record_live_owner(
+    scene: &Scene,
+    expected: &mut BTreeMap<NodeKey, OverlayOwner>,
+    node: NodeKey,
+    owner: OverlayOwner,
+) -> Result<(), String> {
+    if !scene.nodes.contains_key(node) {
+        return Err(format!("{owner:?} owns missing node {node:?}"));
+    }
+    if expected.insert(node, owner).is_some() {
+        return Err(format!("generated node {node:?} has multiple owners"));
+    }
+    Ok(())
+}

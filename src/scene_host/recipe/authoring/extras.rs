@@ -22,6 +22,7 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
     recipes: &[SceneRecipeInstanceSetV1],
     resources: InstanceSetResources<'_>,
     manifest: &mut Vec<crate::SceneRecipeBuildTargetV1>,
+    instance_manifest: &mut Vec<crate::SceneRecipeBuildInstanceV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> BTreeMap<String, NodeKey> {
     let mut node_keys = BTreeMap::new();
@@ -145,6 +146,7 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                     continue;
                 }
             };
+        let handle = host.register_node(node);
         for (instance_index, instance) in recipe.instances.iter().enumerate() {
             let instance_path = format!("{path}.instances[{instance_index}]");
             let transform = match transform_from_recipe(
@@ -175,6 +177,13 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                     continue;
                 }
             };
+            instance_manifest.push(crate::SceneRecipeBuildInstanceV1 {
+                set_id: recipe.id.clone(),
+                id: instance.id.clone(),
+                set_handle: handle,
+                instance_id: instance_id.as_u64(),
+                identity_scope: "runtime_scoped".to_owned(),
+            });
             if let Some(visible) = instance.visible
                 && let Err(error) = host.scene.set_instance_visible(set, instance_id, visible)
             {
@@ -205,7 +214,6 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                 }
             }
         }
-        let handle = host.register_node(node);
         node_keys.insert(recipe.id.clone(), node);
         manifest.push(crate::SceneRecipeBuildTargetV1 {
             id: recipe.id.clone(),
@@ -392,11 +400,7 @@ pub(in crate::scene_host::recipe) fn build_authored_clipping_planes(
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let active_count = recipes.iter().filter(|plane| plane.active).count();
-    let max_planes = host
-        .renderer()
-        .capability_report()
-        .capabilities()
-        .max_clipping_planes as usize;
+    let max_planes = host.recipe_max_clipping_planes();
     if active_count > max_planes {
         diagnostics.push(error_diagnostic(
             "$.clipping_planes",

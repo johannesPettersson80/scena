@@ -154,7 +154,7 @@ mod tests {
             "bufferViews": [{ "buffer": 0, "byteLength": 12, "byteOffset": 0 }],
             "accessors": [{
                 "bufferView": 0, "byteOffset": 0, "componentType": 5126,
-                "count": 1, "type": "VEC3",
+                "count": 1, "type": "VEC3", "min": [0.0, 0.0, 0.0], "max": [0.0, 0.0, 0.0],
             }],
             "materials": [
                 { "pbrMetallicRoughness": { "baseColorFactor": [1.0, 0.0, 0.0, 1.0] }},

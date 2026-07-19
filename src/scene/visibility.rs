@@ -135,38 +135,13 @@ impl Scene {
         self.nodes.get(node).map(|node| node.helper_on_top)
     }
 
-    pub(crate) fn visible_in_hierarchy(&self, mut node: NodeKey) -> bool {
-        loop {
-            let Some(data) = self.nodes.get(node) else {
-                return false;
-            };
-            if !data.visible {
-                return false;
-            }
-            let Some(parent) = data.parent else {
-                return true;
-            };
-            node = parent;
-        }
+    pub(crate) fn visible_in_hierarchy(&self, node: NodeKey) -> bool {
+        self.resolved_node_state(node)
+            .is_some_and(|resolved| resolved.hierarchy_visible)
     }
 
     pub(crate) fn visible_for_active_camera(&self, node: NodeKey) -> bool {
-        let Some(node_data) = self.nodes.get(node) else {
-            return false;
-        };
-        self.visible_in_hierarchy(node)
-            && self.node_matches_active_camera_mask(node_data.layer_mask)
-    }
-
-    fn node_matches_active_camera_mask(&self, layer_mask: u64) -> bool {
-        let Some(camera) = self.active_camera else {
-            return true;
-        };
-        let camera_mask = self
-            .camera_layer_masks
-            .get(&camera)
-            .copied()
-            .unwrap_or(u64::MAX);
-        camera_mask & layer_mask != 0
+        self.resolved_node_state(node)
+            .is_some_and(|resolved| resolved.camera_visible)
     }
 }

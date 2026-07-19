@@ -21,7 +21,7 @@ pub(super) fn check_production_asset_profile(root: &Path, findings: &mut Vec<Fin
         &[
             "`production-assets`",
             "enables `ktx2` + `meshopt`",
-            "features = [\"production-assets\"]",
+            "cargo add scena --features production-assets",
         ],
     );
     require_contains(

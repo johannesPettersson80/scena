@@ -122,27 +122,29 @@ Use a short validation ledger in handoffs:
 Heavy Rust work runs on the Hetzner CPU builder by default:
 
 - SSH alias: `scena-builder`
-- Remote repo path: `/home/johannes/projects/scena`
+- Shared remote repo observation path: `/home/johannes/projects/scena`. It is not
+  provisioned on the maintained builder as of 2026-07-17 and must never be assumed to exist.
+- Default validation path: `$HOME/.cache/codex-worktrees/scena-<task-slug>`, paired with
+  `CARGO_TARGET_DIR=$HOME/.cache/codex-targets/scena-<task-slug>`.
 - Do not run local `cargo build`, `cargo check`, `cargo test`, `cargo clippy`, `cargo doc`,
   wasm builds, npm browser proof, or long-running render probes unless the user explicitly
   permits it. Local inspection commands such as `rg`, `sed`, `git diff`, and `git status`
   are fine.
-- Keep the remote checkout matched to the work being validated. If local changes are not
-  committed and pushed, verify the remote tree is clean, then mirror the local working tree
-  to the remote repo with `rsync`, excluding `.git` and `target`.
-- If the remote project checkout is dirty, on the wrong branch, or being used by another
-  agent, do not overwrite it. Create an isolated validation copy under
-  `$HOME/.cache/codex-worktrees/scena-<task-slug>` with `rsync --delete --exclude .git
-  --exclude target`, and pair it with a task-scoped `CARGO_TARGET_DIR` under
-  `$HOME/.cache/codex-targets/scena-<task-slug>`. Report both paths in the validation
-  ledger. Clean only that isolated copy/cache when done.
-- Before syncing or running any cargo gate, run a remote disk preflight. The builder often
-  fails late from full target caches, so check free space and clean only scoped generated
-  build output before starting:
+- Before every sync and cargo gate, run the checked-in preflight from the local canonical
+  checkout. It reports `shared_checkout_status=missing` when the old documented shared path
+  is absent and always chooses `validation_mode=isolated`, `validation_path=...`, and
+  `cargo_target_dir=...` without mutating remote state:
 
 ```bash
-ssh scena-builder 'df -hT "$HOME" "$HOME/.cache" /tmp && du -sh "$HOME/.cache/codex-targets" "$HOME/projects/scena/target" 2>/dev/null || true'
+ssh scena-builder 'bash -s -- <task-slug>' < scripts/scena_remote_builder_preflight.sh
 ```
+
+- Mirror the exact local tree to the returned isolated `validation_path` with
+  `rsync --delete --exclude .git --exclude target`. Then manually copy root `AGENTS.md` and
+  the complete `.codex/skills/**` tree again and verify both with `sha256sum` before edits or
+  gates. A full-tree rsync does not substitute for this explicit bootstrap.
+- Report `validation_path`, `CARGO_TARGET_DIR`, shared-checkout status, canonical source,
+  branch, HEAD, and agent-file hashes. Clean only that task-scoped snapshot/cache when done.
 
 - Prefer a task-scoped target cache, for example
   `CARGO_TARGET_DIR=$HOME/.cache/codex-targets/scena-<task-slug>`. If the preflight shows
@@ -156,7 +158,7 @@ ssh scena-builder 'df -hT "$HOME" "$HOME/.cache" /tmp && du -sh "$HOME/.cache/co
 Use this command shape for remote gates:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && <command>'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" <command>'
 ```
 
 Use a tiered validation flow. Do not default to the full release gate chain for every
@@ -181,10 +183,10 @@ spending another cycle.
 For a normal production code change, the default remote gate set is:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D warnings'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo fmt --check'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo clippy --all-targets -- -D warnings'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo test'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo run -p xtask -- doctor --full'
 ```
 
 Use that normal set as the default only after the focused proof is green. During active

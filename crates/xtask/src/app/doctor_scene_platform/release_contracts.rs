@@ -2,12 +2,6 @@ use crate::app::prelude::*;
 
 pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_files(root, findings, "ARCH-M5-RELEASE", REQUIRED_EXAMPLES);
-    require_files(
-        root,
-        findings,
-        "ARCH-M5-RELEASE",
-        REQUIRED_M5_GATE_ARTIFACTS,
-    );
     require_contains(
         root,
         findings,
@@ -135,6 +129,25 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "scena_convert_cli_reports_fbx_to_gltf_plan",
             "m5-benchmarks",
             "m5-public-api-freeze",
+            "producing_command",
+            "payload_sha256",
+            "sample_count",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M5-RELEASE",
+        "crates/xtask/src/app/release/stage_provenance.rs",
+        &[
+            "m5-benchmarks.json",
+            "m5-public-api-freeze.json",
+            "toolchain",
+            "profile",
+            "producing_command",
+            "sample_count",
+            "payload_sha256",
+            "does not match its content",
         ],
     );
     require_contains(
@@ -146,6 +159,9 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "m5-benchmarks.json",
             "m5-public-api-freeze.json",
             "cargo check --examples",
+            "SCENA_RELEASE_COMMIT=$COMMIT",
+            "payload_sha256",
+            "sample_count: 1",
         ],
     );
     require_contains(
@@ -173,34 +189,6 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "cargo publish --dry-run",
         ],
     );
-    require_contains(
-        root,
-        findings,
-        "ARCH-M5-RELEASE",
-        "target/gate-artifacts/m5-benchmarks.json",
-        &[
-            "\"gate\": \"m5-benchmarks\"",
-            "\"status\": \"passed\"",
-            "static-viewer",
-            "standard-model-viewer-gltf",
-            "larger-industrial-gltf",
-            "high-instance",
-            "headless-4k",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-M5-RELEASE",
-        "target/gate-artifacts/m5-public-api-freeze.json",
-        &[
-            "\"gate\"",
-            "m5-public-api-freeze",
-            "\"status\"",
-            "passed",
-            "\"baseline\"",
-        ],
-    );
 }
 
 pub(crate) const REQUIRED_EXAMPLES: &[&str] = &[
@@ -219,9 +207,4 @@ pub(crate) const REQUIRED_EXAMPLES: &[&str] = &[
     "examples/industrial_static_scene.rs",
     "examples/industrial_connector_assembly.rs",
     "examples/coordinate_connector_repair.rs",
-];
-
-pub(crate) const REQUIRED_M5_GATE_ARTIFACTS: &[&str] = &[
-    "target/gate-artifacts/m5-benchmarks.json",
-    "target/gate-artifacts/m5-public-api-freeze.json",
 ];

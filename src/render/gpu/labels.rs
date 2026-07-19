@@ -1,3 +1,4 @@
+use super::stats::GpuResourceStats;
 use crate::render::prepare::PreparedLabelAtlas;
 
 const FINAL_SHADER: &str = include_str!("labels.wgsl");
@@ -76,6 +77,26 @@ pub(super) struct LabelResources {
     surface_flat_pipeline: Option<wgpu::RenderPipeline>,
     post_pipeline: wgpu::RenderPipeline,
     instance_count: u32,
+}
+
+pub(super) fn resource_stats(
+    resources: &LabelResources,
+    labels: &PreparedLabelAtlas,
+) -> GpuResourceStats {
+    let surface_pipelines = u64::from(resources.surface_pipeline.is_some())
+        + u64::from(resources.surface_flat_pipeline.is_some());
+    let pipelines = 3 + surface_pipelines;
+    GpuResourceStats {
+        buffers: 2,
+        textures: 1,
+        pipelines,
+        bind_groups: 1,
+        shader_modules: pipelines,
+        approximate_gpu_memory_bytes: (QUAD_VERTICES.len() * QUAD_VERTEX_BYTE_LEN) as u64
+            + (resources.instance_capacity * INSTANCE_BYTE_LEN).max(4) as u64
+            + u64::from(labels.width()) * u64::from(labels.height()) * 4,
+        ..GpuResourceStats::default()
+    }
 }
 
 pub(super) struct LabelPass<'a> {

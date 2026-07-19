@@ -22,6 +22,8 @@ const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottl
 const ARTIFACT_GPU_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle_gpu.png";
 const ARTIFACT_GPU_FAIL_CLOSED_JSON: &str =
     "target/gate-artifacts/m8-real-asset/waterbottle_gpu_fail_closed.json";
+const ARTIFACT_GPU_RESULT_JSON: &str =
+    "target/gate-artifacts/m8-real-asset/waterbottle_gpu_result.json";
 const ARTIFACT_CPU_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle_cpu.png";
 const ARTIFACT_CPU_FAIL_CLOSED_JSON: &str =
     "target/gate-artifacts/m8-real-asset/waterbottle_cpu_fail_closed.json";
@@ -361,9 +363,13 @@ fn m8_real_asset_waterbottle_gpu_headline() {
             panic!("{reason}");
         }
     };
-    let gpu_adapter_label = match renderer.gpu_adapter_report() {
-        Some(report) => format!("{} ({})", report.name, report.backend),
-        None => String::from("unknown"),
+    let adapter_report = renderer.gpu_adapter_report();
+    let (gpu_adapter_label, gpu_backend) = match &adapter_report {
+        Some(report) => (
+            format!("{} ({})", report.name, report.backend),
+            report.backend.clone(),
+        ),
+        None => (String::from("unknown"), String::from("unknown")),
     };
     eprintln!("scena: rendering WaterBottle via GPU: {gpu_adapter_label}");
     let software_dx12 = gpu_adapter_label.contains("Microsoft Basic Render Driver")
@@ -549,6 +555,75 @@ fn m8_real_asset_waterbottle_gpu_headline() {
             );
         }
     }
+    write_gpu_release_result(
+        &gpu_adapter_label,
+        &gpu_backend,
+        std::env::var_os("SCENA_REFERENCE_DIFF").is_some(),
+    );
+}
+
+fn write_gpu_release_result(adapter: &str, backend: &str, reference_diff_ran: bool) {
+    let png_bytes = std::fs::read(ARTIFACT_GPU_PNG).expect("WaterBottle GPU PNG reads");
+    let png_sha256 = sha256_hex(&png_bytes);
+    let artifact = serde_json::json!({
+        "schema": "scena.m8.waterbottle_gpu_result.v1",
+        "status": "passed",
+        "release_evidence": true,
+        "test_name": "m8_real_asset_waterbottle_gpu_headline",
+        "producer": "cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
+        "commit_sha": current_release_commit(),
+        "timestamp_unix_seconds": current_release_timestamp(),
+        "backend": backend,
+        "adapter": adapter,
+        "software_adapter": false,
+        "skip_marker_observed": false,
+        "fallback_observed": false,
+        "rust_test_output_observed": false,
+        "png_path": "m8-real-asset/waterbottle_gpu.png",
+        "png_sha256": png_sha256,
+        "command_record_path": "release-lanes/macos-metal.commands.jsonl",
+        "metrics": {
+            "nonblack_passed": true,
+            "region_checks_passed": true,
+            "color_family_histograms_passed": true,
+            "reference_diff": if reference_diff_ran { "passed" } else { "not-claimed" }
+        },
+        "source_checksums": [
+            {"path":"m8-real-asset/waterbottle_gpu.png", "sha256":png_sha256}
+        ]
+    });
+    let path = std::path::Path::new(ARTIFACT_GPU_RESULT_JSON);
+    std::fs::write(
+        path,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&artifact).expect("GPU result serializes")
+        ),
+    )
+    .expect("GPU result writes");
+}
+
+fn current_release_commit() -> String {
+    std::env::var("GITHUB_SHA")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .map(|value| value.trim().to_string())
+        })
+        .unwrap_or_else(|| "local-checkout".to_string())
+}
+
+fn current_release_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 fn write_gpu_fail_closed_artifact(reason: &str, status: &str) {

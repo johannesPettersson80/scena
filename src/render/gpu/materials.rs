@@ -14,6 +14,8 @@ pub(super) use super::material_upload::{
 
 mod bind_group;
 pub(super) use bind_group::create_material_bind_group;
+mod resource_stats;
+pub(super) use resource_stats::resource_stats;
 
 /// Plan line 778 commit 2: material GPU resources can take one of two shapes.
 ///
@@ -142,39 +144,6 @@ pub(super) fn create_material_resources(
         create_material_resource(device, queue, layout, Some(slot), texture_binding_mode)
     }));
     MaterialResources::PerMaterial(resources)
-}
-
-pub(super) fn material_texture_byte_len(resources: &MaterialResources) -> u64 {
-    match resources {
-        MaterialResources::PerMaterial(slots) => {
-            slots.iter().map(|slot| slot.texture_byte_len).sum()
-        }
-        MaterialResources::Batched(batched) => batched.texture_byte_len,
-    }
-}
-
-pub(super) fn material_texture_count(resources: &MaterialResources) -> u64 {
-    match resources {
-        MaterialResources::PerMaterial(slots) => slots.len() as u64,
-        // Batched: every layer is one logical material occupying a slice of
-        // the shared array texture; report the layer count so external stats
-        // continue to track per-material totals.
-        MaterialResources::Batched(batched) => u64::from(batched.layer_count),
-    }
-}
-
-/// Plan line 778 commit 2: count of distinct material bind groups consumed by
-/// `encode_unlit_pass`. Always 1 on the batched path (one shared bind group
-/// services every draw with dynamic-offset uniforms) and `slots.len()` on the
-/// per-material path. The renderer surfaces this through
-/// `RendererStats::material_bind_groups` so a "collapses to single bind"
-/// test can assert the path collapse without dragging in
-/// command-encoder introspection.
-pub(super) fn material_bind_group_count(resources: &MaterialResources) -> u32 {
-    match resources {
-        MaterialResources::PerMaterial(slots) => slots.len() as u32,
-        MaterialResources::Batched(_) => 1,
-    }
 }
 
 fn create_material_resource(

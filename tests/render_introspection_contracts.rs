@@ -104,9 +104,30 @@ fn render_introspection_classifies_camera_transform_material_and_clipping_failur
         "material alpha requires a host material edit and must not advertise a patchless render-introspection fix"
     );
 
-    let nan_transform =
-        rendered_box_scene_at(64, 64, Vec3::new(f32::NAN, 0.0, 0.0), Color::WHITE, false);
-    let nan_transform_report = introspect_rendered_scene(&nan_transform);
+    let nan_transform = rendered_box_scene_at(64, 64, Vec3::ZERO, Color::WHITE, false);
+    let mut malformed_inspection = nan_transform
+        .1
+        .inspect_with_assets(&nan_transform.0)
+        .to_schema_report();
+    let malformed_handle = malformed_inspection
+        .draw_list
+        .first()
+        .expect("inspection contains a drawable mesh")
+        .node;
+    let malformed_node = malformed_inspection
+        .nodes
+        .iter_mut()
+        .find(|node| node.handle == malformed_handle)
+        .expect("inspection contains the mesh node");
+    malformed_node.local_transform.translation.x = f32::NAN;
+    malformed_node.world_transform.translation.x = f32::NAN;
+    let nan_transform_report = introspect_supplied_pixels(
+        &nan_transform.1,
+        &nan_transform.2,
+        &malformed_inspection,
+        nan_transform.2.frame_rgba8().to_vec(),
+        RendererStats::default(),
+    );
     assert!(!nan_transform_report.ok, "{nan_transform_report:#?}");
     assert_reason(&nan_transform_report, "nan_transform");
     assert_fix(&nan_transform_report, "set_transform");

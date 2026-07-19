@@ -6,6 +6,7 @@ use super::{GeometryDesc, GeometryError, GeometryVertex};
 pub struct GeometryMorphTarget {
     position_deltas: Vec<Vec3>,
     normal_deltas: Option<Vec<Vec3>>,
+    tangent_deltas: Option<Vec<Vec3>>,
 }
 
 impl GeometryDesc {
@@ -30,8 +31,18 @@ impl GeometryDesc {
                     target_count: normal_deltas.len(),
                 });
             }
+            if let Some(tangent_deltas) = target.tangent_deltas.as_ref()
+                && tangent_deltas.len() != self.vertices.len()
+            {
+                return Err(GeometryError::InvalidMorphTargetVertexCount {
+                    vertex_count: self.vertices.len(),
+                    target_index,
+                    target_count: tangent_deltas.len(),
+                });
+            }
         }
         self.morph_targets = morph_targets;
+        self.generated_tangent_cache = Default::default();
         Ok(self)
     }
 
@@ -67,6 +78,24 @@ impl GeometryDesc {
         }
         Some(vertices)
     }
+
+    /// Applies glTF morph-target tangent deltas while retaining the authored
+    /// tangent handedness. Render preparation subsequently orthogonalizes and
+    /// normalizes the XYZ direction against the morphed normal.
+    pub fn morphed_tangents(&self, weights: &[f32]) -> Option<Vec<[f32; 4]>> {
+        let mut tangents = self.tangents.clone()?;
+        for (target, weight) in self.morph_targets.iter().zip(weights.iter().copied()) {
+            let Some(tangent_deltas) = target.tangent_deltas() else {
+                continue;
+            };
+            for (tangent, delta) in tangents.iter_mut().zip(tangent_deltas) {
+                tangent[0] += delta.x * weight;
+                tangent[1] += delta.y * weight;
+                tangent[2] += delta.z * weight;
+            }
+        }
+        Some(tangents)
+    }
 }
 
 impl GeometryMorphTarget {
@@ -74,6 +103,7 @@ impl GeometryMorphTarget {
         Self {
             position_deltas,
             normal_deltas: None,
+            tangent_deltas: None,
         }
     }
 
@@ -81,6 +111,19 @@ impl GeometryMorphTarget {
         Self {
             position_deltas,
             normal_deltas: Some(normal_deltas),
+            tangent_deltas: None,
+        }
+    }
+
+    pub fn new_with_semantics(
+        position_deltas: Vec<Vec3>,
+        normal_deltas: Option<Vec<Vec3>>,
+        tangent_deltas: Option<Vec<Vec3>>,
+    ) -> Self {
+        Self {
+            position_deltas,
+            normal_deltas,
+            tangent_deltas,
         }
     }
 
@@ -90,6 +133,10 @@ impl GeometryMorphTarget {
 
     pub fn normal_deltas(&self) -> Option<&[Vec3]> {
         self.normal_deltas.as_deref()
+    }
+
+    pub fn tangent_deltas(&self) -> Option<&[Vec3]> {
+        self.tangent_deltas.as_deref()
     }
 }
 

@@ -1,12 +1,11 @@
-use std::collections::BTreeMap;
-
 use crate::assets::{AssetFetcher, Assets};
 use crate::diagnostics::LookupError;
 use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
 use crate::material::{Color, MaterialDesc};
 
 use super::{
-    AnchorKey, AnnotationAnchor, ConnectorKey, LabelDesc, LabelKey, NodeKey, Scene, Transform, Vec3,
+    AnchorKey, AnnotationAnchor, ConnectorKey, LabelDesc, LabelKey, NodeKey, Scene, Transform,
+    Vec3, overlay_ownership::OverlayOwner, transaction::SceneTransaction,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -162,12 +161,10 @@ impl CalloutAnchor {
 }
 
 impl SceneCalloutState {
-    #[cfg(feature = "scene-host")]
     pub const fn leader_line_node(&self) -> NodeKey {
         self.leader_line_node
     }
 
-    #[cfg(feature = "scene-host")]
     pub const fn label_node(&self) -> NodeKey {
         self.label_node
     }
@@ -226,6 +223,10 @@ impl Scene {
             text: callout.text().to_owned(),
         };
         self.callouts.insert(callout.id.clone(), state);
+        let owner = OverlayOwner::Callout(callout.id.clone());
+        self.register_overlay_node(line_node, owner.clone());
+        self.register_overlay_node(label_node, owner);
+        self.assert_overlay_ownership_invariant();
 
         Ok(CalloutReport {
             id: callout.id.clone(),
@@ -238,12 +239,24 @@ impl Scene {
     }
 
     pub fn clear_callout(&mut self, id: &str) -> bool {
-        let Some(callout) = self.callouts.remove(id) else {
+        let Some(callout) = self.callouts.get(id).cloned() else {
             return false;
         };
-        self.clear_annotation_anchor(id);
-        remove_generated_node_if_live(self, callout.leader_line_node);
-        remove_generated_node_if_live(self, callout.label_node);
+        let nodes = [callout.leader_line_node, callout.label_node];
+        let live_nodes = nodes
+            .iter()
+            .copied()
+            .filter(|node| self.node(*node).is_some())
+            .collect::<Vec<_>>();
+        let mut transaction = SceneTransaction::new(self);
+        transaction.scene().callouts.remove(id);
+        transaction.scene().clear_annotation_anchor(id);
+        for node in nodes {
+            transaction.scene().unregister_overlay_node(node);
+        }
+        transaction.scene().remove_nodes_unchecked(&live_nodes);
+        transaction.scene().assert_overlay_ownership_invariant();
+        transaction.commit();
         true
     }
 
@@ -254,10 +267,6 @@ impl Scene {
     #[cfg(feature = "scene-host")]
     pub(crate) fn callout_state(&self, id: &str) -> Option<&SceneCalloutState> {
         self.callouts.get(id)
-    }
-
-    pub(crate) fn callouts_mut(&mut self) -> &mut BTreeMap<String, SceneCalloutState> {
-        &mut self.callouts
     }
 
     fn resolve_callout_anchor(
@@ -357,12 +366,6 @@ fn validate_point(point: Vec3, reason: &'static str) -> Result<(), LookupError> 
         return Ok(());
     }
     Err(LookupError::InvalidBounds { reason })
-}
-
-fn remove_generated_node_if_live(scene: &mut Scene, node: NodeKey) {
-    if scene.node(node).is_some() {
-        let _ = scene.remove_node(node);
-    }
 }
 
 fn line_geometry(start: Vec3, end: Vec3) -> GeometryDesc {

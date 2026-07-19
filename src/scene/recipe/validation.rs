@@ -5,6 +5,7 @@ mod expectations;
 mod imports;
 mod overlays;
 mod setup;
+mod spatial_state;
 mod suggestions;
 
 use super::RecipeBuildPolicy;
@@ -124,6 +125,7 @@ fn validate_scene_recipe_value_inner(
         diagnostics,
     );
     validate_authoring_sections(object, policy, diagnostics);
+    spatial_state::validate_spatial_state_sections(object, diagnostics);
     let import_ids = imports::import_ids(object.get("imports"));
     validate_section_box(object.get("section_box"), &import_ids, diagnostics);
     validate_measurements(object.get("measurements"), diagnostics);

@@ -180,6 +180,7 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
         &[
             "pub struct RendererStats",
             "pub buffers: u64",
+            "pub gpu_textures: u64",
             "pub textures: u64",
             "pub materials: u64",
             "pub render_targets: u64",
@@ -214,8 +215,10 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
         "src/diagnostics.rs",
         &[
             "pub use stats::RendererStats",
+            "pub enum DevicePollStatus",
             "pub struct DevicePoll",
             "pub destroyed_resources: u64",
+            "pub status: DevicePollStatus",
         ],
     );
     require_contains(
@@ -249,7 +252,9 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
         "src/render/gpu/stats.rs",
         &[
             "pub(in crate::render) struct GpuResourceStats",
-            "fn estimate_prepared_resource_stats",
+            "pub(in crate::render) fn destruction_records",
+            "pub(super) fn add_assign",
+            "pub(super) fn target_bytes",
             "approximate_gpu_memory_bytes",
         ],
     );
@@ -270,7 +275,7 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
         "src/render/gpu/lifecycle.rs",
         &[
             "pub(in crate::render) fn pending_destructions(&self) -> u64",
-            "pub(in crate::render) fn poll_device(&mut self) -> (u64, bool)",
+            "pub(in crate::render) fn poll_device(&mut self) -> (u64, DevicePollStatus)",
             "pub(in crate::render) fn release_prepared_resources(&mut self)",
         ],
     );
@@ -291,7 +296,8 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
             "self.stats.shadow_maps = lighting_stats.shadow_maps",
             "self.stats.depth_prepass_passes = depth_stats.passes",
             "self.stats.depth_prepass_draws = depth_stats.draws",
-            "self.stats.textures = logical_stats.textures",
+            "self.stats.gpu_textures = stats.textures",
+            "self.stats.textures = logical_texture_count",
             "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
         ],
     );
@@ -362,14 +368,14 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
             "poll.pending_destructions_before",
         ],
     );
-    require_contains(
+    require_rust_test_functions(
         root,
         findings,
         "ARCH-RENDER-STATS",
-        "src/render/gpu/stats.rs",
+        "tests/c09_gpu_resource_lifecycle.rs",
         &[
-            "estimates_prepared_headless_gpu_resource_counters",
-            "estimates_empty_headless_gpu_resource_counters_at_baseline",
+            "output_resource_changes_require_prepare_and_stats_are_complete_before_render",
+            "resize_and_context_recovery_rebuild_the_same_resource_shape",
         ],
     );
     require_contains(
@@ -387,8 +393,10 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
             "fxaa_passes",
             "live_logical_handles",
             "pub buffers: u64",
+            "pub gpu_textures: u64",
             "pub target_height: u32",
-            "logical `TextureHandle` values only",
+            "`textures` counts logical handles",
+            "`gpu_textures` counts physical allocations",
         ],
     );
 }
@@ -482,15 +490,31 @@ pub(crate) fn check_render_world_bake_contracts(root: &Path, findings: &mut Vec<
             "pub(in crate::render) fn normal_from_model_matrix",
         ],
     );
-    require_contains(
+    forbid_contains(
         root,
         findings,
         "ARCH-RENDER-WORLD-BAKE",
         "src/geometry/primitive.rs",
         &[
-            "pub(crate) fn with_world_from_model",
-            "pub(crate) fn world_from_model",
-            "pub(crate) fn normal_from_model",
+            "world_from_model: [f32; 16]",
+            "normal_from_model: [f32; 16]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-WORLD-BAKE",
+        "src/render/prepare/types/geometry_storage.rs",
+        &["struct PreparedDrawTransform", "PreparedModelVertex"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-WORLD-BAKE",
+        "src/render/prepare/types.rs",
+        &[
+            "draw_transform: Arc<PreparedDrawTransform>",
+            "model_vertices: Option<Arc<[PreparedModelVertex]>>",
         ],
     );
     require_contains(
@@ -513,6 +537,7 @@ pub(crate) fn check_render_world_bake_contracts(root: &Path, findings: &mut Vec<
         &[
             "unbake_position_to_model_space",
             "unbake_normal_to_model_space",
+            "prepared.model_vertices()",
             "primitive.world_from_model()",
             "primitive.normal_from_model()",
         ],

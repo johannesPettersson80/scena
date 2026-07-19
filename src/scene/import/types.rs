@@ -28,6 +28,7 @@ pub(super) struct ImportBuild<'a> {
 pub(super) struct ImportedNode {
     pub(super) source_index: usize,
     pub(super) node: NodeKey,
+    pub(super) morph_nodes: Vec<NodeKey>,
     pub(super) parent: Option<NodeKey>,
     pub(super) name: Option<String>,
     pub(super) bounds: Option<Aabb>,

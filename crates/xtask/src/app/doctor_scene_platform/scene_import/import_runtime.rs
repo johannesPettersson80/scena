@@ -139,4 +139,135 @@ pub(crate) fn check_m3a_import_runtime_contracts(root: &Path, findings: &mut Vec
             "fn path_segments(path: &str)",
         ],
     );
+    check_scene_import_transaction_contracts(root, findings);
+}
+
+fn check_scene_import_transaction_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "SCENE-IMPORT-TRANSACTION",
+        "src/scene/transaction.rs",
+        &[
+            "pub(super) struct SceneTransaction",
+            "snapshot: Option<Scene>",
+            "fn transaction_snapshot",
+            "self.scene.structure_revision",
+            "self.scene.transform_revision",
+            "self.scene.appearance_revision",
+            "self.scene.visibility_revision",
+            "*self.scene = snapshot",
+            "nodes: self.nodes.clone()",
+            "lights: self.lights.clone()",
+            "instance_sets: self.instance_sets.clone()",
+            "animation_mixers: self.animation_mixers.clone()",
+            "anchors: self.anchors.clone()",
+            "retired_anchors: self.retired_anchors.clone()",
+            "connectors: self.connectors.clone()",
+            "retired_connectors: self.retired_connectors.clone()",
+            "node_bounds: self.node_bounds.clone()",
+            "morph_weights: self.morph_weights.clone()",
+            "skin_bindings: self.skin_bindings.clone()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENE-IMPORT-TRANSACTION",
+        "src/scene/import/prevalidation.rs",
+        &[
+            "validate_scene_asset_for_instantiation",
+            "InvalidChildIndex",
+            "MultipleNodeParents",
+            "CyclicNodeGraph",
+            "InvalidAnchorExtras",
+            "InvalidConnectorExtras",
+            "InvalidSkinIndex",
+            "InvalidSkinJointIndex",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENE-IMPORT-TRANSACTION",
+        "src/scene/import/load.rs",
+        &[
+            "ForeignReplacementImport",
+            "SceneTransaction::new(self)",
+            "remove_nodes_unchecked",
+            "transaction.commit()",
+            "import.mark_stale()",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "SCENE-IMPORT-TRANSACTION",
+        "src/scene/import/load.rs",
+        &["import.mark_stale();\n        self.instantiate_with"],
+    );
+    require_replace_import_lifecycle_order(root, findings);
+    require_contains(
+        root,
+        findings,
+        "SCENE-IMPORT-TRANSACTION",
+        "src/scene/removal.rs",
+        &[
+            "ImportFromDifferentScene",
+            "SceneTransaction::new(self)",
+            "transaction.commit()",
+            "import.mark_stale()",
+            "frame.import_retirement_name()",
+            "self.retired_anchors",
+            "self.retired_connectors",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENE-IMPORT-TRANSACTION",
+        "src/scene/import/transaction_tests.rs",
+        &[
+            "repeated_replace_import_is_bounded_and_removes_every_old_root",
+            "failed_create_is_exact_noop_at_every_late_failure_family",
+            "failed_replace_is_exact_noop_at_every_late_failure_family",
+            "prevalidation_rejects_cycles_and_multiple_parents_without_scene_mutation",
+            "remove_import_is_atomic_for_multiple_roots_and_rejects_foreign_scene",
+            "replacement_uses_fresh_runtime_overrides_and_commits_one_revision_boundary",
+            "removed_import_anchor_and_connector_handles_remain_stale_without_live_registry_growth",
+            "direct_anchor_and_connector_removal_remains_missing_not_import_stale",
+        ],
+    );
+}
+
+fn require_replace_import_lifecycle_order(root: &Path, findings: &mut Vec<Finding>) {
+    const REL: &str = "src/scene/import/load.rs";
+    const ORDERED_STEPS: &[&str] = &[
+        "let mut transaction = SceneTransaction::new(self);",
+        ".instantiate_with(scene_asset, options)?",
+        "remove_nodes_unchecked",
+        "transaction.commit();",
+        "import.mark_stale();",
+        "Ok(replacement)",
+    ];
+
+    let Ok(text) = fs::read_to_string(root.join(REL)) else {
+        return;
+    };
+    let Some(function_start) = text.find("pub fn replace_import(") else {
+        return;
+    };
+    let mut cursor = function_start;
+    for step in ORDERED_STEPS {
+        let Some(offset) = text[cursor..].find(step) else {
+            findings.push(Finding::new(
+                "SCENE-IMPORT-TRANSACTION",
+                format!(
+                    "{REL} replace_import lifecycle order is invalid: expected '{step}' after the prior transaction step"
+                ),
+            ));
+            return;
+        };
+        cursor += offset + step.len();
+    }
 }

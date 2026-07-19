@@ -80,16 +80,18 @@ the removed `u64` handles immediately, so callers must resolve new handles via
 import paths, tags, picking, or inspection after rebuilding that subtree.
 
 When proof needs pixels and metadata in one artifact, call `capture()` after
-`render()`. The renderer records the scene revision counters and camera that
+`render()` for native/CPU or synchronous WebGL2 capture. In a WebGPU browser,
+call `await captureAsync()` because GPU-buffer mapping is asynchronous. The
+renderer records the scene revision counters and camera that
 produced the current RGBA8 frame, and `capture()` writes those rendered values
 with viewport/DPR, backend capabilities, and pixel statistics into
 `scena.capture.v1`. If the scene or active camera changes after render and
 before capture, capture fails closed with `CaptureError::StaleRender` instead
 of binding new metadata to old pixels.
 Use `CaptureRgba8::to_png_bytes`, `Renderer::capture_png_bytes`,
-SceneHost `capture_png_bytes`, or browser `capturePng()` when the proof
-artifact should be PNG bytes; these helpers all delegate to the same
-descriptor-bound capture object.
+SceneHost `capture_png_bytes`, browser `capturePng()` for synchronous WebGL2,
+or `await capturePngAsync()` for WebGPU when the proof artifact should be PNG
+bytes; these helpers all delegate to the same descriptor-bound capture object.
 
 ## Minimal pattern
 
