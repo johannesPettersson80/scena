@@ -125,6 +125,11 @@ If a broad gate already passed on the current diff and no file in that gate's ri
 changed afterward, do not rerun it just to generate another timestamp; report the existing
 evidence and the unchanged surface.
 
+The AGENTS investigation circuit breaker also applies on the builder: classify a failure
+before changing code, stop after two remedies with the same signature, and checkpoint after
+30 minutes. A resource, disk, toolchain, or hosted-runner failure is environment evidence,
+not permission to change production behavior or performance baselines.
+
 Keep a short validation ledger in the handoff:
 
 - `focused`: exact reproducer/proof and result

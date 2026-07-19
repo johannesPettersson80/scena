@@ -59,21 +59,49 @@ fn o01_remote_builder_contract_rejects_missing_fallback_and_bootstrap() {
         "missing-path fallback and manual bootstrap omissions must fail: {findings:?}"
     );
 
-    fs::write(
-        fixture_root.join("AGENTS.md"),
-        "scripts/scena_remote_builder_preflight.sh\nvalidation_mode=isolated\nAGENTS.md\n.codex/skills\nsha256sum\nCARGO_TARGET_DIR\n",
-    )
-    .expect("strong AGENTS fixture writes");
-    fs::write(
-        fixture_root.join(".codex/skills/scena-remote-builder/SKILL.md"),
-        "scripts/scena_remote_builder_preflight.sh\nshared_checkout_status=missing\nvalidation_mode=isolated\nAGENTS.md\n.codex/skills\nsha256sum\nCARGO_TARGET_DIR\n",
-    )
-    .expect("strong remote skill fixture writes");
-    fs::write(
-        fixture_root.join("scripts/scena_remote_builder_preflight.sh"),
-        "shared_checkout_status=missing\nvalidation_mode=isolated\nvalidation_path=\ncargo_target_dir=\ndf -hT\n",
-    )
-    .expect("strong preflight fixture writes");
+    for (relative, contents) in [
+        (
+            "AGENTS.md",
+            "scripts/scena_remote_builder_preflight.sh\nscripts/collect_ci_failure_evidence.sh\nscripts/run_windows_complete_hardware_proof.ps1\nvalidation_mode=isolated\nAGENTS.md\n.codex/skills\nsha256sum\nCARGO_TARGET_DIR\nInvestigation Circuit Breakers\nproduct defect\nAfter two failed remediation attempts\nAfter 30 minutes\nsecond user-assisted run requires\nSCENA_M9_TIMING_POLICY=report-only-hosted\n",
+        ),
+        (
+            ".codex/skills/scena-remote-builder/SKILL.md",
+            "scripts/scena_remote_builder_preflight.sh\nshared_checkout_status=missing\nvalidation_mode=isolated\nAGENTS.md\n.codex/skills\nsha256sum\nCARGO_TARGET_DIR\ninvestigation circuit breaker\nstop after two remedies\n",
+        ),
+        (
+            ".codex/skills/scena-renderer-quality/SKILL.md",
+            "Investigation Circuit Breaker\nSCENA_M9_TIMING_POLICY=report-only-hosted\nscripts/run_windows_complete_hardware_proof.ps1\nsecond user-assisted run requires explicit approval\n",
+        ),
+        (
+            ".codex/skills/scena-doctor/SKILL.md",
+            "investigation circuit breakers\nscena-<task-slug>\n",
+        ),
+        (
+            ".codex/skills/scena-release-hygiene/SKILL.md",
+            "scripts/collect_ci_failure_evidence.sh\ninvestigation circuit breaker\nSCENA_M9_TIMING_POLICY=report-only-hosted\n",
+        ),
+        (
+            ".codex/skills/scena-git-github/SKILL.md",
+            "scripts/collect_ci_failure_evidence.sh\ninvestigation circuit breaker\nscena-<task-slug>\n",
+        ),
+        (
+            "scripts/scena_remote_builder_preflight.sh",
+            "shared_checkout_status=missing\nvalidation_mode=isolated\nvalidation_path=\ncargo_target_dir=\ndf -hT\n",
+        ),
+        (
+            "scripts/collect_ci_failure_evidence.sh",
+            "scena.ci_failure_evidence.v1\nfailed-jobs.tsv\nclassification_status\nroot-cause-checkpoint.md\ngh run download\n",
+        ),
+        (
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "bundle-files.sha256\nCompress-Archive\nUploadUrl\nInvoke-WebRequest -UseBasicParsing -Method Put\n",
+        ),
+    ] {
+        let path = fixture_root.join(relative);
+        fs::create_dir_all(path.parent().expect("fixture file has parent"))
+            .expect("strong builder fixture directory");
+        fs::write(path, contents).expect("strong builder fixture writes");
+    }
     findings.clear();
     check_remote_builder_bootstrap_contracts(&fixture_root, &mut findings);
     assert_eq!(findings, Vec::new());

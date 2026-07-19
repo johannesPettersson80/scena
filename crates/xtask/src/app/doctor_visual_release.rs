@@ -1,5 +1,6 @@
 mod browser_probe;
 mod ci_release_lanes;
+mod ci_release_policy;
 mod cpu_webgl2_parity;
 mod feature_specific_oracles;
 mod fixture_metadata;

@@ -1,11 +1,18 @@
 use crate::app::prelude::*;
 
+use super::ci_release_policy::{
+    HOSTED_M9_TIMING_POLICY_ENV, check_agent_template_cli_isolation, check_hosted_m9_timing_policy,
+    check_m9_platform_benchmark_isolation,
+};
+
 const ISOLATED_M9_PLATFORM_BENCHMARK_ENV: &str =
     "SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh";
 const ISOLATED_M9_PLATFORM_BENCHMARK_COMMAND: &str = "cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1";
 
 pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
     check_workflow_action_pins(root, findings);
+    check_hosted_m9_timing_policy(root, findings);
+    check_agent_template_cli_isolation(root, findings);
     require_contains(
         root,
         findings,
@@ -38,6 +45,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "cargo test -p xtask app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact -- --exact",
             "cargo test --test m9_platform_release",
             ISOLATED_M9_PLATFORM_BENCHMARK_ENV,
+            HOSTED_M9_TIMING_POLICY_ENV,
             ISOLATED_M9_PLATFORM_BENCHMARK_COMMAND,
             "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
             "m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact",
@@ -107,6 +115,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "cargo test -p xtask -- --list | grep -Fqx 'app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact: test'",
             "cargo test -p xtask app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact -- --exact",
             ISOLATED_M9_PLATFORM_BENCHMARK_ENV,
+            HOSTED_M9_TIMING_POLICY_ENV,
             ISOLATED_M9_PLATFORM_BENCHMARK_COMMAND,
             "needs:",
             "release-lane-artifact",
@@ -324,6 +333,8 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "m9_platform_rendered_output_suite_writes_release_artifacts",
             "m9_platform_benchmark_writes_release_artifact",
             "SCENA_RUN_M9_PLATFORM_BENCHMARK",
+            "SCENA_M9_TIMING_POLICY",
+            "report-only-hosted",
             "m9-benchmarks-required.json",
             "\"release_evidence\": false",
             "m9_capability_matrix_artifact_covers_required_lanes",
@@ -466,27 +477,6 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
         &["\"production_claim\": true"],
     );
     check_m9_platform_benchmark_isolation(root, findings);
-}
-
-fn check_m9_platform_benchmark_isolation(root: &Path, findings: &mut Vec<Finding>) {
-    let relative = "tests/m9_platform_release.rs";
-    let Ok(source) = fs::read_to_string(root.join(relative)) else {
-        return;
-    };
-    let Some(start) = source.find("fn m9_platform_rendered_output_suite_writes_release_artifacts")
-    else {
-        return;
-    };
-    let rendered_output_test = &source[start..];
-    let end = rendered_output_test
-        .find("\n#[test]")
-        .unwrap_or(rendered_output_test.len());
-    if rendered_output_test[..end].contains("write_benchmark_artifact") {
-        findings.push(Finding::new(
-            "RELEASE-CI-M9",
-            "tests/m9_platform_release.rs must not measure performance inside the broad parallel rendered-output test; run the environment-gated exact benchmark with --test-threads=1",
-        ));
-    }
 }
 
 pub(crate) fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {

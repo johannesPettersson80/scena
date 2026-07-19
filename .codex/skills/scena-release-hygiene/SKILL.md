@@ -43,17 +43,17 @@ the default inner loop for every small fix. During implementation, use the
 release gates once before the release-ready claim.
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D warnings'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
-ssh scena-builder 'cd "$HOME/projects/scena" && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo fmt --check'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo clippy --all-targets -- -D warnings'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo test'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo run -p xtask -- doctor --full'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features'
 ```
 
 For publish-readiness:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo publish --dry-run'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo publish --dry-run'
 ```
 
 An unrun required gate is not a pass. Record the exact blocker when a gate cannot run.
@@ -63,6 +63,17 @@ these gates.
 If the work is not release-ready yet, do not imply these gates are required after every
 increment. Report the focused/scoped proof actually run and the reason release gates are
 being deferred until the checkpoint.
+
+Before patching a failed release run, execute
+`scripts/collect_ci_failure_evidence.sh <run-id>` and classify every failed job. Batch all
+known corrections into one release candidate and run one deciding full matrix. Two failed
+remedies with the same signature trip the investigation circuit breaker; no third push is
+allowed without a smaller discriminating proof.
+
+Shared GitHub-hosted machines are not controlled performance hardware. Their M9 wall-clock
+measurements use `SCENA_M9_TIMING_POLICY=report-only-hosted`; sample validity and allocation
+budgets still block. Strict 5% timing evidence must come from a stable controlled lane and
+must never be replaced by a widened hosted-runner baseline.
 
 For a backlog or checklist that contains many fixes, release hygiene is satisfied by one
 full release-gate run at the final integration checkpoint, plus focused/scoped evidence for

@@ -5,6 +5,9 @@ use super::scena_input::{
 };
 use super::scena_output::{CliOutcome, json_outcome};
 
+#[cfg(feature = "scene-host")]
+use super::scena_input::scene_host_build_from_resolved_recipe;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifyAppearanceCommandArgs {
     input: String,
@@ -38,6 +41,16 @@ pub(crate) fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcom
     };
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
+    if input.has_scene_host_directives() {
+        return run_verify_recipe_appearance(
+            input,
+            width,
+            height,
+            expectation,
+            args.out.as_deref(),
+            args.detail,
+        );
+    }
     let mut viewer = pollster::block_on(
         viewer_builder(input.asset.as_str(), width, height, input.transform, false)
             .with_default_light()
@@ -87,6 +100,96 @@ pub(crate) fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcom
         exit_code,
         "failed to serialize appearance introspection report",
     )
+}
+
+#[cfg(feature = "scene-host")]
+fn run_verify_recipe_appearance(
+    input: super::scena_input::ResolvedSceneInput,
+    width: u32,
+    height: u32,
+    expectation: scena::AppearanceExpectationV1,
+    out: Option<&std::path::Path>,
+    detail: bool,
+) -> Result<CliOutcome, String> {
+    let mut build = pollster::block_on(scene_host_build_from_resolved_recipe(
+        &input, width, height, false,
+    ))?;
+    let requested_variant = expectation.first_requested_variant();
+    let mut active_variant = None;
+    let mut available_variants = Vec::new();
+    if let Some(import) = build.manifest.imports.first() {
+        available_variants = build
+            .host
+            .material_variants(import.import_handle)
+            .map_err(|error| format!("failed to list recipe material variants: {error}"))?;
+        if let Some(variant) = requested_variant
+            && available_variants
+                .iter()
+                .any(|candidate| candidate == variant)
+        {
+            build
+                .host
+                .set_active_material_variant(import.import_handle, Some(variant))
+                .map_err(|error| {
+                    format!("failed to apply recipe material variant '{variant}': {error}")
+                })?;
+        }
+        active_variant = build
+            .host
+            .active_material_variant(import.import_handle)
+            .map_err(|error| format!("failed to inspect recipe material variant: {error}"))?;
+    }
+
+    build
+        .host
+        .prepare()
+        .map_err(|error| format!("failed to prepare recipe appearance scene: {error}"))?;
+    build
+        .host
+        .render()
+        .map_err(|error| format!("failed to render recipe appearance scene: {error}"))?;
+    let capture = build
+        .host
+        .capture()
+        .map_err(|error| format!("failed to capture recipe appearance scene: {error}"))?;
+    if let Some(out) = out {
+        ensure_parent_dir(out)?;
+        capture
+            .write_png(out)
+            .map_err(|error| format!("failed to write PNG '{}': {error}", out.display()))?;
+    }
+    let inspection_json = build
+        .host
+        .inspect_json()
+        .map_err(|error| format!("failed to inspect recipe appearance scene: {error}"))?;
+    let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
+        .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
+    let options = appearance_introspection_options(detail)
+        .with_active_material_variant(active_variant)
+        .with_available_material_variants(available_variants);
+    let report =
+        build
+            .host
+            .renderer()
+            .introspect_appearance(&capture, &inspection, &expectation, options);
+    let exit_code = if report.ok { 0 } else { 1 };
+    json_outcome(
+        &report,
+        exit_code,
+        "failed to serialize recipe appearance introspection report",
+    )
+}
+
+#[cfg(not(feature = "scene-host"))]
+fn run_verify_recipe_appearance(
+    _input: super::scena_input::ResolvedSceneInput,
+    _width: u32,
+    _height: u32,
+    _expectation: scena::AppearanceExpectationV1,
+    _out: Option<&std::path::Path>,
+    _detail: bool,
+) -> Result<CliOutcome, String> {
+    Err("verify appearance for authored recipes requires the scene-host feature".to_owned())
 }
 
 impl VerifyAppearanceCommandArgs {

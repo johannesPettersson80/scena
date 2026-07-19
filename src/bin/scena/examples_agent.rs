@@ -6,6 +6,8 @@ use serde_json::json;
 use super::scena_output::{CliOutcome, json_outcome};
 #[path = "examples_agent/builder.rs"]
 mod builder;
+#[path = "examples_agent/data_visualization.rs"]
+mod data_visualization;
 #[path = "examples_agent/overlays.rs"]
 mod overlays;
 #[path = "examples_agent/starter.rs"]
@@ -89,7 +91,7 @@ fn build_template(name: &str, out_dir: &Path) -> Result<scena::AgentSmokeTemplat
         "product_configurator" => starter::product_configurator(out_dir),
         "live-state-viewer" => live_state_viewer(out_dir),
         "web-viewer" => web_viewer(out_dir),
-        "data-visualization" => data_visualization(out_dir),
+        "data-visualization" => data_visualization::build(out_dir),
         "animated-viewer" => animated_viewer(out_dir),
         "interaction-proof" => interaction_proof(out_dir),
         "cad-inspection" => cad_inspection(out_dir),
@@ -183,56 +185,6 @@ fn web_viewer(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
         &mut builder,
     )?;
     add_common_commands(out_dir, &recipe, &mut builder);
-    Ok(builder.finish())
-}
-
-fn data_visualization(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
-    let mut builder = TemplateBuilder::ready("data-visualization", &["inspection"]);
-    let recipe = write_recipe(
-        out_dir,
-        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
-        96,
-        72,
-        "data-color render smoke proof",
-        &mut builder,
-    )?;
-    add_common_commands(out_dir, &recipe, &mut builder);
-    let expectation = out_dir.join("appearance-expectation.json");
-    write_json_file(
-        &expectation,
-        &json!({
-            "schema": scena::APPEARANCE_EXPECTATION_SCHEMA_V1,
-            "targets": [{
-                "id": "data-mark-material",
-                "color_family": "blue",
-                "swatch_srgb8": [64, 128, 191],
-                "swatch_tolerance": 0.5,
-                "require_source_material": true,
-                "alpha_mode": "opaque"
-            }]
-        }),
-    )?;
-    builder.file(
-        "appearance_expectation",
-        &expectation,
-        scena::APPEARANCE_EXPECTATION_SCHEMA_V1,
-    );
-    let appearance_png = out_dir.join("appearance.png");
-    builder.command(
-        "verify_data_mark_appearance",
-        vec![
-            "verify",
-            "appearance",
-            &path_for_json(&recipe),
-            "--expect",
-            &path_for_json(&expectation),
-            "--out",
-            &path_for_json(&appearance_png),
-        ],
-        scena::APPEARANCE_INTROSPECTION_SCHEMA_V1,
-        true,
-        vec![appearance_png],
-    );
     Ok(builder.finish())
 }
 

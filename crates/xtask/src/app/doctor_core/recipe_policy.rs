@@ -38,6 +38,19 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
     require_markers(
         root,
         findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/bin/scena/verify.rs"),
+        &[
+            "input.has_scene_host_directives()",
+            "run_verify_recipe_appearance",
+            "scene_host_build_from_resolved_recipe",
+            "introspect_appearance",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
         "RECIPE-ERGONOMIC-BACKBONE",
         &root.join("src/material/presets.rs"),
         &[
@@ -362,6 +375,18 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         root,
         findings,
         "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/bin/scena/examples_agent/data_visualization.rs"),
+        &[
+            "TemplateBuilder::ready(\"data-visualization\", &[\"inspection\", \"scene-host\"])",
+            "data-mark-blue",
+            "authored data-color render and appearance proof",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join("src/bin/scena/examples_agent/starter.rs"),
         &[
             "apply_presentation_defaults",
@@ -377,7 +402,10 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         findings,
         "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join("tests/scena_cli_agent_templates.rs"),
-        &["assert_template_recipe_has_beauty_defaults"],
+        &[
+            "assert_template_recipe_has_beauty_defaults",
+            "assert_data_visualization_template_targets_authored_blue_mark",
+        ],
     );
 
     require_markers(

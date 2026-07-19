@@ -354,6 +354,7 @@ pub(crate) fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<F
         "SCENA_BENCHMARK_CPU",
         "SCENA_BENCHMARK_PROFILE",
         "SCENA_MATERIAL_PROOF_URL",
+        "SCENA_M9_TIMING_POLICY",
         "SCENA_REFERENCE_DIFF",
         "SCENA_REQUIRE_PARITY",
         "SCENA_REQUIRE_HARDWARE_GPU",

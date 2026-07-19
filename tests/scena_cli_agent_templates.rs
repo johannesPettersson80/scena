@@ -3,6 +3,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard};
+
+static TEMPLATE_CLI_LOCK: Mutex<()> = Mutex::new(());
 
 const TEMPLATE_NAMES: &[&str] = &[
     "product-configurator",
@@ -25,6 +28,7 @@ const STARTER_SNIPPET_NAMES: &[&str] = &[
 
 #[test]
 fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
+    let _cli_guard = template_cli_guard();
     let root = artifact_dir("agent-templates");
 
     for name in TEMPLATE_NAMES {
@@ -36,8 +40,8 @@ fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
 
         assert!(
             output.status.success(),
-            "template {name} failed, stderr={}",
-            stderr(&output)
+            "template {name} failed: {}",
+            output_diagnostic(&output)
         );
         assert!(
             output.stderr.is_empty(),
@@ -58,6 +62,17 @@ fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
             "template files should exist: {manifest:#}"
         );
         assert_template_recipe_has_beauty_defaults(&output_dir.join("recipe.json"), name);
+        if *name == "data-visualization" {
+            assert!(
+                manifest["required_features"]
+                    .as_array()
+                    .expect("required_features array")
+                    .iter()
+                    .any(|feature| feature == "scene-host"),
+                "authored data visualization verification requires scene-host: {manifest:#}"
+            );
+            assert_data_visualization_template_targets_authored_blue_mark(&output_dir);
+        }
 
         for command in manifest["commands"].as_array().expect("commands array") {
             let argv = command["argv"]
@@ -85,8 +100,8 @@ fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
                 .unwrap_or_else(|error| panic!("template {name} command {argv:?} runs: {error}"));
             assert!(
                 command_output.status.success(),
-                "template {name} command {argv:?} failed, stderr={}",
-                stderr(&command_output)
+                "template {name} command {argv:?} failed: {}",
+                output_diagnostic(&command_output)
             );
             assert!(
                 command_output.stderr.is_empty(),
@@ -109,6 +124,7 @@ fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
 
 #[test]
 fn scena_examples_agent_cli_stdout_matches_golden_fixture() {
+    let _cli_guard = template_cli_guard();
     let root = PathBuf::from("target")
         .join("gate-artifacts")
         .join("scena-cli-agent-template-golden");
@@ -127,7 +143,11 @@ fn scena_examples_agent_cli_stdout_matches_golden_fixture() {
         .output()
         .expect("scena examples agent golden command runs");
 
-    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.status.success(),
+        "golden template command failed: {}",
+        output_diagnostic(&output)
+    );
     assert!(
         output.stderr.is_empty(),
         "examples agent golden command keeps stderr empty, stderr={}",
@@ -144,6 +164,7 @@ fn scena_examples_agent_cli_stdout_matches_golden_fixture() {
 
 #[test]
 fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overlay_notes() {
+    let _cli_guard = template_cli_guard();
     let root = artifact_dir("agent-templates-phase2");
 
     for name in ["cad-inspection", "documentation-renderer"] {
@@ -158,7 +179,11 @@ fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overla
             .output()
             .expect("scena examples agent phase2 command runs");
 
-        assert!(output.status.success(), "stderr={}", stderr(&output));
+        assert!(
+            output.status.success(),
+            "phase2 template {name} failed: {}",
+            output_diagnostic(&output)
+        );
         assert!(output.stderr.is_empty(), "stderr={}", stderr(&output));
         let manifest: serde_json::Value =
             serde_json::from_slice(&output.stdout).expect("template emits JSON");
@@ -219,8 +244,8 @@ fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overla
             .expect("template render command runs");
         assert!(
             render_output.status.success(),
-            "stderr={}",
-            stderr(&render_output)
+            "phase2 render command failed: {}",
+            output_diagnostic(&render_output)
         );
         let report: serde_json::Value =
             serde_json::from_slice(&render_output.stdout).expect("render emits JSON");
@@ -233,8 +258,8 @@ fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overla
             .expect("template recipe inspects");
         assert!(
             inspect_output.status.success(),
-            "stderr={}",
-            stderr(&inspect_output)
+            "phase2 inspect command failed: {}",
+            output_diagnostic(&inspect_output)
         );
         let inspection: serde_json::Value =
             serde_json::from_slice(&inspect_output.stdout).expect("inspect emits JSON");
@@ -255,6 +280,7 @@ fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overla
 
 #[test]
 fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
+    let _cli_guard = template_cli_guard();
     let root = artifact_dir("agent-starter-snippets");
 
     for name in STARTER_SNIPPET_NAMES {
@@ -273,8 +299,8 @@ fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
 
         assert!(
             output.status.success(),
-            "starter snippet {name} failed, stderr={}",
-            stderr(&output)
+            "starter snippet {name} failed: {}",
+            output_diagnostic(&output)
         );
         assert!(
             output.stderr.is_empty(),
@@ -343,8 +369,8 @@ fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
                 });
             assert!(
                 command_output.status.success(),
-                "starter snippet {name} command {argv:?} failed, stderr={}",
-                stderr(&command_output)
+                "starter snippet {name} command {argv:?} failed: {}",
+                output_diagnostic(&command_output)
             );
             assert!(
                 command_output.stderr.is_empty(),
@@ -365,12 +391,27 @@ fn artifact_dir(name: &str) -> PathBuf {
     dir
 }
 
+fn template_cli_guard() -> MutexGuard<'static, ()> {
+    TEMPLATE_CLI_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn path_str(path: &Path) -> &str {
     path.to_str().expect("test path is UTF-8")
 }
 
 fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn output_diagnostic(output: &std::process::Output) -> String {
+    format!(
+        "status={}, stdout={}, stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 fn assert_template_recipe_has_beauty_defaults(recipe_path: &Path, name: &str) {
@@ -438,4 +479,35 @@ fn assert_template_recipe_has_beauty_defaults(recipe_path: &Path, name: &str) {
             "template {name} with a grid should set a visible grid line width instead of relying on thin defaults: {recipe:#}"
         );
     }
+}
+
+fn assert_data_visualization_template_targets_authored_blue_mark(output_dir: &Path) {
+    let recipe: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(output_dir.join("recipe.json"))
+            .expect("data visualization recipe exists"),
+    )
+    .expect("data visualization recipe parses");
+    assert!(
+        recipe["imports"]
+            .as_array()
+            .is_none_or(|imports| imports.is_empty()),
+        "data visualization must author its marks instead of sampling an unrelated textured glTF: {recipe:#}"
+    );
+    assert!(
+        recipe["nodes"]
+            .as_array()
+            .is_some_and(|nodes| nodes.iter().any(|node| {
+                node["tags"]
+                    .as_array()
+                    .is_some_and(|tags| tags.iter().any(|tag| tag == "data-mark-blue"))
+            })),
+        "data visualization must identify the rendered blue mark: {recipe:#}"
+    );
+    let expectation: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(output_dir.join("appearance-expectation.json"))
+            .expect("data visualization expectation exists"),
+    )
+    .expect("data visualization expectation parses");
+    assert_eq!(expectation["targets"][0]["tag"], "data-mark-blue");
+    assert_ne!(expectation["targets"][0]["require_source_material"], true);
 }

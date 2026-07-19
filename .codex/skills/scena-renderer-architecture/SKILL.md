@@ -43,9 +43,9 @@ release-ready handoff, or explicit user request.
 Common scoped gates on `scena-builder`:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D warnings'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo fmt --check'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo clippy --all-targets -- -D warnings'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo test'
 ```
 
 Use the full set only after the focused proof is green and the implementation risk justifies

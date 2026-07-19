@@ -117,6 +117,41 @@ Use a short validation ledger in handoffs:
 - `full`: release-level gates, only when warranted, with the reason.
 - `skipped`: broader gates intentionally not run, with the risk reason.
 
+## Investigation Circuit Breakers
+
+Before changing code for a failed test, browser proof, benchmark, workflow, or release,
+classify the failure as exactly one of: product defect, test-harness defect, environment
+failure, policy failure, or provenance failure. Preserve the exact failing command, source
+commit, complete job log, and relevant artifact before proposing a remedy. A theory is not
+a root cause until it predicts a focused observation that distinguishes it from the other
+classes.
+
+- After two failed remediation attempts with the same failure signature, the investigation
+  circuit breaker trips. Freeze production and harness changes; do not make a third patch
+  until a smaller reproducer or captured diagnostic falsifies at least one competing cause.
+- After 30 minutes without a proven cause, stop and write a checkpoint with elapsed time,
+  exact signature, attempted remedies, current classification, missing evidence, and the
+  next single discriminating probe. Do not compensate with a broader suite.
+- Collect every failed job from one GitHub run before editing. Use
+  `scripts/collect_ci_failure_evidence.sh <run-id>` and batch all known fixes into one
+  release-candidate push. Run one deciding full matrix; do not push serial guesses or rerun
+  a passing matrix merely for a newer timestamp.
+- On user-operated hardware, provide one checksum-verified bundle and one runner command.
+  Windows GPU release proof must use `scripts/run_windows_complete_hardware_proof.ps1` and
+  its automatically uploaded archive. Do not relay individual patch overlays or ask the
+  user to copy diagnostic commands back and forth. A second user-assisted run requires
+  explicit user approval after a written root-cause checkpoint.
+- Strict wall-clock regression thresholds belong only on controlled or dedicated hardware.
+  GitHub-hosted runners use an explicit report-only timing policy while sample validity and
+  deterministic allocation budgets remain blocking. GitHub-hosted M9 commands must set
+  `SCENA_M9_TIMING_POLICY=report-only-hosted`. Never silently widen a baseline to make a
+  shared-runner failure pass.
+
+The validation ledger must also record elapsed investigation time, remediation-attempt
+count, release-candidate push count, full-matrix run count, and user-required action count.
+If any count exceeds the limits above, stop and report the process failure before doing
+more work.
+
 ## Validation
 
 Heavy Rust work runs on the Hetzner CPU builder by default:

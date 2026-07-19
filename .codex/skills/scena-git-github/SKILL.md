@@ -47,6 +47,17 @@ gh pr view <id> --json number,title,state,mergeStateStatus,url,headRefName,baseR
 gh run list --limit 10
 ```
 
+For a failed run, collect the complete exact-SHA evidence before editing:
+
+```bash
+scripts/collect_ci_failure_evidence.sh <run-id>
+```
+
+Classify every failed job as product, harness, environment, policy, or provenance, then
+batch all known fixes into one release-candidate push. After two remedies reproduce the same
+signature, the investigation circuit breaker forbids a third push until a smaller probe
+distinguishes the cause. Do not rerun already-passing jobs merely to refresh timestamps.
+
 ## Issue And PR Workflow
 
 1. Fetch the live issue or PR before accepting its summary.
@@ -65,8 +76,8 @@ gh run list --limit 10
 Use `scena-remote-builder` before remote gates. For git-sensitive work, capture:
 
 ```bash
-ssh scena-builder 'git -C "$HOME/projects/scena" status --short --branch'
-ssh scena-builder 'git -C "$HOME/projects/scena" log --oneline --decorate -1'
+ssh scena-builder 'git -C "$HOME/.cache/codex-worktrees/scena-<task-slug>" status --short --branch'
+ssh scena-builder 'git -C "$HOME/.cache/codex-worktrees/scena-<task-slug>" log --oneline --decorate -1'
 ```
 
 Do not confuse the remote builder checkout with GitHub branch state or the local checkout.

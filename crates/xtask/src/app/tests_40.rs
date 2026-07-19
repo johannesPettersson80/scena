@@ -257,3 +257,129 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
         );
     }
 }
+
+#[test]
+fn doctor_rejects_missing_investigation_circuit_breakers_and_stale_builder_paths() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/agent-circuit-breakers");
+    let _ = fs::remove_dir_all(&fixture_root);
+    for relative in [
+        "AGENTS.md",
+        ".codex/skills/scena-renderer-quality/SKILL.md",
+        ".codex/skills/scena-doctor/SKILL.md",
+        ".codex/skills/scena-release-hygiene/SKILL.md",
+        ".codex/skills/scena-remote-builder/SKILL.md",
+        ".codex/skills/scena-git-github/SKILL.md",
+        "scripts/scena_remote_builder_preflight.sh",
+        "scripts/collect_ci_failure_evidence.sh",
+        "scripts/run_windows_complete_hardware_proof.ps1",
+    ] {
+        let destination = fixture_root.join(relative);
+        fs::create_dir_all(destination.parent().expect("guardrail fixture parent"))
+            .expect("guardrail fixture directory");
+        fs::copy(root.join(relative), destination).expect("guardrail fixture source copies");
+    }
+    for (relative, needle, replacement) in [
+        (
+            "AGENTS.md",
+            "## Investigation Circuit Breakers",
+            "## Investigation Notes",
+        ),
+        (
+            "AGENTS.md",
+            "A second user-assisted run requires",
+            "Another user run may be requested",
+        ),
+    ] {
+        let path = fixture_root.join(relative);
+        let source = fs::read_to_string(&path).expect("guardrail fixture reads");
+        let mutated = source.replace(needle, replacement);
+        assert_ne!(source, mutated, "guardrail mutation must alter {relative}");
+        fs::write(path, mutated).expect("guardrail fixture mutation writes");
+    }
+    let stale_skill = fixture_root.join(".codex/skills/scena-renderer-quality/SKILL.md");
+    let mut stale_text = fs::read_to_string(&stale_skill).expect("quality skill fixture reads");
+    stale_text.push_str("\nssh scena-builder 'cd \"$HOME/projects/scena\" && cargo test'\n");
+    fs::write(stale_skill, stale_text).expect("stale path mutation writes");
+    let mut findings = Vec::new();
+
+    check_remote_builder_bootstrap_contracts(&fixture_root, &mut findings);
+
+    for expected in [
+        "investigation circuit breaker",
+        "second user-assisted run",
+        "obsolete shared checkout path",
+    ] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "O01-REMOTE-BUILDER-BOOTSTRAP" && finding.message.contains(expected)
+            }),
+            "doctor must reject agent guidance without {expected}; findings={findings:?}",
+        );
+    }
+}
+
+#[test]
+fn doctor_rejects_strict_wall_clock_gates_on_github_hosted_runners() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/hosted-timing-policy");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(fixture_root.join(".github/workflows"))
+        .expect("hosted timing workflow fixture directory");
+    for workflow in ["ci.yml", "release.yml"] {
+        fs::write(
+            fixture_root.join(".github/workflows").join(workflow),
+            r#"jobs:
+  windows-dx12:
+    runs-on: windows-2025
+    steps:
+      - run: SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
+"#,
+        )
+        .expect("hosted timing workflow fixture writes");
+    }
+    let mut findings = Vec::new();
+
+    check_m9_ci_release_lanes(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-CI-M9"
+                && finding
+                    .message
+                    .contains("SCENA_M9_TIMING_POLICY=report-only-hosted")
+        }),
+        "doctor must reject strict wall-clock benchmark gates on shared GitHub-hosted runners: {findings:?}",
+    );
+}
+
+#[test]
+fn doctor_rejects_parallel_heavyweight_agent_template_cli_tests() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/agent-template-cli-isolation");
+    let test_path = fixture_root.join("tests/scena_cli_agent_templates.rs");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(test_path.parent().expect("CLI isolation fixture parent"))
+        .expect("CLI isolation fixture directory");
+    fs::copy(root.join("tests/scena_cli_agent_templates.rs"), &test_path)
+        .expect("CLI isolation fixture source copies");
+    let source = fs::read_to_string(&test_path).expect("CLI isolation fixture reads");
+    let mutated = source
+        .replace("static TEMPLATE_CLI_LOCK", "static REMOVED_CLI_LOCK")
+        .replace(
+            "let _cli_guard = template_cli_guard();",
+            "let _removed_guard = ();",
+        );
+    assert_ne!(source, mutated, "CLI isolation mutation must alter fixture");
+    fs::write(&test_path, mutated).expect("CLI isolation mutation writes");
+    let mut findings = Vec::new();
+
+    check_m9_ci_release_lanes(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-CI-M9" && finding.message.contains("TEMPLATE_CLI_LOCK")
+        }),
+        "doctor must reject concurrent heavyweight CLI subprocess tests that can exhaust a hosted runner: {findings:?}",
+    );
+}

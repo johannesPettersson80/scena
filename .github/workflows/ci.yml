@@ -6,6 +6,10 @@ on:
     branches: [main]
     tags: ["v*"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   RUST_TOOLCHAIN: "1.93.1"
   WASM_PACK_VERSION: "0.14.0"
@@ -54,7 +58,7 @@ jobs:
           cargo test --features inspection --test measurement_visual_proof
           cargo test --features ktx2 --test m8_assets_materials_ecosystem m8_ktx2_basisu_feature_loads_compressed_texture_descriptor
           bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release
-          SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
+          SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
           bash scripts/release_lane_command.sh headless-cpu cargo test --test q01_waterbottle_cpu_reference q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders -- --exact
           bash scripts/release_lane_command.sh headless-cpu cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact
@@ -213,7 +217,7 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
-          SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
+          SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- doctor --full
@@ -247,7 +251,7 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
-          SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
+          SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
           cargo run -p xtask -- doctor --full
       - name: Docs
@@ -274,6 +278,7 @@ jobs:
       - name: Dedicated 4K benchmark
         env:
           SCENA_RUN_DEDICATED_4K_BENCHMARK: "1"
+          SCENA_M9_TIMING_POLICY: report-only-hosted
           SCENA_BENCHMARK_PROFILE: perf-test
           SCENA_BENCHMARK_COMMAND: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
         run: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact

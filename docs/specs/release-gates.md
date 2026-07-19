@@ -20,6 +20,25 @@ artifacts. Required lanes fail closed when their renderer or hardware work is
 unavailable; optional diagnostic lanes must say that they are non-release
 evidence.
 
+## Performance timing policy
+
+M9 always requires a valid distribution with the configured minimum sample
+count and always blocks deterministic allocation-count or allocation-byte
+regressions. Wall-clock timing enforcement depends on the measurement host:
+
+- `strict-controlled` is the default and enforces the stored p95 frame/prepare
+  thresholds. Use it on the isolated Hetzner builder or another stable,
+  controlled performance host.
+- `report-only-hosted` is mandatory on shared GitHub-hosted runners. The
+  artifact retains the observed pass/fail result and regression percentage,
+  but variable wall-clock timing alone does not fail the lane.
+
+The policy is selected by `SCENA_M9_TIMING_POLICY`, recorded in every benchmark
+artifact and baseline-comparison row, and doctor-enforced in hosted workflows.
+A hosted regression must be reproduced under `strict-controlled` before it is
+called a product performance defect. Allocation regressions remain blocking in
+both modes; the hosted policy is not permission to widen stored baselines.
+
 ## Required release artifacts
 
 The release bundle includes provenance-bearing `m5-benchmarks.json` and

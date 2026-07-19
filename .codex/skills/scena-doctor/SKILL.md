@@ -18,9 +18,9 @@ prove the bug or drift with the smallest test/check that can fail, then run the 
 that enforces the recurring family.
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --docs'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --architecture'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo run -p xtask -- doctor --docs'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo run -p xtask -- doctor --architecture'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo run -p xtask -- doctor --full'
 ```
 
 Use `scena-remote-builder` before running doctor if local work must be synced to the remote
@@ -49,8 +49,8 @@ doctor edit also changes public behavior.
 - `doctor --docs`: required docs, local links, stale contract names, and canonical contract
   anchors.
 - `doctor --architecture`: required module files, renderer scope boundaries, module
-  boundary drift, backend vocabulary, SOLID/KISS guardrails, unit-test-first governance, and
-  AGENTS validation.
+  boundary drift, backend vocabulary, SOLID/KISS guardrails, unit-test-first governance,
+  investigation circuit breakers, current isolated-builder paths, and AGENTS validation.
 
 ## Expansion Targets
 

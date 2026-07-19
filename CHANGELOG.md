@@ -6,6 +6,21 @@ All notable user-facing changes are recorded here.
 
 ## [1.8.0] - 2026-07-19
 
+- Add enforceable investigation circuit breakers, exact-run CI failure evidence
+  collection, serialized heavyweight CLI subprocess tests, and a single
+  checksum-verified Windows hardware-proof workflow so release debugging stops
+  after repeated identical failures instead of consuming more user-operated
+  test cycles.
+- Separate M9 timing policy from deterministic correctness: shared
+  GitHub-hosted runners report wall-clock drift while still blocking invalid
+  samples and allocation regressions; tight timing thresholds remain strict on
+  controlled performance hardware.
+- Fix the data-visualization agent template to author and explicitly target a
+  blue data mark instead of applying a blue expectation to an unrelated
+  textured glTF whose decoded base-color texture rendered near-black. The
+  `verify appearance` CLI now renders authored recipes through SceneHost rather
+  than misclassifying recipes without imports as glTF assets.
+
 - Add asynchronous SceneHost browser capture and render-introspection methods
   backed by renderer-owned WebGPU buffer mapping, while preserving the existing
   synchronous CPU/WebGL2 methods.
@@ -58,8 +73,9 @@ All notable user-facing changes are recorded here.
 
 - Isolated lane-specific M9 performance measurements from the parallel
   functional test suite and pinned single-threaded benchmark commands in CI and
-  release workflows, preventing hosted-runner contention from masquerading as
-  a renderer regression.
+  release workflows. Shared hosted lanes now identify wall-clock movement as
+  report-only instead of treating variable VM scheduling as a renderer defect;
+  sample validity and allocation budgets remain blocking.
 - Prevent browser resource-retirement records from waiting forever on delayed
   completion callbacks: WebGPU now reports browser-managed automatic logical
   retirement, while WebGL2 uses wgpu's automatic WebGL fence policy and reports

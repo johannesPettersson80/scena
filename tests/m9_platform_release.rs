@@ -1015,10 +1015,13 @@ fn write_benchmark_artifact(lane: &str) {
         benchmark_headless_4k(),
     ];
     let baseline = benchmark_baseline();
-    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline, lane);
+    let timing_policy = m9_timing_policy();
+    let baseline_comparison =
+        apply_benchmark_baselines_with_policy(&mut rows, &baseline, lane, timing_policy);
     let artifact = serde_json::json!({
         "schema": "scena.m9.benchmarks.v1",
         "lane": lane,
+        "timing_policy": timing_policy.as_str(),
         "performance_environment": performance_environment_metadata(lane),
         "regression_threshold_percent": 5.0,
         "baseline_comparison": baseline_comparison,
@@ -1038,11 +1041,17 @@ fn write_dedicated_4k_benchmark_artifact() -> serde_json::Value {
     let matrix_rows = benchmark_feature_matrix_measured_rows(DEDICATED_4K_SAMPLE_COUNT);
     rows.extend(matrix_rows.clone());
     let baseline = benchmark_baseline();
-    let baseline_comparison =
-        apply_benchmark_baselines(&mut rows, &baseline, "headless-4k-performance");
+    let timing_policy = m9_timing_policy();
+    let baseline_comparison = apply_benchmark_baselines_with_policy(
+        &mut rows,
+        &baseline,
+        "headless-4k-performance",
+        timing_policy,
+    );
     let artifact = serde_json::json!({
         "schema": "scena.m9.benchmarks.v1",
         "lane": "headless-4k-performance",
+        "timing_policy": timing_policy.as_str(),
         "performance_environment": performance_environment_metadata("headless-4k-performance"),
         "regression_threshold_percent": 5.0,
         "baseline_comparison": baseline_comparison,
@@ -1073,10 +1082,13 @@ fn write_feature_matrix_required_artifact(lane: &str) {
 
 fn feature_matrix_artifact(lane: &str, mut rows: Vec<serde_json::Value>) -> serde_json::Value {
     let baseline = benchmark_baseline();
-    let baseline_comparison = apply_benchmark_baselines(&mut rows, &baseline, lane);
+    let timing_policy = m9_timing_policy();
+    let baseline_comparison =
+        apply_benchmark_baselines_with_policy(&mut rows, &baseline, lane, timing_policy);
     serde_json::json!({
         "schema": "scena.m9.benchmarks.feature_matrix.v1",
         "lane": lane,
+        "timing_policy": timing_policy.as_str(),
         "performance_environment": performance_environment_metadata(lane),
         "matrix_contract": "resolution x feature set cost reporting for Part A visual features",
         "regression_threshold_percent": 5.0,
@@ -1187,12 +1199,56 @@ fn benchmark_baseline() -> serde_json::Value {
     serde_json::from_str(&text).expect("benchmark baseline file is valid JSON")
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum M9TimingPolicy {
+    StrictControlled,
+    ReportOnlyHosted,
+}
+
+impl M9TimingPolicy {
+    fn parse(value: Option<&str>) -> Result<Self, String> {
+        match value {
+            None | Some("strict-controlled") => Ok(Self::StrictControlled),
+            Some("report-only-hosted") => Ok(Self::ReportOnlyHosted),
+            Some(value) => Err(format!(
+                "unsupported SCENA_M9_TIMING_POLICY={value:?}; expected strict-controlled or report-only-hosted"
+            )),
+        }
+    }
+
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::StrictControlled => "strict-controlled",
+            Self::ReportOnlyHosted => "report-only-hosted",
+        }
+    }
+
+    const fn timing_enforced(self) -> bool {
+        matches!(self, Self::StrictControlled)
+    }
+}
+
+fn m9_timing_policy() -> M9TimingPolicy {
+    let value = std::env::var("SCENA_M9_TIMING_POLICY").ok();
+    M9TimingPolicy::parse(value.as_deref()).unwrap_or_else(|error| panic!("{error}"))
+}
+
 fn apply_benchmark_baselines(
     rows: &mut [serde_json::Value],
     baseline: &serde_json::Value,
     lane: &str,
 ) -> serde_json::Value {
+    apply_benchmark_baselines_with_policy(rows, baseline, lane, M9TimingPolicy::StrictControlled)
+}
+
+fn apply_benchmark_baselines_with_policy(
+    rows: &mut [serde_json::Value],
+    baseline: &serde_json::Value,
+    lane: &str,
+    timing_policy: M9TimingPolicy,
+) -> serde_json::Value {
     let mut status = "passed";
+    let mut reported_timing_regressions = 0_u64;
     let minimum_sample_count = baseline
         .get("minimum_sample_count")
         .and_then(serde_json::Value::as_u64)
@@ -1205,6 +1261,8 @@ fn apply_benchmark_baselines(
             row["baseline_comparison"] = serde_json::json!({
                 "status": "deferred",
                 "reason": "dedicated performance lane required before this row becomes a release blocker",
+                "timing_policy": timing_policy.as_str(),
+                "timing_enforced": timing_policy.timing_enforced(),
             });
             continue;
         }
@@ -1214,6 +1272,8 @@ fn apply_benchmark_baselines(
             row["baseline_comparison"] = serde_json::json!({
                 "status": "failed",
                 "reason": "missing stored baseline row",
+                "timing_policy": timing_policy.as_str(),
+                "timing_enforced": timing_policy.timing_enforced(),
             });
             continue;
         };
@@ -1273,11 +1333,17 @@ fn apply_benchmark_baselines(
             .and_then(serde_json::Value::as_f64);
         let allowed_p95_prepare_ms = baseline_p95_prepare_ms
             .map(|baseline| baseline * (1.0 + allowed_regression_percent / 100.0));
-        let prepare_status = match (p95_prepare_ms, allowed_p95_prepare_ms) {
-            (Some(measured), Some(allowed)) => measured <= allowed,
+        let prepare_measurement_valid = match (p95_prepare_ms, allowed_p95_prepare_ms) {
+            (Some(measured), Some(allowed)) => measured.is_finite() && allowed.is_finite(),
             (None, None) => true,
             _ => false,
         };
+        let prepare_status = prepare_measurement_valid
+            && match (p95_prepare_ms, allowed_p95_prepare_ms) {
+                (Some(measured), Some(allowed)) => measured <= allowed,
+                (None, None) => true,
+                _ => false,
+            };
         let max_allocated_bytes_per_frame = row
             .get("max_allocated_bytes_per_frame")
             .and_then(serde_json::Value::as_u64);
@@ -1292,18 +1358,42 @@ fn apply_benchmark_baselines(
             (None, None) => true,
             _ => false,
         };
-        let frame_status = sample_count >= row_minimum_sample_count && p95_frame_ms <= allowed_p95;
+        let sample_count_status = sample_count >= row_minimum_sample_count;
+        let frame_measurement_valid = p95_frame_ms.is_finite()
+            && baseline_p95_frame_ms.is_finite()
+            && baseline_p95_frame_ms > 0.0
+            && allowed_p95.is_finite();
+        let frame_status = frame_measurement_valid && p95_frame_ms <= allowed_p95;
         let allocation_status = max_allocations_per_frame <= allowed_max_allocations_per_frame;
-        let row_status =
-            if frame_status && prepare_status && allocation_status && allocation_bytes_status {
-                "passed"
-            } else {
-                status = "failed";
-                "failed"
-            };
+        let measurement_status =
+            sample_count_status && frame_measurement_valid && prepare_measurement_valid;
+        let timing_observation_status = frame_status && prepare_status;
+        if measurement_status && !timing_observation_status {
+            reported_timing_regressions += 1;
+        }
+        let timing_gate_status = !timing_policy.timing_enforced() || timing_observation_status;
+        let row_status = if measurement_status
+            && timing_gate_status
+            && allocation_status
+            && allocation_bytes_status
+        {
+            "passed"
+        } else {
+            status = "failed";
+            "failed"
+        };
 
         row["baseline_comparison"] = serde_json::json!({
             "status": row_status,
+            "timing_policy": timing_policy.as_str(),
+            "timing_enforced": timing_policy.timing_enforced(),
+            "timing_gate_status": if timing_policy.timing_enforced() {
+                if timing_observation_status { "passed" } else { "failed" }
+            } else {
+                "reported-only"
+            },
+            "measurement_status": if measurement_status { "passed" } else { "failed" },
+            "sample_count_status": if sample_count_status { "passed" } else { "failed" },
             "baseline_lane": row_baseline
                 .get("lane")
                 .and_then(serde_json::Value::as_str)
@@ -1331,6 +1421,14 @@ fn apply_benchmark_baselines(
     serde_json::json!({
         "status": status,
         "lane": lane,
+        "timing_policy": timing_policy.as_str(),
+        "timing_enforced": timing_policy.timing_enforced(),
+        "reported_timing_regressions": reported_timing_regressions,
+        "blocking_contract": if timing_policy.timing_enforced() {
+            "sample validity, wall-clock timing, and allocations"
+        } else {
+            "sample validity and allocations; wall-clock timing is reported only on shared hosted hardware"
+        },
         "baseline_path": BENCHMARK_BASELINE_PATH,
         "baseline_sha256": asset_source_hash(BENCHMARK_BASELINE_PATH),
         "metrics": [
@@ -3220,6 +3318,96 @@ fn m9_benchmark_baseline_comparison_fails_allocation_regressions() {
         rows[0]["baseline_comparison"]["allowed_max_allocations_per_frame"],
         4
     );
+}
+
+#[test]
+fn m9_hosted_timing_policy_reports_wall_clock_regressions_without_hiding_them() {
+    let mut rows = vec![serde_json::json!({
+        "scene": "static-viewer",
+        "backend": "Headless",
+        "sample_count": 100,
+        "p95_frame_ms": 12.0,
+        "p95_prepare_ms": 24.0,
+        "max_allocations_per_frame": 2,
+        "max_allocated_bytes_per_frame": 64,
+    })];
+    let baseline = serde_json::json!({
+        "minimum_sample_count": 100,
+        "rows": [{
+            "scene": "static-viewer",
+            "backend": "Headless",
+            "p95_frame_ms": 10.0,
+            "p95_prepare_ms": 20.0,
+            "allowed_regression_percent": 5.0,
+            "max_allocations_per_frame": 4,
+            "max_allocated_bytes_per_frame": 128
+        }]
+    });
+
+    let summary = apply_benchmark_baselines_with_policy(
+        &mut rows,
+        &baseline,
+        "github-hosted-test",
+        M9TimingPolicy::ReportOnlyHosted,
+    );
+
+    assert_eq!(summary["status"], "passed");
+    assert_eq!(summary["timing_policy"], "report-only-hosted");
+    assert_eq!(summary["timing_enforced"], false);
+    assert_eq!(summary["reported_timing_regressions"], 1);
+    assert_eq!(rows[0]["baseline_comparison"]["status"], "passed");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["frame_time_status"],
+        "failed"
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["prepare_time_status"],
+        "failed"
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["timing_gate_status"],
+        "reported-only"
+    );
+}
+
+#[test]
+fn m9_hosted_timing_policy_keeps_allocation_regressions_blocking() {
+    let mut rows = vec![serde_json::json!({
+        "scene": "static-viewer",
+        "backend": "Headless",
+        "sample_count": 100,
+        "p95_frame_ms": 10.0,
+        "max_allocations_per_frame": 12,
+    })];
+    let baseline = serde_json::json!({
+        "minimum_sample_count": 100,
+        "rows": [{
+            "scene": "static-viewer",
+            "backend": "Headless",
+            "p95_frame_ms": 10.0,
+            "allowed_regression_percent": 5.0,
+            "max_allocations_per_frame": 4
+        }]
+    });
+
+    let summary = apply_benchmark_baselines_with_policy(
+        &mut rows,
+        &baseline,
+        "github-hosted-test",
+        M9TimingPolicy::ReportOnlyHosted,
+    );
+
+    assert_eq!(summary["status"], "failed");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["allocation_status"],
+        "failed"
+    );
+}
+
+#[test]
+fn m9_timing_policy_rejects_unknown_values() {
+    let error = M9TimingPolicy::parse(Some("make-it-green")).expect_err("unknown policy fails");
+    assert!(error.contains("unsupported SCENA_M9_TIMING_POLICY"));
 }
 
 fn benchmark_profiled_pick_workload(

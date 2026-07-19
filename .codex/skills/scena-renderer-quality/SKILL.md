@@ -34,8 +34,8 @@ Use `scena-remote-builder` for all cargo compile/test/doctor gates. Keep the rem
 matched to the work being validated, then run command shapes such as:
 
 ```bash
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
-ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo test'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo run -p xtask -- doctor --full'
 ```
 
 Use the remote-builder validation ladder. Start with the focused visual/test proof that can
@@ -46,6 +46,20 @@ changes, or release-ready work; they are not the default for every test-only pro
 Do not run local cargo/build/test/browser/render proof unless the user explicitly permits it.
 For visual work, local image inspection is allowed only as inspection of existing artifacts,
 not as a substitute for the required remote or real-GPU proof.
+
+## Investigation Circuit Breaker
+
+Classify a failure as product, harness, environment, policy, or provenance before patching.
+After two remedies produce the same signature, stop changing code and build a smaller
+discriminating probe. At 30 minutes, record the exact signature, elapsed time, attempted
+remedies, and missing evidence. Do not broaden test scope to manufacture confidence.
+
+Wall-clock thresholds are strict only on controlled or dedicated performance hardware.
+GitHub-hosted runners must set `SCENA_M9_TIMING_POLICY=report-only-hosted`; sample-count and
+allocation budgets remain strict. Hardware browser proof requested from a user must be a
+single versioned bundle executed by `scripts/run_windows_complete_hardware_proof.ps1` with
+automatic artifact upload. A second user-assisted run requires explicit approval after a
+root-cause checkpoint.
 
 ## Unit Test First Workflow
 
