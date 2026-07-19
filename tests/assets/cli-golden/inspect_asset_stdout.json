@@ -82,17 +82,7 @@
           "g": 0.5,
           "r": 0.25
         },
-        "fallbacks": [
-          {
-            "fallback_path": "scena.material.fallback_texture",
-            "kind": "missing_texture_fallback",
-            "material_index": 0,
-            "material_slot": "baseColorTexture",
-            "reason": "texture bytes were unavailable; renderer will bind the generated material fallback texture",
-            "source_path": "tests/assets/gltf/textures/albedo.png",
-            "texture_index": 0
-          }
-        ],
+        "fallbacks": [],
         "kind": "unlit",
         "source": {
           "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
@@ -103,18 +93,21 @@
         "textures": [
           {
             "color_space": "srgb",
-            "decoded_dimensions": null,
-            "has_decoded_pixels": false,
+            "decoded_dimensions": [
+              256,
+              256
+            ],
+            "has_decoded_pixels": true,
             "provenance": {
               "derivatives": [],
               "generator": null,
               "license": null,
-              "source_path": "tests/assets/gltf/textures/albedo.png",
-              "source_sha256": null
+              "source_path": "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
+              "source_sha256": "d9b96cd4fee4a6e2ee6899f08eccc9734772c9690831abaeb93d11f16980f987"
             },
             "slot": "baseColorTexture",
             "source_format": "png",
-            "source_path": "tests/assets/gltf/textures/albedo.png"
+            "source_path": "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png"
           }
         ]
       },
@@ -234,17 +227,7 @@
           "g": 0.5,
           "r": 0.25
         },
-        "fallbacks": [
-          {
-            "fallback_path": "scena.material.fallback_texture",
-            "kind": "missing_texture_fallback",
-            "material_index": 0,
-            "material_slot": "baseColorTexture",
-            "reason": "texture bytes were unavailable; renderer will bind the generated material fallback texture",
-            "source_path": "tests/assets/gltf/textures/albedo.png",
-            "texture_index": 0
-          }
-        ],
+        "fallbacks": [],
         "kind": "unlit",
         "source": {
           "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
@@ -255,18 +238,21 @@
         "textures": [
           {
             "color_space": "srgb",
-            "decoded_dimensions": null,
-            "has_decoded_pixels": false,
+            "decoded_dimensions": [
+              256,
+              256
+            ],
+            "has_decoded_pixels": true,
             "provenance": {
               "derivatives": [],
               "generator": null,
               "license": null,
-              "source_path": "tests/assets/gltf/textures/albedo.png",
-              "source_sha256": null
+              "source_path": "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
+              "source_sha256": "d9b96cd4fee4a6e2ee6899f08eccc9734772c9690831abaeb93d11f16980f987"
             },
             "slot": "baseColorTexture",
             "source_format": "png",
-            "source_path": "tests/assets/gltf/textures/albedo.png"
+            "source_path": "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png"
           }
         ]
       },

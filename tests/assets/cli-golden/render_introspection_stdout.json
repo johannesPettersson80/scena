@@ -2,7 +2,7 @@
   "artifacts": {
     "capture": {
       "height": 48,
-      "payload_fnv1a64": "2b817375a1281999",
+      "payload_fnv1a64": "555e260328c2569c",
       "schema": "scena.capture.v1",
       "width": 64
     },
@@ -45,18 +45,18 @@
     "tiny_in_frame": false
   },
   "luminance": {
-    "max": 134.045,
-    "mean": 11.556,
+    "max": 11.907,
+    "mean": 0.758,
     "min": 0.0,
     "p05": 0.0,
     "p50": 0.0,
-    "p95": 99.959
+    "p95": 6.526
   },
   "nodes_detail": [],
   "nodes_summary": {
     "culled": 0,
     "drawn": 1,
-    "failed_material": 1,
+    "failed_material": 0,
     "hidden": 0,
     "transparent": 0,
     "visible": 4
@@ -64,5 +64,5 @@
   "ok": true,
   "reasons": [],
   "schema": "scena.render_introspection.v1",
-  "visible_pixel_fraction": 0.137
+  "visible_pixel_fraction": 0.135
 }

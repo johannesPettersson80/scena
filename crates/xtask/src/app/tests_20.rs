@@ -115,6 +115,80 @@ pub(crate) fn cli_output_policy_rejects_raw_println_and_hand_written_json() {
 }
 
 #[test]
+pub(crate) fn cli_render_success_golden_rejects_failed_materials() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/cli-render-success-golden");
+    let golden = fixture_root.join("tests/assets/cli-golden/render_introspection_stdout.json");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(golden.parent().expect("golden parent"))
+        .expect("fixture directories create");
+    fs::write(
+        &golden,
+        r#"{
+  "schema": "scena.render_introspection.v1",
+  "ok": true,
+  "nodes_summary": { "failed_material": 1 }
+}"#,
+    )
+    .expect("invalid success golden writes");
+    let mut findings = Vec::new();
+
+    check_cli_output_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "CLI-GOLDEN-RENDER-SUCCESS"
+                && finding.message.contains("failed_material must be 0")
+        }),
+        "successful render goldens must not accept failed materials: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn cli_inspect_success_golden_rejects_texture_fallbacks() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/cli-inspect-success-golden");
+    let golden_dir = fixture_root.join("tests/assets/cli-golden");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(&golden_dir).expect("fixture directories create");
+    fs::write(
+        golden_dir.join("render_introspection_stdout.json"),
+        r#"{
+  "schema": "scena.render_introspection.v1",
+  "ok": true,
+  "nodes_summary": { "failed_material": 0 }
+}"#,
+    )
+    .expect("valid render success golden writes");
+    fs::write(
+        golden_dir.join("inspect_asset_stdout.json"),
+        r#"{
+  "schema": "scena.scene_inspection.v1",
+  "draw_list": [{
+    "material": {
+      "fallbacks": [{ "kind": "missing_texture_fallback" }],
+      "textures": [{ "has_decoded_pixels": false }]
+    }
+  }]
+}"#,
+    )
+    .expect("invalid inspect success golden writes");
+    let mut findings = Vec::new();
+
+    check_cli_output_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "CLI-GOLDEN-INSPECT-SUCCESS"
+                && finding
+                    .message
+                    .contains("decoded textures without fallbacks")
+        }),
+        "successful inspect goldens must not accept texture fallbacks: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn scene_import_transaction_policy_rejects_premature_stale_replacement() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/import-transaction-policy");

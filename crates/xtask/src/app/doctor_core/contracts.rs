@@ -181,6 +181,96 @@ pub(crate) fn check_cli_output_contracts(root: &Path, findings: &mut Vec<Finding
         "src/bin/scena/process_output_shared.rs",
         &["\\\"schema\\\""],
     );
+
+    check_cli_render_success_golden(root, findings);
+    check_cli_inspect_success_golden(root, findings);
+}
+
+fn check_cli_render_success_golden(root: &Path, findings: &mut Vec<Finding>) {
+    const RULE: &str = "CLI-GOLDEN-RENDER-SUCCESS";
+    const REL: &str = "tests/assets/cli-golden/render_introspection_stdout.json";
+    let path = root.join(REL);
+    let Ok(text) = fs::read_to_string(&path) else {
+        findings.push(Finding::new(
+            RULE,
+            format!("could not read {REL}; successful render output must be pinned"),
+        ));
+        return;
+    };
+    let Ok(report) = serde_json::from_str::<Value>(&text) else {
+        findings.push(Finding::new(RULE, format!("{REL} must contain valid JSON")));
+        return;
+    };
+
+    let ok = report.get("ok").and_then(Value::as_bool);
+    let failed_material = report
+        .pointer("/nodes_summary/failed_material")
+        .and_then(Value::as_u64);
+    if ok != Some(true) || failed_material != Some(0) {
+        findings.push(Finding::new(
+            RULE,
+            format!(
+                "{REL} is the successful render golden: ok must be true and \
+                 nodes_summary.failed_material must be 0 (found ok={ok:?}, \
+                 failed_material={failed_material:?})"
+            ),
+        ));
+    }
+}
+
+fn check_cli_inspect_success_golden(root: &Path, findings: &mut Vec<Finding>) {
+    const RULE: &str = "CLI-GOLDEN-INSPECT-SUCCESS";
+    const REL: &str = "tests/assets/cli-golden/inspect_asset_stdout.json";
+    let path = root.join(REL);
+    let Ok(text) = fs::read_to_string(&path) else {
+        findings.push(Finding::new(
+            RULE,
+            format!("could not read {REL}; successful inspect output must be pinned"),
+        ));
+        return;
+    };
+    let Ok(report) = serde_json::from_str::<Value>(&text) else {
+        findings.push(Finding::new(RULE, format!("{REL} must contain valid JSON")));
+        return;
+    };
+
+    if inspect_report_contains_invalid_material(&report) {
+        findings.push(Finding::new(
+            RULE,
+            format!(
+                "{REL} must describe decoded textures without fallbacks; a successful \
+                 inspect golden cannot normalize a missing material resource"
+            ),
+        ));
+    }
+}
+
+fn inspect_report_contains_invalid_material(value: &Value) -> bool {
+    match value {
+        Value::Array(values) => values.iter().any(inspect_report_contains_invalid_material),
+        Value::Object(object) => {
+            let invalid_material = object.get("material").is_some_and(|material| {
+                let fallbacks = material
+                    .get("fallbacks")
+                    .and_then(Value::as_array)
+                    .is_none_or(|fallbacks| !fallbacks.is_empty());
+                let invalid_texture = material
+                    .get("textures")
+                    .and_then(Value::as_array)
+                    .is_none_or(|textures| {
+                        textures.iter().any(|texture| {
+                            texture.get("has_decoded_pixels").and_then(Value::as_bool) != Some(true)
+                        })
+                    });
+                fallbacks || invalid_texture
+            });
+            invalid_material
+                || object
+                    .values()
+                    .any(inspect_report_contains_invalid_material)
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn require_files(
