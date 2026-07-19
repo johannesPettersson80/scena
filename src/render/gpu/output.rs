@@ -876,6 +876,9 @@ mod tests {
             ("texture_2d_array", GPU_TRIANGLE_SHADER),
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
+            let accumulates_ltc_specular = shader
+                .contains("shaded += ltc_area_light_specular_contribution(")
+                || shader.contains("var shaded = ltc_area_light_specular_contribution(");
             assert!(
                 shader.contains("fn ltc_area_light_specular_contribution")
                     && shader.contains("fn ltc_area_light_polygon")
@@ -885,7 +888,7 @@ mod tests {
                     && shader.contains("LTC_TABLE_2")
                     && shader.contains("fn ltc_integrate_edge")
                     && shader.contains("fn ltc_clip_quad_to_horizon")
-                    && shader.contains("shaded += ltc_area_light_specular_contribution("),
+                    && accumulates_ltc_specular,
                 "{name} shader must include the same fitted-table linearly-transformed-cosine area-light specular path as the CPU reference"
             );
         }
@@ -1040,11 +1043,14 @@ mod tests {
             ("texture_2d_array", GPU_TRIANGLE_SHADER),
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
+            let shadows_sampled_radiance = shader.contains(
+                "area_light_radiance(i, sample_position, world_position) * area_shadow_visibility",
+            ) || shader.contains(
+                "area_light_radiance(index, sample_position, world_position) * area_shadow_visibility",
+            );
             assert!(
                 shader.contains("let area_shadow_visibility = clamp(shadow_visibility, 0.0, 1.0)")
-                    && shader.contains(
-                        "area_light_radiance(i, sample_position, world_position) * area_shadow_visibility"
-                    ),
+                    && shadows_sampled_radiance,
                 "{name} shader must consume prepared area-light visibility so finite emitters \
                  can produce soft penumbra instead of unshadowed area-light radiance"
             );
