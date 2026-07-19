@@ -1,6 +1,7 @@
 #![cfg(all(unix, not(target_arch = "wasm32")))]
 
 use std::fs;
+#[cfg(target_os = "linux")]
 use std::fs::File;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
@@ -18,6 +19,9 @@ fn both_binaries_treat_closed_stdout_as_quiet_success() {
     ]));
 }
 
+// `/dev/full` is Linux-specific; the shared writer unit test injects the same
+// non-BrokenPipe error kind on every target.
+#[cfg(target_os = "linux")]
 #[test]
 fn both_binaries_report_non_broken_stdout_errors_as_structured_failures() {
     assert_non_broken_stdout_failure(Command::new(env!("CARGO_BIN_EXE_scena")).args(["version"]));
@@ -110,6 +114,7 @@ fn assert_closed_stdout_success(command: &mut Command) {
     assert!(output.stderr.is_empty(), "BrokenPipe must be quiet");
 }
 
+#[cfg(target_os = "linux")]
 fn assert_non_broken_stdout_failure(command: &mut Command) {
     let full = File::options()
         .write(true)
