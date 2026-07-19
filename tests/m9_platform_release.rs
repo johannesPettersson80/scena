@@ -319,7 +319,27 @@ fn m9_platform_rendered_output_suite_writes_release_artifacts() {
     }
 
     write_headless_cpu_lane_artifacts();
-    write_benchmark_artifact(lane);
+}
+
+#[test]
+fn m9_platform_benchmark_writes_release_artifact() {
+    let required_path = platform_dir().join("m9-benchmarks-required.json");
+    if std::env::var_os("SCENA_RUN_M9_PLATFORM_BENCHMARK").is_none() {
+        write_json(
+            &required_path,
+            &serde_json::json!({
+                "schema": "scena.m9.platform_benchmark_required.v1",
+                "status": "incomplete",
+                "release_evidence": false,
+                "reason": "SCENA_RUN_M9_PLATFORM_BENCHMARK is not set in the broad parallel test suite",
+                "run_hint": "Run SCENA_RUN_M9_PLATFORM_BENCHMARK=1 cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1 in the isolated release lane.",
+                "required_artifact": path_string(&platform_dir().join("m9-benchmarks.json")),
+            }),
+        );
+        return;
+    }
+    let _ = fs::remove_file(required_path);
+    write_benchmark_artifact(current_lane());
 }
 
 #[test]

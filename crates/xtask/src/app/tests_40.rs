@@ -1,6 +1,43 @@
 use crate::app::prelude::*;
 
 #[test]
+fn doctor_rejects_parallel_m9_platform_benchmark_gate() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/m9-parallel-benchmark");
+    let _ = fs::remove_dir_all(&fixture_root);
+    for directory in [".github/workflows", "tests"] {
+        fs::create_dir_all(fixture_root.join(directory)).expect("M9 benchmark fixture directory");
+    }
+    for workflow in ["ci.yml", "release.yml"] {
+        fs::write(
+            fixture_root.join(".github/workflows").join(workflow),
+            "run: cargo test --test m9_platform_release\n",
+        )
+        .expect("parallel M9 workflow fixture writes");
+    }
+    fs::write(
+        fixture_root.join("tests/m9_platform_release.rs"),
+        r#"
+#[test]
+fn m9_platform_rendered_output_suite_writes_release_artifacts() {
+    write_benchmark_artifact(current_lane());
+}
+"#,
+    )
+    .expect("parallel M9 test fixture writes");
+    let mut findings = Vec::new();
+
+    check_m9_ci_release_lanes(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-CI-M9" && finding.message.contains("--test-threads=1")
+        }),
+        "doctor must reject performance baselines measured inside the broad parallel M9 test target: {findings:?}",
+    );
+}
+
+#[test]
 fn doctor_rejects_cross_fixture_asset_byte_ordering_as_external_fetch_proof() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/asset-fetch-byte-ordering");

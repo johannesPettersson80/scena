@@ -56,6 +56,10 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
+- Isolated lane-specific M9 performance measurements from the parallel
+  functional test suite and pinned single-threaded benchmark commands in CI and
+  release workflows, preventing hosted-runner contention from masquerading as
+  a renderer regression.
 - Prevent browser resource-retirement records from waiting forever on delayed
   completion callbacks: WebGPU now reports browser-managed automatic logical
   retirement, while WebGL2 uses wgpu's automatic WebGL fence policy and reports

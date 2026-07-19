@@ -56,6 +56,7 @@ jobs:
           SCENA_RELEASE_COMMIT="$GITHUB_SHA" SCENA_RELEASE_PROFILE="test-unoptimized" \
             cargo test --test m5_release
           bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release
+          SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
           bash scripts/release_lane_command.sh headless-cpu cargo test --test q01_waterbottle_cpu_reference q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders -- --exact
           bash scripts/release_lane_command.sh headless-cpu cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact
@@ -191,6 +192,7 @@ jobs:
         run: |
           cargo test --all-targets
           bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
+          SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- release-lane-artifact macos-metal
@@ -213,6 +215,7 @@ jobs:
         run: |
           cargo test --all-targets
           bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
+          SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
           cargo run -p xtask -- release-lane-artifact windows-dx12
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

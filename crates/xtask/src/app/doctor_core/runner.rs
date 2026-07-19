@@ -361,6 +361,7 @@ pub(crate) fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<F
         "SCENA_RELEASE_PROFILE",
         "SCENA_ROUND_E_REFERENCE_SHOWCASE",
         "SCENA_RUN_DEDICATED_4K_BENCHMARK",
+        "SCENA_RUN_M9_PLATFORM_BENCHMARK",
         "SCENA_RUN_PF00_BENCHMARK",
         "SCENA_REAGGREGATE_PF00",
         "SCENA_RUN_PF03_STORAGE_BENCHMARK",
