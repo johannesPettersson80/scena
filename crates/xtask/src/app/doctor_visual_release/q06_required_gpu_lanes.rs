@@ -33,38 +33,27 @@ pub(crate) fn check_q06_required_gpu_lane_contracts(root: &Path, findings: &mut 
             ));
             continue;
         };
-        if workflow == ".github/workflows/ci.yml" {
-            if webgpu.contains("SCENA_REQUIRE_PARITY: \"1\"") {
+        if webgpu.contains("SCENA_REQUIRE_PARITY: \"1\"") {
+            findings.push(Finding::new(
+                RULE,
+                format!("{workflow} hosted linux-browser-webgpu must not claim hardware parity"),
+            ));
+        }
+        if workflow == ".github/workflows/release.yml" && webgpu.contains("self-hosted") {
+            findings.push(Finding::new(
+                RULE,
+                "release.yml must not depend on a self-hosted runner for publication",
+            ));
+        }
+        for required in [
+            "runs-on: ubuntu-24.04",
+            "SCENA_GPU_EVIDENCE_CLASS: \"software-conformance\"",
+        ] {
+            if !webgpu.contains(required) {
                 findings.push(Finding::new(
                     RULE,
-                    format!(
-                        "{workflow} hosted linux-browser-webgpu must not claim hardware parity"
-                    ),
+                    format!("{workflow} hosted WebGPU conformance job is missing {required}"),
                 ));
-            }
-            for required in [
-                "runs-on: ubuntu-24.04",
-                "SCENA_GPU_EVIDENCE_CLASS: \"software-conformance\"",
-            ] {
-                if !webgpu.contains(required) {
-                    findings.push(Finding::new(
-                        RULE,
-                        format!("{workflow} hosted WebGPU conformance job is missing {required}"),
-                    ));
-                }
-            }
-        } else {
-            for required in [
-                "runs-on: [self-hosted, linux, x64, gpu, scena-gpu]",
-                "SCENA_REQUIRE_PARITY: \"1\"",
-                "SCENA_GPU_EVIDENCE_CLASS: \"hardware-release\"",
-            ] {
-                if !webgpu.contains(required) {
-                    findings.push(Finding::new(
-                        RULE,
-                        format!("{workflow} hardware WebGPU release job is missing {required}"),
-                    ));
-                }
             }
         }
         for required in [
@@ -167,6 +156,7 @@ pub(crate) fn check_q06_required_gpu_lane_contracts(root: &Path, findings: &mut 
         "crates/xtask/src/app/release/required_gpu_parity.rs",
         &[
             "browser_probe_release_proof_passes",
+            "browser_gpu_conformance_passes",
             "required_browser_gpu_parity_passes",
             "adapter_is_hardware",
             "swiftshader",

@@ -22,7 +22,9 @@ pub(crate) use lane_artifacts::{
     release_lane_required_artifacts, run_release_lane_artifact,
 };
 pub(crate) use required_gpu_parity::{
-    browser_probe_release_proof_passes, required_browser_gpu_parity_passes,
+    browser_gpu_conformance_passes, browser_probe_release_proof_passes,
+    browser_probe_release_proof_passes_for_class, release_lane_evidence_class,
+    required_browser_gpu_parity_passes,
 };
 pub(crate) use review_artifacts::{
     MIN_BENCHMARK_SAMPLE_COUNT, REQUIRED_BENCHMARK_ARTIFACT_SUFFIXES,

@@ -62,7 +62,12 @@ pub(crate) fn release_lane_artifact(root: &Path, lane: &str) -> Result<serde_jso
         .collect::<Result<Vec<_>, _>>()?;
     let commands = release_lane_expected_commands(lane);
     let command_records = release_lane_command_records(root, lane, &commands, &evidence)?;
-    let content_ok = release_lane_content_ok(root, lane)?;
+    let evidence_class = release_lane_evidence_class(lane);
+    let content_ok = if evidence_class == "hardware-release" {
+        release_lane_content_ok(root, lane)?
+    } else {
+        release_lane_content_ok_for_class(root, lane, evidence_class)?
+    };
     let commands_ok = release_lane_command_records_pass(&command_records);
     let status = if evidence
         .iter()
@@ -81,6 +86,7 @@ pub(crate) fn release_lane_artifact(root: &Path, lane: &str) -> Result<serde_jso
         "lane": lane,
         "os": os,
         "backend": backend,
+        "evidence_class": evidence_class,
         "rustc": "1.93.1",
         "producer": format!("cargo run -p xtask -- release-lane-artifact {lane}"),
         "generated_at_unix_seconds": generated_at,
@@ -126,6 +132,14 @@ fn release_lane_source_checksums(root: &Path, evidence: &[Value]) -> Result<Vec<
 }
 
 pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, String> {
+    release_lane_content_ok_for_class(root, lane, "hardware-release")
+}
+
+fn release_lane_content_ok_for_class(
+    root: &Path,
+    lane: &str,
+    evidence_class: &str,
+) -> Result<bool, String> {
     if lane == "headless-cpu" {
         let path = root.join("target/gate-artifacts/m9-platform/headless-cpu/rendered-output.json");
         if !path.is_file() {
@@ -180,7 +194,12 @@ pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, S
             ),
             _ => unreachable!("browser lane was matched above"),
         };
-        return Ok(browser_probe_release_proof_passes(&value, lane)
+        let browser_proof_passes = if evidence_class == "hardware-release" {
+            browser_probe_release_proof_passes(&value, lane)
+        } else {
+            browser_probe_release_proof_passes_for_class(&value, lane, evidence_class)
+        };
+        return Ok(browser_proof_passes
             && q02_material_result_passes(
                 root,
                 result,

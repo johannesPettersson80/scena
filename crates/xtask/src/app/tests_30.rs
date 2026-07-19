@@ -24,6 +24,25 @@ fn q06_required_webgpu_artifact_rejects_unavailable_zero_and_software_results() 
 }
 
 #[test]
+fn q06_hosted_webgpu_conformance_accepts_rendered_software_output_without_claiming_hardware() {
+    let software = required_webgpu_fixture("Cpu", "Google SwiftShader", 1, 64);
+    assert!(browser_gpu_conformance_passes(&software, "webgpu"));
+    assert!(browser_probe_release_proof_passes_for_class(
+        &software,
+        "linux-webgpu-chromium",
+        "software-conformance",
+    ));
+    assert!(!browser_probe_release_proof_passes(
+        &software,
+        "linux-webgpu-chromium",
+    ));
+    assert!(!required_browser_gpu_parity_passes(&software, "webgpu"));
+
+    let zero_output = required_webgpu_fixture("Cpu", "Google SwiftShader", 0, 0);
+    assert!(!browser_gpu_conformance_passes(&zero_output, "webgpu"));
+}
+
+#[test]
 fn q06_linux_native_lane_content_rejects_cpu_fallback() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-release-regressions/q06-linux-cpu-fallback");

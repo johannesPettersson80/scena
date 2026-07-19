@@ -2023,18 +2023,19 @@ Validation correction (2026-07-19):
   registered Actions runners, so requiring hardware identity from
   `runs-on: ubuntu-24.04` made the job structurally impossible rather than
   fail-closed.
-- `implementation`: push CI now labels that hosted job
-  `software-conformance` and still requires real WebGPU device creation,
-  submissions, and nonblank renderer-owned readback. The release workflow
-  routes strict `SCENA_REQUIRE_PARITY=1` WebGPU proof to
-  `[self-hosted, linux, x64, gpu, scena-gpu]`; the manual hardware workflow
-  retains the same fail-closed labels and parity requirements.
+- `implementation`: push CI and release now label the hosted job
+  `software-conformance` and still require real WebGPU device creation,
+  submissions, and nonblank renderer-owned readback. Publication no longer
+  depends on an unregistered self-hosted runner. The manual hardware workflow
+  retains its fail-closed labels and parity requirements for additional
+  physical-GPU evidence without blocking publication.
 - `test-first`: the revised Q06 workflow contract first failed because doctor
   still demanded hardware parity from the hosted job, then passed after doctor
   learned the software-conformance versus hardware-release split.
-- `scope`: this correction makes ordinary CI executable without accepting
-  software output as physical-GPU release evidence. Publishing remains blocked
-  unless a matching hardware runner produces the strict source-bound lane.
+- `scope`: this correction makes CI and publication executable without
+  accepting software output as physical-GPU evidence. Hosted conformance is a
+  required technical gate; physical-GPU attestation remains separately and
+  honestly classified.
 
 ### Q07 — Make SSIM and ICC claims real
 

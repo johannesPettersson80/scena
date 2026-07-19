@@ -10,7 +10,9 @@ All notable user-facing changes are recorded here.
   Exact-commit technical evidence, cross-platform lanes, release readiness,
   package checks, and publication verification remain mandatory; doctor now
   rejects workflow or staging changes that reintroduce an external-personnel
-  gate.
+  gate. Replace the mandatory unregistered self-hosted WebGPU runner with a
+  fail-closed hosted conformance lane while keeping physical-GPU evidence
+  separately classified.
 - Add enforceable investigation circuit breakers, exact-run CI failure evidence
   collection, serialized heavyweight CLI subprocess tests, and a single
   checksum-verified Windows hardware-proof workflow so release debugging stops
@@ -84,9 +86,9 @@ All notable user-facing changes are recorded here.
 - Prevent browser resource-retirement records from waiting forever on delayed
   completion callbacks: WebGPU now reports browser-managed automatic logical
   retirement, while WebGL2 uses wgpu's automatic WebGL fence policy and reports
-  the same non-confirming status. Hosted WebGPU CI is explicitly software
-  conformance; strict hardware parity remains confined to the self-hosted
-  release lane.
+  the same non-confirming status. Hosted WebGPU CI and release proof are
+  explicitly software conformance; optional hardware parity remains confined
+  to the separately triggered physical-GPU workflow.
 - Select M9 performance baselines by release lane before falling back to the
   generic row, with exact-source Linux, macOS Metal, and Windows DX12 ceilings,
   so host timing differences no longer masquerade as renderer regressions.

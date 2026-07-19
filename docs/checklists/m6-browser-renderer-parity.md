@@ -46,16 +46,16 @@ device, positive draw and submission counts, and nonblack
 `renderer-owned-gpu-copy` readback; missing adapters or blank output fail the
 job. It does not claim hardware evidence.
 
-Required release WebGPU uses `SCENA_REQUIRE_PARITY=1` on the self-hosted
-`[self-hosted, linux, x64, gpu, scena-gpu]` runner. Its headline triangle must
-also identify an adapter classified as discrete, integrated, or virtual
-hardware. `NoAdapter`, zero output, missing identity,
-SwiftShader/llvmpipe/lavapipe, CPU adapters, and unproven `Other` adapters fail
-the producer immediately. `SCENA_BROWSER_ALLOW_UNAVAILABLE` remains available
+Required release WebGPU uses the same hosted software-conformance contract. Its
+headline triangle must create a WebGPU device, submit real draws, and produce
+nonblack renderer-owned readback; `NoAdapter`, zero output, and blank readback
+fail publication. This is explicitly recorded as `software-conformance`, not
+physical-hardware evidence. `SCENA_BROWSER_ALLOW_UNAVAILABLE` remains available
 only for explicitly diagnostic local probes and is forbidden in CI and release
-jobs. The required-parity evaluator has a standalone mutation suite, and
-`Q06-REQUIRED-GPU-LANES` prevents a hosted software-conformance job from being
-misrepresented as hardware release evidence.
+jobs. The required-parity evaluator still has a standalone mutation suite for
+optional physical-hardware runs, while `Q06-REQUIRED-GPU-LANES` prevents the
+publication workflow from depending on unavailable self-hosted infrastructure
+or misrepresenting hosted output as hardware evidence.
 
 The Linux native lane separately proves strict `HeadlessGpu` Vulkan-path
 construction and rendered output; it rejects the `Backend::Headless` CPU

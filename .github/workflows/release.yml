@@ -114,8 +114,9 @@ jobs:
           if-no-files-found: error
 
   linux-browser-webgpu:
-    runs-on: [self-hosted, linux, x64, gpu, scena-gpu]
-    timeout-minutes: 180
+    name: Linux browser WebGPU software conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
@@ -129,8 +130,7 @@ jobs:
       - name: Browser WebGPU release lane
         env:
           SCENA_BROWSER_BACKENDS: webgpu
-          SCENA_REQUIRE_PARITY: "1"
-          SCENA_GPU_EVIDENCE_CLASS: "hardware-release"
+          SCENA_GPU_EVIDENCE_CLASS: "software-conformance"
         run: |
           npm ci
           npx playwright install chromium --with-deps

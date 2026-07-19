@@ -68,12 +68,12 @@ fn q06_doctor_requires_strict_gpu_lane_contracts() {
         hosted_conformance_workflow,
     )
     .expect("hosted Q06 conformance workflow writes");
-    let hardware_release_workflow = "jobs:\n  linux-native-vulkan:\n    env:\n      SCENA_REQUIRE_PARITY: \"1\"\n    run: cargo test --test m9_platform_release\n  linux-browser-webgpu:\n    runs-on: [self-hosted, linux, x64, gpu, scena-gpu]\n    env:\n      SCENA_BROWSER_BACKENDS: webgpu\n      SCENA_REQUIRE_PARITY: \"1\"\n      SCENA_GPU_EVIDENCE_CLASS: \"hardware-release\"\n    run: npm run test:required-gpu-parity && npm run browser:m6\n";
+    let hosted_release_workflow = "jobs:\n  linux-native-vulkan:\n    env:\n      SCENA_REQUIRE_PARITY: \"1\"\n    run: cargo test --test m9_platform_release\n  linux-browser-webgpu:\n    runs-on: ubuntu-24.04\n    env:\n      SCENA_BROWSER_BACKENDS: webgpu\n      SCENA_GPU_EVIDENCE_CLASS: \"software-conformance\"\n    run: npm run test:required-gpu-parity && npm run browser:m6\n";
     fs::write(
         fixture_root.join(".github/workflows/release.yml"),
-        hardware_release_workflow,
+        hosted_release_workflow,
     )
-    .expect("hardware Q06 release workflow writes");
+    .expect("hosted Q06 release workflow writes");
     fs::write(
         fixture_root.join(".github/workflows/hardware-gpu.yml"),
         "jobs:\n  native-browser-gpu:\n    runs-on: [self-hosted, linux, x64, gpu, scena-gpu]\n    env:\n      SCENA_REQUIRE_HARDWARE_GPU: \"1\"\n      SCENA_REQUIRE_PARITY: \"1\"\n      SCENA_BROWSER_BACKENDS: webgpu,webgl2\n",
@@ -111,10 +111,30 @@ fn q06_doctor_requires_strict_gpu_lane_contracts() {
     .expect("strong lane validator writes");
     fs::write(
         fixture_root.join("crates/xtask/src/app/release/required_gpu_parity.rs"),
-        "browser_probe_release_proof_passes required_browser_gpu_parity_passes adapter_is_hardware swiftshader llvmpipe\n",
+        "browser_probe_release_proof_passes browser_gpu_conformance_passes required_browser_gpu_parity_passes adapter_is_hardware swiftshader llvmpipe\n",
     )
     .expect("strong required parity validator writes");
     findings.clear();
     check_q06_required_gpu_lane_contracts(&fixture_root, &mut findings);
     assert_eq!(findings, Vec::new());
+
+    fs::write(
+        fixture_root.join(".github/workflows/release.yml"),
+        hosted_release_workflow.replace(
+            "runs-on: ubuntu-24.04",
+            "runs-on: [self-hosted, linux, x64, gpu, scena-gpu]",
+        ),
+    )
+    .expect("self-hosted release mutation writes");
+    findings.clear();
+    check_q06_required_gpu_lane_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "Q06-REQUIRED-GPU-LANES"
+                && finding
+                    .message
+                    .contains("must not depend on a self-hosted runner")
+        }),
+        "release workflow must reject a mandatory self-hosted WebGPU runner: {findings:?}"
+    );
 }
