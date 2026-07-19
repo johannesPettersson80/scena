@@ -622,6 +622,7 @@ pub(crate) const REQUIRED_DOCS: &[&str] = &[
     "docs/guides/place-and-connect-objects.md",
     "docs/guides/troubleshooting-misplaced-assets.md",
     "docs/guides/units-axes-handedness.md",
+    "docs/release-notes/v1.8.0.md",
     "docs/release-notes/v1.7.2.md",
     "docs/release-notes/v1.7.1.md",
     "docs/release-notes/v1.7.0.md",

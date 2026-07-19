@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-19
+
 - Add asynchronous SceneHost browser capture and render-introspection methods
   backed by renderer-owned WebGPU buffer mapping, while preserving the existing
   synchronous CPU/WebGL2 methods.

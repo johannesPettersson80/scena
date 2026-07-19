@@ -92,7 +92,7 @@ impl Finding {
 
 pub(crate) fn finding_reference(rule: &str) -> &'static str {
     if rule.starts_with("RELEASE") || rule.starts_with("CLAIM") || rule.starts_with("M10") {
-        "docs/release-notes/v1.7.2.md"
+        "docs/release-notes/v1.8.0.md"
     } else if rule.contains("STATE-OF-ART")
         || rule == "ARCH-RENDER-TRUTH"
         || rule == "ARCH-RENDER-STANDARD-MATH"
