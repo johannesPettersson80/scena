@@ -2458,7 +2458,7 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
         serde_json::json!([
             "p95_frame_ms",
             "p95_prepare_ms",
-            "max_allocations_per_frame",
+            "p95_allocations_per_frame",
             "max_allocated_bytes_per_frame"
         ])
     );

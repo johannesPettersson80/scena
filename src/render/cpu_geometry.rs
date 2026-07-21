@@ -430,6 +430,49 @@ mod tests {
         assert!(signs.iter().all(|sign| *sign == signs[0] && *sign != 0.0));
     }
 
+    #[test]
+    fn fully_visible_triangles_preserve_the_direct_projection_bits() {
+        let mut scene = Scene::new();
+        let camera = scene
+            .add_perspective_camera(
+                scene.root(),
+                PerspectiveCamera::default(),
+                Transform::at(Vec3::new(0.0, 0.0, 1.732_050_8)),
+            )
+            .expect("camera inserts");
+        let target = RasterTarget {
+            width: 16,
+            height: 16,
+            backend: Backend::Headless,
+        };
+        let camera = CameraProjection::from_scene(&scene, camera, target).expect("projection");
+        let vertices = [
+            vertex(Vec3::new(-1.0, -1.0, 0.0), Color::WHITE),
+            vertex(Vec3::new(3.0, -1.0, 0.0), Color::WHITE),
+            vertex(Vec3::new(-1.0, 3.0, 0.0), Color::WHITE),
+        ];
+        let projected = project_clipped_triangle(
+            vertices,
+            [PrimitiveVertexAttributes::default(); 3],
+            target,
+            &camera,
+        );
+        let [triangle] = projected.triangles() else {
+            panic!("fully visible triangle projects without clipping")
+        };
+
+        for (actual, source) in triangle.vertices().into_iter().zip(vertices) {
+            let expected = camera.project(source.position).expect("source projects");
+            assert_eq!(actual.projected.ndc_x.to_bits(), expected.ndc_x.to_bits());
+            assert_eq!(actual.projected.ndc_y.to_bits(), expected.ndc_y.to_bits());
+            assert_eq!(actual.projected.depth.to_bits(), expected.depth.to_bits());
+            assert_eq!(
+                actual.projected.view_depth.to_bits(),
+                expected.view_depth.to_bits()
+            );
+        }
+    }
+
     fn vertex(position: Vec3, color: Color) -> Vertex {
         Vertex { position, color }
     }

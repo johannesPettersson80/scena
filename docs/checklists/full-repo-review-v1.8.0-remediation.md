@@ -3689,22 +3689,40 @@ remediation diff is stable. Do not run it after each item.
   job logs and six artifact sets before any remediation edit.
 - `hosted-matrix remediation`: the current release-readiness scan no longer
   rescans the obsolete v1.7.1 note, the Q01 fixture copies both required
-  Windows scripts, and the broken-pipe proof uses portable `head -n 0`.
+  Windows scripts, and the broken-pipe proof no longer depends on GNU `head`.
   Allocation diagnostics recorded 16 steady allocations and a periodic 17th
   1,520-byte Rayon scheduler refill. A red/green contract now gates the p95
   allocation count against the unchanged stored budget, keeps maximum allocated
   bytes blocking, and reports the observed maximum count. The exact dedicated
   4K replay passed in 604.05 seconds with every feature row at or below p95 16;
   observed parallel-row maxima remained 17 and were retained in the artifact.
+- `second exact-commit hosted matrix`: GitHub Actions run `29824678879` at
+  `d801ce62c103d7ae415a822d00af6a0ce0c88f14` passed both browser lanes, the
+  wasm package lane, and Headless 4K. Windows found one stale expected metric
+  name in the benchmark-row test. macOS proved that BSD `head` rejects both
+  zero-byte and zero-line forms. Linux native caught two M2 fullscreen-edge
+  reference regressions introduced by the reciprocal-multiply barycentric
+  optimization. `scripts/collect_ci_failure_evidence.sh 29824678879` captured
+  all three failed job logs and seven artifact sets before remediation.
+- `second-matrix remediation`: the Windows benchmark assertion now expects the
+  p95 allocation metric that the contract emits. The Unix broken-pipe proof
+  uses POSIX `dd` with a zero input count and suppressed transfer statistics.
+  The exact M2 oracle failed before the opaque raster path restored division
+  by triangle area, then passed with the committed images unchanged. The
+  reciprocal optimization remains only on paths whose reference proofs stayed
+  green; preserving fullscreen edge coverage takes precedence over that
+  micro-optimization. A focused projection-bit test separately confirms that
+  the near/far clipping projection does not perturb fully visible triangles.
 - `open acceptance`: physical WebGPU parity (Q01), physical GPU resource
   lifecycle (Q04), controlled physical-GPU p95 for shader caching (P01),
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts through the first hosted matrix`: one release-candidate push,
-  one GitHub full-matrix run, zero user-required hardware actions, one branch
-  commit/push, and no tag/merge/publish. One workspace-wide CPU test checkpoint
-  was run. The hosted 4K investigation took approximately 45 minutes, used two
+- `process counts through the second hosted matrix`: two release-candidate
+  pushes, two GitHub full-matrix runs, zero user-required hardware actions, two
+  branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU test
+  checkpoint was run. The hosted 4K investigation took approximately 45
+  minutes, used two
   unsuccessful unpushed aggregation/projection experiments, then froze changes
   for per-sample and per-allocation-size probes before the benchmark-contract
   fix. The WebGPU browser launch circuit breaker separately tripped after two

@@ -216,15 +216,13 @@ fn draw_projected_primitive_cpu(
     if !primitive.double_sided() && area < 0.0 {
         return;
     }
-    let inverse_area = area.recip();
-
     for y in min_y..=max_y {
         for x in min_x..=max_x {
             let px = x as f32 + 0.5;
             let py = y as f32 + 0.5;
-            let w0 = cpu_geometry::edge(b, c, px, py) * inverse_area;
-            let w1 = cpu_geometry::edge(c, a, px, py) * inverse_area;
-            let w2 = cpu_geometry::edge(a, b, px, py) * inverse_area;
+            let w0 = cpu_geometry::edge(b, c, px, py) / area;
+            let w1 = cpu_geometry::edge(c, a, px, py) / area;
+            let w2 = cpu_geometry::edge(a, b, px, py) / area;
             if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
                 continue;
             }
