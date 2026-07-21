@@ -352,15 +352,13 @@ fn rasterize_projected_primitive(
                 super::cpu_geometry::edge(c, a, px, py) / area,
                 super::cpu_geometry::edge(a, b, px, py) / area,
             ];
-            if affine.iter().any(|weight| *weight < 0.0) {
+            if !super::cpu_geometry::barycentric_sample_is_inside(affine) {
                 continue;
             }
             let weights = super::cpu_geometry::perspective_weights(camera, vertices, affine);
             let world =
                 super::cpu_geometry::weighted_vec3([a.position, b.position, c.position], weights);
-            if clipping_planes.iter().any(|plane| !plane.contains(world))
-                || section_box.is_some_and(|section| section.clips(world))
-            {
+            if super::cpu_geometry::point_is_clipped(world, clipping_planes, section_box) {
                 continue;
             }
             if let Some(cutoff) = primitive.semantic_alpha_cutoff() {

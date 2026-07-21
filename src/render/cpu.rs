@@ -1,5 +1,5 @@
 use crate::material::Color;
-use crate::scene::{ClippingPlane, SectionBox, Vec3};
+use crate::scene::{ClippingPlane, SectionBox};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
@@ -223,13 +223,13 @@ fn draw_projected_primitive_cpu(
             let w0 = cpu_geometry::edge(b, c, px, py) / area;
             let w1 = cpu_geometry::edge(c, a, px, py) / area;
             let w2 = cpu_geometry::edge(a, b, px, py) / area;
-            if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+            if !cpu_geometry::barycentric_sample_is_inside([w0, w1, w2]) {
                 continue;
             }
             let weights = cpu_geometry::perspective_weights(camera, vertices, [w0, w1, w2]);
             let position =
                 cpu_geometry::weighted_vec3([a.position, b.position, c.position], weights);
-            if is_clipped(position, clipping_planes, section_box) {
+            if cpu_geometry::point_is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
             let color = multiply_color(mix_color(vertices, weights), primitive.tint());
@@ -334,13 +334,13 @@ fn draw_projected_order_independent_transparency_cpu(
             let w0 = cpu_geometry::edge(b, c, px, py) * inverse_area;
             let w1 = cpu_geometry::edge(c, a, px, py) * inverse_area;
             let w2 = cpu_geometry::edge(a, b, px, py) * inverse_area;
-            if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+            if !cpu_geometry::barycentric_sample_is_inside([w0, w1, w2]) {
                 continue;
             }
             let weights = cpu_geometry::perspective_weights(camera, vertices, [w0, w1, w2]);
             let position =
                 cpu_geometry::weighted_vec3([a.position, b.position, c.position], weights);
-            if is_clipped(position, clipping_planes, section_box) {
+            if cpu_geometry::point_is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
             let depth = mix_depth(vertices, [w0, w1, w2]);
@@ -421,17 +421,6 @@ fn mix_depth(vertices: [CpuScreenVertex; 3], affine: [f32; 3]) -> f32 {
     vertices[0].projected.depth * affine[0]
         + vertices[1].projected.depth * affine[1]
         + vertices[2].projected.depth * affine[2]
-}
-
-fn is_clipped(
-    position: Vec3,
-    clipping_planes: &[ClippingPlane],
-    section_box: Option<SectionBox>,
-) -> bool {
-    clipping_planes
-        .iter()
-        .any(|plane| !plane.contains(position))
-        || section_box.is_some_and(|section| section.clips(position))
 }
 
 pub(super) fn write_pixel(

@@ -1,6 +1,6 @@
 use crate::geometry::{PrimitiveVertexAttributes, Vertex};
 use crate::material::Color;
-use crate::scene::Vec3;
+use crate::scene::{ClippingPlane, SectionBox, Vec3};
 
 use super::RasterTarget;
 use super::camera::{CameraProjection, ProjectedVertex};
@@ -8,6 +8,8 @@ use super::prepare::PreparedPrimitive;
 
 const MAX_CLIPPED_VERTICES: usize = 5;
 const MAX_CLIPPED_TRIANGLES: usize = MAX_CLIPPED_VERTICES - 2;
+const BARYCENTRIC_BOUNDARY_TOLERANCE: f32 = 8.0 * f32::EPSILON;
+const CLIPPING_BOUNDARY_TOLERANCE: f32 = 16.0 * f32::EPSILON;
 
 #[derive(Debug, Clone, Copy)]
 struct ClipVertex {
@@ -280,6 +282,25 @@ pub(super) fn perspective_weights(
     camera.interpolation_weights(projected, affine)
 }
 
+pub(super) fn barycentric_sample_is_inside(weights: [f32; 3]) -> bool {
+    weights
+        .into_iter()
+        .all(|weight| weight.is_finite() && weight >= -BARYCENTRIC_BOUNDARY_TOLERANCE)
+}
+
+pub(super) fn point_is_clipped(
+    position: Vec3,
+    clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
+) -> bool {
+    clipping_planes.iter().any(|plane| {
+        let normal = plane.normal();
+        let signed_distance = normal.dot(position) + plane.distance();
+        let scale = normal.abs().dot(position.abs()) + plane.distance().abs();
+        signed_distance < -CLIPPING_BOUNDARY_TOLERANCE * scale.max(1.0)
+    }) || section_box.is_some_and(|section| section.clips(position))
+}
+
 pub(super) fn weighted_vec3(vertices: [Vec3; 3], weights: [f32; 3]) -> Vec3 {
     vertices[0] * weights[0] + vertices[1] * weights[1] + vertices[2] * weights[2]
 }
@@ -471,6 +492,33 @@ mod tests {
                 expected.view_depth.to_bits()
             );
         }
+    }
+
+    #[test]
+    fn raster_and_clipping_boundaries_tolerate_roundoff_but_reject_real_exterior_samples() {
+        assert!(barycentric_sample_is_inside([
+            -4.0 * f32::EPSILON,
+            0.5,
+            0.5
+        ]));
+        assert!(!barycentric_sample_is_inside([
+            -32.0 * f32::EPSILON,
+            0.5,
+            0.5
+        ]));
+        assert!(!barycentric_sample_is_inside([f32::NAN, 0.5, 0.5]));
+
+        let plane = ClippingPlane::new(Vec3::X, 0.0);
+        assert!(!point_is_clipped(
+            Vec3::new(-4.0 * f32::EPSILON, 0.0, 0.0),
+            &[plane],
+            None
+        ));
+        assert!(point_is_clipped(
+            Vec3::new(-1.0e-3, 0.0, 0.0),
+            &[plane],
+            None
+        ));
     }
 
     fn vertex(position: Vec3, color: Color) -> Vertex {

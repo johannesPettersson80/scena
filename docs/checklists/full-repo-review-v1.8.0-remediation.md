@@ -3713,15 +3713,34 @@ remediation diff is stable. Do not run it after each item.
   green; preserving fullscreen edge coverage takes precedence over that
   micro-optimization. A focused projection-bit test separately confirms that
   the near/far clipping projection does not perturb fully visible triangles.
+- `third exact-commit hosted matrix`: GitHub Actions run `29827472523` at
+  `fae3cddddd4ae04c4483e7d6e723b1ee0ebcddb4` passed WebGL2, WebGPU software
+  conformance, wasm packaging, Headless 4K, macOS Metal, and hosted Windows
+  DX12. Linux native alone failed the M2 structure oracle. The collected seven
+  artifact sets prove that macOS and Windows matched the committed references
+  while Linux omitted the exact fullscreen boundary pixels `(15,0)` and
+  `(31,0)`, plus four pixels reconstructed on the `x = 0` clipping boundary.
+  This classifies the failure as platform-dependent floating-point boundary
+  handling, not reference drift. `scripts/collect_ci_failure_evidence.sh
+  29827472523` preserved the sole failed log and all artifacts before editing.
+- `third-matrix remediation`: CPU triangle inclusion now admits only an
+  eight-ULP normalized barycentric boundary tolerance, rejects non-finite and
+  meaningfully exterior samples, and uses a scale-aware sixteen-ULP tolerance
+  for clipping-plane boundary reconstruction. Opaque, OIT, transmission, and
+  semantic-AOV raster paths share the rule. The focused tolerance unit and the
+  unchanged exact M2 reference oracle pass on the isolated builder. This is the
+  second and final remediation attempt for the repeated M2 signature; another
+  same-signature failure trips the circuit breaker and forbids another patch
+  without a smaller reproducer from the failing host.
 - `open acceptance`: physical WebGPU parity (Q01), physical GPU resource
   lifecycle (Q04), controlled physical-GPU p95 for shader caching (P01),
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts through the second hosted matrix`: two release-candidate
-  pushes, two GitHub full-matrix runs, zero user-required hardware actions, two
-  branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU test
-  checkpoint was run. The hosted 4K investigation took approximately 45
+- `process counts through the third hosted matrix`: three release-candidate
+  pushes, three GitHub full-matrix runs, zero user-required hardware actions,
+  three branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
+  test checkpoint was run. The hosted 4K investigation took approximately 45
   minutes, used two
   unsuccessful unpushed aggregation/projection experiments, then froze changes
   for per-sample and per-allocation-size probes before the benchmark-contract
