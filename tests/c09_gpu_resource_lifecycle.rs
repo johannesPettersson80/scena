@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use scena::{
@@ -11,6 +11,7 @@ use scena::{
     ScreenSpaceReflectionConfig, SurfaceEvent, Transform, Vec3,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 const REQUIRED_LIFECYCLE_ENV: &str = "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE";
 const LIFECYCLE_ARTIFACT_DIR: &str = "target/gate-artifacts/c09-gpu-resource-lifecycle";
@@ -66,6 +67,7 @@ struct RequiredLifecycleEvidence {
     command: String,
     commit_sha: String,
     timestamp_unix_seconds: u64,
+    source_checksums: Vec<SourceChecksum>,
     adapter: Option<GpuAdapterReport>,
     baseline: ResourceCounters,
     prepared: ResourceCounters,
@@ -78,6 +80,12 @@ struct RequiredLifecycleEvidence {
     complete_lifecycle: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SourceChecksum {
+    path: String,
+    sha256: String,
+}
+
 impl RequiredLifecycleEvidence {
     fn known_good() -> Self {
         Self {
@@ -88,6 +96,11 @@ impl RequiredLifecycleEvidence {
             command: "mutation-test".to_string(),
             commit_sha: "test-commit".to_string(),
             timestamp_unix_seconds: 1,
+            source_checksums: vec![SourceChecksum {
+                path: "tests/c09_gpu_resource_lifecycle.rs".to_string(),
+                sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_string(),
+            }],
             adapter: Some(GpuAdapterReport {
                 name: "Mutation Test GPU".to_string(),
                 backend: "Vulkan".to_string(),
@@ -149,6 +162,16 @@ fn validate_required_lifecycle_evidence(
     }
     if evidence.status != "passed" || evidence.proof_class != "physical-hardware-required" {
         return Err("required lifecycle evidence is not a passed hardware proof".to_string());
+    }
+    if evidence.source_checksums.is_empty()
+        || evidence.source_checksums.iter().any(|checksum| {
+            checksum.path.trim().is_empty()
+                || checksum.sha256.len() != 64
+                || !checksum.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || checksum.sha256.bytes().all(|byte| byte == b'0')
+        })
+    {
+        return Err("required lifecycle evidence is missing valid source checksums".to_string());
     }
     let adapter = evidence
         .adapter
@@ -240,6 +263,30 @@ fn write_lifecycle_artifact(name: &str, value: &impl Serialize) {
     fs::write(&path, format!("{body}\n")).expect("Q04 artifact writes");
 }
 
+fn required_lifecycle_source_checksums() -> Result<Vec<SourceChecksum>, String> {
+    ["Cargo.lock", "tests/c09_gpu_resource_lifecycle.rs"]
+        .into_iter()
+        .map(source_checksum)
+        .collect()
+}
+
+fn source_checksum(relative: &str) -> Result<SourceChecksum, String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
+    let bytes = fs::read(&path).map_err(|error| {
+        format!(
+            "could not read provenance source {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(SourceChecksum {
+        path: relative.to_string(),
+        sha256: Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    })
+}
+
 fn current_commit_label() -> String {
     std::env::var("GITHUB_SHA")
         .ok()
@@ -288,6 +335,14 @@ fn required_lifecycle_evaluator_rejects_known_leak_and_missing_adapter() {
         validate_required_lifecycle_evidence(&missing_adapter)
             .expect_err("missing adapter must fail")
             .contains("adapter")
+    );
+
+    let mut missing_source_checksums = RequiredLifecycleEvidence::known_good();
+    missing_source_checksums.source_checksums.clear();
+    assert!(
+        validate_required_lifecycle_evidence(&missing_source_checksums)
+            .expect_err("missing source checksums must fail")
+            .contains("source checksums")
     );
 }
 
@@ -712,6 +767,8 @@ fn required_hardware_gpu_resource_lifecycle_executes_complete_cycle() {
         ),
         commit_sha: current_commit_label(),
         timestamp_unix_seconds: current_timestamp_unix_seconds(),
+        source_checksums: required_lifecycle_source_checksums()
+            .expect("required lifecycle provenance sources hash"),
         adapter: Some(adapter),
         baseline,
         prepared,

@@ -3798,12 +3798,37 @@ remediation diff is stable. Do not run it after each item.
   repeated because this patch changes only the stale test assertion and its
   checklist evidence; the next exact-commit hosted matrix is the deciding full
   checkpoint.
+- `seventh exact-commit hosted matrix`: GitHub Actions run `29843462107` at
+  `fbe66e09697c99fee9df46d98c4e679f3aaa9e44` passed all seven implementation
+  lanes: Linux native/headless, hosted Windows DX12, macOS Metal including
+  strict physical lifecycle, WebGPU software conformance, WebGL2, wasm
+  packaging, and Headless 4K. Linux ran beyond the prior recipe assertion and
+  completed its full cargo and documentation gates. The dependent pre-merge
+  release-evidence integrity job then failed closed because the physical Q04
+  `required-result.json` lacked the source-checksum provenance required of
+  every staged release artifact. The sole failed log and all eight artifact
+  sets were collected under
+  `target/ci-failure-evidence/run-29843462107` before editing.
+- `seventh-matrix remediation`: renderer and lifecycle behavior remain frozen.
+  The Q04 producer now hashes `Cargo.lock` and its own test source into the
+  required artifact, validates non-empty well-formed checksums before writing,
+  and rejects a missing-checksum mutation. The independent Windows one-shot
+  validator rejects the same mutation, the stable fixture carries the field,
+  and doctor pins the producer so a future removal fails source policy. Release
+  gate documentation, release notes, and the changelog describe the binding.
+  This is a provenance/test-harness defect, distinct from all renderer and CLI
+  signatures. The C09 evaluator mutation, independent Windows validator
+  mutation, doctor producer-removal mutation, canonical release-staging test,
+  stable-fixture test, formatting, C09 and xtask strict Clippy, and full doctor
+  pass on the isolated builder. The first JS replay hit the known constrained
+  system-temp quota (`write`, errno `-122`) and passed unchanged with the
+  task-scoped `TMPDIR`.
 - `latest isolated bootstrap`: canonical source
   `/home/johannes/projects/scena`; destination
   `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`;
   target `/home/johannes/.cache/codex-targets/scena-full-review-v18-checklist`;
   branch `codex/full-review-remediation-1.9`; pre-remediation source HEAD
-  `0516f5a4fe921e8cc3ceab3432ab7f3b802caa1d`; shared checkout absent. The
+  `fbe66e09697c99fee9df46d98c4e679f3aaa9e44`; shared checkout absent. The
   explicit post-mirror bootstrap matched `AGENTS.md` SHA-256
   `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
   and relative skills aggregate
@@ -3813,9 +3838,9 @@ remediation diff is stable. Do not run it after each item.
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts through the sixth hosted matrix`: six release-candidate
-  pushes, six GitHub full-matrix runs, zero user-required hardware actions,
-  six branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
+- `process counts through the seventh hosted matrix`: seven release-candidate
+  pushes, seven GitHub full-matrix runs, zero user-required hardware actions,
+  seven branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
   test checkpoint was run. The hosted 4K investigation took approximately 45
   minutes, used two
   unsuccessful unpushed aggregation/projection experiments, then froze changes

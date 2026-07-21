@@ -326,6 +326,16 @@ function validateQ04Lifecycle(report) {
     "Q04 lifecycle is not a passed physical-hardware proof",
   );
   assertProvenance(report, "Q04 lifecycle");
+  invariant(
+    Array.isArray(report.source_checksums)
+      && report.source_checksums.length > 0
+      && report.source_checksums.every((entry) =>
+        typeof entry.path === "string"
+          && entry.path.trim() !== ""
+          && /^[0-9a-f]{64}$/i.test(String(entry.sha256 || ""))
+          && !/^0{64}$/.test(entry.sha256)),
+    "Q04 lifecycle has no valid source checksums",
+  );
   assertNativeHardware(report.adapter, "Q04 lifecycle");
   invariant(
     report.complete_lifecycle === true && Number(report.assertions_executed) >= 10,

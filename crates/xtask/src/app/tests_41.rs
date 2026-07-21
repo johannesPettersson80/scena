@@ -119,6 +119,10 @@ pub(crate) fn required_gpu_resource_lifecycle_fixture() -> Value {
         "schema": "scena.q04.required_gpu_resource_lifecycle.v1",
         "status": "passed",
         "proof_class": "physical-hardware-required",
+        "source_checksums": [{
+            "path": "tests/c09_gpu_resource_lifecycle.rs",
+            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }],
         "adapter": {
             "name": "Mutation Test GPU",
             "device_type": "DiscreteGpu",

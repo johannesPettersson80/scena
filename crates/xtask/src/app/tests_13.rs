@@ -579,4 +579,27 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "doctor must reject WebGL2 lifetime tracking that depends on a browser fence: \
          {findings:?}",
     );
+
+    let evidence = fixture_root.join("tests/c09_gpu_resource_lifecycle.rs");
+    let source = fs::read_to_string(&evidence).expect("read C09 evidence fixture");
+    let mutated = source.replace(
+        "required_lifecycle_source_checksums()",
+        "removed_lifecycle_source_checksums()",
+    );
+    assert_ne!(
+        source, mutated,
+        "source-provenance mutation must alter the C09 evidence producer"
+    );
+    fs::write(&evidence, mutated).expect("remove C09 source provenance producer");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding
+                    .message
+                    .contains("required_lifecycle_source_checksums()")
+        }),
+        "doctor must reject removal of Q04 source provenance: {findings:?}",
+    );
 }

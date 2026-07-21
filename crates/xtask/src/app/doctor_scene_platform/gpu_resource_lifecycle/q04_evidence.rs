@@ -16,6 +16,8 @@ pub(super) fn check_q04_required_gpu_lifecycle_evidence(root: &Path, findings: &
                 "missing_adapter.adapter = None",
                 "required_hardware_gpu_resource_lifecycle_executes_complete_cycle",
                 "validate_required_lifecycle_evidence(&evidence)",
+                "required_lifecycle_source_checksums()",
+                "missing valid source checksums",
                 "required-result.json",
             ],
         ),

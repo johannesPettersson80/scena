@@ -14,7 +14,9 @@ All notable user-facing changes are recorded here.
   FR06 evidence before uploading one archive.
 - Produce the fail-closed Q04 lifecycle artifact in both macOS Metal matrices,
   so premerge/release staging has an actual physical-hardware producer instead
-  of requiring evidence no dependency job could supply.
+  of requiring evidence no dependency job could supply. Bind that artifact to
+  its producer source and dependency lockfile so staging rejects provenance-free
+  lifecycle evidence.
 
 - Strengthen the public brushed-steel preset's anisotropic lobe so its live
   WebGPU material proof clears the existing value-bounded highlight threshold.

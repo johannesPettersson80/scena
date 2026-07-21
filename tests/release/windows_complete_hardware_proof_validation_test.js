@@ -243,6 +243,10 @@ function validQ04Lifecycle() {
     proof_class: "physical-hardware-required",
     commit_sha: "0123456789abcdef0123456789abcdef01234567",
     timestamp_unix_seconds: 1,
+    source_checksums: [{
+      path: "tests/c09_gpu_resource_lifecycle.rs",
+      sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    }],
     adapter: validNativeSurface().adapter,
     baseline,
     prepared: {
@@ -374,6 +378,14 @@ function expectFailure(callback, pattern) {
     report.mutations[0].rejected = false;
   });
   expectFailure(() => validateProofRoot(root), /Q01.*mutation.*wrong-colors/i);
+}
+
+{
+  const root = createProofRoot();
+  mutate(root, "target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json", (report) => {
+    report.source_checksums = [];
+  });
+  expectFailure(() => validateProofRoot(root), /Q04.*source checksums/i);
 }
 
 {

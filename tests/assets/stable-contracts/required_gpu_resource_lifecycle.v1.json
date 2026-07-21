@@ -6,6 +6,12 @@
   "command": "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1 cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
   "commit_sha": "0123456789abcdef0123456789abcdef01234567",
   "timestamp_unix_seconds": 1784590000,
+  "source_checksums": [
+    {
+      "path": "tests/c09_gpu_resource_lifecycle.rs",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  ],
   "adapter": {
     "name": "example-hardware-adapter",
     "backend": "Vulkan",

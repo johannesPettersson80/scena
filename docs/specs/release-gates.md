@@ -91,7 +91,10 @@ The producer writes
 requires physical adapter provenance, at least ten executed lifecycle
 assertions, a larger prepared resource set, return to the baseline retained
 shape, `Confirmed` device polling, and exact destruction of every queued
-resource with zero remaining pending work. The artifact is required for the
+resource with zero remaining pending work. The producer also binds `Cargo.lock`
+and its lifecycle test source with SHA-256 checksums, and both release staging
+and the Windows bundle validator reject missing or malformed source provenance.
+The artifact is required for the
 Linux native Vulkan release lane. Files written by the clearly named optional
 developer smoke tests have `status:"skipped"` and
 `proof_class:"optional-developer-smoke"`; they cannot satisfy this gate.
