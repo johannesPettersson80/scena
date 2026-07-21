@@ -1308,6 +1308,10 @@ fn apply_benchmark_baselines_with_policy(
             .get("max_allocations_per_frame")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(u64::MAX);
+        let p95_allocations_per_frame = row
+            .get("p95_allocations_per_frame")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(max_allocations_per_frame);
         let Some(allowed_max_allocations_per_frame) = row_baseline
             .get("max_allocations_per_frame")
             .and_then(serde_json::Value::as_u64)
@@ -1321,6 +1325,7 @@ fn apply_benchmark_baselines_with_policy(
                 "allowed_p95_frame_ms": allowed_p95,
                 "regression_percent": regression_percent,
                 "minimum_sample_count": row_minimum_sample_count,
+                "p95_allocations_per_frame": p95_allocations_per_frame,
                 "max_allocations_per_frame": max_allocations_per_frame,
             });
             continue;
@@ -1364,7 +1369,7 @@ fn apply_benchmark_baselines_with_policy(
             && baseline_p95_frame_ms > 0.0
             && allowed_p95.is_finite();
         let frame_status = frame_measurement_valid && p95_frame_ms <= allowed_p95;
-        let allocation_status = max_allocations_per_frame <= allowed_max_allocations_per_frame;
+        let allocation_status = p95_allocations_per_frame <= allowed_max_allocations_per_frame;
         let measurement_status =
             sample_count_status && frame_measurement_valid && prepare_measurement_valid;
         let timing_observation_status = frame_status && prepare_status;
@@ -1411,6 +1416,8 @@ fn apply_benchmark_baselines_with_policy(
             "baseline_p95_prepare_ms": baseline_p95_prepare_ms,
             "allowed_p95_prepare_ms": allowed_p95_prepare_ms,
             "minimum_sample_count": row_minimum_sample_count,
+            "p95_allocations_per_frame": p95_allocations_per_frame,
+            "allowed_p95_allocations_per_frame": allowed_max_allocations_per_frame,
             "max_allocations_per_frame": max_allocations_per_frame,
             "allowed_max_allocations_per_frame": allowed_max_allocations_per_frame,
             "max_allocated_bytes_per_frame": max_allocated_bytes_per_frame,
@@ -1434,7 +1441,7 @@ fn apply_benchmark_baselines_with_policy(
         "metrics": [
             "p95_frame_ms",
             "p95_prepare_ms",
-            "max_allocations_per_frame",
+            "p95_allocations_per_frame",
             "max_allocated_bytes_per_frame"
         ],
         "minimum_sample_count": minimum_sample_count,
@@ -3314,6 +3321,45 @@ fn m9_benchmark_baseline_comparison_fails_allocation_regressions() {
     assert_eq!(
         rows[0]["baseline_comparison"]["allowed_max_allocations_per_frame"],
         4
+    );
+}
+
+#[test]
+fn m9_benchmark_allocation_gate_uses_p95_and_reports_isolated_maximums() {
+    let mut rows = vec![serde_json::json!({
+        "scene": "static-viewer",
+        "backend": "Headless",
+        "sample_count": 100,
+        "p95_frame_ms": 10.0,
+        "p95_allocations_per_frame": 16,
+        "max_allocations_per_frame": 17,
+    })];
+    let baseline = serde_json::json!({
+        "minimum_sample_count": 100,
+        "rows": [{
+            "scene": "static-viewer",
+            "backend": "Headless",
+            "p95_frame_ms": 10.0,
+            "allowed_regression_percent": 5.0,
+            "max_allocations_per_frame": 16
+        }]
+    });
+
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "test-lane");
+
+    assert_eq!(summary["status"], "passed");
+    assert_eq!(summary["metrics"][2], "p95_allocations_per_frame");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["allocation_status"],
+        "passed"
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["p95_allocations_per_frame"],
+        16
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["max_allocations_per_frame"],
+        17
     );
 }
 

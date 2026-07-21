@@ -9,7 +9,7 @@ pub(crate) fn release_readiness_accepts_benchmark_artifact_with_passed_baseline_
             "status": "passed",
             "baseline_path": "docs/benchmarks/m9-baselines.json",
             "baseline_sha256": "fnv1a64:0000000000000001",
-            "metrics": ["p95_frame_ms", "max_allocations_per_frame"]
+            "metrics": ["p95_frame_ms", "p95_allocations_per_frame"]
         },
         "rows": [
             {

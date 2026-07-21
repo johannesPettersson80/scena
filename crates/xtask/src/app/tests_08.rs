@@ -530,7 +530,7 @@ pub(crate) fn release_readiness_rejects_benchmark_regression_against_stored_base
             "status": "failed",
             "baseline_path": "docs/benchmarks/m9-baselines.json",
             "baseline_sha256": "fnv1a64:0000000000000001",
-            "metrics": ["p95_frame_ms", "max_allocations_per_frame"]
+            "metrics": ["p95_frame_ms", "p95_allocations_per_frame"]
         },
         "rows": [
             {

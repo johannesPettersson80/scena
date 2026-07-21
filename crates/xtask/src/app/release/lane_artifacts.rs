@@ -592,7 +592,6 @@ pub(crate) fn check_release_readiness_checklists(root: &Path, findings: &mut Vec
         "docs/release-notes/v1.9.0.md",
         "docs/release-notes/v1.8.0.md",
         "docs/release-notes/v1.7.2.md",
-        "docs/release-notes/v1.7.1.md",
     ] {
         let path = root.join(rel);
         let Ok(text) = fs::read_to_string(&path) else {

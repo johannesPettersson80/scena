@@ -176,7 +176,7 @@ fn unknown_commands_keep_stdout_clean_and_emit_one_stderr_envelope() {
 #[cfg(unix)]
 #[test]
 fn broken_stdout_pipe_exits_successfully_without_stderr_noise() {
-    let script = "set -o pipefail; \"$SCENA_BIN\" schema list | head -c 0";
+    let script = "set -o pipefail; \"$SCENA_BIN\" schema list | head -n 0";
     let output = Command::new("bash")
         .args(["-c", script])
         .env("SCENA_BIN", env!("CARGO_BIN_EXE_scena"))

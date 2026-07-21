@@ -3678,13 +3678,35 @@ remediation diff is stable. Do not run it after each item.
   mutation test, formatting, strict xtask Clippy, and full doctor also pass.
   The already-green workspace integration checkpoint was not repeated for
   version/documentation-only changes.
+- `first exact-commit hosted matrix`: GitHub Actions run `29818164424` at
+  `3969753549be6b329439a1ec81885cc31acbfbe4` passed both browser lanes and the
+  wasm package lane, then exposed four batched gate defects. Linux and Windows
+  hit the 600-significant-line module guard after the current release-note
+  list grew by one line; the Q01 doctor mutation fixture omitted the two new
+  Windows proof scripts; macOS used GNU-only `head -c 0`; and the 4K lane
+  treated a periodic Rayon scheduler allocation as a product regression.
+  `scripts/collect_ci_failure_evidence.sh 29818164424` captured all four failed
+  job logs and six artifact sets before any remediation edit.
+- `hosted-matrix remediation`: the current release-readiness scan no longer
+  rescans the obsolete v1.7.1 note, the Q01 fixture copies both required
+  Windows scripts, and the broken-pipe proof uses portable `head -n 0`.
+  Allocation diagnostics recorded 16 steady allocations and a periodic 17th
+  1,520-byte Rayon scheduler refill. A red/green contract now gates the p95
+  allocation count against the unchanged stored budget, keeps maximum allocated
+  bytes blocking, and reports the observed maximum count. The exact dedicated
+  4K replay passed in 604.05 seconds with every feature row at or below p95 16;
+  observed parallel-row maxima remained 17 and were retained in the artifact.
 - `open acceptance`: physical WebGPU parity (Q01), physical GPU resource
   lifecycle (Q04), controlled physical-GPU p95 for shader caching (P01),
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts`: zero release-candidate pushes, zero GitHub full-matrix
-  runs, zero user-required hardware actions, and no commit/tag/push/publish.
-  One workspace-wide CPU test checkpoint was run. The WebGPU browser launch
-  circuit breaker tripped after two same-signature remediation-free replays;
-  no third production or harness patch was made.
+- `process counts through the first hosted matrix`: one release-candidate push,
+  one GitHub full-matrix run, zero user-required hardware actions, one branch
+  commit/push, and no tag/merge/publish. One workspace-wide CPU test checkpoint
+  was run. The hosted 4K investigation took approximately 45 minutes, used two
+  unsuccessful unpushed aggregation/projection experiments, then froze changes
+  for per-sample and per-allocation-size probes before the benchmark-contract
+  fix. The WebGPU browser launch circuit breaker separately tripped after two
+  same-signature remediation-free replays; no third production or harness patch
+  was made there.

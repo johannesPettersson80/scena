@@ -8,6 +8,8 @@ fn q01_doctor_rejects_smoke_only_webgpu_parity_contracts() {
     for relative in [
         ".github/workflows/hardware-gpu.yml",
         "package.json",
+        "scripts/build_windows_complete_hardware_bundle.sh",
+        "scripts/run_windows_complete_hardware_proof.ps1",
         "src/browser_probe.rs",
         "src/browser_probe/parity.rs",
         "src/schema_catalog.rs",
