@@ -3732,14 +3732,43 @@ remediation diff is stable. Do not run it after each item.
   second and final remediation attempt for the repeated M2 signature; another
   same-signature failure trips the circuit breaker and forbids another patch
   without a smaller reproducer from the failing host.
+- `fourth exact-commit hosted matrix`: GitHub Actions run `29830583399` at
+  `97816d97d94fdc15e0bcf14bc9caf794696385c3` passed WebGL2, WebGPU software
+  conformance, wasm packaging, and Headless 4K. Linux, macOS, and hosted
+  Windows advanced through the M2 renderer/reference suites, proving the
+  boundary correction closed the repeated signature, then all failed on the
+  same four stale doctor source pins. Those pins still required clipping
+  implementation text in `cpu.rs` and `semantic_aov.rs` after the shared
+  implementation moved to `cpu_geometry.rs`. The collected evidence under
+  `target/ci-failure-evidence/run-29830583399` contains all three failed logs,
+  annotations, and six artifact sets. This is a policy/test-harness ownership
+  defect, not a third production-renderer remediation attempt.
+- `fourth-matrix remediation`: production rendering code remained frozen.
+  `ARCH-CLIPPING` and `FR06-SEMANTIC-AOV` now pin the shared owner implementation
+  in `cpu_geometry.rs` and the delegating calls in the CPU and semantic-AOV
+  consumers. New mutations prove doctor rejects removal of either consumer
+  delegation and removal of the shared boundary tolerance. Both focused xtask
+  tests, formatting, xtask-only strict Clippy, and `doctor --full` pass on the
+  isolated builder. The workspace suite was intentionally not repeated because
+  this correction changes only source-derived policy and its mutation tests.
+- `latest isolated bootstrap`: canonical source
+  `/home/johannes/projects/scena`; destination
+  `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`;
+  target `/home/johannes/.cache/codex-targets/scena-full-review-v18-checklist`;
+  branch `codex/full-review-remediation-1.9`; pre-remediation source HEAD
+  `97816d97d94fdc15e0bcf14bc9caf794696385c3`; shared checkout absent. The
+  explicit post-mirror bootstrap matched `AGENTS.md` SHA-256
+  `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
+  and relative skills aggregate
+  `8b5c11eb955253fe651e9b084c9d4bf5139afb565dc53d4223da1dc2e4771a0e`.
 - `open acceptance`: physical WebGPU parity (Q01), physical GPU resource
   lifecycle (Q04), controlled physical-GPU p95 for shader caching (P01),
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts through the third hosted matrix`: three release-candidate
-  pushes, three GitHub full-matrix runs, zero user-required hardware actions,
-  three branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
+- `process counts through the fourth hosted matrix`: four release-candidate
+  pushes, four GitHub full-matrix runs, zero user-required hardware actions,
+  four branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
   test checkpoint was run. The hosted 4K investigation took approximately 45
   minutes, used two
   unsuccessful unpushed aggregation/projection experiments, then froze changes

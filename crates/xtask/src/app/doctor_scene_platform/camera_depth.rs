@@ -281,9 +281,7 @@ pub(crate) fn check_clipping_contracts(root: &Path, findings: &mut Vec<Finding>)
         "ARCH-CLIPPING",
         "src/render/cpu.rs",
         &[
-            "clipping_planes: &[ClippingPlane]",
-            "is_clipped",
-            "plane.contains(position)",
+            "cpu_geometry::point_is_clipped(position, clipping_planes, section_box)",
             "cpu_geometry::weighted_vec3",
         ],
     );
@@ -292,7 +290,14 @@ pub(crate) fn check_clipping_contracts(root: &Path, findings: &mut Vec<Finding>)
         findings,
         "ARCH-CLIPPING",
         "src/render/cpu_geometry.rs",
-        &["clip_depth_plane", "project_clipped_triangle"],
+        &[
+            "clip_depth_plane",
+            "project_clipped_triangle",
+            "pub(super) fn point_is_clipped(",
+            "clipping_planes: &[ClippingPlane]",
+            "signed_distance < -CLIPPING_BOUNDARY_TOLERANCE",
+            "section.clips(position)",
+        ],
     );
     require_contains(
         root,

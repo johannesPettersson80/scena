@@ -42,15 +42,19 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
                 "primitive.source_instance()",
                 "f32::INFINITY",
                 "cpu_geometry::perspective_weights",
-                "plane.contains(world)",
-                "section.clips(world)",
+                "cpu_geometry::point_is_clipped(world, clipping_planes, section_box)",
                 "x as f32 + 0.5",
                 "y as f32 + 0.5",
             ],
         ),
         (
             "src/render/cpu_geometry.rs",
-            &["camera.interpolation_weights(projected, affine)"],
+            &[
+                "camera.interpolation_weights(projected, affine)",
+                "pub(super) fn point_is_clipped(",
+                "signed_distance < -CLIPPING_BOUNDARY_TOLERANCE",
+                "section.clips(position)",
+            ],
         ),
         (
             "src/render/settings.rs",
