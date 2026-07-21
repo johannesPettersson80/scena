@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 
+use super::super::scena_policy::push_allow_root;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DoctorCommandArgs {
     pub(crate) input: String,
+    pub(crate) allow_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +16,7 @@ pub(crate) struct RenderCommandArgs {
     pub(crate) height: Option<u32>,
     pub(crate) detail: bool,
     pub(crate) gpu: bool,
+    pub(crate) allow_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +26,7 @@ pub(crate) struct DiagnoseCommandArgs {
     pub(crate) width: Option<u32>,
     pub(crate) height: Option<u32>,
     pub(crate) detail: bool,
+    pub(crate) allow_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +34,7 @@ pub(crate) struct RepairCommandArgs {
     pub(crate) input: String,
     pub(crate) from: PathBuf,
     pub(crate) iteration_budget: u32,
+    pub(crate) allow_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +42,7 @@ pub(crate) struct InspectCommandArgs {
     pub(crate) input: String,
     pub(crate) width: Option<u32>,
     pub(crate) height: Option<u32>,
+    pub(crate) allow_roots: Vec<PathBuf>,
 }
 
 impl DoctorCommandArgs {
@@ -43,15 +50,21 @@ impl DoctorCommandArgs {
         let Some(input) = args.first() else {
             return Err(doctor_usage());
         };
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
                 "--json" => index += 1,
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
+                    index += 2;
+                }
                 flag => return Err(format!("unknown doctor flag '{flag}'; {}", doctor_usage())),
             }
         }
         Ok(Self {
             input: input.clone(),
+            allow_roots,
         })
     }
 }
@@ -66,7 +79,8 @@ impl RenderCommandArgs {
         let mut width = None;
         let mut height = None;
         let mut detail = false;
-        let mut gpu = super::super::scena_input::gpu_requested_from_env();
+        let mut gpu = false;
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -100,6 +114,10 @@ impl RenderCommandArgs {
                     gpu = true;
                     index += 1;
                 }
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
+                    index += 2;
+                }
                 "--json" => index += 1,
                 flag => return Err(format!("unknown render flag '{flag}'; {}", render_usage())),
             }
@@ -114,6 +132,7 @@ impl RenderCommandArgs {
             height,
             detail,
             gpu,
+            allow_roots,
         })
     }
 }
@@ -125,6 +144,7 @@ impl InspectCommandArgs {
         };
         let mut width = None;
         let mut height = None;
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -143,6 +163,10 @@ impl InspectCommandArgs {
                     index += 2;
                 }
                 "--json" => index += 1,
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
+                    index += 2;
+                }
                 flag => {
                     return Err(format!(
                         "unknown inspect flag '{flag}'; {}",
@@ -155,6 +179,7 @@ impl InspectCommandArgs {
             input: input.clone(),
             width,
             height,
+            allow_roots,
         })
     }
 }
@@ -169,6 +194,7 @@ impl DiagnoseCommandArgs {
         let mut width = None;
         let mut height = None;
         let mut detail = false;
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -198,6 +224,10 @@ impl DiagnoseCommandArgs {
                     detail = true;
                     index += 1;
                 }
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
+                    index += 2;
+                }
                 "--json" => index += 1,
                 flag => {
                     return Err(format!(
@@ -216,6 +246,7 @@ impl DiagnoseCommandArgs {
             width,
             height,
             detail,
+            allow_roots,
         })
     }
 }
@@ -227,6 +258,7 @@ impl RepairCommandArgs {
         };
         let mut from = None;
         let mut iteration_budget = 3;
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -241,6 +273,10 @@ impl RepairCommandArgs {
                     )?;
                     index += 2;
                 }
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
+                    index += 2;
+                }
                 "--json" => index += 1,
                 flag => {
                     return Err(format!("unknown repair flag '{flag}'; {}", repair_usage()));
@@ -252,6 +288,7 @@ impl RepairCommandArgs {
             from: from
                 .ok_or_else(|| format!("missing --from <report.json>; {}", repair_usage()))?,
             iteration_budget,
+            allow_roots,
         })
     }
 }
@@ -283,25 +320,25 @@ fn parse_u64(flag: &str, value: String) -> Result<u64, String> {
 }
 
 fn render_usage() -> String {
-    "usage: scena render <asset-or-recipe> --introspect --out <png> [--gpu] [--width <px>] [--height <px>] [--detail] [--round-floats <0..6>]"
+    "usage: scena render <asset-or-recipe> --introspect --out <png> [--gpu] [--width <px>] [--height <px>] [--detail] [--allow-root <directory>]... [--round-floats <0..6>]"
         .to_string()
 }
 
 fn inspect_usage() -> String {
-    "usage: scena inspect <asset-or-recipe> [--width <px>] [--height <px>] [--round-floats <0..6>]"
+    "usage: scena inspect <asset-or-recipe> [--width <px>] [--height <px>] [--allow-root <directory>]... [--round-floats <0..6>]"
         .to_string()
 }
 
 fn diagnose_usage() -> String {
-    "usage: scena diagnose <asset-or-recipe> --visibility [--handle <u64>] [--width <px>] [--height <px>] [--detail] [--round-floats <0..6>]"
+    "usage: scena diagnose <asset-or-recipe> --visibility [--handle <u64>] [--width <px>] [--height <px>] [--detail] [--allow-root <directory>]... [--round-floats <0..6>]"
         .to_string()
 }
 
 fn doctor_usage() -> String {
-    "usage: scena doctor <asset-or-recipe> [--json] [--round-floats <0..6>]".to_string()
+    "usage: scena doctor <asset-or-recipe> [--allow-root <directory>]... [--json] [--round-floats <0..6>]".to_string()
 }
 
 fn repair_usage() -> String {
-    "usage: scena repair <asset-or-recipe> --from <diagnosis-or-introspection.json> [--iteration-budget <n>] [--round-floats <0..6>]"
+    "usage: scena repair <asset-or-recipe> --from <diagnosis-or-introspection.json> [--iteration-budget <n>] [--allow-root <directory>]... [--round-floats <0..6>]"
         .to_string()
 }

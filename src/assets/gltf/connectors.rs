@@ -5,9 +5,11 @@ use std::collections::BTreeSet;
 use ::gltf::Node;
 use serde_json::Value as JsonValue;
 
+use crate::assets::AssetPath;
+use crate::diagnostics::AssetError;
 use crate::scene::{ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, Transform};
 
-use super::transform::parse_node_transform;
+use super::transform::parse_marker_transform;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneAssetConnector {
@@ -87,55 +89,84 @@ impl SceneAssetConnector {
     }
 }
 
-pub(super) fn parse_node_connectors(node: &Node) -> Vec<SceneAssetConnector> {
-    let Some(extras) = super::extras_to_value(node.extras()) else {
-        return Vec::new();
+pub(super) fn parse_node_connectors(
+    path: &AssetPath,
+    node: &Node,
+) -> Result<Vec<SceneAssetConnector>, AssetError> {
+    let Some(raw_extras) = node.extras().as_ref() else {
+        return Ok(Vec::new());
     };
-    extras
+    let extras =
+        serde_json::from_str::<JsonValue>(raw_extras.get()).map_err(|error| AssetError::Parse {
+            path: path.as_str().to_owned(),
+            reason: format!("nodes[{}].extras is invalid JSON: {error}", node.index()),
+        })?;
+    let Some(connectors) = extras
         .get("scena")
         .and_then(|scena| scena.get("connectors"))
-        .and_then(JsonValue::as_array)
-        .map(|connectors| {
-            connectors
-                .iter()
-                .map(|connector| SceneAssetConnector {
-                    name: connector
-                        .get("name")
-                        .and_then(JsonValue::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                    kind: connector
-                        .get("kind")
-                        .and_then(JsonValue::as_str)
-                        .map(str::to_string),
-                    allowed_mates: parse_string_array(connector, "allowedMates", "allowed_mates"),
-                    tags: parse_string_array(connector, "tags", "tags")
-                        .into_iter()
-                        .collect(),
-                    snap_tolerance: parse_non_negative_f32(
-                        connector,
-                        "snapTolerance",
-                        "snap_tolerance",
-                    ),
-                    clearance_hint: parse_non_negative_f32(
-                        connector,
-                        "clearanceHint",
-                        "clearance_hint",
-                    ),
-                    roll_policy: parse_roll_policy(connector)
-                        .unwrap_or(ConnectorRollPolicy::Preserve),
-                    polarity: parse_polarity(connector),
-                    metadata: connector
-                        .get("metadata")
-                        .filter(|metadata| metadata.is_object())
-                        .cloned()
-                        .map(ConnectorMetadata::new),
-                    transform: parse_node_transform(connector),
-                    invalid_reason: validate_connector_extras(connector),
-                })
-                .collect()
+    else {
+        return Ok(Vec::new());
+    };
+    let connectors = connectors.as_array().ok_or_else(|| AssetError::Parse {
+        path: path.as_str().to_owned(),
+        reason: format!(
+            "nodes[{}].extras.scena.connectors must be an array",
+            node.index()
+        ),
+    })?;
+    connectors
+        .iter()
+        .enumerate()
+        .map(|(index, connector)| {
+            let marker_path = format!("nodes[{}].extras.scena.connectors[{index}]", node.index());
+            if let Some(reason) = validate_connector_extras(connector) {
+                return Err(AssetError::Parse {
+                    path: path.as_str().to_owned(),
+                    reason: format!("{marker_path}: {reason}"),
+                });
+            }
+            let transform = parse_marker_transform(connector, &marker_path).map_err(|reason| {
+                AssetError::Parse {
+                    path: path.as_str().to_owned(),
+                    reason,
+                }
+            })?;
+            Ok(SceneAssetConnector {
+                name: connector
+                    .get("name")
+                    .and_then(JsonValue::as_str)
+                    .expect("validated connector name")
+                    .to_string(),
+                kind: connector
+                    .get("kind")
+                    .and_then(JsonValue::as_str)
+                    .map(str::to_string),
+                allowed_mates: parse_string_array(connector, "allowedMates", "allowed_mates"),
+                tags: parse_string_array(connector, "tags", "tags")
+                    .into_iter()
+                    .collect(),
+                snap_tolerance: parse_non_negative_f32(
+                    connector,
+                    "snapTolerance",
+                    "snap_tolerance",
+                ),
+                clearance_hint: parse_non_negative_f32(
+                    connector,
+                    "clearanceHint",
+                    "clearance_hint",
+                ),
+                roll_policy: parse_roll_policy(connector).unwrap_or(ConnectorRollPolicy::Preserve),
+                polarity: parse_polarity(connector),
+                metadata: connector
+                    .get("metadata")
+                    .filter(|metadata| metadata.is_object())
+                    .cloned()
+                    .map(ConnectorMetadata::new),
+                transform,
+                invalid_reason: None,
+            })
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 fn validate_connector_extras(connector: &JsonValue) -> Option<String> {

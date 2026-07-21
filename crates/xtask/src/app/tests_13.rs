@@ -281,6 +281,8 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "src/render/gpu/post/dof.rs",
         "src/browser_probe/probes/state_lifecycle.rs",
         "tests/c09_gpu_resource_lifecycle.rs",
+        "crates/xtask/src/app/release/review_artifacts.rs",
+        "crates/xtask/src/app/release/lane_artifacts.rs",
         "tests/pf01_output_toggle.rs",
         "tests/browser/m6_rust_wasm_renderer_probe.js",
         "tests/browser/pf01_output_toggle.js",
@@ -293,6 +295,11 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         ".github/workflows/hardware-gpu.yml",
         "docs/api.md",
         "docs/browser.md",
+        "docs/lifecycle.md",
+        "docs/specs/release-gates.md",
+        "README.md",
+        "CHANGELOG.md",
+        "docs/release-notes/v1.8.0.md",
     ];
     for relative in files {
         let source = root.join(relative);
@@ -439,6 +446,29 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
                     .contains("SCENA_ALLOW_PARTIAL_HARDWARE_BACKENDS")
         }),
         "doctor must reject partial evidence in the required hardware workflow: {findings:?}",
+    );
+
+    let source = fs::read_to_string(&workflow).expect("read partial hardware workflow fixture");
+    let mutated = source.replacen(
+        "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: \"1\"",
+        "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: \"0\"",
+        1,
+    );
+    assert_ne!(
+        source, mutated,
+        "required lifecycle mutation must alter workflow"
+    );
+    fs::write(&workflow, mutated).expect("disable strict GPU lifecycle evidence");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding
+                    .message
+                    .contains("SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: \"1\"")
+        }),
+        "doctor must reject disabling the strict GPU lifecycle lane: {findings:?}",
     );
 
     let browser_selector = fixture_root.join("tests/browser/hardware_browser.js");

@@ -213,7 +213,7 @@ pub(crate) fn release_readiness_has_no_open_release_deferrals() {
 pub(crate) fn release_readiness_reports_missing_downloaded_artifacts() {
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(
+    let _ = check_release_artifact_bundle_with_summary(
         Path::new("target/xtask-release-readiness-test/missing"),
         &mut findings,
     );
@@ -242,7 +242,7 @@ pub(crate) fn release_readiness_collects_required_command_record_and_log_artifac
     .expect("release command log fixture");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     for required in [
         "release-lanes/headless-cpu.commands.jsonl",
@@ -272,7 +272,7 @@ pub(crate) fn release_readiness_rejects_unavailable_browser_artifact() {
     .expect("test artifact write");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     assert!(
         findings
@@ -295,7 +295,7 @@ pub(crate) fn release_readiness_rejects_command_recorded_release_lane_artifact()
     .expect("lane artifact write");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     assert!(
         findings
@@ -386,7 +386,7 @@ pub(crate) fn release_readiness_rejects_stale_timestamped_artifact() {
     .expect("capability matrix write");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     assert!(
         findings
@@ -409,7 +409,7 @@ pub(crate) fn release_readiness_rejects_constant_ppm_visual_artifact() {
     .expect("constant ppm write");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     assert!(
         findings
@@ -445,7 +445,7 @@ pub(crate) fn release_readiness_rejects_factory_contract_capability_rows() {
     .expect("capability matrix write");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     assert!(
         findings
@@ -481,7 +481,7 @@ pub(crate) fn release_readiness_rejects_missing_lane_capability_rows() {
     .expect("capability matrix write");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     assert!(
         findings

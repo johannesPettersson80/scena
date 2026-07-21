@@ -2,12 +2,18 @@
   "artifacts": {
     "capture": {
       "height": 48,
-      "payload_fnv1a64": "555e260328c2569c",
+      "payload_fnv1a64": "a5d1c54a86b1d666",
       "schema": "scena.capture.v1",
       "width": 64
     },
     "capture_descriptor_path": "target/gate-artifacts/scena-cli-agent-golden/render-frame.capture.json",
     "capture_png_path": "target/gate-artifacts/scena-cli-agent-golden/render-frame.png"
+  },
+  "backend_selection": {
+    "fallback_used": false,
+    "requested": "headless",
+    "selected": "headless",
+    "source": "default"
   },
   "capabilities": {
     "backend": "headless",
@@ -18,39 +24,39 @@
     "surface_attached": false
   },
   "content_bbox_css_px": {
-    "height": 29.0,
-    "max_x": 45.0,
-    "max_y": 37.0,
-    "min_x": 17.0,
-    "min_y": 9.0,
-    "width": 29.0
+    "height": 30.0,
+    "max_x": 38.0,
+    "max_y": 39.0,
+    "min_x": 23.0,
+    "min_y": 10.0,
+    "width": 16.0
   },
   "content_bbox_fraction": {
-    "height": 0.604,
-    "max_x": 0.703,
-    "max_y": 0.771,
-    "min_x": 0.266,
-    "min_y": 0.188,
-    "width": 0.453
+    "height": 0.625,
+    "max_x": 0.594,
+    "max_y": 0.813,
+    "min_x": 0.359,
+    "min_y": 0.208,
+    "width": 0.25
   },
   "fixes": [],
   "framing": {
     "active_camera": 3,
     "center_offset_fraction": [
-      -0.008,
-      -0.01
+      -0.016,
+      0.021
     ],
     "cropped": false,
-    "fit_fraction": 0.604,
+    "fit_fraction": 0.625,
     "tiny_in_frame": false
   },
   "luminance": {
-    "max": 11.907,
-    "mean": 0.758,
-    "min": 0.0,
-    "p05": 0.0,
-    "p50": 0.0,
-    "p95": 6.526
+    "max": 242.932,
+    "mean": 227.918,
+    "min": 0.217,
+    "p05": 7.658,
+    "p50": 242.932,
+    "p95": 242.932
   },
   "nodes_detail": [],
   "nodes_summary": {
@@ -64,5 +70,5 @@
   "ok": true,
   "reasons": [],
   "schema": "scena.render_introspection.v1",
-  "visible_pixel_fraction": 0.135
+  "visible_pixel_fraction": 0.063
 }

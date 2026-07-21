@@ -3,12 +3,6 @@
 use super::super::RasterTarget;
 use super::instancing::InstanceDrawBatch;
 use super::labels::{self, LabelResources};
-#[cfg(any(
-    not(target_arch = "wasm32"),
-    feature = "browser-probe",
-    feature = "scene-host"
-))]
-use super::material_bindings::MaterialTextureBindingMode;
 use super::materials::MaterialResources;
 use super::pipeline::MeshPipelineSet;
 #[cfg(any(
@@ -84,6 +78,7 @@ pub(super) struct BrowserReadbackResources {
     pub(super) view: wgpu::TextureView,
     pub(super) buffer: wgpu::Buffer,
     pub(super) pipelines: MeshPipelineSet,
+    pub(super) format: wgpu::TextureFormat,
     pub(super) padded_bytes_per_row: u32,
     #[allow(dead_code)]
     pub(super) unpadded_bytes_per_row: u32,
@@ -98,7 +93,6 @@ pub(super) fn resource_stats(
         textures: 1,
         render_targets: 1,
         pipelines: 2,
-        shader_modules: 2,
         approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(target, 4, 1)
             + u64::from(resources.padded_bytes_per_row) * u64::from(target.height),
         ..GpuResourceStats::default()
@@ -110,15 +104,27 @@ pub(super) fn resource_stats(
     feature = "browser-probe",
     feature = "scene-host"
 ))]
+pub(super) struct BrowserReadbackResourceDescriptor<'a> {
+    pub(super) target: RasterTarget,
+    pub(super) surface_format: wgpu::TextureFormat,
+    pub(super) output_bind_group_layout: &'a wgpu::BindGroupLayout,
+    pub(super) material_bind_group_layout: &'a wgpu::BindGroupLayout,
+    pub(super) draw_bind_group_layout: &'a wgpu::BindGroupLayout,
+    pub(super) triangle_shader: &'a wgpu::ShaderModule,
+    pub(super) depth_compare: Option<wgpu::CompareFunction>,
+}
+
+#[cfg(any(
+    not(target_arch = "wasm32"),
+    feature = "browser-probe",
+    feature = "scene-host"
+))]
 pub(super) fn create_browser_readback_resources(
     device: &wgpu::Device,
-    target: RasterTarget,
-    output_bind_group_layout: &wgpu::BindGroupLayout,
-    material_bind_group_layout: &wgpu::BindGroupLayout,
-    draw_bind_group_layout: &wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
-    depth_compare: Option<wgpu::CompareFunction>,
+    descriptor: BrowserReadbackResourceDescriptor<'_>,
 ) -> BrowserReadbackResources {
+    let target = descriptor.target;
+    let target_format = readback_format_for_surface(descriptor.surface_format);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.browser.proof_readback_target"),
         size: wgpu::Extent3d {
@@ -129,7 +135,7 @@ pub(super) fn create_browser_readback_resources(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format: target_format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
@@ -144,12 +150,12 @@ pub(super) fn create_browser_readback_resources(
     });
     let pipelines = create_unlit_pipeline_set(
         device,
-        wgpu::TextureFormat::Rgba8Unorm,
-        output_bind_group_layout,
-        material_bind_group_layout,
-        draw_bind_group_layout,
-        texture_binding_mode,
-        depth_compare,
+        descriptor.triangle_shader,
+        target_format,
+        descriptor.output_bind_group_layout,
+        descriptor.material_bind_group_layout,
+        descriptor.draw_bind_group_layout,
+        descriptor.depth_compare,
         1,
     );
     BrowserReadbackResources {
@@ -157,8 +163,21 @@ pub(super) fn create_browser_readback_resources(
         view,
         buffer,
         pipelines,
+        format: target_format,
         padded_bytes_per_row,
         unpadded_bytes_per_row,
+    }
+}
+
+const fn readback_format_for_surface(surface_format: wgpu::TextureFormat) -> wgpu::TextureFormat {
+    match surface_format {
+        wgpu::TextureFormat::Bgra8UnormSrgb | wgpu::TextureFormat::Rgba8UnormSrgb => {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        }
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Rgba8Unorm => {
+            wgpu::TextureFormat::Rgba8Unorm
+        }
+        _ => surface_format,
     }
 }
 
@@ -354,4 +373,21 @@ fn has_transparent_batches(
         || instance_batches
             .iter()
             .any(|batch| !batch.depth_prepass_eligible)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::readback_format_for_surface;
+
+    #[test]
+    fn browser_readback_preserves_surface_transfer_with_rgba_byte_order() {
+        assert_eq!(
+            readback_format_for_surface(wgpu::TextureFormat::Bgra8Unorm),
+            wgpu::TextureFormat::Rgba8Unorm
+        );
+        assert_eq!(
+            readback_format_for_surface(wgpu::TextureFormat::Bgra8UnormSrgb),
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        );
+    }
 }

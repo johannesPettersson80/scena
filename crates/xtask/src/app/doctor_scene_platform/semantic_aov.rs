@@ -41,12 +41,16 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
                 "primitive.semantic_opaque()",
                 "primitive.source_instance()",
                 "f32::INFINITY",
-                "camera.interpolation_weights",
+                "cpu_geometry::perspective_weights",
                 "plane.contains(world)",
                 "section.clips(world)",
                 "x as f32 + 0.5",
                 "y as f32 + 0.5",
             ],
+        ),
+        (
+            "src/render/cpu_geometry.rs",
+            &["camera.interpolation_weights(projected, affine)"],
         ),
         (
             "src/render/settings.rs",

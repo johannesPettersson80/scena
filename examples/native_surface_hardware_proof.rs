@@ -4,8 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    AntiAliasing, Assets, Background, Color, GeometryDesc, MaterialDesc, PlatformSurface,
-    PostBloomConfig, RenderReadbackMode, Renderer, Scene,
+    AntiAliasing, Assets, Background, Color, GeometryDesc, MaterialDesc, NotPreparedReason,
+    PlatformSurface, PostBloomConfig, RenderError, RenderReadbackMode, Renderer, Scene,
+    SurfaceEvent,
 };
 use serde_json::json;
 use winit::application::ApplicationHandler;
@@ -138,6 +139,11 @@ fn run_proof(event_loop: &ActiveEventLoop) -> Result<(), String> {
             "present-only render performed forbidden copy/sync/allocation work: {failures:?}"
         ));
     }
+    if metrics.native_scene_color_passes != 1 || metrics.gpu_queue_submissions != 1 {
+        return Err(format!(
+            "present-only/no-post must encode one scene-color family in one queue submission: {metrics:?}"
+        ));
+    }
     let before_resources = resource_signature(before);
     let after_resources = resource_signature(after);
     if before_resources != after_resources {
@@ -145,6 +151,81 @@ fn run_proof(event_loop: &ActiveEventLoop) -> Result<(), String> {
             "present-only render changed prepared GPU resource ownership: before={before_resources:?}, after={after_resources:?}"
         ));
     }
+
+    let resized_width = WIDTH + 32;
+    let resized_height = HEIGHT + 16;
+    renderer
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: resized_width,
+            height: resized_height,
+        })
+        .map_err(|error| format!("native attached resize event failed: {error:?}"))?;
+    let target_changed_requires_prepare = matches!(
+        renderer.render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::TargetChanged { .. }
+        })
+    );
+    if !target_changed_requires_prepare {
+        return Err("native attached resize did not invalidate prepared target state".to_owned());
+    }
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .map_err(|error| format!("native attached resized prepare failed: {error:?}"))?;
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
+        .map_err(|error| format!("native attached resized render failed: {error:?}"))?;
+    let resized_metrics = renderer.last_render_work_metrics();
+    let rendered_after_resize = renderer.stats().target_width == resized_width
+        && renderer.stats().target_height == resized_height
+        && resized_metrics.native_scene_color_passes == 1
+        && resized_metrics.gpu_queue_submissions == 1;
+    if !rendered_after_resize {
+        return Err(format!(
+            "native attached resized render did not use the resized target in one pass: stats={:?}, metrics={resized_metrics:?}",
+            renderer.stats()
+        ));
+    }
+    renderer
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: WIDTH,
+            height: HEIGHT,
+        })
+        .map_err(|error| format!("native attached resize restore failed: {error:?}"))?;
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .map_err(|error| format!("native attached restored prepare failed: {error:?}"))?;
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
+        .map_err(|error| format!("native attached restored render failed: {error:?}"))?;
+    let restored_original_size =
+        renderer.stats().target_width == WIDTH && renderer.stats().target_height == HEIGHT;
+    if !restored_original_size {
+        return Err(format!(
+            "native attached target did not restore its original size: {:?}",
+            renderer.stats()
+        ));
+    }
+
+    renderer.set_anti_aliasing(AntiAliasing::Msaa4);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .map_err(|error| format!("native MSAA4 surface prepare failed: {error:?}"))?;
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
+        .map_err(|error| format!("native MSAA4 present-only render failed: {error:?}"))?;
+    let msaa4_present_metrics = renderer.last_render_work_metrics();
+    if msaa4_present_metrics.native_scene_color_passes != 1
+        || msaa4_present_metrics.gpu_queue_submissions != 1
+    {
+        return Err(format!(
+            "MSAA4 present-only must resolve one direct surface scene pass in one submission: {msaa4_present_metrics:?}"
+        ));
+    }
+    renderer.set_anti_aliasing(AntiAliasing::None);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .map_err(|error| format!("native proof baseline restore failed: {error:?}"))?;
 
     let phases = [
         capture_phase(
@@ -195,6 +276,20 @@ fn run_proof(event_loop: &ActiveEventLoop) -> Result<(), String> {
     ];
     validate_output_toggle(&phases)?;
 
+    renderer
+        .handle_surface_event(SurfaceEvent::Lost)
+        .map_err(|error| format!("native attached surface-loss event failed: {error:?}"))?;
+    let structured_surface_lost = matches!(
+        renderer.render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly),
+        Err(RenderError::SurfaceLost { recoverable: true })
+    );
+    if !structured_surface_lost {
+        return Err(
+            "native attached surface loss did not latch a structured host-recreation failure"
+                .to_owned(),
+        );
+    }
+
     let phase_json = phases
         .iter()
         .map(|phase| {
@@ -229,9 +324,31 @@ fn run_proof(event_loop: &ActiveEventLoop) -> Result<(), String> {
             "gpu_pipeline_creations": metrics.gpu_pipeline_creations,
             "gpu_bind_group_creations": metrics.gpu_bind_group_creations,
             "gpu_shader_module_creations": metrics.gpu_shader_module_creations,
+            "native_scene_color_passes": metrics.native_scene_color_passes,
+            "gpu_queue_submissions": metrics.gpu_queue_submissions,
+        },
+        "msaa4_present_only": {
+            "native_scene_color_passes": msaa4_present_metrics.native_scene_color_passes,
+            "gpu_queue_submissions": msaa4_present_metrics.gpu_queue_submissions,
+            "readback_copies": msaa4_present_metrics.readback_copies,
+            "sample_count": 4,
         },
         "prepared_resources_before": before_resources,
         "prepared_resources_after": after_resources,
+        "resize_lifecycle": {
+            "status": "passed",
+            "original_size": [WIDTH, HEIGHT],
+            "resized_size": [resized_width, resized_height],
+            "target_changed_requires_prepare": target_changed_requires_prepare,
+            "rendered_after_resize": rendered_after_resize,
+            "restored_original_size": restored_original_size,
+        },
+        "surface_loss_handling": {
+            "status": "passed",
+            "structured_surface_lost": structured_surface_lost,
+            "host_surface_recreation_required": true,
+            "render_rejected_after_loss": structured_surface_lost,
+        },
         "output_toggle": {
             "status": "passed",
             "phases": phase_json,

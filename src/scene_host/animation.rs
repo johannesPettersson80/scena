@@ -239,10 +239,11 @@ pub(super) fn invalid_input(message: impl Into<String>) -> SceneHostError {
 
 fn map_animation_error(error: AnimationError) -> SceneHostError {
     match error {
-        AnimationError::ClipNotFound { name } => SceneHostError::new(
+        AnimationError::ClipNotFound { name, candidates } => SceneHostError::new(
             SceneHostErrorCode::AnimationClipNotFound,
             format!("animation clip {name} was not found"),
-        ),
+        )
+        .with_candidates(candidates),
         AnimationError::InvalidClip { reason } => SceneHostError::new(
             SceneHostErrorCode::InvalidInput,
             format!("animation clip is invalid: {reason}"),

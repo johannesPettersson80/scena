@@ -90,19 +90,41 @@ pub(crate) fn check_pf09_parallel_work_contracts(root: &Path, findings: &mut Vec
             &[][..],
         ),
         (
-            "src/render/cpu.rs",
-            &["primitive_screen_row_bounds"][..],
+            "src/render/cpu_geometry.rs",
+            &["project_clipped_primitive", "CpuProjectedPrimitive"][..],
             &[][..],
         ),
         (
             "src/render/cpu_render.rs",
             &[
-                "struct CpuRowBandBins",
-                "projected_bounds",
-                "primitive_indices: Some(&row_bands.bands[chunk_index])",
                 "cpu_raster_candidate_triangles",
                 "cpu_raster_full_rescan_triangles",
+            ][..],
+            &[][..],
+        ),
+        (
+            "src/render/cpu_render/parallel_pass.rs",
+            &[
+                "primitive_indices: Some(&row_bands.bands[chunk_index])",
+                ".reduce(CpuGeometryPassResult::default",
+                "aggregate.oit_passes.max(result.oit_passes)",
+            ][..],
+            &[".any(|result| result.oit_passes > 0)"][..],
+        ),
+        (
+            "src/render/cpu_render/tests.rs",
+            &[
                 "pf09_row_band_bins_reduce_candidate_scans_and_preserve_order",
+                "cpu_parallel_oit_completes_every_row_band_when_rayon_is_contended",
+            ][..],
+            &[][..],
+        ),
+        (
+            "src/render/cpu_render/row_bands.rs",
+            &[
+                "struct CpuRowBandBins",
+                "projected_primitives",
+                "project_clipped_primitive(primitive, target, camera)",
             ][..],
             &[][..],
         ),
@@ -148,7 +170,7 @@ pub(crate) fn check_pf10_hot_path_contracts(root: &Path, findings: &mut Vec<Find
             &["encoded_ranges: Vec<"][..],
         ),
         (
-            "src/scene/import/animation_bindings.rs",
+            "src/scene/import/source_node_index.rs",
             &["struct SourceNodeIndex", "offsets: HashMap<usize, usize>"][..],
             &[".find(|record| record.source_index"][..],
         ),

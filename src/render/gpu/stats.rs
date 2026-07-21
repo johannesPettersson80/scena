@@ -8,6 +8,7 @@ pub(in crate::render) struct GpuResourceStats {
     pub(in crate::render) pipelines: u64,
     pub(in crate::render) bind_groups: u64,
     pub(in crate::render) shader_modules: u64,
+    pub(in crate::render) shader_module_creations: u64,
     pub(in crate::render) approximate_gpu_memory_bytes: u64,
     /// Plan line 778 commit 2: distinct material bind groups consumed by
     /// the unlit pass. Equals 1 when the renderer chose the batched
@@ -30,6 +31,9 @@ impl GpuResourceStats {
         self.pipelines = self.pipelines.saturating_add(other.pipelines);
         self.bind_groups = self.bind_groups.saturating_add(other.bind_groups);
         self.shader_modules = self.shader_modules.saturating_add(other.shader_modules);
+        self.shader_module_creations = self
+            .shader_module_creations
+            .saturating_add(other.shader_module_creations);
         self.approximate_gpu_memory_bytes = self
             .approximate_gpu_memory_bytes
             .saturating_add(other.approximate_gpu_memory_bytes);

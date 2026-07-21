@@ -1,5 +1,6 @@
 mod bundle_schema;
 mod lane_artifacts;
+mod readiness;
 mod required_gpu_parity;
 mod review_artifacts;
 mod round_e_material_results;
@@ -9,17 +10,22 @@ mod stage_provenance;
 mod stage_visual_proofs;
 mod waterbottle_results;
 
-pub(crate) use bundle_schema::check_release_artifact_bundle;
-pub(crate) use lane_artifacts::check_release_readiness_artifact_env;
+pub(crate) use bundle_schema::{
+    ReleaseArtifactBundleSummary, check_release_artifact_bundle_with_summary,
+};
 pub(crate) use lane_artifacts::{
     check_release_readiness, check_release_readiness_adr, check_release_readiness_checklists,
     copy_optional_json_field, release_artifact_commit_label, release_lane_command_records_pass,
-    run_claim_audit, run_release_readiness,
+    run_claim_audit,
 };
 pub(crate) use lane_artifacts::{
     release_lane_artifact, release_lane_command_records, release_lane_content_ok,
     release_lane_evidence, release_lane_expected_commands, release_lane_measured_command_records,
     release_lane_required_artifacts, run_release_lane_artifact,
+};
+pub(crate) use readiness::{
+    ResolvedReleaseArtifactRoot, release_readiness_report, resolve_release_artifact_root,
+    run_release_readiness,
 };
 pub(crate) use required_gpu_parity::{
     browser_gpu_conformance_passes, browser_probe_release_proof_passes,
@@ -34,7 +40,8 @@ pub(crate) use review_artifacts::{
 };
 pub(crate) use review_artifacts::{
     RELEASE_ARTIFACT_MAX_AGE_SECONDS, RELEASE_ARTIFACT_MAX_FUTURE_SKEW_SECONDS,
-    require_json_status_passed,
+    require_gpu_resource_lifecycle_proof, require_json_status_passed,
+    required_gpu_resource_lifecycle_proof_passes,
 };
 pub(crate) use review_artifacts::{
     RELEASE_LANE_ARTIFACT_SUFFIXES, REQUIRED_NATIVE_GPU_RENDER_ARTIFACT_SUFFIXES,

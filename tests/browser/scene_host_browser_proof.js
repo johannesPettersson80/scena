@@ -1277,6 +1277,34 @@ async function runPageProof(page) {
       const inspectJson = JSON.parse(host.inspectJson());
       const annotationProjectionsJson = JSON.parse(host.annotationProjectionsJson());
 
+      // The general SceneHost fixture uses two separated coplanar triangles,
+      // which cannot produce a depth-neighbor SSAO signal. Temporarily overlap
+      // one triangle in front of the other so this proof measures the effect,
+      // then restore the authored transform before subsequent phases.
+      const phase2FixtureInspection = JSON.parse(host.inspectJson());
+      const phase2LeftTransform = nodeByHandle(
+        phase2FixtureInspection,
+        leftMesh,
+      ).local_transform;
+      const phase2OriginalRightTransform = nodeByHandle(
+        phase2FixtureInspection,
+        rightMesh,
+      ).local_transform;
+      const phase2SsaoOccluderTransform = {
+        translation: [
+          phase2LeftTransform.translation[0] - 0.66,
+          phase2LeftTransform.translation[1] + 0.04,
+          phase2LeftTransform.translation[2] + 0.12,
+        ],
+        rotation: phase2LeftTransform.rotation,
+        scale: phase2LeftTransform.scale,
+      };
+      host.setTransform(
+        rightMeshHandle,
+        phase2SsaoOccluderTransform.translation,
+        phase2SsaoOccluderTransform.rotation,
+        phase2SsaoOccluderTransform.scale,
+      );
       host.setAntiAliasing("none");
       host.setBloom(null);
       host.setAmbientOcclusion(null);
@@ -1294,9 +1322,9 @@ async function runPageProof(page) {
       const phase2OffStats = JSON.parse(host.statsJson());
 
       const phase2SsaoConfig = JSON.stringify({
-        radius_px: 3,
-        intensity: 0.45,
-        depth_threshold: 0.025,
+        radius_px: 4,
+        intensity: 0.8,
+        depth_threshold: 0.0,
       });
       host.setAntiAliasing("none");
       host.setBloom(null);
@@ -1324,6 +1352,12 @@ async function runPageProof(page) {
       const phase2OnCapture = captureSummary(host.capture());
       const phase2OnStats = JSON.parse(host.statsJson());
       const phase2CapabilityReport = JSON.parse(host.capabilitiesJson());
+      host.setTransform(
+        rightMeshHandle,
+        phase2OriginalRightTransform.translation,
+        phase2OriginalRightTransform.rotation,
+        phase2OriginalRightTransform.scale,
+      );
 
       const trackedAnnotation = annotationProjectionsJson.annotations.find(
         (annotation) => annotation.id === "tracked-node",
@@ -1848,6 +1882,10 @@ async function runPageProof(page) {
           after_tint_capture: capture,
         },
         phase2_post_processing: {
+          ssao_fixture: {
+            original_right_transform: phase2OriginalRightTransform,
+            occluder_transform: phase2SsaoOccluderTransform,
+          },
           off_warmup: phase2OffWarmup,
           off_samples: phase2OffSamples,
           on_warmup: phase2OnWarmup,
@@ -3110,7 +3148,14 @@ async function main() {
     });
     try {
       await page.goto(url);
-      pageProof = await runPageProof(page);
+      try {
+        pageProof = await runPageProof(page);
+      } catch (error) {
+        if (consoleMessages.length > 0) {
+          error.message += `\nconsole:\n${consoleMessages.join("\n")}`;
+        }
+        throw error;
+      }
       pageProof.console_messages = consoleMessages.slice();
       const finalRender = await page.evaluate(
         async () => {

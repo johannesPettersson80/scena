@@ -1,4 +1,5 @@
 use super::{SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1};
+use crate::diagnostics::nearest_name_candidates;
 
 pub(super) fn schema_fixture_json(schema: &str) -> Option<&'static str> {
     schema_fixture_map()
@@ -7,14 +8,16 @@ pub(super) fn schema_fixture_json(schema: &str) -> Option<&'static str> {
 }
 
 pub fn nearest_schema_name(input: &str) -> Option<&'static str> {
+    let candidate = nearest_name_candidates(
+        input,
+        schema_fixture_map().iter().map(|(schema, _)| *schema),
+        1,
+    )
+    .into_iter()
+    .next()?;
     schema_fixture_map()
         .iter()
-        .map(|(schema, _)| (*schema, edit_distance(input, schema)))
-        .filter(|(_, distance)| *distance <= 8)
-        .min_by(|(left_schema, left), (right_schema, right)| {
-            left.cmp(right).then_with(|| left_schema.cmp(right_schema))
-        })
-        .map(|(schema, _)| schema)
+        .find_map(|(schema, _)| (*schema == candidate).then_some(*schema))
 }
 
 fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
@@ -92,8 +95,24 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/agent_smoke_template.v1.json"),
         ),
         (
+            "scena.agent_template_catalog.v1",
+            include_str!("../../tests/assets/stable-contracts/agent_template_catalog.v1.json"),
+        ),
+        (
             "scena.browser_proof_run.v1",
             include_str!("../../tests/assets/stable-contracts/browser_proof_run.v1.json"),
+        ),
+        (
+            "scena.q01.required_webgpu_pixel_parity.v1",
+            include_str!(
+                "../../tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json"
+            ),
+        ),
+        (
+            "scena.q04.required_gpu_resource_lifecycle.v1",
+            include_str!(
+                "../../tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json"
+            ),
         ),
         (
             "scena.appearance_expectation.v1",
@@ -196,6 +215,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/asset_doctor.v1.json"),
         ),
         (
+            "scena.asset_conversion.v1",
+            include_str!("../../tests/assets/stable-contracts/asset_conversion.v1.json"),
+        ),
+        (
             "scena.asset_catalog.v1",
             include_str!("../../tests/assets/stable-contracts/asset_catalog.v1.json"),
         ),
@@ -244,23 +267,4 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/host_event.v1.json"),
         ),
     ]
-}
-
-fn edit_distance(left: &str, right: &str) -> usize {
-    let right_chars = right.chars().collect::<Vec<_>>();
-    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
-    let mut current = vec![0; right_chars.len() + 1];
-
-    for (left_index, left_char) in left.chars().enumerate() {
-        current[0] = left_index + 1;
-        for (right_index, right_char) in right_chars.iter().enumerate() {
-            let substitution = usize::from(left_char != *right_char);
-            current[right_index + 1] = (previous[right_index + 1] + 1)
-                .min(current[right_index] + 1)
-                .min(previous[right_index] + substitution);
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-
-    previous[right_chars.len()]
 }

@@ -24,11 +24,16 @@ These are original rendered-output artifacts produced by `scena`.
 
 ## Easy Scene Setup
 
-The common model-viewer setup does not require hand-tuned camera constants.
-Load and instantiate the model, add studio lighting and a grid floor, call
-`Scene::frame_bounds` (or `Scene::frame_import`) with the active camera, create
-`OrbitControls::from_framing`, then prepare and render. The complete runnable
-workflow lives in the easy-scene guide rather than as an uncompiled excerpt.
+The high-level `headless_gltf_viewer`, `interactive_gltf_viewer`, and
+`first_render_gltf_headless` paths frame imported bounds and provide a neutral
+background plus fallback light when a glTF has no authored light or
+environment. They preserve authored lighting and expose any applied fallback
+as a structured diagnostic. Low-level `Renderer` construction remains
+explicit, including its black clear color and absence of implicit lights.
+
+The common model-viewer setup therefore does not require hand-tuned camera or
+lighting constants. The complete runnable workflow lives in the easy-scene
+guide rather than as an uncompiled excerpt.
 
 See [Easy scene setup](docs/guides/easy-scene-setup.md) for the full workflow,
 including connector mating and projected labels.
@@ -63,6 +68,10 @@ git clone https://github.com/johannesPettersson80/scena.git
 cd scena
 cargo run --example glb_model_viewer
 ```
+
+That example loads a PBR CAD glTF through documented viewer defaults. The
+result is neutrally lit and framed; `FirstRender::diagnostics()` reports that a
+fallback was applied so applications can replace it with authored lighting.
 
 Run the deterministic headless render example used by CI-style workflows:
 
@@ -101,6 +110,99 @@ cargo install scena
 scena-convert --help
 ```
 
+Conversion commands default to one machine-readable
+`scena.asset_conversion.v1` document. Select the output contract explicitly
+when integrating the external converter:
+
+```bash
+scena-convert --json --input model.fbx --output model.glb --dry-run
+scena-convert --human --input model.fbx --output model.glb
+```
+
+JSON mode captures converter progress and warnings inside `diagnostics`; it
+never mixes tool text into the JSON stream. Human mode is the explicit
+streaming/plain-text path.
+
+Discover the compiled renderer contract, or strictly probe the current GPU,
+before spending time on a render:
+
+```bash
+scena capabilities --json
+scena capabilities --live --json
+```
+
+The first result is explicitly `static_no_device`; the second is either a
+measured adapter/device report or a nonzero structured `unavailable` report.
+`scena --version` lists every compiled Cargo feature that changes public
+command or asset availability.
+
+Install the agent-facing recipe workflow with its required features:
+
+```bash
+cargo install scena --features agent
+scena examples agent list
+scena examples agent get primitive-scene --out scena-agent/primitive-scene
+scena validate-recipe scena-agent/primitive-scene/recipe.json --full
+scena recipe build scena-agent/primitive-scene/recipe.json
+scena recipe render scena-agent/primitive-scene/recipe.json --introspect --out frame.png
+```
+
+Template catalog output is `scena.agent_template_catalog.v1`. Canonical names
+use kebab-case. Historical underscore spellings remain accepted aliases and
+add a migration note naming the canonical replacement. The formerly ambiguous
+`product_configurator` alias now names `product-configurator-starter`; the
+imported material-variant workflow remains `product-configurator`.
+
+Global and command help are successful JSON on stdout, for example
+`scena diff --help --json` and `scena examples agent list --help`. Recipe diff
+reports inequality as data with exit 0 by default; add `--exit-code` when a
+difference should produce exit 1 in CI.
+
+Any command that accepts `<asset-or-recipe>` dispatches by the parsed input
+kind. Raw glTF/GLB stays on the direct asset path; a recipe always uses the
+policy-aware SceneHost builder and all of its imports. Policy rejection is a
+nonzero structured result—commands never report success for a first-import-only
+partial scene.
+
+`scena repair <asset-or-recipe> --from <report.json>` validates that target
+before deriving a plan: raw assets must pass the runtime asset doctor and
+recipes must complete the same policy-aware build used by `recipe build`.
+Missing, malformed, or policy-rejected targets fail before the report is
+planned; a second positional target is an argument error.
+
+`validate-recipe` defaults to full resolution and inventories imports,
+environment URIs or builtins, fonts, authored texture slots, and nested glTF
+dependencies through the same policy plan used by `recipe build`. Use
+`--syntax-only` only for an explicit no-I/O shape check; its JSON report sets
+`execution_equivalent:false`.
+
+Recipe imports and authored nodes use the same tagged local-transform grammar:
+`{"kind":"trs","translation":[...],"rotation_degrees":[...],"scale":[...]}`
+or `{"kind":"raw","translation":[...],"rotation":[x,y,z,w],"scale":[...]}`.
+TRS rotations compose by calling X, then Y, then Z in degrees. Published 1.8.0
+recipes with an untagged import transform remain readable with a
+`legacy_transform_shape` migration warning; canonical output always writes
+`kind:"raw"`.
+
+Recipes are sandboxed to the current directory by default. To authorize an
+external model library, add only its directory with repeatable
+`--allow-root <directory>` on validation, build, render, inspect, diagnose,
+doctor, or repair. The CLI canonicalizes each root, rejects missing roots and
+resource symlink/traversal escapes, and reports the effective `policy` in the
+result. Preview the exact policy without executing a recipe:
+
+```bash
+scena policy recipe --allow-root /srv/model-library
+```
+
+There is no sandbox-disable flag; direct asset inputs do not accept the recipe
+root option.
+
+Installed agent templates and named environment presets are self-contained:
+these commands work outside a repository checkout and do not depend on
+`tests/assets`. Template defaults use the packaged `studio` preset and never
+replace an explicitly authored `scene.environment`.
+
 ## LLM app-builder skill
 
 `scena` includes a repo-hosted LLM skill at
@@ -120,14 +222,21 @@ Cargo features:
 
 | Feature | Purpose |
 |---|---|
+| `agent` | complete opt-in recipe, inspection, verification, and SceneHost surface; enables `scene-host`, which enables `inspection` |
 | `controls` | compatibility marker; platform-neutral controls are always available |
 | `controls-winit` | compatibility alias enabling `controls`; hosts translate native events explicitly |
 | `controls-web` | compatibility alias enabling `controls`; hosts translate browser events explicitly |
 | `browser-probe` | browser/WASM proof entry points used by CI lanes |
 | `inspection` | scene inspection metadata for debugging, docs, and reproducible examples |
+| `scene-host` | native/browser SceneHost facade; enables `inspection` |
 | `ktx2` | KTX2/Basis texture descriptors for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
 | `obj` | OBJ import feature path |
+
+The default feature set remains empty. Use `agent` for the complete
+self-verification workflow; use `inspection` or `scene-host` directly only
+when deliberately selecting the smaller owner surface. Never list
+`scene-host,inspection`: the former already enables the latter.
 
 ## Happy Path
 
@@ -136,6 +245,24 @@ add a matte grid floor, frame model bounds, prepare once, then render prepared
 frames. The shortest examples are `easy_model_viewer`, `camera_framing`,
 `connector_auto_framing`, `orbit_controls`, `picking_selection_hover`, and
 `headless_ci`.
+
+Transform builder names distinguish replacement from composition:
+`with_scale(Vec3)` and `with_uniform_scale(f32)` replace scale, while
+`scale_by(f32)` multiplies the current scale and preserves translation and
+rotation.
+
+Framing builders use the real output size: pass `FramingOptions::viewport` to
+`frame_all_with_assets_and_options` or `frame_import_with_options` for captures
+and resizable viewers. Visible bounds are fitted, hidden nodes and inspection
+helpers are excluded by default, and presets such as
+`three_quarter_front_right` avoid a forced dead-front view. Use
+`center_visible_bounds_on` to center geometry whose node origin is offset;
+`move_origin_to` is the explicit origin-alignment operation.
+
+Fallible geometry construction: use `GeometryDesc::try_polyline` for runtime or
+untrusted point lists. Zero and one point return
+`GeometryError::PolylineTooShort` without unwinding; the older panicking
+`GeometryDesc::polyline` wrapper is deprecated for compatibility.
 
 ## First scene
 
@@ -164,6 +291,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 The important part is the lifecycle: build scene state, prepare renderer resources, then
 render prepared state. If the scene, assets, surface, target, or renderer settings change,
 call `prepare()` again before rendering.
+Adapter-optional GPU lifecycle tests report a typed skip when hardware is
+unavailable; release evidence uses a separate fail-closed physical-hardware
+cycle that proves tracked resources return to baseline and queued destructions
+reach zero after confirmed device polling.
 
 ## Core workflow
 
@@ -195,28 +326,49 @@ the host receives structured results before drawing frames.
 - Repair handedness and axis metadata before placement.
 - Snap objects by authored anchors and connectors without raw matrix math.
 - Declare recipe anchors, connector mates, group bounds, and inherited visual
-  states with persistent ids and a typed build-manifest mapping.
+  states with recipe-local stable IDs and a typed build-manifest mapping. These
+  are not application-persistence IDs; the host owns durable document identity
+  and migrations.
 - Render labels, helper geometry, layers, visibility masks, and helper-on-top views.
 - Use deterministic headless output for regression tests and generated documentation.
+
+CPU headless triangles are clipped against both camera depth planes before
+screen projection. Geometry crossing the near or far plane therefore remains
+visible, and the same clipped polygon feeds color, transparency, transmission,
+and semantic ID/depth/normal output.
 
 ### Visual proof and CI
 
 - Generate rendered-output artifacts for examples and milestone scenes.
-- Run browser WebGPU/WebGL2 proof lanes through Rust/WASM probe entry points.
-- Record capability JSON, screenshot metadata, benchmark rows, and release artifacts.
+- Run browser WebGPU/WebGL2 proof lanes through Rust/WASM probe entry points;
+  required WebGPU hardware parity compares CPU-oracle and live renderer pixels
+  and rejects six known-bad image mutations.
+- Run KHR material feature proofs over declared regions and visible-effect
+  floors; disabled and inverted-effect mutations must fail, a two-LSB fake
+  effect cannot pass, and harmless one-LSB noise around valid output remains
+  accepted.
+- Compare local M2 structure against committed source frames with windowed
+  SSIM, edge and foreground overlap, heatmaps, and worst-region boxes; broad
+  quadrant means remain diagnostic rather than acceptance criteria.
+- Record capability JSON, screenshot metadata, pixel-diff heatmaps and worst
+  regions, benchmark rows, adapter identity, and source-bound release artifacts.
+- Package final Windows physical checks from one clean exact commit with
+  `scripts/build_windows_complete_hardware_bundle.sh`; its manifest-verified
+  one-shot runner covers required WebGPU pixels, GPU lifecycle, native
+  PresentOnly/MSAA/resize/loss, semantic AOV, and controlled shader-cache p95.
 
 ## Capabilities
 
 | Area | Current surface |
 |---|---|
 | Scene graph | typed nodes, transforms, cameras, lights, clipping planes, imports, labels, instances, picking targets, animation mixers, and dirty-state tracking |
-| Assets | glTF/GLB import, external buffers, cache/dedup/reload, source units, coordinate conversion, anchors, connectors, import-local lookup, retain policy, and stale-handle diagnostics |
-| Geometry | primitives, manual buffers, bounds, lines, wire/edge expansion, UV retention, CPU skinning, CPU morph targets, and instance sets |
+| Assets | glTF/GLB import, external buffers, policy-aware cache/dedup/reload, source units, coordinate conversion, anchors, connectors, import-local lookup, retain policy, and stale-handle diagnostics |
+| Geometry | primitives with seam-safe cylinder/cone UVs, manual buffers, bounds, lines, wire/edge expansion, UV retention, CPU skinning, CPU morph targets, and instance sets |
 | Materials | unlit and metallic-roughness paths, texture descriptors, vertex colors, alpha modes, normal/occlusion/emissive/base-color slots, variants, ACES/sRGB output, and FXAA |
-| Rendering | headless CPU output, typed recipe and conservatively attributed rendered diffs, deterministic semantic ID/depth/world-normal AOVs, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, shadows, IBL, renderer-managed auto exposure, and release-lane proof artifacts |
+| Rendering | headless CPU output, typed recipe and conservatively attributed rendered diffs, deterministic semantic ID/depth/world-normal AOVs, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, one directional shadow caster with explicit nine-comparison-tap 3×3 PCF (not point/spot/cascaded shadows), IBL, renderer-managed auto exposure, and release-lane proof artifacts |
 | Easy viewer setup | projection-based `frame_bounds`, `add_studio_lighting`, matte `add_grid_floor`, world-to-screen projection, and authored connector mating |
-| Interaction | typed picking, hover/selection styling, cursor positions, platform-neutral controls, orbit focus from `FramingOutcome`, and independent hover/select/pointer-leave states |
-| Browser/WASM | wasm32 compile/package, browser WebGPU/WebGL2 proof lanes, attached-canvas probe paths, surface/context/device-loss event vocabulary, and size gates |
+| Interaction | typed picking, hover/selection styling, cursor positions, platform-neutral controls, orbit focus from `FramingOutcome`, captured pointer lifecycle, and independent hover/select/pointer-leave states |
+| Browser/WASM | wasm32 compile/package, browser WebGPU/WebGL2 proof lanes, attached-canvas probe paths, explicit sample-count capability/fallback reporting, surface/context/device-loss event vocabulary, and size gates |
 | Quality | unit/integration tests, visual artifacts, browser proof, benchmarks, allocation checks, and release evidence |
 
 ## Examples by task
@@ -274,7 +426,9 @@ compile time. Stale or missing handles return structured errors.
 
 Surface resize, DPR changes, visibility changes, surface loss, context loss, context
 restore, and device loss are explicit `SurfaceEvent` inputs. Recovery invalidates prepared
-state until the host calls `prepare()` again.
+state until the host calls `prepare()` again. Attached acquisition also refreshes and retries
+`Outdated` exactly once, latches `Lost` for surface recreation, reports timeout/occlusion as
+counted skipped frames, and returns validation or out-of-memory as structured hard errors.
 
 ## Documentation
 
@@ -299,6 +453,7 @@ state until the host calls `prepare()` again.
 | [`docs/guides/units-axes-handedness.md`](docs/guides/units-axes-handedness.md) | unit, axis, and handedness behavior for imported assets |
 | [`docs/guides/authoring-gltf-anchors-connectors.md`](docs/guides/authoring-gltf-anchors-connectors.md) | authoring metadata for CAD-style placement workflows |
 | [`docs/guides/troubleshooting-misplaced-assets.md`](docs/guides/troubleshooting-misplaced-assets.md) | practical checks for invisible, mis-scaled, or rotated imports |
+| [`docs/release-notes/v1.9.0.md`](docs/release-notes/v1.9.0.md) | v1.9.0 correctness, portability, agent workflow, proof-quality, and performance notes |
 | [`docs/release-notes/v1.8.0.md`](docs/release-notes/v1.8.0.md) | v1.8.0 notes for deterministic authoring workflows, renderer correctness, cross-backend GPU proof, and enforceable release evidence |
 | [`docs/release-notes/v1.7.2.md`](docs/release-notes/v1.7.2.md) | v1.7.2 patch notes for chrome showcase reflections, recipe tessellation validation, and CI proof hardening |
 | [`docs/release-notes/v1.7.1.md`](docs/release-notes/v1.7.1.md) | v1.7.1 patch notes for the CI-sized WaterBottle CPU release proof |
@@ -327,7 +482,20 @@ normal file, network, size, memory, and timeout policies for untrusted inputs.
 
 The crate uses structured errors and diagnostics for asset, import, prepare, render, and
 lookup failures. Unsupported required glTF extensions fail explicitly instead of silently
-rendering wrong output.
+rendering wrong output. Missing triangle normals are computed as reported flat
+shading; secondary skin sets are reduced to the strongest four with a structured
+warning; node morph overrides are preserved; and material texture requests for
+unsupported UV sets fail with their exact slot instead of sampling UV0. Invalid
+anchor or connector TRS, basis, and matrix extras abort the asset transaction
+with their exact JSON path instead of degrading authored orientation to
+identity. Generated cylinders and cones use duplicated `u=1` seam vertices so
+their last side quad samples only the final local texture interval.
+Misspelled node/mesh-resource, material, animation, variant, anchor, connector,
+template, environment-preset, and schema names return up to three
+deterministically ranked `candidates` in typed errors or JSON diagnostics. A
+missing active camera retains the direct `Scene::add_default_camera` and
+`Scene::set_active_camera` remedy through renderer, SceneHost, and JSON error
+conversion.
 
 ## FAQ
 

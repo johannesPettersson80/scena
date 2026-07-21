@@ -45,6 +45,12 @@
       "backend": "headless",
       "bloom": "supported",
       "color_target_format": "Rgba8UnormSrgb",
+      "depth_sample_counts": [
+        1,
+        0,
+        0
+      ],
+      "explicit_msaa": "feature_disabled",
       "compute_shaders": "feature_disabled",
       "default_clipping_planes": 8,
       "directional_shadow_map_default_size": 2048,
@@ -67,6 +73,11 @@
       "physical_glass_transmission": "degraded",
       "point_shadows": "feature_disabled",
       "readback_headless_screenshots": "supported",
+      "render_sample_counts": [
+        1,
+        0,
+        0
+      ],
       "reversed_z_depth": "feature_disabled",
       "screen_space_ambient_occlusion": "supported",
       "spot_shadows": "feature_disabled",
@@ -137,6 +148,12 @@
       "backend": "headless",
       "bloom": "supported",
       "color_target_format": "Rgba8UnormSrgb",
+      "depth_sample_counts": [
+        1,
+        0,
+        0
+      ],
+      "explicit_msaa": "feature_disabled",
       "compute_shaders": "feature_disabled",
       "default_clipping_planes": 8,
       "directional_shadow_map_default_size": 2048,
@@ -159,6 +176,11 @@
       "physical_glass_transmission": "degraded",
       "point_shadows": "feature_disabled",
       "readback_headless_screenshots": "supported",
+      "render_sample_counts": [
+        1,
+        0,
+        0
+      ],
       "reversed_z_depth": "feature_disabled",
       "screen_space_ambient_occlusion": "supported",
       "spot_shadows": "feature_disabled",

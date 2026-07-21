@@ -9,11 +9,43 @@ use crate::scene::recipe::{
 use crate::scene::view_math::transform_aabb;
 use crate::scene_host::SceneHostCore;
 use crate::{
-    NodeKey, Quat, SceneImport, Transform, Vec3, placement_center_transform,
-    placement_ground_transform,
+    NodeKey, SceneImport, Transform, Vec3, placement_center_transform, placement_ground_transform,
 };
 
-use super::super::error_diagnostic;
+use super::super::{error_diagnostic, scene_host_error_diagnostic};
+
+pub(in crate::scene_host::recipe) fn apply_import_transform(
+    host: &mut SceneHostCore<DefaultAssetFetcher>,
+    roots: &[u64],
+    transform: Option<&SceneRecipeTransformV1>,
+    import_path: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(transform) = transform else {
+        return;
+    };
+    let transform = match Transform::try_from(transform) {
+        Ok(transform) => transform,
+        Err(error) => {
+            diagnostics.push(error_diagnostic(
+                format!("{import_path}.transform"),
+                "invalid_import_transform",
+                error.to_string(),
+                "use a canonical kind:raw or kind:trs local transform",
+            ));
+            return;
+        }
+    };
+    for root in roots {
+        if let Err(error) = host.set_transform(*root, transform) {
+            diagnostics.push(scene_host_error_diagnostic(
+                import_path,
+                "import_transform_failed",
+                error,
+            ));
+        }
+    }
+}
 
 pub(super) struct TransformResolutionInput<'a> {
     pub(super) node_keys: &'a BTreeMap<String, NodeKey>,
@@ -31,42 +63,16 @@ pub(super) fn transform_from_recipe(
         return Ok(Transform::IDENTITY);
     };
     match transform {
-        SceneRecipeTransformV1::Raw {
-            translation,
-            rotation,
-            scale,
-        } => {
-            let rotation = Quat::from_xyzw(
-                rotation[0] as f32,
-                rotation[1] as f32,
-                rotation[2] as f32,
-                rotation[3] as f32,
-            );
-            let length_sq = rotation.length_squared();
-            if !length_sq.is_finite() || length_sq <= f32::EPSILON {
-                return Err(Box::new(error_diagnostic(
+        local @ (SceneRecipeTransformV1::Raw { .. } | SceneRecipeTransformV1::Trs { .. }) => {
+            Transform::try_from(local).map_err(|error| {
+                Box::new(error_diagnostic(
                     "$",
-                    "invalid_rotation",
-                    "raw transform rotation must be a finite non-zero quaternion",
-                    "use [0,0,0,1] for identity",
-                )));
-            }
-            Ok(Transform {
-                translation: vec3(*translation),
-                rotation: rotation.normalize(),
-                scale: vec3(*scale),
+                    "invalid_transform",
+                    error.to_string(),
+                    "use finite f32-range values and [0,0,0,1] for identity rotation",
+                ))
             })
         }
-        SceneRecipeTransformV1::Trs {
-            translation,
-            rotation_degrees,
-            scale,
-        } => Ok(Transform::IDENTITY
-            .with_translation(vec3(*translation))
-            .rotate_x_deg(rotation_degrees[0] as f32)
-            .rotate_y_deg(rotation_degrees[1] as f32)
-            .rotate_z_deg(rotation_degrees[2] as f32)
-            .with_scale(vec3(*scale))),
         SceneRecipeTransformV1::LookAt { eye, target, up } => {
             let target = match target {
                 SceneRecipeLookAtTargetV1::Position(position) => vec3(*position),
@@ -192,59 +198,22 @@ pub(in crate::scene_host::recipe) fn local_transform_from_recipe(
         return Ok(Transform::IDENTITY);
     };
     match transform {
-        SceneRecipeTransformV1::Raw {
-            translation,
-            rotation,
-            scale,
-        } => {
-            let rotation = Quat::from_xyzw(
-                rotation[0] as f32,
-                rotation[1] as f32,
-                rotation[2] as f32,
-                rotation[3] as f32,
-            );
-            let length_sq = rotation.length_squared();
-            if !length_sq.is_finite() || length_sq <= f32::EPSILON {
-                return Err(Box::new(error_diagnostic(
+        local @ (SceneRecipeTransformV1::Raw { .. } | SceneRecipeTransformV1::Trs { .. }) => {
+            Transform::try_from(local).map_err(|error| {
+                Box::new(error_diagnostic(
                     "$",
                     "invalid_spatial_transform",
-                    "raw local transform rotation must be a finite non-zero quaternion",
-                    "use [0,0,0,1] for identity",
-                )));
-            }
-            Ok(Transform {
-                translation: vec3(*translation),
-                rotation: rotation.normalize(),
-                scale: vec3(*scale),
+                    error.to_string(),
+                    "use finite f32-range values and [0,0,0,1] for identity rotation",
+                ))
             })
         }
-        SceneRecipeTransformV1::Trs {
-            translation,
-            rotation_degrees,
-            scale,
-        } => Ok(Transform::IDENTITY
-            .with_translation(vec3(*translation))
-            .rotate_x_deg(rotation_degrees[0] as f32)
-            .rotate_y_deg(rotation_degrees[1] as f32)
-            .rotate_z_deg(rotation_degrees[2] as f32)
-            .with_scale(vec3(*scale))),
         _ => Err(Box::new(error_diagnostic(
             "$",
             "invalid_spatial_transform",
             "spatial frames and named states accept only raw or trs local transforms",
             "use kind:raw or kind:trs",
         ))),
-    }
-}
-
-trait TransformScaleExt {
-    fn with_scale(self, scale: Vec3) -> Self;
-}
-
-impl TransformScaleExt for Transform {
-    fn with_scale(mut self, scale: Vec3) -> Self {
-        self.scale = scale;
-        self
     }
 }
 

@@ -5,11 +5,15 @@ use super::AnimationError;
 impl fmt::Display for AnimationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ClipNotFound { name } => {
+            Self::ClipNotFound { name, candidates } => {
                 write!(
                     formatter,
                     "imported scene has no animation clip named '{name}'"
-                )
+                )?;
+                if !candidates.is_empty() {
+                    write!(formatter, "; nearest candidates: {}", candidates.join(", "))?;
+                }
+                Ok(())
             }
             Self::InvalidClip { reason } => {
                 write!(formatter, "animation clip is invalid: {reason}")

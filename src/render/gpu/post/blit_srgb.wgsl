@@ -1,3 +1,5 @@
+// Byte-preserving semantic-AOV surface blit. Color post-processing does not
+// use this shader: it uses target-aware final transfer in `blit.rs`.
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,

@@ -1539,6 +1539,9 @@ fn m8_data_uri_base_color_texture_affects_cpu_preview_pixels() {
     for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
         buffer.extend_from_slice(&value.to_le_bytes());
     }
+    for value in [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
     for value in [0.0_f32, 0.0, 1.0, 0.0, 0.5, 1.0] {
         buffer.extend_from_slice(&value.to_le_bytes());
     }
@@ -1561,22 +1564,24 @@ fn m8_data_uri_base_color_texture_affects_cpu_preview_pixels() {
             }}],
             "meshes": [{{
                 "primitives": [{{
-                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
-                    "indices": 2,
+                    "attributes": {{ "POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2 }},
+                    "indices": 3,
                     "material": 0
                 }}]
             }}],
             "nodes": [{{ "name": "TexturedTriangle", "mesh": 0 }}],
-            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "buffers": [{{ "byteLength": 102, "uri": "data:application/octet-stream;base64,{encoded}" }}],
             "bufferViews": [
                 {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
-                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
-                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 72, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 96, "byteLength": 6 }}
             ],
             "accessors": [
                 {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
-                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
-                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
         }}"#
     );
@@ -1852,6 +1857,18 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
     assert_eq!(schema_json["schema"], ASSET_LOAD_REPORT_SCHEMA_V1);
     assert_eq!(schema_json["path"], path);
     assert_eq!(schema_json["cache_hit"], false);
+    assert_eq!(
+        schema_json["requested_options"],
+        serde_json::json!({
+            "strict_textures": false,
+            "strict_external_resources": false,
+            "fetch_byte_limit": null
+        })
+    );
+    assert_eq!(
+        schema_json["cache_entry_options"],
+        schema_json["requested_options"]
+    );
     assert_eq!(schema_json["geometry"]["node_count"], 1);
     assert_eq!(schema_json["geometry"]["mesh_count"], 1);
     assert_eq!(schema_json["geometry"]["primitive_count"], 1);
@@ -1899,6 +1916,8 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
     let decoded: AssetLoadReportV1 =
         serde_json::from_value(schema_json.clone()).expect("asset load report schema decodes");
     assert_eq!(decoded.schema, ASSET_LOAD_REPORT_SCHEMA_V1);
+    assert_eq!(decoded.requested_options, AssetLoadOptions::default());
+    assert_eq!(decoded.cache_entry_options, AssetLoadOptions::default());
     assert_eq!(decoded.provenance.source_path().as_str(), path);
     assert_eq!(
         decoded.provenance.source_sha256(),
@@ -1908,11 +1927,15 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
         decoded.geometry.provenance.source_sha256(),
         Some(expected_sha.as_str())
     );
-    assert!(matches!(
-        decoded.warnings.as_slice(),
-        [AssetLoadWarningV1::ExternalImageMissing { path, reason }]
-            if path == "memory://asset-report/missing.png" && reason.contains("not found")
-    ));
+    assert!(
+        matches!(
+            decoded.warnings.as_slice(),
+            [AssetLoadWarningV1::ExternalImageMissing { path, reason }]
+                if path == "memory://asset-report/missing.png" && reason.contains("not found")
+        ),
+        "decoded warning contract drifted: {:?}",
+        decoded.warnings
+    );
 
     let cached =
         pollster::block_on(assets.load_scene_with_report(path)).expect("cached load reports");
@@ -2020,6 +2043,8 @@ fn m8_asset_load_report_records_external_image_fetch_status() {
     let decoded: AssetLoadReportV1 =
         serde_json::from_value(old_shape).expect("old additive report shape still decodes");
     assert_eq!(decoded.schema, ASSET_LOAD_REPORT_SCHEMA_V1);
+    assert_eq!(decoded.requested_options, AssetLoadOptions::default());
+    assert_eq!(decoded.cache_entry_options, AssetLoadOptions::default());
     assert!(
         serde_json::to_value(decoded)
             .expect("decoded old report reserializes")["external_resources"]
@@ -2108,6 +2133,132 @@ fn m8_strict_scene_load_promotes_missing_external_image_to_error() {
                 if path == "memory://strict-missing-external-image/missing.png"
         ),
         "strict texture loading should preserve the missing external image path in the hard error, got {error:?}",
+    );
+}
+
+#[test]
+fn scene_cache_lenient_then_strict_does_not_bypass_texture_policy() {
+    let path = "memory://cache-policy-lenient-strict/scene.gltf";
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from(path),
+        textured_triangle_gltf("missing.png").into_bytes(),
+    )]));
+
+    let lenient = pollster::block_on(assets.load_scene_with_report(path))
+        .expect("lenient load records the missing image");
+    assert_eq!(lenient.options(), AssetLoadOptions::default());
+    assert_eq!(lenient.cache_entry_options(), AssetLoadOptions::default());
+    assert!(
+        lenient
+            .warnings()
+            .iter()
+            .any(|warning| matches!(warning, AssetLoadWarning::ExternalImageMissing { .. }))
+    );
+
+    let strict = pollster::block_on(assets.load_scene_with_report_options(
+        path,
+        AssetLoadOptions::default().with_strict_textures(true),
+    ));
+    assert!(
+        matches!(strict, Err(AssetError::NotFound { ref path }) if path == "memory://cache-policy-lenient-strict/missing.png"),
+        "strict request must not reuse lenient cached evidence: {strict:?}"
+    );
+}
+
+#[test]
+fn scene_cache_lenient_then_strict_does_not_bypass_external_buffer_policy() {
+    let path = "memory://cache-policy-buffer/scene.gltf";
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from(path),
+        br#"{
+            "asset": { "version": "2.0" },
+            "nodes": [{ "name": "Root" }],
+            "buffers": [{ "byteLength": 0, "uri": "missing.bin" }]
+        }"#
+        .to_vec(),
+    )]));
+
+    let lenient = pollster::block_on(assets.load_scene_with_report(path))
+        .expect("lenient load records the missing empty buffer");
+    assert!(
+        lenient
+            .warnings()
+            .iter()
+            .any(|warning| matches!(warning, AssetLoadWarning::ExternalBufferMissing { .. }))
+    );
+
+    let strict = pollster::block_on(assets.load_scene_with_report_options(
+        path,
+        AssetLoadOptions::default().with_strict_external_resources(true),
+    ));
+    assert!(
+        matches!(strict, Err(AssetError::NotFound { ref path }) if path == "memory://cache-policy-buffer/missing.bin"),
+        "strict buffer policy must not reuse lenient cached evidence: {strict:?}"
+    );
+}
+
+#[test]
+fn scene_cache_strict_then_lenient_keeps_policy_specific_evidence() {
+    let path = "memory://cache-policy-strict-lenient/scene.gltf";
+    let image = AssetPath::from("memory://cache-policy-strict-lenient/present.png");
+    let fetcher = MutableMemoryFetcher::new(vec![
+        (
+            AssetPath::from(path),
+            textured_triangle_gltf("present.png").into_bytes(),
+        ),
+        (image.clone(), png_rgba8(1, 1, &[[220, 30, 40, 255]])),
+    ]);
+    let assets = Assets::with_fetcher(fetcher.clone());
+
+    let strict_options = AssetLoadOptions::default().with_strict_textures(true);
+    let strict = pollster::block_on(assets.load_scene_with_report_options(path, strict_options))
+        .expect("strict load validates the present image");
+    assert!(!strict.cache_hit());
+    assert_eq!(strict.options(), strict_options);
+    assert_eq!(strict.cache_entry_options(), strict_options);
+    assert!(
+        strict.warnings().is_empty(),
+        "strict present-image warnings drifted: {:?}",
+        strict.warnings()
+    );
+
+    fetcher.remove(&image);
+    let lenient = pollster::block_on(assets.load_scene_with_report(path))
+        .expect("strict cache evidence satisfies the later lenient request");
+    assert!(
+        lenient.cache_hit(),
+        "validated strict evidence should avoid a duplicate lenient cache entry"
+    );
+    assert!(lenient.warnings().is_empty());
+    assert_eq!(lenient.options(), AssetLoadOptions::default());
+    assert_eq!(lenient.cache_entry_options(), strict_options);
+    let schema = lenient.to_schema_report();
+    assert_eq!(schema.requested_options, AssetLoadOptions::default());
+    assert_eq!(schema.cache_entry_options, strict_options);
+    let lenient_cached = pollster::block_on(assets.load_scene_with_report(path))
+        .expect("second lenient request reuses the same compatible evidence");
+    assert!(lenient_cached.cache_hit());
+    assert_eq!(lenient_cached.cache_entry_options(), strict_options);
+}
+
+#[test]
+fn scene_cache_unlimited_then_bounded_does_not_bypass_fetch_limit() {
+    let path = "memory://cache-policy-fetch-limit/scene.gltf";
+    let bytes = br#"{
+        "asset": { "version": "2.0" },
+        "nodes": [{ "name": "LargerThanTinyLimit" }]
+    }"#
+    .to_vec();
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(AssetPath::from(path), bytes)]));
+
+    pollster::block_on(assets.load_scene(path)).expect("unlimited load succeeds");
+    let bounded = pollster::block_on(assets.load_scene_with_report_options(
+        path,
+        AssetLoadOptions::default().with_fetch_byte_limit(16),
+    ));
+    assert!(
+        matches!(bounded, Err(AssetError::PolicyViolation { .. })),
+        "bounded request must enforce its limit instead of reusing unlimited cache evidence: {bounded:?}"
     );
 }
 
@@ -5260,6 +5411,9 @@ fn textured_triangle_gltf(image_uri: &str) -> String {
     for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
         buffer.extend_from_slice(&value.to_le_bytes());
     }
+    for value in [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
     for value in [0.0_f32, 0.0, 1.0, 0.0, 0.5, 1.0] {
         buffer.extend_from_slice(&value.to_le_bytes());
     }
@@ -5282,22 +5436,24 @@ fn textured_triangle_gltf(image_uri: &str) -> String {
             }}],
             "meshes": [{{
                 "primitives": [{{
-                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
-                    "indices": 2,
+                    "attributes": {{ "POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2 }},
+                    "indices": 3,
                     "material": 0
                 }}]
             }}],
             "nodes": [{{ "name": "TexturedTriangle", "mesh": 0 }}],
-            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "buffers": [{{ "byteLength": 102, "uri": "data:application/octet-stream;base64,{encoded}" }}],
             "bufferViews": [
                 {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
-                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
-                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 72, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 96, "byteLength": 6 }}
             ],
             "accessors": [
                 {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-1,-1,-1], "max": [1,1,1] }},
-                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
-                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR" }}
             ]
         }}"#
     )

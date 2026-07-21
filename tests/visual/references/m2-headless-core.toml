@@ -1,8 +1,19 @@
 [suite]
 name = "m2-headless-core"
 status = "reference"
-reference_mode = "quadrant-mean-rgba-v1"
-max_abs_diff = 3
+reference_mode = "local-structure-v2"
+reference_frames = "tests/visual/references/m2-headless-core-frames.toml"
+window_size = 8
+window_stride = 4
+mean_window_ssim_min = 0.97
+worst_window_ssim_min = 0.70
+edge_iou_min = 0.85
+foreground_iou_min = 0.95
+quadrant_metrics_role = "debug-only"
+
+# The broad quadrant rows below are retained only in generated diagnostics and
+# migration history. Acceptance uses the committed per-pixel frames plus local
+# SSIM, dilated edge IoU, and dilated foreground IoU.
 
 [[reference]]
 name = "direct-lights-pbr"

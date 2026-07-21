@@ -12,6 +12,9 @@ const JSON_ARTIFACTS = {
   fr06Browser: "target/gate-artifacts/fr06-semantic-aov/browser/semantic-aov-browser-proof.json",
   nativeSurface: "target/gate-artifacts/pf01-pf02-native-surface/native-present-only.json",
   nativeFr06: "target/gate-artifacts/fr06-semantic-aov/native/native-semantic-aov-proof.json",
+  q01Parity: "target/gate-artifacts/m6-required-webgpu-pixel-parity/result.json",
+  q04Lifecycle: "target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json",
+  p01Benchmark: "target/gate-artifacts/p01-shader-module-cache.json",
 };
 
 const VISUAL_ARTIFACTS = [
@@ -22,6 +25,9 @@ const VISUAL_ARTIFACTS = [
   "target/gate-artifacts/pf01-pf02-native-surface/fxaa-only.ppm",
   "target/gate-artifacts/pf01-pf02-native-surface/on.ppm",
   "target/gate-artifacts/pf01-pf02-native-surface/off-again.ppm",
+  "target/gate-artifacts/m6-required-webgpu-pixel-parity/cpu-reference.png",
+  "target/gate-artifacts/m6-required-webgpu-pixel-parity/gpu-live.png",
+  "target/gate-artifacts/m6-required-webgpu-pixel-parity/diff-heatmap.png",
 ];
 
 const SOFTWARE_MARKERS = [
@@ -33,6 +39,14 @@ const SOFTWARE_MARKERS = [
 ];
 
 const PHASE_IDS = ["off", "bloom_only", "fxaa_only", "on", "off_again"];
+const Q01_MUTATIONS = [
+  "wrong-colors",
+  "geometry-shift",
+  "missing-object",
+  "vertical-flip",
+  "linear-as-srgb",
+  "stale-reference",
+];
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -99,6 +113,17 @@ function assertNativeHardware(adapter, label) {
   for (const marker of SOFTWARE_MARKERS) {
     invariant(!identity.includes(marker), `${label} uses a software adapter marker: ${marker}`);
   }
+}
+
+function assertProvenance(report, label) {
+  invariant(
+    /^[0-9a-f]{40}$/i.test(String(report.commit_sha || "")),
+    `${label} has no exact source commit`,
+  );
+  invariant(
+    Number.isInteger(report.timestamp_unix_seconds) && report.timestamp_unix_seconds > 0,
+    `${label} has no positive timestamp`,
+  );
 }
 
 function validatePf01(report) {
@@ -207,10 +232,149 @@ function validateNativeSurface(report) {
     "native present-only render changed prepared resources",
   );
   invariant(report.output_toggle && report.output_toggle.status === "passed", "native output-toggle status is not passed");
+  const resize = report.resize_lifecycle || {};
+  invariant(
+    resize.status === "passed"
+      && Array.isArray(resize.original_size)
+      && Array.isArray(resize.resized_size)
+      && resize.target_changed_requires_prepare === true
+      && resize.rendered_after_resize === true
+      && resize.restored_original_size === true,
+    "native attached-surface resize lifecycle did not pass",
+  );
+  const recovery = report.surface_loss_handling || {};
+  invariant(
+    recovery.status === "passed"
+      && recovery.structured_surface_lost === true
+      && recovery.host_surface_recreation_required === true
+      && recovery.render_rejected_after_loss === true,
+    "native attached-surface loss handling did not pass",
+  );
   assertNativePhaseSet(report.output_toggle.phases);
   invariant(
     String(report.command || "").includes("scena-native-hardware-proof"),
     "native surface artifact does not identify the proof executable",
+  );
+  return report;
+}
+
+function validateQ01Parity(report, root) {
+  invariant(report.schema === "scena.q01.required_webgpu_pixel_parity.v1", "unexpected Q01 parity schema");
+  invariant(report.status === "passed", "Q01 parity status is not passed");
+  invariant(
+    report.proof_class === "required-live-webgpu-pixel-parity",
+    "Q01 parity is not the required live proof class",
+  );
+  assertProvenance(report, "Q01 parity");
+  assertNativeHardware(report.adapter, "Q01 WebGPU parity");
+  invariant(
+    report.renderer_readback
+      && report.renderer_readback.source === "renderer-owned-gpu-copy"
+      && Number(report.renderer_readback.width) > 0
+      && Number(report.renderer_readback.height) > 0,
+    "Q01 parity did not evaluate a renderer-owned readback",
+  );
+  const thresholds = report.thresholds || {};
+  invariant(
+    thresholds.rgb_chebyshev_tolerance === 4
+      && thresholds.within_tolerance_fraction_min === 0.995
+      && thresholds.rgb_rmse_max === 2
+      && thresholds.p99_5_channel_delta_max === 4
+      && thresholds.foreground_iou_min === 0.995,
+    "Q01 parity thresholds are incomplete or changed",
+  );
+  const metrics = report.metrics || {};
+  invariant(
+    Number(metrics.compared_pixels) > 0
+      && Number(metrics.within_tolerance_fraction) >= thresholds.within_tolerance_fraction_min
+      && Number(metrics.rgb_rmse) <= thresholds.rgb_rmse_max
+      && Number(metrics.p99_5_channel_delta) <= thresholds.p99_5_channel_delta_max
+      && Number(metrics.foreground_iou) >= thresholds.foreground_iou_min,
+    "Q01 parity metrics do not pass the declared thresholds",
+  );
+  for (const name of Q01_MUTATIONS) {
+    invariant(
+      Array.isArray(report.mutations)
+        && report.mutations.some((mutation) => mutation.name === name && mutation.rejected === true),
+      `Q01 parity mutation ${name} was not rejected`,
+    );
+  }
+  for (const kind of ["cpu-reference", "gpu-live", "diff-heatmap"]) {
+    const image = Array.isArray(report.images)
+      ? report.images.find((candidate) => candidate.kind === kind)
+      : null;
+    invariant(image, `Q01 parity is missing ${kind} image metadata`);
+    const expected = `target/gate-artifacts/m6-required-webgpu-pixel-parity/${kind}.png`;
+    invariant(image.path === expected, `Q01 parity ${kind} image path is not canonical`);
+    const file = path.join(root, expected);
+    invariant(fs.existsSync(file), `Q01 parity is missing ${kind} image`);
+    invariant(image.sha256 === artifactHash(file), `Q01 parity ${kind} image checksum does not match`);
+    invariant(Number(image.bytes) === fs.statSync(file).size, `Q01 parity ${kind} image byte count does not match`);
+  }
+  return report;
+}
+
+function lifecycleShape(value) {
+  return ["buffers", "gpu_textures", "render_targets", "pipelines", "bind_groups", "shader_modules"]
+    .map((field) => Number(value && value[field]));
+}
+
+function validateQ04Lifecycle(report) {
+  invariant(report.schema === "scena.q04.required_gpu_resource_lifecycle.v1", "unexpected Q04 lifecycle schema");
+  invariant(
+    report.status === "passed" && report.proof_class === "physical-hardware-required",
+    "Q04 lifecycle is not a passed physical-hardware proof",
+  );
+  assertProvenance(report, "Q04 lifecycle");
+  assertNativeHardware(report.adapter, "Q04 lifecycle");
+  invariant(
+    report.complete_lifecycle === true && Number(report.assertions_executed) >= 10,
+    "Q04 lifecycle did not execute its complete assertion set",
+  );
+  const baseline = lifecycleShape(report.baseline);
+  const prepared = lifecycleShape(report.prepared);
+  const released = lifecycleShape(report.released);
+  invariant(
+    prepared.every(Number.isFinite)
+      && baseline.every(Number.isFinite)
+      && prepared.reduce((sum, value) => sum + value, 0) > baseline.reduce((sum, value) => sum + value, 0),
+    "Q04 lifecycle did not prepare additional tracked resources",
+  );
+  invariant(
+    JSON.stringify(released) === JSON.stringify(baseline),
+    "Q04 lifecycle did not restore the baseline retained resource shape",
+  );
+  invariant(
+    Number(report.released && report.released.pending_destructions) > 0
+      && Number(report.poll_pending_before) === Number(report.released.pending_destructions)
+      && Number(report.poll_destroyed_resources) === Number(report.poll_pending_before)
+      && Number(report.poll_pending_after) === Number(report.baseline && report.baseline.pending_destructions)
+      && report.poll_status === "Confirmed",
+    "Q04 pending destructions were not confirmed and retired",
+  );
+  return report;
+}
+
+function validateP01Benchmark(report) {
+  invariant(report.schema === "scena.p01.shader_module_cache.v1", "unexpected P01 benchmark schema");
+  invariant(report.status === "passed" && report.hardware_adapter === true, "P01 benchmark is not a passed hardware run");
+  assertProvenance(report, "P01 benchmark");
+  assertNativeHardware(report.adapter, "P01 benchmark");
+  invariant(Number(report.sample_count) >= 5, "P01 benchmark has too few samples");
+  invariant(
+    Number(report.cold_shader_module_creations) > Number(report.warm_shader_module_creations)
+      && Number(report.cold_triangle_shader_cache_misses) > 0
+      && Number(report.warm_triangle_shader_cache_hits) > 0,
+    "P01 benchmark did not prove shader-module cache reuse",
+  );
+  invariant(
+    Number(report.p95_improvement_percent) >= Number(report.minimum_material_improvement_percent)
+      && Number(report.warm_p95_ms) < Number(report.cold_p95_ms),
+    "P01 hardware p95 improvement is below the declared material threshold",
+  );
+  invariant(
+    String(report.command || "").includes("scena-p01-shader-module-cache"),
+    "P01 benchmark does not identify the proof executable",
   );
   return report;
 }
@@ -289,6 +453,9 @@ function validateProofRoot(root) {
   const fr06Browser = validateFr06Browser(readJson(proofRoot, JSON_ARTIFACTS.fr06Browser));
   const nativeSurface = validateNativeSurface(readJson(proofRoot, JSON_ARTIFACTS.nativeSurface));
   const nativeFr06 = validateNativeFr06(readJson(proofRoot, JSON_ARTIFACTS.nativeFr06));
+  validateQ01Parity(readJson(proofRoot, JSON_ARTIFACTS.q01Parity), proofRoot);
+  validateQ04Lifecycle(readJson(proofRoot, JSON_ARTIFACTS.q04Lifecycle));
+  validateP01Benchmark(readJson(proofRoot, JSON_ARTIFACTS.p01Benchmark));
   validateVisualArtifacts(proofRoot);
 
   const artifactSha256 = {};
@@ -310,6 +477,10 @@ function validateProofRoot(root) {
       browser_backends: browserBackends,
       native_surface: true,
       native_semantic_aov: true,
+      required_webgpu_pixel_parity: true,
+      gpu_resource_lifecycle: true,
+      shader_module_cache_p95: true,
+      native_surface_resize_recovery: true,
     },
     adapters: {
       browser: Object.fromEntries(pf01.backends.map((backend) => [backend.backend, {
@@ -354,6 +525,9 @@ module.exports = {
   validateFr06Browser,
   validateNativeFr06,
   validateNativeSurface,
+  validateP01Benchmark,
   validatePf01,
   validateProofRoot,
+  validateQ01Parity,
+  validateQ04Lifecycle,
 };

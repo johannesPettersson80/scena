@@ -88,7 +88,18 @@ semantics, networking, gameplay ECS, audio, or application business logic.
 
 ## Current execution tracks
 
-- Easy-use and renderer-quality roadmap:
+### One active implementation backlog
+
+- Full-repo correctness, agent-contract, proof, performance, and documentation
+  remediation:
+  `docs/checklists/full-repo-review-v1.8.0-remediation.md`.
+
+### Historical evidence tracks
+
+The following completed or archived plans retain acceptance evidence; their
+status tags are historical records, not current prioritization:
+
+- Easy-use and renderer-quality evidence log:
   `docs/checklists/next-release-easy-use-and-state-of-the-art.md`.
 - WASM scene host and stable JSON contracts:
   `docs/checklists/wasm-scene-host-and-stable-contracts.md`.
@@ -96,3 +107,12 @@ semantics, networking, gameplay ECS, audio, or application business logic.
   `docs/checklists/renderer-fidelity-dependencies.md`.
 - Stable JSON schema policy:
   `docs/schema-contracts.md`.
+
+## Recipe document boundary
+
+`SceneRecipeV1` is a versioned interchange/build input. It can be stored or
+transmitted as a v1 authoring snapshot, but the host owns application persistence,
+migrations, domain state, undo, and history. The contract makes
+no cross-version lossless round-trip guarantee and does not preserve arbitrary
+unknown extension data. Recipe IDs are stable within the recipe/build workflow;
+they are not runtime handles or application-persistence identities.

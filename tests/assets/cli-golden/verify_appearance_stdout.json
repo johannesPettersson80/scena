@@ -3,7 +3,7 @@
   "artifacts": {
     "capture": {
       "height": 48,
-      "payload_fnv1a64": "1bc696f29e6c5a66",
+      "payload_fnv1a64": "220201176c82abbd",
       "schema": "scena.capture.v1",
       "width": 64
     }
@@ -20,7 +20,7 @@
     "errors": 0,
     "luminance_mean": 0.713,
     "matched": 1,
-    "sampled_pixels": 421,
+    "sampled_pixels": 194,
     "targets": 1,
     "warnings": 0
   },
@@ -73,15 +73,15 @@
       ],
       "sampled_region": {
         "bbox_css_px": {
-          "height": 31.0,
-          "max_x": 47.0,
-          "max_y": 39.0,
-          "min_x": 17.0,
-          "min_y": 9.0,
-          "width": 31.0
+          "height": 35.0,
+          "max_x": 44.0,
+          "max_y": 41.0,
+          "min_x": 20.0,
+          "min_y": 7.0,
+          "width": 25.0
         },
         "kind": "node_bbox",
-        "sampled_pixels": 421
+        "sampled_pixels": 194
       },
       "swatch_distance": 0.11
     }

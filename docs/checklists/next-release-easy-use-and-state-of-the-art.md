@@ -1,5 +1,9 @@
 # scena v1.4-v1.5 easy-use + state-of-the-art roadmap and evidence log
 
+Status: archived historical evidence
+Canonical active backlog:
+`docs/checklists/full-repo-review-v1.8.0-remediation.md`
+
 Created: 2026-05-18
 Reconciled: 2026-05-19 — staleness pass against current main; shipped items
 removed, false gaps reframed, four bets promoted, material presets trimmed
@@ -13,9 +17,9 @@ and visual contracts stay owned by scena modules.
 Visual-proof pass: 2026-05-19 — every item declares its visual proof
 class so "code compiles, APIs work, but the render is wrong" cannot pass
 as success (the v1.3.0 demo failure mode).
-v1.5 cleanup: 2026-05-22 — this file is now both the historical execution
-log for the v1.4/v1.5 easy-use work and the backlog for still-open proof
-lanes. Historical investigation notes below are superseded where they
+v1.5 cleanup: 2026-05-22 — this file is the historical execution log for the
+v1.4/v1.5 easy-use work. Shipped scoped feature rows remain valid evidence,
+but this document is no longer an active backlog. Historical investigation notes below are superseded where they
 conflict with the shipped §2.6 material preset contract.
 
 scena's signature is **easy to use**. This document is the gap inventory
@@ -2271,12 +2275,11 @@ digital-twin applications — Rounds A–D + bets 1.1–1.4 get scena to
 That's a defensible "state-of-the-art static product / digital-twin
 viewer" claim.
 
-The unqualified **"state-of-the-art 3D library"** claim needs at least
-the §3.1 list (genuinely missing) cleared — particularly animation
-visual proof, contact shadows, AA, and material coverage — before it
-survives someone running the same glTF through `<model-viewer>` or
-Three.js side by side. This roadmap is a necessary step, not a
-sufficient one.
+The shipped scoped rows support the competitive static product/digital-twin
+viewer claim above. Scena does not make the unqualified **"state-of-the-art 3D
+library"** claim. Remaining work such as the governed F01-F08 feature projects
+in the active full-repo remediation backlog must be evaluated and accepted
+individually before that broader positioning could be reconsidered.
 
 ---
 

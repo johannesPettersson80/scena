@@ -15,8 +15,9 @@ impl<F> Assets<F> {
     /// This helper is hot-reload-scoped GC, not a generic eviction sweep:
     /// it is intended for long-running [`Assets::reload_scene`] sessions
     /// where the replacement scene's `geometry/material/texture`
-    /// descriptors accumulate in the slotmaps because only the latest
-    /// `SceneAsset` per path is retained in `scene_lookup`. User-created
+    /// descriptors accumulate in the slotmaps because only current semantic
+    /// policy/evidence entries are retained in `scene_lookup`, and explicit
+    /// reload replaces every entry for the reloaded path. User-created
     /// descriptors (every `Assets::create_*` call) are tracked and
     /// always retained so a procedural-scene caller cannot lose handles
     /// they still hold; this is the contract a beginner expects after
@@ -28,13 +29,11 @@ impl<F> Assets<F> {
     /// - every cached `EnvironmentHandle` in `environment_lookup`;
     /// - the texture slots of every reachable material descriptor.
     ///
-    /// A `SceneAsset` returned by [`Assets::load_scene`] but later
-    /// overwritten in `scene_lookup` (for example by a follow-up
-    /// `load_scene` for the same path) is no longer reachable here. If a
-    /// caller still holds an older `SceneAsset` or an instantiated scene
-    /// backed by it, call [`Assets::release_unreferenced_with_scene_roots`]
-    /// and pass those live scene roots instead of using this cache-rooted
-    /// convenience method.
+    /// A `SceneAsset` returned by [`Assets::load_scene`] but later replaced by
+    /// [`Assets::reload_scene`] is no longer reachable here. If a caller still
+    /// holds that older asset or an instantiated scene backed by it, call
+    /// [`Assets::release_unreferenced_with_scene_roots`] and pass those live
+    /// scene roots instead of using this cache-rooted convenience method.
     /// Returns a per-store eviction count.
     ///
     /// Closes scena-gltf-animation-reviewer Phase 6 finding F4 and

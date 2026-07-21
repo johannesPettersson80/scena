@@ -4,7 +4,8 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::diagnostics::{
-    Backend, BuildError, Capabilities, HardwareTier, OutputColorSpace, RendererStats,
+    Backend, BuildError, Capabilities, Diagnostic, DiagnosticCode, HardwareTier, OutputColorSpace,
+    RendererStats,
 };
 use crate::material::Color;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment};
@@ -223,6 +224,9 @@ impl Renderer {
             && gpu
                 .as_ref()
                 .is_some_and(GpuDeviceState::display_p3_canvas_configured);
+        let color_target_format = gpu
+            .as_ref()
+            .map_or("Rgba8UnormSrgb", |gpu| gpu.color_target_format_name());
         let capabilities = if surface_attached {
             Capabilities::for_attached_gpu_backend(backend)
         } else if has_gpu {
@@ -230,6 +234,7 @@ impl Renderer {
         } else {
             Capabilities::for_backend(backend)
         }
+        .with_color_target_format(color_target_format)
         .with_display_p3_output(display_p3_configured);
         let target = RasterTarget {
             width,
@@ -238,6 +243,9 @@ impl Renderer {
         };
         let profile = options.profile();
         let quality = resolve_quality(options, capabilities);
+        let (anti_aliasing, multisample_fallback) =
+            resolve_automatic_anti_aliasing(quality, backend);
+        let configuration_diagnostics: Vec<_> = multisample_fallback.into_iter().collect();
         let render_mode = resolve_render_mode(options, profile);
         Ok(Self {
             target,
@@ -261,11 +269,12 @@ impl Renderer {
                 target_height: height,
                 ..RendererStats::default()
             },
-            diagnostics: Vec::new(),
+            diagnostics: configuration_diagnostics.clone(),
+            configuration_diagnostics,
             capabilities,
             gpu,
             output: OutputTransform::default(),
-            anti_aliasing: anti_aliasing_for_quality(quality),
+            anti_aliasing,
             cpu_occlusion_culling: true,
             semantic_aov_capture_enabled: options.semantic_aov_capture(),
             supersample_factor: 1,
@@ -384,6 +393,29 @@ fn anti_aliasing_for_quality(quality: Quality) -> AntiAliasing {
         Quality::Medium => AntiAliasing::Fxaa,
         Quality::High => AntiAliasing::Msaa4,
     }
+}
+
+fn resolve_automatic_anti_aliasing(
+    quality: Quality,
+    backend: Backend,
+) -> (AntiAliasing, Option<Diagnostic>) {
+    let requested = anti_aliasing_for_quality(quality);
+    if requested.gpu_sample_count() > 1 && matches!(backend, Backend::WebGpu | Backend::WebGl2) {
+        return (
+            AntiAliasing::Fxaa,
+            Some(
+                Diagnostic::warning(
+                    DiagnosticCode::MultisampleFallback,
+                    format!(
+                        "quality {quality:?} selected {requested:?}, but the {backend:?} WASM renderer currently supports sample count 1"
+                    ),
+                    "use the applied FXAA fallback for portable browser rendering, or request an exact MSAA mode and handle UnsupportedSampleCount",
+                )
+                .with_applied_fallback("anti_aliasing"),
+            ),
+        );
+    }
+    (requested, None)
 }
 
 fn resolve_render_mode(options: RendererOptions, profile: Profile) -> RenderMode {

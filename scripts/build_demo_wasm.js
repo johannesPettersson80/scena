@@ -51,6 +51,11 @@ const child = spawn(command, args, {
     // wasm32-unknown-unknown links with rust-lld and rejects native linker
     // arguments such as -fuse-ld=mold, so keep this wasm-pack build target-clean.
     CARGO_ENCODED_RUSTFLAGS: "",
+    // Rust's speed-oriented release default leaves substantial code-size work
+    // for wasm-opt. Compile web bundles for size before the deterministic
+    // wasm-opt pass; callers may override this for a profiling build.
+    CARGO_PROFILE_RELEASE_OPT_LEVEL:
+      process.env.CARGO_PROFILE_RELEASE_OPT_LEVEL || "z",
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -141,6 +146,7 @@ function writeSizeManifest() {
   });
   const manifest = {
     bundle: bundle.name,
+    crate_version: crateVersion(),
     features: bundle.features,
     wasm: "scena_bg.wasm",
     raw_bytes: bytes.length,
@@ -161,6 +167,19 @@ function crateVersion() {
   return cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || "dev";
 }
 
+function validateGeneratedPackageVersion() {
+  const packagePath = path.join(bundle.outDir, "package.json");
+  const generated = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+  const expected = crateVersion();
+  if (generated.version !== expected) {
+    console.error(
+      `[${bundle.label}] generated package version ${generated.version || "<missing>"} does not match Cargo.toml ${expected}`,
+    );
+    return false;
+  }
+  return true;
+}
+
 function replaceInFile(file, replacements) {
   let text = fs.readFileSync(file, "utf8");
   for (const [pattern, replacement] of replacements) {
@@ -168,6 +187,21 @@ function replaceInFile(file, replacements) {
   }
   fs.writeFileSync(`${file}.tmp`, text);
   fs.renameSync(`${file}.tmp`, file);
+}
+
+function stampPublicVersionText() {
+  const version = crateVersion();
+  if (bundle.name === "proof") {
+    replaceInFile("demo/proof.js", [
+      [/scena [0-9]+\.[0-9]+(?:\.[0-9]+)? — pick a name, not a number/g,
+        `scena ${version} — pick a name, not a number`],
+    ]);
+  } else {
+    replaceInFile("demo/index.html", [
+      [/<title>scena [^<]+ live showcase<\/title>/g,
+        `<title>scena ${version} live showcase</title>`],
+    ]);
+  }
 }
 
 function normalizedCacheBusterInput(file) {
@@ -234,9 +268,13 @@ child.on("close", (code, signal) => {
   if (code !== 0) {
     process.exit(code ?? 1);
   }
+  if (!validateGeneratedPackageVersion()) {
+    process.exit(1);
+  }
   if (!runWasmOpt()) {
     process.exit(1);
   }
+  stampPublicVersionText();
   stampCacheBusters(writeSizeManifest());
   process.exit(0);
 });

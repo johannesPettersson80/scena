@@ -21,6 +21,6 @@ pub(crate) use viewer_singletons::{
     check_render_singleton_contracts, check_viewer_facade_contracts, public_struct_names,
 };
 pub(crate) use xtask_split::{
-    check_xtask_module_split, collect_xtask_source_files, contains_xtask_include_macro,
-    xtask_cross_module_glob_import, xtask_source_files,
+    check_xtask_module_split, contains_xtask_include_macro, xtask_cross_module_glob_import,
+    xtask_source_files,
 };

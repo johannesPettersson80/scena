@@ -50,6 +50,7 @@ pub(super) fn resource_stats(
         pipelines: 1,
         bind_groups: 4,
         shader_modules: 1,
+        shader_module_creations: 1,
         approximate_gpu_memory_bytes: shadow_edge
             .saturating_mul(shadow_edge)
             .saturating_mul(4)

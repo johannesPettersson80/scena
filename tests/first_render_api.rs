@@ -50,6 +50,104 @@ fn headless_gltf_viewer_builder_loads_frames_lights_and_renders() {
     );
 }
 
+#[test]
+fn headless_gltf_viewer_defaults_make_pbr_assets_visible_and_explain_the_fallback() {
+    let first = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/cad_terminal_block.gltf")
+            .size(96, 96)
+            .render(),
+    )
+    .expect("documented viewer defaults render a PBR glTF");
+
+    assert_eq!(
+        first.renderer().background_color(),
+        scena::Background::Studio.color(),
+        "the high-level viewer should not inherit the low-level black clear color"
+    );
+    let scene_diagnostics = first
+        .renderer()
+        .diagnose_scene_with_assets(first.scene(), first.assets());
+    assert!(
+        !scene_diagnostics.iter().any(|diagnostic| {
+            diagnostic.code() == scena::DiagnosticCode::MissingLightingOrEnvironment
+        }),
+        "the default viewer must install lighting when the asset authors none: {scene_diagnostics:#?}"
+    );
+    assert!(
+        first.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code() == scena::DiagnosticCode::MissingLightingOrEnvironment
+                && diagnostic.message().contains("applied")
+                && diagnostic
+                    .help()
+                    .is_some_and(|help| help.contains("author"))
+                && diagnostic.setting() == Some("viewer.lighting")
+                && diagnostic.fallback_applied()
+        }),
+        "the high-level result must explain that its neutral fallback was applied: {:#?}",
+        first.diagnostics()
+    );
+    let fallback = first
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.fallback_applied())
+        .expect("fallback diagnostic is retained on the high-level outcome");
+    let fallback_json = serde_json::to_value(fallback).expect("diagnostic serializes");
+    assert_eq!(fallback_json["setting"], "viewer.lighting");
+    assert_eq!(fallback_json["fallback_applied"], true);
+    assert!(
+        fallback_json["help"]
+            .as_str()
+            .is_some_and(|help| !help.is_empty())
+    );
+
+    let distinct_rgb = first
+        .renderer()
+        .frame_rgba8()
+        .chunks_exact(4)
+        .map(|pixel| [pixel[0], pixel[1], pixel[2]])
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        distinct_rgb.len() > 8,
+        "PBR geometry must be visible against the neutral background, distinct_colors={}",
+        distinct_rgb.len()
+    );
+
+    let low_level = scena::Renderer::headless(8, 8).expect("low-level renderer builds");
+    assert_eq!(
+        low_level.background_color(),
+        scena::Background::Black.color(),
+        "low-level deterministic renderer construction must remain explicit"
+    );
+}
+
+#[test]
+fn headless_gltf_viewer_allows_an_explicit_diagnostic_lighting_opt_out() {
+    let first = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/cad_terminal_block.gltf")
+            .size(48, 48)
+            .without_default_lighting()
+            .with_background(scena::Background::Black)
+            .render(),
+    )
+    .expect("explicit diagnostic setup still renders bytes");
+
+    assert!(
+        first.outcome().draw_calls > 0,
+        "the no-light PBR scene is technically rendered"
+    );
+    // Pixel darkness is not the opt-out contract: CPU's explicit no-light PBR
+    // diagnostic path preserves base color, while GPU lighting can be dark.
+    // The structured warning below is the cross-backend evidence that no
+    // fallback was silently applied.
+    let missing = first
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == scena::DiagnosticCode::MissingLightingOrEnvironment)
+        .expect("explicit opt-out surfaces the existing missing-light diagnosis");
+    assert!(!missing.fallback_applied());
+    assert_eq!(missing.setting(), None);
+}
+
 #[cfg(feature = "inspection")]
 #[test]
 fn headless_gltf_viewer_reports_render_introspection() {
@@ -107,6 +205,13 @@ fn headless_gltf_viewer_builder_can_attach_environment_and_report_diagnostics() 
     );
     assert_eq!(first.renderer().stats().environments, 1);
     assert_eq!(first.diagnostics(), first.renderer().diagnostics());
+    assert!(
+        first
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| !diagnostic.fallback_applied()),
+        "an explicit environment must suppress the lighting fallback"
+    );
 }
 
 #[test]

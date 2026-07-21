@@ -92,8 +92,20 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
         "scena.agent_smoke_template.v1",
     ),
     (
+        "tests/assets/stable-contracts/agent_template_catalog.v1.json",
+        "scena.agent_template_catalog.v1",
+    ),
+    (
         "tests/assets/stable-contracts/browser_proof_run.v1.json",
         "scena.browser_proof_run.v1",
+    ),
+    (
+        "tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json",
+        "scena.q01.required_webgpu_pixel_parity.v1",
+    ),
+    (
+        "tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json",
+        "scena.q04.required_gpu_resource_lifecycle.v1",
     ),
     (
         "tests/assets/stable-contracts/appearance_expectation.v1.json",
@@ -158,6 +170,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
     (
         "tests/assets/stable-contracts/asset_doctor.v1.json",
         "scena.asset_doctor.v1",
+    ),
+    (
+        "tests/assets/stable-contracts/asset_conversion.v1.json",
+        "scena.asset_conversion.v1",
     ),
     (
         "tests/assets/stable-contracts/asset_catalog.v1.json",

@@ -2,27 +2,6 @@ use crate::app::prelude::*;
 
 use super::control_flow_allowlist::DIAGNOSTIC_EARLY_RETURNS;
 
-pub(crate) fn run_doctor(mode: DoctorMode) -> Result<(), Vec<Finding>> {
-    let root = repo_root().map_err(|message| vec![Finding::new("DOCTOR-ROOT", message)])?;
-    let mut findings = Vec::new();
-
-    match mode {
-        DoctorMode::Docs => run_docs_doctor(&root, &mut findings),
-        DoctorMode::Architecture => run_architecture_doctor(&root, &mut findings),
-        DoctorMode::Full => {
-            run_docs_doctor(&root, &mut findings);
-            run_architecture_doctor(&root, &mut findings);
-        }
-    }
-
-    if findings.is_empty() {
-        println!("scena doctor: mode={mode:?} status=pass");
-        Ok(())
-    } else {
-        Err(findings)
-    }
-}
-
 pub(crate) fn repo_root() -> Result<PathBuf, String> {
     let mut dir = env::current_dir().map_err(|error| error.to_string())?;
     loop {
@@ -42,6 +21,7 @@ pub(crate) fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_shipped_feature_status_drift(root, findings);
     check_review_provenance_contracts(root, findings);
     check_c11_onboarding_contracts(root, findings);
+    check_d01_public_version_alignment(root, findings);
     check_fr01_fr04_contract_discovery(root, findings);
     check_required_doc_contracts(root, findings);
     check_stable_contract_release_evidence(root, findings);
@@ -53,9 +33,12 @@ pub(crate) fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_m1_browser_rendered_output(root, findings);
     check_m2_browser_rendered_output(root, findings);
     check_m6_browser_renderer_probe(root, findings);
+    check_q01_required_webgpu_pixel_parity(root, findings);
+    check_q03_m2_local_structure(root, findings);
     check_q04_cpu_webgl2_parity_contracts(root, findings);
     check_q05_effect_footprint_contracts(root, findings);
     check_q06_required_gpu_lane_contracts(root, findings);
+    check_full_review_q06_silent_failure_contracts(root, findings);
     check_gltf_asset_matrix_contract(root, findings);
     check_m9_ci_release_lanes(root, findings);
     check_q01_waterbottle_cpu_proof(root, findings);
@@ -68,6 +51,7 @@ pub(crate) fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_pf09_parallel_work_contracts(root, findings);
     check_pf10_hot_path_contracts(root, findings);
     check_release_readiness_ci_fail_closed(root, findings);
+    check_c04_release_readiness_contract(root, findings);
     check_release_publish_dry_run_helper(root, findings);
     check_m10_claim_audit_contract(root, findings);
     check_state_of_art_checklist_links(root, findings);
@@ -85,6 +69,8 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_render_singleton_contracts(root, findings);
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
+    check_c05_primitive_winding_contract(root, findings);
+    check_c07_target_transfer_contract(root, findings);
     check_particle_prepare_allocation_contract(root, findings);
     check_environment_lifecycle_contracts(root, findings);
     check_equirectangular_hdr_environment_contracts(root, findings);
@@ -106,6 +92,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_m4_platform_contracts(root, findings);
     check_m5_release_contracts(root, findings);
     check_cli_output_contracts(root, findings);
+    check_agent_contracts(root, findings);
     check_m7_ergonomics_contracts(root, findings);
     check_m8_assets_materials_contracts(root, findings);
     check_tangent_generation_dependency_contracts(root, findings);
@@ -343,6 +330,7 @@ pub(crate) fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<F
         "SCENA_BROWSER_EXECUTABLE",
         "SCENA_BROWSER_OVERSIZED_TEXTURE",
         "SCENA_BROWSER_REQUIRE_V3D",
+        "SCENA_BROWSER_FORCE_REBUILD",
         "SCENA_BROWSER_VIEWER_ELEMENT_ONLY",
         "SCENA_BROWSER_WORKFLOWS",
         "SCENA_WEBGL2_BROWSER",
@@ -367,6 +355,7 @@ pub(crate) fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<F
         "SCENA_REAGGREGATE_PF00",
         "SCENA_RUN_PF03_STORAGE_BENCHMARK",
         "SCENA_RUN_PF10_OCCLUSION_BENCHMARK",
+        "SCENA_RUN_CONTROLLED_P01_BENCHMARK",
         "SCENA_RUN_EXPENSIVE_CPU_RELEASE_TESTS",
         "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS",
         "SCENA_SHOWCASE_CONNECTOR_ONLY",
@@ -513,9 +502,6 @@ pub(crate) fn check_test_control_flow_policy(root: &Path, findings: &mut Vec<Fin
             }
         }
         if path.extension().and_then(OsStr::to_str) != Some("rs") || !text.contains("return;") {
-            continue;
-        }
-        if text.contains("fail_closed") || text.contains("release_evidence") {
             continue;
         }
         if let Some(entry) = DIAGNOSTIC_EARLY_RETURNS

@@ -10,7 +10,7 @@ const ENCODED_SHADER: &str = concat!(
 const QUAD_VERTEX_BYTE_LEN: usize = 2 * std::mem::size_of::<f32>();
 const INSTANCE_FLOATS: usize = 23;
 const INSTANCE_BYTE_LEN: usize = INSTANCE_FLOATS * std::mem::size_of::<f32>();
-const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const QUAD_VERTICES: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
 const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
     format: wgpu::VertexFormat::Float32x2,
@@ -92,6 +92,7 @@ pub(super) fn resource_stats(
         pipelines,
         bind_groups: 1,
         shader_modules: pipelines,
+        shader_module_creations: pipelines,
         approximate_gpu_memory_bytes: (QUAD_VERTICES.len() * QUAD_VERTEX_BYTE_LEN) as u64
             + (resources.instance_capacity * INSTANCE_BYTE_LEN).max(4) as u64
             + u64::from(labels.width()) * u64::from(labels.height()) * 4,
@@ -238,7 +239,7 @@ pub(super) fn create_resources(
         descriptor.output_bind_group_layout,
         &atlas_layout,
         None,
-        ENCODED_SHADER,
+        shader_for_format(POST_COLOR_FORMAT),
         "scena.gpu_labels.post_pipeline",
     );
     LabelResources {

@@ -1,6 +1,8 @@
 # Application builder roadmap
 
-Status: proposed implementation checklist
+Status: completed historical evidence
+Canonical active backlog:
+`docs/checklists/full-repo-review-v1.8.0-remediation.md`
 Date: 2026-06-14
 
 Scope: make `scena` easier to use as the visual, interaction, asset, browser,
@@ -71,8 +73,9 @@ cannot hide them as zero-test successes:
       cadence and calls mutation, time advancement, `prepare()`, and `render()`.
 
 Evidence: the implemented helpers remain visual, diagnostic, interaction, asset,
-and proof surfaces. Recipes are transient snapshots; visual patches and repair
-reports are deltas for the host to apply; animation and presentation timeline
+and proof surfaces. Recipes are versioned interchange/build snapshots rather
+than canonical application documents; visual patches and repair reports are
+deltas for the host to apply; animation and presentation timeline
 proofs are host-ticked and do not add a hidden loop or domain runtime.
 
 ## Phase 0 - Host contract foundation
@@ -573,9 +576,12 @@ Required commands:
 - [x] `scena browser-proof [scene-host|m6] [--dry-run]`: emit
       `scena.browser_proof_run.v1`; delegate to the existing wasm-pack +
       Playwright browser lanes while keeping stdout machine-readable.
-- [x] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
-      through the same terminal command family. Evidence:
+- [x] `scena doctor <asset-or-recipe>`: emit `scena.asset_doctor.v1` for a raw
+      glTF/GLB asset and the complete policy-aware
+      `scena.recipe_build_result.v1` for a parsed recipe. Evidence:
       `tests/scena_cli_agent.rs::scena_doctor_cli_emits_json_and_nonzero_for_broken_asset`
+      plus
+      `tests/scena_cli_recipe.rs::imports_only_recipe_commands_build_every_import`
       and `tests/assets/cli-golden/doctor_broken_asset_stdout.json`.
 - [x] `scena examples agent <template> [--out <dir>]`: emit
       `scena.agent_smoke_template.v1` for core ready templates and structured

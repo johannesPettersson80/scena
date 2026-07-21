@@ -62,6 +62,12 @@ export function defineScenaViewerElement(tagName) {
       this._host = null;
       this._activePointers = new Map();
       this._lastPinchDistance = null;
+      this._controlListenersAttached = false;
+      this._boundPointerDown = (event) => this._handlePointerDown(event);
+      this._boundPointerMove = (event) => this._handlePointerMove(event);
+      this._boundPointerEnd = (event) => this._handlePointerEnd(event);
+      this._boundLostPointerCapture = (event) => this._handleLostPointerCapture(event);
+      this._boundWheel = (event) => this._handleWheel(event);
       variantPicker.addEventListener("change", () => {
         const name = variantPicker.value || null;
         this.dispatchEvent(new CustomEvent("scena-viewer-variant-change", {
@@ -82,14 +88,10 @@ export function defineScenaViewerElement(tagName) {
       });
       this.addEventListener("drop", (event) => this._handleDrop(event));
       this.addEventListener("keydown", (event) => this._handleKeydown(event));
-      this.addEventListener("pointerdown", (event) => this._handlePointerDown(event));
-      this.addEventListener("pointermove", (event) => this._handlePointerMove(event));
-      this.addEventListener("pointerup", (event) => this._handlePointerEnd(event));
-      this.addEventListener("pointercancel", (event) => this._handlePointerEnd(event));
-      this.addEventListener("wheel", (event) => this._handleWheel(event), { passive: false });
     }
 
     connectedCallback() {
+      this._attachControlListeners();
       if (!this.hasAttribute("role")) {
         this.setAttribute("role", "img");
       }
@@ -103,6 +105,11 @@ export function defineScenaViewerElement(tagName) {
         this.setAttribute("aria-roledescription", "interactive 3D model");
       }
       this._emit("scena-viewer-ready");
+    }
+
+    disconnectedCallback() {
+      this._detachControlListeners();
+      this._releasePointerState();
     }
 
     attributeChangedCallback() {
@@ -592,6 +599,12 @@ export function defineScenaViewerElement(tagName) {
         y: Number(event.clientY || 0),
         pointerType: event.pointerType || "mouse"
       });
+      try {
+        this.setPointerCapture(event.pointerId);
+      } catch (_error) {
+        // Synthetic events do not own an active browser pointer. Real pointer
+        // events still use capture; synthetic contract probes remain usable.
+      }
       if (this._activePointers.size >= 2) {
         this._lastPinchDistance = this._pinchDistance();
       }
@@ -633,6 +646,60 @@ export function defineScenaViewerElement(tagName) {
       if (this._activePointers.size < 2) {
         this._lastPinchDistance = null;
       }
+      try {
+        if (this.hasPointerCapture(event.pointerId)) {
+          this.releasePointerCapture(event.pointerId);
+        }
+      } catch (_error) {
+        // The browser may already have released capture after cancellation.
+      }
+    }
+
+    _handleLostPointerCapture(event) {
+      this._activePointers.delete(event.pointerId);
+      if (this._activePointers.size < 2) {
+        this._lastPinchDistance = null;
+      }
+    }
+
+    _attachControlListeners() {
+      if (this._controlListenersAttached) {
+        return;
+      }
+      this.addEventListener("pointerdown", this._boundPointerDown);
+      this.addEventListener("pointermove", this._boundPointerMove);
+      this.addEventListener("pointerup", this._boundPointerEnd);
+      this.addEventListener("pointercancel", this._boundPointerEnd);
+      this.addEventListener("lostpointercapture", this._boundLostPointerCapture);
+      this.addEventListener("wheel", this._boundWheel, { passive: false });
+      this._controlListenersAttached = true;
+    }
+
+    _detachControlListeners() {
+      if (!this._controlListenersAttached) {
+        return;
+      }
+      this.removeEventListener("pointerdown", this._boundPointerDown);
+      this.removeEventListener("pointermove", this._boundPointerMove);
+      this.removeEventListener("pointerup", this._boundPointerEnd);
+      this.removeEventListener("pointercancel", this._boundPointerEnd);
+      this.removeEventListener("lostpointercapture", this._boundLostPointerCapture);
+      this.removeEventListener("wheel", this._boundWheel);
+      this._controlListenersAttached = false;
+    }
+
+    _releasePointerState() {
+      for (const pointerId of this._activePointers.keys()) {
+        try {
+          if (this.hasPointerCapture(pointerId)) {
+            this.releasePointerCapture(pointerId);
+          }
+        } catch (_error) {
+          // A detached element may have lost capture before cleanup runs.
+        }
+      }
+      this._activePointers.clear();
+      this._lastPinchDistance = null;
     }
 
     _handleWheel(event) {

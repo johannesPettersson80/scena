@@ -1,5 +1,4 @@
 use super::super::RasterTarget;
-use super::material_bindings::MaterialTextureBindingMode;
 use super::pipeline::{MeshPipelineSet, create_unlit_pipeline_set};
 use super::stats::GpuResourceStats;
 
@@ -20,7 +19,6 @@ pub(super) fn resource_stats(target: RasterTarget) -> GpuResourceStats {
         textures: 2,
         render_targets: 1,
         pipelines: 2,
-        shader_modules: 2,
         approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(target, 4, 1) + 4,
         ..GpuResourceStats::default()
     }
@@ -29,12 +27,12 @@ pub(super) fn resource_stats(target: RasterTarget) -> GpuResourceStats {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn create_transmission_resources(
     device: &wgpu::Device,
+    triangle_shader: &wgpu::ShaderModule,
     target: RasterTarget,
     format: wgpu::TextureFormat,
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
     _depth_compare: Option<wgpu::CompareFunction>,
 ) -> TransmissionResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -85,11 +83,11 @@ pub(super) fn create_transmission_resources(
     });
     let pipelines = create_unlit_pipeline_set(
         device,
+        triangle_shader,
         format,
         output_bind_group_layout,
         material_bind_group_layout,
         draw_bind_group_layout,
-        texture_binding_mode,
         None,
         1,
     );
@@ -112,7 +110,8 @@ mod tests {
             .next()
             .expect("implementation precedes tests");
         assert!(
-            source.contains("texture_binding_mode,\n        None,")
+            source.contains("triangle_shader,\n        format,")
+                && source.contains("draw_bind_group_layout,\n        None,")
                 && !source.contains("transmission_scene_depth"),
             "transmission scene-color rendering must not reuse the final depth pre-pass; \
              the final depth buffer can reject the opaque target behind glass"

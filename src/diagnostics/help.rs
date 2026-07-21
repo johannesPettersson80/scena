@@ -77,6 +77,9 @@ impl PrepareError {
             Self::GpuResourceUpload { .. } => {
                 "call Renderer::prepare again after fixing the browser/GPU resource state; render must not hide upload failures"
             }
+            Self::GpuDeviceRebuildRequired { .. } => {
+                "recreate the Renderer and prepare retained scene/assets again; on native attached surfaces recover_surface with a fresh PlatformSurface re-requests the device"
+            }
             Self::UnsupportedSampleCount { .. } => {
                 "choose an anti_aliasing sample count supported by the active GPU adapter, such as msaa4, then prepare again"
             }
@@ -96,8 +99,23 @@ impl RenderError {
                 "ignore zero-sized host surface events until the surface is visible"
             }
             Self::SurfaceLost { .. } => "call recover_surface, then prepare again",
-            Self::ContextLost { .. } | Self::GpuDeviceLost { .. } => {
+            Self::SurfaceOutdated { .. } => {
+                "the renderer already reconfigured and retried once; wait for the next resize event or replace the surface"
+            }
+            Self::SurfaceConfigurationChanged { .. } => {
+                "call Renderer::prepare again so pipelines match the refreshed surface format, then render"
+            }
+            Self::GpuValidation { .. } => {
+                "inspect the wgpu validation diagnostic and fix the renderer or surface configuration; do not retry as transient churn"
+            }
+            Self::GpuOutOfMemory { .. } => {
+                "release GPU resources or reduce render-target and asset memory, then rebuild the renderer if the device was lost"
+            }
+            Self::ContextLost { .. } => {
                 "call recover_context with retained assets, then prepare again"
+            }
+            Self::GpuDeviceLost { .. } => {
+                "recreate the Renderer and prepare retained scene/assets again; a lost wgpu Device/Queue cannot be reused"
             }
             Self::GpuResourcesNotPrepared { .. } => "call Renderer::prepare before rendering",
             Self::UnsupportedSampleCount { .. } => {

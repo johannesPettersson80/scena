@@ -24,6 +24,7 @@ jobs:
     env:
       RUST_TOOLCHAIN: "1.93.1"
       SCENA_REQUIRE_HARDWARE_GPU: "1"
+      SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: "1"
       SCENA_REQUIRE_PARITY: "1"
       SCENA_BROWSER_BACKENDS: webgpu,webgl2
     steps:
@@ -49,6 +50,15 @@ jobs:
           cargo install wasm-pack --version 0.14.0 --locked
       - name: Required GPU evaluator contract
         run: npm run test:required-gpu-parity
+      - name: Required WebGPU pixel parity
+        env:
+          SCENA_BROWSER_BACKENDS: webgpu
+        run: npm run browser:q01-parity
+      - name: Required native GPU resource lifecycle
+        run: >-
+          cargo test --test c09_gpu_resource_lifecycle
+          required_hardware_gpu_resource_lifecycle_executes_complete_cycle
+          -- --exact --nocapture
       - name: PF01 native rendered output toggle
         env:
           SCENA_HARDWARE_PROOF_COMMAND: SCENA_REQUIRE_HARDWARE_GPU=1 cargo test --test pf01_output_toggle pf01_native_gpu_output_toggle_renders_off_on_off_without_lazy_resources -- --exact --nocapture

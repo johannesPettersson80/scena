@@ -41,6 +41,8 @@ mod pipeline;
 mod post;
 #[cfg(not(target_arch = "wasm32"))]
 mod prepare_resources;
+#[cfg(not(target_arch = "wasm32"))]
+mod prepare_resources_support;
 #[cfg(target_arch = "wasm32")]
 mod prepare_resources_wasm;
 #[cfg(not(target_arch = "wasm32"))]
@@ -53,6 +55,7 @@ mod shadow;
 mod stats;
 mod strokes;
 mod surface_config;
+mod surface_frame;
 mod transmission;
 mod vertices;
 
@@ -73,6 +76,7 @@ pub(super) use self::post::{GpuOutputPlan, GpuPostPassCounts, GpuPostSettings};
 use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
 use self::strokes::StrokeResources;
+pub(in crate::render) use self::surface_frame::SurfaceFrameSkipReason;
 use self::vertices::{DrawUniformValue, PrimitiveDrawBatch};
 use super::RasterTarget;
 use super::prepare::PreparedGpuLightUniform;
@@ -85,7 +89,9 @@ pub(super) struct GpuDeviceState {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: Option<GpuSurfaceState>,
+    runtime_fault: surface_frame::GpuRuntimeFaultState,
     pending_destructions: u64,
+    triangle_shader_modules: pipeline::TriangleShaderModuleCache,
     #[cfg(target_arch = "wasm32")]
     last_poll_observation: &'static str,
     resources: Option<GpuPreparedResources>,
@@ -128,12 +134,16 @@ pub(in crate::render) struct GpuRenderResult {
     pub(in crate::render) submitted: bool,
     pub(in crate::render) post_counts: GpuPostPassCounts,
     pub(in crate::render) draw_submissions: u64,
+    pub(in crate::render) native_scene_color_passes: u64,
     pub(in crate::render) readback_copies: u64,
     pub(in crate::render) readback_bytes_copied: u64,
     pub(in crate::render) map_requests: u64,
     pub(in crate::render) blocking_polls: u64,
     pub(in crate::render) blocking_waits: u64,
     pub(in crate::render) cpu_frame_copy_bytes: u64,
+    pub(in crate::render) surface_skip: Option<surface_frame::SurfaceFrameSkipReason>,
+    pub(in crate::render) surface_reconfigurations: u64,
+    pub(in crate::render) surface_acquire_retries: u64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -192,6 +202,7 @@ struct GpuPreparedResources {
     offscreen_msaa4_pipelines: MeshPipelineSet,
     offscreen_msaa8_pipelines: Option<MeshPipelineSet>,
     msaa_color: Option<MsaaColorResources>,
+    surface_msaa_color: Option<MsaaColorResources>,
     surface_pipeline: Option<MeshPipelineSet>,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
@@ -264,6 +275,22 @@ struct GpuPreparedResources {
 }
 
 impl GpuDeviceState {
+    pub(in crate::render) fn color_target_format(&self) -> wgpu::TextureFormat {
+        self.surface
+            .as_ref()
+            .map_or(pipeline::GPU_COLOR_FORMAT, |surface| surface.config.format)
+    }
+
+    pub(in crate::render) fn color_target_format_name(&self) -> &'static str {
+        match self.color_target_format() {
+            wgpu::TextureFormat::Rgba8Unorm => "Rgba8Unorm",
+            wgpu::TextureFormat::Rgba8UnormSrgb => "Rgba8UnormSrgb",
+            wgpu::TextureFormat::Bgra8Unorm => "Bgra8Unorm",
+            wgpu::TextureFormat::Bgra8UnormSrgb => "Bgra8UnormSrgb",
+            _ => "Rgba8UnormSrgb",
+        }
+    }
+
     pub(super) const fn display_p3_canvas_configured(&self) -> bool {
         self.display_p3_canvas_configured
     }

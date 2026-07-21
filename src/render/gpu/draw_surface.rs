@@ -11,7 +11,8 @@ use super::browser_readback::{
 };
 use super::depth;
 use super::draw_common::{
-    camera_position_uniform, identity_matrix, post_color_management_uniform, wgpu_clear_color,
+    camera_position_uniform, identity_matrix, target_color_management_uniform,
+    wgpu_clear_color_for_target,
 };
 use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
 use super::overlays::{OverlayPasses, encode_overlay_passes};
@@ -19,6 +20,7 @@ use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
 use super::{
     GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, labels, post, strokes,
+    surface_frame,
 };
 
 impl GpuDeviceState {
@@ -33,6 +35,9 @@ impl GpuDeviceState {
         section_box: Option<SectionBox>,
         post_settings: GpuPostSettings,
     ) -> Result<GpuRenderResult, RenderError> {
+        if let Some(error) = self.runtime_fault.render_error(target.backend) {
+            return Err(error);
+        }
         let Some(resources) = self.resources.as_mut() else {
             return self.render_empty_surface(target, background_color);
         };
@@ -41,12 +46,18 @@ impl GpuDeviceState {
                 backend: target.backend,
             });
         }
-        let Some(surface) = self.surface.as_ref() else {
+        let Some(surface_format) = self.surface.as_ref().map(|surface| surface.config.format)
+        else {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: target.backend,
             });
         };
         let post_enabled = post_settings.enabled();
+        let scene_format = if post_enabled {
+            post::scene_color_format()
+        } else {
+            surface_format
+        };
         if post_enabled
             && !resources
                 .post
@@ -57,7 +68,7 @@ impl GpuDeviceState {
                 backend: target.backend,
             });
         }
-        let mut color_management = post_color_management_uniform(color_management, post_enabled);
+        let mut color_management = target_color_management_uniform(color_management, scene_format);
         if let Some(reflections) = post_settings.reflections() {
             color_management[2] = reflections.strength();
             color_management[3] = reflections.roughness();
@@ -110,15 +121,28 @@ impl GpuDeviceState {
         )? {
             return Ok(result);
         }
-        let surface_output = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(output)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Outdated
-            | wgpu::CurrentSurfaceTexture::Lost
-            | wgpu::CurrentSurfaceTexture::Validation => return Ok(GpuRenderResult::default()),
-        };
+        let surface_frame::SurfaceFrameAcquisition {
+            output: surface_output,
+            skip: surface_skip,
+            reconfigure_after_present,
+            mut reconfigurations,
+            retries: surface_acquire_retries,
+        } = surface_frame::acquire_surface_frame(
+            self.surface.as_mut(),
+            &self.adapter,
+            &self.device,
+            target,
+        )?;
+        if surface_skip.is_some() {
+            self.refresh_browser_canvas_output_color_space(target.backend);
+            return Ok(GpuRenderResult {
+                surface_skip,
+                surface_reconfigurations: reconfigurations,
+                surface_acquire_retries,
+                ..GpuRenderResult::default()
+            });
+        }
+        let surface_output = surface_output.expect("attached browser surface acquired a frame");
         let surface_view = surface_output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -157,10 +181,11 @@ impl GpuDeviceState {
                 },
             );
         }
-        let surface_readback = resources
-            .readback
-            .as_ref()
-            .filter(|_| surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC));
+        let surface_readback = resources.readback.as_ref().filter(|_| {
+            self.surface
+                .as_ref()
+                .is_some_and(|surface| surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC))
+        });
         if !post_enabled
             && surface_readback.is_none()
             && let Some(readback) = resources.readback.as_ref()
@@ -187,7 +212,7 @@ impl GpuDeviceState {
                     instance_batches: &resources.instance_batches,
                     identity_instance: resources.identity_instance,
                     transmission: &resources.transmission,
-                    clear_color: wgpu_clear_color(background_color),
+                    clear_color: wgpu_clear_color_for_target(background_color, readback.format),
                     draw_submissions: &mut draw_submissions,
                 },
             );
@@ -226,7 +251,7 @@ impl GpuDeviceState {
                 transmission_view: &resources.transmission.view,
                 transmission_pipelines: resources.transmission.pipelines.refs(),
                 force_scene_color_pass: post_settings.reflections().is_some(),
-                clear_color: wgpu_clear_color(background_color),
+                clear_color: wgpu_clear_color_for_target(background_color, scene_format),
                 base_label,
                 draw_submissions: &mut draw_submissions,
             },
@@ -403,10 +428,17 @@ impl GpuDeviceState {
             }
             self.queue.submit(Some(encoder.finish()));
             surface_output.present();
+            if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
+                surface_frame::reconfigure_existing_surface(surface, &self.device);
+                reconfigurations = reconfigurations.saturating_add(1);
+                self.refresh_browser_canvas_output_color_space(target.backend);
+            }
             return Ok(GpuRenderResult {
                 submitted: true,
                 post_counts: counts,
                 draw_submissions,
+                surface_reconfigurations: reconfigurations,
+                surface_acquire_retries,
                 ..GpuRenderResult::default()
             });
         } else {
@@ -417,10 +449,17 @@ impl GpuDeviceState {
         }
         self.queue.submit(Some(encoder.finish()));
         surface_output.present();
+        if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
+            surface_frame::reconfigure_existing_surface(surface, &self.device);
+            reconfigurations = reconfigurations.saturating_add(1);
+            self.refresh_browser_canvas_output_color_space(target.backend);
+        }
         Ok(GpuRenderResult {
             submitted: true,
             post_counts,
             draw_submissions,
+            surface_reconfigurations: reconfigurations,
+            surface_acquire_retries,
             ..GpuRenderResult::default()
         })
     }

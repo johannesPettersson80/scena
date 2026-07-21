@@ -12,11 +12,58 @@ use scena::{
     EnvironmentHandle, GeometryDesc, GeometryTopology, MaterialDesc, PerspectiveCamera, Renderer,
     Scene, TextureColorSpace, Transform, Vec3,
 };
+use serde::Serialize;
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
 fn ndc_fixture_camera_transform() -> Transform {
     Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES))
+}
+
+#[test]
+fn m8_khr_material_visual_oracle_rejects_disabled_and_wrong_direction_mutations() {
+    let reports = evaluate_khr_material_feature_mutations();
+    let names = reports.iter().map(|report| report.name).collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "clearcoat",
+            "sheen",
+            "anisotropy-light-left",
+            "anisotropy-light-right",
+            "iridescence",
+            "dispersion",
+            "transmission-volume",
+        ],
+        "every covered KHR material feature and both directional anisotropy views must be evaluated"
+    );
+    for report in reports {
+        assert!(
+            report.positive_passed,
+            "{} enabled feature must exceed its declared visible-effect floor: {report:#?}",
+            report.name
+        );
+        assert!(
+            report.disabled_rejected,
+            "{} disabled control must fail the same evaluator: {report:#?}",
+            report.name
+        );
+        assert!(
+            report.wrong_direction_rejected,
+            "{} inverted-effect mutation must fail the same evaluator: {report:#?}",
+            report.name
+        );
+        assert!(
+            report.one_lsb_noise_passed,
+            "{} harmless one-LSB noise must not fail visible acceptance: {report:#?}",
+            report.name
+        );
+        assert!(
+            report.two_lsb_effect_nudge_rejected,
+            "{} two-LSB control nudge must not create a visible feature pass: {report:#?}",
+            report.name
+        );
+    }
 }
 
 #[test]
@@ -80,101 +127,6 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
             assert!(
                 center[0] > 150 && center[1] < 80 && center[2] < 80,
                 "m8-texture-slots must prove decoded texture pixels affect output, got {center:?}"
-            );
-        }
-        if artifact.name == "m8-clearcoat-material-feature" {
-            let matte_highlight =
-                max_luminance_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
-            let clearcoat_highlight = max_luminance_in_region(
-                &artifact.rgba,
-                artifact.width,
-                artifact.width / 2,
-                artifact.width,
-            );
-            assert!(
-                clearcoat_highlight > matte_highlight + 1,
-                "clearcoat visual proof must brighten the right-side specular response; \
-                 matte={matte_highlight:?} clearcoat={clearcoat_highlight:?}"
-            );
-        }
-        if artifact.name == "m8-sheen-material-feature" {
-            let black_sheen =
-                max_luminance_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
-            let red_sheen = max_luminance_in_region(
-                &artifact.rgba,
-                artifact.width,
-                artifact.width / 2,
-                artifact.width,
-            );
-            assert!(
-                red_sheen > black_sheen + 2,
-                "sheen visual proof must brighten the right-side texture/factor response; \
-                 black={black_sheen:?} red={red_sheen:?}"
-            );
-        }
-        if artifact.name == "m8-anisotropy-material-feature" {
-            let off =
-                max_luminance_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
-            let on = max_luminance_in_region(
-                &artifact.rgba,
-                artifact.width,
-                artifact.width / 2,
-                artifact.width,
-            );
-            assert!(
-                on > off,
-                "anisotropy visual proof must brighten the right-side direction/strength response; \
-                 off={off:?} on={on:?}"
-            );
-        }
-        if artifact.name == "m8-iridescence-material-feature" {
-            let off_average =
-                average_rgb_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
-            let on_average = average_rgb_in_region(
-                &artifact.rgba,
-                artifact.width,
-                artifact.width / 2,
-                artifact.width,
-            );
-            assert!(
-                on_average[2] - on_average[0] > off_average[2] - off_average[0] + 2.0
-                    && on_average[2] > on_average[1]
-                    && on_average[1] > on_average[0],
-                "iridescence visual proof must shift the average material response toward a thickness-driven blue lobe without relying on saturated maxima; \
-                 off_average={off_average:?} on_average={on_average:?}"
-            );
-        }
-        if artifact.name == "m8-dispersion-material-feature" {
-            let off = max_rgb_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
-            let on = max_rgb_in_region(
-                &artifact.rgba,
-                artifact.width,
-                artifact.width / 2,
-                artifact.width,
-            );
-            assert!(
-                on[0] > off[0] || on[2] > off[2],
-                "dispersion visual proof must separate red/blue channel response; \
-                 off={off:?} on={on:?}"
-            );
-        }
-        if artifact.name == "m8-transmission-volume-material-feature" {
-            let off = max_rgb_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
-            let on = max_rgb_in_region(
-                &artifact.rgba,
-                artifact.width,
-                artifact.width / 2,
-                artifact.width,
-            );
-            assert!(
-                rgb_distance(off, on) > 120 && rgb_sum(off) > rgb_sum(on) + 180,
-                "transmissionTexture must gate physical transmission and visibly separate blocked from transmitted glass; \
-                 off={off:?} on={on:?}"
-            );
-            assert!(
-                on[2] > on[0] && on[2] > on[1],
-                "volume attenuation visual proof must tint the transmitted glass path toward blue; \
-                 off={off:?} on={on:?}"
             );
         }
         write_ppm_artifact(&artifact_dir, &artifact);
@@ -544,6 +496,486 @@ fn render_environment_color_management() -> VisualArtifact {
     artifact
 }
 
+const KHR_VISIBLE_CHANNEL_DELTA: u8 = 4;
+const KHR_NUMERICAL_RMSE_MAX: f32 = 1.1;
+const KHR_EFFECT_ALIGNMENT_MIN: f32 = 0.9;
+
+#[derive(Debug, Clone, Copy, Serialize)]
+struct FeatureRegion {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FeatureDirection {
+    LuminanceIncrease,
+    RedIncrease,
+    SpatialRedistribution,
+    BlueMinusRedIncrease,
+    ChromaticSpreadIncrease,
+    BlueDominantDarkening,
+}
+
+#[derive(Debug, Serialize)]
+struct FeatureEvaluation {
+    passed: bool,
+    visible_effect_passed: bool,
+    numerical_match_passed: bool,
+    effect_rmse: f32,
+    changed_pixel_fraction: f32,
+    direction_metric: f32,
+    reference_rmse: f32,
+    effect_alignment: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct KhrMaterialFeatureReport {
+    name: &'static str,
+    region: FeatureRegion,
+    direction: FeatureDirection,
+    min_effect_rmse: f32,
+    min_changed_pixel_fraction: f32,
+    min_direction_metric: f32,
+    positive_passed: bool,
+    disabled_rejected: bool,
+    wrong_direction_rejected: bool,
+    one_lsb_noise_passed: bool,
+    two_lsb_effect_nudge_rejected: bool,
+    positive: FeatureEvaluation,
+    disabled_control: FeatureEvaluation,
+    wrong_direction: FeatureEvaluation,
+    one_lsb_noise: FeatureEvaluation,
+    two_lsb_effect_nudge: FeatureEvaluation,
+}
+
+struct KhrMaterialFeatureCase {
+    name: &'static str,
+    control: Vec<u8>,
+    enabled: Vec<u8>,
+    region: FeatureRegion,
+    direction: FeatureDirection,
+    min_effect_rmse: f32,
+    min_changed_pixel_fraction: f32,
+    min_direction_metric: f32,
+}
+
+fn evaluate_khr_material_feature_mutations() -> Vec<KhrMaterialFeatureReport> {
+    let reports = render_khr_material_feature_cases()
+        .into_iter()
+        .map(evaluate_khr_material_feature_case)
+        .collect::<Vec<_>>();
+    let artifact_dir = artifact_dir();
+    fs::create_dir_all(&artifact_dir).expect("Q02 artifact directory can be created");
+    let artifact = serde_json::json!({
+        "proof_class": "q02-khr-material-feature-mutation-proof",
+        "evaluator_version": 1,
+        "resolution": [256, 256],
+        "encoding": "srgb8",
+        "visible_acceptance": {
+            "channel_delta_min": KHR_VISIBLE_CHANNEL_DELTA,
+            "feature_specific_effect_rmse_and_changed_fraction": true,
+            "feature_specific_expected_direction": true,
+        },
+        "numerical_tolerance": {
+            "reference_rmse_max": KHR_NUMERICAL_RMSE_MAX,
+            "effect_alignment_min": KHR_EFFECT_ALIGNMENT_MIN,
+        },
+        "mutations": [
+            "disabled-control",
+            "two-lsb-effect-nudge",
+            "inverted-effect-direction",
+            "one-lsb-noise"
+        ],
+        "reports": &reports,
+    });
+    fs::write(
+        artifact_dir.join("khr-material-feature-proof.json"),
+        serde_json::to_vec_pretty(&artifact).expect("Q02 artifact serializes"),
+    )
+    .expect("Q02 artifact writes");
+    reports
+}
+
+fn evaluate_khr_material_feature_case(case: KhrMaterialFeatureCase) -> KhrMaterialFeatureReport {
+    let wrong_direction = invert_feature_effect(&case.control, &case.enabled);
+    let one_lsb_noise = add_one_lsb_noise(&case.enabled);
+    let two_lsb_effect_nudge = add_two_lsb_effect_nudge(&case.control, &case.enabled);
+    let positive = evaluate_feature_candidate(&case, &case.enabled);
+    let disabled_control = evaluate_feature_candidate(&case, &case.control);
+    let wrong_direction_evaluation = evaluate_feature_candidate(&case, &wrong_direction);
+    let one_lsb_noise_evaluation = evaluate_feature_candidate(&case, &one_lsb_noise);
+    let two_lsb_effect_nudge_evaluation = evaluate_feature_candidate(&case, &two_lsb_effect_nudge);
+    KhrMaterialFeatureReport {
+        name: case.name,
+        region: case.region,
+        direction: case.direction,
+        min_effect_rmse: case.min_effect_rmse,
+        min_changed_pixel_fraction: case.min_changed_pixel_fraction,
+        min_direction_metric: case.min_direction_metric,
+        positive_passed: positive.passed,
+        disabled_rejected: !disabled_control.passed,
+        wrong_direction_rejected: !wrong_direction_evaluation.passed,
+        one_lsb_noise_passed: one_lsb_noise_evaluation.passed,
+        two_lsb_effect_nudge_rejected: !two_lsb_effect_nudge_evaluation.passed,
+        positive,
+        disabled_control,
+        wrong_direction: wrong_direction_evaluation,
+        one_lsb_noise: one_lsb_noise_evaluation,
+        two_lsb_effect_nudge: two_lsb_effect_nudge_evaluation,
+    }
+}
+
+fn evaluate_feature_candidate(
+    case: &KhrMaterialFeatureCase,
+    candidate: &[u8],
+) -> FeatureEvaluation {
+    let mut effect_squared = 0.0_f64;
+    let mut reference_squared = 0.0_f64;
+    let mut reference_norm = 0.0_f64;
+    let mut candidate_norm = 0.0_f64;
+    let mut alignment_dot = 0.0_f64;
+    let mut changed_pixels = 0_u32;
+    let mut masked_pixels = 0_u32;
+    let mut control_rgb = [0.0_f64; 3];
+    let mut candidate_rgb = [0.0_f64; 3];
+    for y in case.region.y..case.region.y + case.region.height {
+        for x in case.region.x..case.region.x + case.region.width {
+            let offset = ((y * 256 + x) * 4) as usize;
+            let control = &case.control[offset..offset + 3];
+            let reference = &case.enabled[offset..offset + 3];
+            if control.iter().chain(reference).copied().max().unwrap_or(0) <= 3 {
+                continue;
+            }
+            masked_pixels += 1;
+            let mut max_delta = 0_u8;
+            for channel in 0..3 {
+                control_rgb[channel] += f64::from(control[channel]);
+                candidate_rgb[channel] += f64::from(candidate[offset + channel]);
+                let expected_delta = f64::from(reference[channel]) - f64::from(control[channel]);
+                let candidate_delta =
+                    f64::from(candidate[offset + channel]) - f64::from(control[channel]);
+                effect_squared += candidate_delta * candidate_delta;
+                let reference_error =
+                    f64::from(candidate[offset + channel]) - f64::from(reference[channel]);
+                reference_squared += reference_error * reference_error;
+                reference_norm += expected_delta * expected_delta;
+                candidate_norm += candidate_delta * candidate_delta;
+                alignment_dot += expected_delta * candidate_delta;
+                max_delta = max_delta.max(candidate[offset + channel].abs_diff(control[channel]));
+            }
+            if max_delta >= KHR_VISIBLE_CHANNEL_DELTA {
+                changed_pixels += 1;
+            }
+        }
+    }
+    assert!(
+        masked_pixels > 0,
+        "{} feature region must cover rendered pixels",
+        case.name
+    );
+    let channel_count = f64::from(masked_pixels) * 3.0;
+    let effect_rmse = (effect_squared / channel_count).sqrt() as f32;
+    let reference_rmse = (reference_squared / channel_count).sqrt() as f32;
+    let effect_alignment = if reference_norm > 0.0 && candidate_norm > 0.0 {
+        (alignment_dot / (reference_norm * candidate_norm).sqrt()) as f32
+    } else {
+        -1.0
+    };
+    let changed_pixel_fraction = changed_pixels as f32 / masked_pixels as f32;
+    let count = f64::from(masked_pixels);
+    let control_mean = control_rgb.map(|value| value / count);
+    let candidate_mean = candidate_rgb.map(|value| value / count);
+    let direction_metric = match case.direction {
+        FeatureDirection::LuminanceIncrease => {
+            ((candidate_mean.iter().sum::<f64>() - control_mean.iter().sum::<f64>()) / 3.0) as f32
+        }
+        FeatureDirection::RedIncrease => (candidate_mean[0] - control_mean[0]) as f32,
+        FeatureDirection::SpatialRedistribution => effect_rmse,
+        FeatureDirection::BlueMinusRedIncrease => {
+            ((candidate_mean[2] - candidate_mean[0]) - (control_mean[2] - control_mean[0])) as f32
+        }
+        FeatureDirection::ChromaticSpreadIncrease => {
+            let spread = |rgb: [f64; 3]| {
+                rgb.into_iter().fold(f64::NEG_INFINITY, f64::max)
+                    - rgb.into_iter().fold(f64::INFINITY, f64::min)
+            };
+            (spread(candidate_mean) - spread(control_mean)) as f32
+        }
+        FeatureDirection::BlueDominantDarkening => {
+            let blue_dominance = candidate_mean[2] - candidate_mean[0].max(candidate_mean[1]);
+            let darkening =
+                (control_mean.iter().sum::<f64>() - candidate_mean.iter().sum::<f64>()) / 3.0;
+            blue_dominance.min(darkening) as f32
+        }
+    };
+    let visible_effect_passed = effect_rmse >= case.min_effect_rmse
+        && changed_pixel_fraction >= case.min_changed_pixel_fraction
+        && direction_metric >= case.min_direction_metric;
+    let numerical_match_passed =
+        reference_rmse <= KHR_NUMERICAL_RMSE_MAX && effect_alignment >= KHR_EFFECT_ALIGNMENT_MIN;
+    FeatureEvaluation {
+        passed: visible_effect_passed && numerical_match_passed,
+        visible_effect_passed,
+        numerical_match_passed,
+        effect_rmse,
+        changed_pixel_fraction,
+        direction_metric,
+        reference_rmse,
+        effect_alignment,
+    }
+}
+
+fn invert_feature_effect(control: &[u8], enabled: &[u8]) -> Vec<u8> {
+    control
+        .iter()
+        .zip(enabled)
+        .enumerate()
+        .map(|(index, (&control, &enabled))| {
+            if index % 4 == 3 {
+                enabled
+            } else {
+                (i16::from(control) * 2 - i16::from(enabled)).clamp(0, 255) as u8
+            }
+        })
+        .collect()
+}
+
+fn add_one_lsb_noise(enabled: &[u8]) -> Vec<u8> {
+    enabled
+        .iter()
+        .enumerate()
+        .map(|(index, &value)| {
+            if index % 4 == 3 {
+                value
+            } else if (index / 4 + index % 4) % 2 == 0 {
+                value.saturating_add(1)
+            } else {
+                value.saturating_sub(1)
+            }
+        })
+        .collect()
+}
+
+fn add_two_lsb_effect_nudge(control: &[u8], enabled: &[u8]) -> Vec<u8> {
+    control
+        .iter()
+        .zip(enabled)
+        .enumerate()
+        .map(|(index, (&control, &enabled))| {
+            if index % 4 == 3 || enabled == control {
+                control
+            } else if enabled > control {
+                control.saturating_add(2).min(enabled)
+            } else {
+                control.saturating_sub(2).max(enabled)
+            }
+        })
+        .collect()
+}
+
+fn render_khr_material_feature_cases() -> Vec<KhrMaterialFeatureCase> {
+    let assets = Assets::new();
+    let common_region = FeatureRegion {
+        x: 98,
+        y: 110,
+        width: 76,
+        height: 78,
+    };
+    let render = |name, material, light_yaw_deg| {
+        render_material_box_with_light_yaw(
+            name,
+            &assets,
+            material,
+            None,
+            true,
+            light_yaw_deg,
+            "q02-khr-feature-source-frame",
+        )
+        .rgba
+    };
+
+    let clearcoat_control =
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62);
+    let clearcoat_enabled = clearcoat_control
+        .clone()
+        .with_clearcoat_factor(0.9)
+        .with_clearcoat_roughness_factor(0.12);
+
+    let sheen_off = load_pixel_texture(&assets, [0, 0, 0, 255], TextureColorSpace::Srgb);
+    let sheen_on = load_pixel_texture(&assets, [255, 0, 0, 255], TextureColorSpace::Srgb);
+    let sheen_base =
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(104, 96, 92), 0.0, 0.72)
+            .with_sheen_color_factor(Color::WHITE)
+            .with_sheen_roughness_factor(0.35);
+
+    let anisotropy_off = load_pixel_texture(&assets, [255, 128, 0, 255], TextureColorSpace::Linear);
+    let anisotropy_on =
+        load_pixel_texture(&assets, [255, 128, 255, 255], TextureColorSpace::Linear);
+    let anisotropy_base =
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(150, 150, 150), 1.0, 0.42)
+            .with_anisotropy_strength_factor(1.0);
+
+    let iridescence_off = load_pixel_texture(&assets, [0, 0, 0, 255], TextureColorSpace::Linear);
+    let iridescence_on = load_pixel_texture(&assets, [255, 0, 0, 255], TextureColorSpace::Linear);
+    let iridescence_thickness =
+        load_pixel_texture(&assets, [0, 255, 0, 255], TextureColorSpace::Linear);
+    let iridescence_base =
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(180, 180, 180), 1.0, 0.18)
+            .with_iridescence_factor(1.0)
+            .with_iridescence_ior(1.45)
+            .with_iridescence_thickness_range_nm(120.0, 520.0)
+            .with_iridescence_thickness_texture(iridescence_thickness);
+
+    let dispersion_control =
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(165, 165, 165), 0.0, 0.24)
+            .with_dispersion_factor(0.0);
+    let dispersion_enabled = dispersion_control.clone().with_dispersion_factor(1.0);
+
+    let transmission_off = load_pixel_texture(&assets, [0, 0, 0, 255], TextureColorSpace::Linear);
+    let transmission_on = load_pixel_texture(&assets, [255, 0, 0, 255], TextureColorSpace::Linear);
+    let transmission_thickness =
+        load_pixel_texture(&assets, [0, 255, 0, 255], TextureColorSpace::Linear);
+    let transmission_base =
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
+            .with_transmission_factor(1.0)
+            .with_ior(1.7)
+            .with_thickness_factor(2.0)
+            .with_thickness_texture(transmission_thickness)
+            .with_attenuation_distance(1.0)
+            .with_attenuation_color(Color::from_linear_rgb(0.08, 0.35, 1.0));
+
+    vec![
+        KhrMaterialFeatureCase {
+            name: "clearcoat",
+            control: render("q02-clearcoat-control", clearcoat_control, 0.0),
+            enabled: render("q02-clearcoat-enabled", clearcoat_enabled, 0.0),
+            region: FeatureRegion {
+                x: 104,
+                y: 112,
+                width: 64,
+                height: 70,
+            },
+            direction: FeatureDirection::LuminanceIncrease,
+            min_effect_rmse: 2.0,
+            min_changed_pixel_fraction: 0.02,
+            min_direction_metric: 0.5,
+        },
+        KhrMaterialFeatureCase {
+            name: "sheen",
+            control: render(
+                "q02-sheen-control",
+                sheen_base.clone().with_sheen_color_texture(sheen_off),
+                0.0,
+            ),
+            enabled: render(
+                "q02-sheen-enabled",
+                sheen_base.with_sheen_color_texture(sheen_on),
+                0.0,
+            ),
+            region: common_region,
+            direction: FeatureDirection::RedIncrease,
+            min_effect_rmse: 20.0,
+            min_changed_pixel_fraction: 0.25,
+            min_direction_metric: 20.0,
+        },
+        KhrMaterialFeatureCase {
+            name: "anisotropy-light-left",
+            control: render(
+                "q02-anisotropy-left-control",
+                anisotropy_base
+                    .clone()
+                    .with_anisotropy_texture(anisotropy_off),
+                -35.0,
+            ),
+            enabled: render(
+                "q02-anisotropy-left-enabled",
+                anisotropy_base
+                    .clone()
+                    .with_anisotropy_texture(anisotropy_on),
+                -35.0,
+            ),
+            region: common_region,
+            direction: FeatureDirection::SpatialRedistribution,
+            min_effect_rmse: 8.0,
+            min_changed_pixel_fraction: 0.20,
+            min_direction_metric: 8.0,
+        },
+        KhrMaterialFeatureCase {
+            name: "anisotropy-light-right",
+            control: render(
+                "q02-anisotropy-right-control",
+                anisotropy_base
+                    .clone()
+                    .with_anisotropy_texture(anisotropy_off),
+                35.0,
+            ),
+            enabled: render(
+                "q02-anisotropy-right-enabled",
+                anisotropy_base.with_anisotropy_texture(anisotropy_on),
+                35.0,
+            ),
+            region: common_region,
+            direction: FeatureDirection::SpatialRedistribution,
+            min_effect_rmse: 8.0,
+            min_changed_pixel_fraction: 0.20,
+            min_direction_metric: 8.0,
+        },
+        KhrMaterialFeatureCase {
+            name: "iridescence",
+            control: render(
+                "q02-iridescence-control",
+                iridescence_base
+                    .clone()
+                    .with_iridescence_texture(iridescence_off),
+                0.0,
+            ),
+            enabled: render(
+                "q02-iridescence-enabled",
+                iridescence_base.with_iridescence_texture(iridescence_on),
+                0.0,
+            ),
+            region: common_region,
+            direction: FeatureDirection::BlueMinusRedIncrease,
+            min_effect_rmse: 6.0,
+            min_changed_pixel_fraction: 0.20,
+            min_direction_metric: 5.0,
+        },
+        KhrMaterialFeatureCase {
+            name: "dispersion",
+            control: render("q02-dispersion-control", dispersion_control, 0.0),
+            enabled: render("q02-dispersion-enabled", dispersion_enabled, 0.0),
+            region: common_region,
+            direction: FeatureDirection::ChromaticSpreadIncrease,
+            min_effect_rmse: 10.0,
+            min_changed_pixel_fraction: 0.20,
+            min_direction_metric: 10.0,
+        },
+        KhrMaterialFeatureCase {
+            name: "transmission-volume",
+            control: render(
+                "q02-transmission-control",
+                transmission_base
+                    .clone()
+                    .with_transmission_texture(transmission_off),
+                0.0,
+            ),
+            enabled: render(
+                "q02-transmission-enabled",
+                transmission_base.with_transmission_texture(transmission_on),
+                0.0,
+            ),
+            region: common_region,
+            direction: FeatureDirection::BlueDominantDarkening,
+            min_effect_rmse: 30.0,
+            min_changed_pixel_fraction: 0.50,
+            min_direction_metric: 15.0,
+        },
+    ]
+}
+
 fn render_clearcoat_material_feature() -> VisualArtifact {
     let assets = Assets::new();
     let matte = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62);
@@ -803,6 +1235,27 @@ fn render_material_box<F>(
     add_light: bool,
     proof_class: &'static str,
 ) -> VisualArtifact {
+    render_material_box_with_light_yaw(
+        name,
+        assets,
+        material,
+        environment,
+        add_light,
+        0.0,
+        proof_class,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_material_box_with_light_yaw<F>(
+    name: &'static str,
+    assets: &Assets<F>,
+    material: MaterialDesc,
+    environment: Option<EnvironmentHandle>,
+    add_light: bool,
+    light_yaw_deg: f32,
+    proof_class: &'static str,
+) -> VisualArtifact {
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.55));
     let material = assets.create_material(material);
     let mut scene = Scene::new();
@@ -812,10 +1265,16 @@ fn render_material_box<F>(
         .add()
         .expect("mesh inserts");
     if add_light {
-        scene
-            .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
-            .add()
-            .expect("light inserts");
+        let builder =
+            scene.directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0));
+        if light_yaw_deg == 0.0 {
+            builder.add().expect("light inserts");
+        } else {
+            builder
+                .transform(Transform::IDENTITY.rotate_y_deg(light_yaw_deg))
+                .add()
+                .expect("rotated light inserts");
+        }
     }
     let camera = scene.add_default_camera().expect("camera inserts");
     let environment = environment.or_else(|| add_light.then(|| assets.default_environment()));
@@ -968,60 +1427,6 @@ fn pixel_at(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     rgba[offset..offset + 4]
         .try_into()
         .expect("pixel slice has four channels")
-}
-
-fn max_luminance_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> u16 {
-    let height = rgba.len() as u32 / width / 4;
-    let mut max_luminance = 0;
-    for y in 0..height {
-        for x in min_x..max_x {
-            let pixel = pixel_at(rgba, width, x, y);
-            max_luminance =
-                max_luminance.max(u16::from(pixel[0]) + u16::from(pixel[1]) + u16::from(pixel[2]));
-        }
-    }
-    max_luminance
-}
-
-fn max_rgb_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> [u16; 3] {
-    let height = rgba.len() as u32 / width / 4;
-    let mut max_rgb = [0, 0, 0];
-    for y in 0..height {
-        for x in min_x..max_x {
-            let pixel = pixel_at(rgba, width, x, y);
-            max_rgb[0] = max_rgb[0].max(u16::from(pixel[0]));
-            max_rgb[1] = max_rgb[1].max(u16::from(pixel[1]));
-            max_rgb[2] = max_rgb[2].max(u16::from(pixel[2]));
-        }
-    }
-    max_rgb
-}
-
-fn average_rgb_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> [f32; 3] {
-    let height = rgba.len() as u32 / width / 4;
-    let mut total = [0_u64; 3];
-    let mut count = 0_u64;
-    for y in 0..height {
-        for x in min_x..max_x {
-            let pixel = pixel_at(rgba, width, x, y);
-            for (channel, sum) in total.iter_mut().enumerate() {
-                *sum += u64::from(pixel[channel]);
-            }
-            count += 1;
-        }
-    }
-    total.map(|sum| sum as f32 / count as f32)
-}
-
-fn rgb_sum(value: [u16; 3]) -> u16 {
-    value[0] + value[1] + value[2]
-}
-
-fn rgb_distance(left: [u16; 3], right: [u16; 3]) -> u16 {
-    left.into_iter()
-        .zip(right)
-        .map(|(left, right)| left.abs_diff(right))
-        .sum()
 }
 
 fn write_ppm_artifact(dir: &Path, artifact: &VisualArtifact) {

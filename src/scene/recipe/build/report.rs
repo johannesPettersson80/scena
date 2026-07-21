@@ -6,7 +6,7 @@ use super::{
     OVERRIDE_MAX_INDICES, OVERRIDE_MAX_INSTANCES, OVERRIDE_MAX_MATERIALS, OVERRIDE_MAX_NODES,
     OVERRIDE_MAX_OUTPUT_PIXELS, OVERRIDE_MAX_PARTICLES, OVERRIDE_MAX_RECIPE_BYTES,
     OVERRIDE_MAX_TEXTURE_BYTES, OVERRIDE_MAX_TEXTURES, OVERRIDE_MAX_VERTICES, OVERRIDE_NETWORK,
-    OVERRIDE_ROOTS, OVERRIDE_URI_SCHEMES, RECIPE_POLICY_SCHEMA_V1, RecipeBuildPolicy,
+    OVERRIDE_URI_SCHEMES, RECIPE_POLICY_SCHEMA_V1, RecipeBuildPolicy,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,13 +142,19 @@ impl RecipeBuildPolicy {
             allowed_roots: self
                 .allowed_roots
                 .iter()
-                .map(|root| RecipeBuildPolicyRootV1 {
+                .zip(&self.allowed_root_operator_overrides)
+                .map(|(root, operator_override)| RecipeBuildPolicyRootV1 {
                     path: root
                         .canonicalize()
                         .unwrap_or_else(|_| root.clone())
                         .display()
                         .to_string(),
-                    source: self.source_for(OVERRIDE_ROOTS).to_owned(),
+                    source: if *operator_override {
+                        "operator_override"
+                    } else {
+                        "compiled_default"
+                    }
+                    .to_owned(),
                 })
                 .collect(),
             limits,

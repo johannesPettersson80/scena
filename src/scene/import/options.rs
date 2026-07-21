@@ -1,4 +1,4 @@
-use crate::animation::AnimationTarget;
+use crate::animation::{AnimationInterpolation, AnimationTarget};
 use crate::scene::{Angle, Quat, Transform, Vec3};
 
 use super::{ImportOptions, SourceCoordinateSystem, SourceUnits};
@@ -50,6 +50,22 @@ impl ImportOptions {
             AnimationTarget::Translation => self.source_coordinate_system.convert_vec3(value),
             AnimationTarget::Scale => self.source_coordinate_system.convert_scale(value),
             AnimationTarget::Rotation | AnimationTarget::Weights => value,
+        }
+    }
+
+    pub(super) fn convert_animation_rotation(
+        self,
+        interpolation: AnimationInterpolation,
+        output_index: usize,
+        value: Quat,
+    ) -> Quat {
+        let is_cubic_tangent =
+            interpolation == AnimationInterpolation::CubicSpline && output_index % 3 != 1;
+        if is_cubic_tangent {
+            self.source_coordinate_system
+                .convert_rotation_derivative(value)
+        } else {
+            self.source_coordinate_system.convert_rotation(value)
         }
     }
 
@@ -119,7 +135,14 @@ impl SourceCoordinateSystem {
         let Some(basis) = self.basis_rotation() else {
             return rotation;
         };
-        multiply_quat(basis, multiply_quat(rotation, inverse_unit_quat(basis)))
+        normalize_quat(conjugate_quat(basis, rotation))
+    }
+
+    fn convert_rotation_derivative(self, derivative: Quat) -> Quat {
+        let Some(basis) = self.basis_rotation() else {
+            return derivative;
+        };
+        conjugate_quat(basis, derivative)
     }
 
     fn basis_rotation(self) -> Option<Quat> {
@@ -134,13 +157,17 @@ impl SourceCoordinateSystem {
     }
 }
 
-fn multiply_quat(left: Quat, right: Quat) -> Quat {
-    normalize_quat(Quat::from_xyzw(
+fn conjugate_quat(basis: Quat, value: Quat) -> Quat {
+    multiply_quat_raw(basis, multiply_quat_raw(value, inverse_unit_quat(basis)))
+}
+
+fn multiply_quat_raw(left: Quat, right: Quat) -> Quat {
+    Quat::from_xyzw(
         left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
         left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
         left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
         left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
-    ))
+    )
 }
 
 fn inverse_unit_quat(rotation: Quat) -> Quat {
@@ -160,4 +187,140 @@ fn normalize_quat(value: Quat) -> Quat {
         value.z * inverse_length,
         value.w * inverse_length,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::animation::{
+        AnimationClipKey, AnimationInterpolation, AnimationOutput, AnimationSourceChannel,
+        AnimationSourceClip,
+    };
+    use crate::scene::NodeKey;
+    use slotmap::Key;
+
+    #[test]
+    fn z_up_rotation_animation_uses_the_static_transform_basis() {
+        let options = ImportOptions::gltf_default()
+            .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded);
+        let source_rotation = Transform::IDENTITY.rotate_z_deg(90.0).rotation;
+        let clip = AnimationSourceClip::new(
+            Some("z-up-rotation".to_owned()),
+            vec![AnimationSourceChannel::new(
+                0,
+                AnimationTarget::Rotation,
+                vec![0.0, 1.0],
+                AnimationOutput::Quat(vec![Quat::IDENTITY, source_rotation]),
+                AnimationInterpolation::Linear,
+            )],
+            1.0,
+        );
+        let rebound = clip
+            .rebind_imported_many(
+                AnimationClipKey::fresh(),
+                |_, _| vec![NodeKey::null()],
+                |target, value| options.convert_animation_vec3(target, value),
+                |interpolation, index, value| {
+                    options.convert_animation_rotation(interpolation, index, value)
+                },
+            )
+            .expect("converted animation remains valid");
+        let actual = rebound.channels()[0]
+            .sample_quat(1.0)
+            .expect("rotation key samples");
+        let expected = options
+            .convert_transform(Transform {
+                rotation: source_rotation,
+                ..Transform::IDENTITY
+            })
+            .rotation;
+
+        assert_same_orientation(actual, expected);
+    }
+
+    #[test]
+    fn z_up_cubic_rotation_converts_derivative_tangents_without_normalizing_them() {
+        let options = ImportOptions::gltf_default()
+            .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded);
+        let end = Transform::IDENTITY.rotate_z_deg(90.0).rotation;
+        let source = AnimationSourceClip::new(
+            Some("z-up-cubic-rotation".to_owned()),
+            vec![AnimationSourceChannel::new(
+                0,
+                AnimationTarget::Rotation,
+                vec![0.0, 1.0],
+                AnimationOutput::Quat(vec![
+                    Quat::from_xyzw(0.0, 0.0, 0.0, 0.0),
+                    Quat::IDENTITY,
+                    Quat::from_xyzw(0.0, 0.0, 0.5, 0.0),
+                    Quat::from_xyzw(0.0, 0.0, 0.5, 0.0),
+                    end,
+                    Quat::from_xyzw(0.0, 0.0, 0.0, 0.0),
+                ]),
+                AnimationInterpolation::CubicSpline,
+            )],
+            1.0,
+        );
+        let source_rebound = source.rebind(
+            AnimationClipKey::fresh(),
+            |_| Some(NodeKey::null()),
+            |_, value| value,
+        );
+        let converted = source
+            .rebind_imported_many(
+                AnimationClipKey::fresh(),
+                |_, _| vec![NodeKey::null()],
+                |target, value| options.convert_animation_vec3(target, value),
+                |interpolation, index, value| {
+                    options.convert_animation_rotation(interpolation, index, value)
+                },
+            )
+            .expect("converted cubic animation remains valid");
+
+        for time in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let source_sample = source_rebound.channels()[0]
+                .sample_quat(time)
+                .expect("source cubic rotation samples");
+            let expected = options
+                .convert_transform(Transform {
+                    rotation: source_sample,
+                    ..Transform::IDENTITY
+                })
+                .rotation;
+            let actual = converted.channels()[0]
+                .sample_quat(time)
+                .expect("converted cubic rotation samples");
+            assert_same_orientation(actual, expected);
+        }
+
+        let tangent = options.convert_animation_rotation(
+            AnimationInterpolation::CubicSpline,
+            2,
+            Quat::from_xyzw(0.0, 0.0, 0.5, 0.0),
+        );
+        let norm = (tangent.x * tangent.x
+            + tangent.y * tangent.y
+            + tangent.z * tangent.z
+            + tangent.w * tangent.w)
+            .sqrt();
+        assert!(
+            (norm - 0.5).abs() <= 0.0001,
+            "tangent norm changed: {tangent:?}"
+        );
+        assert!(
+            tangent.y.abs() >= 0.4999,
+            "Z derivative must map to Y: {tangent:?}"
+        );
+    }
+
+    fn assert_same_orientation(actual: Quat, expected: Quat) {
+        let dot = actual.x * expected.x
+            + actual.y * expected.y
+            + actual.z * expected.z
+            + actual.w * expected.w;
+        assert!(
+            dot.abs() >= 0.9999,
+            "quaternion orientations differ: actual={actual:?} expected={expected:?} dot={dot}"
+        );
+    }
 }

@@ -9,6 +9,12 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
     let help = help_report();
     assert_contract(
         &help,
+        "capabilities [--live] [--json]",
+        &["scena.capability_report.v1"],
+        &["scena.capability_report.v1", "scena.cli_error.v1"],
+    );
+    assert_contract(
+        &help,
         "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]",
         &[
             "scena.render_introspection.v1",
@@ -48,7 +54,7 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
     );
     assert_contract(
         &help,
-        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>]",
+        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
         &["scena.scene_recipe_diff_result.v1"],
         &[
             "scena.scene_recipe_validation.v1",
@@ -73,6 +79,7 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
             &[success],
             &[
                 "scena.asset_doctor.v1",
+                "scena.recipe_build_result.v1",
                 "scena.scene_recipe_validation.v1",
                 "scena.cli_error.v1",
             ],
@@ -96,8 +103,29 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
             vec!["scena.interaction_verification.v1"],
         ),
     ] {
-        assert_contract(&help, command, &success, &["scena.cli_error.v1"]);
+        assert_contract(
+            &help,
+            command,
+            &success,
+            &[
+                "scena.recipe_build_result.v1",
+                "scena.scene_recipe_validation.v1",
+                "scena.cli_error.v1",
+            ],
+        );
     }
+
+    assert_contract(
+        &help,
+        "doctor <asset-or-recipe>",
+        &["scena.asset_doctor.v1", "scena.recipe_build_result.v1"],
+        &[
+            "scena.asset_doctor.v1",
+            "scena.recipe_build_result.v1",
+            "scena.scene_recipe_validation.v1",
+            "scena.cli_error.v1",
+        ],
+    );
 }
 
 #[test]
@@ -128,9 +156,64 @@ fn fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas() {
         ],
         vec!["inspect", path_str(&invalid)],
         vec!["diagnose", path_str(&invalid), "--visibility"],
+        vec!["doctor", path_str(&invalid)],
     ] {
         assert_failure_stdout_schema(run(&args), "scena.scene_recipe_validation.v1");
     }
+
+    let appearance_expectation = root.join("appearance.json");
+    fs::write(
+        &appearance_expectation,
+        r#"{"schema":"scena.appearance_expectation.v1","targets":[]}"#,
+    )
+    .expect("appearance expectation writes");
+    assert_failure_stdout_schema(
+        run(&[
+            "verify",
+            "appearance",
+            path_str(&invalid),
+            "--expect",
+            path_str(&appearance_expectation),
+        ]),
+        "scena.scene_recipe_validation.v1",
+    );
+    assert_failure_stdout_schema(
+        run(&[
+            "verify",
+            "animation",
+            path_str(&invalid),
+            "--clip",
+            "missing",
+            "--times",
+            "0",
+        ]),
+        "scena.scene_recipe_validation.v1",
+    );
+    let interaction_expectation = root.join("interaction.json");
+    fs::write(
+        &interaction_expectation,
+        r#"{"schema":"scena.interaction_expectation.v1","viewport":{"width_css_px":64.0,"height_css_px":64.0,"device_pixel_ratio":1.0},"steps":[{"action":"pick","x_css_px":1.0,"y_css_px":1.0,"expect_hit":false}]}"#,
+    )
+    .expect("interaction expectation writes");
+    assert_failure_stdout_schema(
+        run(&[
+            "verify",
+            "interaction",
+            path_str(&invalid),
+            "--expect",
+            path_str(&interaction_expectation),
+        ]),
+        "scena.scene_recipe_validation.v1",
+    );
+    assert_failure_stdout_schema(
+        run(&[
+            "repair",
+            path_str(&invalid),
+            "--from",
+            path_str(&root.join("unused-report.json")),
+        ]),
+        "scena.scene_recipe_validation.v1",
+    );
 
     let recipe_png = root.join("recipe.png");
     assert_failure_stdout_schema(
@@ -232,6 +315,7 @@ fn fr04_each_command_has_a_real_structured_argument_error_fixture() {
         vec!["schema", "get"],
         vec!["vocab", "list", "unexpected"],
         vec!["vocab", "get"],
+        vec!["capabilities", "unexpected"],
         vec!["policy", "recipe", "unexpected"],
         vec!["validate-recipe"],
         vec!["place"],
@@ -289,6 +373,7 @@ fn fr04_every_declared_output_schema_has_real_cli_fixture_evidence() {
         .expect("command contracts are an array")
     {
         let command = contract["command"].as_str().expect("command is a string");
+        let evidence_command = command.replace(" [--allow-root <directory>]...", "");
         for outcome in ["success", "error"] {
             for schema in contract["emits"][outcome]
                 .as_array()
@@ -299,7 +384,9 @@ fn fr04_every_declared_output_schema_has_real_cli_fixture_evidence() {
                     continue;
                 }
                 let evidence = EVIDENCE.iter().find(|row| {
-                    row.command == command && row.outcome == outcome && row.schema == schema
+                    row.command == evidence_command
+                        && row.outcome == outcome
+                        && row.schema == schema
                 });
                 let evidence = evidence.unwrap_or_else(|| {
                     panic!("missing real CLI fixture evidence for {command} {outcome} {schema}")
@@ -379,6 +466,20 @@ const EVIDENCE: &[Evidence] = &[
         "fr04_vocab_get_has_a_real_success_fixture"
     ),
     evidence!(
+        "capabilities [--live] [--json]",
+        "success",
+        "scena.capability_report.v1",
+        "tests/a03_capabilities_cli.rs",
+        "static_capabilities_are_explicitly_no_device_and_json_alias_matches"
+    ),
+    evidence!(
+        "capabilities [--live] [--json]",
+        "error",
+        "scena.capability_report.v1",
+        "tests/a03_capabilities_cli.rs",
+        "live_capabilities_are_measured_or_fail_closed_with_a_structured_reason"
+    ),
+    evidence!(
         "policy recipe",
         "success",
         "scena.recipe_policy.v1",
@@ -386,14 +487,14 @@ const EVIDENCE: &[Evidence] = &[
         "fr01_vocab_and_fr04_policy_are_machine_discoverable"
     ),
     evidence!(
-        "validate-recipe <recipe.json> [--max-imports <n>]",
+        "validate-recipe <recipe.json> [--full|--syntax-only] [--max-imports <n>]",
         "success",
         "scena.scene_recipe_validation.v1",
         "tests/fr04_cli_schema_matrix.rs",
         "fr04_validate_recipe_has_a_real_success_fixture"
     ),
     evidence!(
-        "validate-recipe <recipe.json> [--max-imports <n>]",
+        "validate-recipe <recipe.json> [--full|--syntax-only] [--max-imports <n>]",
         "error",
         "scena.scene_recipe_validation.v1",
         "tests/scena_cli_recipe.rs",
@@ -519,21 +620,21 @@ const EVIDENCE: &[Evidence] = &[
         "fr06_recipe_aov_cli_writes_portable_images_and_persistent_legend"
     ),
     evidence!(
-        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>]",
+        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
         "success",
         "scena.scene_recipe_diff_result.v1",
         "tests/fr07_recipe_diff.rs",
         "fr07_diff_cli_keeps_structural_diff_renderer_free"
     ),
     evidence!(
-        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>]",
+        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
         "error",
         "scena.scene_recipe_validation.v1",
         "tests/fr07_recipe_diff.rs",
         "fr07_diff_cli_emits_declared_validation_and_build_failure_schemas"
     ),
     evidence!(
-        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>]",
+        "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
         "error",
         "scena.scene_recipe_build.v1",
         "tests/fr07_recipe_diff.rs",
@@ -561,7 +662,14 @@ const EVIDENCE: &[Evidence] = &[
         "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
     evidence!(
-        "examples agent [get] <template> [--out <dir>]",
+        "examples agent list",
+        "success",
+        "scena.agent_template_catalog.v1",
+        "tests/a04_cli_ergonomics.rs",
+        "template_catalog_has_one_canonical_name_and_aliases_emit_migration_metadata"
+    ),
+    evidence!(
+        "examples agent get <template> [--out <dir>]",
         "success",
         "scena.agent_smoke_template.v1",
         "tests/scena_cli_agent_templates.rs",
@@ -580,6 +688,13 @@ const EVIDENCE: &[Evidence] = &[
         "scena.asset_doctor.v1",
         "tests/scena_cli_agent.rs",
         "scena_cli_missing_assets_emit_json_not_command_errors"
+    ),
+    evidence!(
+        "render <asset-or-recipe> --introspect --out <png> [--gpu]",
+        "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
     ),
     evidence!(
         "render <asset-or-recipe> --introspect --out <png> [--gpu]",
@@ -605,6 +720,13 @@ const EVIDENCE: &[Evidence] = &[
     evidence!(
         "inspect <asset-or-recipe>",
         "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
+    ),
+    evidence!(
+        "inspect <asset-or-recipe>",
+        "error",
         "scena.scene_recipe_validation.v1",
         "tests/fr04_cli_schema_matrix.rs",
         "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
@@ -626,6 +748,13 @@ const EVIDENCE: &[Evidence] = &[
     evidence!(
         "diagnose <asset-or-recipe> --visibility [--handle <u64>]",
         "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
+    ),
+    evidence!(
+        "diagnose <asset-or-recipe> --visibility [--handle <u64>]",
+        "error",
         "scena.scene_recipe_validation.v1",
         "tests/fr04_cli_schema_matrix.rs",
         "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
@@ -639,10 +768,31 @@ const EVIDENCE: &[Evidence] = &[
     ),
     evidence!(
         "doctor <asset-or-recipe>",
+        "success",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "imports_only_recipe_commands_build_every_import"
+    ),
+    evidence!(
+        "doctor <asset-or-recipe>",
         "error",
         "scena.asset_doctor.v1",
         "tests/scena_cli_agent.rs",
         "scena_doctor_cli_emits_json_and_nonzero_for_broken_asset"
+    ),
+    evidence!(
+        "doctor <asset-or-recipe>",
+        "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
+    ),
+    evidence!(
+        "doctor <asset-or-recipe>",
+        "error",
+        "scena.scene_recipe_validation.v1",
+        "tests/fr04_cli_schema_matrix.rs",
+        "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
     evidence!(
         "browser-proof [scene-host|m6] [--backend webgl2] [--dry-run]",
@@ -666,11 +816,39 @@ const EVIDENCE: &[Evidence] = &[
         "scena_repair_cli_exits_nonzero_for_irreducible_diagnosis"
     ),
     evidence!(
+        "repair <asset-or-recipe> --from <report.json>",
+        "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
+    ),
+    evidence!(
+        "repair <asset-or-recipe> --from <report.json>",
+        "error",
+        "scena.scene_recipe_validation.v1",
+        "tests/fr04_cli_schema_matrix.rs",
+        "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
+    ),
+    evidence!(
         "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
         "success",
         "scena.appearance_introspection.v1",
         "tests/scena_cli_agent.rs",
         "scena_verify_appearance_cli_checks_variant_color_and_fails_closed"
+    ),
+    evidence!(
+        "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
+        "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
+    ),
+    evidence!(
+        "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
+        "error",
+        "scena.scene_recipe_validation.v1",
+        "tests/fr04_cli_schema_matrix.rs",
+        "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
     evidence!(
         "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change] [--expect-translations 'x,y,z;...']",
@@ -680,11 +858,39 @@ const EVIDENCE: &[Evidence] = &[
         "scena_verify_animation_cli_checks_sampled_change_and_fails_closed"
     ),
     evidence!(
+        "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change] [--expect-translations 'x,y,z;...']",
+        "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
+    ),
+    evidence!(
+        "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change] [--expect-translations 'x,y,z;...']",
+        "error",
+        "scena.scene_recipe_validation.v1",
+        "tests/fr04_cli_schema_matrix.rs",
+        "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
+    ),
+    evidence!(
         "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>",
         "success",
         "scena.interaction_verification.v1",
         "tests/scena_cli_interaction.rs",
         "scena_verify_interaction_cli_runs_synthetic_select_and_fails_wrong_handle"
+    ),
+    evidence!(
+        "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>",
+        "error",
+        "scena.recipe_build_result.v1",
+        "tests/scena_cli_recipe.rs",
+        "recipe_commands_check_policy_for_every_import"
+    ),
+    evidence!(
+        "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>",
+        "error",
+        "scena.scene_recipe_validation.v1",
+        "tests/fr04_cli_schema_matrix.rs",
+        "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
 ];
 
@@ -700,7 +906,14 @@ fn help_report() -> serde_json::Value {
 fn assert_contract(help: &serde_json::Value, command: &str, success: &[&str], error: &[&str]) {
     let contract = help["command_contracts"]
         .as_array()
-        .and_then(|contracts| contracts.iter().find(|row| row["command"] == command))
+        .and_then(|contracts| {
+            contracts.iter().find(|row| {
+                row["command"].as_str().is_some_and(|declared| {
+                    declared == command
+                        || declared.strip_suffix(" [--allow-root <directory>]...") == Some(command)
+                })
+            })
+        })
         .unwrap_or_else(|| panic!("missing command contract for {command}: {help:#}"));
     assert_eq!(contract["emits"]["success"], strings(success), "{command}");
     assert_eq!(contract["emits"]["error"], strings(error), "{command}");

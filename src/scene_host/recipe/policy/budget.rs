@@ -202,6 +202,39 @@ impl RecipeTextureBudget {
         Ok(resolved)
     }
 
+    pub(in crate::scene_host::recipe) fn reserve_builtin_environment(
+        &mut self,
+        policy: &RecipeBuildPolicy,
+        source_bytes: usize,
+        diagnostic_path: impl Into<String>,
+    ) -> Result<(), Box<SceneRecipeDiagnosticV1>> {
+        let diagnostic_path = diagnostic_path.into();
+        self.reserve_texture_slot(policy, &diagnostic_path)?;
+        if source_bytes > policy.fetch_byte_limit() {
+            return Err(Box::new(error_diagnostic(
+                diagnostic_path,
+                "policy_violation",
+                format!(
+                    "bundled environment source is {source_bytes} bytes, exceeding RecipeBuildPolicy fetch_byte_limit {}",
+                    policy.fetch_byte_limit()
+                ),
+                "choose a smaller preset or raise the operator-owned fetch_byte_limit policy",
+            )));
+        }
+        if source_bytes > policy.max_texture_bytes() {
+            return Err(Box::new(error_diagnostic(
+                diagnostic_path,
+                "policy_violation",
+                format!(
+                    "bundled environment source is {source_bytes} bytes, exceeding RecipeBuildPolicy max_texture_bytes {}",
+                    policy.max_texture_bytes()
+                ),
+                "choose a smaller preset or raise the operator-owned max_texture_bytes policy",
+            )));
+        }
+        Ok(())
+    }
+
     pub(in crate::scene_host::recipe) fn reserve_loaded_textures(
         &mut self,
         policy: &RecipeBuildPolicy,

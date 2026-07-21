@@ -18,6 +18,10 @@ fn environment_preset_catalog_exposes_metadata_and_package_budget() {
         "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
     );
     assert_eq!(
+        studio.runtime_uri(),
+        "scena://bundled/environment/studio_small_03_128x64.hdr"
+    );
+    assert_eq!(
         studio.source_sha256(),
         "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817"
     );
@@ -28,7 +32,17 @@ fn environment_preset_catalog_exposes_metadata_and_package_budget() {
             .contains("polyhaven.com/a/studio_small_03")
     );
     assert!(studio.contract().contains("studio HDR"));
-    assert_eq!(studio.files(), &[studio.source_path()]);
+    assert_eq!(
+        studio.files(),
+        &[
+            studio.source_path(),
+            "tests/assets/environment/generated/studio_small_03_128x64.hdr",
+        ]
+    );
+    assert!(
+        studio.source_size_bytes() < 50_000,
+        "the package-embedded runtime derivative must not ship the full 1K HDR into every WASM bundle"
+    );
 
     let total_bytes = EnvironmentPreset::ALL
         .iter()
@@ -48,7 +62,7 @@ fn environment_presets_load_without_user_supplied_paths() {
         let desc = assets
             .try_environment(handle)
             .expect("preset handle resolves in the source asset store");
-        assert_eq!(desc.source_path().as_str(), preset.metadata().source_path());
+        assert_eq!(desc.source_path().as_str(), preset.metadata().runtime_uri());
     }
 }
 

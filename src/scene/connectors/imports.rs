@@ -47,7 +47,9 @@ impl Scene {
 
 fn connector_lookup_error(error: LookupError, requested_name: &str) -> ConnectionError {
     match error {
-        LookupError::ConnectorNotFound { name } => ConnectionError::MissingConnectorName { name },
+        LookupError::ConnectorNotFound { name, .. } => {
+            ConnectionError::MissingConnectorName { name }
+        }
         LookupError::AmbiguousConnectorName { name, hosts } => {
             ConnectionError::AmbiguousImportConnector { name, hosts }
         }

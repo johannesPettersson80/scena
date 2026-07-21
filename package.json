@@ -14,6 +14,8 @@
   },
   "scripts": {
     "browser:m6": "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    "browser:q01-parity": "node tests/browser/m6_rust_wasm_renderer_probe.js --q01-parity-only",
+    "browser:c11-lifecycle": "node tests/browser/m6_rust_wasm_renderer_probe.js --lifecycle-only",
     "browser:q02-materials": "node tests/browser/m6_rust_wasm_renderer_probe.js --q02-material-only",
     "test:required-gpu-parity": "node tests/browser/required_gpu_parity_test.js && node tests/browser/pf01_output_toggle_validation_test.js",
     "test:pf01-output-toggle-validation": "node tests/browser/pf01_output_toggle_validation_test.js",

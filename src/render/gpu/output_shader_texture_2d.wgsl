@@ -609,7 +609,18 @@ fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
        light_ndc.z < 0.0 || light_ndc.z > 1.0 {
         return 1.0;
     }
-    return textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv, light_ndc.z);
+    let shadow_texel_size = 1.0 / vec2<f32>(textureDimensions(shadow_map));
+    var shadow_visibility = 0.0;
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>(-1.0, -1.0), light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 0.0, -1.0), light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 1.0, -1.0), light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>(-1.0,  0.0), light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv, light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 1.0,  0.0), light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>(-1.0,  1.0), light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 0.0,  1.0), light_ndc.z);
+    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 1.0,  1.0), light_ndc.z);
+    return shadow_visibility / 9.0;
 }
 
 fn area_light_sample_position(index: u32, sample: u32) -> vec3<f32> {

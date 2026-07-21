@@ -30,6 +30,8 @@ pub enum SceneHostErrorCode {
 pub struct SceneHostError {
     code: SceneHostErrorCode,
     message: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    candidates: Vec<String>,
 }
 
 impl SceneHostError {
@@ -37,6 +39,7 @@ impl SceneHostError {
         Self {
             code,
             message: message.into(),
+            candidates: Vec::new(),
         }
     }
 
@@ -46,6 +49,15 @@ impl SceneHostError {
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub fn candidates(&self) -> &[String] {
+        &self.candidates
+    }
+
+    pub fn with_candidates(mut self, candidates: Vec<String>) -> Self {
+        self.candidates = candidates;
+        self
     }
 }
 
@@ -83,7 +95,17 @@ impl From<crate::diagnostics::InstantiateError> for SceneHostError {
 
 impl From<crate::diagnostics::LookupError> for SceneHostError {
     fn from(error: crate::diagnostics::LookupError) -> Self {
-        Self::new(SceneHostErrorCode::Lookup, error.to_string())
+        let candidates = match &error {
+            crate::diagnostics::LookupError::NodeNameNotFound { candidates, .. }
+            | crate::diagnostics::LookupError::AnchorNotFound { candidates, .. }
+            | crate::diagnostics::LookupError::ConnectorNotFound { candidates, .. }
+            | crate::diagnostics::LookupError::ClipNotFound { candidates, .. }
+            | crate::diagnostics::LookupError::VariantNotFound { candidates, .. } => {
+                candidates.clone()
+            }
+            _ => Vec::new(),
+        };
+        Self::new(SceneHostErrorCode::Lookup, error.to_string()).with_candidates(candidates)
     }
 }
 
@@ -95,7 +117,11 @@ impl From<crate::diagnostics::PrepareError> for SceneHostError {
 
 impl From<crate::diagnostics::RenderError> for SceneHostError {
     fn from(error: crate::diagnostics::RenderError) -> Self {
-        Self::new(SceneHostErrorCode::Render, error.to_string())
+        let code = match &error {
+            crate::diagnostics::RenderError::NoActiveCamera => SceneHostErrorCode::NoActiveCamera,
+            _ => SceneHostErrorCode::Render,
+        };
+        Self::new(code, error.to_string())
     }
 }
 

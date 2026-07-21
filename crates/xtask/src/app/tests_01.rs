@@ -107,7 +107,19 @@ pub(crate) fn parses_doctor_modes() {
     );
     assert_eq!(
         parse_command(vec!["release-readiness".into()]),
-        Ok(Command::ReleaseReadiness)
+        Ok(Command::ReleaseReadiness {
+            artifact_root: None
+        })
+    );
+    assert_eq!(
+        parse_command(vec![
+            "release-readiness".into(),
+            "--artifact-root".into(),
+            "target/gate-artifacts".into()
+        ]),
+        Ok(Command::ReleaseReadiness {
+            artifact_root: Some("target/gate-artifacts".into())
+        })
     );
     assert_eq!(
         parse_command(vec![

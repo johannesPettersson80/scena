@@ -14,6 +14,25 @@ pub(crate) fn check_q02_round_e_material_proof(root: &Path, findings: &mut Vec<F
         root,
         findings,
         "Q02-ROUND-E-MATERIALS",
+        "tests/m8_visual_proof.rs",
+        &[
+            "m8_khr_material_visual_oracle_rejects_disabled_and_wrong_direction_mutations",
+            "KHR_VISIBLE_CHANNEL_DELTA: u8 = 4",
+            "KHR_NUMERICAL_RMSE_MAX: f32 = 1.1",
+            "KHR_EFFECT_ALIGNMENT_MIN: f32 = 0.9",
+            "two_lsb_effect_nudge_rejected",
+            "wrong_direction_rejected",
+            "one_lsb_noise_passed",
+            "anisotropy-light-left",
+            "anisotropy-light-right",
+            "khr-material-feature-proof.json",
+            "q02-khr-material-feature-mutation-proof",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "Q02-ROUND-E-MATERIALS",
         "scripts/round_e_material_evaluator.cjs",
         &[
             "round-e-shared-material-threshold-evaluator",
@@ -189,6 +208,49 @@ pub(crate) fn check_q02_round_e_material_proof(root: &Path, findings: &mut Vec<F
             "round-e-cpu-material-proof.json",
             "round-e-cloudflare-material-proof.json",
             "round-e-webgpu-material-proof/result.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "Q02-ROUND-E-MATERIALS",
+        "docs/rendering.md",
+        &[
+            "KHR material visual-proof contract",
+            "two-LSB effect nudge",
+            "Directional anisotropy",
+            "under two light directions",
+            "khr-material-feature-proof.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "Q02-ROUND-E-MATERIALS",
+        "README.md",
+        &[
+            "KHR material feature proofs",
+            "disabled and inverted-effect mutations",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "Q02-ROUND-E-MATERIALS",
+        "CHANGELOG.md",
+        &[
+            "Strengthen the KHR material visual proofs",
+            "two anisotropy light directions",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "Q02-ROUND-E-MATERIALS",
+        "docs/release-notes/v1.8.0.md",
+        &[
+            "one- or two-LSB change",
+            "disabled and inverted-effect mutations",
         ],
     );
 }

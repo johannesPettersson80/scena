@@ -1,4 +1,4 @@
-use crate::material::Color;
+use crate::material::{Color, srgb_u8_to_linear};
 
 use super::{RasterTarget, ReconstructionFilter};
 
@@ -235,9 +235,9 @@ fn accumulate_rgba8_sample(
     let source_offset = source_target
         .pixel_index(source_x, source_y)
         .saturating_mul(4);
-    linear[0] += srgb8_to_linear(source_frame[source_offset]) * weight;
-    linear[1] += srgb8_to_linear(source_frame[source_offset + 1]) * weight;
-    linear[2] += srgb8_to_linear(source_frame[source_offset + 2]) * weight;
+    linear[0] += srgb_u8_to_linear(source_frame[source_offset]) * weight;
+    linear[1] += srgb_u8_to_linear(source_frame[source_offset + 1]) * weight;
+    linear[2] += srgb_u8_to_linear(source_frame[source_offset + 2]) * weight;
     *alpha += (f32::from(source_frame[source_offset + 3]) / 255.0) * weight;
     *weight_sum += weight;
 }
@@ -254,7 +254,8 @@ fn encode_linear_average(linear: [f32; 3], alpha: f32, weight_sum: f32) -> [u8; 
     ]
 }
 
-fn srgb8_to_linear(value: u8) -> f32 {
+#[cfg(test)]
+fn srgb8_to_linear_formula(value: u8) -> f32 {
     let value = f32::from(value) / 255.0;
     if value <= 0.04045 {
         value / 12.92
@@ -275,6 +276,17 @@ fn linear_to_srgb8(value: f32) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn srgb8_lookup_is_bit_identical_to_the_transfer_formula() {
+        for value in u8::MIN..=u8::MAX {
+            assert_eq!(
+                srgb_u8_to_linear(value).to_bits(),
+                super::srgb8_to_linear_formula(value).to_bits(),
+                "lookup entry {value} drifted from the transfer formula"
+            );
+        }
+    }
+
     use super::*;
     use crate::diagnostics::Backend;
 

@@ -1,0 +1,144 @@
+{
+  "schema": "scena.q01.required_webgpu_pixel_parity.v1",
+  "proof_class": "required-live-webgpu-pixel-parity",
+  "status": "passed",
+  "failure_codes": [],
+  "backend": "WebGpu",
+  "adapter": {
+    "name": "example-hardware-adapter",
+    "device_type": "DiscreteGpu",
+    "backend": "BrowserWebGpu"
+  },
+  "command": {
+    "argv": [
+      "node",
+      "tests/browser/m6_rust_wasm_renderer_probe.js",
+      "--q01-parity-only"
+    ],
+    "environment": {
+      "SCENA_REQUIRE_PARITY": "1",
+      "SCENA_BROWSER_BACKENDS": "webgpu"
+    }
+  },
+  "renderer_readback": {
+    "source": "renderer-owned-gpu-copy",
+    "width": 64,
+    "height": 64,
+    "rgba8_fnv1a64": "0123456789abcdef"
+  },
+  "fixture": {
+    "id": "m6-identical-unlit-triangle-v1"
+  },
+  "normalization": {
+    "row_origin": "top-left",
+    "transfer": "srgb8",
+    "alpha": "straight-opaque",
+    "dimensions": "exact",
+    "width": 64,
+    "height": 64,
+    "comparison_channels": "rgb"
+  },
+  "thresholds": {
+    "rgb_chebyshev_tolerance": 4,
+    "within_tolerance_fraction_min": 0.995,
+    "rgb_rmse_max": 2.0,
+    "p99_5_channel_delta_max": 4,
+    "foreground_iou_min": 0.995
+  },
+  "mask": {
+    "kind": "two-pixel-gradient-edge-exclusion",
+    "source": "cpu-reference-gradient",
+    "excluded_pixels": 128,
+    "foreground_domain": "edge-excluded"
+  },
+  "metrics": {
+    "compared_pixels": 3968,
+    "masked_edge_pixels": 128,
+    "within_tolerance_fraction": 1.0,
+    "rgb_rmse": 0.0,
+    "p99_5_channel_delta": 0,
+    "foreground_iou": 1.0
+  },
+  "worst_region": {
+    "bbox": [
+      0,
+      0,
+      8,
+      8
+    ],
+    "rgb_rmse": 0.0
+  },
+  "mutations": [
+    {
+      "name": "wrong-colors",
+      "rejected": true,
+      "failure_codes": [
+        "RGB_RMSE"
+      ]
+    },
+    {
+      "name": "geometry-shift",
+      "rejected": true,
+      "failure_codes": [
+        "FOREGROUND_IOU"
+      ]
+    },
+    {
+      "name": "missing-object",
+      "rejected": true,
+      "failure_codes": [
+        "FOREGROUND_IOU"
+      ]
+    },
+    {
+      "name": "vertical-flip",
+      "rejected": true,
+      "failure_codes": [
+        "FOREGROUND_IOU"
+      ]
+    },
+    {
+      "name": "linear-as-srgb",
+      "rejected": true,
+      "failure_codes": [
+        "RGB_RMSE"
+      ]
+    },
+    {
+      "name": "stale-reference",
+      "rejected": true,
+      "failure_codes": [
+        "FOREGROUND_IOU"
+      ]
+    }
+  ],
+  "images": [
+    {
+      "kind": "cpu-reference",
+      "path": "target/gate-artifacts/m6-required-webgpu-pixel-parity/cpu-reference.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 256
+    },
+    {
+      "kind": "gpu-live",
+      "path": "target/gate-artifacts/m6-required-webgpu-pixel-parity/gpu-live.png",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "bytes": 256
+    },
+    {
+      "kind": "diff-heatmap",
+      "path": "target/gate-artifacts/m6-required-webgpu-pixel-parity/diff-heatmap.png",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 192
+    }
+  ],
+  "producer": "node tests/browser/m6_rust_wasm_renderer_probe.js",
+  "commit_sha": "0000000000000000000000000000000000000000",
+  "timestamp_unix_seconds": 0,
+  "source_checksums": [
+    {
+      "path": "tests/browser/required_gpu_parity.js",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ]
+}

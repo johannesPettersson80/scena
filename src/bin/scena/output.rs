@@ -9,6 +9,35 @@ pub(crate) struct CliOutputFormat {
     round_floats: Option<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg(feature = "inspection")]
+pub(crate) struct CliBackendSelectionV1 {
+    source: &'static str,
+    requested: scena::Backend,
+    selected: Option<scena::Backend>,
+    fallback_used: bool,
+}
+
+#[cfg(feature = "inspection")]
+impl CliBackendSelectionV1 {
+    pub(crate) const fn new(gpu_flag: bool, selected: Option<scena::Backend>) -> Self {
+        let requested = if gpu_flag {
+            scena::Backend::HeadlessGpu
+        } else {
+            scena::Backend::Headless
+        };
+        Self {
+            source: if gpu_flag { "cli_flag" } else { "default" },
+            requested,
+            selected,
+            fallback_used: matches!(
+                (requested, selected),
+                (scena::Backend::HeadlessGpu, Some(scena::Backend::Headless))
+            ),
+        }
+    }
+}
+
 pub(crate) fn success(stdout: String) -> CliOutcome {
     CliOutcome {
         stdout,
@@ -33,6 +62,62 @@ pub(crate) fn json_outcome<T: serde::Serialize>(
             .map_err(|error| format!("{context}: {error}"))?,
         exit_code,
     })
+}
+
+#[cfg(feature = "inspection")]
+pub(crate) fn json_outcome_with_backend_selection<T: serde::Serialize>(
+    value: &T,
+    exit_code: i32,
+    context: &str,
+    selection: CliBackendSelectionV1,
+) -> Result<CliOutcome, String> {
+    let mut value = serde_json::to_value(value).map_err(|error| format!("{context}: {error}"))?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| format!("{context}: result envelope must be a JSON object"))?;
+    object.insert(
+        "backend_selection".to_owned(),
+        serde_json::to_value(selection).expect("backend selection is serializable"),
+    );
+    json_outcome(&value, exit_code, context)
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+pub(crate) fn add_backend_selection_to_outcome(
+    mut outcome: CliOutcome,
+    selection: CliBackendSelectionV1,
+) -> Result<CliOutcome, String> {
+    let mut value: serde_json::Value = serde_json::from_str(&outcome.stdout)
+        .map_err(|error| format!("failed to attach backend selection to JSON output: {error}"))?;
+    let object = value.as_object_mut().ok_or_else(|| {
+        "failed to attach backend selection: result envelope must be a JSON object".to_owned()
+    })?;
+    object.insert(
+        "backend_selection".to_owned(),
+        serde_json::to_value(selection).expect("backend selection is serializable"),
+    );
+    outcome.stdout = serde_json::to_string_pretty(&value)
+        .map_err(|error| format!("failed to serialize backend selection: {error}"))?;
+    Ok(outcome)
+}
+
+#[cfg(feature = "inspection")]
+pub(crate) fn add_recipe_policy_to_outcome(
+    mut outcome: CliOutcome,
+    policy: &scena::RecipeBuildPolicyReportV1,
+) -> Result<CliOutcome, String> {
+    let mut value: serde_json::Value = serde_json::from_str(&outcome.stdout)
+        .map_err(|error| format!("failed to attach recipe policy to JSON output: {error}"))?;
+    let object = value.as_object_mut().ok_or_else(|| {
+        "failed to attach recipe policy: result envelope must be a JSON object".to_owned()
+    })?;
+    object.insert(
+        "policy".to_owned(),
+        serde_json::to_value(policy).expect("recipe policy is serializable"),
+    );
+    outcome.stdout = serde_json::to_string_pretty(&value)
+        .map_err(|error| format!("failed to serialize recipe policy: {error}"))?;
+    Ok(outcome)
 }
 
 pub(crate) fn parse_output_format_args(

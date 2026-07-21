@@ -1,7 +1,7 @@
 use crate::app::prelude::*;
 
 const RULE: &str = "Q05-EFFECT-FOOTPRINTS";
-const MODE: &str = "quadrant-mean-rgba-v1";
+const MODE: &str = "local-structure-v2";
 const EFFECT_FIXTURES: &[&str] = &[
     "direct-lights-pbr",
     "shadowed-directional-light",
@@ -105,10 +105,10 @@ pub(crate) fn check_q05_effect_footprint_contracts(root: &Path, findings: &mut V
         "struct EffectPair",
         "struct PixelMask",
         "fn effect_pair_failures",
-        "fn quadrant_reference_matches",
+        "fn quadrant_debug_rows_match",
         "fn fixture_reference_mode",
         "fn reference_mode",
-        "fn q05_reference_oracle_rejects_quadrant_corruption_outside_legacy_samples",
+        "fn q03_quadrant_debug_rows_notice_coarse_corruption",
         "fn q05_effect_footprint_masks_reject_erased_effect_regions",
     ] {
         if !proof.contains(required) {

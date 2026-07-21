@@ -9,7 +9,8 @@ const {
   sanitizeChromiumGpuInfo,
 } = require("./hardware_browser.js");
 
-function result(adapter, drawCalls = 1, nonblack = 64) {
+function result(adapter, drawCalls = 1, nonblack = 64, parity = null) {
+  const gpuFrame = parity && parity.gpu_frame;
   return {
     backend: "WebGpu",
     status: "passed",
@@ -19,7 +20,55 @@ function result(adapter, drawCalls = 1, nonblack = 64) {
     adapter,
     renderer_readback: {
       source: "renderer-owned-gpu-copy",
+      width: gpuFrame && gpuFrame.width,
+      height: gpuFrame && gpuFrame.height,
+      rgba8_base64: gpuFrame && gpuFrame.rgba8_base64,
       pixel_statistics: { nonblack },
+    },
+    parity,
+  };
+}
+
+function parityFixture(gpuTransform = (rgba) => rgba) {
+  const width = 32;
+  const height = 32;
+  const cpu = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const foreground = y >= 4 && y < 28 && x >= 4 && x <= 4 + (y - 4) / 2;
+      cpu[offset] = foreground ? 190 : 0;
+      cpu[offset + 1] = foreground ? 105 : 0;
+      cpu[offset + 2] = foreground ? 45 : 0;
+      cpu[offset + 3] = 255;
+    }
+  }
+  const gpu = gpuTransform(Buffer.from(cpu));
+  return {
+    schema: "scena.m6.cpu_webgpu_parity.v1",
+    status: "passed",
+    backend: "WebGpu",
+    fixture: { id: "m6-identical-unlit-triangle-v1" },
+    normalization: {
+      row_origin: "top-left",
+      transfer: "srgb8",
+      alpha: "straight-opaque",
+      dimensions: "exact",
+      width,
+      height,
+      comparison_channels: "rgb",
+    },
+    cpu_frame: {
+      source: "renderer-owned-cpu-frame",
+      width,
+      height,
+      rgba8_base64: cpu.toString("base64"),
+    },
+    gpu_frame: {
+      source: "renderer-owned-gpu-copy",
+      width,
+      height,
+      rgba8_base64: gpu.toString("base64"),
     },
   };
 }
@@ -50,14 +99,164 @@ assert(
     result: result({ name: "Google SwiftShader", device_type: "Cpu" }),
   }).failure_codes.includes("SOFTWARE_ADAPTER"),
 );
+const requiredHardwarePixels = evaluateRequiredGpuParity({
+  required: true,
+  requestedBackend: "webgpu",
+  result: result(
+    { name: "NVIDIA RTX", device_type: "DiscreteGpu" },
+    1,
+    64,
+    parityFixture(),
+  ),
+});
 assert.strictEqual(
+  requiredHardwarePixels.status,
+  "passed",
+  JSON.stringify(requiredHardwarePixels, null, 2),
+);
+
+const missingPixels = evaluateRequiredGpuParity({
+  required: true,
+  requestedBackend: "webgpu",
+  result: result({ name: "NVIDIA RTX", device_type: "DiscreteGpu" }),
+});
+assert(
+  missingPixels.failure_codes.includes("PIXEL_PARITY_MISSING"),
+  "nonblack renderer output must not pass required WebGPU parity without reference pixels",
+);
+
+const correctPixels = evaluateRequiredGpuParity({
+  required: true,
+  requestedBackend: "webgpu",
+  result: result(
+    { name: "NVIDIA RTX", device_type: "DiscreteGpu" },
+    1,
+    64,
+    parityFixture(),
+  ),
+});
+assert.strictEqual(correctPixels.pixel_parity.status, "passed");
+assert.deepStrictEqual(
+  correctPixels.pixel_parity.mutations.map((mutation) => mutation.name),
+  [
+    "wrong-colors",
+    "geometry-shift",
+    "missing-object",
+    "vertical-flip",
+    "linear-as-srgb",
+    "stale-reference",
+  ],
+);
+assert(correctPixels.pixel_parity.mutations.every((mutation) => mutation.rejected === true));
+assert.strictEqual(correctPixels.pixel_parity.normalization.transfer, "srgb8");
+assert.strictEqual(correctPixels.pixel_parity.mask.kind, "two-pixel-gradient-edge-exclusion");
+assert.strictEqual(correctPixels.pixel_parity.mask.source, "cpu-reference-gradient");
+assert.strictEqual(correctPixels.pixel_parity.mask.foreground_domain, "edge-excluded");
+assert(Array.isArray(correctPixels.pixel_parity.worst_region.bbox));
+assert.strictEqual(typeof correctPixels.pixel_parity.diff_heatmap_rgba8_base64, "string");
+
+const softwareConformance = evaluateRequiredGpuParity({
+  required: false,
+  requestedBackend: "webgpu",
+  result: result(
+    { name: "Google SwiftShader", device_type: "Cpu" },
+    1,
+    64,
+    parityFixture(),
+  ),
+});
+assert.strictEqual(softwareConformance.status, "diagnostic");
+assert.strictEqual(softwareConformance.pixel_parity.status, "passed");
+
+const wrongSoftwarePixels = evaluateRequiredGpuParity({
+  required: false,
+  requestedBackend: "webgpu",
+  result: result(
+    { name: "Google SwiftShader", device_type: "Cpu" },
+    1,
+    64,
+    parityFixture((gpu) => {
+      gpu.fill(0);
+      for (let offset = 3; offset < gpu.length; offset += 4) gpu[offset] = 255;
+      return gpu;
+    }),
+  ),
+});
+assert.strictEqual(
+  wrongSoftwarePixels.status,
+  "failed",
+  "software conformance must evaluate pixels without claiming hardware parity",
+);
+
+const edgeCoverageVariant = evaluateRequiredGpuParity({
+  required: true,
+  requestedBackend: "webgpu",
+  result: result(
+    { name: "NVIDIA RTX", device_type: "DiscreteGpu" },
+    1,
+    64,
+    parityFixture((gpu) => {
+      const width = 32;
+      const height = 32;
+      for (let y = 0; y < height; y += 1) {
+        let rightmost = -1;
+        for (let x = 0; x < width; x += 1) {
+          if (gpu[(y * width + x) * 4] > 0) rightmost = x;
+        }
+        if (rightmost >= 0) {
+          const offset = (y * width + rightmost) * 4;
+          gpu[offset] = 0;
+          gpu[offset + 1] = 0;
+          gpu[offset + 2] = 0;
+        }
+      }
+      return gpu;
+    }),
+  ),
+});
+assert.strictEqual(
+  edgeCoverageVariant.status,
+  "passed",
+  "declared edge masking must tolerate one-pixel raster fill-convention differences",
+);
+
+const detachedReadbackResult = result(
+  { name: "NVIDIA RTX", device_type: "DiscreteGpu" },
+  1,
+  64,
+  parityFixture(),
+);
+detachedReadbackResult.renderer_readback.rgba8_base64 = Buffer.alloc(32 * 32 * 4).toString("base64");
+assert(
   evaluateRequiredGpuParity({
     required: true,
     requestedBackend: "webgpu",
-    result: result({ name: "NVIDIA RTX", device_type: "DiscreteGpu" }),
-  }).status,
-  "passed",
+    result: detachedReadbackResult,
+  }).failure_codes.includes("PIXEL_PARITY_MALFORMED"),
+  "the compared GPU candidate must be the renderer headline readback",
 );
+
+const wrongColors = evaluateRequiredGpuParity({
+  required: true,
+  requestedBackend: "webgpu",
+  result: result(
+    { name: "NVIDIA RTX", device_type: "DiscreteGpu" },
+    1,
+    64,
+    parityFixture((gpu) => {
+      for (let offset = 0; offset < gpu.length; offset += 4) {
+        if (gpu[offset] > 0) {
+          gpu[offset] = 20;
+          gpu[offset + 1] = 210;
+          gpu[offset + 2] = 230;
+        }
+      }
+      return gpu;
+    }),
+  ),
+});
+assert.strictEqual(wrongColors.status, "failed");
+assert(wrongColors.failure_codes.includes("PIXEL_PARITY_MISMATCH"));
 
 assert.deepStrictEqual(
   evaluateRequiredHardwareAdapter({

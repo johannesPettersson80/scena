@@ -171,8 +171,13 @@ fn emit_recipe_patch(
     else {
         return Err("validated placement import disappeared before patch emission".to_owned());
     };
-    let previous_transform = import.transform;
-    import.transform = Some(transform);
+    let previous_transform = import
+        .transform
+        .as_ref()
+        .map(scena::Transform::try_from)
+        .transpose()
+        .map_err(|error| format!("validated import transform failed to resolve: {error}"))?;
+    import.transform = Some(scena::SceneRecipeTransformV1::from(transform));
     rebase_recipe_resource_uris(&source_path, &mut recipe);
     let updated_recipe = serde_json::to_value(&recipe)
         .map_err(|error| format!("failed to serialize updated recipe: {error}"))?;
@@ -329,7 +334,24 @@ fn load_placement_runtime(
                 ),
             ))
         })?;
-        let transform = import.transform.unwrap_or(scena::Transform::IDENTITY);
+        let transform = match import.transform.as_ref() {
+            Some(transform) => match scena::Transform::try_from(transform) {
+                Ok(transform) => transform,
+                Err(error) => {
+                    return Err(Box::new(scena::ScenePlacementResultV1::failure(
+                        import.id.clone(),
+                        verb.to_owned(),
+                        scena::ScenePlacementDiagnosticV1::new(
+                            "invalid_transform",
+                            format!("$.imports[{recipe_index}].transform"),
+                            error.to_string(),
+                            "use a canonical kind:raw or kind:trs local transform",
+                        ),
+                    )));
+                }
+            },
+            None => scena::Transform::IDENTITY,
+        };
         for root in scene_import.roots() {
             scene.set_transform(*root, transform).map_err(|error| {
                 Box::new(scena::ScenePlacementResultV1::failure(

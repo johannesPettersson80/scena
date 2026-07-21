@@ -26,12 +26,22 @@ Start with:
 - `examples/native_window.rs`
 - `examples/orbit_controls_native_adapter.rs`
 
+The native renderer refreshes surface configuration and retries acquisition
+exactly once after `Outdated`. A `Lost` surface is latched for host recreation,
+as required by wgpu. Timeout and occlusion skip the frame with explicit
+counters; validation and out-of-memory conditions are structured hard errors.
+See [Lifecycle](lifecycle.md#attached-surface-acquisition) for the host recovery
+contract.
+
 ## Browser applications
 
 Browser hosts provide a canvas and drive rendering through WASM. WebGPU and
 WebGL2 are represented as explicit backend choices so applications can report
 or select capabilities. WebGL2 uses `wgpu::Backends::GL`, so shader compilation
 and resource ownership stay on the shared wgpu/naga renderer path.
+Browser surface acquisition uses the same bounded `Outdated` retry, typed
+`Lost` recreation, counted-skip, and hard validation/OOM classification as
+native attached surfaces.
 
 Start with:
 

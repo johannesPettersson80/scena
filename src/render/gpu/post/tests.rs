@@ -1,18 +1,18 @@
 #[test]
-fn post_chain_uses_encoded_rgba8_and_depth_color_contract() {
+fn post_chain_uses_linear_sampling_srgb8_and_depth_color_contract() {
     let source = include_str!("mod.rs");
     let resources_source = include_str!("resources.rs");
     let depth_source = include_str!("../depth.rs");
     let bloom_shader = include_str!("bloom.wgsl");
     let ssao_shader = include_str!("ssao.wgsl");
     assert!(
-        resources_source.contains("TextureFormat::Rgba8Unorm")
+        resources_source.contains("TextureFormat::Rgba8UnormSrgb")
             && resources_source.contains("TextureSampleType::Float { filterable: false }")
             && depth_source.contains("DEPTH_COLOR_FORMAT")
             && depth_source.contains("color_view")
             && resources_source.contains("scene_pipelines")
             && source.contains("copy_output_to_buffer"),
-        "GPU post chain must render into encoded Rgba8Unorm, expose a depth-color SSAO mechanism, and keep readback on the post output"
+        "GPU post chain must use sRGB attachments for encoded storage with linear shader sampling, expose a depth-color SSAO mechanism, and keep readback on the post output"
     );
     assert!(
         ssao_shader.contains("var depth_texture: texture_2d<f32>")

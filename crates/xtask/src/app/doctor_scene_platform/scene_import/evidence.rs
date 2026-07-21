@@ -66,7 +66,7 @@ pub(crate) fn check_m3a_evidence_contracts(root: &Path, findings: &mut Vec<Findi
             "scene_import_reports_local_and_world_bounds_for_imported_meshes",
             "scene_import_anchor_lookups_parse_gltf_extras_and_stale",
             "scene_import_rejects_duplicate_anchor_names_on_same_host",
-            "scene_import_rejects_invalid_anchor_extras_data",
+            "asset_load_rejects_invalid_anchor_extras_data",
             "scene_import_clip_lookups_are_import_local_and_stale",
             "gltf_required_punctual_lights_instantiate_as_scene_lights",
             "gltf_required_texture_transform_and_mesh_quantization_are_realized",

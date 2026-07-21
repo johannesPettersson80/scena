@@ -1,6 +1,8 @@
 {
   "schema": "scena.scene_recipe_validation.v1",
   "ok": false,
+  "validation_mode": "syntax_only",
+  "execution_equivalent": false,
   "diagnostics": [
     {
       "code": "unknown_field",

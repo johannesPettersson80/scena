@@ -203,6 +203,22 @@ pub(super) fn stats_json(stats: RendererStats) -> serde_json::Value {
         json!(stats.gpu_culling_dispatches),
     );
     object.insert("skipped_frames".to_string(), json!(stats.skipped_frames));
+    object.insert(
+        "surface_timeout_skips".to_string(),
+        json!(stats.surface_timeout_skips),
+    );
+    object.insert(
+        "surface_occluded_skips".to_string(),
+        json!(stats.surface_occluded_skips),
+    );
+    object.insert(
+        "surface_reconfigurations".to_string(),
+        json!(stats.surface_reconfigurations),
+    );
+    object.insert(
+        "surface_acquire_retries".to_string(),
+        json!(stats.surface_acquire_retries),
+    );
     object.insert("gpu_submissions".to_string(), json!(stats.gpu_submissions));
     object.insert(
         "approximate_gpu_memory_bytes".to_string(),

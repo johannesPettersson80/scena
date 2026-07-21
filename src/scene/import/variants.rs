@@ -6,7 +6,7 @@
 //! bound MaterialHandle.
 
 use crate::assets::{MaterialHandle, MaterialVariantBinding};
-use crate::diagnostics::LookupError;
+use crate::diagnostics::{LookupError, nearest_name_candidates};
 use crate::scene::{NodeKey, Scene};
 
 use super::SceneImport;
@@ -40,6 +40,7 @@ impl SceneImport {
         match matches.as_slice() {
             [] => Err(LookupError::VariantNotFound {
                 name: name.to_string(),
+                candidates: nearest_name_candidates(name, &self.material_variants, 3),
             }),
             [index] => Ok(*index),
             _ => Err(LookupError::AmbiguousVariantName {

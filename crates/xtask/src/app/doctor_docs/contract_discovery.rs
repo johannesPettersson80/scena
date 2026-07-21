@@ -158,13 +158,15 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
         ),
         (
             "src/schema_catalog.rs",
+            &["scena.recipe_build_result.v1", "FIELD_MODEL_SCHEMA_V1"][..],
+        ),
+        (
+            "src/schema_catalog/entries.rs",
             &[
                 "scena.vocab.v1",
                 "scena.recipe_policy.v1",
                 "scena.cli_error.v1",
                 "scena.recipe_patch.v1",
-                "scena.recipe_build_result.v1",
-                "FIELD_MODEL_SCHEMA_V1",
             ][..],
         ),
         (

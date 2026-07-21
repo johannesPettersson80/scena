@@ -2,13 +2,283 @@
 
 use base64::Engine as _;
 use scena::{
-    AssetError, AssetFetcher, AssetPath, Assets, DirectionalLight, PerspectiveCamera, Renderer,
-    Scene, Transform, Vec3,
+    AssetError, AssetFetcher, AssetLoadReport, AssetPath, Assets, DirectionalLight,
+    PerspectiveCamera, Renderer, Scene, SceneAsset, Transform, Vec3,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::future::{Ready, ready};
 use std::sync::Arc;
+
+#[test]
+fn missing_normals_are_computed_per_face_for_indexed_and_nonindexed_meshes() {
+    for indexed in [true, false] {
+        let (assets, scene_asset) = load_document(
+            if indexed {
+                "missing-normal-indexed.gltf"
+            } else {
+                "missing-normal-nonindexed.gltf"
+            },
+            missing_normal_hard_edge_fixture(indexed, false),
+        )
+        .unwrap_or_else(|error| panic!("missing NORMAL must compute flat normals: {error}"));
+        let mesh = scene_asset.nodes()[0].mesh().expect("fixture mesh exists");
+        let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+
+        assert_eq!(geometry.vertices().len(), 6);
+        assert_eq!(geometry.indices(), &[0, 1, 2, 3, 4, 5]);
+        for normal in geometry.vertices()[..3].iter().map(|vertex| vertex.normal) {
+            assert_vec3_near(normal, Vec3::new(0.0, 0.0, 1.0));
+        }
+        for normal in geometry.vertices()[3..].iter().map(|vertex| vertex.normal) {
+            assert_vec3_near(normal, Vec3::new(0.0, 1.0, 0.0));
+        }
+    }
+}
+
+#[test]
+fn missing_normals_reject_degenerate_triangles_with_a_precise_error() {
+    let error = expect_load_error(
+        "missing-normal-degenerate.gltf",
+        missing_normal_hard_edge_fixture(false, true),
+        "missing NORMAL on a degenerate triangle must fail closed",
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("NORMAL"),
+        "error must name NORMAL: {message}"
+    );
+    assert!(
+        message.contains("degenerate triangle 0"),
+        "error must identify the irrecoverable face: {message}",
+    );
+}
+
+#[test]
+fn computed_flat_normals_are_recorded_in_the_asset_load_report() {
+    let (_, report) = load_document_report(
+        "missing-normal-report.gltf",
+        missing_normal_hard_edge_fixture(true, false),
+    )
+    .expect("missing normals compute with report evidence");
+    let warnings = report.to_schema_json()["warnings"]
+        .as_array()
+        .expect("schema warnings are an array")
+        .clone();
+    assert!(
+        warnings.iter().any(|warning| {
+            warning["kind"] == "computed_flat_normals"
+                && warning["mesh_index"] == 0
+                && warning["primitive_index"] == 0
+                && warning["triangle_count"] == 2
+        }),
+        "computed-normal behavior must be machine-readable: {warnings:?}",
+    );
+}
+
+#[test]
+fn every_material_texture_slot_rejects_unsupported_texcoord_one_explicitly() {
+    for slot in [
+        "baseColorTexture",
+        "metallicRoughnessTexture",
+        "normalTexture",
+        "occlusionTexture",
+        "emissiveTexture",
+        "clearcoatTexture",
+    ] {
+        let error = expect_load_error(
+            &format!("texcoord-one-{slot}.gltf"),
+            texture_coordinate_one_fixture(slot),
+            "TEXCOORD_1 requests must not silently sample TEXCOORD_0",
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains(slot),
+            "error must identify texture slot {slot}: {message}",
+        );
+        assert!(
+            message.contains("texCoord 1") && message.contains("TEXCOORD_0"),
+            "error must identify requested and supported coordinate sets: {message}",
+        );
+    }
+}
+
+#[test]
+fn secondary_skin_influences_select_the_strongest_four_and_report_degradation() {
+    let (assets, report) = load_document_report(
+        "eight-skin-influences.gltf",
+        eight_skin_influences_fixture(),
+    )
+    .expect("eight source influences load with explicit four-influence degradation");
+    let mesh = report.asset().nodes()[0]
+        .mesh()
+        .expect("fixture mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+    let skin = geometry.skin().expect("skin imports");
+
+    assert_eq!(skin.joints()[0], [4, 1, 3, 2]);
+    assert_weights_near(
+        &skin.weights()[0],
+        &[0.470_588_24, 0.235_294_12, 0.176_470_6, 0.117_647_06],
+    );
+    assert!(
+        skin.weights()
+            .iter()
+            .all(|weights| (weights.iter().sum::<f32>() - 1.0).abs() <= 1.0e-6),
+    );
+
+    let warnings = report.to_schema_json()["warnings"]
+        .as_array()
+        .expect("schema warnings are an array")
+        .clone();
+    assert!(
+        warnings.iter().any(|warning| {
+            warning["kind"] == "skin_influences_truncated"
+                && warning["source_influences"] == 8
+                && warning["retained_influences"] == 4
+                && warning["affected_vertices"] == 3
+        }),
+        "skin influence degradation must be machine-readable: {warnings:?}",
+    );
+}
+
+#[test]
+fn shared_mesh_nodes_apply_distinct_morph_overrides_before_animation() {
+    let (assets, scene_asset) = load_document(
+        "node-morph-overrides.gltf",
+        shared_mesh_node_morph_override_fixture(),
+    )
+    .expect("shared mesh node-level morph overrides load");
+    for (source_index, expected) in [(0, 0.75), (1, 0.25), (2, 0.1)] {
+        let source_node = &scene_asset.nodes()[source_index];
+        assert_eq!(source_node.meshes().len(), 2);
+        for mesh in source_node.meshes() {
+            assert_weights_near(mesh.morph_weights(), &[expected]);
+        }
+    }
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("shared morph mesh instantiates");
+    for (name, expected) in [
+        ("OverrideA", 0.75),
+        ("OverrideB", 0.25),
+        ("MeshDefault", 0.1),
+    ] {
+        let parent = import.node(name).expect("source node resolves");
+        let children = scene.node(parent).expect("parent exists").children();
+        assert_eq!(children.len(), 2, "multi-primitive node fans out");
+        for child in children {
+            assert_weights_near(scene.morph_weights(*child).unwrap(), &[expected]);
+        }
+    }
+
+    let mixer = scene
+        .create_animation_mixer(&import, "OverrideAnimation")
+        .expect("node-weight animation binds to renderable children");
+    scene.seek_animation(mixer, 1.0).expect("animation samples");
+    let animated_parent = import.node("OverrideA").unwrap();
+    for child in scene.node(animated_parent).unwrap().children() {
+        assert_weights_near(scene.morph_weights(*child).unwrap(), &[1.0]);
+    }
+
+    let _ = assets;
+}
+
+#[test]
+fn node_morph_override_width_must_match_every_primitive() {
+    let mut document = shared_mesh_node_morph_override_fixture();
+    document["nodes"][0]["weights"] = json!([0.75, 0.25]);
+    let error = expect_load_error(
+        "node-morph-width.gltf",
+        document,
+        "node morph override cardinality must fail during loading",
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("morph") && message.contains("weight") && message.contains("target"),
+        "cardinality error must identify node weights and primitive targets: {message}",
+    );
+}
+
+#[test]
+fn selected_skin_joint_outside_the_bound_skin_fails_predictably() {
+    let (assets, scene_asset) = load_document(
+        "out-of-range-skin-joint.gltf",
+        skin_influences_fixture([4, 5, 6, 99], [0.01, 0.03, 0.06, 0.4]),
+    )
+    .expect("joint index is validated against the node's bound skin at prepare time");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("skin node hierarchy instantiates");
+    scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(32, 32).expect("renderer builds");
+    let error = renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect_err("selected joint 99 must exceed the eight-joint binding");
+    let message = error.to_string();
+    assert!(
+        message.contains("99") && message.contains("8"),
+        "error must identify joint index and bound joint count: {message}",
+    );
+}
+
+#[test]
+fn khronos_simple_skin_uses_computed_normals_through_skinning_and_cpu_render() {
+    let assets = Assets::new();
+    let report = pollster::block_on(
+        assets.load_scene_with_report("tests/assets/gltf/khronos/SimpleSkin/SimpleSkin.gltf"),
+    )
+    .expect("real Khronos SimpleSkin loads");
+    assert!(
+        report
+            .warnings()
+            .iter()
+            .any(|warning| matches!(warning, scena::AssetLoadWarning::ComputedFlatNormals { .. })),
+        "SimpleSkin omits NORMAL and must report computed flat shading",
+    );
+    let scene_asset = report.asset();
+    let mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("SimpleSkin mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+    assert_eq!(
+        geometry.vertices().len(),
+        geometry.indices().len(),
+        "missing-normal indexed geometry must be split per triangle corner",
+    );
+    assert!(
+        geometry.skin().is_some(),
+        "skin streams survive vertex splitting"
+    );
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(scene_asset)
+        .expect("SimpleSkin instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    scene.frame_import(camera, &import).expect("asset frames");
+    scene
+        .directional_light(DirectionalLight::key_light())
+        .add()
+        .expect("key light inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("computed-normal skin prepares");
+    renderer.render_active(&scene).expect("SimpleSkin renders");
+    assert!(
+        renderer
+            .frame_rgba8()
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8)
+            .count()
+            > 32,
+        "real computed-normal skinned asset must render nonblank",
+    );
+}
 
 #[test]
 fn quantized_signed_and_unsigned_positions_preserve_vertices_bounds_and_render() {
@@ -626,6 +896,188 @@ fn quantized_position_fixture(case: QuantizedPositionCase) -> (Value, Vec<Vec3>,
     )
 }
 
+fn missing_normal_hard_edge_fixture(indexed: bool, degenerate: bool) -> Value {
+    let positions = if degenerate {
+        vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ]
+    } else if indexed {
+        vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    } else {
+        vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ]
+    };
+    let mut bytes = Vec::new();
+    for position in &positions {
+        push_f32s(&mut bytes, position);
+    }
+    let positions_len = bytes.len();
+    let indices = indexed.then(|| {
+        let offset = bytes.len();
+        push_u16s(&mut bytes, &[0, 1, 2, 0, 3, 1]);
+        (offset, 12)
+    });
+    let min = positions.iter().fold([f32::INFINITY; 3], |mut min, value| {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(value[axis]);
+        }
+        min
+    });
+    let max = positions
+        .iter()
+        .fold([f32::NEG_INFINITY; 3], |mut max, value| {
+            for axis in 0..3 {
+                max[axis] = max[axis].max(value[axis]);
+            }
+            max
+        });
+    let mut views = vec![json!({"buffer":0,"byteOffset":0,"byteLength":positions_len})];
+    let mut accessors = vec![json!({
+        "bufferView":0,"componentType":5126,"count":positions.len(),"type":"VEC3",
+        "min":min,"max":max
+    })];
+    let mut primitive = json!({"attributes":{"POSITION":0}});
+    if let Some((offset, length)) = indices {
+        views.push(json!({"buffer":0,"byteOffset":offset,"byteLength":length}));
+        accessors.push(json!({"bufferView":1,"componentType":5123,"count":6,"type":"SCALAR"}));
+        primitive["indices"] = json!(1);
+    }
+    json!({
+        "asset":{"version":"2.0"},
+        "nodes":[{"name":"MissingNormal","mesh":0}],
+        "meshes":[{"primitives":[primitive]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":views,
+        "accessors":accessors
+    })
+}
+
+fn texture_coordinate_one_fixture(slot: &str) -> Value {
+    let mut bytes = triangle_positions_indices();
+    let tex_coords1 = bytes.len();
+    push_f32s(&mut bytes, &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
+    let mut material = json!({"pbrMetallicRoughness":{}});
+    match slot {
+        "baseColorTexture" | "metallicRoughnessTexture" => {
+            material["pbrMetallicRoughness"][slot] = json!({"index":0,"texCoord":1});
+        }
+        "normalTexture" | "occlusionTexture" | "emissiveTexture" => {
+            material[slot] = json!({"index":0,"texCoord":1});
+        }
+        "clearcoatTexture" => {
+            material["extensions"] = json!({
+                "KHR_materials_clearcoat":{"clearcoatTexture":{"index":0,"texCoord":1}}
+            });
+        }
+        _ => unreachable!("fixture slot is enumerated by the test"),
+    }
+    let mut document = json!({
+        "asset":{"version":"2.0"},
+        "nodes":[{"name":"UvSet","mesh":0}],
+        "meshes":[{"primitives":[{
+            "attributes":{"POSITION":0,"TEXCOORD_1":2},"indices":1,"material":0
+        }]}],
+        "materials":[material],
+        "images":[{"uri":normal_map_uri()}],
+        "textures":[{"source":0}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":[
+            {"buffer":0,"byteOffset":0,"byteLength":36},
+            {"buffer":0,"byteOffset":36,"byteLength":6},
+            {"buffer":0,"byteOffset":tex_coords1,"byteLength":24}
+        ],
+        "accessors":[
+            position_accessor(),index_accessor(),
+            {"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}
+        ]
+    });
+    if slot == "clearcoatTexture" {
+        document["extensionsUsed"] = json!(["KHR_materials_clearcoat"]);
+    }
+    document
+}
+
+fn eight_skin_influences_fixture() -> Value {
+    skin_influences_fixture([4, 5, 6, 7], [0.4, 0.03, 0.06, 0.01])
+}
+
+fn skin_influences_fixture(secondary_joints: [u16; 4], secondary_weights: [f32; 4]) -> Value {
+    let mut bytes = triangle_positions_indices();
+    let joints0 = bytes.len();
+    for _ in 0..3 {
+        push_u16s(&mut bytes, &[0, 1, 2, 3]);
+    }
+    let weights0 = bytes.len();
+    for _ in 0..3 {
+        push_f32s(&mut bytes, &[0.05, 0.2, 0.1, 0.15]);
+    }
+    let joints1 = bytes.len();
+    for _ in 0..3 {
+        push_u16s(&mut bytes, &secondary_joints);
+    }
+    let weights1 = bytes.len();
+    for _ in 0..3 {
+        push_f32s(&mut bytes, &secondary_weights);
+    }
+    let mut nodes = vec![json!({"name":"Skinned","mesh":0,"skin":0})];
+    nodes.extend((0..8).map(|index| json!({"name":format!("Joint{index}")})));
+    json!({
+        "asset":{"version":"2.0"},
+        "nodes":nodes,
+        "skins":[{"joints":[1,2,3,4,5,6,7,8]}],
+        "meshes":[{"primitives":[{
+            "attributes":{
+                "POSITION":0,"JOINTS_0":2,"WEIGHTS_0":3,"JOINTS_1":4,"WEIGHTS_1":5
+            },
+            "indices":1
+        }]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":[
+            {"buffer":0,"byteOffset":0,"byteLength":36},
+            {"buffer":0,"byteOffset":36,"byteLength":6},
+            {"buffer":0,"byteOffset":joints0,"byteLength":24},
+            {"buffer":0,"byteOffset":weights0,"byteLength":48},
+            {"buffer":0,"byteOffset":joints1,"byteLength":24},
+            {"buffer":0,"byteOffset":weights1,"byteLength":48}
+        ],
+        "accessors":[
+            position_accessor(),index_accessor(),
+            {"bufferView":2,"componentType":5123,"count":3,"type":"VEC4"},
+            {"bufferView":3,"componentType":5126,"count":3,"type":"VEC4"},
+            {"bufferView":4,"componentType":5123,"count":3,"type":"VEC4"},
+            {"bufferView":5,"componentType":5126,"count":3,"type":"VEC4"}
+        ]
+    })
+}
+
+fn shared_mesh_node_morph_override_fixture() -> Value {
+    let mut document = multi_primitive_fixture();
+    document["nodes"] = json!([
+        {"name":"OverrideA","mesh":0,"weights":[0.75]},
+        {"name":"OverrideB","mesh":0,"weights":[0.25]},
+        {"name":"MeshDefault","mesh":0}
+    ]);
+    document["meshes"][0]["weights"] = json!([0.1]);
+    document["animations"][0]["name"] = json!("OverrideAnimation");
+    document
+}
+
 fn invalid_integer_normal_fixture() -> Value {
     let mut bytes = Vec::new();
     push_f32s(
@@ -958,6 +1410,19 @@ fn load_document(
     ));
     let scene_asset = pollster::block_on(assets.load_scene(path.as_str()))?;
     Ok((assets, scene_asset))
+}
+
+fn load_document_report(
+    name: &str,
+    document: Value,
+) -> Result<(Assets<MemoryFetcher>, AssetLoadReport<SceneAsset>), AssetError> {
+    let path = AssetPath::from(format!("memory://c04/{name}"));
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        path.clone(),
+        serde_json::to_vec(&document).unwrap(),
+    ));
+    let report = pollster::block_on(assets.load_scene_with_report(path.as_str()))?;
+    Ok((assets, report))
 }
 
 fn expect_load_error(name: &str, document: Value, context: &str) -> AssetError {

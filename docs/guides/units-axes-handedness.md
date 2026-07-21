@@ -12,6 +12,10 @@ let import = scene.instantiate_with(
         .with_source_units(SourceUnits::Millimeters)
         .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
 )?;
+
+// Rotation animation clips are rebound through the same coordinate basis.
+let mixer = scene.create_animation_mixer(&import, "RotateArm")?;
+scene.seek_animation(mixer, 0.5)?;
 ```
 
 For a non-meter source, `scena` inserts one synthetic import placement root whose uniform
@@ -24,6 +28,15 @@ Anchor and connector locals remain expressed in the import's source-unit space u
 single root is composed. An anchor with an explicit `units` field is converted once into
 the import-unit local space while retaining its authored unit metadata. Do not pre-convert
 marker locals to meters; doing so would apply the placement-root scale a second time.
+
+The coordinate option applies consistently to a node's rest transform and its
+rotation animation. Linear and step quaternion keys are basis-conjugated before
+sampling. For glTF `CUBICSPLINE` rotation channels, quaternion values are
+normalized as rotations after conversion, while derivative tangents are
+basis-conjugated without normalization. Translation animation follows the
+selected axis mapping; scale and morph-weight animation remains dimensionless.
+Skins, anchors, and connectors continue to resolve through their existing
+import-local ownership and the same converted node hierarchy.
 
 ## Failure Modes
 

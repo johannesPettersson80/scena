@@ -3,9 +3,11 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use super::scena_output::{CliOutcome, json_outcome};
+use super::scena_output::{CliOutcome, json_outcome, json_success};
 #[path = "examples_agent/builder.rs"]
 mod builder;
+#[path = "examples_agent/catalog.rs"]
+mod catalog;
 #[path = "examples_agent/data_visualization.rs"]
 mod data_visualization;
 #[path = "examples_agent/overlays.rs"]
@@ -14,24 +16,56 @@ mod overlays;
 mod starter;
 
 use builder::{TemplateBuilder, capture_descriptor_path, path_for_json, write_json_file};
+use catalog::{resolve_template, template_catalog};
 use overlays::{add_cad_overlay_recipe_sections, add_documentation_overlay_recipe_sections};
 
 const INTERACTION_EXPECTATION_SCHEMA_V1: &str = "scena.interaction_expectation.v1";
 const INTERACTION_VERIFICATION_SCHEMA_V1: &str = "scena.interaction_verification.v1";
-const TEMPLATE_STUDIO_ENVIRONMENT: &str =
-    "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
+const TEMPLATE_MATERIAL_VARIANTS_ASSET: &str =
+    "scena://bundled/agent-template/material_variants_scene.gltf";
+const TEMPLATE_ANIMATED_TRIANGLE_ASSET: &str =
+    "scena://bundled/agent-template/animated_triangle_scene.glb";
+const TEMPLATE_CAD_PLATE_ASSET: &str =
+    "scena://bundled/agent-template/cad_plate_drawing_scene.gltf";
 const TEMPLATE_CAPTURE_MIN_WIDTH: u32 = 640;
 const TEMPLATE_CAPTURE_MIN_HEIGHT: u32 = 480;
+
+pub(crate) fn template_name_candidates(name: &str) -> Vec<String> {
+    catalog::template_name_candidates(name)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExamplesAgentCommandArgs {
     name: String,
-    out: PathBuf,
+    out: Option<PathBuf>,
 }
 
 pub(crate) fn run_examples_agent_command(args: &[String]) -> Result<CliOutcome, String> {
+    if matches!(args, [arg] if arg == "list")
+        || matches!(args, [first, second] if first == "list" && second == "--json")
+    {
+        return json_success(
+            &template_catalog(),
+            "failed to serialize agent template catalog",
+        );
+    }
     let args = ExamplesAgentCommandArgs::parse(args)?;
-    let template = build_template(&args.name, &args.out)?;
+    let selection = resolve_template(&args.name).ok_or_else(|| {
+        format!(
+            "unknown examples agent template '{}'; run 'scena examples agent list' for canonical names and aliases",
+            args.name
+        )
+    })?;
+    let out = args
+        .out
+        .unwrap_or_else(|| PathBuf::from("target/scena-agent").join(selection.canonical));
+    let mut template = build_template(selection.canonical, &out)?;
+    if selection.alias.is_some() {
+        template.notes.push(format!(
+            "deprecated template alias '{}'; use '{}'",
+            args.name, selection.canonical
+        ));
+    }
     json_outcome(
         &template,
         0,
@@ -70,7 +104,6 @@ impl ExamplesAgentCommandArgs {
                 }
             }
         }
-        let out = out.unwrap_or_else(|| PathBuf::from("target/scena-agent").join(&name));
         Ok(Self { name, out })
     }
 }
@@ -84,11 +117,11 @@ fn build_template(name: &str, out_dir: &Path) -> Result<scena::AgentSmokeTemplat
     })?;
     match name {
         "product-configurator" => product_configurator(out_dir),
-        "primitive_scene" => starter::primitive_scene(out_dir),
-        "cad_plate" => starter::cad_plate(out_dir),
-        "dashboard_bars" => starter::dashboard_bars(out_dir),
-        "machine_state_viewer" => starter::machine_state_viewer(out_dir),
-        "product_configurator" => starter::product_configurator(out_dir),
+        "primitive-scene" => starter::primitive_scene(out_dir),
+        "cad-plate" => starter::cad_plate(out_dir),
+        "dashboard-bars" => starter::dashboard_bars(out_dir),
+        "machine-state-viewer" => starter::machine_state_viewer(out_dir),
+        "product-configurator-starter" => starter::product_configurator(out_dir),
         "live-state-viewer" => live_state_viewer(out_dir),
         "web-viewer" => web_viewer(out_dir),
         "data-visualization" => data_visualization::build(out_dir),
@@ -96,10 +129,7 @@ fn build_template(name: &str, out_dir: &Path) -> Result<scena::AgentSmokeTemplat
         "interaction-proof" => interaction_proof(out_dir),
         "cad-inspection" => cad_inspection(out_dir),
         "documentation-renderer" => documentation_renderer(out_dir),
-        other => Err(format!(
-            "unknown examples agent template '{other}'; available templates: {}",
-            template_names().join(", ")
-        )),
+        other => Err(format!("unregistered canonical agent template '{other}'")),
     }
 }
 
@@ -107,7 +137,7 @@ fn product_configurator(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, S
     let mut builder = TemplateBuilder::ready("product-configurator", &["inspection"]);
     let recipe = write_recipe(
         out_dir,
-        "tests/assets/gltf/material_variants_scene.gltf",
+        TEMPLATE_MATERIAL_VARIANTS_ASSET,
         96,
         72,
         "product configurator material variant proof",
@@ -157,7 +187,7 @@ fn live_state_viewer(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, Stri
     let mut builder = TemplateBuilder::ready("live-state-viewer", &["inspection"]);
     let recipe = write_recipe(
         out_dir,
-        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+        TEMPLATE_MATERIAL_VARIANTS_ASSET,
         96,
         72,
         "live-state visibility smoke proof",
@@ -178,7 +208,7 @@ fn web_viewer(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
     let mut builder = TemplateBuilder::ready("web-viewer", &["inspection"]);
     let recipe = write_recipe(
         out_dir,
-        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+        TEMPLATE_MATERIAL_VARIANTS_ASSET,
         128,
         96,
         "web viewer render smoke proof",
@@ -192,7 +222,7 @@ fn animated_viewer(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String
     let mut builder = TemplateBuilder::ready("animated-viewer", &["inspection"]);
     let recipe = write_recipe(
         out_dir,
-        "tests/assets/gltf/animated_triangle_scene.glb",
+        TEMPLATE_ANIMATED_TRIANGLE_ASSET,
         96,
         72,
         "animation change smoke proof",
@@ -222,7 +252,7 @@ fn interaction_proof(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, Stri
     let mut builder = TemplateBuilder::ready("interaction-proof", &["inspection", "scene-host"]);
     let recipe = write_recipe(
         out_dir,
-        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+        TEMPLATE_MATERIAL_VARIANTS_ASSET,
         128,
         128,
         "synthetic interaction smoke proof",
@@ -285,7 +315,7 @@ fn cad_inspection(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String>
     let mut builder = TemplateBuilder::ready("cad-inspection", &["inspection", "scene-host"]);
     let recipe = write_recipe(
         out_dir,
-        "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+        TEMPLATE_CAD_PLATE_ASSET,
         128,
         96,
         "CAD inspection load, render, and visibility smoke proof",
@@ -312,7 +342,7 @@ fn documentation_renderer(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1,
         TemplateBuilder::ready("documentation-renderer", &["inspection", "scene-host"]);
     let recipe = write_recipe(
         out_dir,
-        "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+        TEMPLATE_CAD_PLATE_ASSET,
         128,
         96,
         "documentation base render and introspection smoke proof",
@@ -393,7 +423,7 @@ fn template_light_rig() -> serde_json::Value {
 fn template_scene_setup(background: &str) -> serde_json::Value {
     json!({
         "background": { "kind": background },
-        "environment": { "kind": "uri", "uri": TEMPLATE_STUDIO_ENVIRONMENT }
+        "environment": { "preset": "studio" }
     })
 }
 
@@ -428,24 +458,7 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, Strin
         .ok_or_else(|| format!("{flag} requires a value"))
 }
 
-fn template_names() -> Vec<&'static str> {
-    vec![
-        "product-configurator",
-        "primitive_scene",
-        "cad_plate",
-        "dashboard_bars",
-        "machine_state_viewer",
-        "product_configurator",
-        "live-state-viewer",
-        "web-viewer",
-        "data-visualization",
-        "animated-viewer",
-        "interaction-proof",
-        "cad-inspection",
-        "documentation-renderer",
-    ]
-}
-
 fn examples_agent_usage() -> String {
-    "usage: scena examples agent [get] <template> [--out <dir>]".to_string()
+    "usage: scena examples agent list | scena examples agent get <template> [--out <dir>]"
+        .to_string()
 }

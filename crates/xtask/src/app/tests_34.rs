@@ -304,6 +304,7 @@ fn pf10_hot_path_doctor_rejects_linear_keyframe_scanning() {
         "src/render/gpu/vertices.rs",
         "src/render/gpu/instancing.rs",
         "src/scene/import/animation_bindings.rs",
+        "src/scene/import/source_node_index.rs",
         "src/assets/gltf/textures.rs",
         "src/geometry.rs",
         "src/assets/gltf/meshes.rs",

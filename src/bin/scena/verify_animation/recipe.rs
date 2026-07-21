@@ -3,7 +3,9 @@ use super::expectations::{apply_expected_node_status, expected_node_status};
 use super::observations::{
     AnimationObservation, samples_from_observations, selected_observed_node,
 };
-use crate::scena_input::{ResolvedSceneInput, scene_host_build_from_resolved_recipe};
+use crate::scena_input::{
+    ResolvedRecipeBuild, ResolvedSceneInput, scene_host_build_from_resolved_recipe,
+};
 use crate::scena_output::{CliOutcome, json_outcome};
 
 pub(super) async fn run_verify_recipe_animation(
@@ -13,6 +15,10 @@ pub(super) async fn run_verify_recipe_animation(
     height: u32,
 ) -> Result<CliOutcome, String> {
     let build = scene_host_build_from_resolved_recipe(&input, width, height, false).await?;
+    let build = match build {
+        ResolvedRecipeBuild::Built(build) => build,
+        ResolvedRecipeBuild::Rejected(outcome) => return Ok(outcome),
+    };
     let manifest = build.manifest;
     let mut host = build.host;
     let animation_handle = if let Some(animation) = manifest

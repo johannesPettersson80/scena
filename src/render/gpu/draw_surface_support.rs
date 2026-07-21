@@ -8,8 +8,8 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
 use super::super::RasterTarget;
-use super::draw_common::wgpu_clear_color;
-use super::{GpuDeviceState, GpuRenderResult};
+use super::draw_common::wgpu_clear_color_for_target;
+use super::{GpuDeviceState, GpuRenderResult, surface_frame};
 
 impl GpuDeviceState {
     pub(in crate::render) fn render_empty_surface(
@@ -17,20 +17,42 @@ impl GpuDeviceState {
         target: RasterTarget,
         background_color: Color,
     ) -> Result<GpuRenderResult, RenderError> {
-        let Some(surface) = self.surface.as_ref() else {
+        if let Some(error) = self.runtime_fault.render_error(target.backend) {
+            return Err(error);
+        }
+        if self.surface.is_none() {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: target.backend,
             });
-        };
-        let surface_output = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(output)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Outdated
-            | wgpu::CurrentSurfaceTexture::Lost
-            | wgpu::CurrentSurfaceTexture::Validation => return Ok(GpuRenderResult::default()),
-        };
+        }
+        let surface_frame::SurfaceFrameAcquisition {
+            output: surface_output,
+            skip: surface_skip,
+            reconfigure_after_present,
+            mut reconfigurations,
+            retries: surface_acquire_retries,
+        } = surface_frame::acquire_surface_frame(
+            self.surface.as_mut(),
+            &self.adapter,
+            &self.device,
+            target,
+        )?;
+        if surface_skip.is_some() {
+            self.refresh_browser_canvas_output_color_space(target.backend);
+            return Ok(GpuRenderResult {
+                surface_skip,
+                surface_reconfigurations: reconfigurations,
+                surface_acquire_retries,
+                ..GpuRenderResult::default()
+            });
+        }
+        let surface_output = surface_output.expect("attached browser surface acquired a frame");
+        let surface_format = self
+            .surface
+            .as_ref()
+            .expect("attached browser surface remains configured")
+            .config
+            .format;
         let surface_view = surface_output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -47,7 +69,10 @@ impl GpuDeviceState {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu_clear_color(background_color)),
+                        load: wgpu::LoadOp::Clear(wgpu_clear_color_for_target(
+                            background_color,
+                            surface_format,
+                        )),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -59,7 +84,17 @@ impl GpuDeviceState {
         }
         self.queue.submit(Some(encoder.finish()));
         surface_output.present();
-        Ok(GpuRenderResult::default())
+        if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
+            surface_frame::reconfigure_existing_surface(surface, &self.device);
+            reconfigurations = reconfigurations.saturating_add(1);
+            self.refresh_browser_canvas_output_color_space(target.backend);
+        }
+        Ok(GpuRenderResult {
+            submitted: true,
+            surface_reconfigurations: reconfigurations,
+            surface_acquire_retries,
+            ..GpuRenderResult::default()
+        })
     }
 
     #[cfg(any(feature = "browser-probe", feature = "scene-host"))]

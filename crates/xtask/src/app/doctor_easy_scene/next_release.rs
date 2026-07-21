@@ -590,8 +590,8 @@ pub(super) fn check_asset_hot_reload(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "watch_scene_for_hot_reload",
             "drain_changed_scenes",
-            "reload_scene(&scene_asset)",
-            "replace_import(&import, &reloaded)",
+            "reload_scene_with_report(&scene_asset)",
+            "replace_import(&import, reloaded)",
         ],
     );
 }

@@ -6,6 +6,7 @@ OUT="$ROOT/target/release-readiness"
 LOGS="$OUT/logs"
 SUMMARY="$OUT/summary.tsv"
 FAILURES=0
+RELEASE_ARTIFACT_ROOT="${SCENA_RELEASE_ARTIFACT_ROOT:-target/gate-artifacts}"
 
 mkdir -p "$LOGS"
 : > "$SUMMARY"
@@ -16,7 +17,7 @@ generated_at_unix = $(date +%s)
 SCENA_USE_GPU = "${SCENA_USE_GPU-}"
 VK_ICD_FILENAMES = "${VK_ICD_FILENAMES-}"
 SCENA_REFERENCE_DIFF = "${SCENA_REFERENCE_DIFF-}"
-SCENA_RELEASE_ARTIFACT_ROOT = "${SCENA_RELEASE_ARTIFACT_ROOT-}"
+SCENA_RELEASE_ARTIFACT_ROOT = "${RELEASE_ARTIFACT_ROOT}"
 browser_headless = "${BROWSER_HEADLESS-}"
 browser_executable = "${BROWSER_EXECUTABLE-}"
 EOF
@@ -79,7 +80,7 @@ run_gate cargo-check-wasm cargo check --target wasm32-unknown-unknown --all-feat
 run_gate cargo-test-xtask cargo test -p xtask
 
 run_gate doctor-full cargo run -p xtask -- doctor --full
-run_gate release-readiness cargo run -p xtask -- release-readiness
+run_gate release-readiness cargo run -p xtask -- release-readiness --artifact-root "$RELEASE_ARTIFACT_ROOT"
 run_gate package-list cargo package --list
 
 if [[ -z "$(cd "$ROOT" && git status --short)" ]]; then

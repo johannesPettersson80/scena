@@ -96,7 +96,7 @@ pub enum AnimationOutput {
 
 #[derive(Debug, Clone)]
 pub struct AnimationMixer {
-    clip: AnimationClip,
+    clip: Arc<AnimationClip>,
     state: AnimationPlaybackState,
     time_seconds: f32,
     speed: f32,
@@ -193,40 +193,6 @@ impl AnimationClip {
     pub const fn duration_seconds(&self) -> f32 {
         self.duration_seconds
     }
-
-    pub(crate) fn cloned_payload_bytes(&self) -> u64 {
-        let mut bytes = self.name.as_ref().map_or(0, |name| name.len() as u64);
-        bytes = bytes.saturating_add(
-            (self.channels.len() as u64)
-                .saturating_mul(std::mem::size_of::<AnimationChannel>() as u64),
-        );
-        for channel in &self.channels {
-            bytes = bytes.saturating_add(
-                (channel.input_seconds.len() as u64)
-                    .saturating_mul(std::mem::size_of::<f32>() as u64),
-            );
-            let output_bytes = match &channel.output {
-                AnimationOutput::Vec3(values) => {
-                    (values.len() as u64).saturating_mul(std::mem::size_of::<Vec3>() as u64)
-                }
-                AnimationOutput::Quat(values) => {
-                    (values.len() as u64).saturating_mul(std::mem::size_of::<Quat>() as u64)
-                }
-                AnimationOutput::Weights(values) => {
-                    let outer = (values.len() as u64)
-                        .saturating_mul(std::mem::size_of::<Vec<f32>>() as u64);
-                    values.iter().fold(outer, |total, weights| {
-                        total.saturating_add(
-                            (weights.len() as u64)
-                                .saturating_mul(std::mem::size_of::<f32>() as u64),
-                        )
-                    })
-                }
-            };
-            bytes = bytes.saturating_add(output_bytes);
-        }
-        bytes
-    }
 }
 
 impl AnimationSourceClip {
@@ -277,27 +243,30 @@ impl AnimationSourceClip {
         F: FnMut(usize) -> Option<NodeKey>,
         G: FnMut(AnimationTarget, Vec3) -> Vec3,
     {
+        let mut keep_rotation = |_: AnimationInterpolation, _: usize, value: Quat| value;
         let channels = self
             .channels
             .iter()
-            .filter_map(|channel| channel.rebind(&mut map_node, &mut map_vec3))
+            .filter_map(|channel| channel.rebind(&mut map_node, &mut map_vec3, &mut keep_rotation))
             .collect();
         AnimationClip::new_unchecked(key, self.name.clone(), channels, self.duration_seconds)
     }
 
-    pub(crate) fn rebind_imported_many<F, G>(
+    pub(crate) fn rebind_imported_many<F, G, H>(
         &self,
         key: AnimationClipKey,
         mut map_nodes: F,
         mut map_vec3: G,
+        mut map_quat: H,
     ) -> Result<AnimationClip, AnimationError>
     where
         F: FnMut(usize, AnimationTarget) -> Vec<NodeKey>,
         G: FnMut(AnimationTarget, Vec3) -> Vec3,
+        H: FnMut(AnimationInterpolation, usize, Quat) -> Quat,
     {
         let mut channels = Vec::new();
         for source in &self.channels {
-            let output = source.rebound_output(&mut map_vec3);
+            let output = source.rebound_output(&mut map_vec3, &mut map_quat);
             for target_node in map_nodes(source.source_node, source.target) {
                 channels.push(AnimationChannel::new(
                     target_node,
@@ -465,12 +434,18 @@ impl AnimationSourceChannel {
         &self.input_seconds
     }
 
-    fn rebind<F, G>(&self, map_node: &mut F, map_vec3: &mut G) -> Option<AnimationChannel>
+    fn rebind<F, G, H>(
+        &self,
+        map_node: &mut F,
+        map_vec3: &mut G,
+        map_quat: &mut H,
+    ) -> Option<AnimationChannel>
     where
         F: FnMut(usize) -> Option<NodeKey>,
         G: FnMut(AnimationTarget, Vec3) -> Vec3,
+        H: FnMut(AnimationInterpolation, usize, Quat) -> Quat,
     {
-        let output = self.rebound_output(map_vec3);
+        let output = self.rebound_output(map_vec3, map_quat);
         Some(AnimationChannel::new(
             map_node(self.source_node)?,
             self.target,
@@ -480,9 +455,10 @@ impl AnimationSourceChannel {
         ))
     }
 
-    fn rebound_output<G>(&self, map_vec3: &mut G) -> AnimationOutput
+    fn rebound_output<G, H>(&self, map_vec3: &mut G, map_quat: &mut H) -> AnimationOutput
     where
         G: FnMut(AnimationTarget, Vec3) -> Vec3,
+        H: FnMut(AnimationInterpolation, usize, Quat) -> Quat,
     {
         match &self.output {
             AnimationOutput::Vec3(values) => AnimationOutput::Vec3(
@@ -492,7 +468,14 @@ impl AnimationSourceChannel {
                     .map(|value| map_vec3(self.target, value))
                     .collect(),
             ),
-            AnimationOutput::Quat(values) => AnimationOutput::Quat(values.clone()),
+            AnimationOutput::Quat(values) => AnimationOutput::Quat(
+                values
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(index, value)| map_quat(self.interpolation, index, value))
+                    .collect(),
+            ),
             AnimationOutput::Weights(values) => AnimationOutput::Weights(values.clone()),
         }
     }

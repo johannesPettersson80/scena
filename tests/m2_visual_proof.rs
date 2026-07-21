@@ -1,18 +1,23 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use base64::Engine;
 use scena::{
     AntiAliasing, Assets, ClippingPlane, ClippingPlaneSet, Color, DirectionalLight, GeometryDesc,
     GeometryTopology, MaterialDesc, OrderIndependentTransparencyConfig, PerspectiveCamera,
     PostBloomConfig, Primitive, Renderer, Scene, ScreenSpaceAmbientOcclusionConfig, Transform,
     Vec3, Vertex,
 };
+use serde::Serialize;
 
 const M2_HEADLESS_FIXTURE_METADATA: &str = include_str!("visual/fixtures/m2-headless-core.toml");
 const M2_HEADLESS_REFERENCE_METADATA: &str =
     include_str!("visual/references/m2-headless-core.toml");
+const M2_HEADLESS_REFERENCE_FRAMES: &str =
+    include_str!("visual/references/m2-headless-core-frames.toml");
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
 #[test]
@@ -57,7 +62,7 @@ fn m2_headless_visual_artifacts_cover_lighting_depth_and_clipping() {
 }
 
 #[test]
-fn m2_headless_reference_tolerances_match_current_fixtures() {
+fn m2_headless_local_structure_references_match_current_fixtures() {
     assert_eq!(
         fixture_reference_mode(),
         reference_mode(),
@@ -65,39 +70,46 @@ fn m2_headless_reference_tolerances_match_current_fixtures() {
     );
     assert_eq!(
         reference_mode(),
-        "quadrant-mean-rgba-v1",
-        "reference metadata mode must match the implemented tolerant full-frame quadrant evaluator"
+        "local-structure-v2",
+        "reference metadata mode must match the local SSIM/edge/foreground evaluator"
     );
-    let references = reference_specs();
+    let artifact_dir = artifact_dir();
+    fs::create_dir_all(&artifact_dir).expect("M2 structural artifact directory creates");
     let mut mismatches = Vec::new();
 
     for fixture in visual_fixtures() {
-        let reference = references
-            .iter()
-            .find(|reference| reference.name == fixture.name)
-            .unwrap_or_else(|| panic!("missing reference metadata for {}", fixture.name));
         let proof = (fixture.render)();
-        let quadrants = quadrant_metrics(&proof.frame, fixture.width, fixture.height);
-
-        // Triangle edge tests in the rasterizer are sensitive to floating-point precision,
-        // so occupancy can drift by 1-2 pixels between aarch64 and x86_64 runners. Four
-        // quadrant aggregates cover every pixel while tolerating that bounded edge drift.
-        const NONBLACK_PIXEL_TOLERANCE: usize = 4;
-        if !quadrant_reference_matches(
+        let (reference_width, reference_height, reference) = reference_frame(fixture.name);
+        assert_eq!(
+            (reference_width, reference_height),
+            (fixture.width, fixture.height),
+            "{} committed reference dimensions",
+            fixture.name
+        );
+        let report =
+            structural_reference_report(&proof.frame, &reference, fixture.width, fixture.height);
+        write_structural_reference_artifacts(
+            &artifact_dir,
+            fixture.name,
             &proof.frame,
+            &reference,
             fixture.width,
             fixture.height,
-            reference,
-            NONBLACK_PIXEL_TOLERANCE,
-        ) {
+            &report,
+        );
+        if !report.passed {
             mismatches.push(format!(
-                "{}: quadrant_mean_rgba={:?} quadrant_nonblack={:?} \
-                 reference_mean_rgba={:?} reference_nonblack={:?}",
+                "{}: mean_ssim={:.4} worst_ssim={:.4} edge_iou={:.4} \
+                 foreground_iou={:.4} worst_region={:?}; candidate_quadrants={:?} \
+                 reference_quadrants={:?}",
                 fixture.name,
-                quadrants.mean_rgba,
-                quadrants.nonblack,
-                reference.quadrant_mean_rgba,
-                reference.quadrant_nonblack,
+                report.mean_window_ssim,
+                report.worst_window_ssim,
+                report.edge_iou,
+                report.foreground_iou,
+                report.worst_region,
+                report.debug_candidate_quadrants,
+                report.debug_reference_quadrants,
             ));
         }
     }
@@ -110,7 +122,7 @@ fn m2_headless_reference_tolerances_match_current_fixtures() {
 }
 
 #[test]
-fn q05_reference_oracle_rejects_quadrant_corruption_outside_legacy_samples() {
+fn q03_quadrant_debug_rows_notice_coarse_corruption() {
     let fixture = visual_fixtures()
         .into_iter()
         .find(|fixture| fixture.name == "direct-lights-pbr")
@@ -130,9 +142,52 @@ fn q05_reference_oracle_rejects_quadrant_corruption_outside_legacy_samples() {
     }
 
     assert!(
-        !quadrant_reference_matches(&frame, fixture.width, fixture.height, &reference, 4),
-        "a full-quadrant color corruption outside center/left/right samples must fail reference acceptance"
+        !quadrant_debug_rows_match(&frame, fixture.width, fixture.height, &reference, 4),
+        "diagnostic quadrant rows should still notice a coarse color corruption"
     );
+}
+
+#[test]
+fn q03_structure_oracle_rejects_quadrant_mean_preserving_mutations() {
+    let fixture = visual_fixtures()
+        .into_iter()
+        .find(|fixture| fixture.name == "shadowed-directional-light")
+        .expect("shadow fixture exists");
+    let reference = (fixture.render)().frame;
+    let expected_quadrants = quadrant_metrics(&reference, fixture.width, fixture.height);
+    let artifact_dir = artifact_dir();
+    fs::create_dir_all(&artifact_dir).expect("Q03 mutation artifact directory creates");
+    for (name, candidate) in [
+        (
+            "moved-structure",
+            rotate_each_quadrant_180(&reference, fixture.width, fixture.height),
+        ),
+        (
+            "structure-collapsed-to-stripes",
+            sort_each_quadrant_by_luminance(&reference, fixture.width, fixture.height),
+        ),
+    ] {
+        assert_eq!(
+            quadrant_metrics(&candidate, fixture.width, fixture.height),
+            expected_quadrants,
+            "{name} must preserve the legacy quadrant means and occupancy exactly"
+        );
+        let report =
+            structural_reference_report(&candidate, &reference, fixture.width, fixture.height);
+        write_structural_reference_artifacts(
+            &artifact_dir,
+            &format!("q03-{name}"),
+            &candidate,
+            &reference,
+            fixture.width,
+            fixture.height,
+            &report,
+        );
+        assert!(
+            !report.passed,
+            "{name} must fail the local structure oracle despite preserving broad means: {report:#?}"
+        );
+    }
 }
 
 #[test]
@@ -233,10 +288,29 @@ struct ReferenceSpec {
     quadrant_nonblack: [usize; 4],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct QuadrantMetrics {
     mean_rgba: [[u8; 4]; 4],
     nonblack: [usize; 4],
+}
+
+const STRUCTURE_WINDOW_SIZE: u32 = 8;
+const STRUCTURE_WINDOW_STRIDE: u32 = 4;
+const STRUCTURE_MEAN_SSIM_MIN: f32 = 0.97;
+const STRUCTURE_WORST_WINDOW_SSIM_MIN: f32 = 0.70;
+const STRUCTURE_EDGE_IOU_MIN: f32 = 0.85;
+const STRUCTURE_FOREGROUND_IOU_MIN: f32 = 0.95;
+
+#[derive(Debug, Clone, Serialize)]
+struct StructuralReferenceReport {
+    passed: bool,
+    mean_window_ssim: f32,
+    worst_window_ssim: f32,
+    edge_iou: f32,
+    foreground_iou: f32,
+    worst_region: [u32; 4],
+    debug_candidate_quadrants: QuadrantMetrics,
+    debug_reference_quadrants: QuadrantMetrics,
 }
 
 fn visual_fixtures() -> [VisualFixture; 9] {
@@ -1249,6 +1323,69 @@ fn validate_clipping_half_space(proof: &VisualProof) {
     assert_eq!(pixel_at(&proof.frame, 32, 28, 8), [240, 240, 240, 255]);
 }
 
+fn reference_frame(name: &str) -> (u32, u32, Vec<u8>) {
+    let marker = format!("[[frame]]\nname = \"{name}\"");
+    let start = M2_HEADLESS_REFERENCE_FRAMES
+        .find(&marker)
+        .unwrap_or_else(|| panic!("missing committed structural reference frame {name}"));
+    let block = &M2_HEADLESS_REFERENCE_FRAMES[start..];
+    let block = block
+        .find("\n[[frame]]")
+        .map(|next| &block[..next])
+        .unwrap_or(block);
+    let encoded = block
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("png_base64 = "))
+        .map(parse_quoted)
+        .unwrap_or_else(|| panic!("reference frame {name} must provide png_base64"));
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .unwrap_or_else(|error| panic!("reference frame {name} base64 decodes: {error}"));
+    decode_png_rgba8(name, &bytes)
+}
+
+fn decode_png_rgba8(name: &str, bytes: &[u8]) -> (u32, u32, Vec<u8>) {
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder
+        .read_info()
+        .unwrap_or_else(|error| panic!("reference frame {name} PNG header decodes: {error}"));
+    let mut decoded = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .expect("expanded PNG output buffer size is known")
+    ];
+    let info = reader
+        .next_frame(&mut decoded)
+        .unwrap_or_else(|error| panic!("reference frame {name} PNG pixels decode: {error}"));
+    let decoded = &decoded[..info.buffer_size()];
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => decoded.to_vec(),
+        png::ColorType::Rgb => decoded
+            .chunks_exact(3)
+            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
+            .collect(),
+        png::ColorType::Grayscale => decoded
+            .iter()
+            .flat_map(|&value| [value, value, value, 255])
+            .collect(),
+        png::ColorType::GrayscaleAlpha => decoded
+            .chunks_exact(2)
+            .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], pixel[1]])
+            .collect(),
+        png::ColorType::Indexed => {
+            panic!("reference frame {name} remained indexed after PNG expansion")
+        }
+    };
+    assert_eq!(
+        rgba.len(),
+        info.width as usize * info.height as usize * 4,
+        "reference frame {name} RGBA8 byte count"
+    );
+    (info.width, info.height, rgba)
+}
+
 fn reference_specs() -> Vec<ReferenceSpec> {
     let mut references = Vec::new();
     let mut current: Option<ReferenceSpec> = None;
@@ -1348,7 +1485,7 @@ fn rgba_within_tolerance(actual: [u8; 4], expected: [u8; 4], max_abs_diff: u8) -
         .all(|(actual, expected)| actual.abs_diff(expected) <= max_abs_diff)
 }
 
-fn quadrant_reference_matches(
+fn quadrant_debug_rows_match(
     frame: &[u8],
     width: u32,
     height: u32,
@@ -1397,6 +1534,325 @@ fn quadrant_metrics(frame: &[u8], width: u32, height: u32) -> QuadrantMetrics {
         mean_rgba,
         nonblack,
     }
+}
+
+fn structural_reference_report(
+    candidate: &[u8],
+    reference: &[u8],
+    width: u32,
+    height: u32,
+) -> StructuralReferenceReport {
+    assert_eq!(candidate.len(), reference.len());
+    assert_eq!(candidate.len(), width as usize * height as usize * 4);
+    let candidate_luma = blurred_luminance(candidate, width, height);
+    let reference_luma = blurred_luminance(reference, width, height);
+    let window_size = STRUCTURE_WINDOW_SIZE.min(width).min(height).max(1);
+    let x_positions = window_positions(width, window_size, STRUCTURE_WINDOW_STRIDE);
+    let y_positions = window_positions(height, window_size, STRUCTURE_WINDOW_STRIDE);
+    let mut ssim_sum = 0.0_f64;
+    let mut window_count = 0_u32;
+    let mut worst_window_ssim = f64::INFINITY;
+    let mut worst_region = [0, 0, window_size, window_size];
+    for &y in &y_positions {
+        for &x in &x_positions {
+            let ssim = window_ssim(&candidate_luma, &reference_luma, width, x, y, window_size);
+            ssim_sum += ssim;
+            window_count += 1;
+            if ssim < worst_window_ssim {
+                worst_window_ssim = ssim;
+                worst_region = [x, y, window_size, window_size];
+            }
+        }
+    }
+    let mean_window_ssim = (ssim_sum / f64::from(window_count.max(1))) as f32;
+    let worst_window_ssim = worst_window_ssim as f32;
+    let candidate_edges = dilate_mask(
+        &sobel_edge_mask(&candidate_luma, width, height, 18.0),
+        width,
+        height,
+        1,
+    );
+    let reference_edges = dilate_mask(
+        &sobel_edge_mask(&reference_luma, width, height, 18.0),
+        width,
+        height,
+        1,
+    );
+    let edge_iou = mask_iou(&candidate_edges, &reference_edges);
+    let candidate_foreground =
+        dilate_mask(&foreground_mask(candidate, width, height), width, height, 1);
+    let reference_foreground =
+        dilate_mask(&foreground_mask(reference, width, height), width, height, 1);
+    let foreground_iou = mask_iou(&candidate_foreground, &reference_foreground);
+    StructuralReferenceReport {
+        passed: mean_window_ssim >= STRUCTURE_MEAN_SSIM_MIN
+            && worst_window_ssim >= STRUCTURE_WORST_WINDOW_SSIM_MIN
+            && edge_iou >= STRUCTURE_EDGE_IOU_MIN
+            && foreground_iou >= STRUCTURE_FOREGROUND_IOU_MIN,
+        mean_window_ssim,
+        worst_window_ssim,
+        edge_iou,
+        foreground_iou,
+        worst_region,
+        debug_candidate_quadrants: quadrant_metrics(candidate, width, height),
+        debug_reference_quadrants: quadrant_metrics(reference, width, height),
+    }
+}
+
+fn window_positions(length: u32, window: u32, stride: u32) -> Vec<u32> {
+    if length <= window {
+        return vec![0];
+    }
+    let mut positions = (0..=length - window)
+        .step_by(stride.max(1) as usize)
+        .collect::<Vec<_>>();
+    let final_position = length - window;
+    if positions.last().copied() != Some(final_position) {
+        positions.push(final_position);
+    }
+    positions
+}
+
+fn blurred_luminance(frame: &[u8], width: u32, height: u32) -> Vec<f64> {
+    let mut luminance = vec![0.0; (width * height) as usize];
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = pixel_at(frame, width, x, y);
+            luminance[(y * width + x) as usize] = 0.2126 * f64::from(pixel[0])
+                + 0.7152 * f64::from(pixel[1])
+                + 0.0722 * f64::from(pixel[2]);
+        }
+    }
+    let mut blurred = vec![0.0; luminance.len()];
+    for y in 0..height {
+        for x in 0..width {
+            let mut sum = 0.0;
+            let mut count = 0.0;
+            for offset_y in -1_i32..=1 {
+                for offset_x in -1_i32..=1 {
+                    let sample_x = (x as i32 + offset_x).clamp(0, width as i32 - 1) as u32;
+                    let sample_y = (y as i32 + offset_y).clamp(0, height as i32 - 1) as u32;
+                    sum += luminance[(sample_y * width + sample_x) as usize];
+                    count += 1.0;
+                }
+            }
+            blurred[(y * width + x) as usize] = sum / count;
+        }
+    }
+    blurred
+}
+
+fn window_ssim(
+    candidate: &[f64],
+    reference: &[f64],
+    width: u32,
+    x_min: u32,
+    y_min: u32,
+    window: u32,
+) -> f64 {
+    let count = f64::from(window * window);
+    let mut candidate_mean = 0.0;
+    let mut reference_mean = 0.0;
+    for y in y_min..y_min + window {
+        for x in x_min..x_min + window {
+            let index = (y * width + x) as usize;
+            candidate_mean += candidate[index];
+            reference_mean += reference[index];
+        }
+    }
+    candidate_mean /= count;
+    reference_mean /= count;
+    let mut candidate_variance = 0.0;
+    let mut reference_variance = 0.0;
+    let mut covariance = 0.0;
+    for y in y_min..y_min + window {
+        for x in x_min..x_min + window {
+            let index = (y * width + x) as usize;
+            let candidate_delta = candidate[index] - candidate_mean;
+            let reference_delta = reference[index] - reference_mean;
+            candidate_variance += candidate_delta * candidate_delta;
+            reference_variance += reference_delta * reference_delta;
+            covariance += candidate_delta * reference_delta;
+        }
+    }
+    let denominator = (count - 1.0).max(1.0);
+    candidate_variance /= denominator;
+    reference_variance /= denominator;
+    covariance /= denominator;
+    let c1 = (0.01_f64 * 255.0).powi(2);
+    let c2 = (0.03_f64 * 255.0).powi(2);
+    ((2.0 * candidate_mean * reference_mean + c1) * (2.0 * covariance + c2))
+        / ((candidate_mean.powi(2) + reference_mean.powi(2) + c1)
+            * (candidate_variance + reference_variance + c2))
+}
+
+fn sobel_edge_mask(luminance: &[f64], width: u32, height: u32, threshold: f64) -> Vec<bool> {
+    let mut edges = vec![false; luminance.len()];
+    if width < 3 || height < 3 {
+        return edges;
+    }
+    for y in 1..height - 1 {
+        for x in 1..width - 1 {
+            let sample = |offset_x: i32, offset_y: i32| {
+                luminance
+                    [((y as i32 + offset_y) as u32 * width + (x as i32 + offset_x) as u32) as usize]
+            };
+            let gradient_x = -sample(-1, -1) + sample(1, -1) - 2.0 * sample(-1, 0)
+                + 2.0 * sample(1, 0)
+                - sample(-1, 1)
+                + sample(1, 1);
+            let gradient_y = -sample(-1, -1) - 2.0 * sample(0, -1) - sample(1, -1)
+                + sample(-1, 1)
+                + 2.0 * sample(0, 1)
+                + sample(1, 1);
+            edges[(y * width + x) as usize] = gradient_x.hypot(gradient_y) >= threshold;
+        }
+    }
+    edges
+}
+
+fn foreground_mask(frame: &[u8], width: u32, height: u32) -> Vec<bool> {
+    (0..width * height)
+        .map(|index| {
+            let offset = index as usize * 4;
+            frame[offset] > 3 || frame[offset + 1] > 3 || frame[offset + 2] > 3
+        })
+        .collect()
+}
+
+fn dilate_mask(mask: &[bool], width: u32, height: u32, radius: i32) -> Vec<bool> {
+    let mut dilated = vec![false; mask.len()];
+    for y in 0..height {
+        for x in 0..width {
+            if !mask[(y * width + x) as usize] {
+                continue;
+            }
+            for offset_y in -radius..=radius {
+                for offset_x in -radius..=radius {
+                    let target_x = x as i32 + offset_x;
+                    let target_y = y as i32 + offset_y;
+                    if target_x >= 0
+                        && target_y >= 0
+                        && target_x < width as i32
+                        && target_y < height as i32
+                    {
+                        dilated[(target_y as u32 * width + target_x as u32) as usize] = true;
+                    }
+                }
+            }
+        }
+    }
+    dilated
+}
+
+fn mask_iou(left: &[bool], right: &[bool]) -> f32 {
+    let mut intersection = 0_u32;
+    let mut union = 0_u32;
+    for (&left, &right) in left.iter().zip(right) {
+        intersection += u32::from(left && right);
+        union += u32::from(left || right);
+    }
+    if union == 0 {
+        1.0
+    } else {
+        intersection as f32 / union as f32
+    }
+}
+
+fn rotate_each_quadrant_180(frame: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut rotated = frame.to_vec();
+    for (x_min, x_max) in [(0, width / 2), (width / 2, width)] {
+        for (y_min, y_max) in [(0, height / 2), (height / 2, height)] {
+            for y in y_min..y_max {
+                for x in x_min..x_max {
+                    let source_x = x_max - 1 - (x - x_min);
+                    let source_y = y_max - 1 - (y - y_min);
+                    let source = ((source_y * width + source_x) * 4) as usize;
+                    let target = ((y * width + x) * 4) as usize;
+                    rotated[target..target + 4].copy_from_slice(&frame[source..source + 4]);
+                }
+            }
+        }
+    }
+    rotated
+}
+
+fn sort_each_quadrant_by_luminance(frame: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut sorted_frame = frame.to_vec();
+    for (x_min, x_max) in [(0, width / 2), (width / 2, width)] {
+        for (y_min, y_max) in [(0, height / 2), (height / 2, height)] {
+            let mut pixels = Vec::new();
+            for y in y_min..y_max {
+                for x in x_min..x_max {
+                    pixels.push(pixel_at(frame, width, x, y));
+                }
+            }
+            pixels.sort_by_key(|pixel| {
+                (
+                    u16::from(pixel[0]) + u16::from(pixel[1]) + u16::from(pixel[2]),
+                    pixel[0],
+                    pixel[1],
+                    pixel[2],
+                    pixel[3],
+                )
+            });
+            for (index, pixel) in pixels.into_iter().enumerate() {
+                let local_width = (x_max - x_min) as usize;
+                let x = x_min + (index % local_width) as u32;
+                let y = y_min + (index / local_width) as u32;
+                let target = ((y * width + x) * 4) as usize;
+                sorted_frame[target..target + 4].copy_from_slice(&pixel);
+            }
+        }
+    }
+    sorted_frame
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_structural_reference_artifacts(
+    dir: &Path,
+    name: &str,
+    candidate: &[u8],
+    reference: &[u8],
+    width: u32,
+    height: u32,
+    report: &StructuralReferenceReport,
+) {
+    let mut heatmap = format!("P6\n{width} {height}\n255\n").into_bytes();
+    for (candidate, reference) in candidate.chunks_exact(4).zip(reference.chunks_exact(4)) {
+        let delta = candidate[..3]
+            .iter()
+            .zip(&reference[..3])
+            .map(|(&candidate, &reference)| candidate.abs_diff(reference))
+            .max()
+            .unwrap_or(0);
+        heatmap.extend_from_slice(&[delta.saturating_mul(4), delta, 0]);
+    }
+    fs::write(dir.join(format!("{name}-reference-diff.ppm")), heatmap)
+        .expect("M2 structural heatmap writes");
+    let artifact = serde_json::json!({
+        "proof_class": "q03-m2-local-structure-reference",
+        "reference_mode": "local-structure-v2",
+        "fixture": name,
+        "resolution": [width, height],
+        "encoding": "srgb8",
+        "thresholds": {
+            "window_size": STRUCTURE_WINDOW_SIZE,
+            "window_stride": STRUCTURE_WINDOW_STRIDE,
+            "mean_window_ssim_min": STRUCTURE_MEAN_SSIM_MIN,
+            "worst_window_ssim_min": STRUCTURE_WORST_WINDOW_SSIM_MIN,
+            "edge_iou_min": STRUCTURE_EDGE_IOU_MIN,
+            "foreground_iou_min": STRUCTURE_FOREGROUND_IOU_MIN,
+        },
+        "quadrant_metrics_role": "debug-only",
+        "report": report,
+        "heatmap": format!("target/gate-artifacts/m2-visual/{name}-reference-diff.ppm"),
+    });
+    fs::write(
+        dir.join(format!("{name}-reference-metrics.json")),
+        serde_json::to_vec_pretty(&artifact).expect("M2 structural report serializes"),
+    )
+    .expect("M2 structural report writes");
 }
 
 fn reference_mode() -> String {
@@ -1479,7 +1935,7 @@ fn write_ppm_artifact(
              height = {height}\n\
              nonblack_pixels = {nonblack_pixels}\n\
              unique_pixels = {unique_pixels}\n\
-             tolerance = \"quadrant-mean-rgba-max-abs-diff-3\"\n\
+             tolerance = \"local-structure-v2-windowed-ssim-edge-foreground\"\n\
              proof_class = \"{proof_class}\"\n\
              production_claim = false\n\
              fixture_suite = \"m2-headless-core\"\n\

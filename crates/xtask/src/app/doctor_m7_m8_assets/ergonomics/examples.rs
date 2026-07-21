@@ -236,7 +236,8 @@ pub(crate) fn check_m7_example_contracts(root: &Path, findings: &mut Vec<Finding
             "scene.frame_import",
             "renderer.set_environment",
             "renderer.prepare_with_assets",
-            "renderer.diagnostics().to_vec()",
+            "let diagnostics = viewer.diagnostics();",
+            "setup_diagnostics",
         ],
     );
 }

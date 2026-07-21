@@ -19,11 +19,11 @@ const TEMPLATE_NAMES: &[&str] = &[
 ];
 
 const STARTER_SNIPPET_NAMES: &[&str] = &[
-    "primitive_scene",
-    "cad_plate",
-    "dashboard_bars",
-    "machine_state_viewer",
-    "product_configurator",
+    "primitive-scene",
+    "cad-plate",
+    "dashboard-bars",
+    "machine-state-viewer",
+    "product-configurator-starter",
 ];
 
 #[test]
@@ -385,6 +385,150 @@ fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
     }
 }
 
+#[test]
+fn scena_examples_agent_primitive_flow_runs_from_an_unrelated_working_directory() {
+    let _cli_guard = template_cli_guard();
+    let root = artifact_dir("agent-template-portable-primitive");
+    let cwd = root.join("unrelated-working-directory");
+    let output_dir = root.join("generated");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&cwd).expect("unrelated working directory creates");
+
+    let generate = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .current_dir(&cwd)
+        .args([
+            "examples",
+            "agent",
+            "get",
+            "primitive-scene",
+            "--out",
+            path_str(&output_dir),
+        ])
+        .output()
+        .expect("portable starter generation runs");
+    assert!(
+        generate.status.success(),
+        "portable starter generation failed: {}",
+        output_diagnostic(&generate)
+    );
+
+    let recipe_path = output_dir.join("recipe.json");
+    for args in [
+        vec!["validate-recipe", path_str(&recipe_path)],
+        vec!["recipe", "build", path_str(&recipe_path)],
+        vec![
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&output_dir.join("frame.png")),
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .current_dir(&cwd)
+            .args(&args)
+            .output()
+            .unwrap_or_else(|error| panic!("portable command {args:?} runs: {error}"));
+        assert!(
+            output.status.success(),
+            "portable command {args:?} failed: {}",
+            output_diagnostic(&output)
+        );
+    }
+}
+
+#[test]
+fn scena_examples_agent_defaults_preserve_an_explicit_environment() {
+    let _cli_guard = template_cli_guard();
+    let root = artifact_dir("agent-template-explicit-environment");
+    let _ = fs::remove_dir_all(&root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "examples",
+            "agent",
+            "get",
+            "product-configurator-starter",
+            "--out",
+            path_str(&root),
+        ])
+        .output()
+        .expect("product configurator starter generation runs");
+    assert!(
+        output.status.success(),
+        "product configurator starter generation failed: {}",
+        output_diagnostic(&output)
+    );
+
+    let recipe: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join("recipe.json")).expect("starter recipe exists"),
+    )
+    .expect("starter recipe parses");
+    assert_eq!(
+        recipe["scene"]["environment"],
+        serde_json::json!({ "kind": "default" }),
+        "presentation defaults must not overwrite an explicitly authored environment: {recipe:#}"
+    );
+}
+
+#[test]
+fn scena_examples_agent_every_template_runs_end_to_end_outside_a_checkout() {
+    let _cli_guard = template_cli_guard();
+    let root = artifact_dir("agent-template-portable-catalog");
+    let cwd = root.join("unrelated-working-directory");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&cwd).expect("unrelated working directory creates");
+
+    for (starter, name) in TEMPLATE_NAMES
+        .iter()
+        .map(|name| (false, *name))
+        .chain(STARTER_SNIPPET_NAMES.iter().map(|name| (true, *name)))
+    {
+        let output_dir = root.join(name);
+        let mut generate_args = vec!["examples", "agent"];
+        if starter {
+            generate_args.push("get");
+        }
+        generate_args.extend([name, "--out", path_str(&output_dir)]);
+        let generate = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .current_dir(&cwd)
+            .args(&generate_args)
+            .output()
+            .unwrap_or_else(|error| panic!("template {name} generation runs: {error}"));
+        assert!(
+            generate.status.success(),
+            "template {name} generation failed: {}",
+            output_diagnostic(&generate)
+        );
+
+        let recipe_path = output_dir.join("recipe.json");
+        for args in [
+            vec!["validate-recipe", path_str(&recipe_path)],
+            vec!["recipe", "build", path_str(&recipe_path)],
+            vec![
+                "recipe",
+                "render",
+                path_str(&recipe_path),
+                "--introspect",
+                "--out",
+                path_str(&output_dir.join("portable-frame.png")),
+            ],
+        ] {
+            let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+                .current_dir(&cwd)
+                .args(&args)
+                .output()
+                .unwrap_or_else(|error| panic!("template {name} command {args:?} runs: {error}"));
+            assert!(
+                output.status.success(),
+                "template {name} command {args:?} failed: {}",
+                output_diagnostic(&output)
+            );
+        }
+    }
+}
+
 fn artifact_dir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
     fs::create_dir_all(&dir).expect("artifact dir exists");
@@ -433,15 +577,10 @@ fn assert_template_recipe_has_beauty_defaults(recipe_path: &Path, name: &str) {
             "template {name} should include directional {preset} light: {recipe:#}"
         );
     }
-    assert_eq!(
-        recipe["scene"]["environment"]["kind"], "uri",
-        "template {name} should use a bundled HDRI environment: {recipe:#}"
-    );
     assert!(
-        recipe["scene"]["environment"]["uri"]
-            .as_str()
-            .is_some_and(|uri| uri.ends_with("studio_small_03_1k.hdr")),
-        "template {name} should point at the bundled studio HDRI: {recipe:#}"
+        recipe["scene"]["environment"] == serde_json::json!({ "preset": "studio" })
+            || recipe["scene"]["environment"] == serde_json::json!({ "kind": "default" }),
+        "template {name} should preserve an authored environment or use the portable studio preset: {recipe:#}"
     );
     assert!(
         matches!(

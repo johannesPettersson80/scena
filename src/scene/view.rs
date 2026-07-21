@@ -2,10 +2,10 @@ use crate::assets::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 
-use super::transforms::{compose_transform, local_transform_from_world, validate_transform};
+use super::transforms::{local_transform_from_world, validate_transform};
 use super::view_math::{
-    inverse_unit_quat, look_rotation, merge_optional_bounds, multiply_quat, normalize_or,
-    positive_min, positive_or, subtract_vec3, transform_aabb, union_aabb,
+    inverse_unit_quat, look_rotation, multiply_quat, normalize_or, positive_min, positive_or,
+    subtract_vec3, union_aabb,
 };
 use super::{
     Camera, CameraKey, ImportAnchor, NodeKey, NodeKind, PerspectiveCamera, Quat, Scene,
@@ -106,18 +106,48 @@ impl Scene {
         camera: CameraKey,
         import: &SceneImport,
     ) -> Result<(), LookupError> {
-        let bounds = import
+        let options = self.legacy_framing_options(camera)?;
+        self.frame_import_with_options(camera, import, options)
+            .map(|_| ())
+    }
+
+    /// Frames visible imported bounds with an explicit target viewport and view.
+    pub fn frame_import_with_options(
+        &mut self,
+        camera: CameraKey,
+        import: &SceneImport,
+        options: super::FramingOptions,
+    ) -> Result<super::FramingOutcome, LookupError> {
+        import
             .bounds_world(self)
             .ok_or(LookupError::ImportHasNoBounds)?;
-        self.frame(camera, bounds)
+        let bounds = import
+            .roots()
+            .iter()
+            .filter_map(|root| {
+                self.visible_node_subtree_bounds_world(*root, options.includes_helpers())
+            })
+            .reduce(union_aabb)
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        self.frame_bounds(camera, bounds, options)
     }
 
     /// Frames all currently visible mesh bounds known to the scene.
     pub fn frame_all(&mut self, camera: CameraKey) -> Result<(), LookupError> {
+        let options = self.legacy_framing_options(camera)?;
+        self.frame_all_with_options(camera, options).map(|_| ())
+    }
+
+    /// Frames all visible bounds known directly to the scene with explicit options.
+    pub fn frame_all_with_options(
+        &mut self,
+        camera: CameraKey,
+        options: super::FramingOptions,
+    ) -> Result<super::FramingOutcome, LookupError> {
         let bounds = self
-            .scene_bounds_world()
+            .scene_bounds_world(options.includes_helpers())
             .ok_or(LookupError::ImportHasNoBounds)?;
-        self.frame(camera, bounds)
+        self.frame_bounds(camera, bounds, options)
     }
 
     /// Frames all visible mesh and instance bounds, resolving direct geometry handles through
@@ -127,13 +157,26 @@ impl Scene {
         camera: CameraKey,
         assets: &Assets<F>,
     ) -> Result<(), LookupError> {
+        let options = self.legacy_framing_options(camera)?;
+        self.frame_all_with_assets_and_options(camera, assets, options)
+            .map(|_| ())
+    }
+
+    /// Frames all visible scene content using the target viewport and view in `options`.
+    pub fn frame_all_with_assets_and_options<F>(
+        &mut self,
+        camera: CameraKey,
+        assets: &Assets<F>,
+        options: super::FramingOptions,
+    ) -> Result<super::FramingOutcome, LookupError> {
+        let include_helpers = options.includes_helpers();
         let bounds = self
-            .scene_bounds_world()
+            .scene_bounds_world(include_helpers)
             .into_iter()
-            .chain(self.asset_backed_scene_bounds_world(assets))
+            .chain(self.asset_backed_scene_bounds_world(assets, include_helpers))
             .reduce(union_aabb)
             .ok_or(LookupError::ImportHasNoBounds)?;
-        self.frame(camera, bounds)
+        self.frame_bounds(camera, bounds, options)
     }
 
     /// Frames visible scene content plus overlay anchors with enough viewport margin for
@@ -151,9 +194,9 @@ impl Scene {
         viewport_height: u32,
     ) -> Result<super::FramingOutcome, LookupError> {
         let bounds = self
-            .scene_bounds_world()
+            .scene_bounds_world(true)
             .into_iter()
-            .chain(self.asset_backed_scene_bounds_world(assets))
+            .chain(self.asset_backed_scene_bounds_world(assets, true))
             .chain(self.visible_label_anchor_bounds_world())
             .reduce(union_aabb)
             .ok_or(LookupError::ImportHasNoBounds)?;
@@ -229,125 +272,24 @@ impl Scene {
         Ok((a - b).length())
     }
 
-    fn scene_bounds_world(&self) -> Option<Aabb> {
-        self.mesh_bounds_nodes()
-            .filter(|(node, _bounds)| {
-                !matches!(
-                    self.nodes.get(*node).map(|node_ref| &node_ref.kind),
-                    Some(NodeKind::Label(_))
-                )
-            })
-            .filter_map(|(node, bounds)| {
-                let transform = self.world_transform(node)?;
-                Some(transform_aabb(bounds, transform))
-            })
-            .reduce(union_aabb)
-    }
-
-    fn visible_label_anchor_bounds_world(&self) -> Option<Aabb> {
-        self.label_nodes()
-            .map(|(_node, _label, _desc, transform)| {
-                Aabb::new(transform.translation, transform.translation)
-            })
-            .reduce(union_aabb)
-    }
-
-    fn visible_label_margin_px(&self, viewport_width: u32, viewport_height: u32) -> f32 {
-        let max_label_half_extent = self
-            .label_nodes()
-            .map(|(_node, _label, desc, _transform)| {
-                let metrics = desc.metrics();
-                let padding = (desc.size() * 0.25).ceil().max(2.0);
-                metrics.width_px.max(metrics.height_px) * 0.5 + padding + 8.0
-            })
-            .fold(0.0_f32, f32::max);
-        // Keep overlay labels from consuming most of the frame. A per-side cap of 15%
-        // leaves at least 70% of the shorter viewport dimension for the framed subject.
-        let max_usable = viewport_width.min(viewport_height) as f32 * 0.15;
-        max_label_half_extent.min(max_usable).max(0.0)
-    }
-
-    fn node_subtree_bounds_world(&self, node: NodeKey) -> Option<Aabb> {
-        let node_ref = self.nodes.get(node)?;
-        let local_bounds = self.node_bounds.get(&node).and_then(|bounds| {
-            let transform = self.world_transform(node)?;
-            Some(transform_aabb(*bounds, transform))
-        });
-        node_ref
-            .children
-            .iter()
-            .filter_map(|child| self.node_subtree_bounds_world(*child))
-            .fold(local_bounds, |bounds, child_bounds| {
-                Some(match bounds {
-                    Some(bounds) => union_aabb(bounds, child_bounds),
-                    None => child_bounds,
-                })
-            })
-    }
-
-    fn asset_backed_scene_bounds_world<F>(&self, assets: &Assets<F>) -> Option<Aabb> {
-        let mut bounds = None;
-        for (node, node_ref) in self.nodes.iter() {
-            if !self.visible_for_active_camera(node) {
-                continue;
-            }
-            if let Some(node_bounds) = self.asset_backed_node_bounds_world(node, node_ref, assets) {
-                bounds = Some(merge_optional_bounds(bounds, node_bounds));
-            }
-        }
-        bounds
-    }
-
-    fn asset_backed_node_subtree_bounds_world<F>(
+    fn legacy_framing_options(
         &self,
-        node: NodeKey,
-        assets: &Assets<F>,
-    ) -> Option<Aabb> {
-        let node_ref = self.nodes.get(node)?;
-        node_ref
-            .children
-            .iter()
-            .filter_map(|child| self.asset_backed_node_subtree_bounds_world(*child, assets))
-            .fold(
-                self.asset_backed_node_bounds_world(node, node_ref, assets),
-                |bounds, child_bounds| Some(merge_optional_bounds(bounds, child_bounds)),
-            )
-    }
-
-    fn asset_backed_node_bounds_world<F>(
-        &self,
-        node: NodeKey,
-        node_ref: &super::Node,
-        assets: &Assets<F>,
-    ) -> Option<Aabb> {
-        match &node_ref.kind {
-            NodeKind::Mesh(mesh) => {
-                let geometry = assets.geometry(mesh.geometry())?;
-                let transform = self.world_transform(node)?;
-                Some(transform_aabb(geometry.bounds(), transform))
-            }
-            NodeKind::InstanceSet(instance_set) => {
-                let instance_set = self.instance_sets.get(*instance_set)?;
-                let geometry = assets.geometry(instance_set.geometry())?;
-                let node_transform = self.world_transform(node)?;
-                instance_set
-                    .instances()
-                    .map(|instance| {
-                        transform_aabb(
-                            geometry.bounds(),
-                            compose_transform(node_transform, instance.transform()),
-                        )
-                    })
-                    .reduce(union_aabb)
-            }
-            NodeKind::Empty
-            | NodeKind::Renderable(_)
-            | NodeKind::Model(_)
-            | NodeKind::ParticleSet(_)
-            | NodeKind::Label(_)
-            | NodeKind::Camera(_)
-            | NodeKind::Light(_) => None,
-        }
+        camera: CameraKey,
+    ) -> Result<super::FramingOptions, LookupError> {
+        let descriptor = self
+            .camera(camera)
+            .ok_or(LookupError::CameraNotFound(camera))?;
+        let Camera::Perspective(perspective) = descriptor else {
+            return Err(LookupError::UnsupportedCameraType {
+                camera,
+                operation: "legacy framing",
+                supported: "perspective",
+            });
+        };
+        let aspect = positive_or(perspective.aspect, 1.0);
+        let height = 1_000_u32;
+        let width = (aspect * height as f32).round().max(1.0) as u32;
+        Ok(super::FramingOptions::new().viewport(width, height))
     }
 
     /// Rotates the selected camera node so its local -Z axis points at `target`.
@@ -403,13 +345,39 @@ impl Scene {
         self.set_node_transform_and_mark_changed(camera_node, camera_transform)
     }
 
-    pub fn center_on(&mut self, node: NodeKey, center: Vec3) -> Result<(), LookupError> {
+    /// Moves a node origin to an exact world-space point.
+    pub fn move_origin_to(&mut self, node: NodeKey, center: Vec3) -> Result<(), LookupError> {
         let mut world_transform = self
             .world_transform(node)
             .ok_or(LookupError::NodeNotFound(node))?;
         world_transform.translation = center;
         let transform = self.local_transform_for_world(node, world_transform)?;
         self.set_node_transform_and_mark_changed(node, transform)
+    }
+
+    /// Legacy origin-alignment name. Use `move_origin_to` for origins or
+    /// `center_visible_bounds_on` for visible content.
+    #[deprecated(note = "use move_origin_to or center_visible_bounds_on")]
+    pub fn center_on(&mut self, node: NodeKey, center: Vec3) -> Result<(), LookupError> {
+        self.move_origin_to(node, center)
+    }
+
+    /// Translates a subtree so its visible, non-helper bounds center reaches `center`.
+    pub fn center_visible_bounds_on<F>(
+        &mut self,
+        node: NodeKey,
+        assets: &Assets<F>,
+        center: Vec3,
+    ) -> Result<(), LookupError> {
+        let bounds = self
+            .visible_asset_backed_node_subtree_bounds_world(node, assets, false)
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        let mut world = self
+            .world_transform(node)
+            .ok_or(LookupError::NodeNotFound(node))?;
+        world.translation += center - bounds.center();
+        let local = self.local_transform_for_world(node, world)?;
+        self.set_node_transform_and_mark_changed(node, local)
     }
 
     pub fn align_to(&mut self, node: NodeKey, transform: Transform) -> Result<(), LookupError> {

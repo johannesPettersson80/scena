@@ -93,7 +93,7 @@ fn q04_doctor_fails_closed_on_missing_browser_parity_contracts() {
     .expect("strong browser page writes");
     fs::write(
         fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
-        "function assertCpuWebGl2Parity(result) { const {cpu, gpu, metrics, mutation} = result; cpu.rgba8_base64; gpu.rgba8_base64; metrics.rmse <= 0.08; metrics.ssim >= 0.93; metrics.p95_channel_delta <= 24; mutation.rejected !== true; } assertCpuWebGl2Parity(result);\n",
+        "function assertCpuWebGl2Parity(result) { const {cpu, gpu, metrics, mutation} = result; cpu.rgba8_base64; gpu.rgba8_base64; metrics.rmse <= 0.08; metrics.ssim >= 0.93; metrics.p95_channel_delta <= 24; mutation.rejected !== true; } if (postProcessing === \"off\" && backend.toLowerCase() === \"webgl2\") { assertCpuWebGl2Parity(result); }\n",
     )
     .expect("strong browser runner writes");
     fs::write(

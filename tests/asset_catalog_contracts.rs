@@ -74,8 +74,7 @@ fn asset_catalog_validation_reports_ready_and_invalid_assets() {
             .expect("invalid feature asset"),
         &[
             "invalid_source_coordinate_system",
-            "invalid_anchor",
-            "invalid_connector",
+            "load_failed",
             "preview_missing",
         ],
     );

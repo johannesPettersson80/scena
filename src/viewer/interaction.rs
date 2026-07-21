@@ -1,7 +1,40 @@
+use crate::controls::OrbitControls;
 use crate::diagnostics::LookupError;
 use crate::picking::{CursorPosition, Hit, Viewport};
+use crate::scene::{CameraKey, FramingOutcome, Scene, SceneImport, Vec3};
 
 use super::InteractiveGltfViewer;
+
+/// Derives the initial orbit transform from the imported bounds and the
+/// camera pose established by framing.
+pub(super) fn build_orbit_controls(
+    enabled: bool,
+    scene: &Scene,
+    import: &SceneImport,
+    camera: CameraKey,
+    framing: Option<FramingOutcome>,
+) -> Option<OrbitControls> {
+    if !enabled {
+        return None;
+    }
+    if let Some(framing) = framing {
+        return Some(OrbitControls::from_framing(framing));
+    }
+    let bounds = import.bounds_world(scene);
+    let target = bounds.map(|aabb| aabb.center()).unwrap_or(Vec3::ZERO);
+    let distance = scene
+        .camera_node(camera)
+        .and_then(|node| scene.world_transform(node))
+        .map(|transform| {
+            let dx = transform.translation.x - target.x;
+            let dy = transform.translation.y - target.y;
+            let dz = transform.translation.z - target.z;
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        })
+        .filter(|distance| distance.is_finite() && *distance > 0.0)
+        .unwrap_or(2.0);
+    Some(OrbitControls::new(target, distance))
+}
 
 impl InteractiveGltfViewer {
     /// Registers a callback fired by [`Self::click_at`].

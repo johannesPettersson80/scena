@@ -26,10 +26,10 @@
           "kind": "transform",
           "node": 2,
           "rendered_centroid_css_px": [
-            31.5,
-            28.322
+            30.268,
+            25.722
           ],
-          "rendered_coverage_px": 421,
+          "rendered_coverage_px": 194,
           "transform": {
             "rotation": [
               0.0,
@@ -50,7 +50,7 @@
           }
         }
       ],
-      "payload_fnv1a64": "4ce35e7a1f1d7113",
+      "payload_fnv1a64": "b595ea32b336a3e5",
       "time_seconds": 0.0,
       "transform_revision": 1
     },
@@ -64,10 +64,10 @@
           "kind": "transform",
           "node": 2,
           "rendered_centroid_css_px": [
-            42.0,
-            28.333
+            38.021,
+            29.775
           ],
-          "rendered_coverage_px": 420,
+          "rendered_coverage_px": 305,
           "transform": {
             "rotation": [
               0.0,
@@ -88,7 +88,7 @@
           }
         }
       ],
-      "payload_fnv1a64": "ad22ecc7eb5bbe75",
+      "payload_fnv1a64": "348109977e5dd6e9",
       "time_seconds": 0.5,
       "transform_revision": 2
     },
@@ -102,10 +102,10 @@
           "kind": "transform",
           "node": 2,
           "rendered_centroid_css_px": [
-            51.988,
-            28.337
+            48.533,
+            33.879
           ],
-          "rendered_coverage_px": 416,
+          "rendered_coverage_px": 486,
           "transform": {
             "rotation": [
               0.0,
@@ -126,7 +126,7 @@
           }
         }
       ],
-      "payload_fnv1a64": "25262569f956ed4d",
+      "payload_fnv1a64": "64d18948752cad5d",
       "time_seconds": 1.0,
       "transform_revision": 3
     }
@@ -137,7 +137,7 @@
     "changed_channel_count": 1,
     "invalid_channel_count": 0,
     "rendered_movement": true,
-    "rendered_movement_delta_px": 20.488,
+    "rendered_movement_delta_px": 20.004,
     "sample_count": 3,
     "unchanged_channel_count": 0,
     "visible_change": true

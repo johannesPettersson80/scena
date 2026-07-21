@@ -14,6 +14,8 @@ pub(super) fn diagnostics_json(diagnostics: &[crate::Diagnostic]) -> serde_json:
                     "severity": format!("{:?}", diagnostic.severity),
                     "message": diagnostic.message,
                     "help": diagnostic.help,
+                    "setting": diagnostic.setting,
+                    "fallback_applied": diagnostic.fallback_applied,
                 })
             })
             .collect(),
@@ -35,7 +37,7 @@ mod tests {
 }
 
 pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {
-    json!({
+    let mut value = json!({
         "buffers": stats.buffers,
         "gpu_textures": stats.gpu_textures,
         "textures": stats.textures,
@@ -77,5 +79,25 @@ pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {
         "target_height": stats.target_height,
         "directional_shadow_map_resolution": stats.directional_shadow_map_resolution,
         "directional_shadow_pcf_kernel": stats.directional_shadow_pcf_kernel,
-    })
+    });
+    let object = value
+        .as_object_mut()
+        .expect("renderer stats JSON is constructed as an object");
+    object.insert(
+        "surface_timeout_skips".to_string(),
+        json!(stats.surface_timeout_skips),
+    );
+    object.insert(
+        "surface_occluded_skips".to_string(),
+        json!(stats.surface_occluded_skips),
+    );
+    object.insert(
+        "surface_reconfigurations".to_string(),
+        json!(stats.surface_reconfigurations),
+    );
+    object.insert(
+        "surface_acquire_retries".to_string(),
+        json!(stats.surface_acquire_retries),
+    );
+    value
 }

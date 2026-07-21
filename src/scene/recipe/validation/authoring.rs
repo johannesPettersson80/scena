@@ -10,6 +10,8 @@ mod reflective_tessellation;
 mod resources;
 mod targets;
 
+pub(in crate::scene::recipe::validation) use targets::{TransformUse, validate_transform};
+
 pub(super) fn has_authored_renderable_nodes(object: &Map<String, Value>) -> bool {
     targets::has_authored_renderable_nodes(object)
         || targets::has_authored_instance_sets(object.get("instance_sets"))

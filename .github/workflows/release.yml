@@ -192,6 +192,15 @@ jobs:
           SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- release-lane-artifact macos-metal
+      - name: Required physical GPU resource lifecycle
+        env:
+          SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: "1"
+        run: >-
+          SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1
+          bash scripts/release_lane_command.sh macos-metal
+          cargo test --test c09_gpu_resource_lifecycle
+          required_hardware_gpu_resource_lifecycle_executes_complete_cycle
+          -- --exact --nocapture
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

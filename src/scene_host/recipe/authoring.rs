@@ -25,4 +25,4 @@ pub(super) use lights::build_authored_lights;
 pub(super) use materials::{AuthoredMaterialResources, build_authored_materials};
 pub(super) use nodes::{AuthoredNodeResources, build_authored_nodes};
 pub(super) use particles::{ParticleSetResources, build_authored_particle_sets};
-pub(super) use transform::local_transform_from_recipe;
+pub(super) use transform::{apply_import_transform, local_transform_from_recipe};

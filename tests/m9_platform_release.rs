@@ -2126,6 +2126,7 @@ fn pf00_animation_benchmark_row_records_work_and_byte_distributions() {
     assert_eq!(row["distributions"]["advance_ms"]["sample_count"], 3);
     assert_eq!(row["counters"]["channels_scanned"], 4);
     assert_eq!(row["counters"]["weight_values_written"], 8);
+    assert_eq!(row["counters"]["clip_clone_bytes"], 0);
     assert!(
         row["counters"]["keyframe_intervals_tested"]
             .as_u64()
@@ -2138,12 +2139,8 @@ fn pf00_animation_benchmark_row_records_work_and_byte_distributions() {
             .is_some_and(|bytes| bytes > 0),
         "profiled animation must expose actual copied bytes: {row:#}"
     );
-    assert!(
-        row["allocations"]["max_allocated_bytes"]
-            .as_u64()
-            .is_some_and(|bytes| bytes > 0),
-        "animation update must report measured allocation bytes: {row:#}"
-    );
+    assert_eq!(row["allocations"]["max_allocation_count"], 0);
+    assert_eq!(row["allocations"]["max_allocated_bytes"], 0);
 }
 
 #[test]
@@ -3824,6 +3821,10 @@ fn prepare_work_metrics_json(metrics: scena::PrepareWorkMetrics) -> serde_json::
         "gpu_pipeline_creations": metrics.gpu_pipeline_creations,
         "gpu_bind_group_creations": metrics.gpu_bind_group_creations,
         "gpu_shader_module_creations": metrics.gpu_shader_module_creations,
+        "gpu_triangle_shader_cache_hits": metrics.gpu_triangle_shader_cache_hits,
+        "gpu_triangle_shader_cache_misses": metrics.gpu_triangle_shader_cache_misses,
+        "gpu_nonblocking_polls": metrics.gpu_nonblocking_polls,
+        "gpu_blocking_polls": metrics.gpu_blocking_polls,
         "draw_uniform_unique_values": metrics.draw_uniform_unique_values,
         "draw_uniform_lookup_probes": metrics.draw_uniform_lookup_probes,
         "draw_uniform_bytes_copied": metrics.draw_uniform_bytes_copied,
@@ -4280,12 +4281,16 @@ fn render_work_metrics_json(metrics: scena::RenderWorkMetrics) -> serde_json::Va
         "gpu_pipeline_creations": metrics.gpu_pipeline_creations,
         "gpu_bind_group_creations": metrics.gpu_bind_group_creations,
         "gpu_shader_module_creations": metrics.gpu_shader_module_creations,
+        "native_scene_color_passes": metrics.native_scene_color_passes,
+        "gpu_queue_submissions": metrics.gpu_queue_submissions,
         "async_readback_submissions": metrics.async_readback_submissions,
         "peak_readbacks_in_flight": metrics.peak_readbacks_in_flight,
         "cpu_parallel_workers": metrics.cpu_parallel_workers,
         "cpu_raster_candidate_triangles": metrics.cpu_raster_candidate_triangles,
         "cpu_raster_full_rescan_triangles": metrics.cpu_raster_full_rescan_triangles,
         "cpu_raster_bin_storage_growth_bytes": metrics.cpu_raster_bin_storage_growth_bytes,
+        "cpu_output_pixels_encoded": metrics.cpu_output_pixels_encoded,
+        "cpu_primitive_flag_scan_items": metrics.cpu_primitive_flag_scan_items,
     })
 }
 

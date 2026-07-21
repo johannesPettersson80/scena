@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add()?;
     let helper = scene
         .mesh(geometry, helper_material)
-        .transform(Transform::at(Vec3::new(0.25, 0.0, 0.0)).scale_by(0.5))
+        .transform(Transform::at(Vec3::new(0.25, 0.0, 0.0)).with_uniform_scale(0.5))
         .add()?;
     let hidden = scene
         .mesh(geometry, visible_material)

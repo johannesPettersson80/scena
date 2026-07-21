@@ -130,6 +130,10 @@ impl GeometryDesc {
         new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
     }
 
+    /// Builds a closed cylinder with a duplicated side seam at `u = 1`.
+    ///
+    /// The seam duplicates position and normal data so no side triangle
+    /// interpolates backward from the final UV interval to `u = 0`.
     pub fn cylinder(radius: f32, height: f32, segments: u32) -> Self {
         let radius = radius.abs();
         let half_height = height.abs() * 0.5;
@@ -139,9 +143,13 @@ impl GeometryDesc {
         let mut indices = Vec::new();
 
         for (ring, y) in [-half_height, half_height].into_iter().enumerate() {
-            for segment in 0..segments {
+            for segment in 0..=segments {
                 let u = segment as f32 / segments as f32;
-                let theta = segment as f32 / segments as f32 * std::f32::consts::TAU;
+                let theta = if segment == segments {
+                    0.0
+                } else {
+                    u * std::f32::consts::TAU
+                };
                 let normal = Vec3::new(theta.cos(), 0.0, theta.sin());
                 vertices.push(GeometryVertex {
                     position: Vec3::new(normal.x * radius, y, normal.z * radius),
@@ -150,6 +158,7 @@ impl GeometryDesc {
                 tex_coords0.push([u, ring as f32]);
             }
         }
+        let side_row = segments + 1;
         let bottom_cap_base = vertices.len() as u32;
         for segment in 0..segments {
             let theta = segment as f32 / segments as f32 * std::f32::consts::TAU;
@@ -184,9 +193,9 @@ impl GeometryDesc {
         for segment in 0..segments {
             let next = (segment + 1) % segments;
             let bottom = segment;
-            let bottom_next = next;
-            let top = segment + segments;
-            let top_next = next + segments;
+            let bottom_next = segment + 1;
+            let top = segment + side_row;
+            let top_next = segment + 1 + side_row;
             indices.extend_from_slice(&[bottom, top, bottom_next, bottom_next, top, top_next]);
             indices.extend_from_slice(&[
                 bottom_center,
@@ -199,6 +208,10 @@ impl GeometryDesc {
         new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
     }
 
+    /// Builds a closed cone with face-local side UVs and tip vertices.
+    ///
+    /// The final face ends at `u = 1`; its base edge never wraps backward to
+    /// `u = 0` during interpolation.
     pub fn cone(radius: f32, height: f32, segments: u32) -> Self {
         let radius = radius.abs();
         let half_height = height.abs() * 0.5;
@@ -218,7 +231,7 @@ impl GeometryDesc {
                 next_theta.sin() * radius,
             );
             let tip = Vec3::new(0.0, half_height, 0.0);
-            let normal = triangle_normal(p0, p1, tip);
+            let normal = triangle_normal(p0, tip, p1);
             let base = vertices.len() as u32;
             vertices.extend_from_slice(&[
                 GeometryVertex {
@@ -236,10 +249,10 @@ impl GeometryDesc {
             ]);
             tex_coords0.extend_from_slice(&[
                 [segment as f32 / segments as f32, 1.0],
-                [next as f32 / segments as f32, 1.0],
+                [(segment + 1) as f32 / segments as f32, 1.0],
                 [(segment as f32 + 0.5) / segments as f32, 0.0],
             ]);
-            indices.extend_from_slice(&[base, base + 1, base + 2]);
+            indices.extend_from_slice(&[base, base + 2, base + 1]);
         }
 
         let bottom_center = vertices.len() as u32;
@@ -360,7 +373,7 @@ impl GeometryDesc {
         let mut indices = Vec::with_capacity(24);
         for face in faces {
             let base = vertices.len() as u32;
-            let normal = triangle_normal(face[0], face[1], face[2]);
+            let normal = triangle_normal(face[0], face[2], face[1]);
             vertices.extend(
                 face.iter()
                     .copied()
@@ -368,9 +381,9 @@ impl GeometryDesc {
             );
             tex_coords0.extend(face.iter().enumerate().map(|(index, _)| face_uvs[index]));
             if face.len() == 3 {
-                indices.extend_from_slice(&[base, base + 1, base + 2]);
+                indices.extend_from_slice(&[base, base + 2, base + 1]);
             } else {
-                indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                indices.extend_from_slice(&[base, base + 2, base + 1, base, base + 3, base + 2]);
             }
         }
         new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)

@@ -309,6 +309,7 @@ fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::GeometryDesc;
 
     #[test]
     fn generated_triangle_tangent_follows_texcoord_u_axis() {
@@ -433,6 +434,50 @@ mod tests {
         assert_eq!(
             tangents[0].handedness, -1.0,
             "mirrored UV islands must flip tangent-space bitangent handedness"
+        );
+    }
+
+    #[test]
+    fn generated_cylinder_and_cone_seams_keep_finite_local_tangents() {
+        let cylinder = GeometryDesc::cylinder(1.0, 2.0, 12);
+        let cylinder_tangents = generate_model_tangents(
+            cylinder.vertices(),
+            cylinder.indices(),
+            Some(cylinder.tex_coords0()),
+        );
+        assert_eq!(cylinder_tangents.len(), cylinder.vertices().len());
+        assert!(
+            cylinder_tangents
+                .iter()
+                .flatten()
+                .all(|component| component.is_finite()),
+            "duplicated cylinder seam must retain finite generated tangents"
+        );
+        for ring in 0..2 {
+            let first = ring * 13;
+            let seam = first + 12;
+            for component in 0..4 {
+                assert!(
+                    (cylinder_tangents[first][component] - cylinder_tangents[seam][component])
+                        .abs()
+                        <= 1.0e-5,
+                    "cylinder seam tangent mismatch at ring {ring}, component {component}: {:?} != {:?}",
+                    cylinder_tangents[first],
+                    cylinder_tangents[seam]
+                );
+            }
+        }
+
+        let cone = GeometryDesc::cone(1.0, 2.0, 12);
+        let cone_tangents =
+            generate_model_tangents(cone.vertices(), cone.indices(), Some(cone.tex_coords0()));
+        assert_eq!(cone_tangents.len(), cone.vertices().len());
+        assert!(
+            cone_tangents
+                .iter()
+                .flatten()
+                .all(|component| component.is_finite()),
+            "face-local cone tip UVs must retain finite generated tangents"
         );
     }
 

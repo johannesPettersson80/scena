@@ -16,10 +16,8 @@ use ::gltf::buffer::Source as BufferSource;
 use crate::diagnostics::AssetError;
 
 pub use self::anchors::SceneAssetAnchor;
-use self::anchors::parse_node_anchors;
 use self::animation::parse_gltf_clips;
 pub use self::connectors::SceneAssetConnector;
-use self::connectors::parse_node_connectors;
 pub use self::extensions::{GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus};
 use self::extensions::{collect_extension_diagnostics, is_v1_required_gltf_extension};
 use self::external::{external_buffer_paths, external_image_paths, resolve_relative_path};
@@ -27,6 +25,7 @@ use self::lights::parse_punctual_lights;
 pub use self::material_variants::MaterialVariantBinding;
 use self::materials::parse_materials;
 use self::meshes::parse_meshes;
+use self::nodes::parse_gltf_nodes;
 use self::scene_asset::SceneAssetData;
 pub use self::scene_asset::{
     ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, SceneAsset, SceneAssetClip, SceneAssetGeometrySummary,
@@ -35,8 +34,7 @@ pub use self::scene_asset::{
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
 use self::textures::parse_textures;
-use self::transform::from_gltf_transform;
-use super::{AssetPath, AssetProvenance, AssetStorage};
+use super::{AssetLoadWarning, AssetPath, AssetProvenance, AssetStorage};
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn gltf_now_ms() -> f64 {
@@ -68,6 +66,7 @@ mod material_variants;
 mod materials;
 mod meshes;
 mod meshopt;
+mod nodes;
 mod scene_asset;
 mod skins;
 mod textures;
@@ -225,7 +224,15 @@ impl SceneAsset {
         {
             step_start = log_gltf_step("parse_materials", step_start);
         }
-        let meshes = parse_meshes(path, &gltf.document, &buffers, &materials, storage)?;
+        let mut load_warnings = Vec::<AssetLoadWarning>::new();
+        let meshes = parse_meshes(
+            path,
+            &gltf.document,
+            &buffers,
+            &materials,
+            storage,
+            &mut load_warnings,
+        )?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("parse_meshes", step_start);
@@ -262,6 +269,7 @@ impl SceneAsset {
                 extension_diagnostics,
                 material_variants,
                 material_fallbacks,
+                load_warnings,
                 provenance,
                 retained_source_bytes: None,
             }),
@@ -361,47 +369,6 @@ fn resolve_buffers(
             }
         })
         .collect()
-}
-
-fn parse_gltf_nodes(
-    path: &AssetPath,
-    document: &::gltf::Document,
-    buffers: &buffers::ResolvedGltfBuffers,
-    meshes: &[Vec<SceneAssetMesh>],
-    lights: &[SceneAssetLight],
-) -> Result<Vec<SceneAssetNode>, AssetError> {
-    document
-        .nodes()
-        .map(|node| {
-            Ok(SceneAssetNode {
-                name: node.name().map(str::to_string),
-                children: node.children().map(|child| child.index()).collect(),
-                transform: from_gltf_transform(node.transform()),
-                meshes: node
-                    .mesh()
-                    .and_then(|mesh| meshes.get(mesh.index()))
-                    .cloned()
-                    .unwrap_or_default(),
-                instance_transforms: instancing::parse_node_instance_transforms(
-                    path, document, buffers, &node,
-                )?,
-                skin: node.skin().map(|skin| skin.index()),
-                light: node
-                    .light()
-                    .and_then(|light| lights.get(light.index()).copied()),
-                anchors: parse_node_anchors(&node),
-                connectors: parse_node_connectors(&node),
-            })
-        })
-        .collect()
-}
-
-/// Helper exposed to anchor/connector parsers: convert the `gltf` crate's
-/// `Extras = Option<Box<RawValue>>` into a `serde_json::Value` so the
-/// existing scena-specific JSON-walking validators can inspect it.
-pub(super) fn extras_to_value(extras: &::gltf::json::Extras) -> Option<serde_json::Value> {
-    let raw = extras.as_ref()?;
-    serde_json::from_str(raw.get()).ok()
 }
 
 pub(super) fn has_glb_magic(bytes: &[u8]) -> bool {

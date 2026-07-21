@@ -45,6 +45,17 @@ pub(super) const IMPORT_FIELDS: &[&str] = &[
     "material",
     "edge_emphasis",
 ];
+pub(super) const IMPORT_TRANSFORM_KINDS: &[&str] = &["raw", "trs"];
+pub(super) const AUTHORING_TRANSFORM_KINDS: &[&str] = &[
+    "raw",
+    "trs",
+    "look_at",
+    "center",
+    "ground",
+    "fit_to_size",
+    "place_on",
+    "align_to_anchor",
+];
 pub(super) const CAPTURE_FIELDS: &[&str] = &["width", "height"];
 pub(super) const PRIMITIVE_KINDS: &[&str] = &[
     "arrow", "axes", "box", "cone", "cylinder", "disc", "grid", "line", "plane", "polyline",
@@ -131,6 +142,8 @@ pub fn scene_recipe_field_model_v1() -> SchemaFieldModelV1 {
             false,
             json!({"kind":"trs"}),
         ),
+        field("$.imports[].transform.kind", "string", true, json!("trs"))
+            .with_enum_strings(IMPORT_TRANSFORM_KINDS),
         field("$.geometries[].id", "string", true, json!("box_geo")),
         field(
             "$.geometries[].primitive",
@@ -224,6 +237,8 @@ pub fn scene_recipe_field_model_v1() -> SchemaFieldModelV1 {
             false,
             json!({"kind":"trs"}),
         ),
+        field("$.nodes[].transform.kind", "string", true, json!("trs"))
+            .with_enum_strings(AUTHORING_TRANSFORM_KINDS),
         field("$.anchors[].id", "string", true, json!("mount")),
         field("$.anchors[].source.kind", "string", true, json!("authored"))
             .with_enum_strings(&["authored", "import"]),

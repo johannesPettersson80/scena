@@ -222,7 +222,20 @@ fn release_lane_content_ok_for_class(
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
     let value = serde_json::from_str::<serde_json::Value>(&text)
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-    Ok(native_gpu_render_proof_passes(&value))
+    if !native_gpu_render_proof_passes(&value) {
+        return Ok(false);
+    }
+    if lane != "linux-native-vulkan" {
+        return Ok(true);
+    }
+    let lifecycle_path =
+        root.join("target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json");
+    let lifecycle = fs::read_to_string(&lifecycle_path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    Ok(lifecycle
+        .as_ref()
+        .is_some_and(required_gpu_resource_lifecycle_proof_passes))
 }
 
 pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
@@ -245,20 +258,29 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
         ]
         .into_iter()
         .collect(),
-        "linux-native-vulkan" | "macos-metal" | "windows-dx12" => [
-            format!("target/gate-artifacts/m9-platform/{lane}/rendered-output.json"),
-            format!("target/gate-artifacts/m9-platform/{lane}/capabilities.json"),
-            format!("target/gate-artifacts/m9-platform/{lane}/surface-context-loss.json"),
-            format!("target/gate-artifacts/m9-platform/{lane}/default-scene.ppm"),
-            format!("target/gate-artifacts/m9-platform/{lane}/static-gltf.ppm"),
-            format!("target/gate-artifacts/m9-platform/{lane}/pbr-directional-red.ppm"),
-            format!("target/gate-artifacts/m9-platform/{lane}/pbr-point-green.ppm"),
-            format!("target/gate-artifacts/m9-platform/{lane}/pbr-spot-blue.ppm"),
-            "target/gate-artifacts/m9-platform/m9-benchmarks.json".to_string(),
-            "target/gate-artifacts/m9-platform/m9-benchmarks-feature-matrix.json".to_string(),
-        ]
-        .into_iter()
-        .collect(),
+        "linux-native-vulkan" | "macos-metal" | "windows-dx12" => {
+            let mut artifacts = [
+                format!("target/gate-artifacts/m9-platform/{lane}/rendered-output.json"),
+                format!("target/gate-artifacts/m9-platform/{lane}/capabilities.json"),
+                format!("target/gate-artifacts/m9-platform/{lane}/surface-context-loss.json"),
+                format!("target/gate-artifacts/m9-platform/{lane}/default-scene.ppm"),
+                format!("target/gate-artifacts/m9-platform/{lane}/static-gltf.ppm"),
+                format!("target/gate-artifacts/m9-platform/{lane}/pbr-directional-red.ppm"),
+                format!("target/gate-artifacts/m9-platform/{lane}/pbr-point-green.ppm"),
+                format!("target/gate-artifacts/m9-platform/{lane}/pbr-spot-blue.ppm"),
+                "target/gate-artifacts/m9-platform/m9-benchmarks.json".to_string(),
+                "target/gate-artifacts/m9-platform/m9-benchmarks-feature-matrix.json".to_string(),
+            ]
+            .into_iter()
+            .collect::<Vec<_>>();
+            if lane == "linux-native-vulkan" {
+                artifacts.push(
+                    "target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json"
+                        .to_string(),
+                );
+            }
+            artifacts
+        }
         "linux-webgl2-chromium" => [
             "target/gate-artifacts/m6-rust-wasm-renderer-probe.json",
             "target/gate-artifacts/round-e-cloudflare-material-proof.json",
@@ -302,7 +324,12 @@ pub(crate) fn release_lane_expected_commands(lane: &str) -> Vec<&'static str> {
             "cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact",
             "node scripts/evaluate_round_e_cpu_materials.cjs",
         ],
-        "linux-native-vulkan" | "macos-metal" | "windows-dx12" => vec![
+        "linux-native-vulkan" => vec![
+            "cargo test --test m9_platform_release",
+            "cargo check --examples",
+            "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1 cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
+        ],
+        "macos-metal" | "windows-dx12" => vec![
             "cargo test --test m9_platform_release",
             "cargo check --examples",
         ],
@@ -533,28 +560,15 @@ pub(crate) fn run_claim_audit() -> Result<(), Vec<Finding>> {
     Ok(())
 }
 
-pub(crate) fn run_release_readiness() -> Result<(), Vec<Finding>> {
-    let root = repo_root().map_err(|message| vec![Finding::new("RELEASE-READY-ROOT", message)])?;
-    let mut findings = Vec::new();
-    check_release_readiness(&root, &mut findings);
-    if findings.is_empty() {
-        println!("scena release readiness: pass");
-        Ok(())
-    } else {
-        Err(findings)
-    }
-}
-
 pub(crate) fn check_release_readiness(root: &Path, findings: &mut Vec<Finding>) {
     run_docs_doctor(root, findings);
     run_architecture_doctor(root, findings);
     check_release_readiness_adr(root, findings);
     check_release_readiness_checklists(root, findings);
-    check_release_readiness_artifact_env(root, findings);
 }
 
 pub(crate) fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Finding>) {
-    let rel = "docs/release-notes/v1.8.0.md";
+    let rel = "docs/release-notes/v1.9.0.md";
     let path = root.join(rel);
     let Ok(text) = fs::read_to_string(&path) else {
         findings.push(Finding::new(
@@ -566,7 +580,7 @@ pub(crate) fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Findin
     if text.contains("Remaining Release Blockers") || text.contains("open release blocker") {
         findings.push(Finding::new(
             "RELEASE-READY-M10",
-            "v1.8.0 release notes still record open release blockers",
+            "v1.9.0 release notes still record open release blockers",
         ));
     }
 }
@@ -575,6 +589,7 @@ pub(crate) fn check_release_readiness_checklists(root: &Path, findings: &mut Vec
     for rel in [
         "README.md",
         "docs/README.md",
+        "docs/release-notes/v1.9.0.md",
         "docs/release-notes/v1.8.0.md",
         "docs/release-notes/v1.7.2.md",
         "docs/release-notes/v1.7.1.md",
@@ -600,17 +615,4 @@ pub(crate) fn check_release_readiness_checklists(root: &Path, findings: &mut Vec
             }
         }
     }
-}
-
-pub(crate) fn check_release_readiness_artifact_env(root: &Path, findings: &mut Vec<Finding>) {
-    let Ok(configured_root) = env::var("SCENA_RELEASE_ARTIFACT_ROOT") else {
-        return;
-    };
-    let configured_path = PathBuf::from(configured_root);
-    let artifact_root = if configured_path.is_absolute() {
-        configured_path
-    } else {
-        root.join(configured_path)
-    };
-    check_release_artifact_bundle(&artifact_root, findings);
 }

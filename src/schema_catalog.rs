@@ -9,11 +9,12 @@ mod reports;
 use entries::SchemaEntryRow;
 
 pub use agent_smoke::{
-    AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AgentSmokeTemplateCommandV1, AgentSmokeTemplateFileV1,
-    AgentSmokeTemplateV1,
+    AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AGENT_TEMPLATE_CATALOG_SCHEMA_V1, AgentSmokeTemplateCommandV1,
+    AgentSmokeTemplateFileV1, AgentSmokeTemplateV1, AgentTemplateCatalogEntryV1,
+    AgentTemplateCatalogV1,
 };
 pub use fixtures::nearest_schema_name;
-pub use reports::{schema_catalog_entry, schema_catalog_v1};
+pub use reports::{schema_catalog_entry, schema_catalog_v1, schema_entry_report_v1};
 
 pub const SCHEMA_CATALOG_SCHEMA_V1: &str = "scena.schema_catalog.v1";
 pub const SCHEMA_ENTRY_SCHEMA_V1: &str = "scena.schema_entry.v1";
@@ -44,33 +45,6 @@ pub struct SchemaEntryReportV1 {
     pub invalid_example: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_model: Option<SchemaFieldModelV1>,
-}
-
-pub fn schema_entry_report_v1(schema: &str) -> Option<SchemaEntryReportV1> {
-    let entry = schema_catalog_entry(schema)?;
-    let example = fixtures::schema_fixture_json(schema)
-        .and_then(|fixture| serde_json::from_str(fixture).ok())
-        .unwrap_or(serde_json::Value::Null);
-    Some(SchemaEntryReportV1 {
-        schema: SCHEMA_ENTRY_SCHEMA_V1.to_owned(),
-        entry,
-        example,
-        invalid_example: reports::invalid_example_for_schema(schema),
-        field_model: reports::field_model_for_schema(schema),
-    })
-}
-
-fn schema_catalog_entries() -> Vec<SchemaCatalogEntryV1> {
-    schema_entry_rows()
-        .iter()
-        .map(|row| SchemaCatalogEntryV1 {
-            schema: row.schema.to_owned(),
-            owner_module: row.owner_module.to_owned(),
-            summary: row.summary.to_owned(),
-            feature_flag: row.feature_flag.map(str::to_owned),
-            fixture_path: row.fixture_path.map(str::to_owned),
-        })
-        .collect()
 }
 
 fn schema_entry_rows() -> &'static [SchemaEntryRow] {
@@ -174,11 +148,36 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/agent_smoke_template.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.agent_template_catalog.v1",
+            owner_module: "schema_catalog/agent_smoke",
+            summary: "Canonical agent template names, aliases, status, and required features.",
+            feature_flag: Some("inspection"),
+            fixture_path: Some("tests/assets/stable-contracts/agent_template_catalog.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.browser_proof_run.v1",
             owner_module: "bin/scena",
             summary: "One-command browser proof wrapper result with lane, command, and artifact paths.",
             feature_flag: None,
             fixture_path: Some("tests/assets/stable-contracts/browser_proof_run.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.q01.required_webgpu_pixel_parity.v1",
+            owner_module: "browser_probe",
+            summary: "Source-bound CPU/WebGPU pixel comparison with mutations, adapter, and artifact provenance.",
+            feature_flag: Some("browser-probe"),
+            fixture_path: Some(
+                "tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json",
+            ),
+        },
+        SchemaEntryRow {
+            schema: "scena.q04.required_gpu_resource_lifecycle.v1",
+            owner_module: "render",
+            summary: "Physical-GPU prepare, render, release, and confirmed resource-retirement evidence.",
+            feature_flag: None,
+            fixture_path: Some(
+                "tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json",
+            ),
         },
         SchemaEntryRow {
             schema: "scena.appearance_expectation.v1",
@@ -356,6 +355,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/asset_doctor.v1.json"),
         },
         SchemaEntryRow {
+            schema: crate::ASSET_CONVERSION_SCHEMA_V1,
+            owner_module: "assets/conversion",
+            summary: "FBX-to-glTF conversion plan, captured tool diagnostics, and outcome.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/asset_conversion.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.asset_catalog.v1",
             owner_module: "assets",
             summary: "Host-owned asset catalog manifest consumed by Scena readiness validation.",
@@ -435,69 +441,6 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             summary: "SceneHost event batch for pick, hover, load, diagnostic, capture, and surface events.",
             feature_flag: Some("scene-host"),
             fixture_path: Some("tests/assets/stable-contracts/host_event.v1.json"),
-        },
-        SchemaEntryRow {
-            schema: "scena.release.findings.v1",
-            owner_module: "xtask/release",
-            summary: "Independent release-review findings register bound to one source commit.",
-            feature_flag: None,
-            fixture_path: None,
-        },
-        SchemaEntryRow {
-            schema: "scena.release.staging.v1",
-            owner_module: "xtask/release",
-            summary: "Release artifact staging metadata kept separate from source evidence provenance.",
-            feature_flag: None,
-            fixture_path: None,
-        },
-        SchemaEntryRow {
-            schema: "scena.recipe_patch.v1",
-            owner_module: "scene/recipe",
-            summary: "Source-digest-bound placement update with complete canonical recipe and semantic change summary.",
-            feature_flag: None,
-            fixture_path: Some("tests/assets/stable-contracts/recipe_patch.v1.json"),
-        },
-        SchemaEntryRow {
-            schema: "scena.vocab.v1",
-            owner_module: "vocabulary",
-            summary: "Closed renderer and recipe vocabularies with stable owners and versions.",
-            feature_flag: None,
-            fixture_path: Some("tests/assets/stable-contracts/vocab.v1.json"),
-        },
-        SchemaEntryRow {
-            schema: "scena.recipe_policy.v1",
-            owner_module: "scene/recipe",
-            summary: "Effective recipe sandbox roots, URI/network policy, limits, and value sources.",
-            feature_flag: None,
-            fixture_path: Some("tests/assets/stable-contracts/recipe_policy.v1.json"),
-        },
-        SchemaEntryRow {
-            schema: "scena.cli_error.v1",
-            owner_module: "bin/scena",
-            summary: "Structured CLI dispatch and argument error emitted on stderr.",
-            feature_flag: None,
-            fixture_path: Some("tests/assets/stable-contracts/cli_error.v1.json"),
-        },
-        SchemaEntryRow {
-            schema: "scena.cli_io_error.v1",
-            owner_module: "bin/scena",
-            summary: "Structured fatal CLI stdout write failure report emitted on stderr.",
-            feature_flag: None,
-            fixture_path: None,
-        },
-        SchemaEntryRow {
-            schema: "scena.cli_help.v1",
-            owner_module: "bin/scena",
-            summary: "Machine-readable scena CLI command, option, and guide discovery.",
-            feature_flag: None,
-            fixture_path: None,
-        },
-        SchemaEntryRow {
-            schema: "scena.cli_version.v1",
-            owner_module: "bin/scena",
-            summary: "Machine-readable package version, commit, and compiled feature report.",
-            feature_flag: None,
-            fixture_path: None,
         },
     ]
 }

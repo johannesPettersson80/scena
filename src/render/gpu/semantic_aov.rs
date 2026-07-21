@@ -6,12 +6,10 @@ use crate::scene::{ClippingPlane, SectionBox};
 
 use super::GpuPreparedResources;
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
-use super::material_bindings::MaterialTextureBindingMode;
 use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
 use super::materials::MaterialResources;
 use super::output::{
-    DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER, GPU_TRIANGLE_SHADER_TEXTURE_2D,
-    OutputUniformUpload, encode_clipping_uniform, encode_output_uniform,
+    DRAW_UNIFORM_ENTRY_STRIDE, OutputUniformUpload, encode_clipping_uniform, encode_output_uniform,
 };
 use super::pipeline::SCENA_FRONT_FACE;
 use super::stats::GpuResourceStats;
@@ -61,7 +59,7 @@ pub(super) struct SemanticAovResourceDescriptor<'a> {
     pub(super) output_layout: &'a wgpu::BindGroupLayout,
     pub(super) material_layout: &'a wgpu::BindGroupLayout,
     pub(super) draw_layout: &'a wgpu::BindGroupLayout,
-    pub(super) texture_binding_mode: MaterialTextureBindingMode,
+    pub(super) triangle_shader: &'a wgpu::ShaderModule,
     pub(super) reversed_z: bool,
     pub(super) attribution: GpuSemanticAttribution,
     #[cfg(target_arch = "wasm32")]
@@ -77,7 +75,7 @@ pub(super) fn create_resources(
         output_layout,
         material_layout,
         draw_layout,
-        texture_binding_mode,
+        triangle_shader,
         reversed_z,
         attribution,
         #[cfg(target_arch = "wasm32")]
@@ -133,7 +131,7 @@ pub(super) fn create_resources(
             output_layout,
             material_layout,
             draw_layout,
-            texture_binding_mode,
+            triangle_shader,
             reversed_z,
             false,
         ),
@@ -142,7 +140,7 @@ pub(super) fn create_resources(
             output_layout,
             material_layout,
             draw_layout,
-            texture_binding_mode,
+            triangle_shader,
             reversed_z,
             true,
         ),
@@ -185,7 +183,8 @@ pub(super) fn resource_stats(resources: &SemanticAovResources) -> GpuResourceSta
         render_targets: 4,
         pipelines: 2 + u64::from(webgl2_readback),
         bind_groups: u64::from(webgl2_readback) * 3,
-        shader_modules: 2 + u64::from(webgl2_readback),
+        shader_modules: u64::from(webgl2_readback),
+        shader_module_creations: u64::from(webgl2_readback),
         approximate_gpu_memory_bytes: target_bytes
             .saturating_mul(4)
             .saturating_add(readback_bytes.saturating_mul(3)),
@@ -206,18 +205,10 @@ fn create_pipeline(
     output_layout: &wgpu::BindGroupLayout,
     material_layout: &wgpu::BindGroupLayout,
     draw_layout: &wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
+    shader: &wgpu::ShaderModule,
     reversed_z: bool,
     double_sided: bool,
 ) -> wgpu::RenderPipeline {
-    let source = match texture_binding_mode {
-        MaterialTextureBindingMode::Texture2d => GPU_TRIANGLE_SHADER_TEXTURE_2D,
-        MaterialTextureBindingMode::Texture2dArray => GPU_TRIANGLE_SHADER,
-    };
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.semantic_aov.shader"),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
-    });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.semantic_aov.pipeline_layout"),
         bind_group_layouts: &[
@@ -235,7 +226,7 @@ fn create_pipeline(
         }),
         layout: Some(&layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[
@@ -269,7 +260,7 @@ fn create_pipeline(
         }),
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some("fs_semantic"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[color_target(), color_target(), color_target()],

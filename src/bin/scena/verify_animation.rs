@@ -30,13 +30,13 @@ pub(crate) struct VerifyAnimationCommandArgs {
 
 pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = VerifyAnimationCommandArgs::parse(args)?;
-    let input = match resolve_scene_input(&args.input) {
+    let input = match resolve_scene_input(&args.input, scena::RecipeBuildPolicy::testing()) {
         Ok(input) => input,
         Err(outcome) => return Ok(outcome),
     };
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
-    if input.has_scene_host_directives() {
+    if input.is_recipe() {
         #[cfg(feature = "scene-host")]
         {
             return pollster::block_on(recipe::run_verify_recipe_animation(

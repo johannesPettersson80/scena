@@ -8,18 +8,35 @@ use super::dispersion_materials::check_dispersion_material_contracts;
 use super::iridescence_materials::check_iridescence_material_contracts;
 use super::material_texture_diagnostics::check_material_texture_diagnostic_contracts;
 use super::sheen_materials::check_sheen_material_contracts;
+use super::texture_baseline::check_texture_baseline_contracts;
 use super::visual_materials::check_m8_visual_material_contracts;
 use crate::app::prelude::*;
 mod c03_texture;
 mod c04_deformation;
 mod c05_units;
+mod c08_animation_basis;
+mod c09_transactional_reload;
+mod c10_cache_policy;
+mod c14_semantics;
+mod c15_marker_transforms;
 pub(crate) use c03_texture::check_c03_texture_contracts;
 pub(crate) use c04_deformation::check_c04_deformation_contracts;
 pub(crate) use c05_units::check_c05_unit_contracts;
+pub(crate) use c08_animation_basis::check_c08_animation_basis_contract;
+pub(crate) use c09_transactional_reload::check_c09_transactional_reload_contract;
+pub(crate) use c10_cache_policy::check_c10_cache_policy_contract;
+pub(crate) use c14_semantics::check_c14_gltf_semantic_contract;
+pub(crate) use c15_marker_transforms::check_c15_marker_transform_contract;
 pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
     check_c03_texture_contracts(root, findings);
     check_c04_deformation_contracts(root, findings);
     check_c05_unit_contracts(root, findings);
+    check_c08_animation_basis_contract(root, findings);
+    check_c09_transactional_reload_contract(root, findings);
+    check_c10_cache_policy_contract(root, findings);
+    check_c14_gltf_semantic_contract(root, findings);
+    check_c15_marker_transform_contract(root, findings);
+    check_texture_baseline_contracts(root, findings);
     check_m8_instancing_contracts(root, findings);
     check_clearcoat_material_contracts(root, findings);
     check_sheen_material_contracts(root, findings);
@@ -71,20 +88,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         "ASSETS-M8",
         "src/assets.rs",
         &["TextureSourceFormat", "source_format"],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/texture.rs",
-        &[
-            "validate_texture_source_format",
-            "UnsupportedTextureFormat",
-            "TextureSourceFormat",
-            "source_format",
-            "TextureSourceFormat::Jpeg",
-            "decode_jpeg_rgba8",
-        ],
     );
     require_contains(
         root,
@@ -248,22 +251,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         &[
             "m8_release_unreferenced_with_scene_roots_retains_older_reload_descriptors",
             "release_unreferenced_with_scene_roots",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/texture.rs",
-        &[
-            "decode_png_rgba8",
-            "decode_jpeg_rgba8",
-            "has_decoded_pixels",
-            "decode_missing_pixels_from_bytes",
-            "wrap_texture_coordinate",
-            "TextureWrap::ClampToEdge",
-            "TextureWrap::MirroredRepeat",
-            "decoded_mip_metadata",
         ],
     );
     require_contains(

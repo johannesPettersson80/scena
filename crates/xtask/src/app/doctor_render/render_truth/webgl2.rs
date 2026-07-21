@@ -56,7 +56,7 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "src/render/gpu/draw_surface.rs",
         &[
             "pub(in crate::render) fn render_to_surface",
-            "surface.surface.get_current_texture()",
+            "surface_frame::acquire_surface_frame",
             "encode_shadow_caster_pass",
             "encode_scene_color_passes",
             "surface_output.present();",

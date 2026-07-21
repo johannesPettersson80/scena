@@ -67,7 +67,7 @@ fn projected_primitive_counts(
                 ProjectedGeometryCounts {
                     vertices: checked_add(
                         checked_mul(segments, 4, "cylinder vertices")?,
-                        2,
+                        4,
                         "cylinder vertices",
                     )?,
                     indices: checked_mul(segments, 12, "cylinder indices")?,

@@ -1,8 +1,14 @@
 use super::create_post_pipeline;
 
-const SHADER: &str = include_str!("blit.wgsl");
-const SRGB_SHADER: &str = concat!(
-    include_str!("blit_srgb.wgsl"),
+const LINEAR_TARGET_SHADER: &str = concat!(
+    include_str!("blit.wgsl"),
+    "\n",
+    include_str!("post_output_linear.wgsl")
+);
+const SRGB_BYTE_TARGET_SHADER: &str = concat!(
+    include_str!("blit.wgsl"),
+    "\n",
+    include_str!("post_output_srgb.wgsl"),
     "\n",
     include_str!("../../color_contract.wgsl")
 );
@@ -12,27 +18,30 @@ pub(super) fn create_surface_pipeline(
     pipeline_layout: &wgpu::PipelineLayout,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    create_post_pipeline(
-        device,
-        "scena.gpu_post.surface_blit_pipeline",
-        SHADER,
-        pipeline_layout,
-        format,
-    )
+    create_target_pipeline(device, pipeline_layout, format)
 }
 
-pub(super) fn create_srgb_pipeline(
+pub(super) fn create_target_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
     create_post_pipeline(
         device,
-        "scena.gpu_post.srgb_blit_pipeline",
-        SRGB_SHADER,
+        "scena.gpu_post.target_blit_pipeline",
+        shader_for_target(format),
         pipeline_layout,
         format,
     )
+}
+
+const fn shader_for_target(format: wgpu::TextureFormat) -> &'static str {
+    match format {
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm => {
+            SRGB_BYTE_TARGET_SHADER
+        }
+        _ => LINEAR_TARGET_SHADER,
+    }
 }
 
 pub(super) fn encode(

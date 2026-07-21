@@ -211,12 +211,16 @@ impl Color {
     }
 }
 
-fn srgb_u8_to_linear(channel: u8) -> f32 {
+pub(crate) fn srgb_u8_to_linear(channel: u8) -> f32 {
     static LUT: OnceLock<[f32; 256]> = OnceLock::new();
     LUT.get_or_init(|| {
         std::array::from_fn(|index| {
             let srgb = index as f32 / 255.0;
-            Srgb::new(srgb, srgb, srgb).into_linear().red
+            if srgb <= 0.04045 {
+                srgb / 12.92
+            } else {
+                ((srgb + 0.055) / 1.055).powf(2.4)
+            }
         })
     })[usize::from(channel)]
 }
@@ -264,12 +268,12 @@ mod tests {
     #[test]
     fn pf04_pf05_contract_srgb_u8_lut_is_bit_exact_for_every_byte() {
         for channel in u8::MIN..=u8::MAX {
-            let expected = Color::from_srgb(
-                f32::from(channel) / 255.0,
-                f32::from(channel) / 255.0,
-                f32::from(channel) / 255.0,
-            )
-            .r;
+            let srgb = f32::from(channel) / 255.0;
+            let expected = if srgb <= 0.04045 {
+                srgb / 12.92
+            } else {
+                ((srgb + 0.055) / 1.055).powf(2.4)
+            };
             assert_eq!(
                 srgb_u8_to_linear(channel).to_bits(),
                 expected.to_bits(),

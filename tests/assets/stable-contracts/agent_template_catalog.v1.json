@@ -1,0 +1,96 @@
+{
+  "schema": "scena.agent_template_catalog.v1",
+  "templates": [
+    {
+      "name": "animated-viewer",
+      "aliases": ["animated_viewer"],
+      "status": "ready",
+      "required_features": ["inspection"],
+      "summary": "Animated asset playback and change verification."
+    },
+    {
+      "name": "cad-inspection",
+      "aliases": ["cad_inspection"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "CAD section, measurement, and callout inspection."
+    },
+    {
+      "name": "cad-plate",
+      "aliases": ["cad_plate"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Authored CAD plate starter scene."
+    },
+    {
+      "name": "dashboard-bars",
+      "aliases": ["dashboard_bars"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Authored industrial dashboard starter."
+    },
+    {
+      "name": "data-visualization",
+      "aliases": ["data_visualization"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Authored data visualization with verification."
+    },
+    {
+      "name": "documentation-renderer",
+      "aliases": ["documentation_renderer"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Documentation capture and annotation workflow."
+    },
+    {
+      "name": "interaction-proof",
+      "aliases": ["interaction_proof"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Synthetic hover and selection verification."
+    },
+    {
+      "name": "live-state-viewer",
+      "aliases": ["live_state_viewer"],
+      "status": "ready",
+      "required_features": ["inspection"],
+      "summary": "Visibility and live-state diagnosis workflow."
+    },
+    {
+      "name": "machine-state-viewer",
+      "aliases": ["machine_state_viewer"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Authored machine-state starter scene."
+    },
+    {
+      "name": "primitive-scene",
+      "aliases": ["primitive_scene"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Authored primitive starter scene."
+    },
+    {
+      "name": "product-configurator",
+      "aliases": [],
+      "status": "ready",
+      "required_features": ["inspection"],
+      "summary": "Imported material-variant product configuration proof."
+    },
+    {
+      "name": "product-configurator-starter",
+      "aliases": ["product_configurator"],
+      "status": "ready",
+      "required_features": ["inspection", "scene-host"],
+      "summary": "Authored-from-scratch product configurator starter."
+    },
+    {
+      "name": "web-viewer",
+      "aliases": ["web_viewer"],
+      "status": "ready",
+      "required_features": ["inspection"],
+      "summary": "Portable web-viewer render workflow."
+    }
+  ]
+}

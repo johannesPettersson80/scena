@@ -16,6 +16,7 @@ package version.
 
 | Feature | Purpose |
 |---|---|
+| `agent` | complete opt-in self-verification surface; enables `scene-host`, which already enables `inspection` |
 | `controls` | compatibility marker; platform-neutral orbit, pan, zoom, and focus controls are always compiled |
 | `controls-winit` | compatibility alias enabling `controls`; no `winit` dependency or hidden event loop is added |
 | `controls-web` | compatibility alias enabling `controls`; browser hosts translate DOM events explicitly |
@@ -38,7 +39,18 @@ provenance value contracts are available with the default crate APIs.
 Inspection contracts require `inspection`; the browser/native host facade
 requires `scene-host`, which enables `inspection`.
 
+The `agent` composition is the public one-step choice for recipe authoring,
+inspection, rendering, and verification loops. It intentionally names only
+`scene-host`; listing `inspection` again would misrepresent the actual feature
+graph.
+
 ## Recommended combinations
+
+Complete agent/self-verification surface:
+
+```bash
+cargo add scena --features agent
+```
 
 Native viewer:
 
@@ -87,8 +99,10 @@ cargo add scena --features scene-host,controls-web
 
 ## Default feature set
 
-The default feature set is intentionally small. Add only the integrations your
-application needs.
+The default feature set is exactly empty. `agent` is opt-in and aliases only
+existing code, so it adds no dependencies or package files beyond selecting
+the already documented `scene-host` -> `inspection` graph. Add only the
+integrations your application needs.
 
 PNG, JPEG, and WebP decoding is available without an opt-in feature because
 these are the baseline native image paths. KTX2/Basis remains optional behind

@@ -1,6 +1,8 @@
 # Browser renderer-fidelity dependencies
 
-Status: planned sibling track
+Status: archived historical evidence
+Canonical active backlog:
+`docs/checklists/full-repo-review-v1.8.0-remediation.md`
 Date: 2026-06-01
 Scope: renderer-quality dependencies that must be closed before the WASM
 `SceneHost` and stable JSON work can claim final browser visual proof.
@@ -145,4 +147,3 @@ SCENA_BROWSER_BACKENDS=webgl2 node tests/browser/m6_rust_wasm_renderer_probe.js
       exact rendered-output proof artifact.
 - [ ] Any waived fidelity item needs an ADR or release-note entry naming owner,
       expiry, affected backend, user-visible risk, and replacement evidence.
-

@@ -20,6 +20,52 @@ cargo install scena
 scena-convert --help
 ```
 
+Plan an FBX conversion without installing the external converter yet:
+
+```bash
+scena-convert --json --input model.fbx --output model.glb --dry-run
+```
+
+Machine mode emits exactly one `scena.asset_conversion.v1` result for success
+or failure and captures tool progress/warnings as diagnostics. Pass `--human`
+when an operator wants plain text and live converter output.
+
+For recipe and agent-template commands, install the agent-facing features:
+
+```bash
+cargo install scena --features agent
+scena examples agent list
+scena examples agent get primitive-scene --out scena-agent/primitive-scene
+scena validate-recipe scena-agent/primitive-scene/recipe.json --full
+scena recipe build scena-agent/primitive-scene/recipe.json
+scena recipe render scena-agent/primitive-scene/recipe.json --introspect --out first-scene.png
+```
+
+This sequence is portable from any working directory. The generated recipe
+uses package-embedded sample assets and the licensed `studio` environment
+preset; it does not require a cloned `scena` repository.
+The opt-in `agent` feature is the one-step self-verification surface: it enables
+`scene-host`, which already enables `inspection`. Default library builds remain
+feature-empty; do not redundantly request both lower-level features.
+Commands that accept `<asset-or-recipe>` keep raw glTF/GLB on the direct asset
+path, but always build a parsed recipe in full through the same sandbox as
+`recipe build`. A rejected later import is a nonzero structured failure, never
+a successful partial scene.
+
+If a recipe intentionally references a model library outside the working
+directory, authorize only that directory and reuse the option on every step:
+
+```bash
+scena policy recipe --allow-root /srv/models
+scena validate-recipe recipe.json --full --allow-root /srv/models
+scena recipe build recipe.json --allow-root /srv/models
+scena recipe render recipe.json --introspect --out frame.png --allow-root /srv/models
+```
+
+`--allow-root` is repeatable. Roots must be existing directories and are
+reported canonically under `policy.allowed_roots`; canonical resource paths
+must remain below one of those roots, so `..` and symlink escapes remain denied.
+
 ## Run an example
 
 Clone the repository and run the model-viewer example:
@@ -43,6 +89,28 @@ cargo check --examples
 ```
 
 ## Create a first scene
+
+For a PBR glTF/GLB model viewer, start with the high-level path:
+
+```rust,no_run
+# async fn first_render_example() -> Result<(), Box<dyn std::error::Error>> {
+let first = scena::first_render_gltf_headless("machine.glb", 800, 600).await?;
+for diagnostic in first.diagnostics() {
+    eprintln!("{}", diagnostic.message());
+}
+# Ok(())
+# }
+```
+
+The high-level viewer frames imported bounds and, only when the asset has no
+authored light or environment, applies a neutral directional fallback against
+a studio background. The structured diagnostic names `viewer.lighting` and
+sets `fallback_applied` so the fallback is never silent. Use
+`without_default_lighting()` with an explicit background for deliberately dark
+diagnostic renders.
+
+When assembling the lower-level scene yourself, lighting and background remain
+your responsibility. This explicit unlit example is deterministic by design:
 
 ```rust,no_run
 use scena::{Assets, Color, GeometryDesc, MaterialDesc, Renderer, Scene};

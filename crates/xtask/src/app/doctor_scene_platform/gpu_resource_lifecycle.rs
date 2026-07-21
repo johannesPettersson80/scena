@@ -1,6 +1,9 @@
 use crate::app::prelude::*;
 
+mod q04_evidence;
+
 pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    q04_evidence::check_q04_required_gpu_lifecycle_evidence(root, findings);
     const RULE: &str = "RENDER-C09";
     let required: &[(&str, &[&str])] = &[
         (
@@ -37,7 +40,7 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "scena.gpu_post.texture_pipeline_layout",
                 "scena.gpu_post.depth_pipeline_layout",
                 "fxaa::create_pipelines",
-                "pipelines - u64::from(resources.surface_fxaa_pipeline.is_some())",
+                "optional_surface_pipelines + 6 - u64::from(resources.surface_fxaa_pipeline.is_some())",
                 "scena.gpu_post.uniform_staging",
                 "POST_UNIFORM_SLOT_COUNT",
                 "wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST",
@@ -304,6 +307,10 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "native combined output collapsed to bloom-only",
                 "native combined output collapsed to FXAA-only",
                 "native off-again output did not restore baseline pixels",
+                "resize_lifecycle",
+                "target_changed_requires_prepare",
+                "surface_loss_handling",
+                "host_surface_recreation_required",
                 "output_toggle",
             ],
         ),
@@ -319,21 +326,45 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "validateNativeSurface",
                 "validateNativeFr06",
                 "validateFr06Browser",
+                "validateQ01Parity",
+                "validateQ04Lifecycle",
+                "validateP01Benchmark",
+                "native_surface_resize_recovery",
             ],
         ),
         (
             "scripts/run_windows_complete_hardware_proof.ps1",
             &[
                 "bundle-files.sha256",
+                "source-commit.txt",
+                "Proof bundle source commit",
                 "test:required-gpu-parity",
+                "browser:q01-parity",
                 "browser:pf01-output-toggle",
                 "browser:fr06-semantic-aov",
                 "scena-native-hardware-proof.exe",
                 "scena-fr06-native-hardware-proof.exe",
+                "scena-q04-gpu-resource-lifecycle.exe",
+                "scena-p01-shader-module-cache.exe",
+                "SCENA_RUN_CONTROLLED_P01_BENCHMARK",
                 "SCENA_REQUIRE_HARDWARE_GPU",
                 "windows_complete_hardware_proof_validation.js",
                 "Compress-Archive",
                 "Invoke-WebRequest -UseBasicParsing -Method Put",
+            ],
+        ),
+        (
+            "scripts/build_windows_complete_hardware_bundle.sh",
+            &[
+                "Windows release-evidence bundles require a clean committed checkout",
+                "wasm-pack 0.14.0",
+                "x86_64-pc-windows-gnu",
+                "scena-native-hardware-proof.exe",
+                "scena-fr06-native-hardware-proof.exe",
+                "scena-q04-gpu-resource-lifecycle.exe",
+                "scena-p01-shader-module-cache.exe",
+                "bundle-files.sha256",
+                "source-commit.txt",
             ],
         ),
         (
@@ -463,21 +494,6 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
              to either bloom-only or FXAA-only output",
         ));
     }
-
-    require_rust_test_functions(
-        root,
-        findings,
-        RULE,
-        "tests/c09_gpu_resource_lifecycle.rs",
-        &[
-            "msaa8_is_fully_prepared_or_rejected_before_render",
-            "output_resource_changes_require_prepare_and_stats_are_complete_before_render",
-            "cpu_poll_reports_explicitly_unsupported_instead_of_success",
-            "resize_and_context_recovery_rebuild_the_same_resource_shape",
-            "output_revision_and_native_readback_modes_are_explicit_and_render_allocates_no_gpu_resources",
-            "double_buffered_async_readback_batch_preserves_input_order",
-        ],
-    );
 
     for relative in ["src/render/gpu/draw.rs", "src/render/gpu/draw_surface.rs"] {
         let Ok(source) = fs::read_to_string(root.join(relative)) else {

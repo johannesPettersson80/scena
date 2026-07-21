@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use super::scena_input::resolve_scene_input;
+use super::scena_input::{
+    ResolvedRecipeBuild, resolve_scene_input, scene_host_build_from_resolved_recipe,
+};
 use super::scena_output::{CliOutcome, json_outcome};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,14 +29,48 @@ pub(crate) fn run_verify_interaction_command(args: &[String]) -> Result<CliOutco
         })?;
     expectation.validate_schema()?;
 
-    let input = match resolve_scene_input(&args.input) {
+    let input = match resolve_scene_input(&args.input, scena::RecipeBuildPolicy::testing()) {
         Ok(input) => input,
         Err(outcome) => return Ok(outcome),
     };
     let artifacts = scena::InteractionVerificationArtifactsV1::from_viewport(expectation.viewport);
-    let mut host =
-        scena::SceneHostCore::headless(artifacts.width_physical_px, artifacts.height_physical_px)
-            .map_err(|error| format!("failed to create interaction host: {error}"))?;
+    let mut host = if input.is_recipe() {
+        let build = pollster::block_on(scene_host_build_from_resolved_recipe(
+            &input,
+            artifacts.width_physical_px,
+            artifacts.height_physical_px,
+            false,
+        ))?;
+        match build {
+            ResolvedRecipeBuild::Built(build) => build.host,
+            ResolvedRecipeBuild::Rejected(outcome) => return Ok(outcome),
+        }
+    } else {
+        let mut host = scena::SceneHostCore::headless(
+            artifacts.width_physical_px,
+            artifacts.height_physical_px,
+        )
+        .map_err(|error| format!("failed to create interaction host: {error}"))?;
+        let import =
+            pollster::block_on(host.instantiate_url(input.asset.as_str())).map_err(|error| {
+                format!(
+                    "failed to load interaction asset '{}': {error}",
+                    input.asset
+                )
+            })?;
+        if let Some(transform) = input.transform {
+            for root in host
+                .import_roots(import)
+                .map_err(|error| format!("failed to resolve import roots: {error}"))?
+            {
+                host.set_transform(root, transform)
+                    .map_err(|error| format!("failed to apply import transform: {error}"))?;
+            }
+        }
+        host.frame_all()
+            .map_err(|error| format!("failed to frame interaction target: {error}"))?;
+        host
+    };
     if artifacts.device_pixel_ratio != 1.0
         || artifacts.width_css_px != artifacts.width_physical_px as f32
         || artifacts.height_css_px != artifacts.height_physical_px as f32
@@ -47,24 +83,6 @@ pub(crate) fn run_verify_interaction_command(args: &[String]) -> Result<CliOutco
         .map_err(|error| format!("failed to set interaction viewport: {error}"))?;
     }
 
-    let import =
-        pollster::block_on(host.instantiate_url(input.asset.as_str())).map_err(|error| {
-            format!(
-                "failed to load interaction asset '{}': {error}",
-                input.asset
-            )
-        })?;
-    if let Some(transform) = input.transform {
-        for root in host
-            .import_roots(import)
-            .map_err(|error| format!("failed to resolve import roots: {error}"))?
-        {
-            host.set_transform(root, transform)
-                .map_err(|error| format!("failed to apply recipe import transform: {error}"))?;
-        }
-    }
-    host.frame_all()
-        .map_err(|error| format!("failed to frame interaction target: {error}"))?;
     host.prepare()
         .map_err(|error| format!("failed to prepare interaction target: {error}"))?;
     host.render()

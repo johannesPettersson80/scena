@@ -1,5 +1,8 @@
 use crate::app::prelude::*;
 
+mod q05_pcf;
+pub(crate) use q05_pcf::directional_shadow_shader_has_pcf3x3;
+
 pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -137,6 +140,7 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
 }
 
 pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    q05_pcf::check_q05_directional_shadow_pcf3x3(root, findings);
     require_contains(
         root,
         findings,

@@ -6,7 +6,7 @@ use super::scena_input::{
 use super::scena_output::{CliOutcome, json_outcome};
 
 #[cfg(feature = "scene-host")]
-use super::scena_input::scene_host_build_from_resolved_recipe;
+use super::scena_input::{ResolvedRecipeBuild, scene_host_build_from_resolved_recipe};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifyAppearanceCommandArgs {
@@ -35,13 +35,13 @@ pub(crate) fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcom
         })?;
     expectation.validate_schema()?;
 
-    let input = match resolve_scene_input(&args.input) {
+    let input = match resolve_scene_input(&args.input, scena::RecipeBuildPolicy::testing()) {
         Ok(input) => input,
         Err(outcome) => return Ok(outcome),
     };
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
-    if input.has_scene_host_directives() {
+    if input.is_recipe() {
         return run_verify_recipe_appearance(
             input,
             width,
@@ -111,21 +111,23 @@ fn run_verify_recipe_appearance(
     out: Option<&std::path::Path>,
     detail: bool,
 ) -> Result<CliOutcome, String> {
-    let mut build = pollster::block_on(scene_host_build_from_resolved_recipe(
+    let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, false,
     ))?;
+    let mut build = match build {
+        ResolvedRecipeBuild::Built(build) => build,
+        ResolvedRecipeBuild::Rejected(outcome) => return Ok(outcome),
+    };
     let requested_variant = expectation.first_requested_variant();
     let mut active_variant = None;
     let mut available_variants = Vec::new();
-    if let Some(import) = build.manifest.imports.first() {
-        available_variants = build
+    for import in &build.manifest.imports {
+        let import_variants = build
             .host
             .material_variants(import.import_handle)
             .map_err(|error| format!("failed to list recipe material variants: {error}"))?;
         if let Some(variant) = requested_variant
-            && available_variants
-                .iter()
-                .any(|candidate| candidate == variant)
+            && import_variants.iter().any(|candidate| candidate == variant)
         {
             build
                 .host
@@ -134,11 +136,14 @@ fn run_verify_recipe_appearance(
                     format!("failed to apply recipe material variant '{variant}': {error}")
                 })?;
         }
-        active_variant = build
+        active_variant = active_variant.or(build
             .host
             .active_material_variant(import.import_handle)
-            .map_err(|error| format!("failed to inspect recipe material variant: {error}"))?;
+            .map_err(|error| format!("failed to inspect recipe material variant: {error}"))?);
+        available_variants.extend(import_variants);
     }
+    available_variants.sort();
+    available_variants.dedup();
 
     build
         .host

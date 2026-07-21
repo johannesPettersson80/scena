@@ -2743,10 +2743,10 @@ fn examples_visual_animation_renders_morph_clip_at_frame_to_ppm() {
 #[test]
 fn examples_visual_glb_model_viewer_renders_imported_mesh_to_ppm() {
     // Mirror examples/glb_model_viewer.rs: a single first_render_gltf_headless call
-    // against the mesh+material+vertex-color sample fixture. Proves the high-level
-    // first-render + glTF mesh import + framing path produces visible pixels.
+    // against a representative PBR CAD fixture. Proves the high-level first-render
+    // defaults provide lighting, framing, and a visible neutral presentation.
     let first = pollster::block_on(scena::first_render_gltf_headless(
-        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+        "tests/assets/gltf/cad_terminal_block.gltf",
         ARTIFACT_WIDTH,
         ARTIFACT_HEIGHT,
     ))
@@ -2760,6 +2760,14 @@ fn examples_visual_glb_model_viewer_renders_imported_mesh_to_ppm() {
     assert!(
         count_nonblack_pixels(frame) > 0,
         "glb_model_viewer example must render at least one nonblack pixel"
+    );
+    let distinct_rgb = frame
+        .chunks_exact(4)
+        .map(|pixel| [pixel[0], pixel[1], pixel[2]])
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        distinct_rgb.len() > 8,
+        "PBR model-viewer proof must contain visible tonal structure"
     );
 
     write_artifact("glb_model_viewer", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);

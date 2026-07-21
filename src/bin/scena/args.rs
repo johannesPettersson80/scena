@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use super::scena_policy::push_allow_root;
+
 #[cfg(feature = "inspection")]
 #[path = "args/inspection.rs"]
 mod inspection;
@@ -10,6 +12,8 @@ pub(crate) use inspection::*;
 pub(crate) struct ValidateRecipeCommandArgs {
     pub(crate) recipe: PathBuf,
     pub(crate) max_imports: Option<usize>,
+    pub(crate) syntax_only: bool,
+    pub(crate) allow_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +41,8 @@ impl ValidateRecipeCommandArgs {
             return Err(validate_recipe_usage());
         };
         let mut max_imports = None;
+        let mut syntax_only = false;
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -50,6 +56,18 @@ impl ValidateRecipeCommandArgs {
                 "--json" => {
                     index += 1;
                 }
+                "--syntax-only" => {
+                    syntax_only = true;
+                    index += 1;
+                }
+                "--full" => {
+                    syntax_only = false;
+                    index += 1;
+                }
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
+                    index += 2;
+                }
                 flag => {
                     return Err(format!(
                         "unknown validate-recipe argument '{flag}'; {}",
@@ -61,6 +79,8 @@ impl ValidateRecipeCommandArgs {
         Ok(Self {
             recipe: PathBuf::from(recipe),
             max_imports,
+            syntax_only,
+            allow_roots,
         })
     }
 }
@@ -236,7 +256,8 @@ fn parse_positive_usize(flag: &str, value: String) -> Result<usize, String> {
 }
 
 fn validate_recipe_usage() -> String {
-    "usage: scena validate-recipe <recipe.json> [--max-imports <n>]".to_string()
+    "usage: scena validate-recipe <recipe.json> [--full|--syntax-only] [--max-imports <n>] [--allow-root <directory>]..."
+        .to_string()
 }
 
 fn place_usage() -> String {

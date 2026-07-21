@@ -229,9 +229,9 @@ fn interactive_gltf_viewer_switches_material_variants_and_reprepares() {
 #[test]
 fn interactive_gltf_viewer_with_orbit_controls_attaches_controller_seeded_from_framing() {
     // Phase 5B step 2: `with_orbit_controls()` derives the initial OrbitControls
-    // target+distance from the imported scene's bounds and the framed camera
-    // position. The controller must therefore exist and have a positive
-    // distance (the framed camera is offset along +Z from the bounds center).
+    // target, distance, and angles from the imported scene's framing result.
+    // The controller must therefore preserve the viewer's initial
+    // three-quarter camera instead of snapping to a front view on first input.
     let viewer = interactive_gltf_viewer(
         "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf",
         PlatformSurface::native_window(96, 64),
@@ -248,11 +248,8 @@ fn interactive_gltf_viewer_with_orbit_controls_attaches_controller_seeded_from_f
         "framed orbit controls must seed a positive finite distance, got {}",
         controls.distance()
     );
-    assert!(
-        controls.yaw_radians().abs() < f32::EPSILON,
-        "orbit controls start unrotated; yaw={}",
-        controls.yaw_radians()
-    );
+    assert!((controls.yaw_radians() - std::f32::consts::FRAC_PI_4).abs() < 1.0e-5);
+    assert!((controls.pitch_radians() - std::f32::consts::FRAC_PI_6).abs() < 1.0e-5);
 }
 
 #[test]

@@ -15,6 +15,7 @@ mod build;
 mod camera;
 mod color_contract;
 mod cpu;
+mod cpu_geometry;
 mod cpu_labels;
 mod cpu_overlay;
 mod cpu_reflections;
@@ -88,7 +89,8 @@ pub use self::screen_space_reflections::ScreenSpaceReflectionConfig;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 use self::state::{PreparedSceneState, RenderedFrameState};
 use self::target::{RasterTarget, backend_for_attached_surface, validate_target_size};
-pub use self::work_metrics::RenderWorkMetrics;
+use self::work_metrics::PrepareTelemetry;
+pub use self::work_metrics::{PrepareWorkMetrics, RenderReadbackMode, RenderWorkMetrics};
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -113,6 +115,7 @@ pub struct Renderer {
     gpu_supersample_frame: Vec<u8>,
     stats: RendererStats,
     diagnostics: Vec<Diagnostic>,
+    configuration_diagnostics: Vec<Diagnostic>,
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
@@ -154,81 +157,6 @@ pub struct Renderer {
     not_sync: PhantomData<Cell<()>>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct PrepareTelemetry {
-    full_prepares: u64,
-    prepared_primitive_collections: u64,
-    static_gpu_resource_rebuilds: u64,
-    dynamic_template_prepares: u64,
-    draw_uniform_only_updates: u64,
-}
-
-/// Controls whether a GPU render only presents or also synchronously copies
-/// the rendered pixels into [`Renderer::frame_rgba8`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum RenderReadbackMode {
-    /// Headless GPU rendering captures pixels; attached native/browser
-    /// surfaces present without readback unless managed auto exposure needs it.
-    #[default]
-    Automatic,
-    /// Submit/present without a texture-to-buffer copy, map, or blocking wait.
-    PresentOnly,
-    /// Copy and map the rendered pixels before returning.
-    Synchronous,
-}
-
-/// Deterministic CPU work and byte counters collected by a profiled prepare.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct PrepareWorkMetrics {
-    pub prepared_triangle_count: u64,
-    pub prepared_model_vertex_buffer_count: u64,
-    pub prepared_model_vertex_bytes: u64,
-    pub prepared_unique_draw_transforms: u64,
-    pub prepared_draw_transform_bytes: u64,
-    pub prepared_triangle_reference_bytes: u64,
-    pub prepared_list_copy_bytes: u64,
-    pub asset_storage_lock_acquisitions: u64,
-    pub generated_tangent_calls: u64,
-    pub generated_tangent_triangles: u64,
-    pub generated_tangent_vertices: u64,
-    pub generated_tangent_cache_hits: u64,
-    pub generated_tangent_cache_misses: u64,
-    pub tangent_input_transform_bytes: u64,
-    pub tangent_output_bytes: u64,
-    pub deformed_vertex_bytes_materialized: u64,
-    pub shadow_rays: u64,
-    pub shadow_visibility_cache_hits: u64,
-    pub shadow_visibility_cache_misses: u64,
-    pub bvh_node_bounds_tests: u64,
-    pub ray_triangle_intersection_tests: u64,
-    pub area_light_samples: u64,
-    pub cpu_bake_subdivided_triangles: u64,
-    pub cpu_bake_shaded_vertices: u64,
-    pub texture_samples: u64,
-    pub cpu_bake_corner_bytes_copied: u64,
-    pub gpu_buffer_creations: u64,
-    pub gpu_texture_creations: u64,
-    pub gpu_pipeline_creations: u64,
-    pub gpu_bind_group_creations: u64,
-    pub gpu_shader_module_creations: u64,
-    pub draw_uniform_unique_values: u64,
-    pub draw_uniform_lookup_probes: u64,
-    pub draw_uniform_bytes_copied: u64,
-}
-
-impl PrepareWorkMetrics {
-    pub const fn bytes_cloned_or_copied(self) -> u64 {
-        self.prepared_model_vertex_bytes
-            .saturating_add(self.prepared_list_copy_bytes)
-            .saturating_add(self.tangent_input_transform_bytes)
-            .saturating_add(self.tangent_output_bytes)
-            .saturating_add(self.deformed_vertex_bytes_materialized)
-            .saturating_add(self.cpu_bake_corner_bytes_copied)
-            .saturating_add(self.draw_uniform_bytes_copied)
-    }
-}
-
 #[derive(Debug, Default)]
 pub(in crate::render) struct PrepareWorkCounter {
     prepared_triangle_count: Cell<u64>,
@@ -262,6 +190,10 @@ pub(in crate::render) struct PrepareWorkCounter {
     gpu_pipeline_creations: Cell<u64>,
     gpu_bind_group_creations: Cell<u64>,
     gpu_shader_module_creations: Cell<u64>,
+    gpu_triangle_shader_cache_hits: Cell<u64>,
+    gpu_triangle_shader_cache_misses: Cell<u64>,
+    gpu_nonblocking_polls: Cell<u64>,
+    gpu_blocking_polls: Cell<u64>,
     draw_uniform_unique_values: Cell<u64>,
     draw_uniform_lookup_probes: Cell<u64>,
     draw_uniform_bytes_copied: Cell<u64>,
@@ -450,6 +382,24 @@ impl PrepareWorkCounter {
         );
     }
 
+    pub(in crate::render) fn record_gpu_triangle_shader_cache(&self, hit: bool) {
+        let counter = if hit {
+            &self.gpu_triangle_shader_cache_hits
+        } else {
+            &self.gpu_triangle_shader_cache_misses
+        };
+        counter.set(counter.get().saturating_add(1));
+    }
+
+    pub(in crate::render) fn record_gpu_prepare_poll(&self, blocking: bool) {
+        let counter = if blocking {
+            &self.gpu_blocking_polls
+        } else {
+            &self.gpu_nonblocking_polls
+        };
+        counter.set(counter.get().saturating_add(1));
+    }
+
     pub(in crate::render) fn record_draw_uniform_indexing(
         &self,
         unique_values: usize,
@@ -506,6 +456,10 @@ impl PrepareWorkCounter {
             gpu_pipeline_creations: self.gpu_pipeline_creations.get(),
             gpu_bind_group_creations: self.gpu_bind_group_creations.get(),
             gpu_shader_module_creations: self.gpu_shader_module_creations.get(),
+            gpu_triangle_shader_cache_hits: self.gpu_triangle_shader_cache_hits.get(),
+            gpu_triangle_shader_cache_misses: self.gpu_triangle_shader_cache_misses.get(),
+            gpu_nonblocking_polls: self.gpu_nonblocking_polls.get(),
+            gpu_blocking_polls: self.gpu_blocking_polls.get(),
             draw_uniform_unique_values: self.draw_uniform_unique_values.get(),
             draw_uniform_lookup_probes: self.draw_uniform_lookup_probes.get(),
             draw_uniform_bytes_copied: self.draw_uniform_bytes_copied.get(),

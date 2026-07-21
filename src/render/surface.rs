@@ -103,6 +103,10 @@ impl Renderer {
             self.depth_frame = Some(vec![f32::INFINITY; self.target.pixel_len()]);
         }
         self.gpu = gpu;
+        let color_target_format = self
+            .gpu
+            .as_ref()
+            .map_or("Rgba8UnormSrgb", |gpu| gpu.color_target_format_name());
         self.capabilities = if attached {
             Capabilities::for_attached_gpu_backend(backend)
         } else if self.gpu.is_some() {
@@ -110,10 +114,13 @@ impl Renderer {
         } else {
             Capabilities::for_backend(backend)
         }
+        .with_color_target_format(color_target_format)
         .with_display_p3_output(false);
         self.stats.target_width = size.width;
         self.stats.target_height = size.height;
         self.surface_lost = None;
+        self.context_lost = None;
+        self.device_lost = None;
         self.target_revision = self.target_revision.saturating_add(1);
         self.prepared = None;
         self.clear_rendered_frame();
@@ -139,6 +146,7 @@ impl Renderer {
                     .ok_or(BuildError::UnsupportedBackend { backend })?;
                 let size = gpu.attach_browser_surface(backend, size, canvas)?;
                 let display_p3_canvas_configured = gpu.display_p3_canvas_configured();
+                let color_target_format = gpu.color_target_format_name();
                 if self.target.width != size.width || self.target.height != size.height {
                     self.resize_target(size.width, size.height).map_err(|_| {
                         BuildError::InvalidTargetSize {
@@ -148,6 +156,7 @@ impl Renderer {
                     })?;
                 }
                 self.capabilities = Capabilities::for_attached_gpu_backend(backend)
+                    .with_color_target_format(color_target_format)
                     .with_display_p3_output(display_p3_canvas_configured);
                 self.surface_lost = None;
                 self.clear_rendered_frame();
@@ -179,6 +188,12 @@ impl Renderer {
         assets: &Assets<F>,
         _scene: &mut Scene,
     ) -> Result<(), PrepareError> {
+        if let Some(recoverable) = self.device_lost {
+            return Err(PrepareError::GpuDeviceRebuildRequired {
+                backend: self.target.backend,
+                recoverable,
+            });
+        }
         if assets.retain_policy() == RetainPolicy::Never {
             return Err(PrepareError::BackendCapabilityMismatch {
                 feature: "context recovery",
@@ -187,7 +202,7 @@ impl Renderer {
                     .to_string(),
             });
         }
-        match self.context_lost.or(self.device_lost) {
+        match self.context_lost {
             Some(false) => Err(PrepareError::BackendCapabilityMismatch {
                 feature: "context recovery",
                 backend: self.target.backend,
@@ -199,7 +214,6 @@ impl Renderer {
                     gpu.clear_prepared_resources_for_context_recovery();
                 }
                 self.context_lost = None;
-                self.device_lost = None;
                 self.target_revision = self.target_revision.saturating_add(1);
                 self.prepared = None;
                 self.clear_rendered_frame();
@@ -244,15 +258,25 @@ impl Renderer {
     }
 
     pub(super) fn loss_error(&self) -> Result<(), RenderError> {
+        if let Some(recoverable) = self.device_lost {
+            return Err(RenderError::GpuDeviceLost { recoverable });
+        }
         if let Some(recoverable) = self.surface_lost {
             return Err(RenderError::SurfaceLost { recoverable });
         }
         if let Some(recoverable) = self.context_lost {
             return Err(RenderError::ContextLost { recoverable });
         }
-        if let Some(recoverable) = self.device_lost {
-            return Err(RenderError::GpuDeviceLost { recoverable });
-        }
         Ok(())
+    }
+
+    pub(super) fn prepare_device_ready(&self) -> Result<(), PrepareError> {
+        match self.device_lost {
+            Some(recoverable) => Err(PrepareError::GpuDeviceRebuildRequired {
+                backend: self.target.backend,
+                recoverable,
+            }),
+            None => Ok(()),
+        }
     }
 }

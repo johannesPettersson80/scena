@@ -1956,8 +1956,16 @@ fn m7_headless_gpu_camera_projection_renders_world_space_triangle_outside_ndc() 
 
 #[test]
 fn m7_cpu_and_headless_gpu_camera_projection_match_within_tolerance_when_available() {
-    let (cpu_scene, cpu_camera) = world_space_triangle_scene();
-    let cpu_frame = render_headless_frame_at_size(cpu_scene, cpu_camera, 96, 96);
+    let (mut cpu_scene, cpu_camera) = world_space_triangle_scene();
+    let mut cpu_renderer = Renderer::headless(96, 96).expect("CPU renderer builds");
+    cpu_renderer.set_anti_aliasing(scena::AntiAliasing::None);
+    cpu_renderer
+        .prepare(&mut cpu_scene)
+        .expect("CPU camera-framed fixture prepares");
+    cpu_renderer
+        .render(&cpu_scene, cpu_camera)
+        .expect("CPU camera-framed fixture renders");
+    let cpu_frame = cpu_renderer.frame_rgba8().to_vec();
     let Some(cpu_centroid) = nonblack_centroid(&cpu_frame, 96) else {
         panic!("CPU camera-framed fixture must render nonblack pixels");
     };
@@ -1965,6 +1973,7 @@ fn m7_cpu_and_headless_gpu_camera_projection_match_within_tolerance_when_availab
     let Ok(mut renderer) = Renderer::headless_gpu(96, 96) else {
         return;
     };
+    renderer.set_anti_aliasing(scena::AntiAliasing::None);
     let (mut gpu_scene, gpu_camera) = world_space_triangle_scene();
 
     renderer
@@ -2771,7 +2780,7 @@ fn m7_transform_helpers_and_frame_import_avoid_manual_matrix_math() {
         .add_empty(scene.root(), Transform::default())
         .expect("marker inserts");
     scene
-        .center_on(marker, Vec3::new(4.0, 5.0, 6.0))
+        .move_origin_to(marker, Vec3::new(4.0, 5.0, 6.0))
         .expect("center helper updates node translation");
     assert_eq!(
         scene
@@ -2794,7 +2803,7 @@ fn m7_bounds_helpers_on_nested_nodes_preserve_requested_world_placement() {
         .expect("centered child inserts");
 
     scene
-        .center_on(centered, Vec3::new(3.0, 4.0, 0.0))
+        .move_origin_to(centered, Vec3::new(3.0, 4.0, 0.0))
         .expect("center_on accepts nested node");
     assert_eq!(
         scene
@@ -4145,7 +4154,8 @@ fn m7_error_display_snapshots_cover_beginner_recovery_paths() {
         vec![
             (
                 "missing_camera",
-                "scene has no active camera".to_string(),
+                "scene has no active camera; call Scene::add_default_camera or Scene::set_active_camera"
+                    .to_string(),
                 "call Scene::add_default_camera or Scene::set_active_camera"
             ),
             (

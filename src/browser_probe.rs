@@ -15,10 +15,11 @@ use web_sys::HtmlCanvasElement;
 use workflows::{build_workflow_scene, scene_with_triangle};
 
 use crate::{
-    ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetFetcher, Assets, Backend, Background, CameraKey,
-    EnvironmentHandle, FlyControls, FollowControls, OrbitControlAction, OrbitControls,
-    OutputColorSpace, PerspectiveCamera, PixelReadback, PlatformSurface, PointerEvent, Renderer,
-    RendererOptions, Scene, Transform, Vec3, fnv1a64_hex, sample_rgba8,
+    ASSET_DOCTOR_REPORT_SCHEMA_V1, AntiAliasing, AssetFetcher, Assets, Backend, Background,
+    CameraKey, EnvironmentHandle, FlyControls, FollowControls, OrbitControlAction, OrbitControls,
+    OutputColorSpace, PerspectiveCamera, PixelReadback, PlatformSurface, PointerEvent, Profile,
+    Quality, Renderer, RendererOptions, Scene, Tonemapper, Transform, Vec3, fnv1a64_hex,
+    sample_rgba8,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -257,7 +258,13 @@ async fn render_workflow_probe(
     } else {
         None
     };
-    render_scene(
+    let renderer_options = match workflow {
+        "color-transfer-no-post" => RendererOptions::default().with_quality(Quality::Low),
+        "color-transfer-post" => RendererOptions::default().with_quality(Quality::Medium),
+        "msaa-capability" => RendererOptions::default().with_profile(Profile::Quality),
+        _ => RendererOptions::default(),
+    };
+    render_scene_with_options(
         canvas,
         backend,
         workflow,
@@ -266,6 +273,7 @@ async fn render_workflow_probe(
         workflow_scene.camera,
         workflow_scene.metadata,
         environment,
+        renderer_options,
     )
     .await
 }
@@ -307,7 +315,15 @@ async fn render_scene_with_options<F: AssetFetcher>(
 ) -> Result<String, JsValue> {
     let width = canvas.width();
     let height = canvas.height();
-    let cpu_parity_frame = if backend == Backend::WebGl2 && workflow == "triangle" {
+    let cpu_parity_required = match backend {
+        Backend::WebGl2 => matches!(
+            workflow,
+            "triangle" | "color-transfer-no-post" | "color-transfer-post"
+        ),
+        Backend::WebGpu => workflow == "triangle",
+        _ => false,
+    };
+    let cpu_parity_frame = if cpu_parity_required {
         let mut cpu_renderer = Renderer::headless_with_options(width, height, renderer_options)
             .map_err(|error| JsValue::from_str(&format!("CPU parity build failed: {error:?}")))?;
         configure_probe_renderer(&mut cpu_renderer, &metadata, environment);
@@ -345,19 +361,42 @@ async fn render_scene_with_options<F: AssetFetcher>(
     let renderer_readback = renderer.browser_readback_rgba8().await?;
     let parity = cpu_parity_frame
         .as_ref()
-        .map(|cpu| parity::cpu_webgl2_report(cpu, renderer_readback.as_ref()));
+        .map(|cpu| parity::cpu_browser_gpu_report(cpu, renderer_readback.as_ref(), backend));
     let renderer_readback = renderer_readback.as_ref().map(renderer_readback_json);
     let stats = renderer.stats();
-    let capabilities = renderer.capabilities();
+    let capabilities = *renderer.capabilities();
     let adapter = renderer.gpu_adapter_report();
+    let selected_anti_aliasing = format!("{:?}", renderer.anti_aliasing());
+    let diagnostics = diagnostics_json(renderer.diagnostics());
+    let explicit_msaa = if workflow == "msaa-capability" {
+        renderer.set_anti_aliasing(AntiAliasing::Msaa4);
+        match renderer.prepare_with_assets(scene, assets) {
+            Err(crate::PrepareError::UnsupportedSampleCount {
+                requested, maximum, ..
+            }) => Some(json!({
+                "status": "rejected",
+                "requested": requested,
+                "maximum": maximum,
+            })),
+            Ok(()) => Some(json!({ "status": "accepted" })),
+            Err(error) => Some(json!({
+                "status": "wrong_error",
+                "error": format!("{error:?}"),
+            })),
+        }
+    } else {
+        None
+    };
 
     Ok(json!({
         "schema": "scena.m6.browser_renderer_probe.v1",
         "status": "rendered",
         "workflow": workflow,
         "metadata": metadata,
-        "capabilities": capabilities_json(*capabilities),
-        "diagnostics": diagnostics_json(renderer.diagnostics()),
+        "capabilities": capabilities_json(capabilities),
+        "diagnostics": diagnostics,
+        "anti_aliasing": selected_anti_aliasing,
+        "explicit_msaa": explicit_msaa,
         "requested_output_color_space": format!("{:?}", renderer.output_color_space()),
         "backend": format!("{:?}", capabilities.backend),
         "gpu_device": capabilities.gpu_device,
@@ -391,6 +430,9 @@ fn configure_probe_renderer(
     }
     if let Some(exposure_ev) = metadata.get("exposure_ev").and_then(|value| value.as_f64()) {
         renderer.set_exposure_ev(exposure_ev as f32);
+    }
+    if metadata.get("tonemapper").and_then(|value| value.as_str()) == Some("standard") {
+        renderer.set_tonemapper(Tonemapper::Standard);
     }
 }
 

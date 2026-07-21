@@ -217,7 +217,7 @@ fn m8_set_active_variant_returns_typed_error_for_unknown_name() {
         .expect("midnight variant resolves before the unknown-name probe");
 
     match scene.set_active_variant(&import, Some("nonexistent")) {
-        Err(LookupError::VariantNotFound { name }) => {
+        Err(LookupError::VariantNotFound { name, .. }) => {
             assert_eq!(name, "nonexistent");
         }
         other => panic!("expected VariantNotFound, got {other:?}"),

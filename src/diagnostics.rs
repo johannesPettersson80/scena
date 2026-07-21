@@ -1,6 +1,6 @@
 //! Structured errors, capability reports, and renderer stats.
 
-use crate::animation::{AnimationClipKey, AnimationMixerKey};
+use crate::animation::AnimationClipKey;
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle, TextureHandle};
 use crate::geometry::GeometryTopology;
 use crate::material::{AlphaMode, MaterialKind};
@@ -9,6 +9,7 @@ use crate::scene::{
     SourceCoordinateSystem,
 };
 
+mod animation_error;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 mod browser_timing;
 mod capabilities;
@@ -16,19 +17,26 @@ mod capability_status;
 mod diagnostic;
 mod display;
 mod display_animation;
+mod frame;
 mod help;
 mod import_overlay;
+mod name_candidates;
 mod post_processing;
 mod stats;
+pub use animation_error::AnimationError;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 pub(crate) use browser_timing::browser_timing_enabled;
 pub use capabilities::{
     AdapterLimitsReport, AlphaPipelineStatus, Backend, CAPABILITY_REPORT_SCHEMA_V1, Capabilities,
-    CapabilityReport, CapabilityReportV1, CapabilityStatus, GpuAdapterReport, HardwareTier,
-    OutputColorSpace, OutputStageStatus,
+    CapabilityConstraintProbeV1, CapabilityConstraintStatusV1, CapabilityProbeModeV1,
+    CapabilityProbeStatusV1, CapabilityProbeUnavailableV1, CapabilityProbeV1, CapabilityReport,
+    CapabilityReportV1, CapabilityStatus, CapabilityTargetProbeV1, GpuAdapterReport,
+    GpuDeviceReport, HardwareTier, OutputColorSpace, OutputStageStatus,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticSeverity};
+pub use frame::{DevicePoll, DevicePollStatus, RenderOutcome};
 pub use import_overlay::{ImportDiagnosticOverlay, ImportDiagnosticOverlayKind};
+pub use name_candidates::nearest_name_candidates;
 pub use post_processing::{
     PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1,
 };
@@ -206,6 +214,10 @@ pub enum PrepareError {
         backend: Backend,
         reason: String,
     },
+    GpuDeviceRebuildRequired {
+        backend: Backend,
+        recoverable: bool,
+    },
     UnsupportedSampleCount {
         backend: Backend,
         requested: u32,
@@ -226,6 +238,19 @@ pub enum RenderError {
     },
     SurfaceLost {
         recoverable: bool,
+    },
+    SurfaceOutdated {
+        backend: Backend,
+        retry_attempted: bool,
+    },
+    SurfaceConfigurationChanged {
+        backend: Backend,
+    },
+    GpuValidation {
+        backend: Backend,
+    },
+    GpuOutOfMemory {
+        backend: Backend,
     },
     ContextLost {
         recoverable: bool,
@@ -344,6 +369,7 @@ pub enum LookupError {
     ImportFromDifferentScene,
     NodeNameNotFound {
         name: String,
+        candidates: Vec<String>,
     },
     AmbiguousNodeName {
         name: String,
@@ -351,6 +377,7 @@ pub enum LookupError {
     },
     AnchorNotFound {
         name: String,
+        candidates: Vec<String>,
     },
     AmbiguousAnchorName {
         name: String,
@@ -358,6 +385,7 @@ pub enum LookupError {
     },
     ConnectorNotFound {
         name: String,
+        candidates: Vec<String>,
     },
     AmbiguousConnectorName {
         name: String,
@@ -365,6 +393,7 @@ pub enum LookupError {
     },
     ClipNotFound {
         name: String,
+        candidates: Vec<String>,
     },
     AmbiguousClipName {
         name: String,
@@ -377,6 +406,7 @@ pub enum LookupError {
     /// that KHR_materials_variants name.
     VariantNotFound {
         name: String,
+        candidates: Vec<String>,
     },
     /// A material variant name appears more than once in the source
     /// `KHR_materials_variants` declaration. Returned instead of
@@ -451,47 +481,6 @@ pub enum LookupError {
         field: &'static str,
         reason: &'static str,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnimationError {
-    ClipNotFound { name: String },
-    InvalidClip { reason: String },
-    MixerNotFound(AnimationMixerKey),
-    StaleMixer(AnimationMixerKey),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[non_exhaustive]
-pub enum DevicePollStatus {
-    /// The backend safely retires logical resources without claiming GPU completion.
-    Automatic,
-    /// The renderer/backend has no explicit GPU completion path.
-    #[default]
-    Unsupported,
-    /// A real asynchronous queue-completion signal has been submitted but not observed yet.
-    Submitted,
-    /// The backend confirmed completion and the reported destructions may be retired.
-    Confirmed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct DevicePoll {
-    pub pending_destructions_before: u64,
-    pub pending_destructions_after: u64,
-    pub destroyed_resources: u64,
-    pub status: DevicePollStatus,
-    /// Compatibility projection: true only when `status == Confirmed`.
-    pub gpu_polled: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RenderOutcome {
-    pub width: u32,
-    pub height: u32,
-    pub draw_calls: u64,
-    pub primitives: u64,
-    pub skipped: bool,
 }
 
 impl From<BuildError> for Error {

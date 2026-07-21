@@ -53,10 +53,10 @@ jobs:
           cargo test --lib --features scene-host scene_host::core_tests::c13_
           cargo test --features scene-host,inspection --test scene_recipe_contracts --test label_text
           cargo test --features scene-host,inspection --test scena_cli_agent_templates
-          cargo test --features inspection --test scena_cli_recipe --test scena_cli_agent
+          cargo test --features scene-host,inspection --test scena_cli_recipe --test scena_cli_agent
           cargo test --features inspection --test m7_threejs_ergonomics m7_scene_inspection
           cargo test --features inspection --test measurement_visual_proof
-          cargo test --features ktx2 --test m8_assets_materials_ecosystem m8_ktx2_basisu_feature_loads_compressed_texture_descriptor
+          cargo test --features ktx2 --test m8_assets_materials_ecosystem m8_ktx2_basisu_feature_decodes_basisu_ktx2_rgba_pixels -- --exact
           bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release
           SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
@@ -221,6 +221,15 @@ jobs:
           SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- doctor --full
+      - name: Required physical GPU resource lifecycle
+        env:
+          SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: "1"
+        run: >-
+          SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1
+          bash scripts/release_lane_command.sh macos-metal
+          cargo test --test c09_gpu_resource_lifecycle
+          required_hardware_gpu_resource_lifecycle_executes_complete_cycle
+          -- --exact --nocapture
       - name: Docs
         env:
           RUSTDOCFLAGS: "-D warnings"

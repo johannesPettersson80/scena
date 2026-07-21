@@ -13,6 +13,7 @@ mod manifest_helpers;
 mod material_texture_diagnostics;
 mod sheen_materials;
 mod state_of_art;
+mod texture_baseline;
 mod visual_materials;
 
 pub(crate) use asset_fetch_evidence::check_asset_load_test_evidence;
@@ -23,7 +24,9 @@ pub(crate) use asset_matrix::{
 };
 pub(crate) use assets_materials::{
     check_c03_texture_contracts, check_c04_deformation_contracts, check_c05_unit_contracts,
-    check_m8_assets_materials_contracts,
+    check_c08_animation_basis_contract, check_c09_transactional_reload_contract,
+    check_c10_cache_policy_contract, check_c14_gltf_semantic_contract,
+    check_c15_marker_transform_contract, check_m8_assets_materials_contracts,
 };
 pub(crate) use ergonomics::check_m7_ergonomics_contracts;
 pub(crate) use manifest_helpers::{
@@ -35,4 +38,6 @@ pub(crate) use manifest_helpers::{
     check_manifest_file_hash, derivative_manifest_entries, is_lower_hex_sha256, quoted_assignment,
     quoted_manifest_assignment, require_manifest_u32, sha256_hex, u32_manifest_assignment,
 };
-pub(crate) use state_of_art::check_state_of_art_checklist_links;
+pub(crate) use state_of_art::{
+    check_document_governance_truth, check_state_of_art_checklist_links,
+};

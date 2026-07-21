@@ -252,6 +252,13 @@ impl fmt::Display for PrepareError {
                     "backend {backend:?} failed during explicit GPU resource upload: {reason}"
                 )
             }
+            Self::GpuDeviceRebuildRequired {
+                backend,
+                recoverable,
+            } => write!(
+                formatter,
+                "GPU device for {backend:?} was lost and cannot be reused; renderer rebuild required (host-recoverable={recoverable})"
+            ),
             Self::UnsupportedSampleCount {
                 backend,
                 requested,
@@ -268,7 +275,10 @@ impl fmt::Display for RenderError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotPrepared { reason } => write!(formatter, "renderer is not prepared: {reason}"),
-            Self::NoActiveCamera => write!(formatter, "scene has no active camera"),
+            Self::NoActiveCamera => write!(
+                formatter,
+                "scene has no active camera; call Scene::add_default_camera or Scene::set_active_camera"
+            ),
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::InvalidSurfaceSize { width, height } => {
                 write!(formatter, "invalid surface size {width}x{height}")
@@ -278,6 +288,23 @@ impl fmt::Display for RenderError {
                     formatter,
                     "render surface was lost; recoverable={recoverable}"
                 )
+            }
+            Self::SurfaceOutdated {
+                backend,
+                retry_attempted,
+            } => write!(
+                formatter,
+                "{backend:?} render surface remained outdated after retry={retry_attempted}"
+            ),
+            Self::SurfaceConfigurationChanged { backend } => write!(
+                formatter,
+                "{backend:?} surface format or present mode changed during recovery"
+            ),
+            Self::GpuValidation { backend } => {
+                write!(formatter, "{backend:?} reported a GPU validation error")
+            }
+            Self::GpuOutOfMemory { backend } => {
+                write!(formatter, "{backend:?} GPU reported out of memory")
             }
             Self::ContextLost { recoverable } => {
                 write!(

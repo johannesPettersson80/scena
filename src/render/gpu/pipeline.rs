@@ -17,6 +17,47 @@ pub(super) const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg
 /// triangle order that is front-facing in the CPU rasterizer maps to CCW here.
 pub(super) const SCENA_FRONT_FACE: wgpu::FrontFace = wgpu::FrontFace::Ccw;
 
+/// Device-owned cache for the large triangle shader source. Pipeline layouts,
+/// target formats, culling, depth state, and sample counts remain pipeline
+/// dependencies; none of them changes the compiled shader module.
+#[derive(Debug, Default)]
+pub(super) struct TriangleShaderModuleCache {
+    texture_2d: Option<wgpu::ShaderModule>,
+    texture_2d_array: Option<wgpu::ShaderModule>,
+}
+
+pub(super) struct TriangleShaderModuleLookup {
+    pub(super) module: wgpu::ShaderModule,
+    pub(super) hit: bool,
+}
+
+impl TriangleShaderModuleCache {
+    pub(super) fn get_or_create(
+        &mut self,
+        device: &wgpu::Device,
+        texture_binding_mode: MaterialTextureBindingMode,
+    ) -> TriangleShaderModuleLookup {
+        let slot = match texture_binding_mode {
+            MaterialTextureBindingMode::Texture2d => &mut self.texture_2d,
+            MaterialTextureBindingMode::Texture2dArray => &mut self.texture_2d_array,
+        };
+        let hit = slot.is_some();
+        let module = slot
+            .get_or_insert_with(|| {
+                let shader_source = match texture_binding_mode {
+                    MaterialTextureBindingMode::Texture2d => GPU_TRIANGLE_SHADER_TEXTURE_2D,
+                    MaterialTextureBindingMode::Texture2dArray => GPU_TRIANGLE_SHADER,
+                };
+                device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("scena.m0.unlit_triangle"),
+                    source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+                })
+            })
+            .clone();
+        TriangleShaderModuleLookup { module, hit }
+    }
+}
+
 pub(super) struct UnlitPass<'a> {
     pub(super) view: &'a wgpu::TextureView,
     pub(super) resolve_target: Option<&'a wgpu::TextureView>,
@@ -260,33 +301,33 @@ impl DrawSideFilter {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn create_unlit_pipeline_set(
     device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
     format: wgpu::TextureFormat,
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
     sample_count: u32,
 ) -> MeshPipelineSet {
     MeshPipelineSet {
         single_sided: create_unlit_pipeline(
             device,
+            shader,
             format,
             output_bind_group_layout,
             material_bind_group_layout,
             draw_bind_group_layout,
-            texture_binding_mode,
             depth_compare,
             false,
             sample_count,
         ),
         double_sided: create_unlit_pipeline(
             device,
+            shader,
             format,
             output_bind_group_layout,
             material_bind_group_layout,
             draw_bind_group_layout,
-            texture_binding_mode,
             depth_compare,
             true,
             sample_count,
@@ -297,23 +338,15 @@ pub(super) fn create_unlit_pipeline_set(
 #[allow(clippy::too_many_arguments)]
 fn create_unlit_pipeline(
     device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
     format: wgpu::TextureFormat,
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
     double_sided: bool,
     sample_count: u32,
 ) -> wgpu::RenderPipeline {
-    let shader_source = match texture_binding_mode {
-        MaterialTextureBindingMode::Texture2d => GPU_TRIANGLE_SHADER_TEXTURE_2D,
-        MaterialTextureBindingMode::Texture2dArray => GPU_TRIANGLE_SHADER,
-    };
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.m0.unlit_triangle"),
-        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-    });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m0.pipeline_layout"),
         bind_group_layouts: &[
@@ -342,7 +375,7 @@ fn create_unlit_pipeline(
         label: Some(label),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[vertex_buffer, instance_buffer],
@@ -364,7 +397,7 @@ fn create_unlit_pipeline(
             ..Default::default()
         },
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some("fs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {

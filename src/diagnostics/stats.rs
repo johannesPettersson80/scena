@@ -44,6 +44,14 @@ pub struct RendererStats {
     pub culled_objects: u64,
     pub gpu_culling_dispatches: u64,
     pub skipped_frames: u64,
+    /// Frames skipped because surface acquisition timed out.
+    pub surface_timeout_skips: u64,
+    /// Frames skipped because the host surface was occluded.
+    pub surface_occluded_skips: u64,
+    /// Surface configurations refreshed after outdated, lost, or suboptimal acquisition.
+    pub surface_reconfigurations: u64,
+    /// Surface acquisition retries performed after a configuration refresh.
+    pub surface_acquire_retries: u64,
     pub gpu_submissions: u64,
     pub approximate_gpu_memory_bytes: Option<u64>,
     pub cpu_frame_ms: f32,

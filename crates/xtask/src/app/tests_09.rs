@@ -171,7 +171,7 @@ pub(crate) fn release_readiness_rejects_cpu_fallback_native_render_artifact() {
     .expect("fallback rendered-output write");
     let mut findings = Vec::new();
 
-    check_release_artifact_bundle(&artifact_root, &mut findings);
+    let _ = check_release_artifact_bundle_with_summary(&artifact_root, &mut findings);
 
     assert!(
         findings
@@ -582,6 +582,7 @@ pub(crate) fn c04_deformation_doctor_rejects_cubic_weight_stride_regression() {
     let files = [
         "src/assets/gltf/animation.rs",
         "src/assets/gltf/meshes.rs",
+        "src/assets/gltf/meshes/skin_influences.rs",
         "src/animation.rs",
         "src/scene/import.rs",
         "src/scene/import/types.rs",

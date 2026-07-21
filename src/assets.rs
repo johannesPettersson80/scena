@@ -12,7 +12,9 @@ use crate::geometry::{GeometryDesc, StaticBatchReport};
 use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
+mod builtin;
 mod catalog;
+mod conversion;
 mod doctor;
 mod environment;
 mod environment_hdr;
@@ -36,14 +38,22 @@ mod material_source;
 mod obj;
 mod provenance;
 mod recipe_validation;
+mod scene_cache;
 mod scene_loading;
+mod store_id;
 mod texture;
+pub(crate) use builtin::{bundled_scene_bytes, is_bundled_scene_uri};
 pub use catalog::{
     ASSET_CATALOG_SCHEMA_V1, ASSET_READINESS_REPORT_SCHEMA_V1, AssetCatalogAssetV1,
     AssetCatalogExpectedBoundsV1, AssetCatalogFeatureRequirementV1,
     AssetCatalogMaterialRequirementsV1, AssetCatalogPreviewV1, AssetCatalogV1,
     AssetReadinessAssetReportV1, AssetReadinessFindingV1, AssetReadinessPreviewV1,
     AssetReadinessReportV1, AssetReadinessSeverityV1, AssetReadinessSummaryV1,
+};
+pub use conversion::{
+    ASSET_CONVERSION_SCHEMA_V1, AssetConversionDiagnosticSeverityV1,
+    AssetConversionDiagnosticStreamV1, AssetConversionDiagnosticV1, AssetConversionReportV1,
+    AssetConversionStatusV1,
 };
 pub use doctor::{
     ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetDoctorFindingV1, AssetDoctorReportV1,
@@ -79,6 +89,7 @@ pub use load::{
     AssetExternalResourceStatus, AssetExternalResourceV1, AssetLoadControl, AssetLoadOptions,
     AssetLoadProgress, AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning,
     AssetLoadWarningV1, AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1,
+    AssetReloadError,
 };
 pub use material_presets::{
     MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
@@ -95,7 +106,7 @@ pub use texture::{
 };
 
 use self::fetch::TrackedAssetFetcher;
-use self::texture::{TextureCacheKey, validate_texture_source_format};
+use self::texture::{TextureCacheKey, TextureCacheUpdatePolicy, validate_texture_source_format};
 
 new_key_type! {
     pub struct ModelHandle;
@@ -126,27 +137,6 @@ pub struct AssetPath(String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetStoreId(std::num::NonZeroU64);
 
-impl AssetStoreId {
-    fn next() -> Self {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(1);
-        let raw = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let value = std::num::NonZeroU64::new(raw)
-            .expect("AssetStoreId counter never returns zero before saturation");
-        Self(value)
-    }
-
-    pub const fn get(self) -> u64 {
-        self.0.get()
-    }
-}
-
-impl std::fmt::Display for AssetStoreId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Assets#{}", self.0.get())
-    }
-}
-
 /// Per-store eviction counts returned by [`Assets::release_unreferenced`].
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct AssetEvictionStats {
@@ -174,9 +164,10 @@ struct AssetStorage {
     material_sources: BTreeMap<MaterialHandle, AssetMaterialSource>,
     textures: SlotMap<TextureHandle, Arc<TextureDesc>>,
     environments: SlotMap<EnvironmentHandle, Arc<EnvironmentDesc>>,
-    scene_lookup: BTreeMap<AssetPath, SceneAsset>,
-    scene_load_telemetry: BTreeMap<AssetPath, load::AssetLoadTelemetry>,
+    scene_lookup: BTreeMap<scene_cache::SceneCacheKey, SceneAsset>,
+    scene_load_telemetry: BTreeMap<scene_cache::SceneCacheKey, load::AssetLoadTelemetry>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
+    texture_cache_update_policy: TextureCacheUpdatePolicy,
     environment_lookup: BTreeMap<AssetPath, EnvironmentHandle>,
     // Tracks descriptors minted directly by `Assets::create_<kind>` (user-created)
     // rather than by glTF parsing or environment loading. `release_unreferenced`
@@ -214,6 +205,7 @@ impl<F> Assets<F> {
                 scene_lookup: BTreeMap::new(),
                 scene_load_telemetry: BTreeMap::new(),
                 texture_lookup: BTreeMap::new(),
+                texture_cache_update_policy: TextureCacheUpdatePolicy::Immutable,
                 environment_lookup: BTreeMap::new(),
                 user_created_geometries: std::collections::BTreeSet::new(),
                 user_created_materials: std::collections::BTreeSet::new(),

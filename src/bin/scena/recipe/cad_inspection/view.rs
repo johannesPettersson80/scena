@@ -119,11 +119,11 @@ pub(super) fn inspection_recipe(
             }
         }])
     };
-    recipe["lights"] = json!([
-        { "id": "cad_key", "kind": "directional", "preset": "key" },
-        { "id": "cad_fill", "kind": "directional", "preset": "fill" },
-        { "id": "cad_rim", "kind": "directional", "preset": "rim" }
-    ]);
+    recipe["lights"] = json!([{
+        "id": "cad_studio",
+        "kind": "studio_rig",
+        "preset": "studio_rig"
+    }]);
     recipe["scene"] = json!({
         "background": { "kind": "custom", "color": "#EEF1F4" },
         "grid": { "enabled": false }
@@ -136,7 +136,7 @@ pub(super) fn inspection_recipe(
         "reconstruction": "gaussian",
         "ssao": { "radius_px": 12, "intensity": 0.55, "depth_threshold": 0.03 },
         "tonemapper": "aces",
-        "exposure_ev": 0.0
+        "exposure_ev": 0.25
     });
     recipe["expect"] = json!({
         "expect_bbox_fit": {

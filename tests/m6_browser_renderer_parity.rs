@@ -296,26 +296,6 @@ async fn m6_webgl2_surface_lifecycle_requires_prepare_and_retained_assets() {
         .expect("render after context recovery succeeds");
 
     renderer
-        .handle_surface_event(SurfaceEvent::DeviceLost { recoverable: true })
-        .expect("device-loss event is accepted");
-    assert!(
-        matches!(
-            renderer.render(&scene, camera),
-            Err(RenderError::GpuDeviceLost { recoverable: true })
-        ),
-        "device loss must surface as a structured render error",
-    );
-    renderer
-        .recover_context(&assets, &mut scene)
-        .expect("retained assets allow device recovery");
-    renderer
-        .prepare_with_assets(&mut scene, &assets)
-        .expect("explicit prepare after device recovery succeeds");
-    renderer
-        .render(&scene, camera)
-        .expect("render after device recovery succeeds");
-
-    renderer
         .handle_surface_event(SurfaceEvent::Lost)
         .expect("surface-loss event is accepted");
     assert!(
@@ -324,6 +304,38 @@ async fn m6_webgl2_surface_lifecycle_requires_prepare_and_retained_assets() {
             Err(RenderError::SurfaceLost { recoverable: true })
         ),
         "surface loss must surface as a structured render error",
+    );
+
+    renderer
+        .handle_surface_event(SurfaceEvent::DeviceLost { recoverable: true })
+        .expect("device-loss event is accepted");
+    assert!(
+        matches!(
+            renderer.render(&scene, camera),
+            Err(RenderError::GpuDeviceLost { recoverable: true })
+        ),
+        "terminal device loss must take precedence over surface loss",
+    );
+    assert!(matches!(
+        renderer.recover_context(&assets, &mut scene),
+        Err(PrepareError::GpuDeviceRebuildRequired {
+            recoverable: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        renderer.prepare_with_assets(&mut scene, &assets),
+        Err(PrepareError::GpuDeviceRebuildRequired {
+            recoverable: true,
+            ..
+        })
+    ));
+    assert!(
+        matches!(
+            renderer.render(&scene, camera),
+            Err(RenderError::GpuDeviceLost { recoverable: true })
+        ),
+        "failed recovery must leave device loss latched",
     );
 }
 

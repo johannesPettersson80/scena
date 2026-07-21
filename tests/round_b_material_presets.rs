@@ -60,7 +60,7 @@ fn expanded_material_presets_use_only_backed_material_lanes() {
     assert_color_close(brushed.base_color(), Color::LIGHT_GRAY);
     assert_close(brushed.metallic_factor(), 1.0);
     assert_close(brushed.roughness_factor(), 0.36);
-    assert_close(brushed.anisotropy_strength_factor(), 0.72);
+    assert_close(brushed.anisotropy_strength_factor(), 1.0);
 
     let clearcoat = MaterialDesc::clearcoat_plastic(Color::BLUE);
     assert_color_close(clearcoat.base_color(), Color::BLUE);

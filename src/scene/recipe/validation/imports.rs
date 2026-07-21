@@ -3,8 +3,12 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use crate::scene::Transform;
-use crate::scene::recipe::{RecipeBuildPolicy, types::SceneRecipeDiagnosticV1};
+use crate::scene::recipe::{
+    RecipeBuildPolicy,
+    types::{SceneRecipeDiagnosticV1, SceneRecipeTransformV1},
+};
 
+use super::authoring::{TransformUse, validate_transform as validate_canonical_transform};
 use super::diagnostic;
 use super::suggestions::{EXPECTED_EXTENT_FIELDS, IMPORT_FIELDS, nearest_import_field};
 
@@ -283,17 +287,74 @@ fn validate_transform(
     transform: &Value,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
-    if serde_json::from_value::<Transform>(transform.clone()).is_err() {
+    if transform.get("kind").is_some() {
+        validate_canonical_transform(
+            &path,
+            transform,
+            TransformUse::Import,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            diagnostics,
+        );
+        return;
+    }
+    let legacy_fields_are_exact = transform.as_object().is_some_and(|object| {
+        object.len() == 3
+            && ["translation", "rotation", "scale"]
+                .iter()
+                .all(|field| object.contains_key(*field))
+    });
+    let legacy = legacy_fields_are_exact
+        .then(|| serde_json::from_value::<Transform>(transform.clone()).ok())
+        .flatten();
+    let Some(legacy) = legacy else {
         diagnostics.push(diagnostic(
             "invalid_transform",
             "error",
             path,
-            "transform must match scena's stable Transform JSON shape",
-            "emit translation, rotation, and scale arrays, or omit transform for identity",
+            "import transform must use the canonical tagged transform grammar",
+            "emit kind:\"trs\" with translation/rotation_degrees/scale or kind:\"raw\" with translation/rotation/scale",
             None,
             false,
         ));
+        return;
+    };
+    let canonical = SceneRecipeTransformV1::from(legacy);
+    if let Err(error) = Transform::try_from(&canonical) {
+        diagnostics.push(diagnostic(
+            if matches!(
+                error,
+                crate::SceneRecipeTransformConversionError::InvalidQuaternion
+            ) {
+                "invalid_rotation"
+            } else {
+                "invalid_transform"
+            },
+            "error",
+            if matches!(
+                error,
+                crate::SceneRecipeTransformConversionError::InvalidQuaternion
+            ) {
+                format!("{path}.rotation")
+            } else {
+                path
+            },
+            error.to_string(),
+            "use finite f32-range values and [0,0,0,1] for identity rotation",
+            None,
+            false,
+        ));
+        return;
     }
+    diagnostics.push(diagnostic(
+        "legacy_transform_shape",
+        "warning",
+        path,
+        "untagged import transforms are a compatibility alias from the published v1.8.0 grammar",
+        "add kind:\"raw\" now; new output always uses the canonical tagged grammar",
+        serde_json::to_string(&canonical).ok(),
+        true,
+    ));
 }
 
 pub(super) fn import_ids(imports: Option<&Value>) -> BTreeSet<String> {

@@ -7,20 +7,31 @@ use super::scena_input::{
     asset_doctor_outcome_or_error, capture_descriptor_path, ensure_parent_dir, path_for_json,
     render_introspection_options, resolve_scene_input, viewer_builder,
 };
-use super::scena_output::{CliOutcome, json_outcome, json_success};
+use super::scena_output::{
+    CliBackendSelectionV1, CliOutcome, add_recipe_policy_to_outcome, json_outcome,
+    json_outcome_with_backend_selection, json_success,
+};
+use super::scena_policy::{effective_recipe_policy, ensure_recipe_policy_applies};
 
 #[cfg(feature = "scene-host")]
-use super::scena_input::scene_host_from_resolved_recipe;
+use super::scena_input::{
+    ResolvedRecipeBuild, scene_host_build_from_resolved_recipe,
+    scene_host_manifest_from_resolved_recipe,
+};
+#[cfg(feature = "scene-host")]
+use super::scena_output::add_backend_selection_to_outcome;
 
 pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = RenderCommandArgs::parse(args)?;
-    let input = match resolve_scene_input(&args.input) {
+    let policy = effective_recipe_policy(&args.allow_roots, None)?;
+    let input = match resolve_scene_input(&args.input, policy) {
         Ok(input) => input,
         Err(outcome) => return Ok(outcome),
     };
+    ensure_recipe_policy_applies(input.is_recipe(), &args.allow_roots)?;
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
-    if input.has_scene_host_directives() {
+    if input.is_recipe() {
         return run_render_scene_host_recipe(input, width, height, args);
     }
     let first = match pollster::block_on(
@@ -74,10 +85,11 @@ pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> 
         .renderer()
         .introspect_capture(&capture, &inspection, options);
     let exit_code = if report.ok { 0 } else { 1 };
-    json_outcome(
+    json_outcome_with_backend_selection(
         &report,
         exit_code,
         "failed to serialize render introspection report",
+        CliBackendSelectionV1::new(args.gpu, Some(first.renderer().capabilities().backend)),
     )
 }
 
@@ -96,9 +108,22 @@ fn run_render_scene_host_recipe(
     height: u32,
     args: RenderCommandArgs,
 ) -> Result<CliOutcome, String> {
-    let mut host = pollster::block_on(scene_host_from_resolved_recipe(
+    let policy = input.policy.to_schema_report();
+    let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, args.gpu,
     ))?;
+    let mut host = match build {
+        ResolvedRecipeBuild::Built(build) => build.host,
+        ResolvedRecipeBuild::Rejected(outcome) => {
+            return add_recipe_policy_to_outcome(
+                add_backend_selection_to_outcome(
+                    outcome,
+                    CliBackendSelectionV1::new(args.gpu, None),
+                )?,
+                &policy,
+            );
+        }
+    };
     warn_gpu_fallback(args.gpu, host.backend());
     host.prepare()
         .map_err(|error| format!("failed to prepare recipe scene: {error}"))?;
@@ -139,10 +164,14 @@ fn run_render_scene_host_recipe(
         .renderer()
         .introspect_capture(&capture, &inspection, options);
     let exit_code = if report.ok { 0 } else { 1 };
-    json_outcome(
-        &report,
-        exit_code,
-        "failed to serialize render introspection report",
+    add_recipe_policy_to_outcome(
+        json_outcome_with_backend_selection(
+            &report,
+            exit_code,
+            "failed to serialize render introspection report",
+            CliBackendSelectionV1::new(args.gpu, Some(host.backend())),
+        )?,
+        &policy,
     )
 }
 
@@ -161,13 +190,15 @@ fn run_render_scene_host_recipe(
 
 pub(crate) fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = InspectCommandArgs::parse(args)?;
-    let input = match resolve_scene_input(&args.input) {
+    let policy = effective_recipe_policy(&args.allow_roots, None)?;
+    let input = match resolve_scene_input(&args.input, policy) {
         Ok(input) => input,
         Err(outcome) => return Ok(outcome),
     };
+    ensure_recipe_policy_applies(input.is_recipe(), &args.allow_roots)?;
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
-    if input.has_scene_host_directives() {
+    if input.is_recipe() {
         return run_inspect_scene_host_recipe(input, width, height);
     }
     let viewer = match pollster::block_on(
@@ -193,16 +224,26 @@ fn run_inspect_scene_host_recipe(
     width: u32,
     height: u32,
 ) -> Result<CliOutcome, String> {
-    let host = pollster::block_on(scene_host_from_resolved_recipe(
+    let policy = input.policy.to_schema_report();
+    let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, false,
     ))?;
+    let host = match build {
+        ResolvedRecipeBuild::Built(build) => build.host,
+        ResolvedRecipeBuild::Rejected(outcome) => {
+            return add_recipe_policy_to_outcome(outcome, &policy);
+        }
+    };
     let text = host
         .inspect_json()
         .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
-    Ok(CliOutcome {
-        stdout: text,
-        exit_code: 0,
-    })
+    add_recipe_policy_to_outcome(
+        CliOutcome {
+            stdout: text,
+            exit_code: 0,
+        },
+        &policy,
+    )
 }
 
 #[cfg(not(feature = "scene-host"))]
@@ -219,13 +260,15 @@ fn run_inspect_scene_host_recipe(
 
 pub(crate) fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = DiagnoseCommandArgs::parse(args)?;
-    let input = match resolve_scene_input(&args.input) {
+    let policy = effective_recipe_policy(&args.allow_roots, None)?;
+    let input = match resolve_scene_input(&args.input, policy) {
         Ok(input) => input,
         Err(outcome) => return Ok(outcome),
     };
+    ensure_recipe_policy_applies(input.is_recipe(), &args.allow_roots)?;
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
-    if input.has_scene_host_directives() {
+    if input.is_recipe() {
         return run_diagnose_scene_host_recipe(input, width, height, args);
     }
     let first = match pollster::block_on(
@@ -265,9 +308,16 @@ fn run_diagnose_scene_host_recipe(
     height: u32,
     args: DiagnoseCommandArgs,
 ) -> Result<CliOutcome, String> {
-    let mut host = pollster::block_on(scene_host_from_resolved_recipe(
+    let policy = input.policy.to_schema_report();
+    let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, false,
     ))?;
+    let mut host = match build {
+        ResolvedRecipeBuild::Built(build) => build.host,
+        ResolvedRecipeBuild::Rejected(outcome) => {
+            return add_recipe_policy_to_outcome(outcome, &policy);
+        }
+    };
     host.prepare()
         .map_err(|error| format!("failed to prepare recipe scene for diagnosis: {error}"))?;
     host.render()
@@ -286,10 +336,13 @@ fn run_diagnose_scene_host_recipe(
         .renderer()
         .diagnose_visibility(&inspection, args.handle, options);
     let exit_code = if report.ok { 0 } else { 1 };
-    json_outcome(
-        &report,
-        exit_code,
-        "failed to serialize visibility diagnosis report",
+    add_recipe_policy_to_outcome(
+        json_outcome(
+            &report,
+            exit_code,
+            "failed to serialize visibility diagnosis report",
+        )?,
+        &policy,
     )
 }
 
@@ -308,7 +361,23 @@ fn run_diagnose_scene_host_recipe(
 
 pub(crate) fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = RepairCommandArgs::parse(args)?;
-    let _input = args.input;
+    let policy = effective_recipe_policy(&args.allow_roots, None)?;
+    let input = match resolve_scene_input(&args.input, policy) {
+        Ok(input) => input,
+        Err(outcome) => return Ok(outcome),
+    };
+    ensure_recipe_policy_applies(input.is_recipe(), &args.allow_roots)?;
+    let policy = input.policy.to_schema_report();
+    if input.is_recipe()
+        && let Some(outcome) = validate_repair_recipe_input(&input)?
+    {
+        return Ok(outcome);
+    }
+    if !input.is_recipe()
+        && let Some(outcome) = validate_repair_asset_input(&input.asset)?
+    {
+        return Ok(outcome);
+    }
     let text = fs::read_to_string(&args.from)
         .map_err(|error| format!("failed to read report '{}': {error}", args.from.display()))?;
     let value: serde_json::Value = serde_json::from_str(&text)
@@ -352,8 +421,52 @@ pub(crate) fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> 
             args.iteration_budget,
             args.iteration_budget,
         );
-        return json_outcome(&loop_result, 1, "failed to serialize agent loop result");
+        return add_recipe_policy_to_outcome(
+            json_outcome(&loop_result, 1, "failed to serialize agent loop result")?,
+            &policy,
+        );
     }
     let exit_code = if plan.auto_fixable { 0 } else { 1 };
-    json_outcome(&plan, exit_code, "failed to serialize visual repair plan")
+    add_recipe_policy_to_outcome(
+        json_outcome(&plan, exit_code, "failed to serialize visual repair plan")?,
+        &policy,
+    )
+}
+
+fn validate_repair_asset_input(asset: &str) -> Result<Option<CliOutcome>, String> {
+    let report = pollster::block_on(scena::Assets::new().doctor_asset_path(asset));
+    if report.ok {
+        Ok(None)
+    } else {
+        json_outcome(
+            &report,
+            1,
+            "failed to serialize repair target asset doctor report",
+        )
+        .map(Some)
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn validate_repair_recipe_input(
+    input: &super::scena_input::ResolvedSceneInput,
+) -> Result<Option<CliOutcome>, String> {
+    let report = pollster::block_on(scene_host_manifest_from_resolved_recipe(input))?;
+    if report.ok {
+        Ok(None)
+    } else {
+        json_outcome(
+            &report,
+            1,
+            "failed to serialize repair target recipe build result",
+        )
+        .map(Some)
+    }
+}
+
+#[cfg(not(feature = "scene-host"))]
+fn validate_repair_recipe_input(
+    _input: &super::scena_input::ResolvedSceneInput,
+) -> Result<Option<CliOutcome>, String> {
+    Err("repair for scene recipes requires the scene-host feature".to_owned())
 }

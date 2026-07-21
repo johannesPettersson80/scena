@@ -4,11 +4,11 @@ use serde_json::{Value, json};
 
 use super::add_common_commands;
 use super::builder::{TemplateBuilder, write_json_file};
-use super::{TEMPLATE_CAPTURE_MIN_HEIGHT, TEMPLATE_CAPTURE_MIN_WIDTH, TEMPLATE_STUDIO_ENVIRONMENT};
+use super::{TEMPLATE_CAPTURE_MIN_HEIGHT, TEMPLATE_CAPTURE_MIN_WIDTH};
 
 pub(super) fn primitive_scene(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
     authored_template(
-        "primitive_scene",
+        "primitive-scene",
         out_dir,
         json!({
             "schema": scena::SCENE_RECIPE_SCHEMA_V1,
@@ -45,14 +45,14 @@ pub(super) fn primitive_scene(out_dir: &Path) -> Result<scena::AgentSmokeTemplat
             "scene": { "background": { "kind": "studio" }, "grid": { "padding": 0.08, "line_spacing": 0.05 } },
             "render": { "profile": "balanced", "quality": "medium", "anti_aliasing": "fxaa", "tonemapper": "pbr_neutral" },
             "capture": { "width": 320, "height": 220 },
-            "metadata": { "template": "primitive_scene", "purpose": "authored primitive starter scene" }
+            "metadata": { "template": "primitive-scene", "purpose": "authored primitive starter scene" }
         }),
     )
 }
 
 pub(super) fn cad_plate(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
     authored_template(
-        "cad_plate",
+        "cad-plate",
         out_dir,
         json!({
             "schema": scena::SCENE_RECIPE_SCHEMA_V1,
@@ -100,14 +100,14 @@ pub(super) fn cad_plate(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, S
             "scene": { "background": { "kind": "studio" } },
             "render": { "profile": "balanced", "quality": "medium", "anti_aliasing": "fxaa", "tonemapper": "pbr_neutral" },
             "capture": { "width": 320, "height": 220 },
-            "metadata": { "template": "cad_plate", "purpose": "authored CAD inspection starter with section box, dimension, and callout" }
+            "metadata": { "template": "cad-plate", "purpose": "authored CAD inspection starter with section box, dimension, and callout" }
         }),
     )
 }
 
 pub(super) fn dashboard_bars(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
     authored_template(
-        "dashboard_bars",
+        "dashboard-bars",
         out_dir,
         json!({
             "schema": scena::SCENE_RECIPE_SCHEMA_V1,
@@ -145,14 +145,14 @@ pub(super) fn dashboard_bars(out_dir: &Path) -> Result<scena::AgentSmokeTemplate
             "scene": { "background": { "kind": "dark_studio" } },
             "render": { "profile": "balanced", "quality": "medium", "anti_aliasing": "fxaa", "tonemapper": "pbr_neutral" },
             "capture": { "width": 320, "height": 220 },
-            "metadata": { "template": "dashboard_bars", "purpose": "authored industrial dashboard bars starter" }
+            "metadata": { "template": "dashboard-bars", "purpose": "authored industrial dashboard bars starter" }
         }),
     )
 }
 
 pub(super) fn machine_state_viewer(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
     authored_template(
-        "machine_state_viewer",
+        "machine-state-viewer",
         out_dir,
         json!({
             "schema": scena::SCENE_RECIPE_SCHEMA_V1,
@@ -203,14 +203,14 @@ pub(super) fn machine_state_viewer(out_dir: &Path) -> Result<scena::AgentSmokeTe
             "scene": { "background": { "kind": "studio" }, "grid": { "padding": 0.08, "line_spacing": 0.04 } },
             "render": { "profile": "balanced", "quality": "medium", "anti_aliasing": "fxaa", "tonemapper": "pbr_neutral" },
             "capture": { "width": 320, "height": 220 },
-            "metadata": { "template": "machine_state_viewer", "purpose": "authored machine state starter" }
+            "metadata": { "template": "machine-state-viewer", "purpose": "authored machine state starter" }
         }),
     )
 }
 
 pub(super) fn product_configurator(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
     authored_template(
-        "product_configurator",
+        "product-configurator-starter",
         out_dir,
         json!({
             "schema": scena::SCENE_RECIPE_SCHEMA_V1,
@@ -246,7 +246,7 @@ pub(super) fn product_configurator(out_dir: &Path) -> Result<scena::AgentSmokeTe
             "scene": { "background": { "kind": "studio" }, "environment": { "kind": "default" } },
             "render": { "profile": "balanced", "quality": "medium", "anti_aliasing": "fxaa", "tonemapper": "pbr_neutral" },
             "capture": { "width": 320, "height": 220 },
-            "metadata": { "template": "product_configurator", "purpose": "authored product configurator starter" }
+            "metadata": { "template": "product-configurator-starter", "purpose": "authored product configurator starter" }
         }),
     )
 }
@@ -287,10 +287,9 @@ fn apply_presentation_defaults(recipe: &mut Value) {
         scene
             .entry("background")
             .or_insert_with(|| json!({ "kind": "studio" }));
-        scene.insert(
-            "environment".to_owned(),
-            json!({ "kind": "uri", "uri": TEMPLATE_STUDIO_ENVIRONMENT }),
-        );
+        scene
+            .entry("environment")
+            .or_insert_with(|| json!({ "preset": "studio" }));
         if let Some(grid) = scene.get_mut("grid")
             && grid.is_object()
         {

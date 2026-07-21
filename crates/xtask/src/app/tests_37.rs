@@ -9,6 +9,7 @@ fn fr06_doctor_rejects_persistent_runtime_handle_claims() {
         "docs/specs/semantic-aov-v1.md",
         "src/render/prepare/types.rs",
         "src/render/prepare.rs",
+        "src/render/cpu_geometry.rs",
         "src/render/semantic_aov.rs",
         "src/render/settings.rs",
         "src/render/gpu/semantic_aov.rs",

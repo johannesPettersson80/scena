@@ -10,12 +10,21 @@ or from the file you authored directly.
 Run:
 
 ```bash
-scena validate-recipe "$RECIPE"
+scena validate-recipe "$RECIPE" --full
 ```
 
 Fix the field named by each diagnostic `path`. For unknown fields or enum
 values, use `scena schema get scena.scene_recipe.v1` and apply the closest
 schema-backed name only when the suggestion is unambiguous.
+For unknown schema, template, node, geometry/mesh-resource, material,
+animation, variant, anchor, connector, import, or environment-preset names,
+read the structured `candidates` array. It is capped and deterministically
+ranked; never scrape candidate text from the human `message`.
+If the normalized URI intentionally belongs to an external operator library,
+run `scena policy recipe --allow-root /exact/library`, then repeat that same
+`--allow-root` on validation and every later recipe command. Never broaden to a
+parent directory just to silence a denial; canonical traversal and symlink
+escapes are supposed to remain rejected.
 
 ## Blank Or Empty Frame
 
@@ -34,6 +43,10 @@ Common causes:
 - alpha/material makes target invisible;
 - clipping plane removed the target;
 - missing geometry/material/texture evidence.
+
+For `NoActiveCamera`, preserve the reported remedy: use
+`Scene::add_default_camera` for a standard framed camera or
+`Scene::set_active_camera` for an authored camera.
 
 Use:
 

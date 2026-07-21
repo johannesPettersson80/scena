@@ -4,6 +4,8 @@ use crate::scene::{Camera, CameraKey, Quat, Scene, Transform, Vec3};
 
 use super::RasterTarget;
 
+mod depth_projection;
+
 #[derive(Debug, Clone)]
 pub(super) struct CameraProjection {
     camera: Camera,

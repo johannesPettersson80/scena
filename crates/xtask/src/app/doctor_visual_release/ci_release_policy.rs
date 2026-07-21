@@ -49,11 +49,16 @@ pub(super) fn check_agent_template_cli_isolation(root: &Path, findings: &mut Vec
     let guard_count = text
         .matches("let _cli_guard = template_cli_guard();")
         .count();
-    if !text.contains("static TEMPLATE_CLI_LOCK") || guard_count != 4 {
+    let subprocess_test_count = text
+        .split("\n#[test]")
+        .skip(1)
+        .filter(|test| test.contains("Command::new"))
+        .count();
+    if !text.contains("static TEMPLATE_CLI_LOCK") || guard_count != subprocess_test_count {
         findings.push(Finding::new(
             "RELEASE-CI-M9",
             format!(
-                "{relative} must use TEMPLATE_CLI_LOCK in all four heavyweight subprocess tests; found {guard_count} guards"
+                "{relative} must use TEMPLATE_CLI_LOCK in every heavyweight subprocess test; found {guard_count} guards for {subprocess_test_count} subprocess tests"
             ),
         ));
     }

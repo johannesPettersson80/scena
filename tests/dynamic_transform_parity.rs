@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 use scena::{
     AnimationChannel, AnimationClip, AnimationInterpolation, AnimationOutput, AnimationTarget,
-    AntiAliasing, AssetPath, Assets, Color, GeometryDesc, MaterialDesc, Scene, Transform, Vec3,
+    AntiAliasing, AssetPath, Assets, Color, GeometryDesc, ImportOptions, MaterialDesc, Scene,
+    SourceCoordinateSystem, Transform, Vec3,
 };
 use support::parity::{
     ParitySweep, PixelRegion, RenderBackend, RgbaFrame, renderer_for_backend,
@@ -83,6 +84,60 @@ fn dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_impor
         &artifacts.join("dynamic-transform-parity.json"),
         &[("movement_records", movement_json)],
     );
+}
+
+#[test]
+fn z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion() {
+    const CASE: &str = "z-up-imported-rotation-animation";
+    if !require_cpu_gpu_parity_adapter_or_skip(
+        "z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion",
+    ) {
+        return;
+    }
+
+    let artifacts = artifact_dir();
+    let cpu = render_z_up_rotation_animation(RenderBackend::Cpu, &artifacts, CASE);
+    let gpu = render_z_up_rotation_animation(RenderBackend::Gpu, &artifacts, CASE);
+    let region = PixelRegion {
+        x: 0,
+        y: 0,
+        width: WIDTH,
+        height: HEIGHT,
+    };
+    let mut sweep = ParitySweep::new("scena.z_up_rotation_animation_parity.v1");
+    let before = sweep.compare_region(
+        "z-up-rest-cpu-vs-gpu",
+        RgbaFrame::new("cpu-rest", &cpu.before, WIDTH, HEIGHT),
+        RgbaFrame::new("gpu-rest", &gpu.before, WIDTH, HEIGHT),
+        region,
+    );
+    let after = sweep.compare_region(
+        "z-up-animated-cpu-vs-gpu",
+        RgbaFrame::new("cpu-animated", &cpu.after, WIDTH, HEIGHT),
+        RgbaFrame::new("gpu-animated", &gpu.after, WIDTH, HEIGHT),
+        region,
+    );
+    assert!(
+        before.rmse <= 0.14 && after.rmse <= 0.14,
+        "converted Z-up frame must stay within CPU/GPU parity tolerance: before={before:?}, after={after:?}"
+    );
+    assert!(
+        before.channel_delta.mean_channel_delta <= 22.0
+            && after.channel_delta.mean_channel_delta <= 22.0,
+        "converted Z-up frame mean channel delta is too high: before={before:?}, after={after:?}"
+    );
+
+    let cpu_delta_x = cpu.after_centroid.0 - cpu.before_centroid.0;
+    let gpu_delta_x = gpu.after_centroid.0 - gpu.before_centroid.0;
+    assert!(
+        cpu_delta_x.abs() >= 2.0 && gpu_delta_x.abs() >= 2.0,
+        "converted Z-up rotation must visibly move the offset fixture on both paths: cpu={cpu_delta_x:.2}, gpu={gpu_delta_x:.2}"
+    );
+    assert!(
+        (cpu_delta_x - gpu_delta_x).abs() <= 4.0,
+        "CPU/GPU converted motion must agree: cpu={cpu_delta_x:.2}, gpu={gpu_delta_x:.2}"
+    );
+    sweep.write_json(&artifacts.join("z-up-rotation-animation-parity.json"), &[]);
 }
 
 fn compare_case(
@@ -246,6 +301,36 @@ fn render_imported_set_transform(
             scene
                 .set_transform(moving, Transform::at(Vec3::new(0.45, 0.0, 0.0)))
                 .expect("import root moves right");
+        })
+    })
+}
+
+fn render_z_up_rotation_animation(
+    backend: RenderBackend,
+    artifacts: &Path,
+    case_name: &'static str,
+) -> MotionCapture {
+    render_motion(backend, artifacts, case_name, |scene, assets| {
+        let scene_asset =
+            pollster::block_on(assets.load_scene("tests/assets/gltf/z_up_animated_rotation.gltf"))
+                .expect("Z-up animated rotation fixture loads");
+        let import = scene
+            .instantiate_with(
+                &scene_asset,
+                ImportOptions::gltf_default()
+                    .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
+            )
+            .expect("Z-up animated rotation fixture instantiates");
+        let mixer = scene
+            .create_animation_mixer(&import, "LinearZ")
+            .expect("Z-up linear rotation mixer creates");
+        scene
+            .seek_animation(mixer, 0.0)
+            .expect("Z-up rest frame samples");
+        Box::new(move |scene| {
+            scene
+                .seek_animation(mixer, 0.5)
+                .expect("Z-up animated frame samples");
         })
     })
 }

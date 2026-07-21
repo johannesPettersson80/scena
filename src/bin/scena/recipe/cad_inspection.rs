@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
-use crate::scena_output::{CliOutcome, json_outcome};
+use crate::scena_output::{
+    CliBackendSelectionV1, CliOutcome, json_outcome, json_outcome_with_backend_selection,
+};
 
 #[path = "cad_inspection/image.rs"]
 mod image;
@@ -46,10 +48,11 @@ pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutco
         Ok(build) => build,
         Err(manifest) => {
             let result = scena::SceneRecipeRenderResultV1::build_failed(manifest);
-            return json_outcome(
+            return json_outcome_with_backend_selection(
                 &result,
                 1,
                 "failed to serialize CAD inspection build failure",
+                CliBackendSelectionV1::new(args.gpu, None),
             );
         }
     };
@@ -143,7 +146,8 @@ pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutco
             "render_result": {
                 "ok": result_json["ok"].as_bool().unwrap_or(false),
                 "introspection_ok": result_json["introspection"]["ok"].as_bool().unwrap_or(false),
-                "verification_ok": result_json["verification"]["ok"].as_bool().unwrap_or(false)
+                "verification_ok": result_json["verification"]["ok"].as_bool().unwrap_or(false),
+                "backend_selection": result_json["backend_selection"].clone()
             },
             "postprocess": image::postprocess_json(metrics, args.width, args.height)
         }));
@@ -182,6 +186,9 @@ pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutco
             "edge_emphasis": "presentation_only",
             "geometry_modified": false
         },
+        "backend_selection": views.first()
+            .map(|view| view["render_result"]["backend_selection"].clone())
+            .unwrap_or(Value::Null),
         "views": views
     });
     json_outcome(
@@ -199,7 +206,7 @@ impl InspectCadArgs {
         let mut out_dir = None;
         let mut width = 2560;
         let mut height = 1920;
-        let mut gpu = super::super::scena_input::gpu_requested_from_env();
+        let mut gpu = false;
         let mut max_imports = None;
         let mut index = 1;
         while index < args.len() {

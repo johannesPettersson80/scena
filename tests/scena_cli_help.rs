@@ -15,6 +15,17 @@ fn scena_help_points_to_llm_app_builder_guide() {
 
     let help: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("scena --help emits JSON");
+    assert_eq!(help["backend_selection"]["default"], "headless");
+    assert!(
+        help["backend_selection"]["gpu_flag"]
+            .as_str()
+            .is_some_and(|value| value.contains("--gpu") && value.contains("fallback"))
+    );
+    assert!(
+        help["backend_selection"]["environment"]
+            .as_str()
+            .is_some_and(|value| value.contains("SCENA_USE_GPU") && value.contains("ignored"))
+    );
     let guides = help
         .get("guides")
         .and_then(serde_json::Value::as_array)

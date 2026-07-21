@@ -145,7 +145,8 @@ fn scena_render_cli_exits_nonzero_and_emits_json_for_empty_frame() {
             .expect("render reasons is an array")
             .iter()
             .any(|reason| reason["code"] == "empty_frame"
-                || reason["code"] == "no_visible_drawables"),
+                || reason["code"] == "no_visible_drawables"
+                || reason["code"] == "alpha_zero"),
         "empty render should explain why ok=false: {report:#}"
     );
     assert!(fs::metadata(&png_path).expect("PNG artifact exists").len() > 0);
@@ -442,7 +443,7 @@ fn scena_agent_cli_stdout_matches_golden_fixtures() {
         ])
         .output()
         .expect("scena repair golden command runs");
-    assert_success_stdout_matches(&repair, "repair_plan_stdout.json");
+    assert_success_stdout_matches_with_policy(&repair, "repair_plan_stdout.json");
 
     let expectation_path = dir.join("appearance-expectation.json");
     fs::write(
@@ -1291,6 +1292,34 @@ fn assert_report_reason(report: &serde_json::Value, code: &str) {
 fn assert_success_stdout_matches(output: &std::process::Output, fixture: &str) {
     assert!(output.status.success(), "stderr={}", stderr(output));
     assert_stdout_matches(output, fixture);
+}
+
+fn assert_success_stdout_matches_with_policy(output: &std::process::Output, fixture: &str) {
+    assert!(output.status.success(), "stderr={}", stderr(output));
+    assert!(
+        output.stderr.is_empty(),
+        "golden stdout command must keep stderr empty, stderr={}",
+        stderr(output)
+    );
+    let mut actual: Value = serde_json::from_slice(&output.stdout).expect("stdout emits JSON");
+    let policy = actual
+        .as_object_mut()
+        .and_then(|object| object.remove("policy"))
+        .expect("repair output surfaces the effective recipe policy");
+    assert_eq!(policy["schema"], "scena.recipe_policy.v1");
+    assert_eq!(policy["network"]["allowed"], false);
+    assert!(
+        policy["allowed_roots"]
+            .as_array()
+            .is_some_and(|roots| !roots.is_empty()),
+        "repair policy must identify at least one sandbox root: {policy:#}"
+    );
+    let expected: Value = serde_json::from_str(
+        &fs::read_to_string(cli_golden_path(fixture))
+            .unwrap_or_else(|error| panic!("failed to read CLI golden fixture {fixture}: {error}")),
+    )
+    .expect("CLI golden fixture parses");
+    assert_eq!(actual, expected, "CLI stdout fixture drifted: {fixture}");
 }
 
 fn assert_failure_stdout_matches(output: &std::process::Output, fixture: &str) {

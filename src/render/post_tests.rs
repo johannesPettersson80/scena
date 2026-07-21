@@ -7,7 +7,70 @@ use crate::scene::{Scene, Transform, Vec3};
 use super::output::{DepthOfFieldPostConfig, apply_depth_of_field_rgba8};
 use super::{
     AntiAliasing, DepthOfFieldConfig, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig,
+    Tonemapper,
 };
+
+#[test]
+fn gpu_post_toggle_preserves_srgb8_transfer() {
+    let render = |anti_aliasing| {
+        let mut renderer = Renderer::headless_gpu(32, 32)
+            .expect("required GPU color-transfer renderer must build");
+        let assets = Assets::new();
+        let mut scene = Scene::new();
+        let camera = scene.add_default_camera().expect("camera inserts");
+        scene
+            .add_renderable(
+                scene.root(),
+                quad_primitives(
+                    -1.2,
+                    -1.2,
+                    1.2,
+                    1.2,
+                    0.0,
+                    Color::from_linear_rgb(0.18, 0.18, 0.18),
+                )
+                .to_vec(),
+                Transform::default(),
+            )
+            .expect("color-transfer quad inserts");
+        renderer.set_tonemapper(Tonemapper::Standard);
+        renderer.set_anti_aliasing(anti_aliasing);
+        renderer.clear_bloom();
+        renderer.clear_screen_space_ambient_occlusion();
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("color-transfer scene prepares");
+        renderer
+            .render(&scene, camera)
+            .expect("color-transfer scene renders");
+        let offset = ((16 * 32 + 16) * 4) as usize;
+        renderer.frame_rgba8()[offset..offset + 4].to_vec()
+    };
+
+    let no_post = render(AntiAliasing::None);
+    let post = render(AntiAliasing::Fxaa);
+    let expected = [118_u8, 118, 118, 255];
+    for (label, actual) in [("no-post", &no_post), ("post", &post)] {
+        for channel in 0..4 {
+            assert!(
+                actual[channel].abs_diff(expected[channel]) <= 2,
+                "{label} channel {channel} expected {} +/-2, got {}; rgba={actual:?}",
+                expected[channel],
+                actual[channel],
+            );
+        }
+        assert_ne!(
+            actual[0], 46,
+            "{label} must not expose linear bytes as sRGB"
+        );
+    }
+    for channel in 0..4 {
+        assert!(
+            no_post[channel].abs_diff(post[channel]) <= 2,
+            "post toggle changed channel {channel}: no-post={no_post:?} post={post:?}",
+        );
+    }
+}
 
 #[test]
 fn headless_gpu_post_chain_runs_enabled_passes_and_changes_pixels() {

@@ -13,6 +13,18 @@ pub struct SkinningMatrix {
     rows: [[f32; 4]; 4],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SkinningNormalMatrix {
+    rows: [[f32; 3]; 3],
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SkinningWorkMetrics {
+    pub(crate) normal_matrices_prepared: u64,
+    pub(crate) normal_matrix_bytes_prepared: u64,
+    pub(crate) weighted_influences: u64,
+}
+
 impl GeometryDesc {
     pub fn with_skin(mut self, skin: GeometrySkin) -> Result<Self, GeometryError> {
         if skin.joints.len() != self.vertices.len() {
@@ -41,6 +53,19 @@ impl GeometryDesc {
         source_vertices: &[GeometryVertex],
         joint_matrices: &[SkinningMatrix],
     ) -> Result<Option<Vec<GeometryVertex>>, GeometryError> {
+        self.skinned_vertices_profiled(
+            source_vertices,
+            joint_matrices,
+            &mut SkinningWorkMetrics::default(),
+        )
+    }
+
+    pub(crate) fn skinned_vertices_profiled(
+        &self,
+        source_vertices: &[GeometryVertex],
+        joint_matrices: &[SkinningMatrix],
+        metrics: &mut SkinningWorkMetrics,
+    ) -> Result<Option<Vec<GeometryVertex>>, GeometryError> {
         let Some(skin) = &self.skin else {
             return Ok(None);
         };
@@ -50,6 +75,17 @@ impl GeometryDesc {
                 source_count: source_vertices.len(),
             });
         }
+        let normal_matrices = joint_matrices
+            .iter()
+            .copied()
+            .map(SkinningMatrix::normal_matrix)
+            .collect::<Vec<_>>();
+        metrics.normal_matrices_prepared = metrics
+            .normal_matrices_prepared
+            .saturating_add(normal_matrices.len() as u64);
+        metrics.normal_matrix_bytes_prepared = metrics.normal_matrix_bytes_prepared.saturating_add(
+            (normal_matrices.len() * std::mem::size_of::<SkinningNormalMatrix>()) as u64,
+        );
         let mut vertices = Vec::with_capacity(source_vertices.len());
         for (vertex_index, source) in source_vertices.iter().enumerate() {
             let mut position = Vec3::ZERO;
@@ -68,13 +104,22 @@ impl GeometryDesc {
                             joint,
                             joint_count: joint_matrices.len(),
                         })?;
+                let normal_matrix =
+                    normal_matrices
+                        .get(joint)
+                        .ok_or(GeometryError::InvalidSkinJointIndex {
+                            vertex_index,
+                            joint,
+                            joint_count: normal_matrices.len(),
+                        })?;
+                metrics.weighted_influences = metrics.weighted_influences.saturating_add(1);
                 position = add_vec3(
                     position,
                     scale_vec3(matrix.transform_position(source.position), weight),
                 );
                 normal = add_vec3(
                     normal,
-                    scale_vec3(matrix.transform_normal(source.normal), weight),
+                    scale_vec3(normal_matrix.transform(source.normal), weight),
                 );
             }
             vertices.push(GeometryVertex {
@@ -191,7 +236,7 @@ impl SkinningMatrix {
         )
     }
 
-    pub fn transform_normal(self, normal: Vec3) -> Vec3 {
+    fn normal_matrix(self) -> SkinningNormalMatrix {
         let m00 = self.rows[0][0];
         let m01 = self.rows[0][1];
         let m02 = self.rows[0][2];
@@ -213,16 +258,44 @@ impl SkinningMatrix {
         let c22 = m00 * m11 - m01 * m10;
         let determinant = m00 * c00 + m01 * c01 + m02 * c02;
         if determinant.abs() <= f32::EPSILON || !determinant.is_finite() {
-            return self.transform_direction(normal);
+            return SkinningNormalMatrix {
+                rows: [[m00, m01, m02], [m10, m11, m12], [m20, m21, m22]],
+            };
         }
         let inverse_determinant = determinant.recip();
+        SkinningNormalMatrix {
+            rows: [
+                [
+                    c00 * inverse_determinant,
+                    c01 * inverse_determinant,
+                    c02 * inverse_determinant,
+                ],
+                [
+                    c10 * inverse_determinant,
+                    c11 * inverse_determinant,
+                    c12 * inverse_determinant,
+                ],
+                [
+                    c20 * inverse_determinant,
+                    c21 * inverse_determinant,
+                    c22 * inverse_determinant,
+                ],
+            ],
+        }
+    }
+}
+
+impl SkinningNormalMatrix {
+    fn transform(self, normal: Vec3) -> Vec3 {
         Vec3::new(
-            (c00 * normal.x + c01 * normal.y + c02 * normal.z) * inverse_determinant,
-            (c10 * normal.x + c11 * normal.y + c12 * normal.z) * inverse_determinant,
-            (c20 * normal.x + c21 * normal.y + c22 * normal.z) * inverse_determinant,
+            self.rows[0][0] * normal.x + self.rows[0][1] * normal.y + self.rows[0][2] * normal.z,
+            self.rows[1][0] * normal.x + self.rows[1][1] * normal.y + self.rows[1][2] * normal.z,
+            self.rows[2][0] * normal.x + self.rows[2][1] * normal.y + self.rows[2][2] * normal.z,
         )
     }
+}
 
+impl SkinningMatrix {
     fn translation(translation: Vec3) -> Self {
         let mut matrix = Self::IDENTITY;
         matrix.rows[0][3] = translation.x;
@@ -355,6 +428,42 @@ mod tests {
 
         let expected = normalize_or(Vec3::new(0.5, 1.0, 0.0), Vec3::Y);
         assert_vec3_near(skinned[0].normal, expected);
+    }
+
+    #[test]
+    fn skin_normal_matrix_work_scales_with_joints_not_vertex_influences() {
+        let geometry = GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![
+                GeometryVertex {
+                    position: Vec3::ZERO,
+                    normal: Vec3::Y,
+                };
+                300
+            ],
+            (0..300_u32).collect(),
+        )
+        .expect("geometry validates")
+        .with_skin(GeometrySkin::new(
+            vec![[0, 1, 2, 3]; 300],
+            vec![[0.25, 0.25, 0.25, 0.25]; 300],
+        ))
+        .expect("skin validates");
+        let joints = [
+            SkinningMatrix::IDENTITY,
+            SkinningMatrix::from_transform(Transform::at(Vec3::X)),
+            SkinningMatrix::from_transform(Transform::at(Vec3::Y)),
+            SkinningMatrix::from_transform(Transform::at(Vec3::Z)),
+        ];
+        let mut metrics = SkinningWorkMetrics::default();
+
+        geometry
+            .skinned_vertices_profiled(geometry.vertices(), &joints, &mut metrics)
+            .expect("skinning succeeds")
+            .expect("skinned vertices are produced");
+
+        assert_eq!(metrics.normal_matrices_prepared, joints.len() as u64);
+        assert_eq!(metrics.weighted_influences, 1_200);
     }
 
     fn assert_vec3_near(actual: Vec3, expected: Vec3) {

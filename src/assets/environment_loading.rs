@@ -1,6 +1,8 @@
 use base64::Engine;
+use std::borrow::Cow;
 
 use super::environment::{DEFAULT_ENVIRONMENT_SOURCE_PATH, is_equirectangular_hdr_path};
+use super::environment_preset::{bundled_environment_bytes, is_bundled_environment_uri};
 use super::environment_sidecar::{EnvironmentPrefilterSidecar, sidecar_path_for_environment};
 use super::load::AssetLoadOptions;
 use super::scene_loading::{
@@ -13,7 +15,6 @@ impl<F> Assets<F> {
     /// Verifies that an explicit recipe environment source is fetchable under
     /// the supplied byte policy without decoding or inserting GPU-facing
     /// environment state.
-    #[cfg(feature = "scene-host")]
     pub(crate) async fn validate_environment_source_with_options(
         &self,
         path: impl Into<AssetPath>,
@@ -151,7 +152,9 @@ impl<F> Assets<F> {
     where
         F: AssetFetcher,
     {
-        if environment_path.as_str().starts_with("data:") {
+        if environment_path.as_str().starts_with("data:")
+            || is_bundled_environment_uri(environment_path)
+        {
             return Ok(None);
         }
         let sidecar_path = sidecar_path_for_environment(environment_path);
@@ -212,7 +215,10 @@ fn warn_optional_environment_sidecar_failed(path: &AssetPath, reason: &str) {
     }
 }
 
-fn embedded_environment_bytes(path: &AssetPath) -> Result<Option<Vec<u8>>, AssetError> {
+fn embedded_environment_bytes(path: &AssetPath) -> Result<Option<Cow<'static, [u8]>>, AssetError> {
+    if let Some(bytes) = bundled_environment_bytes(path) {
+        return Ok(Some(Cow::Borrowed(bytes)));
+    }
     if !path.as_str().starts_with("data:") {
         return Ok(None);
     }
@@ -232,6 +238,7 @@ fn embedded_environment_bytes(path: &AssetPath) -> Result<Option<Vec<u8>>, Asset
         .map_or(encoded, |(payload, _query)| payload);
     base64::engine::general_purpose::STANDARD
         .decode(encoded)
+        .map(Cow::Owned)
         .map(Some)
         .map_err(|error| AssetError::Parse {
             path: path.as_str().to_string(),

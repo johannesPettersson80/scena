@@ -24,6 +24,7 @@ pub struct FramingOptions {
     viewport_width: u32,
     viewport_height: u32,
     tighten_depth_range: bool,
+    include_helpers: bool,
 }
 
 /// Result returned by [`Scene::frame_bounds`].
@@ -114,6 +115,7 @@ impl FramingOptions {
             viewport_width: 1,
             viewport_height: 1,
             tighten_depth_range: false,
+            include_helpers: false,
         }
     }
 
@@ -353,6 +355,18 @@ impl FramingOptions {
     pub const fn tighten_depth_range(mut self, enabled: bool) -> Self {
         self.tighten_depth_range = enabled;
         self
+    }
+
+    /// Includes visible inspection-helper geometry in aggregate scene bounds.
+    /// Hidden nodes remain excluded. The default is `false` so axes, bounds,
+    /// and measurement helpers do not shrink the primary subject.
+    pub const fn include_helpers(mut self, include: bool) -> Self {
+        self.include_helpers = include;
+        self
+    }
+
+    pub(crate) const fn includes_helpers(self) -> bool {
+        self.include_helpers
     }
 }
 

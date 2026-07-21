@@ -141,6 +141,49 @@ fn fr02_recipe_build_validates_required_environment_and_counts_real_fetch_attemp
 }
 
 #[test]
+fn fr02_recipe_build_reports_and_skips_only_an_explicitly_optional_environment() {
+    let root = fixture_dir("optional-environment");
+    let recipe = root.join("missing-optional-environment.recipe.json");
+    write_json(
+        &recipe,
+        &json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [{
+                "id": "box_geo",
+                "primitive": { "kind": "box", "size": [0.2, 0.2, 0.2] }
+            }],
+            "materials": [{
+                "id": "box_mat",
+                "kind": "unlit",
+                "base_color": "#FFFFFF"
+            }],
+            "nodes": [{
+                "id": "box",
+                "geometry": "box_geo",
+                "material": "box_mat"
+            }],
+            "scene": {
+                "environment": {
+                    "kind": "uri",
+                    "uri": "missing-optional-environment.hdr",
+                    "optional": true
+                }
+            }
+        }),
+    );
+
+    let output = run_build(&recipe, &[]);
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    let report = stdout_json(&output);
+    assert!(
+        has_diagnostic(&report, "optional_environment_skipped"),
+        "{report:#}"
+    );
+    assert_eq!(report["build"]["ok"], true);
+    assert_zero_render_execution(&report);
+}
+
+#[test]
 fn fr02_recipe_build_result_matches_stable_schema_fixture_shape() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "assets/stable-contracts/recipe_build_result.v1.json"

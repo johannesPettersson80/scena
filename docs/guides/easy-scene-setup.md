@@ -15,6 +15,26 @@ headless GPU enabled to regenerate them. On lavapipe:
 
 ## Minimal model viewer
 
+The shortest PBR-safe path is:
+
+```rust
+# async fn first_render_example() -> Result<(), Box<dyn std::error::Error>> {
+let first = scena::first_render_gltf_headless("machine.glb", 1280, 720).await?;
+for warning in first.diagnostics() {
+    eprintln!("{}", warning.message());
+}
+# Ok(())
+# }
+```
+
+`headless_gltf_viewer`, `interactive_gltf_viewer`, and the one-frame helper
+preserve authored lights and environments. When neither exists, they apply one
+neutral directional fallback and a studio background, then retain a structured
+`MissingLightingOrEnvironment` warning with `setting = "viewer.lighting"` and
+`fallback_applied = true`. Call `without_default_lighting()` only for an
+intentional dark diagnostic setup. The explicit composition below remains the
+right path when the application owns the complete presentation rig.
+
 ```rust
 use scena::{
     Assets, AutoExposureConfig, Background, GridFloorOptions, Renderer, Scene,
@@ -355,10 +375,13 @@ CPU headless renderer, without requesting a GPU adapter:
 ```rust
 let png = headless_gltf_viewer("machine.glb")
     .size(800, 600)
-    .with_default_light()
     .render_png_bytes()
     .await?;
 ```
+
+No light call is required for a presentable first frame. Add
+`with_default_light()`, `with_default_environment()`, or a viewer profile when
+you want that explicit named policy instead of the conditional fallback.
 
 ![A single rendered frame encoded directly via capture_png](../assets/easy-scene-showcase/capture-png.jpg)
 
@@ -437,12 +460,22 @@ let mut watcher =
 
 for path in watcher.drain_changed_scenes()? {
     if path.as_str() == scene_asset.path().as_str() {
-        let reloaded = assets.reload_scene(&scene_asset).await?;
-        import = scene.replace_import(&import, &reloaded)?;
+        let report = assets.reload_scene_with_report(&scene_asset).await?;
+        let reloaded = report.asset();
+        import = scene.replace_import(&import, reloaded)?;
         renderer.prepare_with_assets(&mut scene, &assets)?;
     }
 }
 ```
+
+Explicit reload is transactional and strict about referenced buffers and
+supported images. Editing an external texture at the same path updates its
+decoded revision while preserving the texture cache handle. If a dependency is
+deleted or cannot decode, the last complete cached scene remains usable.
+`reload_scene_with_report` exposes successful fetch/dependency/progress
+evidence and returns `AssetReloadError` with `previous_asset_preserved()` on
+failure; call `reload_scene` when only the replacement asset and compatibility
+`AssetError` are needed.
 
 ![Asset reload before / after — sphere colour changes when the bytes change on disk](../assets/easy-scene-showcase/animated-hot-reload.gif)
 
