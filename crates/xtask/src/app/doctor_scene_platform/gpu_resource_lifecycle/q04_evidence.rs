@@ -35,7 +35,9 @@ pub(super) fn check_q04_required_gpu_lifecycle_evidence(root: &Path, findings: &
             "crates/xtask/src/app/release/lane_artifacts.rs",
             &[
                 "c09-gpu-resource-lifecycle/required-result.json",
-                "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1 cargo test --test c09_gpu_resource_lifecycle",
+                "if lane != \"macos-metal\"",
+                "if lane == \"macos-metal\"",
+                "cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
                 "required_hardware_gpu_resource_lifecycle_executes_complete_cycle",
             ],
         ),

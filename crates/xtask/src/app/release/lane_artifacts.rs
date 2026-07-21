@@ -225,7 +225,7 @@ fn release_lane_content_ok_for_class(
     if !native_gpu_render_proof_passes(&value) {
         return Ok(false);
     }
-    if lane != "linux-native-vulkan" {
+    if lane != "macos-metal" {
         return Ok(true);
     }
     let lifecycle_path =
@@ -273,7 +273,7 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
             ]
             .into_iter()
             .collect::<Vec<_>>();
-            if lane == "linux-native-vulkan" {
+            if lane == "macos-metal" {
                 artifacts.push(
                     "target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json"
                         .to_string(),
@@ -324,14 +324,14 @@ pub(crate) fn release_lane_expected_commands(lane: &str) -> Vec<&'static str> {
             "cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact",
             "node scripts/evaluate_round_e_cpu_materials.cjs",
         ],
-        "linux-native-vulkan" => vec![
+        "linux-native-vulkan" | "windows-dx12" => vec![
             "cargo test --test m9_platform_release",
             "cargo check --examples",
-            "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1 cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
         ],
-        "macos-metal" | "windows-dx12" => vec![
+        "macos-metal" => vec![
             "cargo test --test m9_platform_release",
             "cargo check --examples",
+            "cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
         ],
         "linux-webgl2-chromium" => vec![
             "wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe",

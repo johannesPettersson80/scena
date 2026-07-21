@@ -471,6 +471,26 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "doctor must reject disabling the strict GPU lifecycle lane: {findings:?}",
     );
 
+    let lane_artifacts = fixture_root.join("crates/xtask/src/app/release/lane_artifacts.rs");
+    let source = fs::read_to_string(&lane_artifacts).expect("read release lane fixture");
+    let mutated = source.replace(
+        "if lane == \"macos-metal\"",
+        "if lane == \"linux-native-vulkan\"",
+    );
+    assert_ne!(
+        source, mutated,
+        "lifecycle lane ownership mutation must alter release tooling"
+    );
+    fs::write(&lane_artifacts, mutated).expect("misroute lifecycle evidence to software Vulkan");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09" && finding.message.contains("if lane == \"macos-metal\"")
+        }),
+        "doctor must reject assigning physical lifecycle evidence to the hosted software-Vulkan lane: {findings:?}",
+    );
+
     let browser_selector = fixture_root.join("tests/browser/hardware_browser.js");
     let source = fs::read_to_string(&browser_selector).expect("read browser selector fixture");
     let mutated = source.replacen("gfx.webgpu.force-enabled", "removed-webgpu-force-enable", 1);

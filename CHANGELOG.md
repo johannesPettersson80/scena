@@ -16,7 +16,8 @@ All notable user-facing changes are recorded here.
   so premerge/release staging has an actual physical-hardware producer instead
   of requiring evidence no dependency job could supply. Bind that artifact to
   its producer source and dependency lockfile so staging rejects provenance-free
-  lifecycle evidence.
+  lifecycle evidence, and assign its artifact and measured command to the
+  physical macOS lane rather than hosted Linux software Vulkan.
 
 - Strengthen the public brushed-steel preset's anisotropic lobe so its live
   WebGPU material proof clears the existing value-bounded highlight threshold.

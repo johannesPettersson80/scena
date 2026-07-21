@@ -154,6 +154,39 @@ pub(crate) fn required_gpu_resource_lifecycle_fixture() -> Value {
 }
 
 #[test]
+fn q04_physical_gpu_lifecycle_evidence_belongs_to_the_macos_metal_lane() {
+    const LIFECYCLE_ARTIFACT: &str =
+        "target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json";
+    const LIFECYCLE_COMMAND: &str = "cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture";
+
+    let macos_artifacts = release_lane_required_artifacts("macos-metal");
+    let linux_artifacts = release_lane_required_artifacts("linux-native-vulkan");
+    assert!(
+        macos_artifacts
+            .iter()
+            .any(|path| path == LIFECYCLE_ARTIFACT),
+        "the physical macOS lane must own the lifecycle artifact"
+    );
+    assert!(
+        !linux_artifacts
+            .iter()
+            .any(|path| path == LIFECYCLE_ARTIFACT),
+        "the hosted Linux software-Vulkan lane must not claim physical lifecycle evidence"
+    );
+
+    let macos_commands = release_lane_expected_commands("macos-metal");
+    let linux_commands = release_lane_expected_commands("linux-native-vulkan");
+    assert!(
+        macos_commands.contains(&LIFECYCLE_COMMAND),
+        "the physical macOS lane must require the lifecycle command"
+    );
+    assert!(
+        !linux_commands.contains(&LIFECYCLE_COMMAND),
+        "the hosted Linux software-Vulkan lane must not require the lifecycle command"
+    );
+}
+
+#[test]
 fn c04_doctor_rejects_fail_open_readiness_drift() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/c04-release-readiness");

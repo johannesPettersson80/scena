@@ -2830,7 +2830,7 @@ Validation ledger (2026-07-21):
   adapter, command, commit, timestamp, and assertion provenance in
   `scena.q04.required_gpu_resource_lifecycle.v1`.
 - `release/doctor`: the self-hosted Linux GPU workflow runs the exact strict
-  test. The Linux native release lane and staged bundle require
+  test. The physical macOS Metal release lane and staged bundle require
   `c09-gpu-resource-lifecycle/required-result.json`; the independent consumer
   rechecks accepted adapter identity, at least ten assertions, resource growth,
   return to baseline shape, exact destroyed count, `Confirmed`, and zero
@@ -3823,12 +3823,37 @@ remediation diff is stable. Do not run it after each item.
   pass on the isolated builder. The first JS replay hit the known constrained
   system-temp quota (`write`, errno `-122`) and passed unchanged with the
   task-scoped `TMPDIR`.
+- `eighth exact-commit hosted matrix`: GitHub Actions run `29850021956` at
+  `1381539798e39a05d403f01ffed7eca4b56cfa43` again passed all seven
+  implementation lanes, including the strict physical lifecycle proof on
+  macOS Metal. The dependent evidence-integrity job accepted the new Q04
+  source checksums, then failed because the Linux-native lane manifest still
+  required that physical lifecycle artifact and measured command even though
+  hosted Linux deliberately uses software Vulkan and never executes the
+  strict physical test. The complete failed log and all eight artifact sets
+  were collected under `target/ci-failure-evidence/run-29850021956` before
+  editing. This is a distinct release-lane ownership defect, not a repeat of
+  the source-provenance failure; renderer production code remains frozen.
+- `eighth-matrix remediation`: a focused lane-ownership test first failed by
+  proving the physical artifact and command were assigned to Linux rather than
+  macOS. Release-lane artifact, content, and measured-command ownership now
+  follows the actual workflow producer: physical macOS Metal owns Q04, while
+  hosted Linux software Vulkan does not claim physical evidence. The canonical
+  staging fixture and release-gate documentation match that ownership, and
+  `RENDER-C09` pins both macOS conditions with a mutation that rejects routing
+  the artifact back to Linux. Inspection of the captured macOS command ledger
+  found that its recorder correctly omits the externally set environment
+  assignment; a tightened focused test failed against the prefixed expectation
+  and passed after matching the exact recorded command. The focused ownership
+  test, doctor mutation, canonical staging test, formatting, strict xtask
+  Clippy, and full doctor pass on the isolated builder. This is the first
+  remediation attempt for this exact lane-ownership signature.
 - `latest isolated bootstrap`: canonical source
   `/home/johannes/projects/scena`; destination
   `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`;
   target `/home/johannes/.cache/codex-targets/scena-full-review-v18-checklist`;
   branch `codex/full-review-remediation-1.9`; pre-remediation source HEAD
-  `fbe66e09697c99fee9df46d98c4e679f3aaa9e44`; shared checkout absent. The
+  `1381539798e39a05d403f01ffed7eca4b56cfa43`; shared checkout absent. The
   explicit post-mirror bootstrap matched `AGENTS.md` SHA-256
   `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
   and relative skills aggregate
@@ -3838,10 +3863,10 @@ remediation diff is stable. Do not run it after each item.
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts through the seventh hosted matrix`: seven release-candidate
-  pushes, seven GitHub full-matrix runs, zero user-required hardware actions,
-  seven branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
-  test checkpoint was run. The hosted 4K investigation took approximately 45
+- `process counts through the eighth hosted matrix and its remediation`: nine
+  release-candidate pushes, eight GitHub full-matrix runs, zero user-required
+  hardware actions, nine branch commits/pushes, and no tag/merge/publish. One
+  workspace-wide CPU test checkpoint was run. The hosted 4K investigation took approximately 45
   minutes, used two
   unsuccessful unpushed aggregation/projection experiments, then froze changes
   for per-sample and per-allocation-size probes before the benchmark-contract
