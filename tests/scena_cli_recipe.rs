@@ -24,6 +24,38 @@ fn configure_command_for_lavapipe(command: &mut Command) {
     }
 }
 
+fn has_actionable_msaa_limit(stderr: &str, maximum: u32, requested: u32) -> bool {
+    let legacy = format!("does not support MSAA sample count {requested}");
+    let legacy_maximum = format!("maximum supported sample count is {maximum}");
+    let prepare_maximum = format!("supports at most {maximum} samples");
+    let prepare_requested = format!("explicit prepare requested {requested}");
+
+    (stderr.contains(&legacy) && stderr.contains(&legacy_maximum))
+        || (stderr.contains(&prepare_maximum) && stderr.contains(&prepare_requested))
+}
+
+#[test]
+fn msaa_limit_diagnostic_requires_maximum_and_requested_counts() {
+    let legacy = "backend HeadlessGpu does not support MSAA sample count 8; maximum supported sample count is 4";
+    let prepare =
+        "backend HeadlessGpu supports at most 4 samples, but explicit prepare requested 8";
+
+    assert!(has_actionable_msaa_limit(legacy, 4, 8));
+    assert!(has_actionable_msaa_limit(prepare, 4, 8));
+    assert!(!has_actionable_msaa_limit(
+        "backend HeadlessGpu supports at most 4 samples",
+        4,
+        8
+    ));
+    assert!(!has_actionable_msaa_limit(
+        "explicit prepare requested 8",
+        4,
+        8
+    ));
+    assert!(!has_actionable_msaa_limit(prepare, 2, 8));
+    assert!(!has_actionable_msaa_limit(prepare, 4, 16));
+}
+
 #[test]
 fn scena_render_cli_accepts_scene_recipe_input() {
     let dir = artifact_dir("render");
@@ -6005,8 +6037,7 @@ fn scena_recipe_render_gpu_msaa_overlays_write_png_on_real_adapter() {
         assert!(png_path.exists(), "GPU msaa8 overlay render writes the PNG");
     } else {
         assert!(
-            stderr.contains("does not support MSAA sample count 8")
-                && stderr.contains("maximum supported sample count"),
+            has_actionable_msaa_limit(&stderr, 4, 8),
             "GPU msaa8 must fail with an actionable sample-count capability diagnostic, got stderr={stderr}"
         );
     }

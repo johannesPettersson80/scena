@@ -3777,12 +3777,33 @@ remediation diff is stable. Do not run it after each item.
   conditional unused import in `a09_feature_discoverability`; it is recorded as
   an invalid over-broad feature combination, not substituted for the green
   changed-target gate.
+- `sixth exact-commit hosted matrix`: GitHub Actions run `29838343514` at
+  `0516f5a4fe921e8cc3ceab3432ab7f3b802caa1d` passed hosted Windows DX12,
+  macOS Metal including strict physical lifecycle, WebGPU software
+  conformance, WebGL2, wasm packaging, and Headless 4K. Linux native/headless
+  passed 373 xtask tests, all 345 all-feature library tests, and 98 recipe CLI
+  tests before failing only in the MSAA8 diagnostic assertion. The product
+  correctly rejected the explicit request with `supports at most 4 samples`
+  and `explicit prepare requested 8`; the test accepted only the older
+  equivalent wording. The complete failed log and all seven artifact sets were
+  collected under `target/ci-failure-evidence/run-29838343514` before editing.
+- `sixth-matrix remediation`: production code remains frozen. The recipe CLI
+  test now accepts both supported diagnostic forms only when they name the
+  expected maximum and requested sample counts. Focused mutations reject a
+  missing maximum, a missing request, and incorrect counts. This is a distinct
+  test-harness contract defect and the first remediation attempt for this
+  signature. The focused mutation test, the exact real-adapter MSAA overlay
+  test, formatting, changed-target all-feature strict Clippy, and full doctor
+  pass on the isolated builder. The workspace suite was intentionally not
+  repeated because this patch changes only the stale test assertion and its
+  checklist evidence; the next exact-commit hosted matrix is the deciding full
+  checkpoint.
 - `latest isolated bootstrap`: canonical source
   `/home/johannes/projects/scena`; destination
   `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`;
   target `/home/johannes/.cache/codex-targets/scena-full-review-v18-checklist`;
   branch `codex/full-review-remediation-1.9`; pre-remediation source HEAD
-  `97816d97d94fdc15e0bcf14bc9caf794696385c3`; shared checkout absent. The
+  `0516f5a4fe921e8cc3ceab3432ab7f3b802caa1d`; shared checkout absent. The
   explicit post-mirror bootstrap matched `AGENTS.md` SHA-256
   `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
   and relative skills aggregate
@@ -3792,9 +3813,9 @@ remediation diff is stable. Do not run it after each item.
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts through the fifth hosted matrix`: five release-candidate
-  pushes, five GitHub full-matrix runs, zero user-required hardware actions,
-  five branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
+- `process counts through the sixth hosted matrix`: six release-candidate
+  pushes, six GitHub full-matrix runs, zero user-required hardware actions,
+  six branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
   test checkpoint was run. The hosted 4K investigation took approximately 45
   minutes, used two
   unsuccessful unpushed aggregation/projection experiments, then froze changes
