@@ -3751,6 +3751,32 @@ remediation diff is stable. Do not run it after each item.
   tests, formatting, xtask-only strict Clippy, and `doctor --full` pass on the
   isolated builder. The workspace suite was intentionally not repeated because
   this correction changes only source-derived policy and its mutation tests.
+- `fifth exact-commit hosted matrix`: GitHub Actions run `29833841396` at
+  `a8b8d2d8d689d59a46899384e098ba3324c1213d` passed hosted Windows DX12,
+  macOS Metal including the strict physical lifecycle proof, WebGPU software
+  conformance, WebGL2, wasm packaging, and Headless 4K. Linux native/headless
+  passed the all-feature 345-test library run and subsequent focused targets,
+  then failed only in `scena_agent_cli_stdout_matches_golden_fixtures`: a
+  camera-frustum coordinate rounded to three decimals was one emitted unit
+  different (`-999.265` versus `-999.264`). The complete failed log and all
+  seven artifact sets were collected under
+  `target/ci-failure-evidence/run-29833841396` before editing.
+- `fifth-matrix remediation`: the CLI output remains unchanged. The inspection
+  golden now keeps schema and every non-frustum field exact while accepting at
+  most one three-decimal output unit in camera-frustum floats. A focused replay
+  then exposed the same harness family in animation rendered observations:
+  Linux included one boundary pixel at the middle sample, changing its payload
+  hash, coverage by one pixel, and centroid by less than 0.04 CSS px. The
+  animation golden keeps all schema, clip, transform, revision, reason, and
+  summary fields exact; hashes must be valid and preserve the same sample-change
+  pattern; rendered centroids allow 0.05 px and coverage allows one pixel.
+  Mutations beyond each threshold and integer identity drift are rejected. The
+  complete 19-test `scena_cli_agent` target, focused mutation proof, formatting,
+  and changed-target strict Clippy pass on the isolated builder. An attempted
+  all-targets `inspection`-only Clippy invocation reached a pre-existing
+  conditional unused import in `a09_feature_discoverability`; it is recorded as
+  an invalid over-broad feature combination, not substituted for the green
+  changed-target gate.
 - `latest isolated bootstrap`: canonical source
   `/home/johannes/projects/scena`; destination
   `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`;
@@ -3766,9 +3792,9 @@ remediation diff is stable. Do not run it after each item.
   attached native PresentOnly/MSAA proof (P02), Linux Vulkan, macOS Metal,
   Windows DX12, complete staged release readiness, selected-release semver
   review, and a clean-tree publish dry-run. Optional F01-F08 remain deferred.
-- `process counts through the fourth hosted matrix`: four release-candidate
-  pushes, four GitHub full-matrix runs, zero user-required hardware actions,
-  four branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
+- `process counts through the fifth hosted matrix`: five release-candidate
+  pushes, five GitHub full-matrix runs, zero user-required hardware actions,
+  five branch commits/pushes, and no tag/merge/publish. One workspace-wide CPU
   test checkpoint was run. The hosted 4K investigation took approximately 45
   minutes, used two
   unsuccessful unpushed aggregation/projection experiments, then froze changes

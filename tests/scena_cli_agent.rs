@@ -405,7 +405,7 @@ fn scena_agent_cli_stdout_matches_golden_fixtures() {
         ])
         .output()
         .expect("scena inspect golden command runs");
-    assert_success_stdout_matches(&inspect, "inspect_asset_stdout.json");
+    assert_success_inspection_stdout_matches(&inspect, "inspect_asset_stdout.json");
 
     let diagnose = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args([
@@ -499,7 +499,7 @@ fn scena_agent_cli_stdout_matches_golden_fixtures() {
         ])
         .output()
         .expect("scena verify animation golden command runs");
-    assert_success_stdout_matches(&animation, "verify_animation_stdout.json");
+    assert_success_animation_stdout_matches(&animation, "verify_animation_stdout.json");
 }
 
 #[test]
@@ -1292,6 +1292,237 @@ fn assert_report_reason(report: &serde_json::Value, code: &str) {
 fn assert_success_stdout_matches(output: &std::process::Output, fixture: &str) {
     assert!(output.status.success(), "stderr={}", stderr(output));
     assert_stdout_matches(output, fixture);
+}
+
+fn assert_success_inspection_stdout_matches(output: &std::process::Output, fixture: &str) {
+    assert!(output.status.success(), "stderr={}", stderr(output));
+    assert!(
+        output.stderr.is_empty(),
+        "golden stdout command must keep stderr empty, stderr={}",
+        stderr(output)
+    );
+    let mut actual: Value = serde_json::from_slice(&output.stdout).expect("stdout emits JSON");
+    let mut expected: Value = serde_json::from_str(
+        &fs::read_to_string(cli_golden_path(fixture))
+            .unwrap_or_else(|error| panic!("failed to read CLI golden fixture {fixture}: {error}")),
+    )
+    .expect("CLI golden fixture parses");
+    let actual_frustums = actual
+        .as_object_mut()
+        .and_then(|object| object.remove("camera_frustums"))
+        .expect("inspection output includes camera_frustums");
+    let expected_frustums = expected
+        .as_object_mut()
+        .and_then(|object| object.remove("camera_frustums"))
+        .expect("inspection golden includes camera_frustums");
+
+    assert_eq!(actual, expected, "CLI stdout fixture drifted: {fixture}");
+    assert!(
+        json_matches_with_float_tolerance(&actual_frustums, &expected_frustums, 0.001_1),
+        "CLI camera-frustum fixture drifted beyond one three-decimal output unit: {fixture}\n\
+         actual={actual_frustums:#}\nexpected={expected_frustums:#}"
+    );
+}
+
+fn assert_success_animation_stdout_matches(output: &std::process::Output, fixture: &str) {
+    assert!(output.status.success(), "stderr={}", stderr(output));
+    assert!(
+        output.stderr.is_empty(),
+        "golden stdout command must keep stderr empty, stderr={}",
+        stderr(output)
+    );
+    let mut actual: Value = serde_json::from_slice(&output.stdout).expect("stdout emits JSON");
+    let mut expected: Value = serde_json::from_str(
+        &fs::read_to_string(cli_golden_path(fixture))
+            .unwrap_or_else(|error| panic!("failed to read CLI golden fixture {fixture}: {error}")),
+    )
+    .expect("CLI golden fixture parses");
+    let actual_samples = actual
+        .as_object_mut()
+        .and_then(|object| object.remove("samples"))
+        .and_then(|samples| samples.as_array().cloned())
+        .expect("animation output includes samples");
+    let expected_samples = expected
+        .as_object_mut()
+        .and_then(|object| object.remove("samples"))
+        .and_then(|samples| samples.as_array().cloned())
+        .expect("animation golden includes samples");
+
+    assert_eq!(actual, expected, "CLI stdout fixture drifted: {fixture}");
+    assert_eq!(actual_samples.len(), expected_samples.len());
+    let mut actual_hashes = Vec::with_capacity(actual_samples.len());
+    let mut expected_hashes = Vec::with_capacity(expected_samples.len());
+    for (mut actual_sample, mut expected_sample) in actual_samples.into_iter().zip(expected_samples)
+    {
+        let actual_hash = actual_sample
+            .as_object_mut()
+            .and_then(|sample| sample.remove("payload_fnv1a64"))
+            .and_then(|hash| hash.as_str().map(str::to_owned))
+            .expect("animation sample includes payload_fnv1a64");
+        let expected_hash = expected_sample
+            .as_object_mut()
+            .and_then(|sample| sample.remove("payload_fnv1a64"))
+            .and_then(|hash| hash.as_str().map(str::to_owned))
+            .expect("animation golden includes payload_fnv1a64");
+        assert!(
+            valid_fnv1a64(&actual_hash),
+            "animation sample emitted an invalid payload hash: {actual_hash}"
+        );
+        actual_hashes.push(actual_hash);
+        expected_hashes.push(expected_hash);
+
+        let actual_observations = actual_sample
+            .as_object_mut()
+            .and_then(|sample| sample.remove("observed_values"))
+            .and_then(|observations| observations.as_array().cloned())
+            .expect("animation sample includes observed_values");
+        let expected_observations = expected_sample
+            .as_object_mut()
+            .and_then(|sample| sample.remove("observed_values"))
+            .and_then(|observations| observations.as_array().cloned())
+            .expect("animation golden includes observed_values");
+        assert_eq!(
+            actual_sample, expected_sample,
+            "animation sample contract drifted: {fixture}"
+        );
+        assert_eq!(actual_observations.len(), expected_observations.len());
+
+        for (mut actual_observation, mut expected_observation) in
+            actual_observations.into_iter().zip(expected_observations)
+        {
+            let actual_centroid = actual_observation
+                .as_object_mut()
+                .and_then(|observation| observation.remove("rendered_centroid_css_px"))
+                .expect("animation observation includes rendered_centroid_css_px");
+            let expected_centroid = expected_observation
+                .as_object_mut()
+                .and_then(|observation| observation.remove("rendered_centroid_css_px"))
+                .expect("animation golden includes rendered_centroid_css_px");
+            let actual_coverage = actual_observation
+                .as_object_mut()
+                .and_then(|observation| observation.remove("rendered_coverage_px"))
+                .expect("animation observation includes rendered_coverage_px");
+            let expected_coverage = expected_observation
+                .as_object_mut()
+                .and_then(|observation| observation.remove("rendered_coverage_px"))
+                .expect("animation golden includes rendered_coverage_px");
+            assert_eq!(
+                actual_observation, expected_observation,
+                "animation observation contract drifted: {fixture}"
+            );
+            assert!(
+                rendered_observation_metrics_match(
+                    &actual_centroid,
+                    &expected_centroid,
+                    &actual_coverage,
+                    &expected_coverage,
+                ),
+                "animation rendered observation drifted beyond 0.05 px centroid / one pixel \
+                 coverage: {fixture}; actual centroid={actual_centroid}, expected \
+                 centroid={expected_centroid}, actual coverage={actual_coverage}, expected \
+                 coverage={expected_coverage}"
+            );
+        }
+    }
+
+    for left in 0..actual_hashes.len() {
+        for right in (left + 1)..actual_hashes.len() {
+            assert_eq!(
+                actual_hashes[left] == actual_hashes[right],
+                expected_hashes[left] == expected_hashes[right],
+                "animation payload change pattern drifted: {fixture}"
+            );
+        }
+    }
+}
+
+fn valid_fnv1a64(value: &str) -> bool {
+    value.len() == 16 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn rendered_observation_metrics_match(
+    actual_centroid: &Value,
+    expected_centroid: &Value,
+    actual_coverage: &Value,
+    expected_coverage: &Value,
+) -> bool {
+    json_matches_with_float_tolerance(actual_centroid, expected_centroid, 0.05)
+        && actual_coverage
+            .as_u64()
+            .zip(expected_coverage.as_u64())
+            .is_some_and(|(actual, expected)| actual.abs_diff(expected) <= 1)
+}
+
+fn json_matches_with_float_tolerance(actual: &Value, expected: &Value, tolerance: f64) -> bool {
+    match (actual, expected) {
+        (Value::Number(actual), Value::Number(expected)) => {
+            match (actual.as_i64(), expected.as_i64()) {
+                (Some(actual), Some(expected)) => actual == expected,
+                _ => actual
+                    .as_f64()
+                    .zip(expected.as_f64())
+                    .is_some_and(|(actual, expected)| (actual - expected).abs() <= tolerance),
+            }
+        }
+        (Value::Array(actual), Value::Array(expected)) => {
+            actual.len() == expected.len()
+                && actual.iter().zip(expected).all(|(actual, expected)| {
+                    json_matches_with_float_tolerance(actual, expected, tolerance)
+                })
+        }
+        (Value::Object(actual), Value::Object(expected)) => {
+            actual.len() == expected.len()
+                && actual.iter().all(|(key, actual)| {
+                    expected.get(key).is_some_and(|expected| {
+                        json_matches_with_float_tolerance(actual, expected, tolerance)
+                    })
+                })
+        }
+        _ => actual == expected,
+    }
+}
+
+#[test]
+fn inspection_golden_tolerance_accepts_one_output_unit_and_rejects_real_drift() {
+    let expected = json!({"node": 3, "corners": [[-999.264, 136.955]]});
+    let platform_roundoff = json!({"node": 3, "corners": [[-999.265, 136.955]]});
+    let changed_frustum = json!({"node": 3, "corners": [[-999.274, 136.955]]});
+    let changed_node = json!({"node": 4, "corners": [[-999.264, 136.955]]});
+
+    assert!(json_matches_with_float_tolerance(
+        &platform_roundoff,
+        &expected,
+        0.001_1
+    ));
+    assert!(!json_matches_with_float_tolerance(
+        &changed_frustum,
+        &expected,
+        0.001_1
+    ));
+    assert!(!json_matches_with_float_tolerance(
+        &changed_node,
+        &expected,
+        0.001_1
+    ));
+
+    assert!(rendered_observation_metrics_match(
+        &json!([38.007, 29.742]),
+        &json!([38.021, 29.775]),
+        &json!(306),
+        &json!(305),
+    ));
+    assert!(!rendered_observation_metrics_match(
+        &json!([38.121, 29.775]),
+        &json!([38.021, 29.775]),
+        &json!(306),
+        &json!(305),
+    ));
+    assert!(!rendered_observation_metrics_match(
+        &json!([38.021, 29.775]),
+        &json!([38.021, 29.775]),
+        &json!(307),
+        &json!(305),
+    ));
 }
 
 fn assert_success_stdout_matches_with_policy(output: &std::process::Output, fixture: &str) {
