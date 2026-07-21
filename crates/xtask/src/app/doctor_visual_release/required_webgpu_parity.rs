@@ -85,6 +85,8 @@ pub(crate) fn check_q01_required_webgpu_pixel_parity(root: &Path, findings: &mut
             "diff-heatmap.png",
             "scena.q01.required_webgpu_pixel_parity.v1",
             "worst_region",
+            "collectBrowserGpuEvidence",
+            "browser_gpu: browserGpu",
             "sourcePaths",
         ],
     );

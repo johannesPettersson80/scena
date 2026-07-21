@@ -337,6 +337,7 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             &[
                 "bundle-files.sha256",
                 "source-commit.txt",
+                "Copy-Item -LiteralPath $sourceCommitPath -Destination $ProofRoot -Force",
                 "Proof bundle source commit",
                 "test:required-gpu-parity",
                 "browser:q01-parity",

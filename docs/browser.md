@@ -257,12 +257,17 @@ reference. Adapter identity, submissions, draw calls, and nonblack counts are
 retained as diagnostics but cannot satisfy parity. SwiftShader, llvmpipe, and
 other software adapters produce conformance evidence only; a lane named
 hardware parity fails unless physical hardware identity is proven.
+Chromium can privacy-redact the WebGPU adapter fields exposed through wgpu. In
+that case Q01 records `SystemInfo.getInfo` evidence from the same Chromium
+process and accepts only an active renderer that matches a physical GPU device;
+SwiftShader and other software renderers remain rejected.
 
 The run writes `target/gate-artifacts/m6-required-webgpu-pixel-parity/` with
 the CPU reference, live GPU frame, diff heatmap, and a provenance-bearing
 `result.json`. That report records metrics, thresholds, mask, worst-region
-bounding box, all mutation outcomes, adapter, source commit, command, producer
-checksums, and PNG hashes. The aggregate M6 artifact carries the same evaluated
+bounding box, all mutation outcomes, wgpu adapter and same-browser GPU
+attestation, source commit, command, producer checksums, and PNG hashes. The
+aggregate M6 artifact carries the same evaluated
 parity result so release readiness can reject smoke-only or materially wrong
 hardware output.
 

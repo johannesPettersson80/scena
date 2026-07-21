@@ -60,6 +60,10 @@ The release consumer independently requires that pixel result and its six
 mutation rejections; setting a top-level status string on a smoke-only artifact
 does not pass. Software adapters remain `software-conformance` evidence and
 cannot satisfy a `hardware-release` lane.
+When Chromium redacts the WebGPU adapter identity, the Q01 producer supplements
+it with `SystemInfo.getInfo` evidence collected from that exact browser process.
+The active renderer must match a physical device in the sanitized report;
+SwiftShader or an empty/unmatched report still fails closed.
 
 The final Windows physical proof is built from a clean exact commit with
 `scripts/build_windows_complete_hardware_bundle.sh <output.zip>`. The bundle
@@ -71,6 +75,8 @@ attached-surface resize/loss/PresentOnly/MSAA, Q04 resource retirement, and the
 controlled P01 shader-cache distribution. A dirty checkout or commit mismatch
 is rejected before packaging, and every downloaded and installed file is
 verified against the manifest.
+The install step copies every manifest-listed root file, including
+`source-commit.txt`, before validating the installed workspace.
 
 ## Required GPU resource lifecycle
 

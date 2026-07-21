@@ -394,7 +394,7 @@ function evaluateRequiredPixelParity(parity, rendererReadback) {
   };
 }
 
-function evaluateRequiredGpuParity({ required, requestedBackend, result, error }) {
+function evaluateRequiredGpuParity({ required, requestedBackend, result, error, browserGpu }) {
   const webgpuPixels = normalizedBackend(requestedBackend) === "webgpu";
   if (!required && !webgpuPixels) {
     return { status: "diagnostic", failure_codes: [] };
@@ -430,11 +430,11 @@ function evaluateRequiredGpuParity({ required, requestedBackend, result, error }
     failures.push("ZERO_RENDERER_OUTPUT");
   }
   if (required) {
-    if (!result.adapter || typeof result.adapter !== "object") {
-      failures.push("ADAPTER_IDENTITY_MISSING");
-    } else if (softwareAdapter(result.adapter)) {
+    if (softwareAdapter(result.adapter) || softwareBrowserGpu(browserGpu)) {
       failures.push("SOFTWARE_ADAPTER");
-    } else if (!hardwareAdapter(result.adapter)) {
+    } else if (!result.adapter || typeof result.adapter !== "object") {
+      failures.push("ADAPTER_IDENTITY_MISSING");
+    } else if (!hardwareAdapter(result.adapter) && !hardwareBrowserGpu(browserGpu)) {
       failures.push("ADAPTER_HARDWARE_UNPROVEN");
     }
   }

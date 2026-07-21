@@ -150,6 +150,7 @@ Copy-Item -LiteralPath (Join-Path $bundleRoot "package-lock.json") -Destination 
 Copy-Item -LiteralPath (Join-Path $bundleRoot "Cargo.lock") -Destination $ProofRoot -Force
 Copy-Item -LiteralPath (Join-Path $bundleRoot "AGENTS.md") -Destination $ProofRoot -Force
 Copy-Item -LiteralPath (Join-Path $bundleRoot "run-proof.ps1") -Destination $ProofRoot -Force
+Copy-Item -LiteralPath $sourceCommitPath -Destination $ProofRoot -Force
 
 $proofSkills = Join-Path $ProofRoot ".codex\skills"
 Remove-Item -LiteralPath $proofSkills -Recurse -Force -ErrorAction SilentlyContinue

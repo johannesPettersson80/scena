@@ -3873,3 +3873,52 @@ remediation diff is stable. Do not run it after each item.
   fix. The WebGPU browser launch circuit breaker separately tripped after two
   same-signature remediation-free replays; no third production or harness patch
   was made there.
+
+### Windows final hardware evidence correction (2026-07-22)
+
+- `first user run / harness classification`: exact-commit bundle
+  `2ca24487e9e30f7f21131aa720b43f503806abf9` stopped before GPU work because
+  `run-proof.ps1` required manifest-listed `source-commit.txt` in the installed
+  workspace without copying it there. This is a test-harness defect. The
+  tracked installer now copies the file before installed-manifest validation;
+  a doctor mutation removes that exact copy and must fail.
+- `second user run / Q01 evidence`: the corrected wrapper reached live Edge
+  WebGPU and uploaded archive SHA-256
+  `eb2bef8c7ea0c1ab4fb3678f524a34429b99eb8a127973085aaeddd9dd52b5c8`.
+  The renderer-owned WebGPU pixels matched the CPU oracle exactly: RGB RMSE
+  `0`, within-tolerance fraction `1.0`, p99.5 delta `0`, and foreground IoU
+  `1.0`; all six known-bad mutations were rejected. The lane still failed
+  `ADAPTER_HARDWARE_UNPROVEN` because wgpu reported the privacy-redacted
+  browser adapter as empty/`Other` and Q01, unlike PF01 and FR06, did not
+  collect the existing same-browser Chromium CDP GPU evidence. This is a gate
+  defect, not a renderer-output failure.
+- `test-first remediation`: the Q01 evaluator regression first failed for a
+  redacted adapter plus physical CDP report, then passed after the evaluator
+  accepted only a matching physical same-browser renderer and continued to
+  reject SwiftShader. The browser producer now collects that evidence from its
+  own Chromium process, persists it in the provenance-bound Q01 artifact, and
+  doctor mutation coverage prevents removing it. The focused JavaScript
+  evaluator suite, both focused xtask doctor mutations, formatting, and full
+  doctor pass on the isolated builder.
+- `builder provenance`: canonical source `/home/johannes/projects/scena`;
+  isolated destination
+  `/home/johannes/.cache/codex-worktrees/scena-full-review-windows-cdp`;
+  target `/home/johannes/.cache/codex-targets/scena-full-review-windows-cdp`;
+  source branch `codex/full-review-remediation-1.9`, pre-fix HEAD
+  `2ca24487e9e30f7f21131aa720b43f503806abf9`. Explicit bootstrap matched
+  `AGENTS.md` SHA-256
+  `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
+  and skills aggregate
+  `a333a1ac0f97feaa5abf4512d2eac8b2ec77b0f4b3b59f24a608331c48216fa3`.
+  One Rust replay was an environment failure on constrained `/tmp` and passed
+  via task-local `TMPDIR`. A later checksum check found and repaired one
+  same-size/mtime rsync corruption in the remote M9 test file before gates;
+  no local or production file was changed for that provenance failure.
+- `validation ledger`: focused = live Windows Q01 artifact plus JavaScript and
+  doctor mutation tests; scoped = `npm run test:required-gpu-parity`,
+  `cargo fmt --check`, and `xtask doctor --full`; full = pending the next frozen
+  exact commit because browser/gate source changed after the previously green
+  full matrix. User-required actions `2`; remediation attempts `1` for each of
+  two distinct signatures; new release-candidate pushes `0`; new full-matrix
+  runs `0`. No third laptop run is requested before a clean exact-commit bundle
+  and hosted full checkpoint are ready.

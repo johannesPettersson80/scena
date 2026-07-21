@@ -52,6 +52,24 @@ fn q01_doctor_rejects_smoke_only_webgpu_parity_contracts() {
         }),
         "removing a known-bad image mutation must fail doctor: {findings:?}",
     );
+
+    let browser_probe = fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js");
+    let source = fs::read_to_string(&browser_probe).expect("Q01 browser probe reads");
+    let mutated = source.replace("collectBrowserGpuEvidence", "ignoreSameBrowserGpuEvidence");
+    assert_ne!(
+        source, mutated,
+        "Q01 mutation must remove same-browser GPU attestation"
+    );
+    fs::write(browser_probe, mutated).expect("Q01 browser probe mutation writes");
+    findings.clear();
+    check_q01_required_webgpu_pixel_parity(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "Q01-REQUIRED-WEBGPU-PIXEL-PARITY"
+                && finding.message.contains("collectBrowserGpuEvidence")
+        }),
+        "removing Q01 same-browser GPU attestation must fail doctor: {findings:?}",
+    );
 }
 
 #[test]

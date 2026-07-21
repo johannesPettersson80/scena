@@ -221,6 +221,11 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
             "removed-p01-benchmark-proof",
         ),
         (
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "Copy-Item -LiteralPath $sourceCommitPath -Destination $ProofRoot -Force",
+            "removed-source-commit-install-copy",
+        ),
+        (
             "scripts/build_windows_complete_hardware_bundle.sh",
             "Windows release-evidence bundles require a clean committed checkout",
             "allowed-dirty-bundle",

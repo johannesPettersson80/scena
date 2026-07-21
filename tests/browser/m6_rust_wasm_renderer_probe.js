@@ -8,6 +8,7 @@ const {
   attachReleaseArtifactProvenance,
 } = require("../release/release_artifact_provenance.js");
 const { evaluateRequiredGpuParity } = require("./required_gpu_parity.js");
+const { collectBrowserGpuEvidence } = require("./hardware_browser.js");
 const {
   cropRoundEMaterialTiles,
   evaluateRoundEMaterialTiles,
@@ -1366,7 +1367,7 @@ function writeRequiredWebgpuMaterialArtifact(artifactDir, result, evaluation) {
   );
 }
 
-function writeRequiredWebgpuParityArtifact(artifactDir, result, evaluation) {
+function writeRequiredWebgpuParityArtifact(artifactDir, result, evaluation, browserGpu) {
   const parity = result && result.parity;
   const pixelParity = evaluation && evaluation.pixel_parity;
   if (!parity || !pixelParity || !parity.cpu_frame || !parity.gpu_frame) {
@@ -1400,6 +1401,7 @@ function writeRequiredWebgpuParityArtifact(artifactDir, result, evaluation) {
     failure_codes: evaluation.failure_codes,
     backend: result.backend,
     adapter: result.adapter,
+    browser_gpu: browserGpu,
     command: {
       argv: [path.basename(process.execPath), ...process.argv.slice(1)],
       environment: {
@@ -1432,6 +1434,7 @@ function writeRequiredWebgpuParityArtifact(artifactDir, result, evaluation) {
       "src/browser_probe/parity.rs",
       "tests/browser/m6_rust_wasm_renderer_probe.js",
       "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+      "tests/browser/hardware_browser.js",
       "tests/browser/required_gpu_parity.js",
       "tests/release/release_artifact_provenance.js",
     ],
@@ -2126,6 +2129,7 @@ async function main() {
     headless: true,
     args: chromiumLaunchArgs(selectedBackends),
   });
+  const browserGpu = await collectBrowserGpuEvidence(browser, "chromium");
 
   let workflows = parityOnly || lifecycleOnly ? [] : materialOnly ? ["pbr-material-presets"] : [
     "model-viewer",
@@ -2256,10 +2260,11 @@ async function main() {
           required: requiredParity,
           requestedBackend: backend,
           result,
+          browserGpu,
         });
         requiredParityEvaluations.push({ backend, ...requiredEvaluation });
         if (requiredParity && backend === "webgpu") {
-          writeRequiredWebgpuParityArtifact(artifactDir, result, requiredEvaluation);
+          writeRequiredWebgpuParityArtifact(artifactDir, result, requiredEvaluation, browserGpu);
         }
         if (requiredEvaluation.status === "failed") {
           throw new Error(

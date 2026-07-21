@@ -6,6 +6,10 @@ All notable user-facing changes are recorded here.
 
 ## [1.9.0] - 2026-07-21
 
+- Attest privacy-redacted browser WebGPU adapters with same-process Chromium
+  CDP GPU evidence in the required Q01 parity lane, while continuing to reject
+  software renderers. Fix the Windows proof installer to copy its manifest-bound
+  source commit before validating the installed workspace.
 - Make the final Windows hardware request genuinely one-shot. A clean-commit
   bundle builder now packages pinned WebGPU/WebGL2 WASM and cross-compiled
   native executables behind a SHA-256 manifest; the runner and independent

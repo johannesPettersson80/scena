@@ -316,6 +316,34 @@ const chromiumNvidiaGpu = {
   },
   feature_status: { webgpu: "enabled", webgl2: "enabled" },
 };
+assert.strictEqual(
+  evaluateRequiredGpuParity({
+    required: true,
+    requestedBackend: "webgpu",
+    result: result(redactedWebGpuAdapter, 1, 64, parityFixture()),
+    browserGpu: chromiumNvidiaGpu,
+  }).status,
+  "passed",
+  "Q01 parity must use same-browser CDP evidence when WebGPU adapter identity is redacted",
+);
+assert(
+  evaluateRequiredGpuParity({
+    required: true,
+    requestedBackend: "webgpu",
+    result: result(redactedWebGpuAdapter, 1, 64, parityFixture()),
+    browserGpu: {
+      ...chromiumNvidiaGpu,
+      devices: [{
+        vendor_id: 0x1ae0,
+        device_id: 0xc0de,
+        vendor_string: "Google",
+        device_string: "Google SwiftShader",
+      }],
+      aux_attributes: { gl_renderer: "ANGLE (Google, Vulkan SwiftShader Device)" },
+    },
+  }).failure_codes.includes("SOFTWARE_ADAPTER"),
+  "Q01 parity must reject same-browser CDP evidence for a software adapter",
+);
 assert.deepStrictEqual(
   sanitizeChromiumGpuInfo({
     gpu: {
