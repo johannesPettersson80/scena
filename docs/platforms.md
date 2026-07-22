@@ -32,6 +32,10 @@ as required by wgpu. Timeout and occlusion skip the frame with explicit
 counters; validation and out-of-memory conditions are structured hard errors.
 See [Lifecycle](lifecycle.md#attached-surface-acquisition) for the host recovery
 contract.
+For native MSAA, the surface color and scene-depth attachments use the same
+sample count; only overlays rendered after resolve use single-sample depth.
+Native uncaptured wgpu diagnostics are preserved on stderr before the typed
+validation fault is returned.
 
 ## Browser applications
 

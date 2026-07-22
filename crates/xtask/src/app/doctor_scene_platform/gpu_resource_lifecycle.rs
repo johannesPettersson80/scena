@@ -327,6 +327,8 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "validateNativeFr06",
                 "validateFr06Browser",
                 "validateQ01Parity",
+                "assertQ01Hardware(report);",
+                "normalizedArtifactPath(image.path)",
                 "validateQ04Lifecycle",
                 "validateP01Benchmark",
                 "native_surface_resize_recovery",

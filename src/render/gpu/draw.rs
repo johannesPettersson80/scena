@@ -9,15 +9,14 @@ use super::draw_common::{
     camera_position_uniform, identity_matrix, target_color_management_uniform,
     wgpu_clear_color_for_target,
 };
-use super::draw_overlays::{
-    encode_offscreen_overlay_pass, encode_surface_overlay_pass, resolved_depth_view,
-};
+use super::draw_overlays::{encode_offscreen_overlay_pass, encode_surface_overlay_pass};
 use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
 use super::pipeline::GPU_COLOR_FORMAT;
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
 use super::{
-    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, surface_frame,
+    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuPreparedResources, GpuRenderResult,
+    post, surface_frame,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +25,42 @@ enum NativeSceneTargetPlan {
     OffscreenAndSurface,
     DirectSurface,
     Post,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeDepthSource {
+    Scene,
+    ResolvedOverlay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeSurfaceDepthPlan {
+    scene: NativeDepthSource,
+    overlay: NativeDepthSource,
+}
+
+const fn native_surface_depth_plan(sample_count: u32) -> NativeSurfaceDepthPlan {
+    NativeSurfaceDepthPlan {
+        scene: NativeDepthSource::Scene,
+        overlay: if sample_count > 1 {
+            NativeDepthSource::ResolvedOverlay
+        } else {
+            NativeDepthSource::Scene
+        },
+    }
+}
+
+fn native_depth_view(
+    resources: &GpuPreparedResources,
+    source: NativeDepthSource,
+) -> Option<&wgpu::TextureView> {
+    match source {
+        NativeDepthSource::Scene => resources.depth_prepass.as_ref().map(|depth| &depth.view),
+        NativeDepthSource::ResolvedOverlay => resources
+            .overlay_depth_prepass
+            .as_ref()
+            .map(|depth| &depth.view),
+    }
 }
 
 const fn native_scene_target_plan(
@@ -260,7 +295,9 @@ impl GpuDeviceState {
                 });
             }
         }
-        let resolved_depth_view = resolved_depth_view(resources, sample_count);
+        let depth_plan = native_surface_depth_plan(sample_count);
+        let surface_scene_depth_view = native_depth_view(resources, depth_plan.scene);
+        let resolved_depth_view = native_depth_view(resources, depth_plan.overlay);
         if scene_target_plan != NativeSceneTargetPlan::DirectSurface {
             let post_resources = resources.post.as_ref();
             let (final_view, final_pipelines, base_label) = if post_enabled {
@@ -392,7 +429,7 @@ impl GpuDeviceState {
                     final_view: surface_attachment_view,
                     final_resolve_target: surface_resolve_target,
                     final_pipelines: surface_pipeline.refs(),
-                    depth_view: resolved_depth_view,
+                    depth_view: surface_scene_depth_view,
                     vertex_buffer: &resources.vertex_buffer,
                     instance_buffer: &resources.instance_buffer,
                     output_bind_group: &resources.output_bind_group,
@@ -466,7 +503,10 @@ impl GpuDeviceState {
 
 #[cfg(test)]
 mod tests {
-    use super::{NativeSceneTargetPlan, native_scene_target_plan};
+    use super::{
+        NativeDepthSource, NativeSceneTargetPlan, native_scene_target_plan,
+        native_surface_depth_plan,
+    };
 
     #[test]
     fn present_only_without_post_targets_the_surface_once() {
@@ -486,5 +526,16 @@ mod tests {
             native_scene_target_plan(true, true, false),
             NativeSceneTargetPlan::Post
         );
+    }
+
+    #[test]
+    fn msaa_surface_scene_and_resolved_overlays_use_matching_depth_samples() {
+        let single_sample = native_surface_depth_plan(1);
+        assert_eq!(single_sample.scene, NativeDepthSource::Scene);
+        assert_eq!(single_sample.overlay, NativeDepthSource::Scene);
+
+        let msaa4 = native_surface_depth_plan(4);
+        assert_eq!(msaa4.scene, NativeDepthSource::Scene);
+        assert_eq!(msaa4.overlay, NativeDepthSource::ResolvedOverlay);
     }
 }

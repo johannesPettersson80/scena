@@ -62,6 +62,10 @@ function normalizedBackend(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function normalizedArtifactPath(value) {
+  return String(value || "").replace(/\\/g, "/");
+}
+
 function assertBackendSet(backends, label) {
   invariant(Array.isArray(backends) && backends.length === 2, `${label} must contain exactly two backends`);
   const names = backends.map((backend) => String(backend.backend || "")).sort();
@@ -113,6 +117,22 @@ function assertNativeHardware(adapter, label) {
   for (const marker of SOFTWARE_MARKERS) {
     invariant(!identity.includes(marker), `${label} uses a software adapter marker: ${marker}`);
   }
+}
+
+function assertQ01Hardware(report) {
+  const evaluated = evaluateRequiredHardwareAdapter({
+    required: true,
+    requestedBackend: "webgpu",
+    actualBackend: report.backend,
+    gpuDevice: true,
+    surfaceAttached: true,
+    adapter: report.adapter,
+    browserGpu: report.browser_gpu,
+  });
+  invariant(
+    evaluated.status === "passed",
+    `Q01 WebGPU parity hardware evidence failed: ${evaluated.failure_codes.join(",")}`,
+  );
 }
 
 function assertProvenance(report, label) {
@@ -266,7 +286,7 @@ function validateQ01Parity(report, root) {
     "Q01 parity is not the required live proof class",
   );
   assertProvenance(report, "Q01 parity");
-  assertNativeHardware(report.adapter, "Q01 WebGPU parity");
+  assertQ01Hardware(report);
   invariant(
     report.renderer_readback
       && report.renderer_readback.source === "renderer-owned-gpu-copy"
@@ -305,7 +325,10 @@ function validateQ01Parity(report, root) {
       : null;
     invariant(image, `Q01 parity is missing ${kind} image metadata`);
     const expected = `target/gate-artifacts/m6-required-webgpu-pixel-parity/${kind}.png`;
-    invariant(image.path === expected, `Q01 parity ${kind} image path is not canonical`);
+    invariant(
+      normalizedArtifactPath(image.path) === expected,
+      `Q01 parity ${kind} image path is not canonical`,
+    );
     const file = path.join(root, expected);
     invariant(fs.existsSync(file), `Q01 parity is missing ${kind} image`);
     invariant(image.sha256 === artifactHash(file), `Q01 parity ${kind} image checksum does not match`);

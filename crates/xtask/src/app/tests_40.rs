@@ -201,6 +201,16 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
             "native present-only counter was not checked",
         ),
         (
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "assertQ01Hardware(report);",
+            "assertNativeHardware(report.adapter, \"Q01 WebGPU parity\");",
+        ),
+        (
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "normalizedArtifactPath(image.path)",
+            "String(image.path)",
+        ),
+        (
             "scripts/run_windows_complete_hardware_proof.ps1",
             "browser:fr06-semantic-aov",
             "removed-browser-fr06-proof",
@@ -266,6 +276,16 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
             "RENDER-C09",
             "tests/release/windows_complete_hardware_proof_validation.js",
             "native present-only ${counter} must be zero",
+        ),
+        (
+            "RENDER-C09",
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "assertQ01Hardware(report);",
+        ),
+        (
+            "RENDER-C09",
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "normalizedArtifactPath(image.path)",
         ),
         (
             "RENDER-C09",

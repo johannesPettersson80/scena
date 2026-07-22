@@ -356,6 +356,11 @@ and semantic ID/depth/normal output.
   `scripts/build_windows_complete_hardware_bundle.sh`; its manifest-verified
   one-shot runner covers required WebGPU pixels, GPU lifecycle, native
   PresentOnly/MSAA/resize/loss, semantic AOV, and controlled shader-cache p95.
+  Native MSAA proof requires sample-matched surface color/scene depth and
+  preserves uncaptured wgpu validation detail in the uploaded log.
+  The independent validator combines privacy-redacted WebGPU adapter metadata
+  with same-browser Chromium GPU evidence and accepts canonical artifact paths
+  emitted with either Windows or POSIX separators.
 
 ## Capabilities
 

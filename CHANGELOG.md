@@ -4,6 +4,18 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+- Fix attached native MSAA rendering so the multisampled surface scene pass
+  binds multisampled scene depth while resolved overlays retain single-sample
+  depth. Native uncaptured wgpu errors now write their detailed validation
+  message to stderr before returning the structured renderer fault.
+- Make the portable Windows Q04 resource-lifecycle proof embed its source and
+  lockfile provenance at compile time instead of trying to read the Linux
+  cross-builder's `CARGO_MANIFEST_DIR` path on the Windows proof machine.
+- Make the independent Windows hardware-proof validator accept privacy-redacted
+  WebGPU adapter metadata only when same-browser Chromium GPU evidence proves a
+  physical adapter, while still rejecting software renderers. Normalize Windows
+  artifact path separators before enforcing canonical Q01 image locations.
+
 ## [1.9.0] - 2026-07-21
 
 - Attest privacy-redacted browser WebGPU adapters with same-process Chromium

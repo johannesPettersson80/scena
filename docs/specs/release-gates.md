@@ -75,8 +75,14 @@ attached-surface resize/loss/PresentOnly/MSAA, Q04 resource retirement, and the
 controlled P01 shader-cache distribution. A dirty checkout or commit mismatch
 is rejected before packaging, and every downloaded and installed file is
 verified against the manifest.
+The native MSAA phase must complete with matching multisampled surface-color
+and scene-depth attachments; resolved overlays remain single-sample. Any
+uncaptured native wgpu validation message is retained in the uploaded run log.
 The install step copies every manifest-listed root file, including
 `source-commit.txt`, before validating the installed workspace.
+The independent validator evaluates privacy-redacted Q01 WebGPU adapters with
+the same-browser Chromium GPU inventory, rejects software renderers, and
+normalizes path separators before requiring canonical Q01 artifact locations.
 
 ## Required GPU resource lifecycle
 

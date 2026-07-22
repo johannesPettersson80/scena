@@ -124,6 +124,12 @@ specific timeout or occlusion counter. Acquisition validation and device
 out-of-memory signals are hard `GpuValidation`/`GpuOutOfMemory` errors. They are
 never folded into a successful black, stale, or unpresented frame.
 
+Native MSAA keeps attachment sample counts explicit: the surface scene pass
+uses multisampled scene depth, then resolved stroke/label overlays use their
+single-sample overlay depth. An uncaptured native wgpu validation message is
+written to stderr before the structured fault is latched, so automatically
+uploaded proof logs retain the driver-level cause.
+
 ## Why this design matters
 
 The explicit lifecycle keeps frame rendering predictable:

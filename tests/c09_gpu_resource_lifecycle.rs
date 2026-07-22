@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use scena::{
@@ -263,28 +263,24 @@ fn write_lifecycle_artifact(name: &str, value: &impl Serialize) {
     fs::write(&path, format!("{body}\n")).expect("Q04 artifact writes");
 }
 
-fn required_lifecycle_source_checksums() -> Result<Vec<SourceChecksum>, String> {
-    ["Cargo.lock", "tests/c09_gpu_resource_lifecycle.rs"]
-        .into_iter()
-        .map(source_checksum)
-        .collect()
+fn required_lifecycle_source_checksums() -> Vec<SourceChecksum> {
+    vec![
+        embedded_source_checksum("Cargo.lock", include_bytes!("../Cargo.lock")),
+        embedded_source_checksum(
+            "tests/c09_gpu_resource_lifecycle.rs",
+            include_bytes!("c09_gpu_resource_lifecycle.rs"),
+        ),
+    ]
 }
 
-fn source_checksum(relative: &str) -> Result<SourceChecksum, String> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
-    let bytes = fs::read(&path).map_err(|error| {
-        format!(
-            "could not read provenance source {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(SourceChecksum {
+fn embedded_source_checksum(relative: &str, bytes: &[u8]) -> SourceChecksum {
+    SourceChecksum {
         path: relative.to_string(),
         sha256: Sha256::digest(bytes)
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect(),
-    })
+    }
 }
 
 fn current_commit_label() -> String {
@@ -343,6 +339,28 @@ fn required_lifecycle_evaluator_rejects_known_leak_and_missing_adapter() {
         validate_required_lifecycle_evidence(&missing_source_checksums)
             .expect_err("missing source checksums must fail")
             .contains("source checksums")
+    );
+}
+
+#[test]
+fn required_lifecycle_source_provenance_is_embedded_for_portable_executables() {
+    let source = include_str!("c09_gpu_resource_lifecycle.rs");
+    let cargo_lock_embedding = ["include_", "bytes!(\"../Cargo.lock\")"].concat();
+    let lifecycle_source_embedding =
+        ["include_", "bytes!(\"c09_gpu_resource_lifecycle.rs\")"].concat();
+    let runtime_manifest_lookup = ["env!", "(\"CARGO_MANIFEST_DIR\")"].concat();
+
+    assert!(
+        source.contains(&cargo_lock_embedding),
+        "portable Q04 executables must embed Cargo.lock provenance at compile time"
+    );
+    assert!(
+        source.contains(&lifecycle_source_embedding),
+        "portable Q04 executables must embed their lifecycle source at compile time"
+    );
+    assert!(
+        !source.contains(&runtime_manifest_lookup),
+        "portable Q04 executables must not read the cross-builder manifest path at runtime"
     );
 }
 
@@ -767,8 +785,7 @@ fn required_hardware_gpu_resource_lifecycle_executes_complete_cycle() {
         ),
         commit_sha: current_commit_label(),
         timestamp_unix_seconds: current_timestamp_unix_seconds(),
-        source_checksums: required_lifecycle_source_checksums()
-            .expect("required lifecycle provenance sources hash"),
+        source_checksums: required_lifecycle_source_checksums(),
         adapter: Some(adapter),
         baseline,
         prepared,

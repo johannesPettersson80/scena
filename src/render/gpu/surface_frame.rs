@@ -353,6 +353,8 @@ impl GpuRuntimeFaultState {
 
 pub(super) fn install_gpu_error_callback(device: &wgpu::Device, state: GpuRuntimeFaultState) {
     device.on_uncaptured_error(std::sync::Arc::new(move |error| {
+        #[cfg(not(target_arch = "wasm32"))]
+        eprintln!("scena wgpu uncaptured error: {error:?}");
         #[cfg(target_arch = "wasm32")]
         web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
             "scena wgpu uncaptured error: {error:?}"

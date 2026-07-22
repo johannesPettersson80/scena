@@ -69,7 +69,7 @@ and release-gate run** for the complete remediation batch.
 - [x] Checkpoint B: remaining correctness, import, surface, and API items
   C08-C21 are green under focused proofs and scoped gates. Do not run the full
   suite.
-- [ ] Checkpoint C: CLI/agent, proof, performance, and documentation items
+- [x] Checkpoint C: CLI/agent, proof, performance, and documentation items
   A01-A09, Q01-Q06, P01-P08, and D01-D06 are green under focused proofs and
   scoped gates. Do not run the full suite.
 - [ ] Checkpoint D: run the full gate set in section 11 exactly once after all
@@ -725,14 +725,14 @@ proofs.
 - [x] Keep lighting, blending, bloom, and other post math linear until the final
   transfer.
 - [x] Add post-on/post-off, WebGPU/WebGL2, and native/browser parity coverage.
-- [ ] Capture physical hardware evidence for the required browser parity claim;
+- [x] Capture physical hardware evidence for the required browser parity claim;
   software conformance is supplementary.
 - [x] Update `docs/specs/color-contract.md`, browser/readback docs, capability
   format reporting, and any affected golden metadata.
 - [x] Acceptance: changing post-processing does not change the transfer
   interpretation of otherwise identical output.
 
-Validation ledger (2026-07-20; physical-hardware row remains open):
+Validation ledger (2026-07-20; physical-hardware row closed 2026-07-22):
 
 - `focused red`: the focused unit oracle first observed byte `46` for linear
   `0.18` on a plain `Rgba8Unorm` target instead of expected sRGB byte `118`.
@@ -766,9 +766,10 @@ Validation ledger (2026-07-20; physical-hardware row remains open):
   validation copy, SHA-256
   `7a91395a6cff507e752bab47bd475fa178b5a9d5a6e786ea75130e6296466e52`,
   commit `7b4fc9ca77e12fd12a69fab92650e1e46ee10354`.
-- `hardware`: still open. The builder adapter was ANGLE/SwiftShader CPU, so the
-  browser result is supplementary conformance and is not mislabeled as the
-  required physical WebGPU/WebGL2 evidence.
+- `hardware`: closed by the Windows complete proof. Chromium CDP identified the
+  active Intel Arc adapter, the final evaluator accepted the privacy-redacted
+  WebGPU adapter only with that same-browser physical inventory, Q01 matched
+  the CPU oracle exactly, and WebGPU/WebGL2 PF01 both passed.
 - `capabilities and docs`: live renderers report the selected RGBA/BGRA
   unorm/sRGB attachment rather than a hardcoded format. The color contract,
   browser/readback, rendering, capabilities, schema, changelog, and explicit
@@ -788,8 +789,8 @@ Validation ledger (2026-07-20; physical-hardware row remains open):
   while the generic rule was case-sensitive. The rule now pins that exact
   sentence, and the next focused run passed. No production behavior was
   changed by this harness correction.
-- `full`: deferred to Checkpoint D. C07 cannot be marked fully complete until
-  the separate physical-hardware artifact is captured.
+- `full`: deferred to Checkpoint D. The physical-hardware artifact is now
+  captured; source-provenance-bound release staging remains separate.
 - `bootstrap`: canonical source `/home/johannes/projects/scena`, isolated
   destination
   `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`,
@@ -1168,7 +1169,7 @@ Owner: native surface draw path.
 - [x] Treat out-of-memory and validation errors as structured hard failures;
   never swallow validation as another transient surface status.
 - [x] Recompute size/format/present mode after DPI, resize, or monitor change.
-- [ ] Add a windowed resize/monitor lifecycle proof on applicable hardware.
+- [x] Add a windowed resize/monitor lifecycle proof on applicable hardware.
 - [x] Update lifecycle/platform/errors docs.
 - [x] Acceptance: recoverable surface churn does not freeze silently, and
   programming/validation failures cannot be hidden.
@@ -1217,10 +1218,10 @@ Validation ledger:
   WASM attempt found an oversized JSON macro expansion after adding four
   counters; explicit additive object insertion fixed it without increasing the
   crate recursion limit.
-- `physical proof`: not run. The Hetzner builder is CPU/software-browser
-  infrastructure and cannot provide an honest window move, DPI/monitor churn,
-  or physical surface-loss injection. The hardware checklist row remains open
-  for the final applicable GPU evidence checkpoint.
+- `physical proof`: closed by the Windows attached-surface proof on Intel Arc.
+  It performed resize/restore, verified nonblank rendering after restore,
+  exercised the structured surface-loss recovery contract, and retained exact
+  resource-counter shape across the lifecycle.
 - `full`: deferred to Checkpoint D. No workspace-wide test, rustdoc,
   physical-GPU matrix, performance distribution, package, publish, or release-
   evidence chain was run for this surface slice.
@@ -2564,12 +2565,11 @@ A09 validation ledger (2026-07-20):
 - [x] Emit diff heatmap, worst-region bounding box, metric summary, adapter,
   commit, command, and artifact hashes.
 - [x] Update browser/release-gate docs and doctor pins.
-- [ ] Acceptance: a hardware GPU rendering a materially wrong image fails.
+- [x] Acceptance: a hardware GPU rendering a materially wrong image fails.
 
-Implementation status (2026-07-20): complete. Physical-hardware execution of
-the acceptance lane remains deferred to the final integration checkpoint; the
-release consumer and evaluator reject synthetic hardware artifacts with wrong
-pixels, but the CPU-only builder cannot supply physical-GPU provenance.
+Implementation status (2026-07-22): complete. The physical Windows Q01 run on
+Intel Arc matched the CPU oracle exactly, and the same artifact's six
+materially wrong output mutations were all rejected by the strict evaluator.
 
 Validation ledger (2026-07-20):
 
@@ -2621,10 +2621,9 @@ Validation ledger (2026-07-20):
   `cargo run -p xtask -- doctor --full` passed. Existing CLI schema and FR04
   contract suites also passed after repairing a discovered stale command-help
   join for the already-shipped `--allow-root` option.
-- `skipped`: no physical GPU was available on the CPU builder, so the final
-  acceptance checkbox remains open. Workspace-wide tests, native GPU lanes,
-  docs/package/publish gates, and the full release matrix remain deferred to
-  Checkpoint D.
+- `hardware`: the later Windows Q01 artifact supplies the physical adapter
+  proof that the CPU builder could not. Workspace-wide tests,
+  docs/package/publish gates, and release-provenance staging remain separate.
 - `bootstrap`: canonical source `/home/johannes/projects/scena`, isolated
   destination
   `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`,
@@ -2802,7 +2801,7 @@ Validation ledger (2026-07-21):
 - [x] Add a strict hardware lane that records allocation/destruction counters,
   adapter provenance, and at least one complete lifecycle.
 - [x] Add known leak and missing-adapter mutations.
-- [ ] Acceptance: a green required lifecycle lane always executed assertions on
+- [x] Acceptance: a green required lifecycle lane always executed assertions on
   an accepted adapter.
 
 Validation ledger (2026-07-21):
@@ -2854,11 +2853,10 @@ Validation ledger (2026-07-21):
   `cargo clippy --test c09_gpu_resource_lifecycle -- -D warnings`,
   `cargo clippy -p xtask --all-targets -- -D warnings`, and
   `cargo run -p xtask -- doctor --full` passed.
-- `skipped`: the Hetzner builder is CPU-only, so it cannot produce the required
-  physical-hardware artifact and the acceptance checkbox remains open until
-  the self-hosted GPU lane runs. Workspace-wide tests, docs build,
-  package/publish checks, and the complete release matrix remain deferred to
-  Checkpoint D.
+- `hardware`: the Windows strict Q04 executable ran on Intel Arc Vulkan,
+  executed all `12` required assertions, observed resource growth and exact
+  baseline-shape return, and confirmed all `72` pending destructions with zero
+  remaining. Workspace-wide and package/release gates remain separate.
 - `bootstrap`: canonical source `/home/johannes/projects/scena`, isolated
   destination
   `/home/johannes/.cache/codex-worktrees/scena-full-review-v18-checklist`,
@@ -3041,7 +3039,7 @@ an item as `measured-no-change` if the proposed complexity is not justified.
   invalidate on device loss.
 - [x] Do not hide first-use shader compilation inside `render()`.
 - [x] Add cache-hit/miss/allocation counters and correctness parity.
-- [ ] Acceptance: module compilation count drops without stale pipelines or
+- [x] Acceptance: module compilation count drops without stale pipelines or
   device-lifetime leaks, and controlled p95 materially improves.
 
 ### P02 — Render native PresentOnly once and restore surface MSAA
@@ -3053,8 +3051,8 @@ an item as `measured-no-change` if the proposed complexity is not justified.
 - [x] Build/use a multisampled surface path with resolve when MSAA is requested
   and supported.
 - [x] Preserve readback and post paths without introducing hidden allocations.
-- [ ] Add rendered parity and physical native-surface evidence.
-- [ ] Acceptance: one scene pass for PresentOnly/no-post and observable MSAA on
+- [x] Add rendered parity and physical native-surface evidence.
+- [x] Acceptance: one scene pass for PresentOnly/no-post and observable MSAA on
   the presented window.
 
 ### P03 — Remove unconditional native prepare synchronization
@@ -3510,7 +3508,7 @@ remediation diff is stable. Do not run it after each item.
   and record path, target directory, branch, HEAD, and agent-file hashes.
 - [x] Confirm every completed C/A/Q/P/D item has focused red and focused green
   evidence or a documented test-first exception.
-- [ ] Confirm every performance item has a controlled distribution or is closed
+- [x] Confirm every performance item has a controlled distribution or is closed
   `measured-no-change` without an unsupported speed claim.
 - [x] Confirm every public claim points to current proof and no optional F item
   is presented as shipped.
@@ -3568,9 +3566,9 @@ remediation diff is stable. Do not run it after each item.
 
 - [x] All C01-C21 correctness items are implemented and proven.
 - [x] All A01-A09 agent/CLI contracts are coherent and documented.
-- [ ] All Q01-Q06 required evidence fails on known-bad output and fails closed
+- [x] All Q01-Q06 required evidence fails on known-bad output and fails closed
   when prerequisites are missing.
-- [ ] All P01-P08 changes are measured, output-correct, and free of unsupported
+- [x] All P01-P08 changes are measured, output-correct, and free of unsupported
   ranking claims.
 - [x] D01-D06 align README, user docs, API/schema docs, examples, changelog,
   release notes, version pins, and roadmaps with shipped reality.
@@ -3922,3 +3920,156 @@ remediation diff is stable. Do not run it after each item.
   two distinct signatures; new release-candidate pushes `0`; new full-matrix
   runs `0`. No third laptop run is requested before a clean exact-commit bundle
   and hosted full checkpoint are ready.
+
+### Windows native MSAA surface correction (2026-07-22)
+
+- `third user run / product classification`: exact-commit bundle
+  `3f1fb07e6c2b6048b4f933952113eb591414997e` passed Q01 physical WebGPU
+  parity, combined WebGPU/WebGL2 PF01, and combined browser FR06 on the Intel
+  Arc hardware adapter. Q01 matched the CPU oracle exactly (RGB RMSE `0`,
+  p99.5 delta `0`, foreground IoU `1.0`) and rejected all six mutations. The
+  attached native proof then failed after its MSAA4 present-only phase with a
+  latched `GpuValidation { backend: NativeSurface }` fault.
+- `root cause`: the native MSAA surface scene pass resolved 4x color into the
+  surface while binding the single-sample depth texture reserved for resolved
+  overlays. wgpu requires render-pass color and depth attachments to use the
+  same sample count. The validation callback was asynchronous, so the MSAA4
+  render returned before the fault was surfaced at the next synchronous
+  capture.
+- `test-first proof`: the focused renderer regression first failed to compile
+  because no explicit native surface depth plan existed, then passed after the
+  plan bound scene depth to the multisampled scene pass and reserved resolved
+  depth for overlays. A C12 doctor mutation that rebinds resolved depth to the
+  scene pass first passed incorrectly and must fail after enforcement is
+  added.
+- `diagnostic test exception`: a native `wgpu::Device::on_uncaptured_error`
+  callback cannot be deterministically triggered on the CPU builder without a
+  real device validation fault. Before adding native stderr reporting, the
+  closest deterministic proof is defined as a C12 source mutation that removes
+  the native callback log and must fail, plus preservation of native stderr in
+  the automatically uploaded Windows archive.
+- `archive and focused evidence`: uploaded archive SHA-256
+  `5c43ee448400047762c078fa533751d7dd83ffbe029433d181e7c82a08e00b48`
+  passed ZIP integrity and exact source-commit binding. The renderer attachment
+  regression failed before implementation and passed afterward; the C12
+  mutation first accepted the bad resolved-depth binding, then rejected both
+  that binding and removal of native uncaptured-error detail after enforcement.
+- `scoped`: isolated builder formatting, the
+  `x86_64-pc-windows-gnu` native proof example check, strict all-target renderer
+  Clippy, strict xtask Clippy, and `doctor --full` pass. Canonical source
+  `/home/johannes/projects/scena` was mirrored to
+  `/home/johannes/.cache/codex-worktrees/scena-full-review-native-msaa-depth`
+  with target
+  `/home/johannes/.cache/codex-targets/scena-full-review-native-msaa-depth`;
+  shared checkout was absent. Explicit bootstrap matched `AGENTS.md` SHA-256
+  `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
+  and skills aggregate
+  `a333a1ac0f97feaa5abf4512d2eac8b2ec77b0f4b3b59f24a608331c48216fa3`.
+- `full and counts`: full workspace/GitHub/hardware proof is deferred until the
+  correction has a clean exact commit; provenance-sensitive release evidence
+  is not synthesized for this uncommitted diff. Investigation elapsed about 45
+  minutes, with one product remediation, one focused test-fixture borrow fix,
+  zero new release-candidate pushes, zero new full-matrix runs, and one new
+  user-required hardware action (three total).
+
+### Windows native MSAA verification and portable Q04 correction (2026-07-22)
+
+- `fourth user run / MSAA result`: the diagnostic bundle containing the exact
+  uncommitted native executable passed the previously failing attached native
+  PF01/PF02 proof on the Intel Arc adapter. MSAA4 submitted one native scene
+  pass with zero readbacks, all five synchronous output phases were nonblank,
+  effect toggles changed pixels, off-again was deterministic, resize/restore
+  and structured surface-loss handling passed, and retained GPU resource
+  counters returned to their baseline shape. Native FR06 also passed.
+- `artifact`: the automatically uploaded result archive has SHA-256
+  `e372af76f3987423bb6b90a3fb1c3683d3171a42e2a70087225cfb343a33c9c8`.
+  Q01 again passed with RGB RMSE `0`, p99.5 channel delta `0`, tolerance
+  fraction `1`, and foreground IoU `1`. The run then stopped at the independent
+  Q04 lifecycle executable with exit code `101`; this does not invalidate the
+  completed native MSAA proof.
+- `Q04 harness classification`: the cross-compiled Q04 executable embedded the
+  Linux build checkout through `env!("CARGO_MANIFEST_DIR")` and tried to read
+  `Cargo.lock` plus `tests/c09_gpu_resource_lifecycle.rs` from that path at
+  runtime on Windows. The required source checksums therefore could never be
+  published by the portable executable. This is a test-harness defect, not a
+  GPU lifecycle result.
+- `Q04 test-first correction`: the focused portability test first failed on the
+  runtime lookup and passed after both provenance inputs were embedded with
+  `include_bytes!`. The C09 doctor contract now requires both embeddings,
+  rejects any runtime `CARGO_MANIFEST_DIR` lookup, and a mutation restores the
+  broken lookup and must fail.
+- `counts`: four total user hardware actions; one MSAA product remediation and
+  one independent Q04 harness remediation in this checkpoint; zero new commits,
+  pushes, or full hosted matrices. The next hardware action is deferred until
+  the rebuilt Q04 executable passes focused compile/provenance checks.
+
+### Complete Windows hardware proof and validator correction (2026-07-22)
+
+- `fifth user run / hardware result`: every hardware producer completed on the
+  Windows laptop. Required live Q01 WebGPU parity matched the CPU oracle exactly
+  (RGB RMSE `0`, p99.5 delta `0`, tolerance fraction `1`, foreground IoU `1`)
+  and rejected all six known-bad mutations. Combined WebGPU/WebGL2 PF01 and
+  FR06, attached native PF01/PF02 with MSAA4 and resize/loss recovery, native
+  FR06, physical Q04 resource retirement, and physical P01 shader-cache timing
+  all passed on the Intel Arc adapter.
+- `Q04 and P01 evidence`: Q04 returned from `12/27/11/21/12/10` prepared
+  resources to the `10/20/4/9/6/3` baseline, confirmed all `72` pending
+  destructions, and passed all `12` lifecycle assertions. P01 measured cold p95
+  `61.7268 ms` and warm p95 `54.1169 ms`, a `12.328%` improvement against the
+  required `10%` threshold, with the expected cache miss/hit distribution.
+- `final error classification`: the one-shot runner failed only when its
+  independent final validator re-read the already-passing artifacts. This was a
+  test-harness defect with two distinct causes: it rejected the privacy-redacted
+  Q01 wgpu adapter without consulting the captured same-browser Chromium GPU
+  inventory, and it required POSIX separators for canonical image paths even
+  though the Windows producer emitted backslashes.
+- `test-first correction`: the focused validator fixture was changed first to
+  use a redacted WebGPU adapter plus physical Chromium GPU evidence and Windows
+  image separators. The old validator failed those cases. The corrected
+  validator now uses the shared hardware evaluator, continues to reject a
+  SwiftShader mutation, and normalizes separators before checking canonical
+  paths. Doctor mutations replace each corrected expression with the previous
+  defective form and must fail.
+- `archive replay`: result archive SHA-256
+  `e79280438e61d3ae6700dee8694fe1ab4992ec603c671d1adc6479cef2ee0828`
+  passed ZIP integrity. Replaying that exact extracted archive through the
+  corrected validator produced `status: passed`, `hardware_evidence: true`, and
+  complete browser WebGPU/WebGL2, native surface, native semantic AOV, Q01,
+  Q04, P01, and resize-recovery coverage. `release_evidence` remains false
+  because this diagnostic bundle deliberately contains uncommitted binaries
+  and is not bound to one frozen source commit; no provenance was synthesized.
+- `counts and next action`: five total user hardware actions, two distinct final
+  validator remediation attempts, zero release-candidate pushes, and zero new
+  full hosted matrices. The captured hardware evidence is sufficient for these
+  fixes, so another laptop run is not required. Full release gates remain one
+  final integration checkpoint after the complete remediation diff is frozen.
+- `focused/scoped`: the JavaScript validator fixture passes, the focused xtask
+  mutation test passes with one executed test and `375` filtered tests, remote
+  `cargo fmt --check` passes, and remote `xtask doctor --full` passes. Canonical
+  source `/home/johannes/projects/scena` was mirrored to isolated destination
+  `/home/johannes/.cache/codex-worktrees/scena-full-review-native-msaa-depth`
+  with target
+  `/home/johannes/.cache/codex-targets/scena-full-review-native-msaa-depth`;
+  the shared checkout was absent. Explicit bootstrap matched `AGENTS.md`
+  SHA-256
+  `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
+  and skills aggregate
+  `a333a1ac0f97feaa5abf4512d2eac8b2ec77b0f4b3b59f24a608331c48216fa3`.
+
+### Final workspace-gate disk circuit breaker (2026-07-22)
+
+- `classification`: environment failure, not a product or test failure. The
+  first final `cargo test --workspace` stopped while creating incremental
+  artifacts with `No space left on device`. After removing only the current
+  task target and retrying with `CARGO_INCREMENTAL=0` and two build jobs, the
+  second attempt reached example linking and failed with the same disk-full
+  signature.
+- `circuit breaker`: two remediation attempts with the same signature froze
+  code and harness changes. The discriminating disk probe showed `/dev/sda1`
+  at `100%`, the current target at `20 GiB`, and two inactive completed
+  full-review target caches using another `44 GiB`; no cargo process referenced
+  those older caches. This isolates capacity from source correctness before a
+  third workspace-gate attempt.
+- `preceding green gates`: the frozen tree passed `cargo fmt --all --check`,
+  strict workspace/all-target Clippy, and all `376` xtask tests before the
+  workspace suite reached the environment limit.

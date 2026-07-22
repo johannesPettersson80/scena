@@ -191,15 +191,17 @@ function validQ01Parity() {
     proof_class: "required-live-webgpu-pixel-parity",
     commit_sha: "0123456789abcdef0123456789abcdef01234567",
     timestamp_unix_seconds: 1,
+    backend: "WebGpu",
     adapter: {
-      name: "Intel(R) Arc(TM) Pro Graphics",
+      name: "",
       backend: "BrowserWebGpu",
-      device_type: "IntegratedGpu",
-      vendor: 32902,
-      device: 32085,
-      driver: "Intel",
-      driver_info: "32.0.101.8517",
+      device_type: "Other",
+      vendor: 0,
+      device: 0,
+      driver: "",
+      driver_info: "",
     },
+    browser_gpu: browserGpu(),
     renderer_readback: { source: "renderer-owned-gpu-copy", width: 96, height: 96 },
     thresholds: {
       rgb_chebyshev_tolerance: 4,
@@ -225,7 +227,7 @@ function validQ01Parity() {
     ].map((name) => ({ name, rejected: true })),
     images: ["cpu-reference", "gpu-live", "diff-heatmap"].map((kind) => ({
       kind,
-      path: `target/gate-artifacts/m6-required-webgpu-pixel-parity/${kind}.png`,
+      path: `target\\gate-artifacts\\m6-required-webgpu-pixel-parity\\${kind}.png`,
       sha256: pngSha256,
       bytes: png.length,
     })),
@@ -378,6 +380,23 @@ function expectFailure(callback, pattern) {
     report.mutations[0].rejected = false;
   });
   expectFailure(() => validateProofRoot(root), /Q01.*mutation.*wrong-colors/i);
+}
+
+{
+  const root = createProofRoot();
+  mutate(root, "target/gate-artifacts/m6-required-webgpu-pixel-parity/result.json", (report) => {
+    report.browser_gpu.devices = [{
+      vendor_id: 0x1ae0,
+      device_id: 0xc0de,
+      vendor_string: "Google",
+      device_string: "Google SwiftShader",
+    }];
+    report.browser_gpu.aux_attributes = {
+      gl_vendor: "Google",
+      gl_renderer: "ANGLE (Google, Vulkan SwiftShader Device)",
+    };
+  });
+  expectFailure(() => validateProofRoot(root), /Q01.*SOFTWARE_ADAPTER/i);
 }
 
 {

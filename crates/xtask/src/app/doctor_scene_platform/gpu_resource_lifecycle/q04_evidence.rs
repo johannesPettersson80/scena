@@ -17,6 +17,8 @@ pub(super) fn check_q04_required_gpu_lifecycle_evidence(root: &Path, findings: &
                 "required_hardware_gpu_resource_lifecycle_executes_complete_cycle",
                 "validate_required_lifecycle_evidence(&evidence)",
                 "required_lifecycle_source_checksums()",
+                "include_bytes!(\"../Cargo.lock\")",
+                "include_bytes!(\"c09_gpu_resource_lifecycle.rs\")",
                 "missing valid source checksums",
                 "required-result.json",
             ],
@@ -132,6 +134,7 @@ pub(super) fn check_q04_required_gpu_lifecycle_evidence(root: &Path, findings: &
         "tests/c09_gpu_resource_lifecycle.rs",
         &[
             "required_lifecycle_evaluator_rejects_known_leak_and_missing_adapter",
+            "required_lifecycle_source_provenance_is_embedded_for_portable_executables",
             "required_hardware_gpu_resource_lifecycle_executes_complete_cycle",
             "msaa8_is_fully_prepared_or_rejected_before_render_optional_gpu_smoke",
             "output_resource_changes_require_prepare_and_stats_are_complete_before_render_optional_gpu_smoke",
@@ -148,6 +151,15 @@ pub(super) fn check_q04_required_gpu_lifecycle_evidence(root: &Path, findings: &
         findings.push(Finding::new(
             RULE,
             "C09 lifecycle tests must emit explicit optional-skip evidence or fail under the required hardware policy; a silent let-Ok early return is forbidden",
+        ));
+    }
+
+    if fs::read_to_string(root.join("tests/c09_gpu_resource_lifecycle.rs"))
+        .is_ok_and(|source| source.contains("env!(\"CARGO_MANIFEST_DIR\")"))
+    {
+        findings.push(Finding::new(
+            RULE,
+            "portable Q04 executables must embed provenance sources instead of reading the cross-builder CARGO_MANIFEST_DIR at runtime",
         ));
     }
 }

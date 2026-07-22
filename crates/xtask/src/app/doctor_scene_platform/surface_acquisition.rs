@@ -26,6 +26,7 @@ pub(crate) fn check_full_review_surface_acquisition_contracts(
             "get_default_config",
             "present_mode_changed",
             "install_gpu_error_callback",
+            "#[cfg(not(target_arch = \"wasm32\"))]\n        eprintln!(\"scena wgpu uncaptured error: {error:?}\");",
         ],
     );
     require_rust_test_functions(
@@ -50,6 +51,8 @@ pub(crate) fn check_full_review_surface_acquisition_contracts(
         &[
             "surface_frame::acquire_surface_frame",
             "if surface_skip.is_some()",
+            "native_surface_depth_plan",
+            "depth_view: surface_scene_depth_view,",
             "surface_reconfigurations",
             "surface_acquire_retries",
             "reconfigure_existing_surface",
@@ -61,6 +64,13 @@ pub(crate) fn check_full_review_surface_acquisition_contracts(
         RULE,
         "src/render/gpu/draw.rs",
         &["wgpu::CurrentSurfaceTexture::Validation => None"],
+    );
+    require_rust_test_functions(
+        root,
+        findings,
+        RULE,
+        "src/render/gpu/draw.rs",
+        &["msaa_surface_scene_and_resolved_overlays_use_matching_depth_samples"],
     );
     for path in [
         "src/render/gpu/draw_surface.rs",
@@ -140,11 +150,27 @@ pub(crate) fn check_full_review_surface_acquisition_contracts(
         &["surface_timeout_skips", "surface_acquire_retries"],
     );
     for (path, needle) in [
+        (
+            "README.md",
+            "Native MSAA proof requires sample-matched surface color/scene depth",
+        ),
         ("README.md", "latches `Lost` for surface recreation"),
+        (
+            "docs/lifecycle.md",
+            "surface scene pass\nuses multisampled scene depth",
+        ),
         ("docs/lifecycle.md", "## Attached surface acquisition"),
         (
             "docs/platforms.md",
+            "surface color and scene-depth attachments use the same",
+        ),
+        (
+            "docs/platforms.md",
             "refreshes surface configuration and retries acquisition",
+        ),
+        (
+            "docs/specs/release-gates.md",
+            "matching multisampled surface-color\nand scene-depth attachments",
         ),
         ("docs/errors.md", "`RenderError::SurfaceOutdated`"),
         ("docs/api.md", "`RendererStats::surface_timeout_skips`"),
@@ -152,6 +178,7 @@ pub(crate) fn check_full_review_surface_acquisition_contracts(
             "CHANGELOG.md",
             "Reconfigure and retry attached native/browser `Outdated`",
         ),
+        ("CHANGELOG.md", "Fix attached native MSAA rendering"),
         (
             "docs/release-notes/v1.8.0.md",
             "published v1.8.0 native surface path silently ignored",
