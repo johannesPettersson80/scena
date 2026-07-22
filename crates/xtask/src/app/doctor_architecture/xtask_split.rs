@@ -169,27 +169,5 @@ pub(crate) fn contains_xtask_include_macro(text: &str) -> bool {
 }
 
 pub(crate) fn xtask_source_files(root: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_xtask_source_files(
-        &root.join("crates/xtask/src"),
-        Path::new("crates/xtask/src"),
-        &mut files,
-    );
-    files.sort();
-    files
-}
-
-pub(crate) fn collect_xtask_source_files(dir: &Path, rel_dir: &Path, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let rel = rel_dir.join(entry.file_name());
-        if path.is_dir() {
-            collect_xtask_source_files(&path, &rel, files);
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-            files.push(rel);
-        }
-    }
+    cached_rust_files_below(root, Path::new("crates/xtask/src"))
 }

@@ -1,3 +1,4 @@
+use crate::diagnostics::nearest_name_candidates;
 use serde_json::Value;
 
 use super::{
@@ -174,15 +175,24 @@ fn validate_environment(value: Option<&Value>, diagnostics: &mut Vec<SceneRecipe
             .map(|preset| preset.recipe_name())
             .collect::<Vec<_>>()
             .join(", ");
-        diagnostics.push(diagnostic(
-            "invalid_environment",
-            "error",
-            "$.scene.environment.preset",
-            format!("environment preset '{preset}' is not supported"),
-            format!("use one of: {names}"),
-            None,
-            false,
-        ));
+        diagnostics.push(
+            diagnostic(
+                "invalid_environment",
+                "error",
+                "$.scene.environment.preset",
+                format!("environment preset '{preset}' is not supported"),
+                format!("use one of: {names}"),
+                None,
+                false,
+            )
+            .with_candidates(nearest_name_candidates(
+                preset,
+                crate::EnvironmentPreset::ALL
+                    .iter()
+                    .map(|preset| preset.recipe_name()),
+                3,
+            )),
+        );
     }
     if kind == Some("uri") {
         match object.get("uri").and_then(Value::as_str) {

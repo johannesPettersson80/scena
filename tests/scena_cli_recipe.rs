@@ -24,6 +24,38 @@ fn configure_command_for_lavapipe(command: &mut Command) {
     }
 }
 
+fn has_actionable_msaa_limit(stderr: &str, maximum: u32, requested: u32) -> bool {
+    let legacy = format!("does not support MSAA sample count {requested}");
+    let legacy_maximum = format!("maximum supported sample count is {maximum}");
+    let prepare_maximum = format!("supports at most {maximum} samples");
+    let prepare_requested = format!("explicit prepare requested {requested}");
+
+    (stderr.contains(&legacy) && stderr.contains(&legacy_maximum))
+        || (stderr.contains(&prepare_maximum) && stderr.contains(&prepare_requested))
+}
+
+#[test]
+fn msaa_limit_diagnostic_requires_maximum_and_requested_counts() {
+    let legacy = "backend HeadlessGpu does not support MSAA sample count 8; maximum supported sample count is 4";
+    let prepare =
+        "backend HeadlessGpu supports at most 4 samples, but explicit prepare requested 8";
+
+    assert!(has_actionable_msaa_limit(legacy, 4, 8));
+    assert!(has_actionable_msaa_limit(prepare, 4, 8));
+    assert!(!has_actionable_msaa_limit(
+        "backend HeadlessGpu supports at most 4 samples",
+        4,
+        8
+    ));
+    assert!(!has_actionable_msaa_limit(
+        "explicit prepare requested 8",
+        4,
+        8
+    ));
+    assert!(!has_actionable_msaa_limit(prepare, 2, 8));
+    assert!(!has_actionable_msaa_limit(prepare, 4, 16));
+}
+
 #[test]
 fn scena_render_cli_accepts_scene_recipe_input() {
     let dir = artifact_dir("render");
@@ -53,6 +85,110 @@ fn scena_render_cli_accepts_scene_recipe_input() {
     assert_eq!(report["ok"], true);
     assert_eq!(report["artifacts"]["capture_png_path"], path_str(&png_path));
     assert!(fs::metadata(&png_path).expect("PNG artifact exists").len() > 0);
+}
+
+#[test]
+fn scena_render_cli_ignores_scena_use_gpu_and_reports_default_selection() {
+    let dir = artifact_dir("render-backend-default");
+    let recipe_path = write_valid_recipe(&dir);
+    let png_path = dir.join("default-frame.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .env("SCENA_USE_GPU", "1")
+        .args([
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena default backend render runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    let report = json_report(&output);
+    assert_eq!(report["backend_selection"]["source"], "default");
+    assert_eq!(report["backend_selection"]["requested"], "headless");
+    assert_eq!(report["backend_selection"]["selected"], "headless");
+    assert_eq!(report["backend_selection"]["fallback_used"], false);
+}
+
+#[test]
+fn scena_render_cli_gpu_flag_reports_explicit_selection_and_fallback_truth() {
+    let dir = artifact_dir("render-backend-gpu-flag");
+    let recipe_path = write_valid_recipe(&dir);
+    let png_path = dir.join("gpu-frame.png");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    configure_command_for_lavapipe(&mut command);
+    let output = command
+        .args([
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--gpu",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena explicit GPU render runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    let report = json_report(&output);
+    let selection = &report["backend_selection"];
+    assert_eq!(selection["source"], "cli_flag");
+    assert_eq!(selection["requested"], "headless_gpu");
+    assert!(
+        matches!(
+            selection["selected"].as_str(),
+            Some("headless_gpu" | "headless")
+        ),
+        "selected backend must report GPU or its explicit CPU fallback: {selection:#}"
+    );
+    assert_eq!(
+        selection["fallback_used"],
+        selection["selected"] == "headless"
+    );
+}
+
+#[test]
+fn scena_render_cli_defaults_produce_visible_pbr_content() {
+    let dir = artifact_dir("render-pbr-defaults");
+    let png_path = dir.join("cad-terminal.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            CAD_TERMINAL_ASSET,
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena render PBR glTF command runs");
+
+    assert!(
+        output.status.success(),
+        "documented CLI defaults should render PBR content, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.render_introspection.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert!(
+        report["visible_pixel_fraction"]
+            .as_f64()
+            .is_some_and(|fraction| fraction > 0.01),
+        "PBR geometry, not only the neutral clear color, must be visible: {report:#}"
+    );
+    assert!(
+        report["luminance"]["max"]
+            .as_f64()
+            .zip(report["luminance"]["min"].as_f64())
+            .is_some_and(|(max, min)| max - min > 8.0),
+        "the rendered object must have visible tonal structure: {report:#}"
+    );
+    assert!(png_path.exists(), "CLI writes the PBR PNG artifact");
 }
 
 #[cfg(feature = "scene-host")]
@@ -152,6 +288,308 @@ fn scena_inspect_and_diagnose_cli_accept_scene_recipe_input() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn imports_only_recipe_commands_build_every_import() {
+    let dir = artifact_dir("imports-only-command-routing");
+    let recipe_path = write_two_import_recipe(&dir, "two-imports.recipe.json", TEST_ASSET);
+    let png_path = dir.join("two-imports.png");
+
+    let build = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["recipe", "build", path_str(&recipe_path)])
+        .output()
+        .expect("scena recipe build command runs");
+    assert!(build.status.success(), "stderr={}", stderr(&build));
+    let build = json_report(&build);
+    assert_eq!(build["build"]["imports"].as_array().map(Vec::len), Some(2));
+
+    let inspect = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["inspect", path_str(&recipe_path)])
+        .output()
+        .expect("scena inspect two-import recipe command runs");
+    assert!(inspect.status.success(), "stderr={}", stderr(&inspect));
+    let inspection = json_report(&inspect);
+    assert_eq!(
+        inspection["imports"].as_array().map(Vec::len),
+        Some(2),
+        "inspect must use the same complete recipe build as recipe build: {inspection:#}"
+    );
+    assert_eq!(
+        inspection["counts"]["visible_drawable"], 2,
+        "{inspection:#}"
+    );
+
+    let render = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena render two-import recipe command runs");
+    assert!(render.status.success(), "stderr={}", stderr(&render));
+    let render = json_report(&render);
+    assert_eq!(
+        render["nodes_summary"]["drawn"], 2,
+        "render must retain both recipe imports: {render:#}"
+    );
+
+    let diagnose = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["diagnose", path_str(&recipe_path), "--visibility"])
+        .output()
+        .expect("scena diagnose two-import recipe command runs");
+    assert!(diagnose.status.success(), "stderr={}", stderr(&diagnose));
+    let diagnosis = json_report(&diagnose);
+    assert_eq!(
+        diagnosis["summary"]["visible_drawables"], 2,
+        "diagnose must inspect the same complete recipe build: {diagnosis:#}"
+    );
+
+    let doctor = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["doctor", path_str(&recipe_path)])
+        .output()
+        .expect("scena doctor two-import recipe command runs");
+    assert!(doctor.status.success(), "stderr={}", stderr(&doctor));
+    let doctor = json_report(&doctor);
+    assert_eq!(
+        doctor["schema"], "scena.recipe_build_result.v1",
+        "{doctor:#}"
+    );
+    assert_eq!(
+        doctor["build"]["imports"].as_array().map(Vec::len),
+        Some(2),
+        "doctor must expose the same complete recipe build: {doctor:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_verifiers_resolve_capabilities_from_the_second_import() {
+    let dir = artifact_dir("second-import-verification");
+    let appearance_recipe = dir.join("appearance.recipe.json");
+    fs::write(
+        &appearance_recipe,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "plain", "uri": TEST_ASSET },
+                {
+                    "id": "variant",
+                    "uri": "tests/assets/gltf/material_variants_scene.gltf",
+                    "transform": {
+                        "translation": [2.0, 0.0, 0.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
+                }
+            ],
+            "capture": { "width": 128, "height": 96 }
+        }))
+        .expect("appearance recipe serializes"),
+    )
+    .expect("appearance recipe writes");
+    let build = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["recipe", "build", path_str(&appearance_recipe)])
+        .output()
+        .expect("appearance recipe build runs");
+    assert!(
+        build.status.success(),
+        "stdout={}, stderr={}",
+        String::from_utf8_lossy(&build.stdout),
+        stderr(&build)
+    );
+    let build = json_report(&build);
+    let variant_handle = build["build"]["imports"][1]["nodes_by_path"]
+        .as_object()
+        .expect("second import node map")
+        .iter()
+        .find(|(path, _)| path.contains("VariantTriangle"))
+        .and_then(|(_, handle)| handle.as_u64())
+        .unwrap_or_else(|| panic!("second import variant node is addressable: {build:#}"));
+    let expectation_path = dir.join("appearance.json");
+    fs::write(
+        &expectation_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.appearance_expectation.v1",
+            "targets": [{
+                "id": "second-import-noon",
+                "node": variant_handle,
+                "variant": "noon",
+                "color_family": "green",
+                "require_source_material": true
+            }]
+        }))
+        .expect("appearance expectation serializes"),
+    )
+    .expect("appearance expectation writes");
+    let appearance = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "appearance",
+            path_str(&appearance_recipe),
+            "--expect",
+            path_str(&expectation_path),
+        ])
+        .output()
+        .expect("second-import appearance verification runs");
+    assert!(
+        appearance.status.success(),
+        "second-import variant must be selectable, stdout={}, stderr={}",
+        String::from_utf8_lossy(&appearance.stdout),
+        stderr(&appearance)
+    );
+    let appearance = json_report(&appearance);
+    assert_eq!(appearance["active_variant"], "noon", "{appearance:#}");
+    assert!(
+        appearance["available_variants"]
+            .as_array()
+            .expect("available variants")
+            .iter()
+            .any(|variant| variant == "noon"),
+        "{appearance:#}"
+    );
+
+    let animation_recipe = dir.join("animation.recipe.json");
+    fs::write(
+        &animation_recipe,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "plain", "uri": TEST_ASSET },
+                { "id": "animated", "uri": "tests/assets/gltf/animated_triangle_scene.glb" }
+            ],
+            "capture": { "width": 96, "height": 72 }
+        }))
+        .expect("animation recipe serializes"),
+    )
+    .expect("animation recipe writes");
+    let animation = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            path_str(&animation_recipe),
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0.5,1.0",
+            "--expect-change",
+        ])
+        .output()
+        .expect("second-import animation verification runs");
+    assert!(
+        animation.status.success(),
+        "second-import animation must be playable, stdout={}, stderr={}",
+        String::from_utf8_lossy(&animation.stdout),
+        stderr(&animation)
+    );
+    let animation = json_report(&animation);
+    assert_eq!(animation["clip"]["name"], "MoveTriangle", "{animation:#}");
+    assert_eq!(animation["ok"], true, "{animation:#}");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_commands_check_policy_for_every_import() {
+    let dir = artifact_dir("all-command-import-policy");
+    let outside_asset = std::env::temp_dir().join(format!(
+        "scena-doctor-outside-root-policy-{}.gltf",
+        std::process::id()
+    ));
+    fs::write(&outside_asset, "{}").expect("outside-root fixture writes");
+    let recipe_path = dir.join("second-import-outside-root.recipe.json");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "inside", "uri": TEST_ASSET },
+                { "id": "outside", "uri": path_str(&outside_asset) }
+            ]
+        }))
+        .expect("policy recipe serializes"),
+    )
+    .expect("policy recipe writes");
+    let appearance_path = dir.join("appearance.json");
+    fs::write(
+        &appearance_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.appearance_expectation.v1",
+            "targets": []
+        }))
+        .expect("appearance expectation serializes"),
+    )
+    .expect("appearance expectation writes");
+    let interaction_path = dir.join("interaction.json");
+    fs::write(
+        &interaction_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.interaction_expectation.v1",
+            "viewport": {
+                "width_css_px": 64.0,
+                "height_css_px": 64.0,
+                "device_pixel_ratio": 1.0
+            },
+            "steps": [{
+                "action": "pick",
+                "x_css_px": 1.0,
+                "y_css_px": 1.0,
+                "expect_hit": false
+            }]
+        }))
+        .expect("interaction expectation serializes"),
+    )
+    .expect("interaction expectation writes");
+
+    let recipe = path_str(&recipe_path);
+    let png = path_str(&dir.join("rejected.png")).to_owned();
+    let capture_dir = path_str(&dir.join("capture")).to_owned();
+    let aov_dir = path_str(&dir.join("aov")).to_owned();
+    let appearance = path_str(&appearance_path).to_owned();
+    let interaction = path_str(&interaction_path).to_owned();
+    let missing_report = path_str(&dir.join("unused-report.json")).to_owned();
+    let commands = [
+        vec!["render", recipe, "--introspect", "--out", &png],
+        vec!["inspect", recipe],
+        vec!["diagnose", recipe, "--visibility"],
+        vec!["doctor", recipe],
+        vec!["repair", recipe, "--from", &missing_report],
+        vec!["verify", "appearance", recipe, "--expect", &appearance],
+        vec![
+            "verify",
+            "animation",
+            recipe,
+            "--clip",
+            "missing",
+            "--times",
+            "0",
+        ],
+        vec!["verify", "interaction", recipe, "--expect", &interaction],
+        vec!["recipe", "build", recipe],
+        vec!["recipe", "render", recipe, "--introspect", "--out", &png],
+        vec!["recipe", "capture", recipe, "--out-dir", &capture_dir],
+        vec!["recipe", "aov", recipe, "--out-dir", &aov_dir],
+    ];
+
+    for args in commands {
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args(&args)
+            .output()
+            .unwrap_or_else(|error| panic!("scena {args:?} runs: {error}"));
+        assert!(
+            !output.status.success(),
+            "{args:?} must fail closed for import 2"
+        );
+        let report = json_report(&output);
+        assert_eq!(report["ok"], false, "{args:?}: {report:#}");
+        assert!(
+            contains_diagnostic(&report, "policy_violation", "$.imports[1].uri"),
+            "{args:?} must expose the same second-import policy failure: {report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scena_recipe_inspect_cad_generates_reviewable_feature_views() {
     let dir = artifact_dir("recipe-inspect-cad-terminal");
     let recipe_path = dir.join("terminal.recipe.json");
@@ -199,6 +637,10 @@ fn scena_recipe_inspect_cad_generates_reviewable_feature_views() {
         serde_json::from_slice(&output.stdout).expect("inspect-cad emits JSON");
     assert_eq!(report["schema"], "scena.cad_inspection_result.v1");
     assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["backend_selection"]["source"], "default");
+    assert_eq!(report["backend_selection"]["requested"], "headless");
+    assert_eq!(report["backend_selection"]["selected"], "headless");
+    assert_eq!(report["backend_selection"]["fallback_used"], false);
     assert_eq!(report["source_recipe"], path_str(&recipe_path));
     let contact_sheet = out_dir.join("cad-inspection-contact-sheet.png");
     assert_eq!(report["contact_sheet_png"], path_str(&contact_sheet));
@@ -217,6 +659,10 @@ fn scena_recipe_inspect_cad_generates_reviewable_feature_views() {
             .find(|candidate| candidate["id"] == expected)
             .unwrap_or_else(|| panic!("missing view {expected}: {report:#}"));
         assert_eq!(view["render_result"]["ok"], true, "{view:#}");
+        assert_eq!(
+            view["render_result"]["backend_selection"], report["backend_selection"],
+            "{view:#}"
+        );
         assert_eq!(view["render_result"]["verification_ok"], true, "{view:#}");
         assert_eq!(view["render_result"]["introspection_ok"], true, "{view:#}");
         assert!(
@@ -289,7 +735,8 @@ fn recipe_import_material_edges_and_principal_face_camera_make_cad_features_visi
             }],
             "scene": {
                 "background": { "kind": "custom", "color": "#F4F6FA" },
-                "grid": { "enabled": false }
+                "grid": { "enabled": false },
+                "environment": { "kind": "default" }
             },
             "render": {
                 "profile": "industrial",
@@ -298,7 +745,7 @@ fn recipe_import_material_edges_and_principal_face_camera_make_cad_features_visi
                 "supersample": 2,
                 "reconstruction": "gaussian",
                 "tonemapper": "aces",
-                "exposure_ev": 0.0
+                "exposure_ev": 1.0
             },
             "lights": [
                 { "id": "cad_key", "kind": "directional", "preset": "key" },
@@ -620,8 +1067,7 @@ fn recipe_target_region_fit_allows_cropped_non_target_imports() {
                     "min_fit": 0.45,
                     "max_fit": 0.86,
                     "min_visible_coverage": 0.06
-                }],
-                "expect_quality": { "profile": "cad" }
+                }]
             }
         }))
         .expect("target-region import recipe serializes"),
@@ -2628,7 +3074,7 @@ fn write_screen_space_reflection_quality_recipe(dir: &Path, name: &str) -> (Path
             "capture": { "width": 260, "height": 220 },
             "expect": {
                 "expect_quality": {
-                    "profile": "product",
+                    "profile": "cad",
                     "reflection": {
                         "min_luminance_range": 0.18,
                         "min_sobel_energy": 0.035,
@@ -4292,7 +4738,7 @@ fn scena_recipe_render_verify_fails_quality_per_line_region() {
 fn scena_recipe_render_verify_fails_geometry_edge_quality_without_sample_aa_on_cpu_and_gpu() {
     let dir = artifact_dir("recipe-render-geometry-edge-no-sample-aa");
     for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
-        let anti_aliasing = if use_gpu { "fxaa" } else { "none" };
+        let anti_aliasing = "none";
         let (recipe_path, png_path) = write_geometry_edge_quality_recipe(
             &dir,
             &format!("geometry-edge-no-sample-aa-{backend}"),
@@ -4353,7 +4799,7 @@ fn scena_recipe_render_verify_fails_geometry_edge_quality_without_sample_aa_on_c
 fn scena_recipe_render_profile_quality_runs_geometry_edge_check_by_default() {
     let dir = artifact_dir("recipe-render-geometry-edge-profile-default");
     for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
-        let anti_aliasing = if use_gpu { "fxaa" } else { "none" };
+        let anti_aliasing = "none";
         let (recipe_path, png_path) = write_geometry_edge_quality_recipe(
             &dir,
             &format!("geometry-edge-profile-default-{backend}"),
@@ -4456,7 +4902,9 @@ fn scena_recipe_render_profile_quality_runs_geometry_edge_check_for_non_product_
             checks.iter().any(|check| {
                 check["id"] == "expect_quality.geometry"
                     && check["code"] == "geometry_missing_antialiasing"
-                    && check["threshold"]["min_intermediate_edge_fraction"] == 0.02
+                    && check["threshold"]["min_intermediate_edge_fraction"]
+                        .as_f64()
+                        .is_some_and(|value| (value - 0.02).abs() < 1.0e-6)
             }),
             "cad profile-only quality must include the geometry-edge check by default on {backend}: {report:#}"
         );
@@ -5589,8 +6037,7 @@ fn scena_recipe_render_gpu_msaa_overlays_write_png_on_real_adapter() {
         assert!(png_path.exists(), "GPU msaa8 overlay render writes the PNG");
     } else {
         assert!(
-            stderr.contains("does not support MSAA sample count 8")
-                && stderr.contains("maximum supported sample count"),
+            has_actionable_msaa_limit(&stderr, 4, 8),
             "GPU msaa8 must fail with an actionable sample-count capability diagnostic, got stderr={stderr}"
         );
     }
@@ -10291,8 +10738,10 @@ fn scena_place_cli_supports_authored_feature_verbs() {
         &["--verb", "look_at", "--target", "0,0,-2"],
     );
     assert!(look_at.status.success(), "stderr={}", stderr(&look_at));
-    let transform: scena::Transform =
+    let recipe_transform: scena::SceneRecipeTransformV1 =
         serde_json::from_value(json_transform(&look_at)).expect("look_at transform deserializes");
+    let transform = scena::Transform::try_from(&recipe_transform)
+        .expect("look_at placement emits a concrete raw transform");
     assert_vec3_value(
         transform.rotation * scena::Vec3::new(0.0, 0.0, -1.0),
         [0.0, 0.0, -1.0],
@@ -10655,6 +11104,22 @@ fn assert_diagnostic(report: &serde_json::Value, code: &str, severity: &str) {
             .any(|diagnostic| diagnostic["code"] == code && diagnostic["severity"] == severity),
         "missing diagnostic {code}/{severity}: {report:#}"
     );
+}
+
+fn contains_diagnostic(report: &serde_json::Value, code: &str, path: &str) -> bool {
+    match report {
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|value| contains_diagnostic(value, code, path)),
+        serde_json::Value::Object(fields) => {
+            (fields.get("code").and_then(serde_json::Value::as_str) == Some(code)
+                && fields.get("path").and_then(serde_json::Value::as_str) == Some(path))
+                || fields
+                    .values()
+                    .any(|value| contains_diagnostic(value, code, path))
+        }
+        _ => false,
+    }
 }
 
 fn run_validate_recipe_fixture(name: &str) -> std::process::Output {

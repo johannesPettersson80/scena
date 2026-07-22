@@ -66,7 +66,7 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         &[
             "pub(in crate::render) fn render_to_surface",
             "GpuResourcesNotPrepared",
-            "surface.surface.get_current_texture()",
+            "surface_frame::acquire_surface_frame",
             "encode_scene_color_passes",
             "surface_output.present();",
         ],

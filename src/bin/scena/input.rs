@@ -21,26 +21,24 @@ pub(crate) struct ResolvedSceneInput {
     pub(crate) height: Option<u32>,
     pub(crate) recipe_path: Option<String>,
     pub(crate) recipe: Option<scena::SceneRecipeV1>,
+    pub(crate) policy: scena::RecipeBuildPolicy,
 }
 
 #[cfg(feature = "inspection")]
-pub(crate) fn resolve_scene_input(input: &str) -> Result<ResolvedSceneInput, CliOutcome> {
-    match try_load_recipe(input)? {
-        Some(recipe) => {
-            let asset = recipe
-                .imports
-                .first()
-                .map(|import| resolve_recipe_asset_uri(input, &import.uri))
-                .unwrap_or_else(|| input.to_owned());
-            Ok(ResolvedSceneInput {
-                asset,
-                transform: recipe.imports.first().and_then(|import| import.transform),
-                width: recipe.capture.as_ref().map(|capture| capture.width),
-                height: recipe.capture.as_ref().map(|capture| capture.height),
-                recipe_path: Some(input.to_owned()),
-                recipe: Some(recipe),
-            })
-        }
+pub(crate) fn resolve_scene_input(
+    input: &str,
+    policy: scena::RecipeBuildPolicy,
+) -> Result<ResolvedSceneInput, CliOutcome> {
+    match try_load_recipe(input, &policy)? {
+        Some(recipe) => Ok(ResolvedSceneInput {
+            asset: input.to_owned(),
+            transform: None,
+            width: recipe.capture.as_ref().map(|capture| capture.width),
+            height: recipe.capture.as_ref().map(|capture| capture.height),
+            recipe_path: Some(input.to_owned()),
+            recipe: Some(recipe),
+            policy,
+        }),
         None => Ok(ResolvedSceneInput {
             asset: input.to_owned(),
             transform: None,
@@ -48,52 +46,22 @@ pub(crate) fn resolve_scene_input(input: &str) -> Result<ResolvedSceneInput, Cli
             height: None,
             recipe_path: None,
             recipe: None,
+            policy,
         }),
     }
 }
 
 #[cfg(feature = "inspection")]
 impl ResolvedSceneInput {
-    pub(crate) fn has_scene_host_directives(&self) -> bool {
-        self.recipe
-            .as_ref()
-            .is_some_and(scene_recipe_has_scene_host_directives)
+    pub(crate) const fn is_recipe(&self) -> bool {
+        self.recipe.is_some()
     }
 }
 
-#[cfg(feature = "inspection")]
-pub(crate) fn scene_recipe_has_scene_host_directives(recipe: &scena::SceneRecipeV1) -> bool {
-    !recipe.colors.is_empty()
-        || !recipe.geometries.is_empty()
-        || !recipe.materials.is_empty()
-        || !recipe.nodes.is_empty()
-        || !recipe.instance_sets.is_empty()
-        || !recipe.labels.is_empty()
-        || !recipe.clipping_planes.is_empty()
-        || !recipe.animations.is_empty()
-        || !recipe.cameras.is_empty()
-        || !recipe.lights.is_empty()
-        || recipe.scene.is_some()
-        || recipe.render.is_some()
-        || recipe.expect.is_some()
-        || recipe.section_box.is_some()
-        || !recipe.measurements.is_empty()
-        || !recipe.callouts.is_empty()
-        || recipe.exploded_view.is_some()
-}
-
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-pub(crate) async fn scene_host_from_resolved_recipe(
-    input: &ResolvedSceneInput,
-    width: u32,
-    height: u32,
-    use_gpu: bool,
-) -> Result<scena::SceneHostCore, String> {
-    Ok(
-        scene_host_build_from_resolved_recipe(input, width, height, use_gpu)
-            .await?
-            .host,
-    )
+pub(crate) enum ResolvedRecipeBuild {
+    Built(Box<scena::SceneHostRecipeBuild>),
+    Rejected(CliOutcome),
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
@@ -102,7 +70,7 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
     width: u32,
     height: u32,
     use_gpu: bool,
-) -> Result<scena::SceneHostRecipeBuild, String> {
+) -> Result<ResolvedRecipeBuild, String> {
     let recipe = input
         .recipe
         .as_ref()
@@ -110,16 +78,22 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
     let recipe_path = input.recipe_path.as_deref().unwrap_or(&input.asset);
     let recipe_text = serde_json::to_string(recipe)
         .map_err(|error| format!("failed to serialize scene recipe for build: {error}"))?;
-    let policy = scena::RecipeBuildPolicy::testing();
-    let mut build = if use_gpu {
+    let policy = input.policy.clone();
+    let build = if use_gpu {
         scena::SceneHostCore::build_recipe_json_gpu(recipe_path, &recipe_text, policy).await
     } else {
         scena::SceneHostCore::build_recipe_json(recipe_path, &recipe_text, policy).await
-    }
-    .map_err(|manifest| {
-        serde_json::to_string_pretty(&manifest)
-            .unwrap_or_else(|error| format!("failed to serialize build failure manifest: {error}"))
-    })?;
+    };
+    let mut build = match build {
+        Ok(build) => build,
+        Err(report) => {
+            return Ok(ResolvedRecipeBuild::Rejected(json_outcome(
+                &report,
+                1,
+                "failed to serialize recipe build failure",
+            )?));
+        }
+    };
     build
         .host
         .resize(width as f32, height as f32, 1.0)
@@ -130,7 +104,26 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
             .frame_all_with_overlays()
             .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
     }
-    Ok(build)
+    Ok(ResolvedRecipeBuild::Built(Box::new(build)))
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+pub(crate) async fn scene_host_manifest_from_resolved_recipe(
+    input: &ResolvedSceneInput,
+) -> Result<scena::RecipeBuildResultV1, String> {
+    let recipe = input
+        .recipe
+        .as_ref()
+        .ok_or_else(|| "recipe manifest build requires a scene recipe input".to_string())?;
+    let recipe_path = input.recipe_path.as_deref().unwrap_or(&input.asset);
+    let recipe_text = serde_json::to_string(recipe)
+        .map_err(|error| format!("failed to serialize scene recipe for build: {error}"))?;
+    Ok(scena::SceneHostCore::build_recipe_manifest_json(
+        recipe_path,
+        &recipe_text,
+        input.policy.clone(),
+    )
+    .await)
 }
 
 #[cfg(feature = "inspection")]
@@ -152,16 +145,6 @@ pub(crate) fn viewer_builder(
     } else {
         builder
     }
-}
-
-#[cfg(feature = "inspection")]
-pub(crate) fn gpu_requested_from_env() -> bool {
-    std::env::var("SCENA_USE_GPU").is_ok_and(|value| {
-        matches!(
-            value.to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
-    })
 }
 
 #[cfg(feature = "inspection")]
@@ -230,14 +213,17 @@ pub(crate) fn path_for_json(path: &Path) -> String {
 }
 
 #[cfg(feature = "inspection")]
-fn try_load_recipe(input: &str) -> Result<Option<scena::SceneRecipeV1>, CliOutcome> {
+fn try_load_recipe(
+    input: &str,
+    policy: &scena::RecipeBuildPolicy,
+) -> Result<Option<scena::SceneRecipeV1>, CliOutcome> {
     let path = Path::new(input);
     let is_recipe_path = input.ends_with(".recipe.json");
-    let policy = scena::RecipeBuildPolicy::testing();
-    let text = match read_recipe_text(path, &policy) {
+    let text = match read_recipe_text(path, policy) {
         Ok(text) => text,
         Err(RecipeReadError::Io(_)) => return Ok(None),
-        Err(RecipeReadError::TooLarge(report)) if is_recipe_path => {
+        Err(RecipeReadError::TooLarge(mut report)) if is_recipe_path => {
+            report.policy = Some(Box::new(policy.to_schema_report()));
             return Err(json_outcome(
                 &report,
                 1,
@@ -257,18 +243,19 @@ fn try_load_recipe(input: &str) -> Result<Option<scena::SceneRecipeV1>, CliOutco
     if !is_recipe_path && !is_recipe_schema {
         return Ok(None);
     }
-    match scena::parse_valid_scene_recipe_json(&text) {
-        Ok(recipe) => Ok(Some(recipe)),
-        Err(report) => {
-            let outcome = json_outcome(
-                &report,
-                1,
-                "failed to serialize scene recipe validation report",
-            )
-            .expect("scene recipe validation report serializes");
-            Err(outcome)
-        }
+    let report = scena::validate_scene_recipe_json_syntax_with_policy(&text, policy);
+    if !report.ok {
+        let outcome = json_outcome(
+            &report,
+            1,
+            "failed to serialize scene recipe validation report",
+        )
+        .expect("scene recipe validation report serializes");
+        return Err(outcome);
     }
+    Ok(Some(
+        serde_json::from_str(&text).expect("structurally validated recipe decodes"),
+    ))
 }
 
 pub(crate) fn read_recipe_text(

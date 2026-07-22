@@ -4,6 +4,7 @@
   "verb": "look_at",
   "import_id": "part",
   "transform": {
+    "kind": "raw",
     "translation": [
       1.235,
       -2.346,
@@ -13,7 +14,7 @@
       0.123,
       -0.235,
       0.346,
-      0.901
+      0.9
     ],
     "scale": [
       0.333,

@@ -1,4 +1,8 @@
-use crate::diagnostics::{AdapterLimitsReport, DevicePollStatus, GpuAdapterReport};
+use crate::diagnostics::{
+    AdapterLimitsReport, Backend, CapabilityConstraintProbeV1, CapabilityConstraintStatusV1,
+    CapabilityProbeModeV1, CapabilityProbeStatusV1, CapabilityProbeV1, CapabilityTargetProbeV1,
+    DevicePollStatus, GpuAdapterReport, GpuDeviceReport,
+};
 
 use super::GpuDeviceState;
 
@@ -36,6 +40,81 @@ impl GpuDeviceState {
                 max_uniform_buffer_binding_size: limits.max_uniform_buffer_binding_size,
                 max_vertex_attributes: limits.max_vertex_attributes,
             },
+        }
+    }
+
+    pub(in crate::render) fn live_capability_probe(
+        &self,
+        backend: Backend,
+        probed_at_unix_ms: u64,
+    ) -> CapabilityProbeV1 {
+        let device_limits = self.device.limits();
+        CapabilityProbeV1 {
+            mode: CapabilityProbeModeV1::LiveAdapter,
+            status: CapabilityProbeStatusV1::Measured,
+            source: "live_wgpu_adapter".to_owned(),
+            probed_at_unix_ms: Some(probed_at_unix_ms),
+            requested_backend: backend,
+            selected_backend: Some(backend),
+            device: Some(GpuDeviceReport {
+                features: format!("{:?}", self.device.features()),
+                limits: AdapterLimitsReport {
+                    max_texture_dimension_2d: device_limits.max_texture_dimension_2d,
+                    max_bind_groups: device_limits.max_bind_groups,
+                    max_uniform_buffer_binding_size: device_limits.max_uniform_buffer_binding_size,
+                    max_vertex_attributes: device_limits.max_vertex_attributes,
+                },
+            }),
+            color_target: self.target_probe(self.color_target_format()),
+            depth_target: self.target_probe(wgpu::TextureFormat::Depth32Float),
+            readback: CapabilityConstraintProbeV1 {
+                status: if self.surface.is_none() {
+                    CapabilityConstraintStatusV1::Supported
+                } else {
+                    CapabilityConstraintStatusV1::NotProbed
+                },
+                detail: if self.surface.is_none() {
+                    "headless target is configured for COPY_SRC readback"
+                } else {
+                    "surface presentation probe does not exercise screenshot readback"
+                }
+                .to_owned(),
+            },
+            presentation: CapabilityConstraintProbeV1 {
+                status: if self.surface.is_some() {
+                    CapabilityConstraintStatusV1::Supported
+                } else {
+                    CapabilityConstraintStatusV1::NotProbed
+                },
+                detail: if self.surface.is_some() {
+                    "attached surface configuration was selected by wgpu"
+                } else {
+                    "headless probe has no presentation surface"
+                }
+                .to_owned(),
+            },
+            unavailable: None,
+        }
+    }
+
+    fn target_probe(&self, format: wgpu::TextureFormat) -> CapabilityTargetProbeV1 {
+        let features = self.adapter.get_texture_format_features(format);
+        CapabilityTargetProbeV1 {
+            format: format!("{format:?}"),
+            source: "adapter_format_features".to_owned(),
+            measured: true,
+            allowed_usages: Some(format!("{:?}", features.allowed_usages)),
+            sample_counts: [1, 2, 4, 8, 16]
+                .into_iter()
+                .filter(|sample_count| {
+                    super::msaa::texture_format_supports_sample_count(
+                        &self.device,
+                        &self.adapter,
+                        format,
+                        *sample_count,
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -89,6 +168,19 @@ impl GpuDeviceState {
         )
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::render) fn poll_device_nonblocking(&mut self) -> (u64, DevicePollStatus) {
+        let pending = self.pending_destructions;
+        match self.device.poll(wgpu::PollType::Poll) {
+            Ok(wgpu::PollStatus::QueueEmpty | wgpu::PollStatus::WaitSucceeded) => {
+                self.pending_destructions = 0;
+                (pending, DevicePollStatus::Confirmed)
+            }
+            Ok(wgpu::PollStatus::Poll) => (0, DevicePollStatus::Submitted),
+            Err(_) => (0, DevicePollStatus::Unsupported),
+        }
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub(in crate::render) fn poll_device(&mut self) -> (u64, DevicePollStatus) {
         // Give browser backends an explicit, non-blocking opportunity to
@@ -114,6 +206,11 @@ impl GpuDeviceState {
         }
 
         (0, DevicePollStatus::Unsupported)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(in crate::render) fn poll_device_nonblocking(&mut self) -> (u64, DevicePollStatus) {
+        self.poll_device()
     }
 }
 

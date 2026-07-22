@@ -10,6 +10,16 @@
     "schema": "scena.asset_load_report.v1",
     "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
     "cache_hit": false,
+    "requested_options": {
+      "strict_textures": false,
+      "strict_external_resources": false,
+      "fetch_byte_limit": null
+    },
+    "cache_entry_options": {
+      "strict_textures": false,
+      "strict_external_resources": false,
+      "fetch_byte_limit": null
+    },
     "fetched_bytes": 4096,
     "external_buffers": 1,
     "external_images": 0,

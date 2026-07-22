@@ -174,6 +174,10 @@ impl Renderer {
     }
 
     pub fn set_anti_aliasing(&mut self, anti_aliasing: AntiAliasing) {
+        self.configuration_diagnostics
+            .retain(|diagnostic| diagnostic.code != crate::DiagnosticCode::MultisampleFallback);
+        self.diagnostics
+            .retain(|diagnostic| diagnostic.code != crate::DiagnosticCode::MultisampleFallback);
         if self.anti_aliasing != anti_aliasing {
             self.anti_aliasing = anti_aliasing;
             self.mark_output_resources_changed();

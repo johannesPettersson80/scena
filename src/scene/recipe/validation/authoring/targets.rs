@@ -7,6 +7,7 @@ mod nodes;
 mod particles;
 
 pub(super) use cameras::validate_cameras;
+pub(in crate::scene::recipe::validation) use common::{TransformUse, validate_transform};
 pub(super) use extras::{
     has_authored_instance_sets, has_authored_labels, validate_clipping_planes,
     validate_instance_sets, validate_labels,

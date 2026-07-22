@@ -1037,6 +1037,39 @@ mod tests {
         );
     }
 
+    fn has_directional_shadow_pcf3x3(shader: &str) -> bool {
+        shader
+            .matches("textureSampleCompareLevel(shadow_map, shadow_sampler")
+            .count()
+            == 9
+            && shader.contains("textureDimensions(shadow_map)")
+            && shader.contains("shadow_texel_size")
+            && shader.contains("shadow_visibility / 9.0")
+    }
+
+    #[test]
+    fn triangle_shaders_use_nine_comparison_taps_for_reported_pcf3x3() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                has_directional_shadow_pcf3x3(shader),
+                "{name} shader must execute the reported 3x3 grid of nine depth-comparison taps"
+            );
+
+            let single_tap_mutation = shader.replacen(
+                "textureSampleCompareLevel(shadow_map, shadow_sampler",
+                "removedComparisonTap(",
+                8,
+            );
+            assert!(
+                !has_directional_shadow_pcf3x3(&single_tap_mutation),
+                "{name} oracle must reject regression to one comparison tap"
+            );
+        }
+    }
+
     #[test]
     fn triangle_shader_multiplies_area_lights_by_prepared_area_shadow_visibility() {
         for (name, shader) in [

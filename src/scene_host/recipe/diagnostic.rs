@@ -5,12 +5,14 @@ pub(in crate::scene_host) fn scene_host_error_diagnostic(
     code: impl Into<String>,
     error: SceneHostError,
 ) -> SceneRecipeDiagnosticV1 {
+    let candidates = error.candidates().to_vec();
     error_diagnostic(
         path,
         code,
         error.to_string(),
         "fix the recipe input and retry",
     )
+    .with_candidates(candidates)
 }
 
 pub(in crate::scene_host) fn error_diagnostic(

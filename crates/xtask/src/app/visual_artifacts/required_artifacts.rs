@@ -398,9 +398,9 @@ pub(crate) fn require_benchmark_baseline_comparison(
                 .and_then(serde_json::Value::as_str)
                 .is_some_and(|status| status != "passed");
             let metric = match (frame_failed, allocation_failed) {
-                (true, true) => "p95_frame_ms and max_allocations_per_frame",
+                (true, true) => "p95_frame_ms and p95_allocations_per_frame",
                 (true, false) => "p95_frame_ms",
-                (false, true) => "max_allocations_per_frame",
+                (false, true) => "p95_allocations_per_frame",
                 (false, false) => "stored baseline",
             };
             findings.push(Finding::new(
@@ -423,7 +423,7 @@ fn benchmark_summary_metrics_cover_required_budgets(summary: &serde_json::Value)
                 .any(|metric| metric.as_str() == Some("p95_frame_ms"))
                 && metrics
                     .iter()
-                    .any(|metric| metric.as_str() == Some("max_allocations_per_frame"))
+                    .any(|metric| metric.as_str() == Some("p95_allocations_per_frame"))
         })
 }
 

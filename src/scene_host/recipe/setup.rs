@@ -2,8 +2,8 @@ use self::grid::{add_grid_floor_with_options, apply_grid, grid_options_under_sce
 use std::collections::BTreeMap;
 
 use super::authoring::{DiagnosticPathExt, authored_color};
-use super::error_diagnostic;
 use super::policy::RecipeTextureBudget;
+use super::{build_diagnostic, error_diagnostic};
 use crate::assets::{AssetLoadOptions, DefaultAssetFetcher};
 use crate::scene::recipe::{
     RecipeBuildPolicy, SceneRecipeAutoExposureV1, SceneRecipeBloomV1, SceneRecipeColorV1,
@@ -143,6 +143,10 @@ pub(super) async fn validate_scene_setup_for_manifest(
     .await;
 }
 
+// This orchestration boundary keeps recipe source, mutable budget/diagnostic
+// accumulators, and renderer policy explicit; bundling them would obscure the
+// ownership split between validation-only and rendering builds.
+#[allow(clippy::too_many_arguments)]
 async fn apply_scene_setup_with_renderer(
     policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
@@ -200,6 +204,7 @@ async fn apply_scene_setup_with_renderer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn apply_scene_preset(
     policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
@@ -355,11 +360,14 @@ async fn apply_environment(
             match load {
                 Ok(Some(handle)) => host.renderer.set_environment(handle),
                 Ok(None) => {}
-                Err(error) if environment.optional => diagnostics.push(error_diagnostic(
-                    "$.scene.environment",
+                Err(error) if environment.optional => diagnostics.push(build_diagnostic(
                     "optional_environment_skipped",
+                    "warning",
+                    "$.scene.environment",
                     format!("optional environment '{uri}' could not be loaded: {error}"),
                     "the environment was marked optional, so the build continues without IBL",
+                    None,
+                    false,
                 )),
                 Err(error) => diagnostics.push(error_diagnostic(
                     "$.scene.environment",
@@ -378,10 +386,11 @@ async fn apply_environment(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn apply_environment_preset(
     policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
-    recipe_path: &str,
+    _recipe_path: &str,
     diagnostic_path: &'static str,
     preset: EnvironmentPreset,
     texture_budget: &mut RecipeTextureBudget,
@@ -389,15 +398,15 @@ async fn apply_environment_preset(
     apply_renderer: bool,
 ) {
     let metadata = preset.metadata();
-    let uri = metadata.source_path();
-    let _resolved =
-        match texture_budget.reserve_environment_uri(policy, recipe_path, uri, diagnostic_path) {
-            Ok(uri) => uri,
-            Err(diagnostic) => {
-                diagnostics.push(*diagnostic);
-                return;
-            }
-        };
+    let uri = metadata.runtime_uri();
+    if let Err(diagnostic) = texture_budget.reserve_builtin_environment(
+        policy,
+        metadata.source_size_bytes(),
+        diagnostic_path,
+    ) {
+        diagnostics.push(*diagnostic);
+        return;
+    }
     match host
         .assets
         .load_environment_preset_with_options(
@@ -415,7 +424,7 @@ async fn apply_environment_preset(
                 "scene preset environment '{}' could not be loaded from '{uri}': {error}",
                 metadata.name()
             ),
-            "the bundled environment preset must be readable and inside RecipeBuildPolicy allowed_roots",
+            "the bundled environment preset must be readable and fit the operator-owned recipe budgets",
         )),
     }
 }

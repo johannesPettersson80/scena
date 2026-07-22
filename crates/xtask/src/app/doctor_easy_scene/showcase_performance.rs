@@ -94,6 +94,8 @@ pub(super) fn check_showcase_performance_contracts(root: &Path, findings: &mut V
             "--strip-debug",
             "--strip-dwarf",
             "--strip-producers",
+            "CARGO_PROFILE_RELEASE_OPT_LEVEL",
+            "process.env.CARGO_PROFILE_RELEASE_OPT_LEVEL || \"z\"",
             "stampCacheBusters(writeSizeManifest())",
             "wasm=${manifest.sha256}",
             "demo/proof/index.html",

@@ -25,6 +25,13 @@ Preparation can:
 Because preparation is explicit, the host can handle errors before drawing a
 frame.
 
+Routine native preparation polls the device nonblocking for retired-resource
+bookkeeping. It blocks only for an API that requires completion, explicit
+readback/shutdown, or bounded resource-pressure recovery; the pressure path is
+reported separately in `PrepareWorkMetrics`. This avoids serializing the CPU
+and GPU on every retained-scene update while keeping pending destruction
+bounded.
+
 ## Render
 
 `render()` and `render_active()` draw prepared state.
@@ -32,6 +39,10 @@ frame.
 Rendering expects the renderer to be prepared for the current scene, assets,
 target, environment, and settings. If the prepared state is stale, `scena`
 returns a structured `RenderError`.
+
+Animation mixers share immutable clips through `Arc<AnimationClip>`. Ticking a
+warm mixer borrows keyframe channels and does not clone the clip's keyframe
+vectors; clip replacement and import rebinding publish a new shared clip.
 
 ## When to prepare again
 
@@ -45,6 +56,79 @@ Call `prepare()` again after:
 - changing render target size,
 - receiving surface resize or context-loss events,
 - changing relevant renderer settings.
+
+## Context loss versus device loss
+
+A recoverable surface or browser context loss does not mean the underlying
+`wgpu::Device` is dead. With retained CPU-side assets, call
+`recover_context()`, then prepare again. Surface replacement uses
+`recover_surface()`; for an attached native window that method requests a fresh
+adapter Device/Queue before publishing the replacement GPU state.
+
+`SurfaceEvent::DeviceLost` is terminal for the current Device/Queue, regardless
+of the host's `recoverable` flag. That flag means the application may rebuild,
+not that wgpu permits reuse. `recover_context()` and every later `prepare*()`
+return `PrepareError::GpuDeviceRebuildRequired`; `render*()` continues to return
+`RenderError::GpuDeviceLost`. Recreate the `Renderer` (or replace an attached
+native surface through the fresh-device boundary), then prepare the existing
+retained `Scene` and `Assets`. Scena checks the latched device-loss state before
+device polling, allocation, upload, or submission.
+
+## GPU resource-retirement evidence
+
+Adapter-optional C09 tests are developer smoke checks. When no adapter can be
+created they write a typed `skipped` artifact under
+`target/gate-artifacts/c09-gpu-resource-lifecycle/`; that outcome is diagnostic
+and is never release evidence.
+
+The required physical-hardware proof is separate and fail closed:
+
+```bash
+SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1 cargo test \
+  --test c09_gpu_resource_lifecycle \
+  required_hardware_gpu_resource_lifecycle_executes_complete_cycle \
+  -- --exact --nocapture
+```
+
+It prepares a baseline resource set, prepares and renders the larger
+MSAA/post-processing set, returns to the baseline retained shape, and polls the
+device until every queued destruction is confirmed. The resulting
+`scena.q04.required_gpu_resource_lifecycle.v1` artifact records the adapter,
+allocation shapes, destruction counters, assertion count, command, commit, and
+timestamp. Missing adapters, software adapters, unexecuted assertions, or a
+nonzero pending count fail the required lane.
+
+For the final physical Windows proof, build the clean-commit bundle with
+`scripts/build_windows_complete_hardware_bundle.sh` and use its `run-proof.ps1`.
+The one-shot runner executes this strict lifecycle test alongside attached
+PresentOnly/MSAA, resize/loss, WebGPU pixel parity, and shader-cache timing,
+then uploads one independently validated archive. Do not substitute optional
+adapter smoke files or an uncommitted executable.
+
+## Attached surface acquisition
+
+Native and browser surface churn is handled at the acquisition boundary.
+`Outdated` causes one configuration refresh and one acquisition retry; the
+refresh re-queries size, format, present mode, alpha mode, and supported usage.
+A second `Outdated` result is returned as a structured error rather than
+entering a retry loop. wgpu defines `Lost` differently: the surface must be
+recreated, so scena latches `SurfaceLost` immediately and the host calls
+`recover_surface`/reattaches its canvas instead of pretending `configure()`
+revived the old surface. If format or present mode changed, rendering returns
+`SurfaceConfigurationChanged`; call `prepare()` so device-bound pipelines match
+the refreshed surface before rendering again.
+
+`Timeout` and `Occluded` are diagnostic frame skips: `RenderOutcome::skipped` is
+true, no command buffer is submitted, and `RendererStats` increments the
+specific timeout or occlusion counter. Acquisition validation and device
+out-of-memory signals are hard `GpuValidation`/`GpuOutOfMemory` errors. They are
+never folded into a successful black, stale, or unpresented frame.
+
+Native MSAA keeps attachment sample counts explicit: the surface scene pass
+uses multisampled scene depth, then resolved stroke/label overlays use their
+single-sample overlay depth. An uncaptured native wgpu validation message is
+written to stderr before the structured fault is latched, so automatically
+uploaded proof logs retain the driver-level cause.
 
 ## Why this design matters
 

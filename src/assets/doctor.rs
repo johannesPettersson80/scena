@@ -254,6 +254,50 @@ fn finding_for_load_warning(warning: &AssetLoadWarning) -> AssetDoctorFindingV1 
             suggested_fix: "Serve the image next to the glTF, correct the URI, or embed the image before approval.".to_owned(),
             source: "asset_load_report".to_owned(),
         },
+        AssetLoadWarning::ComputedFlatNormals {
+            path,
+            mesh_index,
+            primitive_index,
+            triangle_count,
+        } => AssetDoctorFindingV1 {
+            severity: AssetDoctorSeverityV1::Info,
+            code: "flat_normals_computed".to_owned(),
+            path: Some(path.as_str().to_owned()),
+            field: Some(format!(
+                "meshes[{mesh_index}].primitives[{primitive_index}].attributes.NORMAL"
+            )),
+            extension: None,
+            message: format!(
+                "computed flat normals for {triangle_count} triangles because NORMAL was omitted"
+            ),
+            help: "glTF defines flat shading when a triangle primitive omits NORMAL".to_owned(),
+            suggested_fix: "Author NORMAL when a specific smooth or split-normal result is required."
+                .to_owned(),
+            source: "asset_load_report".to_owned(),
+        },
+        AssetLoadWarning::SkinInfluencesTruncated {
+            path,
+            mesh_index,
+            primitive_index,
+            affected_vertices,
+            source_influences,
+            retained_influences,
+        } => AssetDoctorFindingV1 {
+            severity: AssetDoctorSeverityV1::Warning,
+            code: "skin_influences_truncated".to_owned(),
+            path: Some(path.as_str().to_owned()),
+            field: Some(format!(
+                "meshes[{mesh_index}].primitives[{primitive_index}].attributes.WEIGHTS_1"
+            )),
+            extension: None,
+            message: format!(
+                "selected the strongest {retained_influences} of {source_influences} skin influences for {affected_vertices} vertices"
+            ),
+            help: "scena prepares four skin influences per vertex and reports every source vertex that exceeded that limit".to_owned(),
+            suggested_fix: "Limit authored skinning to four nonzero influences per vertex when exact cross-tool parity is required."
+                .to_owned(),
+            source: "asset_load_report".to_owned(),
+        },
     }
 }
 

@@ -1,17 +1,18 @@
 use serde::{Deserialize, Serialize};
 
 mod imports;
+mod transform;
 
 use super::expectations::SceneRecipeTargetRegionV1;
 use super::overlays::SceneRecipeTargetV1;
-use super::{
-    default_transform_scale, default_transform_up, default_true, is_default_scale, is_default_up,
-    is_false, is_true, is_zero_f64, is_zero_vec3,
-};
+use super::{default_true, is_false, is_true};
 
 pub use imports::{
     SceneRecipeExpectedExtentV1, SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportMaterialV1,
     SceneRecipeImportV1,
+};
+pub use transform::{
+    SceneRecipeLookAtTargetV1, SceneRecipeTransformConversionError, SceneRecipeTransformV1,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -462,62 +463,4 @@ pub struct SceneRecipeLightV1 {
     pub outer_cone_degrees: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<SceneRecipeTransformV1>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum SceneRecipeTransformV1 {
-    Raw {
-        #[serde(default, skip_serializing_if = "is_zero_vec3")]
-        translation: [f64; 3],
-        rotation: [f64; 4],
-        #[serde(
-            default = "default_transform_scale",
-            skip_serializing_if = "is_default_scale"
-        )]
-        scale: [f64; 3],
-    },
-    Trs {
-        #[serde(default, skip_serializing_if = "is_zero_vec3")]
-        translation: [f64; 3],
-        #[serde(default, skip_serializing_if = "is_zero_vec3")]
-        rotation_degrees: [f64; 3],
-        #[serde(
-            default = "default_transform_scale",
-            skip_serializing_if = "is_default_scale"
-        )]
-        scale: [f64; 3],
-    },
-    LookAt {
-        eye: [f64; 3],
-        target: SceneRecipeLookAtTargetV1,
-        #[serde(
-            default = "default_transform_up",
-            skip_serializing_if = "is_default_up"
-        )]
-        up: [f64; 3],
-    },
-    Center {},
-    Ground {
-        #[serde(default, skip_serializing_if = "is_zero_f64")]
-        plane_y: f64,
-    },
-    FitToSize {
-        size: [f64; 3],
-    },
-    PlaceOn {
-        target: String,
-        #[serde(default, skip_serializing_if = "is_zero_vec3")]
-        offset: [f64; 3],
-    },
-    AlignToAnchor {
-        anchor: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum SceneRecipeLookAtTargetV1 {
-    Node(String),
-    Position([f64; 3]),
 }

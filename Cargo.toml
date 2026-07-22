@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.8.0"
+version = "1.9.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -17,9 +17,14 @@ include = [
     "/tests/browser/**",
     "/tests/assets/stable-contracts/**",
     "/tests/assets/environment/neutral-studio.fixture.txt",
+    "/tests/assets/environment/PRESET-LICENSES.md",
     "/tests/assets/environment/generated/**",
     "/tests/assets/environment/polyhaven/**",
     "!/tests/assets/environment/polyhaven/*.prefilter.bin",
+    "/tests/assets/gltf/AGENT-TEMPLATE-ASSETS-LICENSE.md",
+    "/tests/assets/gltf/material_variants_scene.gltf",
+    "/tests/assets/gltf/animated_triangle_scene.glb",
+    "/tests/assets/gltf/cad_plate_drawing_scene.gltf",
     "/examples/**",
     "!/examples/furuta_render.rs",
     "/docs/**/*.md",
@@ -100,6 +105,7 @@ wgpu = { version = "29.0.3", features = ["webgl"] }
 
 [features]
 default = []
+agent = ["scene-host"]
 controls = []
 controls-winit = ["controls"]
 controls-web = ["controls"]

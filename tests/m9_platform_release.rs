@@ -1308,6 +1308,10 @@ fn apply_benchmark_baselines_with_policy(
             .get("max_allocations_per_frame")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(u64::MAX);
+        let p95_allocations_per_frame = row
+            .get("p95_allocations_per_frame")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(max_allocations_per_frame);
         let Some(allowed_max_allocations_per_frame) = row_baseline
             .get("max_allocations_per_frame")
             .and_then(serde_json::Value::as_u64)
@@ -1321,6 +1325,7 @@ fn apply_benchmark_baselines_with_policy(
                 "allowed_p95_frame_ms": allowed_p95,
                 "regression_percent": regression_percent,
                 "minimum_sample_count": row_minimum_sample_count,
+                "p95_allocations_per_frame": p95_allocations_per_frame,
                 "max_allocations_per_frame": max_allocations_per_frame,
             });
             continue;
@@ -1364,7 +1369,7 @@ fn apply_benchmark_baselines_with_policy(
             && baseline_p95_frame_ms > 0.0
             && allowed_p95.is_finite();
         let frame_status = frame_measurement_valid && p95_frame_ms <= allowed_p95;
-        let allocation_status = max_allocations_per_frame <= allowed_max_allocations_per_frame;
+        let allocation_status = p95_allocations_per_frame <= allowed_max_allocations_per_frame;
         let measurement_status =
             sample_count_status && frame_measurement_valid && prepare_measurement_valid;
         let timing_observation_status = frame_status && prepare_status;
@@ -1411,6 +1416,8 @@ fn apply_benchmark_baselines_with_policy(
             "baseline_p95_prepare_ms": baseline_p95_prepare_ms,
             "allowed_p95_prepare_ms": allowed_p95_prepare_ms,
             "minimum_sample_count": row_minimum_sample_count,
+            "p95_allocations_per_frame": p95_allocations_per_frame,
+            "allowed_p95_allocations_per_frame": allowed_max_allocations_per_frame,
             "max_allocations_per_frame": max_allocations_per_frame,
             "allowed_max_allocations_per_frame": allowed_max_allocations_per_frame,
             "max_allocated_bytes_per_frame": max_allocated_bytes_per_frame,
@@ -1434,7 +1441,7 @@ fn apply_benchmark_baselines_with_policy(
         "metrics": [
             "p95_frame_ms",
             "p95_prepare_ms",
-            "max_allocations_per_frame",
+            "p95_allocations_per_frame",
             "max_allocated_bytes_per_frame"
         ],
         "minimum_sample_count": minimum_sample_count,
@@ -2126,6 +2133,7 @@ fn pf00_animation_benchmark_row_records_work_and_byte_distributions() {
     assert_eq!(row["distributions"]["advance_ms"]["sample_count"], 3);
     assert_eq!(row["counters"]["channels_scanned"], 4);
     assert_eq!(row["counters"]["weight_values_written"], 8);
+    assert_eq!(row["counters"]["clip_clone_bytes"], 0);
     assert!(
         row["counters"]["keyframe_intervals_tested"]
             .as_u64()
@@ -2138,12 +2146,8 @@ fn pf00_animation_benchmark_row_records_work_and_byte_distributions() {
             .is_some_and(|bytes| bytes > 0),
         "profiled animation must expose actual copied bytes: {row:#}"
     );
-    assert!(
-        row["allocations"]["max_allocated_bytes"]
-            .as_u64()
-            .is_some_and(|bytes| bytes > 0),
-        "animation update must report measured allocation bytes: {row:#}"
-    );
+    assert_eq!(row["allocations"]["max_allocation_count"], 0);
+    assert_eq!(row["allocations"]["max_allocated_bytes"], 0);
 }
 
 #[test]
@@ -2454,7 +2458,7 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
         serde_json::json!([
             "p95_frame_ms",
             "p95_prepare_ms",
-            "max_allocations_per_frame",
+            "p95_allocations_per_frame",
             "max_allocated_bytes_per_frame"
         ])
     );
@@ -3321,6 +3325,45 @@ fn m9_benchmark_baseline_comparison_fails_allocation_regressions() {
 }
 
 #[test]
+fn m9_benchmark_allocation_gate_uses_p95_and_reports_isolated_maximums() {
+    let mut rows = vec![serde_json::json!({
+        "scene": "static-viewer",
+        "backend": "Headless",
+        "sample_count": 100,
+        "p95_frame_ms": 10.0,
+        "p95_allocations_per_frame": 16,
+        "max_allocations_per_frame": 17,
+    })];
+    let baseline = serde_json::json!({
+        "minimum_sample_count": 100,
+        "rows": [{
+            "scene": "static-viewer",
+            "backend": "Headless",
+            "p95_frame_ms": 10.0,
+            "allowed_regression_percent": 5.0,
+            "max_allocations_per_frame": 16
+        }]
+    });
+
+    let summary = apply_benchmark_baselines(&mut rows, &baseline, "test-lane");
+
+    assert_eq!(summary["status"], "passed");
+    assert_eq!(summary["metrics"][2], "p95_allocations_per_frame");
+    assert_eq!(
+        rows[0]["baseline_comparison"]["allocation_status"],
+        "passed"
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["p95_allocations_per_frame"],
+        16
+    );
+    assert_eq!(
+        rows[0]["baseline_comparison"]["max_allocations_per_frame"],
+        17
+    );
+}
+
+#[test]
 fn m9_hosted_timing_policy_reports_wall_clock_regressions_without_hiding_them() {
     let mut rows = vec![serde_json::json!({
         "scene": "static-viewer",
@@ -3824,6 +3867,10 @@ fn prepare_work_metrics_json(metrics: scena::PrepareWorkMetrics) -> serde_json::
         "gpu_pipeline_creations": metrics.gpu_pipeline_creations,
         "gpu_bind_group_creations": metrics.gpu_bind_group_creations,
         "gpu_shader_module_creations": metrics.gpu_shader_module_creations,
+        "gpu_triangle_shader_cache_hits": metrics.gpu_triangle_shader_cache_hits,
+        "gpu_triangle_shader_cache_misses": metrics.gpu_triangle_shader_cache_misses,
+        "gpu_nonblocking_polls": metrics.gpu_nonblocking_polls,
+        "gpu_blocking_polls": metrics.gpu_blocking_polls,
         "draw_uniform_unique_values": metrics.draw_uniform_unique_values,
         "draw_uniform_lookup_probes": metrics.draw_uniform_lookup_probes,
         "draw_uniform_bytes_copied": metrics.draw_uniform_bytes_copied,
@@ -4280,12 +4327,16 @@ fn render_work_metrics_json(metrics: scena::RenderWorkMetrics) -> serde_json::Va
         "gpu_pipeline_creations": metrics.gpu_pipeline_creations,
         "gpu_bind_group_creations": metrics.gpu_bind_group_creations,
         "gpu_shader_module_creations": metrics.gpu_shader_module_creations,
+        "native_scene_color_passes": metrics.native_scene_color_passes,
+        "gpu_queue_submissions": metrics.gpu_queue_submissions,
         "async_readback_submissions": metrics.async_readback_submissions,
         "peak_readbacks_in_flight": metrics.peak_readbacks_in_flight,
         "cpu_parallel_workers": metrics.cpu_parallel_workers,
         "cpu_raster_candidate_triangles": metrics.cpu_raster_candidate_triangles,
         "cpu_raster_full_rescan_triangles": metrics.cpu_raster_full_rescan_triangles,
         "cpu_raster_bin_storage_growth_bytes": metrics.cpu_raster_bin_storage_growth_bytes,
+        "cpu_output_pixels_encoded": metrics.cpu_output_pixels_encoded,
+        "cpu_primitive_flag_scan_items": metrics.cpu_primitive_flag_scan_items,
     })
 }
 

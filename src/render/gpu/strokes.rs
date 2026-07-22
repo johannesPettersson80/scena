@@ -12,7 +12,7 @@ const ENCODED_SHADER: &str = concat!(
 );
 const QUAD_VERTEX_BYTE_LEN: usize = 2 * std::mem::size_of::<f32>();
 const INSTANCE_BYTE_LEN: usize = 11 * std::mem::size_of::<f32>();
-const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const QUAD_VERTICES: [[f32; 2]; 4] = [[-1.0, 0.0], [1.0, 0.0], [-1.0, 1.0], [1.0, 1.0]];
 const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
     format: wgpu::VertexFormat::Float32x2,
@@ -74,6 +74,7 @@ pub(super) fn resource_stats(resources: &StrokeResources) -> GpuResourceStats {
         buffers: 2,
         pipelines,
         shader_modules: pipelines,
+        shader_module_creations: pipelines,
         approximate_gpu_memory_bytes: (QUAD_VERTICES.len() * QUAD_VERTEX_BYTE_LEN) as u64
             + (resources.instance_capacity * INSTANCE_BYTE_LEN).max(4) as u64,
         ..GpuResourceStats::default()
@@ -178,7 +179,7 @@ pub(super) fn create_resources(
         descriptor.output_bind_group_layout,
         descriptor.draw_bind_group_layout,
         None,
-        ENCODED_SHADER,
+        shader_for_format(POST_COLOR_FORMAT),
         "scena.gpu_strokes.post_pipeline",
     );
 

@@ -384,6 +384,7 @@ pub(super) fn resource_stats(
         render_targets: 1 + color + color_msaa,
         pipelines: 2,
         shader_modules: 1,
+        shader_module_creations: 1,
         approximate_gpu_memory_bytes: texture_bytes
             .saturating_add(color_bytes)
             .saturating_add(color_msaa_bytes),

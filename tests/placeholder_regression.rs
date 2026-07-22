@@ -132,6 +132,25 @@ fn double_sided_pbr_backface_uses_camera_facing_shading_normal() {
     );
 }
 
+#[test]
+fn cone_and_wedge_default_culling_show_the_near_exterior() {
+    for (name, geometry) in [
+        ("cone", GeometryDesc::cone(0.70, 1.20, 24)),
+        ("wedge", GeometryDesc::wedge(1.20, 1.00, 0.90)),
+    ] {
+        let single_sided = render_builtin_geometry_cpu(geometry.clone(), false);
+        let double_sided = render_builtin_geometry_cpu(geometry, true);
+        assert_eq!(
+            single_sided, double_sided,
+            "{name} single-sided default culling must render the same near exterior as the double-sided depth reference"
+        );
+        assert!(
+            nonblack_pixel_count(&single_sided) > 100,
+            "{name} near exterior must remain visibly rendered"
+        );
+    }
+}
+
 #[cfg(feature = "inspection")]
 fn introspection_for_material(
     material: MaterialDesc,
@@ -188,6 +207,36 @@ fn render_pbr_backface_cpu(double_sided: bool) -> Vec<u8> {
         .prepare_with_assets(&mut scene, &assets)
         .expect("CPU scene prepares");
     renderer.render_active(&scene).expect("CPU scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+fn render_builtin_geometry_cpu(geometry: GeometryDesc, double_sided: bool) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(geometry);
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::WHITE).with_double_sided(double_sided));
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("camera activates");
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(0.0, 0.0, -2.4)))
+        .add()
+        .expect("built-in mesh inserts");
+
+    let mut renderer = Renderer::headless(64, 64).expect("CPU renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("built-in scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("built-in scene renders");
     renderer.frame_rgba8().to_vec()
 }
 

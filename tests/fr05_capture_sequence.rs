@@ -76,6 +76,10 @@ fn fr05_recipe_capture_emits_canonical_turntable_and_clip_frames() {
         serde_json::from_slice(&output.stdout).expect("capture report is JSON");
     assert_eq!(report["schema"], "scena.capture_sequence_result.v1");
     assert_eq!(report["ok"], true);
+    assert_eq!(report["backend_selection"]["source"], "default");
+    assert_eq!(report["backend_selection"]["requested"], "headless");
+    assert_eq!(report["backend_selection"]["selected"], "headless");
+    assert_eq!(report["backend_selection"]["fallback_used"], false);
     assert_eq!(report["coordinate_convention"]["world_up"], "+Y");
     assert_eq!(
         report["canonical_view_order"],

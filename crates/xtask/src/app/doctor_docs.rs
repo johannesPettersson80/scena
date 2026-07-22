@@ -6,6 +6,7 @@ mod onboarding;
 mod review_provenance;
 pub(crate) mod schema_references;
 mod stable_fixtures;
+mod version_alignment;
 
 pub(crate) use contract_discovery::check_fr01_fr04_contract_discovery;
 pub(crate) use contract_pins::{
@@ -13,6 +14,7 @@ pub(crate) use contract_pins::{
 };
 pub(crate) use onboarding::check_c11_onboarding_contracts;
 pub(crate) use review_provenance::check_review_provenance_contracts;
+pub(crate) use version_alignment::check_d01_public_version_alignment;
 
 pub(crate) fn check_markdown_links(root: &Path, findings: &mut Vec<Finding>) {
     for rel in markdown_files(root) {

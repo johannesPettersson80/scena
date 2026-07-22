@@ -62,6 +62,7 @@ pub(crate) fn release_lane_evidence_class(lane: &str) -> &'static str {
 pub(crate) fn browser_gpu_conformance_passes(value: &Value, expected_backend: &str) -> bool {
     value.get("gate").and_then(Value::as_str) == Some("m6-rust-wasm-renderer-probe")
         && value.get("status").and_then(Value::as_str) == Some("passed")
+        && required_pixel_parity_evaluation_passes(value.get("required_parity"), expected_backend)
         && value
             .get("results")
             .and_then(Value::as_array)
@@ -79,6 +80,7 @@ pub(crate) fn browser_gpu_conformance_passes(value: &Value, expected_backend: &s
                             .and_then(Value::as_u64)
                             .unwrap_or(0)
                             > 0
+                        && renderer_parity_source_matches(result, expected_backend)
                         && result
                             .get("gpu_submissions")
                             .and_then(Value::as_u64)
@@ -119,6 +121,9 @@ pub(crate) fn required_browser_gpu_parity_passes(value: &Value, expected_backend
     {
         return false;
     }
+    if !required_pixel_parity_evaluation_passes(parity, expected_backend) {
+        return false;
+    }
     value
         .get("results")
         .and_then(Value::as_array)
@@ -154,9 +159,145 @@ pub(crate) fn required_browser_gpu_parity_passes(value: &Value, expected_backend
                         .and_then(Value::as_u64)
                         .unwrap_or(0)
                         > 0
+                    && renderer_parity_source_matches(result, expected_backend)
                     && adapter_is_hardware(adapter)
             })
         })
+}
+
+fn required_pixel_parity_evaluation_passes(
+    required_parity: Option<&Value>,
+    expected_backend: &str,
+) -> bool {
+    const MUTATIONS: [&str; 6] = [
+        "wrong-colors",
+        "geometry-shift",
+        "missing-object",
+        "vertical-flip",
+        "linear-as-srgb",
+        "stale-reference",
+    ];
+    required_parity
+        .and_then(|parity| parity.get("evaluations"))
+        .and_then(Value::as_array)
+        .is_some_and(|evaluations| {
+            evaluations.iter().any(|evaluation| {
+                let pixel = evaluation.get("pixel_parity");
+                let normalization = pixel.and_then(|value| value.get("normalization"));
+                let thresholds = pixel.and_then(|value| value.get("thresholds"));
+                let metrics = pixel.and_then(|value| value.get("metrics"));
+                let mutations = pixel
+                    .and_then(|value| value.get("mutations"))
+                    .and_then(Value::as_array);
+                evaluation
+                    .get("backend")
+                    .and_then(Value::as_str)
+                    .is_some_and(|backend| backend.eq_ignore_ascii_case(expected_backend))
+                    && evaluation
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| matches!(status, "passed" | "diagnostic"))
+                    && empty_array(evaluation.get("failure_codes"))
+                    && pixel
+                        .and_then(|value| value.get("status"))
+                        .and_then(Value::as_str)
+                        == Some("passed")
+                    && empty_array(pixel.and_then(|value| value.get("failure_codes")))
+                    && string_field(normalization, "row_origin") == Some("top-left")
+                    && string_field(normalization, "transfer") == Some("srgb8")
+                    && string_field(normalization, "alpha") == Some("straight-opaque")
+                    && string_field(normalization, "dimensions") == Some("exact")
+                    && string_field(normalization, "comparison_channels") == Some("rgb")
+                    && number_field(thresholds, "rgb_chebyshev_tolerance")
+                        .is_some_and(|value| value <= 4.0)
+                    && number_field(thresholds, "within_tolerance_fraction_min")
+                        .is_some_and(|value| value >= 0.995)
+                    && number_field(thresholds, "rgb_rmse_max").is_some_and(|value| value <= 2.0)
+                    && number_field(thresholds, "p99_5_channel_delta_max")
+                        .is_some_and(|value| value <= 4.0)
+                    && number_field(thresholds, "foreground_iou_min")
+                        .is_some_and(|value| value >= 0.995)
+                    && number_field(metrics, "compared_pixels").is_some_and(|value| value > 0.0)
+                    && number_field(metrics, "within_tolerance_fraction")
+                        .is_some_and(|value| value >= 0.995)
+                    && number_field(metrics, "rgb_rmse").is_some_and(|value| value <= 2.0)
+                    && number_field(metrics, "p99_5_channel_delta")
+                        .is_some_and(|value| value <= 4.0)
+                    && number_field(metrics, "foreground_iou").is_some_and(|value| value >= 0.995)
+                    && pixel
+                        .and_then(|value| value.get("mask"))
+                        .and_then(|value| value.get("kind"))
+                        .and_then(Value::as_str)
+                        == Some("two-pixel-gradient-edge-exclusion")
+                    && pixel
+                        .and_then(|value| value.get("mask"))
+                        .and_then(|value| value.get("source"))
+                        .and_then(Value::as_str)
+                        == Some("cpu-reference-gradient")
+                    && pixel
+                        .and_then(|value| value.get("mask"))
+                        .and_then(|value| value.get("foreground_domain"))
+                        .and_then(Value::as_str)
+                        == Some("edge-excluded")
+                    && pixel
+                        .and_then(|value| value.get("worst_region"))
+                        .and_then(|value| value.get("bbox"))
+                        .and_then(Value::as_array)
+                        .is_some_and(|bbox| bbox.len() == 4)
+                    && pixel
+                        .and_then(|value| value.get("diff_heatmap_rgba8_base64"))
+                        .and_then(Value::as_str)
+                        .is_some_and(|heatmap| !heatmap.is_empty())
+                    && mutations.is_some_and(|mutations| {
+                        mutations.len() == MUTATIONS.len()
+                            && mutations.iter().zip(MUTATIONS).all(|(mutation, expected)| {
+                                mutation.get("name").and_then(Value::as_str) == Some(expected)
+                                    && mutation.get("rejected").and_then(Value::as_bool)
+                                        == Some(true)
+                                    && mutation
+                                        .get("failure_codes")
+                                        .and_then(Value::as_array)
+                                        .is_some_and(|codes| !codes.is_empty())
+                            })
+                    })
+            })
+        })
+}
+
+fn renderer_parity_source_matches(result: &Value, expected_backend: &str) -> bool {
+    let parity = result.get("parity");
+    let readback = result.get("renderer_readback");
+    let cpu = parity.and_then(|value| value.get("cpu_frame"));
+    let gpu = parity.and_then(|value| value.get("gpu_frame"));
+    parity
+        .and_then(|value| value.get("schema"))
+        .and_then(Value::as_str)
+        == Some("scena.m6.cpu_webgpu_parity.v1")
+        && parity
+            .and_then(|value| value.get("backend"))
+            .and_then(Value::as_str)
+            .is_some_and(|backend| backend.eq_ignore_ascii_case(expected_backend))
+        && string_field(cpu, "source") == Some("renderer-owned-cpu-frame")
+        && string_field(gpu, "source") == Some("renderer-owned-gpu-copy")
+        && number_field(gpu, "width") == number_field(readback, "width")
+        && number_field(gpu, "height") == number_field(readback, "height")
+        && string_field(gpu, "rgba8_fnv1a64") == string_field(readback, "rgba8_fnv1a64")
+}
+
+fn empty_array(value: Option<&Value>) -> bool {
+    value.and_then(Value::as_array).is_some_and(Vec::is_empty)
+}
+
+fn string_field<'a>(value: Option<&'a Value>, field: &str) -> Option<&'a str> {
+    value
+        .and_then(|value| value.get(field))
+        .and_then(Value::as_str)
+}
+
+fn number_field(value: Option<&Value>, field: &str) -> Option<f64> {
+    value
+        .and_then(|value| value.get(field))
+        .and_then(Value::as_f64)
 }
 
 fn adapter_is_hardware(adapter: Option<&Value>) -> bool {

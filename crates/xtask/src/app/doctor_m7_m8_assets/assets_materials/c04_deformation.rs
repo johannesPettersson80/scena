@@ -13,10 +13,16 @@ pub(crate) fn check_c04_deformation_contracts(root: &Path, findings: &mut Vec<Fi
                 "Semantic::Normals, DataType::I8, true",
                 "Semantic::Normals, DataType::I16, true",
                 "must use FLOAT or normalized signed BYTE/SHORT",
-                "normalize_skin_weights",
-                "must have a finite non-zero sum",
                 "GeometryMorphTarget::new_with_semantics",
                 "vec![Vec3::ZERO; vertex_count]",
+            ],
+        ),
+        (
+            "src/assets/gltf/meshes/skin_influences.rs",
+            &[
+                "validate_and_normalize",
+                "must have a finite non-zero sum",
+                "WEIGHTS_{set} vertex {vertex_index}",
             ],
         ),
         (

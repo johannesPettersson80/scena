@@ -6,9 +6,9 @@
   "import_id": "part",
   "verb": "center",
   "transform": {
+    "kind": "raw",
     "translation": [1.0, 2.0, 3.0],
-    "rotation": [0.0, 0.0, 0.0, 1.0],
-    "scale": [1.0, 1.0, 1.0]
+    "rotation": [0.0, 0.0, 0.0, 1.0]
   },
   "updated_recipe": {
     "schema": "scena.scene_recipe.v1",
@@ -17,9 +17,9 @@
         "id": "part",
         "uri": "part.glb",
         "transform": {
+          "kind": "raw",
           "translation": [1.0, 2.0, 3.0],
-          "rotation": [0.0, 0.0, 0.0, 1.0],
-          "scale": [1.0, 1.0, 1.0]
+          "rotation": [0.0, 0.0, 0.0, 1.0]
         }
       }
     ]
@@ -31,9 +31,9 @@
       "operation": "replace",
       "before": null,
       "after": {
+        "kind": "raw",
         "translation": [1.0, 2.0, 3.0],
-        "rotation": [0.0, 0.0, 0.0, 1.0],
-        "scale": [1.0, 1.0, 1.0]
+        "rotation": [0.0, 0.0, 0.0, 1.0]
       }
     }
   ],

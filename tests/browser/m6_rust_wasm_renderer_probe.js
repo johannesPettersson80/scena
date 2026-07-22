@@ -8,6 +8,7 @@ const {
   attachReleaseArtifactProvenance,
 } = require("../release/release_artifact_provenance.js");
 const { evaluateRequiredGpuParity } = require("./required_gpu_parity.js");
+const { collectBrowserGpuEvidence } = require("./hardware_browser.js");
 const {
   cropRoundEMaterialTiles,
   evaluateRoundEMaterialTiles,
@@ -41,10 +42,10 @@ function contentType(file) {
   return "application/octet-stream";
 }
 
-function ensureBrowserProbePackage(pkgRoot) {
+function ensureBrowserProbePackage(pkgRoot, forceRebuild = false) {
   const jsPath = path.join(pkgRoot, "scena.js");
   const wasmPath = path.join(pkgRoot, "scena_bg.wasm");
-  if (fs.existsSync(jsPath) && fs.existsSync(wasmPath)) {
+  if (!forceRebuild && fs.existsSync(jsPath) && fs.existsSync(wasmPath)) {
     return;
   }
 
@@ -463,6 +464,17 @@ function compactBrowserProbeResult(result) {
         result.renderer_readback.pixel_statistics.nonblack,
     };
   }
+  if (result.parity) {
+    compact.parity = {
+      schema: result.parity.schema,
+      status: result.parity.status,
+      failure_codes: result.parity.failure_codes,
+      metrics: result.parity.metrics,
+      thresholds: result.parity.thresholds,
+      normalization: result.parity.normalization,
+      known_bad_mutation: result.parity.known_bad_mutation,
+    };
+  }
   if (result.material_preset_glass_pixels) {
     compact.material_preset_glass_pixels = {
       status: result.material_preset_glass_pixels.status,
@@ -580,9 +592,11 @@ function assertSurfaceLifecycleProbe(backend, result) {
     "context-restored",
     "recover-context",
     "render-after-context-recovery",
+    "surface-lost",
     "device-lost",
-    "recover-device",
-    "render-after-device-recovery",
+    "device-rebuild-required",
+    "prepare-blocked-after-device-loss",
+    "rebuild-device-renderer",
     "final-render",
   ]) {
     if (!events.has(event)) {
@@ -599,11 +613,16 @@ function assertSurfaceLifecycleProbe(backend, result) {
   if (
     !result.context_recovered ||
     result.context_recovered.draw_calls <= 0 ||
-    !result.device_recovered ||
-    result.device_recovered.draw_calls <= 0
+    result.device_recovered !== null ||
+    !result.device_rebuild_required ||
+    result.device_rebuild_required.status !== "rebuild_required" ||
+    !result.device_rebuild_required.recover_context_blocked ||
+    !result.device_rebuild_required.prepare_blocked ||
+    !result.device_rebuilt ||
+    result.device_rebuilt.draw_calls <= 0
   ) {
     throw new Error(
-      `${backend} surface lifecycle probe did not render after context/device recovery: ${JSON.stringify(result)}`,
+      `${backend} surface lifecycle probe did not distinguish context recovery from device rebuild: ${JSON.stringify(result)}`,
     );
   }
 }
@@ -709,7 +728,9 @@ function assertCpuWebGl2Parity(result) {
     !Array.isArray(parity.failure_codes) ||
     parity.failure_codes.length !== 0
   ) {
-    throw new Error(`webgl2 headline proof is missing passing CPU/WebGL2 parity: ${JSON.stringify(result)}`);
+    throw new Error(
+      `webgl2 headline proof is missing passing CPU/WebGL2 parity: ${JSON.stringify(compactBrowserProbeResult(result))}`,
+    );
   }
   if (
     !cpu ||
@@ -880,15 +901,22 @@ function assertSourceGltfMaterialProof(backend, result) {
   }
   const generatedUnlitCyan =
     pixels.left[2] > pixels.left[0] + 70 && pixels.left[1] > pixels.left[0] + 40;
-  const sourceMaterialBright =
-    pixels.center[0] > 220 && pixels.center[1] > 220 && pixels.center[2] > 150;
+  const sourceLuminance =
+    0.2126 * pixels.center[0] +
+    0.7152 * pixels.center[1] +
+    0.0722 * pixels.center[2];
+  const sourceMaterialBrightWarm =
+    sourceLuminance > 205 &&
+    pixels.center[0] > pixels.center[2] + 50 &&
+    pixels.center[1] > pixels.center[2] + 50 &&
+    Math.abs(pixels.center[0] - pixels.center[1]) < 35;
   const generatedPbrWarm =
     pixels.right[0] > pixels.right[2] + 70 && pixels.right[1] > pixels.right[2] + 40;
   const sourceDistinct =
     distance(pixels.center, pixels.left) > 45 && distance(pixels.center, pixels.right) > 45;
   if (
     !generatedUnlitCyan ||
-    !sourceMaterialBright ||
+    !sourceMaterialBrightWarm ||
     !generatedPbrWarm ||
     !sourceDistinct
   ) {
@@ -972,6 +1000,61 @@ function assertPunctualLightProof(backend, result, channel, workflow) {
     throw new Error(
       `${backend} ${workflow} did not tint PBR output through the ${channel} light lane: ${JSON.stringify(result)}`,
     );
+  }
+}
+
+function assertColorTransferProof(backend, result, postProcessing) {
+  const metadata = result.metadata || {};
+  const readback = result.renderer_readback || {};
+  const pixels = readback.pixel_statistics || {};
+  const center = pixels.center;
+  const expected = metadata.expected_center_srgb8;
+  const stats = result.stats || {};
+  if (
+    metadata.proof_class !== `browser-${postProcessing === "off" ? "no-post" : "post"}-srgb-transfer` ||
+    metadata.post_processing !== postProcessing ||
+    !Array.isArray(center) ||
+    !Array.isArray(expected) ||
+    stats.bloom_passes !== 0 ||
+    stats.ambient_occlusion_passes !== 0 ||
+    stats.screen_space_reflection_passes !== 0
+  ) {
+    throw new Error(
+      `${backend} ${postProcessing} color-transfer proof is incomplete: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    (postProcessing === "off" && stats.fxaa_passes !== 0) ||
+    (postProcessing === "on" && stats.fxaa_passes === 0)
+  ) {
+    throw new Error(
+      `${backend} ${postProcessing} color-transfer proof exercised the wrong post path: ${JSON.stringify(result)}`,
+    );
+  }
+  for (let channel = 0; channel < 4; channel += 1) {
+    if (Math.abs(center[channel] - expected[channel]) > 2) {
+      throw new Error(
+        `${backend} ${postProcessing} transfer expected ${JSON.stringify(expected)} +/-2, got ${JSON.stringify(center)}`,
+      );
+    }
+  }
+  if (center[0] <= 48) {
+    throw new Error(`${backend} ${postProcessing} output regressed to linear byte ${center[0]}`);
+  }
+  if (postProcessing === "off" && backend.toLowerCase() === "webgl2") {
+    assertCpuWebGl2Parity(result);
+  }
+}
+
+function assertPostTogglePreservesColorTransfer(backend, noPostResult, postResult) {
+  const noPostCenter = noPostResult.renderer_readback.pixel_statistics.center;
+  const postCenter = postResult.renderer_readback.pixel_statistics.center;
+  for (let channel = 0; channel < 4; channel += 1) {
+    if (Math.abs(noPostCenter[channel] - postCenter[channel]) > 2) {
+      throw new Error(
+        `${backend} post toggle changed RGBA8 transfer interpretation: no-post=${JSON.stringify(noPostCenter)}, post=${JSON.stringify(postCenter)}`,
+      );
+    }
   }
 }
 
@@ -1275,6 +1358,84 @@ function writeRequiredWebgpuMaterialArtifact(artifactDir, result, evaluation) {
       "tests/browser/m6_rust_wasm_renderer_probe_page.js",
       "tests/browser/required_gpu_parity.js",
       "tests/visual/references/round_e_material_thresholds.toml",
+      "tests/release/release_artifact_provenance.js",
+    ],
+  });
+  fs.writeFileSync(
+    path.join(root, "result.json"),
+    `${JSON.stringify(artifact, null, 2)}\n`,
+  );
+}
+
+function writeRequiredWebgpuParityArtifact(artifactDir, result, evaluation, browserGpu) {
+  const parity = result && result.parity;
+  const pixelParity = evaluation && evaluation.pixel_parity;
+  if (!parity || !pixelParity || !parity.cpu_frame || !parity.gpu_frame) {
+    return;
+  }
+  const width = parity.normalization && parity.normalization.width;
+  const height = parity.normalization && parity.normalization.height;
+  if (!Number.isInteger(width) || !Number.isInteger(height)) {
+    throw new Error("required WebGPU parity artifact lacks exact dimensions");
+  }
+  const root = path.join(artifactDir, "m6-required-webgpu-pixel-parity");
+  fs.mkdirSync(root, { recursive: true });
+  const images = [
+    ["cpu-reference.png", Buffer.from(parity.cpu_frame.rgba8_base64, "base64")],
+    ["gpu-live.png", Buffer.from(parity.gpu_frame.rgba8_base64, "base64")],
+    ["diff-heatmap.png", Buffer.from(pixelParity.diff_heatmap_rgba8_base64, "base64")],
+  ].map(([name, rgba]) => {
+    const png = rgbaPng(width, height, rgba);
+    const file = path.join(root, name);
+    fs.writeFileSync(file, png);
+    return {
+      kind: name.replace(".png", ""),
+      path: path.relative(process.cwd(), file),
+      sha256: crypto.createHash("sha256").update(png).digest("hex"),
+      bytes: png.length,
+    };
+  });
+  const artifact = attachReleaseArtifactProvenance({
+    proof_class: "required-live-webgpu-pixel-parity",
+    status: evaluation.status,
+    failure_codes: evaluation.failure_codes,
+    backend: result.backend,
+    adapter: result.adapter,
+    browser_gpu: browserGpu,
+    command: {
+      argv: [path.basename(process.execPath), ...process.argv.slice(1)],
+      environment: {
+        SCENA_REQUIRE_PARITY: process.env.SCENA_REQUIRE_PARITY || "",
+        SCENA_BROWSER_BACKENDS: process.env.SCENA_BROWSER_BACKENDS || "",
+      },
+    },
+    renderer_readback: {
+      source: result.renderer_readback.source,
+      width: result.renderer_readback.width,
+      height: result.renderer_readback.height,
+      rgba8_fnv1a64: result.renderer_readback.rgba8_fnv1a64,
+    },
+    fixture: pixelParity.fixture,
+    normalization: pixelParity.normalization,
+    thresholds: pixelParity.thresholds,
+    mask: pixelParity.mask,
+    metrics: pixelParity.metrics,
+    worst_region: pixelParity.worst_region,
+    mutations: pixelParity.mutations,
+    images,
+  }, {
+    root: process.cwd(),
+    schema: "scena.q01.required_webgpu_pixel_parity.v1",
+    producer: "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    sourcePaths: [
+      "Cargo.lock",
+      "package-lock.json",
+      "src/browser_probe.rs",
+      "src/browser_probe/parity.rs",
+      "tests/browser/m6_rust_wasm_renderer_probe.js",
+      "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+      "tests/browser/hardware_browser.js",
+      "tests/browser/required_gpu_parity.js",
       "tests/release/release_artifact_provenance.js",
     ],
   });
@@ -1653,6 +1814,11 @@ function assertScenaViewerMobileA11yProof(result) {
     ["wheel_action", "wheel-zoom"],
     ["wheel_delta_y", -120],
     ["keyboard_action", "reset-view"],
+    ["pointer_capture_outside_release", true],
+    ["pointer_capture_reentry_clean", true],
+    ["pointer_capture_active_after_release", 0],
+    ["pointer_capture_second_orbit_delta_x", 18],
+    ["pointer_capture_second_orbit_delta_y", 11],
   ];
   for (const [key, value] of expected) {
     if (checks[key] !== value) {
@@ -1719,6 +1885,59 @@ async function runCameraControlKitProof(page, artifactDir) {
 async function runScenaViewerMobileA11yProof(page, artifactDir) {
   await waitForProbeFunction(page, "scenaViewerMobileA11yProbe");
   const result = await page.evaluate(() => window.scenaViewerMobileA11yProbe());
+  const viewer = page.locator("scena-viewer[data-proof=\"mobile-a11y\"]");
+  await page.evaluate(() => {
+    const viewer = document.querySelector("scena-viewer[data-proof=\"mobile-a11y\"]");
+    window.__scenaPointerCaptureOrbits = [];
+    viewer.addEventListener("scena-viewer-gesture-control", (event) => {
+      if (event.detail?.action === "orbit") {
+        window.__scenaPointerCaptureOrbits.push({ ...event.detail });
+      }
+    });
+  });
+  const bounds = await viewer.boundingBox();
+  if (!bounds) {
+    throw new Error("<scena-viewer> pointer-capture proof has no layout bounds");
+  }
+  const inside = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  const outside = { x: inside.x, y: bounds.y + bounds.height + 48 };
+  await page.mouse.move(inside.x, inside.y);
+  await page.mouse.down();
+  await page.mouse.move(outside.x, outside.y);
+  await page.mouse.up();
+  const afterOutsideRelease = await page.evaluate(
+    () => window.__scenaPointerCaptureOrbits.length,
+  );
+  await page.mouse.move(inside.x, inside.y);
+  const afterReentryMove = await page.evaluate(
+    () => window.__scenaPointerCaptureOrbits.length,
+  );
+  await page.mouse.down();
+  await page.mouse.move(inside.x + 18, inside.y + 11);
+  await page.mouse.up();
+  const pointerCapture = await page.evaluate(() => {
+    const viewer = document.querySelector("scena-viewer[data-proof=\"mobile-a11y\"]");
+    const orbits = window.__scenaPointerCaptureOrbits;
+    return {
+      active_pointers_after_release: viewer._activePointers.size,
+      final_orbit_delta_x: orbits.at(-1)?.deltaX ?? null,
+      final_orbit_delta_y: orbits.at(-1)?.deltaY ?? null,
+    };
+  });
+  result.checks.pointer_capture_outside_release = afterOutsideRelease > 0;
+  result.checks.pointer_capture_reentry_clean = afterReentryMove === afterOutsideRelease;
+  result.checks.pointer_capture_active_after_release =
+    pointerCapture.active_pointers_after_release;
+  result.checks.pointer_capture_second_orbit_delta_x = pointerCapture.final_orbit_delta_x;
+  result.checks.pointer_capture_second_orbit_delta_y = pointerCapture.final_orbit_delta_y;
+  result.status = result.status === "passed" &&
+    result.checks.pointer_capture_outside_release === true &&
+    result.checks.pointer_capture_reentry_clean === true &&
+    result.checks.pointer_capture_active_after_release === 0 &&
+    result.checks.pointer_capture_second_orbit_delta_x === 18 &&
+    result.checks.pointer_capture_second_orbit_delta_y === 11
+    ? "passed"
+    : "failed";
   const screenshotPath = path.join(artifactDir, "scena-viewer-mobile-a11y-browser-proof.png");
   await page
     .locator(result.screenshot_selector || "scena-viewer[data-proof=\"mobile-a11y\"]")
@@ -1840,8 +2059,29 @@ function assertDisplayP3OutputProof(backend, result) {
   }
 }
 
+function assertMsaaCapabilityProof(backend, result) {
+  const capabilities = result.capabilities || {};
+  const fallback = (result.diagnostics || []).find(
+    (diagnostic) => diagnostic.code === "MultisampleFallback",
+  );
+  if (
+    result.anti_aliasing !== "Fxaa" ||
+    JSON.stringify(capabilities.render_sample_counts) !== JSON.stringify([1, 0, 0]) ||
+    JSON.stringify(capabilities.depth_sample_counts) !== JSON.stringify([1, 0, 0]) ||
+    capabilities.explicit_msaa !== "error_if_required" ||
+    !fallback ||
+    result.explicit_msaa?.status !== "rejected" ||
+    result.explicit_msaa?.requested !== 4 ||
+    result.explicit_msaa?.maximum !== 1
+  ) {
+    throw new Error(`${backend} MSAA capability/fallback proof failed: ${JSON.stringify(result)}`);
+  }
+}
+
 async function main() {
+  const parityOnly = process.argv.includes("--q01-parity-only");
   const materialOnly = process.argv.includes("--q02-material-only");
+  const lifecycleOnly = process.argv.includes("--lifecycle-only");
   const { chromium } = loadPlaywright();
   const browserRoot = __dirname;
   const pkgRoot = path.join(process.cwd(), "target", "m6-browser-pkg");
@@ -1856,7 +2096,17 @@ async function main() {
   );
   const artifactDir = path.join(process.cwd(), "target", "gate-artifacts");
   fs.mkdirSync(artifactDir, { recursive: true });
-  ensureBrowserProbePackage(pkgRoot);
+  const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
+  const forceBrowserPackage = process.env.SCENA_BROWSER_FORCE_REBUILD === "1";
+  const skipBrowserPackageBuild = process.env.SCENA_SKIP_WASM_BUILD === "1";
+  // A focused lifecycle run is commonly used immediately after changing the
+  // Rust probe or viewer element. Never let an old target/m6-browser-pkg turn
+  // either proof into a provenance check of stale bytes.
+  ensureBrowserProbePackage(
+    pkgRoot,
+    !skipBrowserPackageBuild
+      && (parityOnly || lifecycleOnly || viewerElementOnly || forceBrowserPackage),
+  );
 
   const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot, demoRoot);
   const selectedBackends = configuredBackends();
@@ -1868,15 +2118,24 @@ async function main() {
   ) {
     throw new Error("Q02 material-only proof requires exactly the webgpu backend");
   }
-  const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
+  if (
+    parityOnly &&
+    (selectedBackends.length !== 1 || selectedBackends[0].toLowerCase() !== "webgpu")
+  ) {
+    throw new Error("Q01 parity-only proof requires exactly the webgpu backend");
+  }
   const browser = await chromium.launch({
     executablePath: chromiumExecutablePath(),
     headless: true,
     args: chromiumLaunchArgs(selectedBackends),
   });
+  const browserGpu = await collectBrowserGpuEvidence(browser, "chromium");
 
-  let workflows = materialOnly ? ["pbr-material-presets"] : [
+  let workflows = parityOnly || lifecycleOnly ? [] : materialOnly ? ["pbr-material-presets"] : [
     "model-viewer",
+    "color-transfer-no-post",
+    "color-transfer-post",
+    "msaa-capability",
     "instancing",
     "picking-selection",
     "animation",
@@ -1914,7 +2173,7 @@ async function main() {
   workflows = configuredWorkflows(workflows);
   const results = [];
   try {
-    if (!materialOnly) {
+    if (!parityOnly && !materialOnly && !lifecycleOnly) {
       const viewerElementPage = await browser.newPage({ viewport: { width: 480, height: 320 } });
       const viewerElementConsoleMessages = [];
       viewerElementPage.on("console", (message) => {
@@ -1966,12 +2225,16 @@ async function main() {
       try {
         await page.goto(url);
         await waitForProbeFunction(page, "scenaM6RustWasmRendererProbe");
-        await waitForProbeFunction(page, "scenaM6RustWasmWorkflowProbe");
-        if (!materialOnly) {
-          await waitForProbeFunction(page, "scenaM6DisplayP3OutputProbe");
+        if (!parityOnly) {
+          await waitForProbeFunction(page, "scenaM6RustWasmWorkflowProbe");
+        }
+        if (!parityOnly && !materialOnly) {
           await waitForProbeFunction(page, "scenaM6RustWasmLifecycleProbe");
-          await waitForProbeFunction(page, "scenaM6RustWasmBenchmarkProbe");
-          await waitForProbeFunction(page, "scenaM6RustWasmStateLifecycleProbe");
+          if (!lifecycleOnly) {
+            await waitForProbeFunction(page, "scenaM6DisplayP3OutputProbe");
+            await waitForProbeFunction(page, "scenaM6RustWasmBenchmarkProbe");
+            await waitForProbeFunction(page, "scenaM6RustWasmStateLifecycleProbe");
+          }
         }
         let result;
         try {
@@ -1997,17 +2260,24 @@ async function main() {
           required: requiredParity,
           requestedBackend: backend,
           result,
+          browserGpu,
         });
         requiredParityEvaluations.push({ backend, ...requiredEvaluation });
+        if (requiredParity && backend === "webgpu") {
+          writeRequiredWebgpuParityArtifact(artifactDir, result, requiredEvaluation, browserGpu);
+        }
         if (requiredEvaluation.status === "failed") {
           throw new Error(
             `${backend} required GPU parity failed: ${JSON.stringify(requiredEvaluation.failure_codes)}`,
           );
         }
+        if (parityOnly) {
+          continue;
+        }
         if (backend === "webgl2") {
           assertCpuWebGl2Parity(result);
         }
-        if (!materialOnly) {
+        if (!materialOnly && !lifecycleOnly) {
           const displayP3Result = await page.evaluate(
             (name) => window.scenaM6DisplayP3OutputProbe(name),
             backend,
@@ -2042,6 +2312,33 @@ async function main() {
         }
         if (workflowResults.has("depth-overlap")) {
           assertDepthOverlapProof(backend, workflowResults.get("depth-overlap"));
+        }
+        if (workflowResults.has("color-transfer-no-post")) {
+          assertColorTransferProof(
+            backend,
+            workflowResults.get("color-transfer-no-post"),
+            "off",
+          );
+        }
+        if (workflowResults.has("color-transfer-post")) {
+          assertColorTransferProof(
+            backend,
+            workflowResults.get("color-transfer-post"),
+            "on",
+          );
+        }
+        if (
+          workflowResults.has("color-transfer-no-post") &&
+          workflowResults.has("color-transfer-post")
+        ) {
+          assertPostTogglePreservesColorTransfer(
+            backend,
+            workflowResults.get("color-transfer-no-post"),
+            workflowResults.get("color-transfer-post"),
+          );
+        }
+        if (workflowResults.has("msaa-capability")) {
+          assertMsaaCapabilityProof(backend, workflowResults.get("msaa-capability"));
         }
         if (workflowResults.has("pbr-point-light")) {
           assertPunctualLightProof(
@@ -2150,6 +2447,10 @@ async function main() {
           );
         }
         assertSurfaceLifecycleProbe(backend, lifecycleResult);
+        if (lifecycleOnly) {
+          assertNoScenaGpuValidationErrors(backend, consoleMessages);
+          continue;
+        }
         const benchmarkResult = await page.evaluate(
           (name) => window.scenaM6RustWasmBenchmarkProbe(name),
           backend,
@@ -2209,6 +2510,35 @@ async function main() {
     return;
   }
 
+  if (lifecycleOnly) {
+    console.log(JSON.stringify({
+      gate: "c11-device-loss-lifecycle",
+      status: "passed",
+      proof_class: "synthetic-headless-browser",
+      backends: selectedBackends,
+      lifecycle: results
+        .filter((result) => Array.isArray(result.event_sequence))
+        .map((result) => ({
+          backend: result.backend,
+          status: result.status,
+          event_sequence: result.event_sequence,
+          device_rebuild_required: result.device_rebuild_required,
+          device_rebuilt: result.device_rebuilt,
+        })),
+    }, null, 2));
+    return;
+  }
+
+  if (viewerElementOnly) {
+    console.log(JSON.stringify({
+      gate: "scena-viewer-element-browser-proof",
+      status: "passed",
+      proof_class: "browser-interaction",
+      results,
+    }, null, 2));
+    return;
+  }
+
   const releaseResults = results.filter(
     (result) =>
       result.schema === "scena.m6.browser_renderer_probe.v1" &&
@@ -2256,6 +2586,7 @@ async function main() {
       "src/browser_probe/parity.rs",
       "tests/browser/m6_rust_wasm_renderer_probe.js",
       "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+      "tests/browser/required_gpu_parity.js",
       "tests/release/release_artifact_provenance.js",
     ],
   });

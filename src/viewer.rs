@@ -3,6 +3,7 @@
 mod animation;
 mod asset_catalog_preview;
 mod capture;
+mod diagnostics;
 mod interaction;
 mod load_progress;
 mod material_variants;
@@ -12,6 +13,7 @@ pub use asset_catalog_preview::{
     AssetCatalogPreviewError, AssetCatalogPreviewPng, render_asset_catalog_preview_png,
 };
 pub use capture::{ViewerCaptureError, ViewerPngError};
+use diagnostics::combined_viewer_diagnostics;
 pub use profile::{VIEWER_PROFILE_NAMES, ViewerProfile, ViewerProfileLighting};
 
 use crate::assets::{AssetLoadProgress, AssetPath, Assets};
@@ -26,11 +28,16 @@ use crate::render::{
     Background, HeadlessBackendSelectionReport, Profile, Quality, RenderMode, Renderer,
     RendererOptions,
 };
-use crate::scene::{CameraKey, Scene, SceneImport, Transform, Vec3};
+use crate::scene::{CameraKey, Scene, SceneImport, Transform};
 
 type ViewerPickCallback = Box<dyn FnMut(std::result::Result<Option<Hit>, LookupError>) + 'static>;
 
 /// Owned state returned by [`first_render_gltf_headless`].
+///
+/// [`Self::diagnostics`] includes renderer/scene diagnosis and any structured
+/// warning for a neutral presentation fallback applied by the high-level
+/// viewer. The low-level [`Renderer`] remains explicit and does not add these
+/// defaults.
 #[derive(Debug)]
 pub struct FirstRender {
     assets: Assets,
@@ -54,6 +61,7 @@ pub struct HeadlessGltfViewer {
     import: SceneImport,
     load_progress_events: Vec<AssetLoadProgress>,
     camera_bookmarks: Vec<CameraBookmark>,
+    setup_diagnostics: Vec<Diagnostic>,
 }
 
 /// Builder for the first headless glTF render.
@@ -77,6 +85,7 @@ struct ViewerCommonOptions {
     background: Option<Background>,
     camera_bookmarks: Vec<CameraBookmark>,
     grid_floor: bool,
+    fallback_lighting: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,9 +104,10 @@ impl ViewerCommonOptions {
             environment_path: None,
             renderer_options: RendererOptions::default(),
             import_transform: None,
-            background: None,
+            background: Some(Background::Studio),
             camera_bookmarks: Vec::new(),
             grid_floor: false,
+            fallback_lighting: true,
         }
     }
 
@@ -115,6 +125,7 @@ impl ViewerCommonOptions {
         self.default_environment = profile.default_environment();
         self.environment_path = None;
         self.lighting = profile.lighting();
+        self.fallback_lighting = false;
         self.grid_floor = profile.grid();
         self.background = profile.background();
     }
@@ -152,6 +163,7 @@ impl FirstRender {
         &self.outcome
     }
 
+    /// Returns the warnings and diagnostics captured for this rendered result.
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
@@ -177,6 +189,16 @@ impl HeadlessGltfViewerBuilder {
     /// Adds a neutral directional light before the first prepare/render.
     pub const fn with_default_light(mut self) -> Self {
         self.common.lighting = ViewerProfileLighting::Directional;
+        self.common.fallback_lighting = false;
+        self
+    }
+
+    /// Disables the presentable-viewer lighting fallback. Use this only when
+    /// the caller deliberately wants an unlit/black diagnostic scene; the
+    /// low-level `Renderer` API remains explicit by default.
+    pub const fn without_default_lighting(mut self) -> Self {
+        self.common.lighting = ViewerProfileLighting::None;
+        self.common.fallback_lighting = false;
         self
     }
 
@@ -251,6 +273,12 @@ impl HeadlessGltfViewerBuilder {
     /// Sets the renderer clear color before the first prepare/render.
     pub const fn with_background_color(mut self, color: Color) -> Self {
         self.common.background = Some(Background::Custom(color));
+        self
+    }
+
+    /// Selects an explicit named background for the high-level viewer.
+    pub const fn with_background(mut self, background: Background) -> Self {
+        self.common.background = Some(background);
         self
     }
 
@@ -340,6 +368,17 @@ impl HeadlessGltfViewer {
         self.renderer.capabilities()
     }
 
+    /// Combines viewer setup fallbacks, scene diagnosis, and renderer
+    /// prepare/render diagnostics for the current state.
+    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        combined_viewer_diagnostics(
+            &self.setup_diagnostics,
+            &self.renderer,
+            &self.scene,
+            &self.assets,
+        )
+    }
+
     pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
         &self.camera_bookmarks
     }
@@ -362,6 +401,7 @@ pub struct InteractiveGltfViewer {
     camera: CameraKey,
     load_progress_events: Vec<AssetLoadProgress>,
     camera_bookmarks: Vec<CameraBookmark>,
+    setup_diagnostics: Vec<Diagnostic>,
     /// Phase 5B step 2: optional orbit-camera controller. Populated when
     /// the builder was configured with `with_orbit_controls()`. Pointer +
     /// touch events route through `handle_pointer_event` /
@@ -383,6 +423,7 @@ impl std::fmt::Debug for InteractiveGltfViewer {
             .field("camera", &self.camera)
             .field("load_progress_events", &self.load_progress_events)
             .field("camera_bookmarks", &self.camera_bookmarks)
+            .field("setup_diagnostics", &self.setup_diagnostics)
             .field("orbit_controls", &self.orbit_controls)
             .field("click_callback_registered", &self.click_callback.is_some())
             .field("hover_callback_registered", &self.hover_callback.is_some())
@@ -422,6 +463,14 @@ impl InteractiveGltfViewerBuilder {
     /// Adds a neutral directional light before the first prepare/render.
     pub const fn with_default_light(mut self) -> Self {
         self.common.lighting = ViewerProfileLighting::Directional;
+        self.common.fallback_lighting = false;
+        self
+    }
+
+    /// Disables the presentable-viewer lighting fallback.
+    pub const fn without_default_lighting(mut self) -> Self {
+        self.common.lighting = ViewerProfileLighting::None;
+        self.common.fallback_lighting = false;
         self
     }
 
@@ -493,6 +542,12 @@ impl InteractiveGltfViewerBuilder {
         self
     }
 
+    /// Selects an explicit named background for the high-level viewer.
+    pub const fn with_background(mut self, background: Background) -> Self {
+        self.common.background = Some(background);
+        self
+    }
+
     /// Configures the viewer for render-on-change loops.
     pub const fn on_change(self) -> Self {
         self.with_render_mode(RenderMode::OnChange)
@@ -531,37 +586,6 @@ impl InteractiveGltfViewerBuilder {
     pub async fn build_async(self) -> crate::Result<InteractiveGltfViewer> {
         self.build_async_with_progress(|_| {}).await
     }
-}
-
-/// Phase 5B step 2: derives the initial OrbitControls transform from the
-/// imported scene's bounds and the framed camera position. Called by both
-/// the sync and async build paths so the controller starts at exactly the
-/// distance/target combination that `frame_import` placed the camera at;
-/// the first orbit/zoom delta therefore composes correctly with the
-/// initial framing.
-fn build_orbit_controls(
-    enabled: bool,
-    scene: &Scene,
-    import: &SceneImport,
-    camera: CameraKey,
-) -> Option<OrbitControls> {
-    if !enabled {
-        return None;
-    }
-    let bounds = import.bounds_world(scene);
-    let target = bounds.map(|aabb| aabb.center()).unwrap_or(Vec3::ZERO);
-    let distance = scene
-        .camera_node(camera)
-        .and_then(|node| scene.world_transform(node))
-        .map(|transform| {
-            let dx = transform.translation.x - target.x;
-            let dy = transform.translation.y - target.y;
-            let dz = transform.translation.z - target.z;
-            (dx * dx + dy * dy + dz * dz).sqrt()
-        })
-        .filter(|distance| distance.is_finite() && *distance > 0.0)
-        .unwrap_or(2.0);
-    Some(OrbitControls::new(target, distance))
 }
 
 impl InteractiveGltfViewer {
@@ -615,9 +639,15 @@ impl InteractiveGltfViewer {
         self.orbit_controls.as_ref()
     }
 
-    /// Renderer diagnostics emitted during prepare or render.
+    /// Combines viewer setup fallbacks, scene diagnosis, and renderer
+    /// prepare/render diagnostics for the current state.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
-        self.renderer.diagnostics().to_vec()
+        combined_viewer_diagnostics(
+            &self.setup_diagnostics,
+            &self.renderer,
+            &self.scene,
+            &self.assets,
+        )
     }
 
     /// Returns the most recently rendered frame's interleaved RGBA8 bytes.
@@ -678,7 +708,9 @@ impl InteractiveGltfViewer {
 ///
 /// This is a convenience orchestration API for examples, tests, and first viewer setup. It
 /// keeps ownership explicit: assets stay in [`Assets`], scene graph state stays in [`Scene`],
-/// and the renderer only prepares and renders already-loaded scene state.
+/// and the renderer only prepares and renders already-loaded scene state. If the imported
+/// scene has neither authored lights nor an environment, this high-level path applies a
+/// neutral directional light and records the fallback in [`FirstRender::diagnostics`].
 pub async fn first_render_gltf_headless(
     path: impl Into<AssetPath>,
     width: u32,

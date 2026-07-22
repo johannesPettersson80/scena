@@ -1,5 +1,6 @@
 use crate::material::Color;
 use crate::scene::{LabelBillboard, LabelDesc, NodeKey, Scene, Transform, Vec3};
+use std::sync::Arc;
 
 use super::super::{RasterTarget, camera::CameraProjection};
 use super::types::{PreparedLabelAtlas, PreparedLabelQuad};
@@ -14,7 +15,7 @@ pub(super) fn prepare_label_atlas(
     origin_shift: Vec3,
 ) -> PreparedLabelAtlas {
     let mut builder = LabelAtlasBuilder::new(ATLAS_WIDTH);
-    let solid = builder.insert(&[u8::MAX], 1, 1);
+    let solid = builder.insert(Arc::from([u8::MAX]), 1, 1);
     let mut quads = Vec::new();
     for (node, _label_key, label, transform) in scene.label_nodes() {
         prepare_label_billboard(
@@ -127,7 +128,7 @@ fn prepare_pixel_label_billboard(
     let glyphs = inputs.label.glyph_rasters();
     if let Some(halo) = inputs.label.halo() {
         for glyph in &glyphs {
-            let atlas = builder.insert(&glyph.alpha, glyph.alpha_width, glyph.alpha_height);
+            let atlas = builder.insert(glyph.alpha.clone(), glyph.alpha_width, glyph.alpha_height);
             quads.push(PreparedLabelQuad::new(
                 Some(frame.node),
                 frame.anchor,
@@ -148,7 +149,7 @@ fn prepare_pixel_label_billboard(
     }
 
     for glyph in &glyphs {
-        let atlas = builder.insert(&glyph.alpha, glyph.alpha_width, glyph.alpha_height);
+        let atlas = builder.insert(glyph.alpha.clone(), glyph.alpha_width, glyph.alpha_height);
         quads.push(PreparedLabelQuad::new(
             Some(frame.node),
             frame.anchor,
@@ -249,7 +250,7 @@ struct PendingAtlasInsert {
     y: u32,
     width: u32,
     height: u32,
-    alpha: Vec<u8>,
+    alpha: Arc<[u8]>,
 }
 
 struct LabelAtlasBuilder {
@@ -273,7 +274,7 @@ impl LabelAtlasBuilder {
         }
     }
 
-    fn insert(&mut self, alpha: &[u8], alpha_width: u32, alpha_height: u32) -> AtlasRect {
+    fn insert(&mut self, alpha: Arc<[u8]>, alpha_width: u32, alpha_height: u32) -> AtlasRect {
         let alpha_width = alpha_width.max(1);
         let alpha_height = alpha_height.max(1);
         let padded_width = alpha_width.saturating_add(ATLAS_GUTTER * 2);
@@ -293,7 +294,7 @@ impl LabelAtlasBuilder {
             y,
             width: alpha_width,
             height: alpha_height,
-            alpha: alpha.to_vec(),
+            alpha,
         });
         self.cursor_x = self.cursor_x.saturating_add(padded_width);
         self.row_height = self.row_height.max(padded_height);

@@ -4,6 +4,239 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+- Fix attached native MSAA rendering so the multisampled surface scene pass
+  binds multisampled scene depth while resolved overlays retain single-sample
+  depth. Native uncaptured wgpu errors now write their detailed validation
+  message to stderr before returning the structured renderer fault.
+- Make the portable Windows Q04 resource-lifecycle proof embed its source and
+  lockfile provenance at compile time instead of trying to read the Linux
+  cross-builder's `CARGO_MANIFEST_DIR` path on the Windows proof machine.
+- Make the independent Windows hardware-proof validator accept privacy-redacted
+  WebGPU adapter metadata only when same-browser Chromium GPU evidence proves a
+  physical adapter, while still rejecting software renderers. Normalize Windows
+  artifact path separators before enforcing canonical Q01 image locations.
+
+## [1.9.0] - 2026-07-21
+
+- Attest privacy-redacted browser WebGPU adapters with same-process Chromium
+  CDP GPU evidence in the required Q01 parity lane, while continuing to reject
+  software renderers. Fix the Windows proof installer to copy its manifest-bound
+  source commit before validating the installed workspace.
+- Make the final Windows hardware request genuinely one-shot. A clean-commit
+  bundle builder now packages pinned WebGPU/WebGL2 WASM and cross-compiled
+  native executables behind a SHA-256 manifest; the runner and independent
+  validator require live Q01 pixel parity, Q04 resource retirement, P01
+  controlled p95, attached-surface resize/loss, PresentOnly/MSAA, PF01, and
+  FR06 evidence before uploading one archive.
+- Produce the fail-closed Q04 lifecycle artifact in both macOS Metal matrices,
+  so premerge/release staging has an actual physical-hardware producer instead
+  of requiring evidence no dependency job could supply. Bind that artifact to
+  its producer source and dependency lockfile so staging rejects provenance-free
+  lifecycle evidence, and assign its artifact and measured command to the
+  physical macOS lane rather than hosted Linux software Vulkan.
+
+- Strengthen the public brushed-steel preset's anisotropic lobe so its live
+  WebGPU material proof clears the existing value-bounded highlight threshold.
+
+- Reduce measured renderer and tooling work without changing output contracts:
+  share device-owned triangle shader modules, render native present-only frames
+  in one scene pass/submission with a real MSAA resolve target, use nonblocking
+  routine prepare polling, share immutable animation clips, defer eligible CPU
+  output encoding, reuse source-node/joint matrices, cache doctor source reads,
+  and share glyph bytes/frame primitive flags. Deterministic work-counter and
+  reference-oracle tests cover these paths; the software-adapter shader timing
+  sample was inconclusive, so no physical-GPU p95 improvement is claimed.
+- Clarify that `SceneRecipeV1` is a versioned interchange/build input rather
+  than the canonical persisted application document. Same-version canonical
+  output covers known fields, arbitrary unknown extension data is not
+  preserved, recipe IDs are local correlation keys, and the host owns durable
+  identity, migration, undo, and history.
+- Make the full-repo remediation checklist the sole active implementation
+  backlog. Older application-builder, WASM-host, fidelity, and easy-use plans
+  remain archived evidence, and the RFC continues to own renderer scope.
+- Make doctor silent-failure guards executable rather than comment-matchable.
+  Required Rust test pins now reject `#[ignore]`, marker words cannot exempt a
+  file from early-return policy, and one cross-owner mutation suite protects
+  complete Rayon consumption, canonical recipe assembly, required-GPU skip
+  evidence, required artifact inventory, and public version alignment.
+- Keep portable Studio preset bytes out of the WASM size cliff by embedding a
+  provenance-pinned 128x64 derivative of the licensed Poly Haven source.
+  Documented demo/proof builds now compile Rust with size optimization before
+  `wasm-opt`, validate generated package versions against `Cargo.toml`, and
+  stamp both public version text and content-derived cache busters.
+- Make the reported directional-shadow PCF 3×3 kernel real on both GPU shader
+  variants: each shadowed fragment now averages nine nearest-filtered
+  depth-comparison taps over one texel in each direction. Shader mutation tests
+  reject the former single linearly filtered comparison, and public capability
+  wording now distinguishes directional shadows from unshipped point, spot,
+  and cascaded shadow maps.
+- Split C09 GPU lifecycle diagnostics from release evidence. Optional
+  adapter-sensitive smoke tests now write typed skip artifacts, while the
+  required physical-hardware lane records adapter provenance, prepared and
+  released resource counters, confirmed destruction completion, and executed
+  assertions. Release readiness rejects missing adapters and known leaks.
+- Replace the M2 quadrant-mean reference oracle with committed source frames,
+  local windowed SSIM, edge/foreground overlap, per-fixture heatmaps, and
+  worst-region reports. Broad means are diagnostic only, and two
+  mean-preserving mutations prove that moved or collapsed structure fails.
+- Strengthen the KHR material visual proofs for clearcoat, sheen, anisotropy,
+  iridescence, dispersion, and transmission/volume with feature-specific
+  regions, meaningful effect floors, two anisotropy light directions, and
+  disabled, subvisible, inverted-effect, and harmless-noise mutations.
+- Replace the required WebGPU nonblack smoke check with source-bound CPU/GPU
+  pixel parity. The hardware lane now enforces declared sRGB8 normalization,
+  Chebyshev/RMSE/high-percentile/foreground metrics, six known-bad mutations,
+  and provenance-bearing CPU, GPU, diff-heatmap, and worst-region artifacts;
+  release validation rejects smoke-only status claims independently.
+- Add an opt-in `agent` Cargo feature as the one-step recipe, inspection,
+  verification, and SceneHost surface. It composes only `scene-host`, which
+  already enables `inspection`; defaults remain empty, version metadata reports
+  the alias, and unavailable CLI commands now name an exact install/run remedy.
+- Unify recipe import and authored-node transforms under the tagged
+  `kind:"trs"` / `kind:"raw"` grammar with one finite conversion and exact
+  X-then-Y-then-Z degree composition path. Published 1.8.0 untagged import
+  transforms remain a warning-only migration alias, while recipe, placement,
+  and patch output now emits canonical `kind:"raw"` shapes.
+- Add one shared normalized nearest-name algorithm and structured, capped
+  `candidates` across imported node, geometry/mesh-resource, material,
+  animation, variant, anchor, connector, agent-template, environment-preset,
+  and schema lookup failures. Animation and SceneHost conversions now preserve
+  candidates, while `NoActiveCamera` keeps its concrete camera-creation remedy
+  through Display and JSON error paths.
+- Make `scena repair <asset-or-recipe> --from <report>` actually constrain the
+  operation: raw targets must pass asset doctor and recipe targets must finish
+  their policy-aware build before repair planning. Missing, malformed, and
+  policy-rejected targets now fail with their structured owner report, and a
+  second positional target remains an argument error. Recipe `doctor` routing
+  is locked to the complete recipe-build path.
+- Put `scena-convert` under the stable `scena.asset_conversion.v1` machine
+  contract. `--json` now emits one typed plan/success/failure document and
+  captures external converter progress and warnings inside diagnostics;
+  `--human` explicitly selects plain text and live tool output. Argument,
+  tool-start, tool-exit, exit-code, and BrokenPipe behavior now matches the
+  documented CLI transport policy.
+- Make every global/per-command help request a successful
+  `scena.cli_help.v1` stdout report, add the stable `scena examples agent list`
+  catalog, normalize template canonical names to kebab-case with migration
+  metadata for underscore aliases, and separate the two prior product-
+  configurator templates as `product-configurator` and
+  `product-configurator-starter`. Recipe diff keeps inequality as exit-0 data
+  by default and adds explicit `--exit-code` CI semantics.
+- Add `scena capabilities [--live] [--json]` for pre-render discovery. Static
+  output is explicitly device-free; live output records adapter and requested-
+  device limits/features, selected formats, usable sample counts, readback and
+  presentation constraints, timestamp/backend provenance, or a structured
+  nonzero unavailable result. `scena --version` now reports every compiled
+  feature that changes public availability.
+- Add repeatable, canonical `--allow-root <directory>` recipe sandbox options
+  across policy discovery, validation, build, render, inspect, diagnose,
+  doctor, and repair. Effective roots are reported with their operator source;
+  missing roots and canonical traversal/symlink escapes remain fail-closed.
+- Make `validate-recipe` default to the same complete resource-resolution plan
+  as recipe build, covering imports, environment URI/builtins, fonts, authored
+  texture slots, and nested glTF dependencies. `--syntax-only` is now an
+  explicit no-I/O mode with `execution_equivalent:false`; full diagnostics
+  carry normalized URI, required state, effective roots, and remedies.
+- Ensure parallel CPU renders with weighted order-independent transparency
+  complete every row band under Rayon contention instead of returning a
+  successful frame with cancelled, uncleared bands.
+- Make every installed agent template portable outside a repository checkout
+  by resolving licensed studio and sample assets through an exact
+  package-embedded `Assets` catalog. Generated defaults now preserve explicitly
+  authored environments, and named preset bytes remain subject to recipe
+  budgets. Missing explicitly optional URI environments now emit a warning and
+  continue without IBL; required URI environments still fail closed.
+- Route every asset-or-recipe CLI verb through the complete policy-aware
+  SceneHost build whenever the parsed input is a recipe. Multi-import recipes
+  can no longer render, inspect, diagnose, doctor, repair, or verify only their
+  first import; recipe rejection remains structured on stdout, and raw
+  glTF/GLB inputs keep their direct asset path.
+- Make `xtask release-readiness` fail closed unless an explicit staged artifact
+  root is supplied, and emit a structured report containing the resolved root
+  and nonzero validated-artifact count. Linux Vulkan rendered-output evidence
+  is now existence-required alongside its provenance and freshness checks.
+- Correct cone lateral and wedge face winding/normals so default single-sided
+  rendering shows the outward near surface instead of the far interior.
+- Duplicate generated cylinder and cone side seam vertices at `u=1`, keeping
+  cone tips face-local so the closing side triangles no longer interpolate
+  backward across the entire texture.
+- Capture `<scena-viewer>` pointers through outside release/cancel and clear
+  interaction listeners/state on disconnect so orbit never sticks on re-entry.
+- Report browser color/depth sample-count matrices. Automatic/profile-selected
+  MSAA now degrades to FXAA with a structured warning on WebGPU/WebGL2, while
+  exact MSAA requests remain actionable prepare errors.
+- Make `--gpu` the sole CLI GPU execution selector; `SCENA_USE_GPU` remains
+  test/proof metadata and no longer changes commands. Render, recipe render,
+  capture, and CAD envelopes now report backend request/selection source and
+  fallback truth.
+- Build generated CAD inspection views with the oriented studio-light rig and
+  a small +0.25 EV presentation adjustment. The previous three preset
+  directional lights shared the identity transform, so a principal face could
+  be nearly black and fail its own quality proof.
+- Give high-level glTF viewers and raw-asset CLI rendering a visible neutral
+  PBR presentation by default while preserving authored lights/environments.
+  Applied fallback lighting is now retained as a structured diagnostic with an
+  affected setting and `fallback_applied` flag; low-level renderer defaults
+  remain explicit.
+- Select GPU output transfer from the actual attachment format instead of the
+  post-processing toggle. Browser and native RGBA8 readback now retains the
+  same sRGB-byte interpretation with post on or off, SDR post passes sample
+  linear RGB through sRGB intermediates, and capability reports record the
+  selected RGBA/BGRA unorm format.
+- Convert imported Z-up rotation animation keys through the same basis as
+  static node rotations. Linear, step, and cubic-spline playback now preserves
+  the converted rest pose, including derivative-safe cubic tangent handling.
+- Make explicit scene reload replace changed external texture bytes
+  transactionally instead of reporting a cache-identity collision. Same-path
+  texture handles remain stable, shared consumers update together, failed
+  dependency reloads retain the last complete scene, and
+  `reload_scene_with_report` exposes successful dependency evidence.
+- Key scene-cache reuse by semantic load policy and retained evidence instead of
+  path alone. A lenient cache entry can no longer bypass later strict missing
+  resource checks or a smaller fetch budget; compatible hits expose both the
+  requested options and cache-entry options in runtime and v1 JSON reports.
+- Treat wgpu device loss as terminal for the current Renderer. Context recovery
+  no longer clears the device-loss flag and reuses a dead Device/Queue;
+  `recover_context` and `prepare*` return typed
+  `GpuDeviceRebuildRequired`, while browser lifecycle proof rebuilds a fresh
+  renderer before submitting again.
+- Reconfigure and retry attached native/browser `Outdated` acquisition once,
+  latch `Lost` for wgpu-required surface recreation, expose timeout/occlusion as
+  counted skipped frames, and return validation, out-of-memory, repeated churn,
+  or changed surface configuration as structured errors instead of silently
+  dropping the presented frame behind `Ok(...)`.
+- Clip CPU triangles against both camera depth planes before projection and
+  row-band binning. Near/far crossing geometry now remains visible across
+  opaque, weighted-OIT, physical-transmission, and semantic AOV paths; clipped
+  vertices retain the complete prepared attribute payload with
+  perspective-correct interpolation.
+- Complete common glTF mesh semantics without silent substitution: omitted
+  triangle normals now produce reported flat-shaded split vertices; ordinary
+  and extension texture infos requesting UV1 fail with the exact slot; skin
+  sets 0/1 select and renormalize the strongest four influences with structured
+  degradation evidence; and per-node morph weights override shared mesh
+  defaults before animation.
+- Validate glTF anchor and connector extras through one strict transform
+  contract. Nonfinite/zero/parallel basis vectors, unpaired forward/up fields,
+  invalid TRS/quaternions, and malformed, projective, singular, or sheared
+  matrices now abort the asset transaction with the exact JSON path instead of
+  degrading to identity or failing later during instantiation.
+- Make `Transform::scale_by` compose multiplicatively, consistent with the
+  `rotate_*_deg` builders, and add explicit `with_scale` and
+  `with_uniform_scale` replacement builders. Code that relied on the old
+  replacement behavior can migrate directly to `with_uniform_scale`.
+- Frame visible aggregate/import bounds through the existing `FramingOptions`
+  contract, using actual viewer/capture dimensions and selectable view presets
+  instead of a stale camera aspect and forced front view. Hidden content and
+  inspection helpers no longer distort default aggregate fits. Add explicit
+  `move_origin_to` and `center_visible_bounds_on` operations and deprecate the
+  ambiguous origin-only `center_on` name. Interactive orbit controls retain the
+  framing view on first input instead of snapping back to front.
+- Deprecate the panicking `GeometryDesc::polyline` compatibility wrapper and
+  document `GeometryDesc::try_polyline` as the preferred runtime/untrusted-data
+  constructor. Zero- and one-point inputs return
+  `GeometryError::PolylineTooShort`; recipe construction remains fallible.
+
 ## [1.8.0] - 2026-07-19
 
 - Remove the unsatisfiable seven-person release-review bundle requirement.

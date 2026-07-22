@@ -33,6 +33,7 @@ scratch_root="${SCENA_PUBLISH_DRY_RUN_TMPDIR:-${TMPDIR:-/tmp}}"
 mkdir -p "$scratch_root"
 worktree_dir="${scratch_root%/}/scena-publish-dry-run-${short_commit}"
 artifact_dir="${repo_root}/target/gate-artifacts/release-lanes"
+release_artifact_root="${SCENA_RELEASE_ARTIFACT_ROOT:-${repo_root}/target/gate-artifacts}"
 log_path="${artifact_dir}/publish-dry-run.log"
 
 mkdir -p "$artifact_dir"
@@ -97,7 +98,7 @@ run_step "npm demo:build"             npm run demo:build
 run_step "npm proof:build"            npm run proof:build
 run_step "cargo doctor --full"        cargo run -p xtask -- doctor --full
 run_step "cargo claim-audit"          cargo run -p xtask -- claim-audit
-run_step "cargo release-readiness"    cargo run -p xtask -- release-readiness
+run_step "cargo release-readiness"    cargo run -p xtask -- release-readiness --artifact-root "$release_artifact_root"
 run_step "cargo publish --dry-run"    cargo publish --dry-run
 
 echo >> "$log_path"

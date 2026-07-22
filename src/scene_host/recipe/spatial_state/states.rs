@@ -119,6 +119,9 @@ struct ResolvedState {
     visibility: BTreeMap<SceneRecipeSpatialTargetV1, SceneRecipeStateVisibilityV1>,
 }
 
+// Keep the structured diagnostic unboxed at this recursive, build-time-only
+// boundary; callers immediately append it to the recipe diagnostic report.
+#[allow(clippy::result_large_err)]
 fn resolve_state(
     id: &str,
     recipes: &BTreeMap<&str, &SceneRecipeNamedStateV1>,

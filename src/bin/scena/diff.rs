@@ -20,6 +20,7 @@ struct DiffCommandArgs {
     max_abs_diff: u8,
     max_mismatched_pixels: usize,
     max_imports: Option<usize>,
+    exit_code: bool,
 }
 
 struct LoadedRecipe {
@@ -56,17 +57,19 @@ pub(crate) fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
         .map_err(|error| format!("failed to serialize typed recipe diff: {error}"))?;
 
     if !args.render {
+        let equal = structural.equal;
         return json_outcome(
             &json!({
                 "schema": RECIPE_DIFF_RESULT_SCHEMA_V1,
-                "equal": structural.equal,
+                "equal": equal,
+                "exit_policy": exit_policy(args.exit_code),
                 "before": path_for_json(&args.before),
                 "after": path_for_json(&args.after),
                 "structural": structural_value,
                 "visual": Value::Null,
                 "execution": execution_report(0),
             }),
-            0,
+            difference_exit_code(args.exit_code, equal),
             "failed to serialize scene recipe diff result",
         );
     }
@@ -135,9 +138,11 @@ pub(crate) fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
 
     let visual_equal = aggregate.status == "passed";
     let report_path = out_dir.join("recipe-diff-result.json");
+    let equal = structural.equal && visual_equal;
     let report = json!({
         "schema": RECIPE_DIFF_RESULT_SCHEMA_V1,
-        "equal": structural.equal && visual_equal,
+        "equal": equal,
+        "exit_policy": exit_policy(args.exit_code),
         "before": path_for_json(&args.before),
         "after": path_for_json(&args.after),
         "structural": structural_value,
@@ -161,7 +166,7 @@ pub(crate) fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
     .map_err(|error| format!("failed to write '{}': {error}", report_path.display()))?;
     json_outcome(
         &report,
-        0,
+        difference_exit_code(args.exit_code, equal),
         "failed to serialize rendered scene recipe diff result",
     )
 }
@@ -180,6 +185,7 @@ impl DiffCommandArgs {
         let mut max_abs_diff = 0;
         let mut max_mismatched_pixels = 0;
         let mut max_imports = None;
+        let mut exit_code = false;
         let mut index = 2;
         while index < args.len() {
             match args[index].as_str() {
@@ -222,6 +228,10 @@ impl DiffCommandArgs {
                     max_imports = Some(value);
                     index += 2;
                 }
+                "--exit-code" => {
+                    exit_code = true;
+                    index += 1;
+                }
                 "--json" => index += 1,
                 flag => return Err(format!("unknown diff argument '{flag}'; {}", usage())),
             }
@@ -241,8 +251,21 @@ impl DiffCommandArgs {
             max_abs_diff,
             max_mismatched_pixels,
             max_imports,
+            exit_code,
         })
     }
+}
+
+const fn exit_policy(exit_code: bool) -> &'static str {
+    if exit_code {
+        "difference_is_failure"
+    } else {
+        "report_only"
+    }
+}
+
+const fn difference_exit_code(exit_code: bool, equal: bool) -> i32 {
+    if exit_code && !equal { 1 } else { 0 }
 }
 
 fn load_recipe(
@@ -369,5 +392,5 @@ fn parse_usize(flag: &str, value: String) -> Result<usize, String> {
 }
 
 fn usage() -> String {
-    "usage: scena diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir> [--max-abs-diff <0..255>] [--max-mismatched-pixels <n>]] [--max-imports <n>]".to_owned()
+    "usage: scena diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir> [--max-abs-diff <0..255>] [--max-mismatched-pixels <n>]] [--max-imports <n>] [--exit-code]".to_owned()
 }

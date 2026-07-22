@@ -95,9 +95,14 @@ fn linear_alpha_to_u8(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-fn linear_channel_to_srgb(value: f32) -> f32 {
+pub(super) fn linear_channel_to_srgb(value: f32) -> f32 {
     let encoded = Srgb::from_linear(LinSrgb::new(value.clamp(0.0, 1.0), 0.0, 0.0));
     encoded.red
+}
+
+pub(super) fn srgb_channel_to_linear(value: f32) -> f32 {
+    let linear = Srgb::new(value.clamp(0.0, 1.0), 0.0, 0.0).into_linear();
+    linear.red
 }
 
 fn mul_mat3_vec3(matrix: [[f32; 3]; 3], vector: [f32; 3]) -> [f32; 3] {

@@ -53,6 +53,7 @@ mod skinning;
 mod transaction;
 mod transforms;
 mod view;
+mod view_bounds;
 pub(crate) mod view_math;
 mod visibility;
 pub use anchors::AnchorFrame;

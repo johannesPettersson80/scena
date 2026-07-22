@@ -8,6 +8,14 @@ pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     pub message: String,
     pub help: Option<String>,
+    /// Viewer or renderer setting affected by this diagnostic, when one
+    /// setting is the actionable remediation target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setting: Option<String>,
+    /// Whether the high-level API already applied a safe fallback while
+    /// preserving the warning for the caller.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub fallback_applied: bool,
     #[serde(skip)]
     context: DiagnosticContext,
 }
@@ -39,6 +47,7 @@ pub enum DiagnosticCode {
     OrderIndependentTransparencyDisabled,
     PhysicalGlassTransmissionDegraded,
     WideGamutOutputUnavailable,
+    MultisampleFallback,
     GpuCullingDisabled,
     MaterialTextureMissingDecodedPixels,
     DestructionQueuePressure,
@@ -73,6 +82,14 @@ impl Diagnostic {
         self.help()
     }
 
+    pub fn setting(&self) -> Option<&str> {
+        self.setting.as_deref()
+    }
+
+    pub const fn fallback_applied(&self) -> bool {
+        self.fallback_applied
+    }
+
     pub fn context(&self) -> DiagnosticContext {
         self.context
     }
@@ -87,6 +104,8 @@ impl Diagnostic {
             severity: DiagnosticSeverity::Info,
             message: message.into(),
             help: Some(help.into()),
+            setting: None,
+            fallback_applied: false,
             context: DiagnosticContext::default(),
         }
     }
@@ -101,6 +120,8 @@ impl Diagnostic {
             severity: DiagnosticSeverity::Warning,
             message: message.into(),
             help: Some(help.into()),
+            setting: None,
+            fallback_applied: false,
             context: DiagnosticContext::default(),
         }
     }
@@ -115,6 +136,8 @@ impl Diagnostic {
             severity: DiagnosticSeverity::Error,
             message: message.into(),
             help: Some(help.into()),
+            setting: None,
+            fallback_applied: false,
             context: DiagnosticContext::default(),
         }
     }
@@ -141,6 +164,16 @@ impl Diagnostic {
         self.context = DiagnosticContext { node: Some(node) };
         self
     }
+
+    pub(crate) fn with_applied_fallback(mut self, setting: impl Into<String>) -> Self {
+        self.setting = Some(setting.into());
+        self.fallback_applied = true;
+        self
+    }
+}
+
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl DiagnosticContext {

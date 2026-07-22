@@ -231,6 +231,46 @@ browser. Renderer-fidelity epics remain separate and require a non-Pi GPU lane.
 The SceneHost proof is CI/release-enforced for WebGL2; the V3D run remains
 additional hardware evidence.
 
+### Required WebGPU pixel parity
+
+The required WebGPU hardware lane is an image-comparison gate, not a
+draw-call/nonblack smoke test. Run it on the physical-GPU runner with:
+
+```bash
+SCENA_REQUIRE_PARITY=1 SCENA_BROWSER_BACKENDS=webgpu npm run browser:q01-parity
+```
+
+The triangle probe renders the same source-bound fixture through the CPU
+renderer and the live WebGPU surface. Both frames are normalized to top-left,
+opaque sRGB8 at the exact canvas dimensions. The evaluator excludes a declared
+two-pixel gradient-edge mask derived only from the CPU reference from
+channel-error statistics and foreground IoU, so CPU/GPU fill-convention
+differences do not count as geometry drift while shifted candidate edges remain
+measurable.
+Acceptance requires at least 99.5% of compared
+pixels within a Chebyshev RGB delta of 4, RGB RMSE at most 2, the 99.5th
+percentile channel delta at most 4, and foreground IoU at least 0.995.
+
+The same evaluator must reject wrong colors, shifted geometry, a missing
+object, a vertical flip, linear bytes mislabeled as sRGB, and a stale
+reference. Adapter identity, submissions, draw calls, and nonblack counts are
+retained as diagnostics but cannot satisfy parity. SwiftShader, llvmpipe, and
+other software adapters produce conformance evidence only; a lane named
+hardware parity fails unless physical hardware identity is proven.
+Chromium can privacy-redact the WebGPU adapter fields exposed through wgpu. In
+that case Q01 records `SystemInfo.getInfo` evidence from the same Chromium
+process and accepts only an active renderer that matches a physical GPU device;
+SwiftShader and other software renderers remain rejected.
+
+The run writes `target/gate-artifacts/m6-required-webgpu-pixel-parity/` with
+the CPU reference, live GPU frame, diff heatmap, and a provenance-bearing
+`result.json`. That report records metrics, thresholds, mask, worst-region
+bounding box, all mutation outcomes, wgpu adapter and same-browser GPU
+attestation, source commit, command, producer checksums, and PNG hashes. The
+aggregate M6 artifact carries the same evaluated
+parity result so release readiness can reject smoke-only or materially wrong
+hardware output.
+
 ## Output Color Space
 
 Browser renderers default to sRGB output. To request wide-gamut presentation,
@@ -242,6 +282,15 @@ WebGL2 uses `drawingBufferColorSpace`, and WebGPU uses
 `GPUCanvasConfiguration.colorSpace`. Headless, unattached, or unproven browser
 surfaces remain sRGB/degraded and emit
 `DiagnosticCode::WideGamutOutputUnavailable`.
+
+Renderer-owned RGBA8 readback uses sRGB display bytes for the default output
+contract even when the browser exposes a plain `Rgba8Unorm` or `Bgra8Unorm`
+surface. Scena selects shader transfer from the actual attachment format:
+plain unorm targets receive explicit encoding, while `*Srgb` targets receive
+linear shader output and perform the transfer in hardware. Post-processing is
+not used as a color-space switch. The M6 `color-transfer-no-post` and
+`color-transfer-post` workflows exercise both paths and require the same center
+pixel interpretation on WebGPU and WebGL2.
 
 The M6 browser proof records this under
 `scenaM6DisplayP3OutputProbe` in
@@ -346,10 +395,20 @@ navigation emits `scena-viewer-key-control` for arrow-key orbit, `+` / `-` zoom,
 and `Escape` / `Home` reset events. With `camera-controls`, pointer and wheel
 input emits `scena-viewer-gesture-control` with `orbit`, `pinch-zoom`, and
 `wheel-zoom` actions so mobile hosts can wire touch gestures into the shared
-Rust controls without browser-specific logic in application code. The M6
-browser proof records the mobile viewport, overflow check, touch-action
-default, keyboard reset, and touch pinch/orbit gestures in
+Rust controls without browser-specific logic in application code. Pointer-down
+captures the active pointer until up/cancel; lost capture and element disconnect
+clear every active pointer and listener. Releasing outside the element therefore
+cannot leave orbit active when the pointer later re-enters. The M6 browser proof
+records the mobile viewport, overflow check, touch-action default, keyboard
+reset, touch pinch/orbit gestures, outside release, and a clean second orbit in
 `scena.scena_viewer_mobile_a11y_browser_proof.v1`.
+
+The current WASM pipelines expose renderer-owned sample-count matrices through
+`Capabilities.render_sample_counts` and `depth_sample_counts`. WebGPU and
+WebGL2 currently report `[1, 0, 0]`: automatic/profile-selected high quality
+degrades from MSAA4 to FXAA and retains a `MultisampleFallback` diagnostic.
+An exact recipe `anti_aliasing:"msaa4"` request is not silently changed;
+prepare returns `UnsupportedSampleCount` with requested and maximum counts.
 
 The inspector/dev overlay is host-fed and renderer-neutral. Call
 `setInspectorSnapshot({ diagnostics, stats })` or
@@ -436,6 +495,17 @@ Browser integrations should forward relevant events to the renderer:
 - context restore.
 
 After surface changes or recovery, call `prepare()` before rendering again.
+Recoverable context loss uses `recover_context()` with retained assets. Device
+loss is different: browser wgpu Device/Queue objects are terminal, so
+`recover_context()` and `prepare()` report `GpuDeviceRebuildRequired`. Create a
+fresh browser `Renderer`/SceneHost for the canvas and prepare the retained scene
+and assets; do not reattach a canvas to the dead renderer and claim recovery.
+Repository validation can run this focused lifecycle proof with
+`npm run browser:c11-lifecycle`; its headless/software adapter result is
+synthetic lifecycle evidence, not physical-GPU device-loss injection.
+It also does not substitute for the native required resource-retirement proof
+documented in [Lifecycle](lifecycle.md): browser-managed automatic retirement
+and a physical native device poll are distinct contracts.
 
 The same rule applies after MSAA or post-processing settings change. Browser
 prepare creates the complete output resource set or returns a structured

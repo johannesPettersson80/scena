@@ -5,6 +5,12 @@
     "backend": "headless",
     "bloom": "supported",
     "color_target_format": "Rgba8UnormSrgb",
+    "depth_sample_counts": [
+      1,
+      0,
+      0
+    ],
+    "explicit_msaa": "feature_disabled",
     "compute_shaders": "feature_disabled",
     "default_clipping_planes": 8,
     "directional_shadow_map_default_size": 2048,
@@ -27,6 +33,11 @@
     "physical_glass_transmission": "degraded",
     "point_shadows": "feature_disabled",
     "readback_headless_screenshots": "supported",
+    "render_sample_counts": [
+      1,
+      0,
+      0
+    ],
     "reversed_z_depth": "feature_disabled",
     "screen_space_ambient_occlusion": "supported",
     "spot_shadows": "feature_disabled",
@@ -88,5 +99,41 @@
       "severity": "warning"
     }
   ],
+  "probe": {
+    "color_target": {
+      "allowed_usages": null,
+      "format": "Rgba8UnormSrgb",
+      "measured": false,
+      "sample_counts": [
+        1
+      ],
+      "source": "renderer_contract"
+    },
+    "depth_target": {
+      "allowed_usages": null,
+      "format": "Depth32Float",
+      "measured": false,
+      "sample_counts": [
+        1
+      ],
+      "source": "renderer_contract"
+    },
+    "device": null,
+    "mode": "static",
+    "presentation": {
+      "detail": "static headless report has no presentation surface",
+      "status": "not_applicable"
+    },
+    "probed_at_unix_ms": null,
+    "readback": {
+      "detail": "no device or target was created",
+      "status": "not_probed"
+    },
+    "requested_backend": "headless",
+    "selected_backend": null,
+    "source": "compiled_backend_table",
+    "status": "static_no_device",
+    "unavailable": null
+  },
   "schema": "scena.capability_report.v1"
 }

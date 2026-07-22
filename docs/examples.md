@@ -38,6 +38,11 @@ cargo check --examples
 | Industrial/static scene | `industrial_static_scene.rs` |
 | Diagnostics and asset readiness | `beginner_diagnostics.rs`, `scene_inspection.rs`, `asset_catalog_picker.rs`; `Assets::validate_asset_catalog()` for `scena.asset_catalog.v1` manifests |
 
+`glb_model_viewer.rs` deliberately uses a PBR CAD glTF, not an unlit fixture.
+It demonstrates the documented high-level guarantee: imported bounds are
+framed, a neutral fallback presentation is applied only when needed, and the
+fallback remains visible through `FirstRender::diagnostics()`.
+
 ## Recommended learning order
 
 1. `first_visible_render.rs`
@@ -195,16 +200,28 @@ matching fixture in the same reviewed change.
 
 ## Agent smoke templates
 
-Use `scena examples agent <template> --out <dir>` to generate a small
+Run `scena examples agent list` first. It emits the stable
+`scena.agent_template_catalog.v1` catalog with one kebab-case canonical name,
+aliases, required features, status, and summary for every template.
+
+Use `scena examples agent get <template> --out <dir>` to generate a small
 CLI-runnable smoke template. The command writes a `scena.scene_recipe.v1`
 recipe plus any expectation files needed by that workflow, then emits a
 `scena.agent_smoke_template.v1` manifest containing the exact `scena` commands
 to run and the artifacts they should create.
 
-Use `scena examples agent get <name> --out <dir>` for authored-from-scratch
-starter snippets. The current starter names are `primitive_scene`, `cad_plate`,
-`dashboard_bars`, `machine_state_viewer`, and `product_configurator`; each writes
-a real `scene_recipe.v1` and commands that validate and render it.
+Authored-from-scratch starter names are `primitive-scene`, `cad-plate`,
+`dashboard-bars`, `machine-state-viewer`, and
+`product-configurator-starter`. Historical underscore spellings remain aliases
+and add a migration note to the manifest. The separate
+`product-configurator` template keeps the imported material-variant proof.
+
+Both template families are portable after
+`cargo install scena --features agent`. Generated recipes use
+package-embedded glTF fixtures where a workflow needs an import and resolve
+`scene.environment.preset:"studio"` through `Assets`; no command depends on a
+repository-relative `tests/assets` path. An environment explicitly authored by
+the template or caller takes precedence over the portable studio default.
 
 Ready templates:
 
@@ -226,7 +243,7 @@ does not use stale WASM.
 
 ```bash
 cargo run --features scene-host -- examples agent interaction-proof --out target/scena-agent/interaction-proof
-cargo run --features scene-host,inspection -- browser-proof scene-host --dry-run
+cargo run --features agent -- browser-proof scene-host --dry-run
 ```
 
 ## CAD-style placement examples

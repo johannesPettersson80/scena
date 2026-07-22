@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use crate::diagnostics::nearest_name_candidates;
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{finite_vec3, validate_known_fields};
@@ -18,15 +19,16 @@ const PLACE_ON_TRANSFORM_FIELDS: &[&str] = &["kind", "target", "offset"];
 const ALIGN_TO_ANCHOR_TRANSFORM_FIELDS: &[&str] = &["kind", "anchor"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::scene::recipe::validation::authoring) enum TransformUse {
+pub(in crate::scene::recipe::validation) enum TransformUse {
+    Import,
     Node,
     Camera,
 }
 
-pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
+pub(in crate::scene::recipe::validation) fn validate_transform(
     path: &str,
     value: &Value,
-    _usage: TransformUse,
+    usage: TransformUse,
     node_ids: &BTreeSet<String>,
     import_ids: &BTreeSet<String>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
@@ -43,7 +45,20 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
         ));
         return;
     };
-    match object.get("kind").and_then(Value::as_str) {
+    let kind = object.get("kind").and_then(Value::as_str);
+    if usage == TransformUse::Import && !matches!(kind, Some("raw" | "trs")) {
+        diagnostics.push(diagnostic(
+            "invalid_transform",
+            "error",
+            format!("{path}.kind"),
+            "import transforms accept only canonical raw or trs local transforms",
+            "use kind:\"trs\" for degree rotations or kind:\"raw\" for a quaternion",
+            None,
+            false,
+        ));
+        return;
+    }
+    match kind {
         Some("raw") => {
             validate_known_fields(path, object, RAW_TRANSFORM_FIELDS, diagnostics);
             validate_vec3_optional(
@@ -202,15 +217,18 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_ref(
 ) {
     match value.and_then(Value::as_str) {
         Some(value) if ids.contains(value) => {}
-        Some(value) => diagnostics.push(diagnostic(
-            format!("unknown_{kind}_ref"),
-            "error",
-            path,
-            format!("{kind} reference '{value}' does not name a declared {kind}"),
-            format!("declare a {kind} with this id before referencing it"),
-            None,
-            false,
-        )),
+        Some(value) => diagnostics.push(
+            diagnostic(
+                format!("unknown_{kind}_ref"),
+                "error",
+                path,
+                format!("{kind} reference '{value}' does not name a declared {kind}"),
+                format!("declare a {kind} with this id before referencing it"),
+                None,
+                false,
+            )
+            .with_candidates(nearest_name_candidates(value, ids, 3)),
+        ),
         None => diagnostics.push(diagnostic(
             format!("missing_{kind}_ref"),
             "error",

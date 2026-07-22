@@ -544,7 +544,7 @@ pub(crate) fn require_contains_in_xtask_app_tree(
         .collect::<Vec<_>>();
     for needle in needles {
         let found = files.iter().any(|rel| {
-            fs::read_to_string(root.join(rel))
+            read_source_to_string(root, rel)
                 .map(|text| text.contains(needle))
                 .unwrap_or(false)
         });

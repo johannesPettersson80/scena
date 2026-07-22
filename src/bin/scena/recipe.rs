@@ -4,7 +4,11 @@ use super::scena_input::{
     RecipeReadError, capture_descriptor_path, ensure_parent_dir, path_for_json, read_recipe_text,
     render_introspection_options,
 };
-use super::scena_output::{CliOutcome, json_outcome};
+use super::scena_output::{
+    CliBackendSelectionV1, CliOutcome, add_recipe_policy_to_outcome, json_outcome,
+    json_outcome_with_backend_selection,
+};
+use super::scena_policy::{effective_recipe_policy, push_allow_root};
 
 #[path = "recipe/verification.rs"]
 mod verification;
@@ -29,27 +33,30 @@ pub(crate) struct RecipeRenderCommandArgs {
     detail: bool,
     gpu: bool,
     max_imports: Option<usize>,
+    allow_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RecipeBuildCommandArgs {
     recipe: PathBuf,
     max_imports: Option<usize>,
+    allow_roots: Vec<PathBuf>,
 }
 
 pub(crate) fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = RecipeBuildCommandArgs::parse(args)?;
-    let mut policy = scena::RecipeBuildPolicy::testing();
-    if let Some(max_imports) = args.max_imports {
-        policy = policy.with_max_imports(max_imports);
-    }
+    let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
+    let policy_report = policy.to_schema_report();
     let recipe_text = match read_recipe_text(&args.recipe, &policy) {
         Ok(text) => text,
         Err(RecipeReadError::TooLarge(report)) => {
-            return json_outcome(
-                &report,
-                1,
-                "failed to serialize scene recipe validation report",
+            return add_recipe_policy_to_outcome(
+                json_outcome(
+                    &report,
+                    1,
+                    "failed to serialize scene recipe validation report",
+                )?,
+                &policy_report,
             );
         }
         Err(RecipeReadError::Io(error)) => {
@@ -78,17 +85,18 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         return Err(recipe_render_usage());
     }
 
-    let mut policy = scena::RecipeBuildPolicy::testing();
-    if let Some(max_imports) = args.max_imports {
-        policy = policy.with_max_imports(max_imports);
-    }
+    let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
+    let policy_report = policy.to_schema_report();
     let recipe_text = match read_recipe_text(&args.recipe, &policy) {
         Ok(text) => text,
         Err(RecipeReadError::TooLarge(report)) => {
-            return json_outcome(
-                &report,
-                1,
-                "failed to serialize scene recipe validation report",
+            return add_recipe_policy_to_outcome(
+                json_outcome(
+                    &report,
+                    1,
+                    "failed to serialize scene recipe validation report",
+                )?,
+                &policy_report,
             );
         }
         Err(RecipeReadError::Io(error)) => {
@@ -116,13 +124,22 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         Ok(build) => build,
         Err(manifest) => {
             let result = scena::SceneRecipeRenderResultV1::build_failed(manifest);
-            return json_outcome(&result, 1, "failed to serialize recipe render result");
+            return add_recipe_policy_to_outcome(
+                json_outcome_with_backend_selection(
+                    &result,
+                    1,
+                    "failed to serialize recipe render result",
+                    CliBackendSelectionV1::new(args.gpu, None),
+                )?,
+                &policy_report,
+            );
         }
     };
     let recipe: scena::SceneRecipeV1 = serde_json::from_str(&recipe_text)
         .map_err(|error| format!("validated recipe failed to decode: {error}"))?;
 
     let mut host = build.host;
+    let backend_selection = CliBackendSelectionV1::new(args.gpu, Some(host.backend()));
     if !recipe.cameras.iter().any(|camera| camera.active) {
         host.frame_all_with_overlays()
             .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
@@ -166,10 +183,14 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
             .introspect_capture(&capture, &inspection, introspection_options);
     if !args.verify {
         let exit_code = if introspection.ok { 0 } else { 1 };
-        return json_outcome(
-            &introspection,
-            exit_code,
-            "failed to serialize render introspection report",
+        return add_recipe_policy_to_outcome(
+            json_outcome_with_backend_selection(
+                &introspection,
+                exit_code,
+                "failed to serialize render introspection report",
+                backend_selection,
+            )?,
+            &policy_report,
         );
     }
     let verification = verify_recipe_expectations(RecipeVerificationInput {
@@ -194,10 +215,14 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         verification,
     );
     let exit_code = if result.ok { 0 } else { 1 };
-    json_outcome(
-        &result,
-        exit_code,
-        "failed to serialize recipe render result",
+    add_recipe_policy_to_outcome(
+        json_outcome_with_backend_selection(
+            &result,
+            exit_code,
+            "failed to serialize recipe render result",
+            backend_selection,
+        )?,
+        &policy_report,
     )
 }
 
@@ -222,8 +247,9 @@ impl RecipeRenderCommandArgs {
         let mut introspect = false;
         let mut verify = false;
         let mut detail = false;
-        let mut gpu = super::scena_input::gpu_requested_from_env();
+        let mut gpu = false;
         let mut max_imports = None;
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -254,6 +280,10 @@ impl RecipeRenderCommandArgs {
                     )?);
                     index += 2;
                 }
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
+                    index += 2;
+                }
                 "--json" => {
                     index += 1;
                 }
@@ -273,6 +303,7 @@ impl RecipeRenderCommandArgs {
             detail,
             gpu,
             max_imports,
+            allow_roots,
         })
     }
 }
@@ -283,6 +314,7 @@ impl RecipeBuildCommandArgs {
             return Err(recipe_build_usage());
         };
         let mut max_imports = None;
+        let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -291,6 +323,10 @@ impl RecipeBuildCommandArgs {
                         "--max-imports",
                         flag_value(args, index, "--max-imports")?,
                     )?);
+                    index += 2;
+                }
+                "--allow-root" => {
+                    push_allow_root(args, index, &mut allow_roots)?;
                     index += 2;
                 }
                 "--json" => index += 1,
@@ -305,6 +341,7 @@ impl RecipeBuildCommandArgs {
         Ok(Self {
             recipe: PathBuf::from(recipe),
             max_imports,
+            allow_roots,
         })
     }
 }
@@ -326,10 +363,11 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, Strin
 }
 
 fn recipe_render_usage() -> String {
-    "usage: scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]"
+    "usage: scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>] [--allow-root <directory>]..."
         .to_owned()
 }
 
 fn recipe_build_usage() -> String {
-    "usage: scena recipe build <recipe.json> [--max-imports <n>]".to_owned()
+    "usage: scena recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]..."
+        .to_owned()
 }

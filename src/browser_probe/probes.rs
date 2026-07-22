@@ -76,7 +76,7 @@ pub(super) async fn render_surface_lifecycle_probe(
         .map_err(|error| JsValue::from_str(&format!("resize render failed: {error:?}")))?;
     events.extend(["reprepare-after-resize", "render-after-resize"]);
 
-    let recovery =
+    let context_recovered =
         verify_context_recovery(&mut renderer, &assets, &mut scene, camera, &mut events)?;
     renderer
         .handle_surface_event(SurfaceEvent::Lost)
@@ -90,15 +90,18 @@ pub(super) async fn render_surface_lifecycle_probe(
             "render while surface lost should return structured SurfaceLost",
         ));
     }
+    events.push("surface-lost");
+    let device_rebuild_required =
+        verify_device_rebuild_required(&mut renderer, &assets, &mut scene, camera)?;
+    events.extend([
+        "device-lost",
+        "device-rebuild-required",
+        "prepare-blocked-after-device-loss",
+    ]);
     let final_outcome = rebuild_after_surface_loss(canvas, backend, &assets, &mut scene, camera)
         .await
         .map_err(|error| JsValue::from_str(&format!("surface rebuild failed: {error:?}")))?;
-    events.extend([
-        "surface-lost",
-        "rebuild-surface-renderer",
-        "final-prepare",
-        "final-render",
-    ]);
+    events.extend(["rebuild-device-renderer", "final-prepare", "final-render"]);
 
     let stats = final_outcome.renderer_stats;
     let capabilities = final_outcome.capabilities;
@@ -110,8 +113,15 @@ pub(super) async fn render_surface_lifecycle_probe(
         "retain_policy": format!("{:?}", assets.retain_policy()),
         "initial": { "width": initial.width, "height": initial.height, "draw_calls": initial.draw_calls },
         "resized": { "width": resized.width, "height": resized.height, "draw_calls": resized.draw_calls },
-        "context_recovered": recovery.context,
-        "device_recovered": recovery.device,
+        "context_recovered": context_recovered,
+        "device_recovered": null,
+        "device_rebuild_required": device_rebuild_required,
+        "device_rebuilt": {
+            "width": final_outcome.render.width,
+            "height": final_outcome.render.height,
+            "draw_calls": final_outcome.render.draw_calls,
+            "primitives": final_outcome.render.primitives,
+        },
         "final_prepare": final_outcome.final_prepare,
         "final": {
             "width": final_outcome.render.width,
@@ -226,7 +236,7 @@ fn verify_context_recovery(
     scene: &mut crate::Scene,
     camera: crate::CameraKey,
     events: &mut Vec<&'static str>,
-) -> Result<LifecycleRecovery, JsValue> {
+) -> Result<serde_json::Value, JsValue> {
     renderer
         .handle_surface_event(SurfaceEvent::Hidden)
         .map_err(|error| JsValue::from_str(&format!("hidden event failed: {error:?}")))?;
@@ -237,84 +247,97 @@ fn verify_context_recovery(
         .handle_surface_event(SurfaceEvent::Occluded { occluded: false })
         .map_err(|error| JsValue::from_str(&format!("occluded event failed: {error:?}")))?;
     events.extend(["hidden", "shown", "occluded"]);
-    let context = verify_loss_and_recovery(
-        renderer,
-        assets,
-        scene,
-        camera,
-        SurfaceEvent::ContextLost { recoverable: true },
-        "context",
-    )?;
+    let context = verify_context_loss_and_recovery(renderer, assets, scene, camera)?;
     events.extend([
         "context-lost",
         "context-restored",
         "recover-context",
         "render-after-context-recovery",
     ]);
-    let device = verify_loss_and_recovery(
-        renderer,
-        assets,
-        scene,
-        camera,
-        SurfaceEvent::DeviceLost { recoverable: true },
-        "device",
-    )?;
-    events.extend([
-        "device-lost",
-        "recover-device",
-        "render-after-device-recovery",
-    ]);
-    Ok(LifecycleRecovery { context, device })
+    Ok(context)
 }
 
-fn verify_loss_and_recovery(
+fn verify_context_loss_and_recovery(
     renderer: &mut Renderer,
     assets: &Assets,
     scene: &mut crate::Scene,
     camera: crate::CameraKey,
-    event: SurfaceEvent,
-    label: &str,
 ) -> Result<serde_json::Value, JsValue> {
     renderer
-        .handle_surface_event(event)
-        .map_err(|error| JsValue::from_str(&format!("{label} lost event failed: {error:?}")))?;
-    let lost_is_structured = match label {
-        "context" => matches!(
-            renderer.render(scene, camera),
-            Err(RenderError::ContextLost { recoverable: true })
-        ),
-        "device" => matches!(
-            renderer.render(scene, camera),
-            Err(RenderError::GpuDeviceLost { recoverable: true })
-        ),
-        _ => false,
-    };
+        .handle_surface_event(SurfaceEvent::ContextLost { recoverable: true })
+        .map_err(|error| JsValue::from_str(&format!("context lost event failed: {error:?}")))?;
+    let lost_is_structured = matches!(
+        renderer.render(scene, camera),
+        Err(RenderError::ContextLost { recoverable: true })
+    );
     if !lost_is_structured {
-        return Err(JsValue::from_str(&format!(
-            "render while {label} lost should return a structured loss error"
-        )));
+        return Err(JsValue::from_str(
+            "render while context lost should return a structured loss error",
+        ));
     }
-    if label == "context" {
-        renderer
-            .handle_surface_event(SurfaceEvent::ContextRestored)
-            .map_err(|error| {
-                JsValue::from_str(&format!("{label} restored event failed: {error:?}"))
-            })?;
-    }
+    renderer
+        .handle_surface_event(SurfaceEvent::ContextRestored)
+        .map_err(|error| JsValue::from_str(&format!("context restored event failed: {error:?}")))?;
     renderer
         .recover_context(assets, scene)
-        .map_err(|error| JsValue::from_str(&format!("{label} recovery failed: {error:?}")))?;
+        .map_err(|error| JsValue::from_str(&format!("context recovery failed: {error:?}")))?;
     renderer
         .prepare_with_assets(scene, assets)
-        .map_err(|error| JsValue::from_str(&format!("{label} prepare failed: {error:?}")))?;
+        .map_err(|error| JsValue::from_str(&format!("context prepare failed: {error:?}")))?;
     let render = renderer
         .render(scene, camera)
-        .map_err(|error| JsValue::from_str(&format!("{label} render failed: {error:?}")))?;
+        .map_err(|error| JsValue::from_str(&format!("context render failed: {error:?}")))?;
     Ok(json!({
         "width": render.width,
         "height": render.height,
         "draw_calls": render.draw_calls,
         "primitives": render.primitives,
+    }))
+}
+
+fn verify_device_rebuild_required(
+    renderer: &mut Renderer,
+    assets: &Assets,
+    scene: &mut crate::Scene,
+    camera: crate::CameraKey,
+) -> Result<serde_json::Value, JsValue> {
+    renderer
+        .handle_surface_event(SurfaceEvent::DeviceLost { recoverable: true })
+        .map_err(|error| JsValue::from_str(&format!("device lost event failed: {error:?}")))?;
+    let render_blocked = matches!(
+        renderer.render(scene, camera),
+        Err(RenderError::GpuDeviceLost { recoverable: true })
+    );
+    let recover_context_blocked = matches!(
+        renderer.recover_context(assets, scene),
+        Err(crate::PrepareError::GpuDeviceRebuildRequired {
+            recoverable: true,
+            ..
+        })
+    );
+    let prepare_blocked = matches!(
+        renderer.prepare_with_assets(scene, assets),
+        Err(crate::PrepareError::GpuDeviceRebuildRequired {
+            recoverable: true,
+            ..
+        })
+    );
+    let render_still_blocked = matches!(
+        renderer.render(scene, camera),
+        Err(RenderError::GpuDeviceLost { recoverable: true })
+    );
+    if !(render_blocked && recover_context_blocked && prepare_blocked && render_still_blocked) {
+        return Err(JsValue::from_str(
+            "device loss must remain latched until a fresh Renderer requests a new Device/Queue",
+        ));
+    }
+    Ok(json!({
+        "status": "rebuild_required",
+        "recoverable": true,
+        "render_blocked": render_blocked,
+        "recover_context_blocked": recover_context_blocked,
+        "prepare_blocked": prepare_blocked,
+        "render_still_blocked": render_still_blocked,
     }))
 }
 
@@ -413,9 +436,4 @@ struct LifecycleFinal {
     diagnostics: serde_json::Value,
     final_prepare: serde_json::Value,
     renderer_readback: Option<serde_json::Value>,
-}
-
-struct LifecycleRecovery {
-    context: serde_json::Value,
-    device: serde_json::Value,
 }

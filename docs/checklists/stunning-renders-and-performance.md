@@ -637,7 +637,8 @@ slow at high resolution.
       so the new visual features can't silently tank perf.
 - Owner: `crates/xtask` M9 lane + `RendererStats`. Proof: committed budgets;
   doctor/CI fails on regression beyond tolerance. The benchmark contract now
-  gates `p95_frame_ms` and `max_allocations_per_frame`, writes explicit
+  gates `p95_frame_ms` and `p95_allocations_per_frame`, reports the observed
+  maximum separately, writes explicit
   `frame_time_status`/`allocation_status`, fails artifacts with missing
   allocation budgets, and keeps the dedicated 4K lane fail-closed via
   `m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact`.

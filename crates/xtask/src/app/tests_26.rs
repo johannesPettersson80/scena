@@ -51,35 +51,15 @@ pub(crate) fn q02_release_content_accepts_bound_results_and_rejects_surface_tamp
         &artifact_root,
         "0123456789abcdef0123456789abcdef01234567",
     );
+    let mut browser_probe =
+        crate::app::tests_30::required_webgpu_fixture("DiscreteGpu", "fixture discrete gpu", 1, 42);
+    browser_probe["results"]
+        .as_array_mut()
+        .expect("Q02 M6 results array")
+        .push(json!({"backend":"webgl2","status":"passed","pixels":{"nonblack":42}}));
     fs::write(
         artifact_root.join("m6-rust-wasm-renderer-probe.json"),
-        r#"{
-          "gate":"m6-rust-wasm-renderer-probe",
-          "status":"passed",
-          "required_parity":{"enabled":true,"status":"passed"},
-          "results":[
-            {"backend":"webgl2","status":"passed","pixels":{"nonblack":42}},
-            {
-              "workflow":"triangle",
-              "backend":"webgpu",
-              "status":"passed",
-              "gpu_device":true,
-              "draw_calls":1,
-              "gpu_submissions":1,
-              "pixels":{"nonblack":42},
-              "renderer_readback":{
-                "source":"renderer-owned-gpu-copy",
-                "pixel_statistics":{"nonblack":42}
-              },
-              "adapter":{
-                "name":"fixture discrete gpu",
-                "device_type":"DiscreteGpu",
-                "driver":"fixture-hardware",
-                "driver_info":"fixture"
-              }
-            }
-          ]
-        }"#,
+        serde_json::to_string_pretty(&browser_probe).expect("Q02 M6 fixture serializes"),
     )
     .expect("Q02 browser M6 fixture");
     write_q02_release_proof_fixtures(&fixture_root, "0123456789abcdef0123456789abcdef01234567");

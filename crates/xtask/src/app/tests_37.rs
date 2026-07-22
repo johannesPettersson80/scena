@@ -9,6 +9,7 @@ fn fr06_doctor_rejects_persistent_runtime_handle_claims() {
         "docs/specs/semantic-aov-v1.md",
         "src/render/prepare/types.rs",
         "src/render/prepare.rs",
+        "src/render/cpu_geometry.rs",
         "src/render/semantic_aov.rs",
         "src/render/settings.rs",
         "src/render/gpu/semantic_aov.rs",
@@ -46,6 +47,28 @@ fn fr06_doctor_rejects_persistent_runtime_handle_claims() {
     let mut findings = Vec::new();
     check_fr06_semantic_aov_contracts(&fixture_root, &mut findings);
     assert_eq!(findings, Vec::new());
+
+    let semantic = fixture_root.join("src/render/semantic_aov.rs");
+    let source = fs::read_to_string(&semantic).expect("FR06 semantic raster source reads");
+    let mutated = source.replace(
+        "super::cpu_geometry::point_is_clipped(world, clipping_planes, section_box)",
+        "false",
+    );
+    assert_ne!(
+        source, mutated,
+        "FR06 shared clipping delegation mutation must alter source"
+    );
+    fs::write(&semantic, mutated).expect("FR06 shared clipping delegation mutation writes");
+    findings.clear();
+    check_fr06_semantic_aov_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR06-SEMANTIC-AOV"
+                && finding.message.contains("cpu_geometry::point_is_clipped")
+        }),
+        "removing semantic AOV clipping delegation must fail doctor: {findings:?}"
+    );
+    fs::write(&semantic, source).expect("FR06 semantic raster source restores");
 
     let asset = fixture_root.join("tests/assets/gltf/mesh_material_vertex_color_scene.gltf");
     let source = fs::read_to_string(&asset).expect("FR06 asset fixture reads");

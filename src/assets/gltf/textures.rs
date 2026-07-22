@@ -24,8 +24,9 @@ use super::super::provenance::sha256_hex;
 ))]
 use super::super::texture::texture_ktx2::validate_ktx2_material_color_space;
 use super::super::{
-    AssetPath, AssetStorage, TextureCacheKey, TextureDesc, TextureFilter, TextureHandle,
-    TextureSamplerDesc, TextureSourceFormat, TextureWrap, validate_texture_source_format,
+    AssetPath, AssetStorage, TextureCacheKey, TextureCacheUpdatePolicy, TextureDesc, TextureFilter,
+    TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
+    validate_texture_source_format,
 };
 use super::buffers::ResolvedGltfBuffers;
 use super::external::resolve_relative_path;
@@ -237,7 +238,7 @@ fn insert_texture(
         source_format,
     };
     if let Some(handle) = storage.texture_lookup.get(&cache_key) {
-        if source_bytes.is_some() {
+        if let Some(source_bytes) = source_bytes {
             let texture = storage
                 .textures
                 .get_mut(*handle)
@@ -246,7 +247,15 @@ fn insert_texture(
                     reason: "texture cache lookup pointed at a missing texture descriptor"
                         .to_string(),
                 })?;
-            std::sync::Arc::make_mut(texture).decode_missing_pixels_from_bytes(source_bytes)?;
+            match storage.texture_cache_update_policy {
+                TextureCacheUpdatePolicy::Immutable => {
+                    std::sync::Arc::make_mut(texture)
+                        .decode_missing_pixels_from_bytes(Some(source_bytes))?;
+                }
+                TextureCacheUpdatePolicy::ReplaceChangedSource => {
+                    std::sync::Arc::make_mut(texture).replace_changed_source_bytes(source_bytes)?;
+                }
+            }
         }
         return Ok(*handle);
     }

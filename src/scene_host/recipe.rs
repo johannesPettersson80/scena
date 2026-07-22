@@ -25,10 +25,10 @@ mod types;
 
 use authoring::{
     AuthoredMaterialResources, AuthoredNodeResources, InstanceSetResources, LabelResources,
-    ParticleSetResources, build_authored_animations, build_authored_cameras,
-    build_authored_clipping_planes, build_authored_fonts, build_authored_geometries,
-    build_authored_instance_sets, build_authored_labels, build_authored_lights,
-    build_authored_materials, build_authored_morphs, build_authored_nodes,
+    ParticleSetResources, apply_import_transform, build_authored_animations,
+    build_authored_cameras, build_authored_clipping_planes, build_authored_fonts,
+    build_authored_geometries, build_authored_instance_sets, build_authored_labels,
+    build_authored_lights, build_authored_materials, build_authored_morphs, build_authored_nodes,
     build_authored_particle_sets, build_authored_skins,
 };
 pub(super) use diagnostic::{error_diagnostic, scene_host_error_diagnostic};
@@ -83,6 +83,9 @@ impl SceneHostCore<DefaultAssetFetcher> {
 
         let mut diagnostics = recipe_policy_diagnostics(&recipe, &policy);
         let mut skipped = Vec::new();
+        let resource_plan: crate::scene::recipe::RecipeResourcePlan =
+            policy.resolve_recipe_resources(recipe_path, &recipe);
+        diagnostics.extend(resource_plan.diagnostics.iter().cloned());
         if has_errors(&diagnostics) {
             return Err(RecipeBuildFailure::before_host(build_manifest(
                 diagnostics,
@@ -143,16 +146,12 @@ impl SceneHostCore<DefaultAssetFetcher> {
 
         for (index, import) in recipe.imports.iter().enumerate() {
             let import_path = format!("$.imports[{index}]");
-            let resolved_uri = match policy.resolve_import_uri(
-                recipe_path,
-                &import.uri,
-                format!("{import_path}.uri"),
-            ) {
-                Ok(uri) => uri,
-                Err(diagnostic) => {
-                    diagnostics.push(*diagnostic);
-                    continue;
-                }
+            let resource_path = format!("{import_path}.uri");
+            let Some(resolved_uri) = resource_plan
+                .resolved_uri(&resource_path)
+                .map(str::to_owned)
+            else {
+                continue;
             };
 
             let report =
@@ -246,17 +245,13 @@ impl SceneHostCore<DefaultAssetFetcher> {
                     continue;
                 }
             };
-            if let Some(transform) = import.transform {
-                for root in &root_handles {
-                    if let Err(error) = host.set_transform(*root, transform) {
-                        diagnostics.push(scene_host_error_diagnostic(
-                            &import_path,
-                            "import_transform_failed",
-                            error,
-                        ));
-                    }
-                }
-            }
+            apply_import_transform(
+                &mut host,
+                &root_handles,
+                import.transform.as_ref(),
+                &import_path,
+                &mut diagnostics,
+            );
             apply_import_presentation(
                 &mut host,
                 &recipe.colors,

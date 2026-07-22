@@ -21,6 +21,25 @@ let import = scene.instantiate(&asset)?;
 Use `SceneImport` for roots, names, paths, anchors, connectors, clips, and diagnostics.
 Do not keep string paths as long-lived object IDs.
 
+## Compose Or Replace Transform Scale
+
+Three.js distinguishes assignment (`object.scale.set(...)`) from composition
+(`object.scale.multiplyScalar(...)`). Scena now makes the same distinction in
+builder form:
+
+```rust
+let transform = Transform::IDENTITY
+    .with_scale(Vec3::new(2.0, 3.0, 4.0)) // replace, like scale.set(...)
+    .scale_by(0.5);                       // compose, like multiplyScalar(...)
+
+let uniform = transform.with_uniform_scale(3.0); // explicit replacement
+```
+
+In v1.8.0, `Transform::scale_by` replaced the current scale. If downstream
+code depended on replacement, change that call to `with_uniform_scale`. Calls
+starting from `Transform::IDENTITY`, `Transform::default()`, or `Transform::at`
+produce the same result and need no migration.
+
 ## Frame The Camera
 
 In Three.js, camera fitting often starts from a `Box3`, a center point, and a
@@ -61,6 +80,35 @@ let controls = OrbitControls::from_framing(framing);
 
 `frame_bounds()` solves from projected AABB corners on both axes, so wide
 objects on portrait/mobile viewports do not get clipped or under-filled.
+
+When the scene contains several imports, prefer the aggregate helper and pass
+the capture or canvas dimensions rather than reusing a stale camera aspect:
+
+```rust
+let framing = scene.frame_all_with_assets_and_options(
+    camera,
+    &assets,
+    FramingOptions::new()
+        .three_quarter_front_right()
+        .margin_px(48.0)
+        .include_helpers(false)
+        .viewport(width, height),
+)?;
+```
+
+This is the `Box3::setFromObject` equivalent for all visible scene content.
+Hidden nodes and tagged inspection helpers do not distort the default fit. Use
+`frame_import_with_options` for only one imported subtree.
+
+Three.js code sometimes conflates moving an `Object3D.position` with centering
+the object's `Box3`. Scena names those operations separately:
+
+```rust
+scene.move_origin_to(node, point)?; // move the node origin
+scene.center_visible_bounds_on(node, &assets, point)?; // center visible geometry
+```
+
+The ambiguous legacy `center_on` spelling is deprecated.
 
 Three.js turntable code often stores the view in `Spherical::theta` and
 `Spherical::phi`. In `scena`, the same intent is expressed as azimuth from the
@@ -190,6 +238,13 @@ renderer.render_active(&scene)?;
 `render()` must not hide asset fetches, first-use GPU uploads, shader compilation, or
 browser initialization. Structural scene, asset, surface, or environment changes require
 another `prepare()`.
+
+For CLI migration, do not split a multi-import recipe into a first-asset load
+plus manual follow-up imports. Commands accepting `<asset-or-recipe>` identify
+recipes explicitly and run the complete document through `RecipeBuildPolicy`
+and SceneHost. Raw `.gltf`/`.glb` inputs still use the direct asset path. A
+rejected recipe import returns a nonzero `scena.recipe_build_result.v1` rather
+than a successful partial render.
 
 ## Pick And Select
 

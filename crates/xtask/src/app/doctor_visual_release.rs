@@ -6,8 +6,11 @@ mod feature_specific_oracles;
 mod fixture_metadata;
 mod performance_truth;
 mod publish_fail_closed;
+mod q03_local_structure;
 mod q05_effect_footprints;
 mod q06_required_gpu_lanes;
+mod release_readiness_contract;
+mod required_webgpu_parity;
 mod round_e_materials;
 mod waterbottle_cpu;
 mod workflow_dependencies;
@@ -33,8 +36,11 @@ pub(crate) use publish_fail_closed::{
     check_release_publish_dry_run_helper, check_release_readiness_ci_fail_closed,
     jobs_with_continue_on_error_release_readiness,
 };
+pub(crate) use q03_local_structure::check_q03_m2_local_structure;
 pub(crate) use q05_effect_footprints::check_q05_effect_footprint_contracts;
 pub(crate) use q06_required_gpu_lanes::check_q06_required_gpu_lane_contracts;
+pub(crate) use release_readiness_contract::check_c04_release_readiness_contract;
+pub(crate) use required_webgpu_parity::check_q01_required_webgpu_pixel_parity;
 pub(crate) use round_e_materials::check_q02_round_e_material_proof;
 pub(crate) use waterbottle_cpu::check_q01_waterbottle_cpu_proof;
 pub(crate) use workflow_dependencies::check_workflow_action_pins;

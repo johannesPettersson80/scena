@@ -1,9 +1,9 @@
-use crate::geometry::Vertex;
 use crate::material::Color;
-use crate::scene::{ClippingPlane, SectionBox, Vec3};
+use crate::scene::{ClippingPlane, SectionBox};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
+use super::cpu_geometry::{self, CpuProjectedPrimitive, CpuScreenTriangle, CpuScreenVertex};
 pub(super) use super::cpu_overlay::write_label_overlay_pixel;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
 use super::prepare::PreparedPrimitive;
@@ -34,6 +34,13 @@ pub(super) struct CpuFrame<'frame> {
     pub(super) linear_frame: &'frame mut [Color],
     pub(super) depth_frame: &'frame mut [f32],
     pub(super) frame: &'frame mut [u8],
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct CpuTriangleClipInputs<'a> {
+    pub(super) clipping_planes: &'a [ClippingPlane],
+    pub(super) section_box: Option<SectionBox>,
+    pub(super) camera: &'a CameraProjection,
 }
 
 impl<'frame> CpuFrame<'frame> {
@@ -110,6 +117,22 @@ pub(super) fn clear_cpu(cpu_frame: &mut CpuFrame<'_>, color: Color) {
     debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.local_pixel_len());
 }
 
+pub(super) fn encode_cpu_frame(cpu_frame: &mut CpuFrame<'_>) -> u64 {
+    let mut encoded = 0_u64;
+    for ((linear, depth), pixel) in cpu_frame
+        .linear_frame
+        .iter()
+        .zip(cpu_frame.depth_frame.iter())
+        .zip(cpu_frame.frame.chunks_exact_mut(4))
+    {
+        if depth.is_finite() {
+            pixel.copy_from_slice(&cpu_frame.output.encode_rgba8(*linear));
+            encoded = encoded.saturating_add(1);
+        }
+    }
+    encoded
+}
+
 pub(super) fn clear_order_independent_transparency(accum: &mut [OitAccumPixel]) {
     for pixel in accum {
         *pixel = OitAccumPixel::default();
@@ -129,44 +152,42 @@ pub(super) fn primitive_needs_physical_transmission(primitive: &PreparedPrimitiv
     primitive.material_transmission().is_some()
 }
 
-pub(super) fn primitive_screen_row_bounds(
-    primitive: &PreparedPrimitive,
-    target: RasterTarget,
-    camera: &CameraProjection,
-) -> Option<(u32, u32)> {
-    let [a, b, c] = primitive.vertices();
-    let a = ScreenVertex::from_vertex(*a, target, camera)?;
-    let b = ScreenVertex::from_vertex(*b, target, camera)?;
-    let c = ScreenVertex::from_vertex(*c, target, camera)?;
-    let min = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
-    let max =
-        a.y.max(b.y)
-            .max(c.y)
-            .ceil()
-            .min(target.height.saturating_sub(1) as f32) as u32;
-    (min <= max).then_some((min, max))
-}
-
 pub(super) fn draw_primitive_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,
-    clipping_planes: &[ClippingPlane],
-    section_box: Option<SectionBox>,
-    camera: &CameraProjection,
+    projected: &CpuProjectedPrimitive,
+    context: CpuTriangleClipInputs<'_>,
     mut material_reflections: Option<&mut [MaterialReflectionPixel]>,
     reflection_config: Option<ScreenSpaceReflectionConfig>,
 ) {
-    let [a, b, c] = primitive.vertices();
-    let [attributes_a, attributes_b, attributes_c] = primitive.vertex_attributes();
-    let Some(a) = ScreenVertex::from_vertex(*a, cpu_frame.target, camera) else {
-        return;
-    };
-    let Some(b) = ScreenVertex::from_vertex(*b, cpu_frame.target, camera) else {
-        return;
-    };
-    let Some(c) = ScreenVertex::from_vertex(*c, cpu_frame.target, camera) else {
-        return;
-    };
+    for triangle in projected.triangles() {
+        draw_projected_primitive_cpu(
+            cpu_frame,
+            primitive,
+            *triangle,
+            context,
+            material_reflections.as_deref_mut(),
+            reflection_config,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_projected_primitive_cpu(
+    cpu_frame: &mut CpuFrame<'_>,
+    primitive: &PreparedPrimitive,
+    triangle: CpuScreenTriangle,
+    context: CpuTriangleClipInputs<'_>,
+    mut material_reflections: Option<&mut [MaterialReflectionPixel]>,
+    reflection_config: Option<ScreenSpaceReflectionConfig>,
+) {
+    let CpuTriangleClipInputs {
+        clipping_planes,
+        section_box,
+        camera,
+    } = context;
+    let vertices = triangle.vertices();
+    let [a, b, c] = vertices;
 
     let min_x = a.x.min(b.x).min(c.x).floor().max(0.0) as u32;
     let max_x =
@@ -188,30 +209,31 @@ pub(super) fn draw_primitive_cpu(
         return;
     }
 
-    let area = edge(a, b, c.x, c.y);
+    let area = cpu_geometry::edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
         return;
     }
     if !primitive.double_sided() && area < 0.0 {
         return;
     }
-
     for y in min_y..=max_y {
         for x in min_x..=max_x {
             let px = x as f32 + 0.5;
             let py = y as f32 + 0.5;
-            let w0 = edge(b, c, px, py) / area;
-            let w1 = edge(c, a, px, py) / area;
-            let w2 = edge(a, b, px, py) / area;
-            if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+            let w0 = cpu_geometry::edge(b, c, px, py) / area;
+            let w1 = cpu_geometry::edge(c, a, px, py) / area;
+            let w2 = cpu_geometry::edge(a, b, px, py) / area;
+            if !cpu_geometry::barycentric_sample_is_inside([w0, w1, w2]) {
                 continue;
             }
-            let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
-            if is_clipped(position, clipping_planes, section_box) {
+            let weights = cpu_geometry::perspective_weights(camera, vertices, [w0, w1, w2]);
+            let position =
+                cpu_geometry::weighted_vec3([a.position, b.position, c.position], weights);
+            if cpu_geometry::point_is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
-            let color = multiply_color(mix_color(a, b, c, w0, w1, w2), primitive.tint());
-            let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
+            let color = multiply_color(mix_color(vertices, weights), primitive.tint());
+            let depth = mix_depth(vertices, [w0, w1, w2]);
             if write_pixel(cpu_frame, x, y, color, depth)
                 && let (Some(buffer), Some(config), Some(reflection)) = (
                     material_reflections.as_deref_mut(),
@@ -227,9 +249,14 @@ pub(super) fn draw_primitive_cpu(
                         x,
                         y,
                         position,
-                        normal: attributes_a.normal * w0
-                            + attributes_b.normal * w1
-                            + attributes_c.normal * w2,
+                        normal: cpu_geometry::weighted_vec3(
+                            [
+                                a.attributes.normal,
+                                b.attributes.normal,
+                                c.attributes.normal,
+                            ],
+                            weights,
+                        ),
                         reflection,
                         config,
                     },
@@ -242,22 +269,34 @@ pub(super) fn draw_primitive_cpu(
 pub(super) fn draw_order_independent_transparency_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,
-    clipping_planes: &[ClippingPlane],
-    section_box: Option<SectionBox>,
-    camera: &CameraProjection,
+    projected: &CpuProjectedPrimitive,
+    context: CpuTriangleClipInputs<'_>,
     accum: &mut [OitAccumPixel],
     config: OrderIndependentTransparencyConfig,
 ) {
-    let [a, b, c] = primitive.vertices();
-    let Some(a) = ScreenVertex::from_vertex(*a, cpu_frame.target, camera) else {
-        return;
-    };
-    let Some(b) = ScreenVertex::from_vertex(*b, cpu_frame.target, camera) else {
-        return;
-    };
-    let Some(c) = ScreenVertex::from_vertex(*c, cpu_frame.target, camera) else {
-        return;
-    };
+    for triangle in projected.triangles() {
+        draw_projected_order_independent_transparency_cpu(
+            cpu_frame, primitive, *triangle, context, accum, config,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_projected_order_independent_transparency_cpu(
+    cpu_frame: &mut CpuFrame<'_>,
+    primitive: &PreparedPrimitive,
+    triangle: CpuScreenTriangle,
+    context: CpuTriangleClipInputs<'_>,
+    accum: &mut [OitAccumPixel],
+    config: OrderIndependentTransparencyConfig,
+) {
+    let CpuTriangleClipInputs {
+        clipping_planes,
+        section_box,
+        camera,
+    } = context;
+    let vertices = triangle.vertices();
+    let [a, b, c] = vertices;
 
     let min_x = a.x.min(b.x).min(c.x).floor().max(0.0) as u32;
     let max_x =
@@ -279,29 +318,32 @@ pub(super) fn draw_order_independent_transparency_cpu(
         return;
     }
 
-    let area = edge(a, b, c.x, c.y);
+    let area = cpu_geometry::edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
         return;
     }
     if !primitive.double_sided() && area < 0.0 {
         return;
     }
+    let inverse_area = area.recip();
 
     for y in min_y..=max_y {
         for x in min_x..=max_x {
             let px = x as f32 + 0.5;
             let py = y as f32 + 0.5;
-            let w0 = edge(b, c, px, py) / area;
-            let w1 = edge(c, a, px, py) / area;
-            let w2 = edge(a, b, px, py) / area;
-            if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+            let w0 = cpu_geometry::edge(b, c, px, py) * inverse_area;
+            let w1 = cpu_geometry::edge(c, a, px, py) * inverse_area;
+            let w2 = cpu_geometry::edge(a, b, px, py) * inverse_area;
+            if !cpu_geometry::barycentric_sample_is_inside([w0, w1, w2]) {
                 continue;
             }
-            let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
-            if is_clipped(position, clipping_planes, section_box) {
+            let weights = cpu_geometry::perspective_weights(camera, vertices, [w0, w1, w2]);
+            let position =
+                cpu_geometry::weighted_vec3([a.position, b.position, c.position], weights);
+            if cpu_geometry::point_is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
-            let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
+            let depth = mix_depth(vertices, [w0, w1, w2]);
             if !depth.is_finite() {
                 continue;
             }
@@ -313,7 +355,7 @@ pub(super) fn draw_order_independent_transparency_cpu(
             }
             accumulate_order_independent_transparency(
                 &mut accum[pixel_index],
-                multiply_color(mix_color(a, b, c, w0, w1, w2), primitive.tint()),
+                multiply_color(mix_color(vertices, weights), primitive.tint()),
                 config,
             );
         }
@@ -346,59 +388,15 @@ pub(super) fn resolve_order_independent_transparency_cpu(
     u64::from(touched)
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ScreenVertex {
-    x: f32,
-    y: f32,
-    depth: f32,
-    inv_depth: f32,
-    position: Vec3,
-    color: Color,
-}
-
-impl ScreenVertex {
-    fn from_vertex(
-        vertex: Vertex,
-        target: RasterTarget,
-        camera: &CameraProjection,
-    ) -> Option<Self> {
-        let projected = camera.project(vertex.position)?;
-        let width = target.width.saturating_sub(1) as f32;
-        let height = target.height.saturating_sub(1) as f32;
-        Some(Self {
-            x: (projected.ndc_x * 0.5 + 0.5) * width,
-            y: (1.0 - (projected.ndc_y * 0.5 + 0.5)) * height,
-            depth: projected.depth,
-            inv_depth: projected.view_depth.recip(),
-            position: vertex.position,
-            color: vertex.color,
-        })
-    }
-}
-
-fn edge(a: ScreenVertex, b: ScreenVertex, x: f32, y: f32) -> f32 {
-    (x - a.x) * (b.y - a.y) - (y - a.y) * (b.x - a.x)
-}
-
-fn mix_color(
-    a: ScreenVertex,
-    b: ScreenVertex,
-    c: ScreenVertex,
-    w0: f32,
-    w1: f32,
-    w2: f32,
-) -> Color {
-    let iw0 = w0 * a.inv_depth;
-    let iw1 = w1 * b.inv_depth;
-    let iw2 = w2 * c.inv_depth;
-    let inv_sum = iw0 + iw1 + iw2;
-    if inv_sum.abs() <= f32::EPSILON || !inv_sum.is_finite() {
-        return mix_color_affine(a.color, b.color, c.color, w0, w1, w2);
-    }
-    let w0 = iw0 / inv_sum;
-    let w1 = iw1 / inv_sum;
-    let w2 = iw2 / inv_sum;
-    mix_color_affine(a.color, b.color, c.color, w0, w1, w2)
+fn mix_color(vertices: [CpuScreenVertex; 3], weights: [f32; 3]) -> Color {
+    mix_color_affine(
+        vertices[0].color,
+        vertices[1].color,
+        vertices[2].color,
+        weights[0],
+        weights[1],
+        weights[2],
+    )
 }
 
 fn mix_color_affine(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
@@ -419,27 +417,10 @@ fn multiply_color(color: Color, tint: Color) -> Color {
     )
 }
 
-fn mix_position(a: Vec3, b: Vec3, c: Vec3, w0: f32, w1: f32, w2: f32) -> Vec3 {
-    Vec3::new(
-        a.x * w0 + b.x * w1 + c.x * w2,
-        a.y * w0 + b.y * w1 + c.y * w2,
-        a.z * w0 + b.z * w1 + c.z * w2,
-    )
-}
-
-fn mix_depth(a: f32, b: f32, c: f32, w0: f32, w1: f32, w2: f32) -> f32 {
-    a * w0 + b * w1 + c * w2
-}
-
-fn is_clipped(
-    position: Vec3,
-    clipping_planes: &[ClippingPlane],
-    section_box: Option<SectionBox>,
-) -> bool {
-    clipping_planes
-        .iter()
-        .any(|plane| !plane.contains(position))
-        || section_box.is_some_and(|section| section.clips(position))
+fn mix_depth(vertices: [CpuScreenVertex; 3], affine: [f32; 3]) -> f32 {
+    vertices[0].projected.depth * affine[0]
+        + vertices[1].projected.depth * affine[1]
+        + vertices[2].projected.depth * affine[2]
 }
 
 pub(super) fn write_pixel(
@@ -460,13 +441,15 @@ pub(super) fn write_pixel(
     }
     let blended = blend_source_over(color, cpu_frame.linear_frame[pixel_index]);
     cpu_frame.linear_frame[pixel_index] = blended;
-    if clamp_alpha_or(color.a, 1.0) >= 1.0 - f32::EPSILON {
+    let source_alpha = clamp_alpha_or(color.a, 1.0);
+    if source_alpha >= 1.0 - f32::EPSILON {
         cpu_frame.depth_frame[pixel_index] = depth;
+    } else {
+        let byte_index = pixel_index * 4;
+        cpu_frame.frame[byte_index..byte_index + 4]
+            .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
     }
 
-    let byte_index = pixel_index * 4;
-    cpu_frame.frame[byte_index..byte_index + 4]
-        .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
     true
 }
 

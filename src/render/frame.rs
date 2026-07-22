@@ -1,5 +1,7 @@
 use super::*;
 
+mod surface;
+
 impl Renderer {
     pub fn render(
         &mut self,
@@ -56,14 +58,26 @@ impl Renderer {
                     let prepared = self.prepared_state(scene)?;
                     (prepared.clipping_planes.clone(), prepared.section_box)
                 };
-                let gpu_result = self.draw_gpu(
+                let gpu_result = match self.draw_gpu(
                     gpu_target.expect("GPU render target exists when GPU is active"),
                     &camera_projection,
                     &clipping_planes,
                     section_box,
                     readback_mode,
-                )?;
+                ) {
+                    Ok(result) => result,
+                    Err(RenderError::SurfaceLost { recoverable }) => {
+                        self.surface_lost = Some(recoverable);
+                        return Err(RenderError::SurfaceLost { recoverable });
+                    }
+                    Err(error) => return Err(error),
+                };
                 self.last_render_work_metrics.add_gpu_result(gpu_result);
+                if let Some(outcome) =
+                    surface::record_surface_result(&mut self.stats, self.target, gpu_result)
+                {
+                    return Ok(outcome);
+                }
                 gpu_draw_submissions = gpu_result.draw_submissions;
                 self.stats.order_independent_transparency_passes = 0;
                 self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion;

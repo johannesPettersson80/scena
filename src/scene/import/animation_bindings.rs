@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-
+use super::source_node_index::SourceNodeIndex;
+#[cfg(test)]
 use super::types::ImportedNode;
 use super::{ImportClip, ImportOptions};
 use crate::animation::{AnimationClipKey, AnimationTarget};
@@ -8,10 +8,9 @@ use crate::diagnostics::InstantiateError;
 
 pub(super) fn rebind_import_clips(
     scene_asset: &SceneAsset,
-    records: &[ImportedNode],
+    source_nodes: &SourceNodeIndex<'_>,
     options: ImportOptions,
 ) -> Result<Vec<ImportClip>, InstantiateError> {
-    let source_nodes = SourceNodeIndex::new(records);
     scene_asset
         .clips()
         .iter()
@@ -22,9 +21,12 @@ pub(super) fn rebind_import_clips(
                     AnimationClipKey::fresh(),
                     |source_index, target| {
                         let mut ignored = SourceNodeLookupMetrics::default();
-                        map_target_nodes_profiled(&source_nodes, source_index, target, &mut ignored)
+                        map_target_nodes_profiled(source_nodes, source_index, target, &mut ignored)
                     },
                     |target, value| options.convert_animation_vec3(target, value),
+                    |interpolation, index, value| {
+                        options.convert_animation_rotation(interpolation, index, value)
+                    },
                 )
                 .map_err(|error| InstantiateError::InvalidAnimationClip {
                     name: clip.name().map(str::to_string),
@@ -33,30 +35,6 @@ pub(super) fn rebind_import_clips(
             Ok(ImportClip { clip: rebased })
         })
         .collect()
-}
-
-struct SourceNodeIndex<'a> {
-    records: &'a [ImportedNode],
-    offsets: HashMap<usize, usize>,
-}
-
-impl<'a> SourceNodeIndex<'a> {
-    fn new(records: &'a [ImportedNode]) -> Self {
-        Self {
-            records,
-            offsets: records
-                .iter()
-                .enumerate()
-                .map(|(offset, record)| (record.source_index, offset))
-                .collect(),
-        }
-    }
-
-    fn get(&self, source_index: usize) -> Option<&ImportedNode> {
-        self.offsets
-            .get(&source_index)
-            .and_then(|offset| self.records.get(*offset))
-    }
 }
 
 #[derive(Debug, Default)]

@@ -35,6 +35,9 @@ pub(super) struct SpatialBuildInputs<'a> {
     pub imports: &'a [SceneRecipeBuildImportV1],
 }
 
+// Recipe collections and their output manifest slices remain explicit here so
+// source IDs cannot be accidentally paired with the wrong artifact owner.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_spatial_state(
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     colors: &BTreeMap<String, crate::SceneRecipeColorV1>,

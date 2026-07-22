@@ -94,10 +94,30 @@
       "fixture_path": "tests/assets/stable-contracts/agent_smoke_template.v1.json"
     },
     {
+      "schema": "scena.agent_template_catalog.v1",
+      "owner_module": "schema_catalog/agent_smoke",
+      "summary": "Canonical agent template names, aliases, status, and required features.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/agent_template_catalog.v1.json"
+    },
+    {
       "schema": "scena.browser_proof_run.v1",
       "owner_module": "bin/scena",
       "summary": "One-command browser proof wrapper result with lane, command, and artifact paths.",
       "fixture_path": "tests/assets/stable-contracts/browser_proof_run.v1.json"
+    },
+    {
+      "schema": "scena.q01.required_webgpu_pixel_parity.v1",
+      "owner_module": "browser_probe",
+      "summary": "Source-bound CPU/WebGPU pixel comparison with mutations, adapter, and artifact provenance.",
+      "feature_flag": "browser-probe",
+      "fixture_path": "tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json"
+    },
+    {
+      "schema": "scena.q04.required_gpu_resource_lifecycle.v1",
+      "owner_module": "render",
+      "summary": "Physical-GPU prepare, render, release, and confirmed resource-retirement evidence.",
+      "fixture_path": "tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json"
     },
     {
       "schema": "scena.appearance_expectation.v1",
@@ -267,6 +287,12 @@
       "fixture_path": "tests/assets/stable-contracts/asset_doctor.v1.json"
     },
     {
+      "schema": "scena.asset_conversion.v1",
+      "owner_module": "assets/conversion",
+      "summary": "FBX-to-glTF conversion plan, captured tool diagnostics, and outcome.",
+      "fixture_path": "tests/assets/stable-contracts/asset_conversion.v1.json"
+    },
+    {
       "schema": "scena.asset_catalog.v1",
       "owner_module": "assets",
       "summary": "Host-owned asset catalog manifest consumed by Scena readiness validation.",
@@ -350,6 +376,11 @@
       "schema": "scena.release.staging.v1",
       "owner_module": "xtask/release",
       "summary": "Release artifact staging metadata kept separate from source evidence provenance."
+    },
+    {
+      "schema": "scena.release_readiness.v1",
+      "owner_module": "xtask/release",
+      "summary": "Fail-closed staged release-evidence validation result with resolved root and artifact counts."
     },
     {
       "schema": "scena.recipe_patch.v1",

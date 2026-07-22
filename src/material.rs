@@ -8,6 +8,7 @@ mod presets;
 mod scalars;
 mod types;
 
+pub(crate) use color::srgb_u8_to_linear;
 pub use color::{Color, ColorParseError};
 use scalars::{clamp_degrees_or, clamp_unit_or, non_negative_or, positive_or, sanitize_alpha_mode};
 pub use types::{AlphaMode, MaterialKind, TextureColorSpace, TextureTransform};

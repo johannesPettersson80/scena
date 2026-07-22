@@ -4,20 +4,6 @@ use super::overlays::{OverlayPasses, encode_overlay_passes};
 use super::{GpuPreparedResources, labels, strokes};
 use crate::render::RasterTarget;
 
-pub(super) fn resolved_depth_view(
-    resources: &GpuPreparedResources,
-    sample_count: u32,
-) -> Option<&wgpu::TextureView> {
-    if sample_count == 1 {
-        resources.depth_prepass.as_ref().map(|depth| &depth.view)
-    } else {
-        resources
-            .overlay_depth_prepass
-            .as_ref()
-            .map(|depth| &depth.view)
-    }
-}
-
 pub(super) fn encode_offscreen_overlay_pass(
     encoder: &mut wgpu::CommandEncoder,
     resources: &GpuPreparedResources,

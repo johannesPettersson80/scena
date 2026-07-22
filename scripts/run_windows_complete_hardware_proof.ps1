@@ -4,6 +4,9 @@ param(
     [string]$NodeRoot = (Join-Path $HOME "scena-gpu-proof\node-v20.20.0-win-x64"),
     [string]$BrowserExecutable = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9a-fA-F]{40}$')]
+    [string]$SourceCommit,
+    [Parameter(Mandatory = $true)]
     [string]$UploadUrl
 )
 
@@ -12,6 +15,7 @@ Set-StrictMode -Version Latest
 
 $bundleRoot = $PSScriptRoot
 $manifestPath = Join-Path $bundleRoot "bundle-files.sha256"
+$sourceCommitPath = Join-Path $bundleRoot "source-commit.txt"
 
 function Get-ManifestEntries {
     param([string]$Path)
@@ -73,6 +77,10 @@ function Invoke-Checked {
 
 $manifest = @(Get-ManifestEntries -Path $manifestPath)
 Assert-ManifestAtRoot -Entries $manifest -Root $bundleRoot -Label "Downloaded proof bundle"
+$bundledSourceCommit = (Get-Content -LiteralPath $sourceCommitPath -Raw).Trim().ToLowerInvariant()
+if ($bundledSourceCommit -ne $SourceCommit.ToLowerInvariant()) {
+    throw "Proof bundle source commit $bundledSourceCommit does not match requested commit $SourceCommit"
+}
 
 if (-not (Test-Path -LiteralPath $ProofRoot -PathType Container)) {
     throw "Existing Windows proof workspace is missing: $ProofRoot"
@@ -90,12 +98,27 @@ if (-not (Test-Path -LiteralPath (Join-Path $ProofRoot "node_modules\playwright"
 $targetRoot = Join-Path $ProofRoot "target"
 $pf01Package = Join-Path $targetRoot "pf01-output-toggle-browser-pkg"
 $fr06Package = Join-Path $targetRoot "fr06-semantic-aov-browser-pkg"
+$m6Package = Join-Path $targetRoot "m6-browser-pkg"
 $browserDir = Join-Path $ProofRoot "tests\browser"
 $releaseDir = Join-Path $ProofRoot "tests\release"
 $assetDir = Join-Path $ProofRoot "tests\assets\gltf"
+$visualReferenceDir = Join-Path $ProofRoot "tests\visual\references"
+$scriptsDir = Join-Path $ProofRoot "scripts"
+$browserProbeSourceDir = Join-Path $ProofRoot "src\browser_probe"
 $binDir = Join-Path $ProofRoot "bin"
 
-foreach ($directory in @($pf01Package, $fr06Package, $browserDir, $releaseDir, $assetDir, $binDir)) {
+foreach ($directory in @(
+    $pf01Package,
+    $fr06Package,
+    $m6Package,
+    $browserDir,
+    $releaseDir,
+    $assetDir,
+    $visualReferenceDir,
+    $scriptsDir,
+    $browserProbeSourceDir,
+    $binDir
+)) {
     Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
 }
@@ -104,17 +127,30 @@ Copy-Item -Path (Join-Path $bundleRoot "target\pf01-output-toggle-browser-pkg\*"
     -Destination $pf01Package -Recurse -Force
 Copy-Item -Path (Join-Path $bundleRoot "target\pf01-output-toggle-browser-pkg\*") `
     -Destination $fr06Package -Recurse -Force
+Copy-Item -Path (Join-Path $bundleRoot "target\m6-browser-pkg\*") `
+    -Destination $m6Package -Recurse -Force
 Copy-Item -Path (Join-Path $bundleRoot "tests\browser\*") `
     -Destination $browserDir -Recurse -Force
 Copy-Item -Path (Join-Path $bundleRoot "tests\release\*") `
     -Destination $releaseDir -Recurse -Force
 Copy-Item -Path (Join-Path $bundleRoot "tests\assets\gltf\*") `
     -Destination $assetDir -Recurse -Force
+Copy-Item -Path (Join-Path $bundleRoot "tests\visual\references\*") `
+    -Destination $visualReferenceDir -Recurse -Force
+Copy-Item -Path (Join-Path $bundleRoot "scripts\*") `
+    -Destination $scriptsDir -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $bundleRoot "src\browser_probe.rs") `
+    -Destination (Join-Path $ProofRoot "src") -Force
+Copy-Item -LiteralPath (Join-Path $bundleRoot "src\browser_probe\parity.rs") `
+    -Destination $browserProbeSourceDir -Force
 Copy-Item -Path (Join-Path $bundleRoot "bin\*") `
     -Destination $binDir -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $bundleRoot "package.json") -Destination $ProofRoot -Force
+Copy-Item -LiteralPath (Join-Path $bundleRoot "package-lock.json") -Destination $ProofRoot -Force
+Copy-Item -LiteralPath (Join-Path $bundleRoot "Cargo.lock") -Destination $ProofRoot -Force
 Copy-Item -LiteralPath (Join-Path $bundleRoot "AGENTS.md") -Destination $ProofRoot -Force
 Copy-Item -LiteralPath (Join-Path $bundleRoot "run-proof.ps1") -Destination $ProofRoot -Force
+Copy-Item -LiteralPath $sourceCommitPath -Destination $ProofRoot -Force
 
 $proofSkills = Join-Path $ProofRoot ".codex\skills"
 Remove-Item -LiteralPath $proofSkills -Recurse -Force -ErrorAction SilentlyContinue
@@ -139,6 +175,9 @@ foreach ($relative in @(
     "pf01-output-toggle",
     "pf01-pf02-native-surface",
     "fr06-semantic-aov",
+    "m6-required-webgpu-pixel-parity",
+    "c09-gpu-resource-lifecycle",
+    "p01-shader-module-cache.json",
     "windows-complete-hardware-proof"
 )) {
     Remove-Item -LiteralPath (Join-Path $gateRoot $relative) -Recurse -Force -ErrorAction SilentlyContinue
@@ -154,6 +193,8 @@ Copy-Item -LiteralPath $manifestPath -Destination $installedManifest -Force
 $bundleManifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
 $nativeExe = Join-Path $binDir "scena-native-hardware-proof.exe"
 $nativeFr06Exe = Join-Path $binDir "scena-fr06-native-hardware-proof.exe"
+$q04LifecycleExe = Join-Path $binDir "scena-q04-gpu-resource-lifecycle.exe"
+$p01BenchmarkExe = Join-Path $binDir "scena-p01-shader-module-cache.exe"
 $failure = $null
 $transcriptStarted = $false
 
@@ -163,6 +204,9 @@ try {
     Set-Location $ProofRoot
 
     $env:SCENA_SKIP_WASM_BUILD = "1"
+    $env:WGPU_BACKEND = "dx12"
+    $env:SCENA_RELEASE_COMMIT = $SourceCommit.ToLowerInvariant()
+    $env:GITHUB_SHA = $SourceCommit.ToLowerInvariant()
     $env:SCENA_REQUIRE_PARITY = "1"
     $env:SCENA_BROWSER_BACKENDS = "webgpu,webgl2"
     $env:SCENA_WEBGPU_BROWSER = "chromium"
@@ -177,6 +221,11 @@ try {
     Invoke-Checked "complete hardware-proof validator tests" {
         & node .\tests\release\windows_complete_hardware_proof_validation_test.js
     }
+    $env:SCENA_BROWSER_BACKENDS = "webgpu"
+    Invoke-Checked "required live WebGPU pixel parity" {
+        & npm.cmd run browser:q01-parity
+    }
+    $env:SCENA_BROWSER_BACKENDS = "webgpu,webgl2"
     Invoke-Checked "strict combined WebGPU/WebGL2 PF01 browser proof" {
         & npm.cmd run browser:pf01-output-toggle
     }
@@ -195,6 +244,20 @@ try {
     $env:SCENA_HARDWARE_PROOF_COMMAND = ".\bin\scena-fr06-native-hardware-proof.exe --exact $nativeFr06Test --nocapture"
     Invoke-Checked "native FR06 semantic-AOV hardware proof" {
         & $nativeFr06Exe --exact $nativeFr06Test --nocapture
+    }
+
+    $env:SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE = "1"
+    $q04LifecycleTest = "required_hardware_gpu_resource_lifecycle_executes_complete_cycle"
+    $env:SCENA_HARDWARE_PROOF_COMMAND = ".\bin\scena-q04-gpu-resource-lifecycle.exe --exact $q04LifecycleTest --nocapture"
+    Invoke-Checked "required physical GPU resource lifecycle" {
+        & $q04LifecycleExe --exact $q04LifecycleTest --nocapture
+    }
+
+    $env:SCENA_RUN_CONTROLLED_P01_BENCHMARK = "1"
+    $p01BenchmarkTest = "full_gpu_reprepare_reuses_the_device_triangle_shader_module"
+    $env:SCENA_HARDWARE_PROOF_COMMAND = ".\bin\scena-p01-shader-module-cache.exe --exact $p01BenchmarkTest --nocapture --test-threads=1"
+    Invoke-Checked "controlled shader-module-cache hardware distribution" {
+        & $p01BenchmarkExe --exact $p01BenchmarkTest --nocapture --test-threads=1
     }
 
     Invoke-Checked "independent complete artifact validation" {
@@ -221,8 +284,11 @@ $executionStatus = if ($null -eq $failure) { "passed" } else { "failed" }
     npm_version = $npmVersion
     browser_executable = $BrowserExecutable
     bundle_manifest_sha256 = $bundleManifestHash
+    source_commit = $bundledSourceCommit
     native_executable_sha256 = (Get-FileHash -LiteralPath $nativeExe -Algorithm SHA256).Hash
     native_fr06_executable_sha256 = (Get-FileHash -LiteralPath $nativeFr06Exe -Algorithm SHA256).Hash
+    q04_lifecycle_executable_sha256 = (Get-FileHash -LiteralPath $q04LifecycleExe -Algorithm SHA256).Hash
+    p01_benchmark_executable_sha256 = (Get-FileHash -LiteralPath $p01BenchmarkExe -Algorithm SHA256).Hash
     wasm_sha256 = (Get-FileHash -LiteralPath (Join-Path $pf01Package "scena_bg.wasm") -Algorithm SHA256).Hash
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
 
@@ -254,6 +320,10 @@ if ($null -ne $failure) {
     browser_backends = @("webgpu", "webgl2")
     native_surface = $true
     native_semantic_aov = $true
+    required_webgpu_pixel_parity = $true
+    gpu_resource_lifecycle = $true
+    shader_module_cache_p95 = $true
+    native_surface_resize_recovery = $true
     summary = $summaryPath
     archive = $archivePath
     archive_sha256 = $archiveHash

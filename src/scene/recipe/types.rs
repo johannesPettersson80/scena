@@ -20,15 +20,17 @@ pub use authoring::{
     SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1,
     SceneRecipeMorphV1, SceneRecipeNodeLodV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
     SceneRecipeParticleSetV1, SceneRecipeParticleV1, SceneRecipePrimitiveV1, SceneRecipeSkinV1,
-    SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
+    SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformConversionError,
+    SceneRecipeTransformV1,
 };
 pub use build_manifest::{
     RECIPE_BUILD_RESULT_SCHEMA_V1, RecipeBuildExecutionV1, RecipeBuildResultV1,
-    SceneRecipeBuildAnchorV1, SceneRecipeBuildAnimationV1, SceneRecipeBuildBoundsV1,
-    SceneRecipeBuildConnectionV1, SceneRecipeBuildConnectorV1, SceneRecipeBuildImportV1,
-    SceneRecipeBuildInstanceV1, SceneRecipeBuildNamedStateV1, SceneRecipeBuildResourceV1,
-    SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1, SceneRecipeBuildV1,
-    SceneRecipeDiagnosticV1, SceneRecipeValidationReportV1,
+    RecipeValidationModeV1, SceneRecipeBuildAnchorV1, SceneRecipeBuildAnimationV1,
+    SceneRecipeBuildBoundsV1, SceneRecipeBuildConnectionV1, SceneRecipeBuildConnectorV1,
+    SceneRecipeBuildImportV1, SceneRecipeBuildInstanceV1, SceneRecipeBuildNamedStateV1,
+    SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1,
+    SceneRecipeBuildV1, SceneRecipeDiagnosticResourceV1, SceneRecipeDiagnosticV1,
+    SceneRecipeResourceResolutionV1, SceneRecipeResourceStatusV1, SceneRecipeValidationReportV1,
 };
 pub use expectations::{
     SceneRecipeBackendExpectationV1, SceneRecipeBboxFitExpectationV1,

@@ -603,6 +603,74 @@ pub(crate) fn clipping_contracts_are_source_enforced() {
     check_clipping_contracts(&root, &mut findings);
 
     assert_eq!(findings, Vec::new());
+
+    let fixture_root = root.join("target/xtask-doctor-regressions/clipping-owner-delegation");
+    let _ = fs::remove_dir_all(&fixture_root);
+    for relative in [
+        "src/scene.rs",
+        "src/scene/clipping.rs",
+        "src/diagnostics.rs",
+        "src/lib.rs",
+        "src/render.rs",
+        "src/render/prepare_lifecycle.rs",
+        "src/render/cpu.rs",
+        "src/render/cpu_geometry.rs",
+        "tests/m2_lighting_depth_clipping.rs",
+        "docs/specs/public-api.md",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+    ] {
+        let destination = fixture_root.join(relative);
+        fs::create_dir_all(
+            destination
+                .parent()
+                .expect("clipping fixture path has parent"),
+        )
+        .expect("clipping fixture directory creates");
+        fs::copy(root.join(relative), destination).expect("clipping fixture source copies");
+    }
+
+    let cpu = fixture_root.join("src/render/cpu.rs");
+    let source = fs::read_to_string(&cpu).expect("CPU clipping source reads");
+    let mutated = source.replace(
+        "cpu_geometry::point_is_clipped(position, clipping_planes, section_box)",
+        "false",
+    );
+    assert_ne!(
+        source, mutated,
+        "CPU clipping delegation mutation alters source"
+    );
+    fs::write(&cpu, mutated).expect("CPU clipping delegation mutation writes");
+    findings.clear();
+    check_clipping_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-CLIPPING"
+                && finding.message.contains("cpu_geometry::point_is_clipped")
+        }),
+        "removing shared CPU clipping delegation must fail doctor: {findings:?}"
+    );
+
+    fs::write(&cpu, source).expect("CPU clipping source restores");
+    let owner = fixture_root.join("src/render/cpu_geometry.rs");
+    let source = fs::read_to_string(&owner).expect("shared clipping owner reads");
+    let mutated = source.replace(
+        "signed_distance < -CLIPPING_BOUNDARY_TOLERANCE * scale.max(1.0)",
+        "signed_distance < 0.0",
+    );
+    assert_ne!(
+        source, mutated,
+        "shared clipping tolerance mutation alters source"
+    );
+    fs::write(owner, mutated).expect("shared clipping tolerance mutation writes");
+    findings.clear();
+    check_clipping_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-CLIPPING"
+                && finding.message.contains("CLIPPING_BOUNDARY_TOLERANCE")
+        }),
+        "removing the shared clipping tolerance must fail doctor: {findings:?}"
+    );
 }
 
 #[test]

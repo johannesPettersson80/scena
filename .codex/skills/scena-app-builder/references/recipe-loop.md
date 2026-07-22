@@ -8,13 +8,13 @@ Rust API code.
 Use a CLI built with app-builder features:
 
 ```bash
-cargo install scena --features scene-host,inspection
+cargo install scena --features agent
 ```
 
 When running from a local checkout, prefix commands with:
 
 ```bash
-cargo run --bin scena --features scene-host,inspection --
+cargo run --bin scena --features agent --
 ```
 
 Use the shipped schema instead of guessing JSON fields:
@@ -38,6 +38,10 @@ above:
 RECIPE=target/scena-agent/primitive_scene/recipe.json
 ```
 
+This installed template flow is portable from any working directory. Generated
+imports and the licensed studio environment are package-embedded, and an
+explicitly authored `scene.environment` always wins over template defaults.
+
 ## 2. Author
 
 Create one declarative recipe JSON file and set `RECIPE` to its path. Prefer authored primitives,
@@ -49,7 +53,9 @@ Rules:
 
 - use globally unique ids;
 - use meters and Y-up right-handed coordinates;
-- use `rotation_degrees` only as documented by the schema;
+- give every import/node transform an explicit `kind`; prefer `kind:"trs"`
+  with `rotation_degrees` in the documented intrinsic X, then Y, then Z order,
+  and use `kind:"raw"` only for a known `[x,y,z,w]` quaternion;
 - use opaque colors unless a field explicitly supports alpha;
 - prefer ergonomic helpers in recipe form: `material.preset`, `camera.lens`,
   `camera.framing`, `scene.preset`, `scene.environment.preset`,
@@ -100,12 +106,16 @@ Rules:
 Run:
 
 ```bash
-scena validate-recipe "$RECIPE"
+scena validate-recipe "$RECIPE" --full
 ```
 
 If validation fails, fix the recipe from the diagnostic `path`, `code`,
 `message`, and `help`. Do not work around validation by deleting requested
 content unless the user agrees.
+For an intentional external library, add its narrow canonical directory with
+repeatable `--allow-root` and preserve the same option through build, render,
+inspect, diagnose, doctor, and repair. Confirm the root appears with
+`source:"operator_override"` in the returned `policy`.
 
 ## 4. Render And Introspect
 
@@ -121,6 +131,13 @@ Accept success only when:
 - top-level `ok` is true;
 - requested artifacts exist;
 - no required content was skipped.
+
+Every `<asset-or-recipe>` verb dispatches a parsed recipe through the same
+policy-aware SceneHost build used by `recipe build`. Treat
+`scena.recipe_build_result.v1` from render, inspect, diagnose, doctor, repair,
+or verify as the canonical rejection report. Do not retry a recipe as a direct
+glTF load or select only its first import. Raw glTF/GLB input remains a direct
+asset operation.
 
 When the recipe has an `expect` block, add `--verify`; that mode emits the
 combined recipe build/capture/introspection/verification report instead of the

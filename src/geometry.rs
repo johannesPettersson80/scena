@@ -421,10 +421,34 @@ impl GeometryDesc {
         Self::lines_from_positions(vec![start, end], vec![0, 1])
     }
 
+    /// Legacy infallible wrapper for fixed, trusted point lists.
+    ///
+    /// Runtime or untrusted input must use [`Self::try_polyline`] so short
+    /// point lists return [`GeometryError::PolylineTooShort`] instead of
+    /// unwinding.
+    #[deprecated(note = "use GeometryDesc::try_polyline for untrusted or runtime input")]
     pub fn polyline(points: &[Vec3]) -> Self {
         Self::try_polyline(points).expect("polyline requires at least two points")
     }
 
+    /// Builds connected line segments from two or more points.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{GeometryDesc, GeometryError, Vec3};
+    ///
+    /// let geometry = GeometryDesc::try_polyline(&[
+    ///     Vec3::ZERO,
+    ///     Vec3::new(1.0, 0.0, 0.0),
+    /// ]).expect("two points form one line segment");
+    /// assert_eq!(geometry.indices(), &[0, 1]);
+    ///
+    /// assert_eq!(
+    ///     GeometryDesc::try_polyline(&[Vec3::ZERO]),
+    ///     Err(GeometryError::PolylineTooShort { point_count: 1 }),
+    /// );
+    /// ```
     pub fn try_polyline(points: &[Vec3]) -> Result<Self, GeometryError> {
         if points.len() < 2 {
             return Err(GeometryError::PolylineTooShort {

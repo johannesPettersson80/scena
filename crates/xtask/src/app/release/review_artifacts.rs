@@ -20,6 +20,7 @@ pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/m9-benchmarks.json",
     "m9-platform/m9-benchmarks-4k.json",
     "m9-platform/m9-benchmarks-feature-matrix.json",
+    "m9-platform/linux-native-vulkan/rendered-output.json",
     "m9-platform/linux-native-vulkan/capabilities.json",
     "m9-platform/linux-native-vulkan/surface-context-loss.json",
     "m9-platform/linux-native-vulkan/default-scene.ppm",
@@ -73,6 +74,7 @@ pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "round-e-cloudflare-material-proof/rubber.png",
     "round-e-webgpu-material-proof/live-frame.png",
     "round-e-webgpu-material-proof/result.json",
+    "c09-gpu-resource-lifecycle/required-result.json",
     "release-lanes/headless-cpu.commands.jsonl",
     "release-lanes/headless-cpu.log",
     "visual-proof/waterbottle-gpu.json",
@@ -90,6 +92,7 @@ pub(crate) const REQUIRED_PASSED_STATUS_ARTIFACT_SUFFIXES: &[&str] = &[
     "round-e-cpu-material-proof.json",
     "round-e-cloudflare-material-proof.json",
     "round-e-webgpu-material-proof/result.json",
+    "c09-gpu-resource-lifecycle/required-result.json",
 ];
 
 pub(crate) const RELEASE_LANE_ARTIFACT_SUFFIXES: &[&str] = &[
@@ -103,6 +106,7 @@ pub(crate) const RELEASE_LANE_ARTIFACT_SUFFIXES: &[&str] = &[
 ];
 
 pub(crate) const REQUIRED_NATIVE_GPU_RENDER_ARTIFACT_SUFFIXES: &[&str] = &[
+    "m9-platform/linux-native-vulkan/rendered-output.json",
     "m9-platform/macos-metal/rendered-output.json",
     "m9-platform/windows-dx12/rendered-output.json",
 ];
@@ -119,6 +123,7 @@ pub(crate) const REQUIRED_JSON_TIMESTAMP_ARTIFACT_SUFFIXES: &[&str] = &[
     "round-e-cpu-material-proof.json",
     "round-e-cloudflare-material-proof.json",
     "round-e-webgpu-material-proof/result.json",
+    "c09-gpu-resource-lifecycle/required-result.json",
     "m9-platform/macos-metal/rendered-output.json",
     "m9-platform/macos-metal/capabilities.json",
     "m9-platform/windows-dx12/rendered-output.json",
@@ -135,6 +140,7 @@ pub(crate) const REQUIRED_JSON_COMMIT_ARTIFACT_SUFFIXES: &[&str] = &[
     "round-e-cpu-material-proof.json",
     "round-e-cloudflare-material-proof.json",
     "round-e-webgpu-material-proof/result.json",
+    "c09-gpu-resource-lifecycle/required-result.json",
     "m9-platform/macos-metal/rendered-output.json",
     "m9-platform/macos-metal/capabilities.json",
     "m9-platform/windows-dx12/rendered-output.json",
@@ -211,6 +217,110 @@ pub(crate) fn require_json_status_passed(path: &Path, suffix: &str, findings: &m
         findings.push(Finding::new(
             "RELEASE-READY-ARTIFACTS",
             format!("downloaded release artifact {suffix} does not have status 'passed'"),
+        ));
+    }
+}
+
+pub(crate) fn required_gpu_resource_lifecycle_proof_passes(value: &Value) -> bool {
+    if value.get("schema").and_then(Value::as_str)
+        != Some("scena.q04.required_gpu_resource_lifecycle.v1")
+        || value.get("status").and_then(Value::as_str) != Some("passed")
+        || value.get("proof_class").and_then(Value::as_str) != Some("physical-hardware-required")
+        || value.get("complete_lifecycle").and_then(Value::as_bool) != Some(true)
+        || value
+            .get("assertions_executed")
+            .and_then(Value::as_u64)
+            .is_none_or(|count| count < 10)
+    {
+        return false;
+    }
+
+    let Some(adapter) = value.get("adapter").and_then(Value::as_object) else {
+        return false;
+    };
+    if !matches!(
+        adapter.get("device_type").and_then(Value::as_str),
+        Some("DiscreteGpu" | "IntegratedGpu" | "VirtualGpu")
+    ) {
+        return false;
+    }
+    let identity = ["name", "device_type", "driver", "driver_info"]
+        .iter()
+        .filter_map(|key| adapter.get(*key).and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    if [
+        "swiftshader",
+        "llvmpipe",
+        "lavapipe",
+        "software rasterizer",
+        "microsoft basic render",
+    ]
+    .iter()
+    .any(|marker| identity.contains(marker))
+    {
+        return false;
+    }
+
+    let Some(baseline) = lifecycle_resource_shape(value.get("baseline")) else {
+        return false;
+    };
+    let Some(prepared) = lifecycle_resource_shape(value.get("prepared")) else {
+        return false;
+    };
+    let Some(released) = lifecycle_resource_shape(value.get("released")) else {
+        return false;
+    };
+    let baseline_total = baseline.iter().sum::<u64>();
+    let prepared_total = prepared.iter().sum::<u64>();
+    let baseline_pending = lifecycle_u64(value.get("baseline"), "pending_destructions");
+    let released_pending = lifecycle_u64(value.get("released"), "pending_destructions");
+    prepared_total > baseline_total
+        && released == baseline
+        && released_pending.is_some_and(|count| count > 0)
+        && value.get("poll_status").and_then(Value::as_str) == Some("Confirmed")
+        && value.get("poll_pending_before").and_then(Value::as_u64) == released_pending
+        && value
+            .get("poll_destroyed_resources")
+            .and_then(Value::as_u64)
+            == released_pending
+        && value.get("poll_pending_after").and_then(Value::as_u64) == baseline_pending
+}
+
+fn lifecycle_resource_shape(value: Option<&Value>) -> Option<[u64; 6]> {
+    let value = value?;
+    Some([
+        value.get("buffers")?.as_u64()?,
+        value.get("gpu_textures")?.as_u64()?,
+        value.get("render_targets")?.as_u64()?,
+        value.get("pipelines")?.as_u64()?,
+        value.get("bind_groups")?.as_u64()?,
+        value.get("shader_modules")?.as_u64()?,
+    ])
+}
+
+fn lifecycle_u64(value: Option<&Value>, field: &str) -> Option<u64> {
+    value?.get(field)?.as_u64()
+}
+
+pub(crate) fn require_gpu_resource_lifecycle_proof(
+    path: &Path,
+    suffix: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let value = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    if value
+        .as_ref()
+        .is_none_or(|value| !required_gpu_resource_lifecycle_proof_passes(value))
+    {
+        findings.push(Finding::new(
+            "RELEASE-READY-ARTIFACTS",
+            format!(
+                "downloaded release artifact {suffix} is not a complete physical-hardware GPU resource-lifecycle proof"
+            ),
         ));
     }
 }

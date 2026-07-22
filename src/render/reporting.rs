@@ -1,6 +1,6 @@
 use crate::assets::Assets;
 use crate::diagnostics::{
-    CapabilityReport, Diagnostic, DiagnosticCode, PostProcessingDepthSourceV1,
+    CapabilityProbeV1, CapabilityReport, Diagnostic, DiagnosticCode, PostProcessingDepthSourceV1,
     PostProcessingPassV1, PostProcessingReportV1, RendererStats,
 };
 use crate::scene::Scene;
@@ -14,6 +14,15 @@ impl Renderer {
             self.gpu_adapter_report(),
             self.post_processing_report(),
         )
+    }
+
+    /// Returns live adapter/device/format provenance for GPU-backed renderers.
+    /// CPU and descriptor-only renderers return `None` because no adapter was
+    /// requested and static capability tables must not be presented as probes.
+    pub fn live_capability_probe(&self, probed_at_unix_ms: u64) -> Option<CapabilityProbeV1> {
+        self.gpu
+            .as_ref()
+            .map(|gpu| gpu.live_capability_probe(self.target.backend, probed_at_unix_ms))
     }
 
     pub fn diagnose_scene(&self, scene: &Scene) -> Vec<Diagnostic> {

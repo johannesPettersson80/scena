@@ -2,10 +2,13 @@ use super::external_resources::{ExternalResourceFetchInputs, fetch_scene_externa
 use super::fetch::AssetFetcher;
 use super::load::{
     self, AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport,
-    AssetLoadTelemetry, check_cancelled,
+    AssetLoadTelemetry, AssetReloadError, check_cancelled,
 };
-use super::{AssetPath, Assets, RetainPolicy, SceneAsset};
+use super::{
+    AssetPath, Assets, RetainPolicy, SceneAsset, TextureCacheUpdatePolicy, bundled_scene_bytes,
+};
 use crate::diagnostics::AssetError;
+use std::borrow::Cow;
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn asset_now_ms() -> f64 {
@@ -30,15 +33,17 @@ impl<F: AssetFetcher> Assets<F> {
         bytes: &[u8],
     ) -> Result<SceneAsset, AssetError> {
         let path = path.into();
+        let options = AssetLoadOptions::default();
         let scene = {
             let mut storage = self.storage();
             let mut scene = SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)?;
             if self.retain_policy == RetainPolicy::Always {
                 scene = scene.with_retained_source_bytes(bytes);
             }
-            storage.scene_lookup.insert(path, scene.clone());
-            storage.scene_load_telemetry.insert(
-                scene.path().clone(),
+            storage.cache_scene(
+                path,
+                options,
+                scene.clone(),
                 AssetLoadTelemetry {
                     fetched_bytes: bytes.len(),
                     ..AssetLoadTelemetry::default()
@@ -119,6 +124,27 @@ impl<F: AssetFetcher> Assets<F> {
     }
 
     pub async fn reload_scene(&self, scene: &SceneAsset) -> Result<SceneAsset, AssetError> {
+        Ok(self.reload_scene_report_inner(scene).await?.into_asset())
+    }
+
+    pub async fn reload_scene_with_report(
+        &self,
+        scene: &SceneAsset,
+    ) -> Result<AssetLoadReport<SceneAsset>, AssetReloadError> {
+        let path = scene.path().clone();
+        self.reload_scene_report_inner(scene)
+            .await
+            .map_err(|error| AssetReloadError {
+                path,
+                error,
+                previous_asset_preserved: true,
+            })
+    }
+
+    async fn reload_scene_report_inner(
+        &self,
+        scene: &SceneAsset,
+    ) -> Result<AssetLoadReport<SceneAsset>, AssetError> {
         let path = scene.path().clone();
         if self.retain_policy != RetainPolicy::Always {
             return Err(AssetError::ReloadRequiresRetain {
@@ -127,20 +153,26 @@ impl<F: AssetFetcher> Assets<F> {
             });
         }
 
-        let mut progress_events = Vec::new();
+        let reload_options = AssetLoadOptions::default()
+            .with_strict_textures(true)
+            .with_strict_external_resources(true);
+        let mut progress_events = vec![AssetLoadProgress::LoadStarted { path: path.clone() }];
         let mut progress = None;
-        let reloaded = match self
-            .parse_scene_uncached(
+        let (reloaded, telemetry) = match self
+            .parse_scene_uncached_with_texture_policy(
                 path.clone(),
                 None,
                 &mut progress_events,
                 &mut progress,
-                AssetLoadOptions::default(),
+                reload_options,
+                TextureCacheUpdatePolicy::ReplaceChangedSource,
             )
             .await
         {
-            Ok((scene, _telemetry)) => scene,
-            Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => {
+            Ok(result) => result,
+            Err(error @ AssetError::NotFound { .. } | error @ AssetError::Io { .. })
+                if asset_error_path(&error) == Some(path.as_str()) =>
+            {
                 let Some(bytes) = scene.retained_source_bytes() else {
                     return Err(AssetError::ReloadRequiresRetain {
                         path: path.as_str().to_string(),
@@ -148,13 +180,52 @@ impl<F: AssetFetcher> Assets<F> {
                     });
                 };
                 let mut storage = self.storage();
-                SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)?
-                    .with_retained_source_bytes(bytes)
+                let previous_policy = storage.texture_cache_update_policy;
+                storage.texture_cache_update_policy =
+                    TextureCacheUpdatePolicy::ReplaceChangedSource;
+                let result = SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)
+                    .map(|scene| scene.with_retained_source_bytes(bytes));
+                storage.texture_cache_update_policy = previous_policy;
+                (result?, storage.telemetry_for_path(&path))
             }
             Err(error) => return Err(error),
         };
-        self.storage().scene_lookup.insert(path, reloaded.clone());
-        Ok(reloaded)
+        load::emit_progress(
+            &mut progress_events,
+            &mut progress,
+            AssetLoadProgress::Parsed {
+                path: path.clone(),
+                nodes: reloaded.node_count(),
+                meshes: reloaded.mesh_count(),
+            },
+        );
+        {
+            let mut storage = self.storage();
+            storage.replace_cached_scene(
+                path.clone(),
+                reload_options,
+                reloaded.clone(),
+                telemetry.clone(),
+            );
+        }
+        load::emit_progress(
+            &mut progress_events,
+            &mut progress,
+            AssetLoadProgress::Cached { path: path.clone() },
+        );
+        Ok(AssetLoadReport {
+            asset: reloaded,
+            path,
+            cache_hit: false,
+            requested_options: reload_options,
+            cache_entry_options: reload_options,
+            fetched_bytes: telemetry.fetched_bytes,
+            external_buffers: telemetry.external_buffers,
+            external_images: telemetry.external_images,
+            external_resources: telemetry.external_resources,
+            warnings: telemetry.warnings,
+            progress_events,
+        })
     }
 
     async fn load_scene_report_inner(
@@ -171,18 +242,9 @@ impl<F: AssetFetcher> Assets<F> {
             AssetLoadProgress::LoadStarted { path: path.clone() },
         );
         check_cancelled(&path, control)?;
-        if let Some((scene, telemetry)) = {
+        if let Some((scene, telemetry, cache_entry_options)) = {
             let storage = self.storage();
-            storage.scene_lookup.get(&path).cloned().map(|scene| {
-                (
-                    scene,
-                    storage
-                        .scene_load_telemetry
-                        .get(&path)
-                        .cloned()
-                        .unwrap_or_default(),
-                )
-            })
+            storage.cached_scene(&path, options)
         } {
             load::emit_progress(
                 &mut progress_events,
@@ -193,6 +255,8 @@ impl<F: AssetFetcher> Assets<F> {
                 asset: scene,
                 path,
                 cache_hit: true,
+                requested_options: options,
+                cache_entry_options,
                 fetched_bytes: 0,
                 external_buffers: telemetry.external_buffers,
                 external_images: telemetry.external_images,
@@ -223,10 +287,7 @@ impl<F: AssetFetcher> Assets<F> {
         check_cancelled(&path, control)?;
         {
             let mut storage = self.storage();
-            storage.scene_lookup.insert(path.clone(), scene.clone());
-            storage
-                .scene_load_telemetry
-                .insert(path.clone(), telemetry.clone());
+            storage.cache_scene(path.clone(), options, scene.clone(), telemetry.clone());
         }
         load::emit_progress(
             &mut progress_events,
@@ -237,6 +298,8 @@ impl<F: AssetFetcher> Assets<F> {
             asset: scene,
             path,
             cache_hit: false,
+            requested_options: options,
+            cache_entry_options: options,
             fetched_bytes: telemetry.fetched_bytes,
             external_buffers: telemetry.external_buffers,
             external_images: telemetry.external_images,
@@ -254,6 +317,26 @@ impl<F: AssetFetcher> Assets<F> {
         progress: &mut Option<&mut dyn FnMut(AssetLoadProgress)>,
         options: AssetLoadOptions,
     ) -> Result<(SceneAsset, AssetLoadTelemetry), AssetError> {
+        self.parse_scene_uncached_with_texture_policy(
+            path,
+            control,
+            progress_events,
+            progress,
+            options,
+            TextureCacheUpdatePolicy::Immutable,
+        )
+        .await
+    }
+
+    async fn parse_scene_uncached_with_texture_policy(
+        &self,
+        path: AssetPath,
+        control: Option<&AssetLoadControl>,
+        progress_events: &mut Vec<AssetLoadProgress>,
+        progress: &mut Option<&mut dyn FnMut(AssetLoadProgress)>,
+        options: AssetLoadOptions,
+        texture_cache_update_policy: TextureCacheUpdatePolicy,
+    ) -> Result<(SceneAsset, AssetLoadTelemetry), AssetError> {
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let total_start = asset_now_ms();
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -262,7 +345,10 @@ impl<F: AssetFetcher> Assets<F> {
         check_cancelled(&path, control)?;
         check_fetch_byte_limit_before_fetch(&path, options.fetch_byte_limit())?;
         let fetcher = self.tracked_fetcher();
-        let bytes = fetcher.fetch(&path).await?;
+        let bytes = match bundled_scene_bytes(&path) {
+            Some(bytes) => Cow::Borrowed(bytes),
+            None => Cow::Owned(fetcher.fetch(&path).await?),
+        };
         check_fetch_byte_limit_after_fetch(&path, bytes.len(), options.fetch_byte_limit())?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
@@ -304,9 +390,11 @@ impl<F: AssetFetcher> Assets<F> {
         check_cancelled(&path, control)?;
         let scene = {
             let mut storage = self.storage();
-            let mut scene =
+            let previous_policy = storage.texture_cache_update_policy;
+            storage.texture_cache_update_policy = texture_cache_update_policy;
+            let scene_result =
                 if external_resources.buffers.is_empty() && external_resources.images.is_empty() {
-                    SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?
+                    SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)
                 } else {
                     SceneAsset::from_gltf_bytes_with_external_resources(
                         path.clone(),
@@ -314,8 +402,10 @@ impl<F: AssetFetcher> Assets<F> {
                         &external_resources.buffers,
                         &external_resources.images,
                         &mut storage,
-                    )?
+                    )
                 };
+            storage.texture_cache_update_policy = previous_policy;
+            let mut scene = scene_result?;
             if self.retain_policy == RetainPolicy::Always {
                 scene = scene.with_retained_source_bytes(&bytes);
             }
@@ -337,7 +427,9 @@ impl<F: AssetFetcher> Assets<F> {
         {
             log_asset_step("parse_scene_uncached total", total_start);
         }
-        Ok((scene, external_resources.telemetry))
+        let mut telemetry = external_resources.telemetry;
+        telemetry.warnings.extend_from_slice(scene.load_warnings());
+        Ok((scene, telemetry))
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -362,6 +454,13 @@ impl<F: AssetFetcher> Assets<F> {
             }
         }
         Ok(())
+    }
+}
+
+fn asset_error_path(error: &AssetError) -> Option<&str> {
+    match error {
+        AssetError::NotFound { path } | AssetError::Io { path, .. } => Some(path),
+        _ => None,
     }
 }
 

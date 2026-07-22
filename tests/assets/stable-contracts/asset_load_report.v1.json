@@ -2,6 +2,16 @@
   "schema": "scena.asset_load_report.v1",
   "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
   "cache_hit": false,
+  "requested_options": {
+    "strict_textures": false,
+    "strict_external_resources": false,
+    "fetch_byte_limit": null
+  },
+  "cache_entry_options": {
+    "strict_textures": false,
+    "strict_external_resources": false,
+    "fetch_byte_limit": null
+  },
   "fetched_bytes": 4096,
   "external_buffers": 1,
   "external_images": 0,
@@ -34,6 +44,22 @@
       "path": "tests/assets/gltf/missing.bin",
       "index": 0,
       "reason": "not found"
+    },
+    {
+      "kind": "computed_flat_normals",
+      "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "mesh_index": 0,
+      "primitive_index": 0,
+      "triangle_count": 12
+    },
+    {
+      "kind": "skin_influences_truncated",
+      "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "mesh_index": 0,
+      "primitive_index": 0,
+      "affected_vertices": 4,
+      "source_influences": 8,
+      "retained_influences": 4
     }
   ],
   "progress_events": [

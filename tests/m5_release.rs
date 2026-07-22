@@ -27,6 +27,7 @@ fn m5_release_surface_files_and_examples_are_present() {
         "docs/release-notes/v1.3.0.md",
         "docs/release-notes/v1.4.0.md",
         "docs/release-notes/v1.5.0.md",
+        "docs/release-notes/v1.9.0.md",
         "docs/release-notes/v1.8.0.md",
         "docs/release-notes/v1.7.2.md",
         "docs/release-notes/v1.7.1.md",
@@ -57,7 +58,7 @@ fn m5_release_surface_files_and_examples_are_present() {
 fn m5_package_metadata_is_ready_for_dry_run() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml is readable");
     for needle in [
-        "version = \"1.8.0\"",
+        "version = \"1.9.0\"",
         "rust-version = ",
         "license = \"MIT OR Apache-2.0\"",
         "documentation = \"https://docs.rs/scena\"",
@@ -94,6 +95,11 @@ fn m5_public_api_baseline_names_frozen_contracts() {
         "Scene::pick_with_assets",
         "Scene::pick_and_select_with_assets",
         "Scene::frame_bounds",
+        "Scene::frame_all_with_options",
+        "Scene::frame_all_with_assets_and_options",
+        "Scene::frame_import_with_options",
+        "Scene::move_origin_to",
+        "Scene::center_visible_bounds_on",
         "Scene::project_world_point",
         "Scene::bounds_for_transforms",
         "Scene::add_grid_floor",
@@ -110,6 +116,7 @@ fn m5_public_api_baseline_names_frozen_contracts() {
         "FramingOptions::three_quarter_front_right",
         "FramingOptions::three_quarter_back_left",
         "FramingOptions::three_quarter_back_right",
+        "FramingOptions::include_helpers",
         "FramingOutcome",
         "ScreenRect",
         "ProjectedPoint",
@@ -124,6 +131,18 @@ fn m5_public_api_baseline_names_frozen_contracts() {
         "Assets::load_scene_with_options",
         "Assets::load_scene_with_report_options",
         "MaterialTextureMissingDecodedPixels",
+        "GeometryDesc::try_polyline",
+        "Transform::with_scale",
+        "Transform::with_uniform_scale",
+        "Transform::scale_by",
+        "Capabilities::render_sample_counts",
+        "Capabilities::depth_sample_counts",
+        "Capabilities::explicit_msaa",
+        "DiagnosticCode::MultisampleFallback",
+        "RecipeValidationModeV1",
+        "SceneRecipeResourceResolutionV1",
+        "SceneRecipeResourceStatusV1",
+        "SceneRecipeDiagnosticResourceV1",
     ] {
         assert!(baseline.contains(needle), "baseline missing {needle}");
     }
@@ -150,6 +169,11 @@ fn m5_public_api_baseline_names_frozen_contracts() {
                 "RenderError",
                 "SceneImport",
                 "Scene::frame_bounds",
+                "Scene::frame_all_with_options",
+                "Scene::frame_all_with_assets_and_options",
+                "Scene::frame_import_with_options",
+                "Scene::move_origin_to",
+                "Scene::center_visible_bounds_on",
                 "FramingOptions::azimuth_elevation",
                 "FramingOptions::front",
                 "FramingOptions::back",
@@ -161,11 +185,24 @@ fn m5_public_api_baseline_names_frozen_contracts() {
                 "FramingOptions::three_quarter_front_right",
                 "FramingOptions::three_quarter_back_left",
                 "FramingOptions::three_quarter_back_right",
+                "FramingOptions::include_helpers",
                 "FramingOutcome",
                 "ScreenRect",
                 "ProjectedPoint",
                 "Aabb::union",
-                "OrbitControls::from_framing"
+                "OrbitControls::from_framing",
+                "GeometryDesc::try_polyline",
+                "Transform::with_scale",
+                "Transform::with_uniform_scale",
+                "Transform::scale_by",
+                "Capabilities::render_sample_counts",
+                "Capabilities::depth_sample_counts",
+                "Capabilities::explicit_msaa",
+                "DiagnosticCode::MultisampleFallback",
+                "RecipeValidationModeV1",
+                "SceneRecipeResourceResolutionV1",
+                "SceneRecipeResourceStatusV1",
+                "SceneRecipeDiagnosticResourceV1"
             ]
         }),
     )
@@ -214,6 +251,7 @@ fn public_error_displays_are_actionable() {
         LookupError::StaleImport.to_string(),
         AnimationError::ClipNotFound {
             name: "Idle".to_string(),
+            candidates: vec!["idle".to_string()],
         }
         .to_string(),
     ];

@@ -1,9 +1,10 @@
 use base64::Engine as _;
 use serde_json::{Value, json};
 
-use crate::{PixelReadback, fnv1a64_hex};
+use crate::{Backend, PixelReadback, fnv1a64_hex};
 
-const SCHEMA: &str = "scena.m6.cpu_webgl2_parity.v1";
+const WEBGL2_SCHEMA: &str = "scena.m6.cpu_webgl2_parity.v1";
+const WEBGPU_SCHEMA: &str = "scena.m6.cpu_webgpu_parity.v1";
 const MAX_RMSE: f64 = 0.08;
 const MIN_SSIM: f64 = 0.93;
 const MAX_P95_CHANNEL_DELTA: u8 = 24;
@@ -11,12 +12,22 @@ const MAX_MEAN_CHANNEL_DELTA: f64 = 6.0;
 const MIN_FOREGROUND_IOU: f64 = 0.90;
 const MAX_FOREGROUND_REGION_RMSE: f64 = 0.13;
 
-pub(super) fn cpu_webgl2_report(cpu: &PixelReadback, gpu: Option<&PixelReadback>) -> Value {
+pub(super) fn cpu_browser_gpu_report(
+    cpu: &PixelReadback,
+    gpu: Option<&PixelReadback>,
+    backend: Backend,
+) -> Value {
+    let schema = match backend {
+        Backend::WebGl2 => WEBGL2_SCHEMA,
+        Backend::WebGpu => WEBGPU_SCHEMA,
+        _ => WEBGL2_SCHEMA,
+    };
     let cpu = NormalizedFrame::from_readback(cpu);
     let Some(gpu) = gpu.map(NormalizedFrame::from_readback) else {
         return json!({
-            "schema": SCHEMA,
+            "schema": schema,
             "status": "failed",
+            "backend": format!("{backend:?}"),
             "failure_codes": ["gpu_frame_missing"],
             "cpu_frame": frame_json("renderer-owned-cpu-frame", &cpu),
             "gpu_frame": Value::Null,
@@ -36,8 +47,9 @@ pub(super) fn cpu_webgl2_report(cpu: &PixelReadback, gpu: Option<&PixelReadback>
     }
 
     json!({
-        "schema": SCHEMA,
+        "schema": schema,
         "status": if failure_codes.is_empty() { "passed" } else { "failed" },
+        "backend": format!("{backend:?}"),
         "fixture": {
             "id": "m6-identical-unlit-triangle-v1",
             "scene_builder": "scene_with_triangle",

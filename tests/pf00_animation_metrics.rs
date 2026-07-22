@@ -4,7 +4,7 @@ use scena::{
 };
 
 #[test]
-fn pf00_animation_profiled_update_reports_scan_clone_and_weight_work() {
+fn pf00_animation_profiled_update_reports_zero_clip_clone_and_weight_work() {
     let mut scene = Scene::new();
     let node = scene
         .add_empty(scene.root(), Transform::IDENTITY)
@@ -61,5 +61,5 @@ fn pf00_animation_profiled_update_reports_scan_clone_and_weight_work() {
         metrics.weight_bytes_written,
         3 * std::mem::size_of::<f32>() as u64
     );
-    assert!(metrics.clip_clone_bytes >= 5 * std::mem::size_of::<f32>() as u64);
+    assert_eq!(metrics.clip_clone_bytes, 0);
 }

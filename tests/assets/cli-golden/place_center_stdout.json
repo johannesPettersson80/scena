@@ -4,15 +4,11 @@
   "ok": true,
   "schema": "scena.placement_result.v1",
   "transform": {
+    "kind": "raw",
     "rotation": [
       0.0,
       0.0,
       0.0,
-      1.0
-    ],
-    "scale": [
-      1.0,
-      1.0,
       1.0
     ],
     "translation": [

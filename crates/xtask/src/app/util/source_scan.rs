@@ -51,8 +51,7 @@ pub(crate) fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
         }) {
             continue;
         }
-        let path = root.join(&rel);
-        let Ok(text) = fs::read_to_string(&path) else {
+        let Ok(text) = read_source_to_string(root, &rel) else {
             continue;
         };
 
@@ -87,7 +86,7 @@ fn cfg_test_only_module_roots(root: &Path) -> BTreeSet<PathBuf> {
     let sources = source_files(root);
     let mut roots = BTreeSet::new();
     for owner in &sources {
-        let Ok(text) = fs::read_to_string(root.join(owner)) else {
+        let Ok(text) = read_source_to_string(root, owner) else {
             continue;
         };
         let module_dir = if owner.file_name().and_then(OsStr::to_str) == Some("mod.rs") {
@@ -268,8 +267,7 @@ pub(crate) fn forbid_contains_path(
     rel: &Path,
     needles: &[&str],
 ) {
-    let path = root.join(rel);
-    let Ok(text) = fs::read_to_string(&path) else {
+    let Ok(text) = read_source_to_string(root, rel) else {
         if rel
             .to_str()
             .is_some_and(crate::app::doctor_docs::is_retired_internal_doc)
@@ -298,24 +296,5 @@ pub(crate) fn forbid_contains_path(
 }
 
 pub(crate) fn source_files(root: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_source_files(&root.join("src"), Path::new("src"), &mut files);
-    files.sort();
-    files
-}
-
-pub(crate) fn collect_source_files(dir: &Path, rel_dir: &Path, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let rel = rel_dir.join(entry.file_name());
-        if path.is_dir() {
-            collect_source_files(&path, &rel, files);
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-            files.push(rel);
-        }
-    }
+    cached_rust_files_below(root, Path::new("src"))
 }

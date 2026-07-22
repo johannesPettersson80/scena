@@ -81,6 +81,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "phase2_ssao_only_changes_rendered_pixels",
             "ssao_only_delta",
             "phase2SsaoOnlyDelta",
+            "phase2SsaoOccluderTransform",
+            "depth_threshold: 0.0",
             "ambient_occlusion_passes === 1",
             "bloom_passes === 0",
             "fxaa_passes === 0",

@@ -525,8 +525,8 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
                 prepared.bind_groups,
                 prepared.shader_modules,
             ),
-            (12, 23, 7, 19, 9, 18),
-            "the default FXAA output owner inventory, including two prepared readback buffers and the post-uniform staging buffer, must be exact before render",
+            (12, 23, 7, 19, 9, 9),
+            "the default FXAA output owner inventory, including the device-shared triangle shader, two prepared readback buffers, and the post-uniform staging buffer, must be exact before render",
         );
         assert_eq!(prepared.pending_destructions, 0);
         assert!(prepared.approximate_gpu_memory_bytes.unwrap_or_default() > 0);
@@ -1998,11 +1998,12 @@ fn builtin_geometry_generators_produce_valid_bounds_and_indices() {
         GeometryDesc::cylinder(1.0, 3.0, 12),
         GeometryDesc::plane(2.0, 3.0),
         GeometryDesc::line(Vec3::ZERO, Vec3::new(1.0, 2.0, 3.0)),
-        GeometryDesc::polyline(&[
+        GeometryDesc::try_polyline(&[
             Vec3::ZERO,
             Vec3::new(1.0, 0.0, 0.0),
             Vec3::new(1.0, 1.0, 0.0),
-        ]),
+        ])
+        .expect("built-in polyline fixture is valid"),
         GeometryDesc::arrow(Vec3::ZERO, Vec3::new(0.0, 1.0, 0.0)),
         GeometryDesc::grid(10.0, 10),
         GeometryDesc::axes(2.0),

@@ -5,8 +5,17 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
     check_c08_presentation_timeline_contracts(root, findings);
     check_c09_gpu_resource_lifecycle_contracts(root, findings);
     check_c10_overlay_ownership_contracts(root, findings);
+    check_c11_terminal_device_loss_contracts(root, findings);
+    check_full_review_surface_acquisition_contracts(root, findings);
+    check_full_review_cpu_depth_clipping_contracts(root, findings);
     check_c12_deformed_picking_contracts(root, findings);
     check_c13_strict_gpu_construction_contracts(root, findings);
+    check_c16_transform_scale_contract(root, findings);
+    check_c17_visible_bounds_framing_contract(root, findings);
+    check_c18_fallible_polyline_contract(root, findings);
+    check_c19_primitive_uv_seam_contract(root, findings);
+    check_c20_browser_execution_ergonomics(root, findings);
+    check_c21_cad_inspection_lighting(root, findings);
     check_scene_host_input_validation_contracts(root, findings);
     check_phase1_appearance_dirty_contracts(root, findings);
     require_contains(

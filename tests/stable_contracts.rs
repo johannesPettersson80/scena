@@ -4,10 +4,11 @@ use serde_json::json;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, AnnotationProjectionReportV1, AssetCatalogV1, AssetDoctorReportV1, AssetLoadReportV1,
-    AssetProvenance, AssetReadinessReportV1, Backend, CAPABILITY_REPORT_SCHEMA_V1, Capabilities,
-    CapabilityReport, CapabilityReportV1, CaptureBaselineReport, CaptureDescriptor, Color,
-    GeometryTopology, Quat, SceneAssetGeometrySummary, Transform, Vec3,
+    Aabb, AnnotationProjectionReportV1, AssetCatalogV1, AssetConversionReportV1,
+    AssetDoctorReportV1, AssetLoadReportV1, AssetProvenance, AssetReadinessReportV1, Backend,
+    CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
+    CaptureBaselineReport, CaptureDescriptor, Color, GeometryTopology, Quat,
+    SceneAssetGeometrySummary, Transform, Vec3,
 };
 
 #[test]
@@ -131,6 +132,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.cli_error.v1",
         ),
         (
+            "tests/assets/stable-contracts/asset_conversion.v1.json",
+            "scena.asset_conversion.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_inspection.v1.json",
             "scena.scene_inspection.v1",
         ),
@@ -169,6 +174,14 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
         (
             "tests/assets/stable-contracts/browser_proof_run.v1.json",
             "scena.browser_proof_run.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json",
+            "scena.q01.required_webgpu_pixel_parity.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json",
+            "scena.q04.required_gpu_resource_lifecycle.v1",
         ),
         (
             "tests/assets/stable-contracts/appearance_expectation.v1.json",
@@ -540,6 +553,13 @@ fn agent_smoke_template_golden_matches_live_schema_serialization() {
 }
 
 #[test]
+fn agent_template_catalog_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::AgentTemplateCatalogV1>(
+        "tests/assets/stable-contracts/agent_template_catalog.v1.json",
+    );
+}
+
+#[test]
 fn browser_proof_run_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::BrowserProofRunV1>(
         "tests/assets/stable-contracts/browser_proof_run.v1.json",
@@ -561,9 +581,34 @@ fn scene_recipe_validation_golden_matches_live_schema_serialization() {
 }
 
 #[test]
-fn placement_result_golden_matches_live_schema_serialization() {
+fn scene_recipe_validation_v1_accepts_pre_resolution_plan_shape() {
+    let mut report =
+        read_fixture_json("tests/assets/stable-contracts/scene_recipe_validation.v1.json");
+    let object = report
+        .as_object_mut()
+        .expect("validation report is an object");
+    object.remove("validation_mode");
+    object.remove("execution_equivalent");
+    object.remove("policy");
+    object.remove("resources");
+    let report: scena::SceneRecipeValidationReportV1 =
+        serde_json::from_value(report).expect("pre-resolution-plan validation shape deserializes");
+    assert_eq!(
+        report.validation_mode,
+        scena::RecipeValidationModeV1::SyntaxOnly
+    );
+    assert!(!report.execution_equivalent);
+    assert!(report.policy.is_none());
+    assert!(report.resources.is_empty());
+}
+
+#[test]
+fn placement_and_recipe_patch_goldens_match_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::ScenePlacementResultV1>(
         "tests/assets/stable-contracts/placement_result.v1.json",
+    );
+    assert_fixture_matches_live_serialization::<scena::SceneRecipePatchResultV1>(
+        "tests/assets/stable-contracts/recipe_patch.v1.json",
     );
 }
 
@@ -663,11 +708,19 @@ fn capability_report_v1_accepts_old_shape_without_post_processing() {
         .as_object_mut()
         .expect("capability report is an object")
         .remove("post_processing");
+    report
+        .as_object_mut()
+        .expect("capability report is an object")
+        .remove("probe");
     let report: CapabilityReportV1 =
         serde_json::from_value(report).expect("old capability_report.v1 shape deserializes");
     assert_eq!(
         report.post_processing, None,
         "additive post_processing defaults for old capability_report.v1 consumers"
+    );
+    assert_eq!(
+        report.probe, None,
+        "additive probe provenance defaults for old capability_report.v1 consumers"
     );
 }
 
@@ -696,6 +749,13 @@ fn asset_load_report_golden_matches_live_schema_serialization() {
 fn asset_doctor_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<AssetDoctorReportV1>(
         "tests/assets/stable-contracts/asset_doctor.v1.json",
+    );
+}
+
+#[test]
+fn asset_conversion_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<AssetConversionReportV1>(
+        "tests/assets/stable-contracts/asset_conversion.v1.json",
     );
 }
 

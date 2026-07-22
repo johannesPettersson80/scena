@@ -1,30 +1,55 @@
-use super::{create_post_pipeline_with_shader, create_post_shader};
+use super::{create_post_pipeline_with_shader, create_post_shader, resources::POST_COLOR_FORMAT};
 
-const SHADER: &str = include_str!("fxaa.wgsl");
+const LINEAR_TARGET_SHADER: &str = concat!(
+    include_str!("fxaa.wgsl"),
+    "\n",
+    include_str!("post_output_linear.wgsl")
+);
+const SRGB_BYTE_TARGET_SHADER: &str = concat!(
+    include_str!("fxaa.wgsl"),
+    "\n",
+    include_str!("post_output_srgb.wgsl"),
+    "\n",
+    include_str!("../../color_contract.wgsl")
+);
 
 pub(super) fn create_pipelines(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
     surface_format: Option<wgpu::TextureFormat>,
 ) -> (wgpu::RenderPipeline, Option<wgpu::RenderPipeline>) {
-    let shader = create_post_shader(device, "scena.gpu_post.fxaa_shader", SHADER);
+    let shader = create_post_shader(device, "scena.gpu_post.fxaa_shader", LINEAR_TARGET_SHADER);
     let post = create_post_pipeline_with_shader(
         device,
         "scena.gpu_post.fxaa_pipeline",
         &shader,
         pipeline_layout,
-        wgpu::TextureFormat::Rgba8Unorm,
+        POST_COLOR_FORMAT,
     );
     let surface = surface_format.map(|format| {
+        let surface_shader = create_post_shader(
+            device,
+            "scena.gpu_post.surface_fxaa_shader",
+            shader_for_target(format),
+        );
         create_post_pipeline_with_shader(
             device,
             "scena.gpu_post.surface_fxaa_pipeline",
-            &shader,
+            &surface_shader,
             pipeline_layout,
             format,
         )
     });
     (post, surface)
+}
+
+const fn shader_for_target(format: wgpu::TextureFormat) -> &'static str {
+    match format {
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm => {
+            SRGB_BYTE_TARGET_SHADER
+        }
+        _ => LINEAR_TARGET_SHADER,
+    }
 }
 
 pub(super) fn encode(

@@ -7,8 +7,7 @@ pub(crate) fn require_contains(
     rel: &str,
     needles: &[&str],
 ) {
-    let path = root.join(rel);
-    let Ok(text) = fs::read_to_string(&path) else {
+    let Ok(text) = read_source_to_string(root, rel) else {
         if let Some(retired) = retired_internal_doc(rel) {
             eprintln!(
                 "scena doctor: intentionally retired document {} (owner: {}; rationale: {})",
@@ -43,29 +42,13 @@ fn split_module_companion_contains(root: &Path, rel: &str, needle: &str) -> bool
     {
         return false;
     }
-    let module_dir = root.join(rel.with_extension(""));
-    rust_files_below(&module_dir).into_iter().any(|path| {
-        fs::read_to_string(path)
-            .map(|text| text.contains(needle))
-            .unwrap_or(false)
-    })
-}
-
-fn rust_files_below(directory: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return Vec::new();
-    };
-    let mut files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            files.extend(rust_files_below(&path));
-        } else if path.extension().and_then(OsStr::to_str) == Some("rs") {
-            files.push(path);
-        }
-    }
-    files.sort();
-    files
+    cached_rust_files_below(root, &rel.with_extension(""))
+        .into_iter()
+        .any(|path| {
+            read_source_to_string(root, path)
+                .map(|text| text.contains(needle))
+                .unwrap_or(false)
+        })
 }
 
 pub(crate) fn require_rust_test_functions(
@@ -75,7 +58,7 @@ pub(crate) fn require_rust_test_functions(
     rel: &str,
     names: &[&str],
 ) {
-    let Ok(text) = fs::read_to_string(root.join(rel)) else {
+    let Ok(text) = read_source_to_string(root, rel) else {
         findings.push(Finding::new(
             rule,
             format!("could not read {rel} for Rust test-item scan"),
@@ -87,7 +70,7 @@ pub(crate) fn require_rust_test_functions(
         if !declared.contains(*name) {
             findings.push(Finding::new(
                 rule,
-                format!("{rel} is missing required #[test] function '{name}'"),
+                format!("{rel} is missing required active (non-ignored) #[test] function '{name}'"),
             ));
         }
     }
@@ -115,6 +98,9 @@ fn rust_test_function_names(text: &str) -> BTreeSet<String> {
         let item = item.strip_prefix("async ").unwrap_or(item);
         if let Some(rest) = item.strip_prefix("fn ")
             && attributes.iter().any(|attribute| attribute == "#[test]")
+            && !attributes
+                .iter()
+                .any(|attribute| attribute.starts_with("#[ignore"))
         {
             let name = rest
                 .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))

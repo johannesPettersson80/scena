@@ -51,6 +51,39 @@ let framing = scene.frame_bounds(
 let controls = scena::OrbitControls::from_framing(framing);
 ```
 
+For aggregate scene or import framing, use the matching option-bearing helper
+so the output dimensions, view, padding, depth policy, and inspection-helper
+policy are part of the solve:
+
+```rust
+let framing = scene.frame_all_with_assets_and_options(
+    camera,
+    &assets,
+    scena::FramingOptions::new()
+        .three_quarter_front_right()
+        .fill(0.72)
+        .margin_px(32.0)
+        .tighten_depth_range(true)
+        .include_helpers(false)
+        .viewport(output_width, output_height),
+)?;
+```
+
+Visible hidden nodes are always excluded; tagged inspection helpers are also
+excluded by default. Use `include_helpers(true)` only when helper geometry is
+part of the intended composition. The legacy `frame_all` and `frame_import`
+methods use the camera's current aspect because they do not receive a target
+size. Viewers and captures that know the real output size use
+`frame_all_with_assets_and_options` or `frame_import_with_options` instead.
+Interactive viewers seed `OrbitControls` from that same `FramingOutcome`, so
+the first pointer event preserves the selected view instead of snapping to
+front.
+
+`Scene::move_origin_to` aligns a node origin. It does not center its geometry.
+Use `Scene::center_visible_bounds_on(node, &assets, point)` when imported or
+authored content is offset from its node origin. The former ambiguous
+`Scene::center_on` name is deprecated.
+
 Scene recipes expose the same camera helpers. Prefer named lenses and framing
 presets instead of hand-tuning a `look_at` distance:
 
@@ -112,6 +145,15 @@ scene-specific light rig.
 
 Start with `examples/industrial_static_scene.rs`.
 
+High-level glTF viewer builders promise a presentable default: they preserve
+authored lights/environments and otherwise add one neutral directional light
+plus a studio background. `FirstRender::diagnostics()` and viewer
+`diagnostics()` include a structured warning describing the applied fallback.
+The raw `Renderer` API intentionally does not do this; black or transparent
+targets and unlit scenes are valid low-level rendering contracts. A low-level
+render may therefore return bytes successfully while scene diagnosis reports
+`MissingLightingOrEnvironment` or `InvisibleScene`.
+
 ## Authored geometry
 
 Scene recipes can author deterministic primitives and custom meshes for
@@ -123,6 +165,11 @@ For visible primitive boxes and cylinders in product-style renders, add a small
 flat chamfer geometry; unsupported primitive kinds reject them instead of
 silently ignoring an inert knob. The build manifest reports the generated
 vertex/index counts so agents can verify the requested geometry was built.
+
+Generated cylinder and cone sides duplicate the closing vertex at `u=1`.
+Their final side triangles therefore interpolate across the local final UV
+interval instead of wrapping backward across the whole texture. Cylinder caps
+retain their independent radial UV layout, while cone tips remain face-local.
 
 When a recipe uses intentionally repeated high/low geometry variants, attach a
 node `lods[]` chain to switch distant or small-on-screen subjects to the cheaper
@@ -154,6 +201,29 @@ Material workflows include:
 - alpha modes,
 - emissive output,
 - ACES/sRGB output.
+
+### KHR material visual-proof contract
+
+The deterministic CPU/reference proof for clearcoat, sheen, anisotropy,
+iridescence, dispersion, and transmission/volume uses fixed, feature-specific
+regions rather than whole-frame maxima. Visible acceptance requires at least a
+four-code-value channel change plus per-feature RMSE, changed-pixel, and signed
+effect-direction floors. Numerical repeatability is evaluated separately: a
+valid feature image with one-LSB noise remains accepted, while a disabled
+control, a two-LSB effect nudge, and an inverted-effect direction all fail the
+same evaluator. Directional anisotropy is rendered under two light directions.
+
+Run the focused proof with:
+
+```text
+cargo test --test m8_visual_proof m8_khr_material_visual_oracle_rejects_disabled_and_wrong_direction_mutations -- --exact
+```
+
+It writes the metric and mutation rows to
+`target/gate-artifacts/m8-visual/khr-material-feature-proof.json`. This CPU
+oracle does not replace the source-bound Round E WebGPU/WebGL2 release lanes;
+it prevents extension implementation smoke tests from passing on imperceptible
+or directionally wrong output.
 
 Create materials through `Assets` and attach them to scene renderables.
 For recipe-authored product scenes, prefer `material.preset` before raw PBR
@@ -276,8 +346,13 @@ Shadow behavior is capability-aware. Applications should query capabilities and
 diagnostics when selecting optional shadow-heavy scenes or quality settings.
 Directional shadows are supported on GPU-device WebGPU/WebGL2/native lanes
 where the renderer renders a shadow map and samples it into visible receiver
-pixels. CPU/reference and unattached factory capability rows report `degraded`
-instead of claiming the GPU receiver path.
+pixels. The shipped receiver filter is an explicit 3×3 texel grid: nine
+nearest-filtered depth-comparison samples averaged once per shadowed fragment.
+`directional_shadow_pcf_kernel: 3` in capabilities and frame stats names that
+sample grid, not the implicit 2×2 footprint of one linearly filtered comparison
+sample. CPU/reference and unattached factory capability rows report `degraded`
+instead of claiming the GPU receiver path. Point/spot shadow maps and cascaded
+directional maps are not currently shipped.
 
 Area lights are evaluated as finite sampled emitters on both CPU and GPU, with
 LTC-style specular evaluation for rectangular, disc, and sphere emitter shapes.
@@ -307,10 +382,25 @@ color-management, punctual/area/environment/shadow lighting, and sixteen
 scene-clipping plane uniforms plus clipping control. Per-draw model and normal
 matrices live in the draw-uniform bind group instead.
 
+CPU depth-slab clipping happens before perspective division and row-band
+binning. The retained projection cache stores the clipped triangles once per
+geometry pass, so parallel bands do not repeat clipping or projection. Pixel
+attributes use camera-appropriate interpolation, while post-projection depth
+remains screen-linear for the depth buffer. GPU backends continue to use
+hardware clip-space clipping for the same near/far contract.
+
 Output color is sRGB unless capability evidence says otherwise.
 `Capabilities::wide_gamut_output` and the browser M4 smoke artifact record
 Display P3 canvas probe results; scena does not blanket-claim wide-gamut output
 on native, headless, or unmeasured browser surfaces.
+
+`Capabilities::color_target_format` reports the selected attachment format.
+For `*Srgb` attachments, shaders keep RGB linear and the attachment performs
+the transfer. For plain `*Unorm` attachments that carry the sRGB output
+contract, the final shader performs the transfer. RGBA8 capture/readback is
+therefore sRGB display bytes in either case and does not change interpretation
+when post-processing is enabled. See
+[`specs/color-contract.md`](specs/color-contract.md).
 
 Subtle postprocess bloom is opt-in:
 
@@ -318,8 +408,8 @@ Subtle postprocess bloom is opt-in:
 renderer.set_bloom(Some(scena::PostBloomConfig::subtle()));
 ```
 
-The bloom pass runs on the output frame before FXAA and is reported through
-`RendererStats::bloom_passes`.
+The bloom pass samples linear RGB from sRGB post intermediates before FXAA and
+is reported through `RendererStats::bloom_passes`.
 
 Depth of field is opt-in for product and documentation hero shots:
 
@@ -349,6 +439,12 @@ renderer.set_anti_aliasing(scena::AntiAliasing::None);
 renderer.set_anti_aliasing(scena::AntiAliasing::Fxaa);
 renderer.set_anti_aliasing(scena::AntiAliasing::Msaa4);
 ```
+
+On the current WebGPU/WebGL2 WASM pipelines, automatic or profile-selected
+high quality degrades to FXAA and records `MultisampleFallback` with
+`fallback_applied:true`. Capability JSON reports color/depth sample matrices of
+`[1, 0, 0]`. Calling `set_anti_aliasing(Msaa4)` is an exact request and remains
+an actionable `UnsupportedSampleCount { requested: 4, maximum: 1 }` error.
 
 CPU rendering enables a conservative occlusion prepass only when at least 64
 prepared primitives have overlapping projected tiles. GPU backends never run
@@ -412,5 +508,32 @@ prepared state.
 
 If you mutate scene graph, assets, surface, target, environment, or relevant
 renderer settings, call `prepare()` again.
+
+### Prepare and render performance contracts
+
+GPU triangle shader modules are cached per live device and material texture
+binding mode, shared by compatible pipelines, and discarded with that device.
+Structural work remains in `prepare()`; `render()` does not compile shaders.
+`PrepareWorkMetrics` exposes module creations, cache hits/misses, and routine
+nonblocking versus pressure-triggered blocking polls.
+
+On native attached surfaces, `PresentOnly` without post-processing encodes one
+scene-color pass and submits once. Requested supported MSAA renders into a
+multisampled surface-sized target and resolves into the presentation texture.
+Readback and post-processing retain their explicit offscreen paths.
+
+The CPU raster path retains projected row-bin candidates, computes frame-wide
+primitive flags once, uses inverse-area multiplication, and performs final
+linear-to-display conversion once per finite-depth output pixel where blending
+semantics permit. Transparency and transmission keep their required linear or
+already-encoded intermediate semantics. The u8-to-linear path uses the shared
+bit-identical lookup table. `RenderWorkMetrics` exposes scene passes,
+submissions, output encodes, row-bin work, and primitive-flag scans so these
+contracts can be tested without timing-only assertions.
+
+Imported animation and skin preparation share one source-node index. Joint
+position/normal matrices are computed once per joint update rather than per
+vertex influence, including inverse-transpose normal handling for nonuniform
+scale.
 
 See [Lifecycle](lifecycle.md).

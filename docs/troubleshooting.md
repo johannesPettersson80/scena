@@ -2,7 +2,32 @@
 
 This page lists common problems and the first places to look.
 
+## Release readiness reports a missing or incomplete artifact root
+
+Run readiness against the canonical staged bundle explicitly:
+
+```bash
+cargo run -p xtask -- release-readiness --artifact-root target/gate-artifacts
+```
+
+`RELEASE-READY-ARTIFACT-ROOT` means neither the flag nor a non-empty
+`SCENA_RELEASE_ARTIFACT_ROOT` selected a bundle. A missing/unreadable directory
+or missing required files is reported as `RELEASE-READY-ARTIFACTS`. Inspect the
+`scena.release_readiness.v1` fields `artifact_root`,
+`discovered_artifact_count`, `required_artifact_count`, and
+`validated_artifact_count`; zero validated artifacts is always failure. First
+run `stage-release-artifacts <downloaded-root> target/gate-artifacts` if the
+lane archives have not yet been assembled.
+
 ## The output is blank
+
+The documented high-level glTF viewer and raw-asset CLI render paths install a
+neutral presentation when an asset has no authored lighting/environment. Check
+`FirstRender::diagnostics()` for `MissingLightingOrEnvironment` with
+`fallback_applied = true`; that warning means the frame was recovered but the
+presentation is still not authored. Low-level `Renderer` construction remains
+black and unlit by default, so a successful byte capture alone is not proof of
+a visible scene.
 
 Check:
 
@@ -13,11 +38,79 @@ Check:
 - `prepare()` was called after the latest scene or asset change.
 - The renderer target size is non-zero.
 
+If the renderer reports `NoActiveCamera`, call `Scene::add_default_camera` for
+the standard framed camera or `Scene::set_active_camera` for an authored one.
+Those exact remedies remain present after SceneHost and JSON conversion.
+
 Useful examples:
 
 - `examples/first_visible_render.rs`
 - `examples/camera_framing.rs`
 - `examples/headless_ci.rs`
+
+## A name was not found
+
+Read the structured `candidates` array on the lookup error, recipe diagnostic,
+SceneHost error, or `scena.cli_error.v1` response. Scena ranks at most three
+names with one case- and separator-normalized algorithm, so a typo such as a
+schema, template, node, geometry/mesh-resource, material, animation, variant,
+anchor, connector, or environment preset can be repaired from the first
+response. Do not scrape the human message, and do not auto-apply a candidate
+when the surrounding task makes the choice ambiguous.
+
+For a recipe, run the structured path before changing camera or material data:
+
+```bash
+scena validate-recipe recipe.json --full
+scena recipe build recipe.json
+scena diagnose recipe.json --visibility
+scena repair recipe.json
+```
+
+Full validation reports `policy`, `resources`, and resource-attached
+diagnostics. Check the normalized URI, `required` flag, and `allowed_roots`
+before changing recipe content. `--syntax-only` deliberately does not establish
+that render-time resources are available.
+
+If the normalized URI is intentionally in an external model library, do not
+move the file or disable the sandbox. Inspect and then reuse a narrow operator
+root:
+
+```bash
+scena policy recipe --allow-root /srv/model-library
+scena validate-recipe recipe.json --full --allow-root /srv/model-library
+scena diagnose recipe.json --visibility --allow-root /srv/model-library
+```
+
+The directory must exist. The reported path is canonical, and canonical asset
+paths must remain below it; a symlink or `..` traversal that lands elsewhere is
+still a `policy_violation`. Repeat `--allow-root` for multiple libraries.
+
+For a raw glTF/GLB, use the same asset path with `scena render --introspect`,
+`scena diagnose --visibility`, and `scena repair`. Introspection/verification
+is allowed to fail a provably invisible result even though a low-level capture
+could return bytes.
+
+These asset-or-recipe verbs do not use a compatibility shortcut for recipes.
+They build every import through the same sandbox and resolver as
+`scena recipe build`. If import 2 or later is missing or outside the allowed
+roots, the command exits nonzero with its exact recipe-build diagnostic instead
+of rendering a partial scene. `scena doctor recipe.json` therefore emits
+`scena.recipe_build_result.v1`; `scena doctor model.glb` continues to emit
+`scena.asset_doctor.v1`.
+
+`scena repair target --from report.json` applies the same distinction before
+planning. A raw target must load cleanly through asset doctor; a recipe must
+complete policy-aware validation/build. If the target is missing, malformed,
+or outside the allowed roots, fix or authorize the target first—the report is
+not processed against an unchecked path. Do not pass a second positional
+target; it is rejected rather than silently ignored.
+
+If an older generated template reports a `policy_violation` for
+`tests/assets/environment/polyhaven/...` or `tests/assets/gltf/...`, regenerate
+it with the current installed CLI. Current templates use packaged builtin
+assets and work outside a checkout. Explicit URI environments remain required
+assets and fail closed; named `studio`/`neutral_studio` presets are portable.
 
 ## The model is too large or too small
 
@@ -52,6 +145,44 @@ Resize and surface events invalidate prepared renderer state. Forward the event
 to the renderer and call `prepare()` again before rendering.
 
 See [Lifecycle](lifecycle.md).
+
+## The CLI used an unexpected backend
+
+Inspect the top-level `backend_selection` object. CPU is the default;
+`source:"cli_flag"` appears only when `--gpu` was passed. The CLI ignores
+`SCENA_USE_GPU`, which remains test/proof metadata, so shell state cannot
+silently switch production rendering. If `fallback_used:true`, the selected
+backend is `headless` because the explicitly requested preferred-GPU path could
+not build. Use strict GPU construction for hardware proof.
+
+For a pre-render check, run `scena capabilities --live --json`. A successful
+report must say `probe.status:"measured"` and identify the selected adapter and
+device. Exit 1 with `probe.status:"unavailable"` is an actionable hardware or
+driver result, not a test skip. `scena capabilities --json` is intentionally
+`static_no_device` and cannot validate the current machine. The headless probe
+does not validate window/browser presentation; use the matching rendered
+surface lane for that claim.
+
+## Help or template discovery was treated as an error
+
+Current builds return `scena.cli_help.v1` on stdout with exit 0 for both global
+and per-command help, including `scena diff --help --json`. Discover templates
+with `scena examples agent list`; do not provoke an unknown-template error.
+Canonical template names use kebab-case. Older underscore aliases still run and
+record their replacement in the generated manifest `notes`.
+
+`scena diff` exits 0 for an unequal but valid comparison. Use `--exit-code`
+only when CI should treat inequality as exit 1; the JSON report remains on
+stdout in either mode.
+
+## Converter progress corrupted JSON output
+
+Use `scena-convert --json ...`. Current builds capture FBX2glTF stdout/stderr
+inside the `scena.asset_conversion.v1` `diagnostics` array and emit exactly one
+JSON document. Exit 2 means the conversion request was invalid; exit 1 means
+the tool was unavailable or failed, and the same stdout report contains the
+remedy and captured diagnostic lines. Use `--human` only when live plain-text
+tool output is intentional.
 
 ## Browser rendering is unavailable
 
@@ -93,6 +224,12 @@ Check:
 - coordinate-system conversion,
 - left-handed versus right-handed data,
 - whether the anchor belongs to the expected imported node.
+
+Malformed marker transforms now fail during asset loading instead of becoming
+identity. Read the exact extras path in `AssetError::Parse`. `forward` and `up`
+must be present together, finite, nonzero, and nonparallel; quaternion rotations
+must be normalized; scale must be finite and nonzero; and matrices must be
+finite affine 4x4 transforms that decompose without shear.
 
 See:
 

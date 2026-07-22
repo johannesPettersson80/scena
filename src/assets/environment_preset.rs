@@ -19,7 +19,7 @@
 
 use crate::diagnostics::AssetError;
 
-use super::{AssetFetcher, AssetLoadOptions, Assets, EnvironmentHandle};
+use super::{AssetFetcher, AssetLoadOptions, AssetPath, Assets, EnvironmentHandle};
 
 const NEUTRAL_STUDIO_SOURCE_PATH: &str = "tests/assets/environment/neutral-studio.fixture.txt";
 const NEUTRAL_STUDIO_SOURCE_SHA256: &str =
@@ -29,11 +29,17 @@ const NEUTRAL_STUDIO_FILES: &[&str] = &[
     "tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml",
     "tests/assets/environment/generated/brdf-lut-256.fixture.toml",
 ];
+const NEUTRAL_STUDIO_SOURCE_BYTES: &[u8] =
+    include_bytes!("../../tests/assets/environment/neutral-studio.fixture.txt");
 
 const STUDIO_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
+const STUDIO_RUNTIME_PATH: &str = "tests/assets/environment/generated/studio_small_03_128x64.hdr";
+const STUDIO_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_03_128x64.hdr";
 const STUDIO_SOURCE_SHA256: &str =
     "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817";
-const STUDIO_FILES: &[&str] = &[STUDIO_SOURCE_PATH];
+const STUDIO_FILES: &[&str] = &[STUDIO_SOURCE_PATH, STUDIO_RUNTIME_PATH];
+const STUDIO_RUNTIME_BYTES: &[u8] =
+    include_bytes!("../../tests/assets/environment/generated/studio_small_03_128x64.hdr");
 
 /// One bundled, checked environment preset.
 ///
@@ -60,6 +66,8 @@ pub enum EnvironmentPreset {
 pub struct EnvironmentPresetMetadata {
     name: &'static str,
     source_path: &'static str,
+    runtime_uri: &'static str,
+    source_size_bytes: usize,
     source_sha256: &'static str,
     source_url: &'static str,
     license: &'static str,
@@ -96,6 +104,8 @@ impl EnvironmentPreset {
             Self::NeutralStudio => EnvironmentPresetMetadata {
                 name: "NeutralStudio",
                 source_path: NEUTRAL_STUDIO_SOURCE_PATH,
+                runtime_uri: NEUTRAL_STUDIO_SOURCE_PATH,
+                source_size_bytes: NEUTRAL_STUDIO_SOURCE_BYTES.len(),
                 source_sha256: NEUTRAL_STUDIO_SOURCE_SHA256,
                 source_url: "scena://bundled/neutral-studio",
                 license: "CC0-1.0",
@@ -105,6 +115,8 @@ impl EnvironmentPreset {
             Self::Studio => EnvironmentPresetMetadata {
                 name: "Studio",
                 source_path: STUDIO_SOURCE_PATH,
+                runtime_uri: STUDIO_RUNTIME_URI,
+                source_size_bytes: STUDIO_RUNTIME_BYTES.len(),
                 source_sha256: STUDIO_SOURCE_SHA256,
                 source_url: "https://polyhaven.com/a/studio_small_03",
                 license: "CC0-1.0",
@@ -124,6 +136,17 @@ impl EnvironmentPresetMetadata {
     /// Primary file path passed to the asset fetcher.
     pub const fn source_path(self) -> &'static str {
         self.source_path
+    }
+
+    /// Runtime identifier used to load the packaged preset without consulting
+    /// the process working directory.
+    pub const fn runtime_uri(self) -> &'static str {
+        self.runtime_uri
+    }
+
+    /// Encoded byte size charged to recipe fetch and texture budgets.
+    pub const fn source_size_bytes(self) -> usize {
+        self.source_size_bytes
     }
 
     /// SHA-256 of the primary fixture; used by package-budget tests.
@@ -189,7 +212,15 @@ impl<F: AssetFetcher> Assets<F> {
         preset: EnvironmentPreset,
         options: AssetLoadOptions,
     ) -> Result<EnvironmentHandle, AssetError> {
-        self.load_environment_with_options(preset.metadata().source_path(), options)
+        self.load_environment_with_options(preset.metadata().runtime_uri(), options)
             .await
     }
+}
+
+pub(super) fn bundled_environment_bytes(path: &AssetPath) -> Option<&'static [u8]> {
+    (path.as_str() == STUDIO_RUNTIME_URI).then_some(STUDIO_RUNTIME_BYTES)
+}
+
+pub(super) fn is_bundled_environment_uri(path: &AssetPath) -> bool {
+    path.as_str() == STUDIO_RUNTIME_URI
 }

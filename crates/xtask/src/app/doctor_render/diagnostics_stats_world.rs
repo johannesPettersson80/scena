@@ -59,7 +59,7 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "self.diagnostics.clear()",
             ".prepare_target()",
-            "prepare::collect_precision_diagnostics(scene, target.backend)",
+            "prepare::collect_precision_diagnostics(",
             "prepare::collect_camera_visibility_diagnostics",
         ],
     );
@@ -374,8 +374,8 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
         "ARCH-RENDER-STATS",
         "tests/c09_gpu_resource_lifecycle.rs",
         &[
-            "output_resource_changes_require_prepare_and_stats_are_complete_before_render",
-            "resize_and_context_recovery_rebuild_the_same_resource_shape",
+            "output_resource_changes_require_prepare_and_stats_are_complete_before_render_optional_gpu_smoke",
+            "resize_and_context_recovery_rebuild_the_same_resource_shape_optional_gpu_smoke",
         ],
     );
     require_contains(

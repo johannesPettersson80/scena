@@ -14,6 +14,8 @@ use super::{
     PrepareWorkCounter, PrepareWorkMetrics, Renderer, culling, gpu, prepare, validate_target_size,
 };
 
+const GPU_PREPARE_DESTRUCTION_PRESSURE_LIMIT: u64 = 16_384;
+
 mod support;
 
 fn gpu_triangle_primitives<'a>(
@@ -136,7 +138,19 @@ impl Renderer {
     ) -> Result<(), PrepareError> {
         let total_start = prepare_now_ms();
         let mut step_start = total_start;
-        self.poll_device();
+        self.prepare_device_ready()?;
+        if let Some(gpu) = self.gpu.as_mut() {
+            let blocking = gpu.pending_destructions() > GPU_PREPARE_DESTRUCTION_PRESSURE_LIMIT;
+            if blocking {
+                let _ = gpu.poll_device();
+            } else {
+                let _ = gpu.poll_device_nonblocking();
+            }
+            self.stats.pending_destructions = gpu.pending_destructions();
+            if let Some(work) = work {
+                work.record_gpu_prepare_poll(blocking);
+            }
+        }
         self.diagnostics.clear();
         let target = self
             .prepare_target()
@@ -151,7 +165,11 @@ impl Renderer {
             }
         })?;
         let screen_space_scale = self.screen_space_prepare_scale();
-        let mut diagnostics = prepare::collect_precision_diagnostics(scene, target.backend);
+        let mut diagnostics = self.configuration_diagnostics.clone();
+        diagnostics.extend(prepare::collect_precision_diagnostics(
+            scene,
+            target.backend,
+        ));
         diagnostics.extend(prepare::collect_camera_visibility_diagnostics(
             scene, target,
         ));
@@ -398,7 +416,7 @@ impl Renderer {
                     stats.textures,
                     stats.pipelines,
                     stats.bind_groups,
-                    stats.shader_modules,
+                    stats.shader_module_creations,
                 );
             }
             let pending_destructions = gpu.pending_destructions();

@@ -1,5 +1,6 @@
 use crate::diagnostics::LookupError;
 use crate::material::Color;
+use std::sync::Arc;
 
 use super::{LabelKey, NodeKey, NodeKind, Scene, Transform};
 
@@ -233,7 +234,7 @@ pub(crate) struct LabelGlyphRaster {
     pub(crate) height_px: f32,
     pub(crate) alpha_width: u32,
     pub(crate) alpha_height: u32,
-    pub(crate) alpha: Vec<u8>,
+    pub(crate) alpha: Arc<[u8]>,
 }
 
 fn readable_size_or(value: f32, fallback: f32) -> f32 {

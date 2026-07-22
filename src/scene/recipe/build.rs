@@ -4,11 +4,15 @@ use std::path::{Component, Path, PathBuf};
 use super::types::SceneRecipeDiagnosticV1;
 
 mod report;
+mod resource_plan;
 mod sandbox;
 pub use report::{
     RecipeBuildPolicyBoolV1, RecipeBuildPolicyLimitV1, RecipeBuildPolicyReportV1,
     RecipeBuildPolicyRootV1, RecipeBuildPolicyStringV1,
 };
+#[cfg(feature = "scene-host")]
+pub(crate) use resource_plan::RecipeResourcePlan;
+pub(crate) use resource_plan::{PlannedRecipeResource, RecipeResourceRole};
 
 const DEFAULT_MAX_IMPORTS: usize = 64;
 const DEFAULT_MAX_NODES: usize = 10_000;
@@ -69,6 +73,7 @@ pub struct RecipeBuildPolicy {
     allow_network: bool,
     allowed_uri_schemes: BTreeSet<String>,
     allowed_roots: Vec<PathBuf>,
+    allowed_root_operator_overrides: Vec<bool>,
     override_mask: u32,
 }
 
@@ -76,6 +81,8 @@ impl Default for RecipeBuildPolicy {
     fn default() -> Self {
         let mut allowed_uri_schemes = BTreeSet::new();
         allowed_uri_schemes.insert("file".to_owned());
+        let allowed_roots = default_allowed_roots();
+        let allowed_root_operator_overrides = vec![false; allowed_roots.len()];
         Self {
             max_imports: DEFAULT_MAX_IMPORTS,
             max_nodes: DEFAULT_MAX_NODES,
@@ -95,7 +102,8 @@ impl Default for RecipeBuildPolicy {
             max_recipe_bytes: DEFAULT_MAX_RECIPE_BYTES,
             allow_network: false,
             allowed_uri_schemes,
-            allowed_roots: default_allowed_roots(),
+            allowed_roots,
+            allowed_root_operator_overrides,
             override_mask: 0,
         }
     }
@@ -334,6 +342,27 @@ impl RecipeBuildPolicy {
 
     pub fn with_allowed_roots(mut self, roots: impl IntoIterator<Item = PathBuf>) -> Self {
         self.allowed_roots = roots.into_iter().collect();
+        self.allowed_root_operator_overrides = vec![true; self.allowed_roots.len()];
+        self.override_mask |= OVERRIDE_ROOTS;
+        self
+    }
+
+    /// Adds one operator-authorized local root without removing compiled defaults.
+    ///
+    /// CLI adapters should canonicalize and validate the directory before calling
+    /// this method. Resource paths are canonicalized again at resolution time, so
+    /// symlinks or parent traversal cannot escape the effective root set.
+    pub fn with_allowed_root(mut self, root: PathBuf) -> Self {
+        if let Some(index) = self
+            .allowed_roots
+            .iter()
+            .position(|existing| existing == &root)
+        {
+            self.allowed_root_operator_overrides[index] = true;
+        } else {
+            self.allowed_roots.push(root);
+            self.allowed_root_operator_overrides.push(true);
+        }
         self.override_mask |= OVERRIDE_ROOTS;
         self
     }
@@ -389,7 +418,9 @@ pub(crate) fn build_diagnostic(
         message: message.into(),
         help: help.into(),
         suggestion,
+        candidates: Vec::new(),
         auto_fixable,
+        resource: None,
     }
 }
 

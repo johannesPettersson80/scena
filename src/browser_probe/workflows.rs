@@ -31,6 +31,9 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
         "labels-helpers" => Ok(labels_helpers_scene()?),
         "industrial-static-scene" => Ok(industrial_static_scene()?),
         "depth-overlap" => Ok(depth_overlap_scene()?),
+        "color-transfer-no-post" => Ok(color_transfer_no_post_scene()?),
+        "color-transfer-post" => Ok(color_transfer_post_scene()?),
+        "msaa-capability" => Ok(color_transfer_no_post_scene()?),
         "pbr-point-light" => Ok(pbr::point_light_scene()?),
         "pbr-spot-light" => Ok(pbr::spot_light_scene()?),
         "pbr-normal-map" => pbr::normal_map_scene().await,
@@ -43,6 +46,58 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
         "asset-catalog-preview" => asset_catalog_preview_scene().await,
         other => ergonomics::build_ergonomics_scene(other).await,
     }
+}
+
+fn color_transfer_no_post_scene() -> Result<WorkflowScene, JsValue> {
+    color_transfer_scene("browser-no-post-srgb-transfer", "off")
+}
+
+fn color_transfer_post_scene() -> Result<WorkflowScene, JsValue> {
+    color_transfer_scene("browser-post-srgb-transfer", "on")
+}
+
+fn color_transfer_scene(
+    proof_class: &'static str,
+    post_processing: &'static str,
+) -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    let camera = add_default_camera(&mut scene)?;
+    let gray = Color::from_linear_rgb(0.18, 0.18, 0.18);
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::triangle([
+                Vertex {
+                    position: Vec3::new(-0.8, -0.6, 0.0),
+                    color: gray,
+                },
+                Vertex {
+                    position: Vec3::new(0.8, -0.6, 0.0),
+                    color: gray,
+                },
+                Vertex {
+                    position: Vec3::new(0.0, 0.8, 0.0),
+                    color: gray,
+                },
+            ])],
+            Transform::default(),
+        )
+        .map_err(|error| {
+            JsValue::from_str(&format!("color-transfer triangle failed: {error:?}"))
+        })?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "proof_class": proof_class,
+            "linear_input": 0.18,
+            "expected_center_srgb8": [118, 118, 118, 255],
+            "tonemapper": "standard",
+            "post_processing": post_processing,
+        }),
+    })
 }
 
 async fn model_viewer_scene() -> Result<WorkflowScene, JsValue> {

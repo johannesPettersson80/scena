@@ -26,7 +26,7 @@ pub(crate) fn check_m3a_loading_contracts(root: &Path, findings: &mut Vec<Findin
             "pub use fetch::{AssetFetcher, DefaultAssetFetcher}",
             "pub use gltf::{",
             "SceneAssetMesh",
-            "scene_lookup: BTreeMap<AssetPath, SceneAsset>",
+            "scene_lookup: BTreeMap<scene_cache::SceneCacheKey, SceneAsset>",
         ],
     );
     require_contains(
@@ -180,8 +180,10 @@ pub(crate) fn check_m3a_loading_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "from_gltf_transform",
             "GltfTransform",
-            "\"matrix\"",
-            "matrix_transform",
+            "parse_marker_transform",
+            "parse_matrix",
+            "quaternion must be normalized",
+            "scale.abs().min_element() <= f32::EPSILON",
         ],
     );
     require_contains(
@@ -192,9 +194,9 @@ pub(crate) fn check_m3a_loading_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "pub(super) fn parse_node_anchors",
             "validate_anchor_extras",
-            "validate_number_array",
-            "anchor rotation quaternion must be normalized",
-            "anchor scale components must not be zero",
+            "parse_marker_transform",
+            "Result<Vec<SceneAssetAnchor>, AssetError>",
+            "invalid_reason: None",
         ],
     );
     require_contains(

@@ -1,0 +1,189 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "scena C08 Z-up animation regression fixture"
+  },
+  "extensionsUsed": [
+    "KHR_materials_unlit"
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [0]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "AnimatedZUp",
+      "mesh": 0,
+      "rotation": [0.0, 0.0, 0.25881905, 0.9659258]
+    }
+  ],
+  "meshes": [
+    {
+      "name": "OffsetPointer",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "VisibleUnlit",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.2, 0.8, 0.95, 1.0]
+      },
+      "extensions": {
+        "KHR_materials_unlit": {}
+      }
+    }
+  ],
+  "animations": [
+    {
+      "name": "LinearZ",
+      "samplers": [
+        {
+          "input": 2,
+          "output": 3,
+          "interpolation": "LINEAR"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 0,
+            "path": "rotation"
+          }
+        }
+      ]
+    },
+    {
+      "name": "StepZ",
+      "samplers": [
+        {
+          "input": 2,
+          "output": 4,
+          "interpolation": "STEP"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 0,
+            "path": "rotation"
+          }
+        }
+      ]
+    },
+    {
+      "name": "CubicZ",
+      "samplers": [
+        {
+          "input": 2,
+          "output": 5,
+          "interpolation": "CUBICSPLINE"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 0,
+            "path": "rotation"
+          }
+        }
+      ]
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 312,
+      "uri": "data:application/octet-stream;base64,AAAAAArXI74AAAAAmpmZPwrXI74AAAAAmpmZPwrXIz4AAAAAAAAAAArXI74AAAAAmpmZPwrXIz4AAAAAAAAAAArXIz4AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAgD8AAAAAAAAAAO6DhD7qRnc/AAAAAAAAAADzBDU/8wQ1PwAAAAAAAAAA7oOEPupGdz8AAAAAAAAAAPMENT/zBDU/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7oOEPupGdz8AAAAAAAAAADMzsz4AAAAAAAAAAAAAAAAzM7M+AAAAAAAAAAAAAAAA8wQ1P/MENT8AAAAAAAAAAAAAAAAAAAAA"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 72,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 72,
+      "byteLength": 72,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 144,
+      "byteLength": 8
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 152,
+      "byteLength": 32
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 184,
+      "byteLength": 32
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 216,
+      "byteLength": 96
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 6,
+      "type": "VEC3",
+      "min": [0.0, -0.16, 0.0],
+      "max": [1.2, 0.16, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 6,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR",
+      "min": [0.0],
+      "max": [1.0]
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 6,
+      "type": "VEC4"
+    }
+  ]
+}

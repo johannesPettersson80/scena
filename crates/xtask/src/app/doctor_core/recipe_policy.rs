@@ -1,9 +1,19 @@
 use crate::app::prelude::*;
 
+mod command_routing;
+mod operator_roots;
+mod resource_resolution;
+pub(crate) use command_routing::check_c03_canonical_recipe_command_routing;
+pub(crate) use operator_roots::check_a02_operator_recipe_roots;
+pub(crate) use resource_resolution::check_a01_recipe_resource_resolution;
+
 /// `RECIPE-BUILD-POLICY-BOUNDARY`: recipe JSON is untrusted input, so
 /// policy limits must be enforced before allocation/fetch/decode seams and
 /// pinned by known-bad tests.
 pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec<Finding>) {
+    check_c03_canonical_recipe_command_routing(root, findings);
+    check_a01_recipe_resource_resolution(root, findings);
+    check_a02_operator_recipe_roots(root, findings);
     let tests_path = root.join("tests/scene_recipe_contracts.rs");
     require_markers(
         root,
@@ -41,7 +51,7 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join("src/bin/scena/verify.rs"),
         &[
-            "input.has_scene_host_directives()",
+            "input.is_recipe()",
             "run_verify_recipe_appearance",
             "scene_host_build_from_resolved_recipe",
             "introspect_appearance",
@@ -340,7 +350,8 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "VK_ICD_FILENAMES",
             "cargo test --lib --features scene-host,inspection",
             "cargo test --features scene-host,inspection --test scena_cli_agent_templates",
-            "cargo test --features inspection --test scena_cli_recipe --test scena_cli_agent",
+            "cargo test --features scene-host,inspection --test scena_cli_recipe --test scena_cli_agent",
+            "cargo test --features ktx2 --test m8_assets_materials_ecosystem m8_ktx2_basisu_feature_decodes_basisu_ktx2_rgba_pixels -- --exact",
         ],
     );
 
@@ -362,8 +373,9 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join("src/bin/scena/examples_agent.rs"),
         &[
-            "TEMPLATE_STUDIO_ENVIRONMENT",
-            "studio_small_03_1k.hdr",
+            "TEMPLATE_MATERIAL_VARIANTS_ASSET",
+            "scena://bundled/agent-template/",
+            "\"environment\": { \"preset\": \"studio\" }",
             "TEMPLATE_CAPTURE_MIN_WIDTH: u32 = 640",
             "\"preset\": \"key\"",
             "\"preset\": \"fill\"",
@@ -390,10 +402,10 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         &root.join("src/bin/scena/examples_agent/starter.rs"),
         &[
             "apply_presentation_defaults",
-            "TEMPLATE_STUDIO_ENVIRONMENT",
             "TEMPLATE_CAPTURE_MIN_WIDTH",
             "\"preset\": \"key\"",
-            "\"environment\"",
+            ".entry(\"environment\")",
+            "\"preset\": \"studio\"",
         ],
     );
 
@@ -431,7 +443,7 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         &root.join(".codex/skills/scena-app-builder/SKILL.md"),
         &[
             "Make the output presentable",
-            "studio_small_03_1k.hdr",
+            "packaged `studio` preset",
             "crossed by leader/dimension lines",
             "expect_grounded",
             "ground_contact_missing",
@@ -454,7 +466,7 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         &root.join("docs/guides/llm-app-builder.md"),
         &[
             "Make It Look Good",
-            "studio_small_03_1k.hdr",
+            "packaged `studio` preset",
             "overlay_label_intersects_line",
             "expect_grounded",
             "ground_contact_missing",

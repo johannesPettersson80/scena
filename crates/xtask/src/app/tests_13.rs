@@ -281,6 +281,8 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "src/render/gpu/post/dof.rs",
         "src/browser_probe/probes/state_lifecycle.rs",
         "tests/c09_gpu_resource_lifecycle.rs",
+        "crates/xtask/src/app/release/review_artifacts.rs",
+        "crates/xtask/src/app/release/lane_artifacts.rs",
         "tests/pf01_output_toggle.rs",
         "tests/browser/m6_rust_wasm_renderer_probe.js",
         "tests/browser/pf01_output_toggle.js",
@@ -293,6 +295,11 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         ".github/workflows/hardware-gpu.yml",
         "docs/api.md",
         "docs/browser.md",
+        "docs/lifecycle.md",
+        "docs/specs/release-gates.md",
+        "README.md",
+        "CHANGELOG.md",
+        "docs/release-notes/v1.8.0.md",
     ];
     for relative in files {
         let source = root.join(relative);
@@ -441,6 +448,49 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "doctor must reject partial evidence in the required hardware workflow: {findings:?}",
     );
 
+    let source = fs::read_to_string(&workflow).expect("read partial hardware workflow fixture");
+    let mutated = source.replacen(
+        "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: \"1\"",
+        "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: \"0\"",
+        1,
+    );
+    assert_ne!(
+        source, mutated,
+        "required lifecycle mutation must alter workflow"
+    );
+    fs::write(&workflow, mutated).expect("disable strict GPU lifecycle evidence");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding
+                    .message
+                    .contains("SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: \"1\"")
+        }),
+        "doctor must reject disabling the strict GPU lifecycle lane: {findings:?}",
+    );
+
+    let lane_artifacts = fixture_root.join("crates/xtask/src/app/release/lane_artifacts.rs");
+    let source = fs::read_to_string(&lane_artifacts).expect("read release lane fixture");
+    let mutated = source.replace(
+        "if lane == \"macos-metal\"",
+        "if lane == \"linux-native-vulkan\"",
+    );
+    assert_ne!(
+        source, mutated,
+        "lifecycle lane ownership mutation must alter release tooling"
+    );
+    fs::write(&lane_artifacts, mutated).expect("misroute lifecycle evidence to software Vulkan");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09" && finding.message.contains("if lane == \"macos-metal\"")
+        }),
+        "doctor must reject assigning physical lifecycle evidence to the hosted software-Vulkan lane: {findings:?}",
+    );
+
     let browser_selector = fixture_root.join("tests/browser/hardware_browser.js");
     let source = fs::read_to_string(&browser_selector).expect("read browser selector fixture");
     let mutated = source.replacen("gfx.webgpu.force-enabled", "removed-webgpu-force-enable", 1);
@@ -548,5 +598,28 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         }),
         "doctor must reject WebGL2 lifetime tracking that depends on a browser fence: \
          {findings:?}",
+    );
+
+    let evidence = fixture_root.join("tests/c09_gpu_resource_lifecycle.rs");
+    let source = fs::read_to_string(&evidence).expect("read C09 evidence fixture");
+    let mutated = source.replace(
+        "required_lifecycle_source_checksums()",
+        "removed_lifecycle_source_checksums()",
+    );
+    assert_ne!(
+        source, mutated,
+        "source-provenance mutation must alter the C09 evidence producer"
+    );
+    fs::write(&evidence, mutated).expect("remove C09 source provenance producer");
+    findings.clear();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding
+                    .message
+                    .contains("required_lifecycle_source_checksums()")
+        }),
+        "doctor must reject removal of Q04 source provenance: {findings:?}",
     );
 }

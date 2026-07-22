@@ -143,11 +143,11 @@ impl MaterialDesc {
     ///
     /// let material = MaterialDesc::brushed_steel();
     /// assert_eq!(material.metallic_factor(), 1.0);
-    /// assert!(material.anisotropy_strength_factor() > 0.5);
+    /// assert_eq!(material.anisotropy_strength_factor(), 1.0);
     /// ```
     pub const fn brushed_steel() -> Self {
         Self::pbr_metallic_roughness(Color::LIGHT_GRAY, 1.0, 0.36)
-            .with_anisotropy_strength_factor(0.72)
+            .with_anisotropy_strength_factor(1.0)
     }
 
     /// Glossy coated plastic preset backed by `KHR_materials_clearcoat` factors.

@@ -45,9 +45,9 @@ fn q05_doctor_rejects_sampled_hash_and_missing_effect_masks() {
         "clipping-half-space",
     ];
     let mut fixture_metadata =
-        "[suite]\nreference_mode = \"quadrant-mean-rgba-v1\"\nmax_abs_diff = 3\n".to_owned();
+        "[suite]\nreference_mode = \"local-structure-v2\"\nmax_abs_diff = 3\n".to_owned();
     let mut reference_metadata =
-        "[suite]\nreference_mode = \"quadrant-mean-rgba-v1\"\nmax_abs_diff = 3\n".to_owned();
+        "[suite]\nreference_mode = \"local-structure-v2\"\nmax_abs_diff = 3\n".to_owned();
     for effect in effects {
         fixture_metadata.push_str(&format!(
             "[[fixture]]\nname = \"{effect}\"\nproof_class = \"paired-effect-footprint\"\npair = \"off-left-on-right\"\nspatial_mask = [0, 0, 1, 1]\n"
@@ -68,7 +68,7 @@ fn q05_doctor_rejects_sampled_hash_and_missing_effect_masks() {
     .expect("strong reference metadata writes");
     fs::write(
         fixture_root.join("tests/m2_visual_proof.rs"),
-        "struct EffectPair; struct PixelMask; fn effect_pair_failures() {} fn quadrant_reference_matches() {} fn fixture_reference_mode() {} fn reference_mode() {} fn q05_reference_oracle_rejects_quadrant_corruption_outside_legacy_samples() {} fn q05_effect_footprint_masks_reject_erased_effect_regions() {}\n",
+        "struct EffectPair; struct PixelMask; fn effect_pair_failures() {} fn quadrant_debug_rows_match() {} fn fixture_reference_mode() {} fn reference_mode() {} fn q03_quadrant_debug_rows_notice_coarse_corruption() {} fn q05_effect_footprint_masks_reject_erased_effect_regions() {}\n",
     )
     .expect("strong visual proof writes");
     findings.clear();

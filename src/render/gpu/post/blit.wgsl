@@ -24,5 +24,5 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let dims = vec2<i32>(textureDimensions(source_texture));
     let coord = clamp(vec2<i32>(in.uv * vec2<f32>(dims)), vec2<i32>(0), dims - vec2<i32>(1));
-    return textureLoad(source_texture, coord, 0);
+    return finalize_post_output(textureLoad(source_texture, coord, 0));
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::diagnostics::{ImportDiagnosticOverlay, LookupError};
+use crate::diagnostics::{ImportDiagnosticOverlay, LookupError, nearest_name_candidates};
 use crate::geometry::Aabb;
 
 use super::bounds::{transform_aabb, union_optional};
@@ -19,6 +19,13 @@ impl SceneImport {
         match matches.as_slice() {
             [] => Err(LookupError::NodeNameNotFound {
                 name: name.to_string(),
+                candidates: nearest_name_candidates(
+                    name,
+                    self.records
+                        .iter()
+                        .filter_map(|record| record.name.as_deref()),
+                    3,
+                ),
             }),
             [node] => Ok(*node),
             _ => Err(LookupError::AmbiguousNodeName {
@@ -151,6 +158,11 @@ impl SceneImport {
         match matches.as_slice() {
             [] => Err(LookupError::ClipNotFound {
                 name: name.to_string(),
+                candidates: nearest_name_candidates(
+                    name,
+                    self.clips.iter().filter_map(|clip| clip.name()),
+                    3,
+                ),
             }),
             [clip] => Ok(*clip),
             _ => Err(LookupError::AmbiguousClipName {
@@ -176,6 +188,12 @@ impl SceneImport {
         let Some(name) = previous.name() else {
             return Err(LookupError::ClipNotFound {
                 name: "<unnamed>".to_string(),
+                candidates: self
+                    .clips
+                    .iter()
+                    .filter_map(|clip| clip.name().map(str::to_owned))
+                    .take(3)
+                    .collect(),
             });
         };
         self.clip(name)
@@ -197,6 +215,11 @@ impl SceneImport {
         match matches.as_slice() {
             [] => Err(LookupError::AnchorNotFound {
                 name: name.to_string(),
+                candidates: nearest_name_candidates(
+                    name,
+                    self.anchors.iter().map(|anchor| anchor.name.as_str()),
+                    3,
+                ),
             }),
             [anchor] => Ok(*anchor),
             _ => Err(LookupError::AmbiguousAnchorName {
@@ -224,6 +247,13 @@ impl SceneImport {
         match matches.as_slice() {
             [] => Err(LookupError::ConnectorNotFound {
                 name: name.to_string(),
+                candidates: nearest_name_candidates(
+                    name,
+                    self.connectors
+                        .iter()
+                        .map(|connector| connector.name.as_str()),
+                    3,
+                ),
             }),
             [connector] => Ok(*connector),
             _ => Err(LookupError::AmbiguousConnectorName {

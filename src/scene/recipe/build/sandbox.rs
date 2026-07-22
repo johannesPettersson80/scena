@@ -8,6 +8,9 @@ impl RecipeBuildPolicy {
         diagnostic_path: impl Into<String>,
     ) -> Result<String, Box<SceneRecipeDiagnosticV1>> {
         let diagnostic_path = diagnostic_path.into();
+        if crate::assets::is_bundled_scene_uri(uri) {
+            return Ok(uri.to_owned());
+        }
         let scheme = uri_scheme(uri).map(str::to_ascii_lowercase);
         if let Some(scheme) = scheme.as_deref() {
             if matches!(scheme, "http" | "https") && !self.allow_network {

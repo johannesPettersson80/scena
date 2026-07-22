@@ -56,10 +56,19 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "src/render/cpu.rs",
+        "src/render/cpu_geometry.rs",
         &[
             "CameraProjection",
-            "camera.project(vertex.position)",
+            "camera.project_clipped",
+            "clip_depth_plane",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/cpu.rs",
+        &[
             "depth_frame: &'frame mut [f32]",
             "mix_depth",
             "depth > cpu_frame.depth_frame[pixel_index]",

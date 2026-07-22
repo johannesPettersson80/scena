@@ -376,7 +376,7 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
         "src/render/gpu/post/blit.rs",
         &[
             "include_str!(\"../../color_contract.wgsl\")",
-            "blit_srgb.wgsl",
+            "post_output_srgb.wgsl",
         ],
     );
     require_contains(

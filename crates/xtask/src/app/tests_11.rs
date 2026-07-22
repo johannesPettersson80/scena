@@ -67,6 +67,10 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         &fixture_root.join("release-linux-native-vulkan"),
         STAGE_TEST_COMMIT,
     );
+    write_stage_test_json(
+        &fixture_root.join("release-macos-metal/c09-gpu-resource-lifecycle/required-result.json"),
+        &crate::app::tests_41::required_gpu_resource_lifecycle_fixture(),
+    );
     for suffix in [
         "release-lanes/linux-native-vulkan.json",
         "release-lanes/headless-cpu.json",

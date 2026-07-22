@@ -1203,6 +1203,23 @@ fn scene_recipe_build_policy_rejects_authored_texture_and_environment_bypasses()
     ))
     .expect_err("environment fetch cap fails closed");
     assert_build_reason(&report, "policy_violation", "$.scene.environment.uri");
+
+    let preset_environment = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [{ "id": "geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [{ "id": "node", "geometry": "geo", "material": "mat" }],
+        "scene": { "environment": { "preset": "studio" } }
+    }))
+    .expect("preset environment recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &preset_environment,
+        scena::RecipeBuildPolicy::testing().with_fetch_byte_limit(16),
+    ))
+    .expect_err("bundled environment fetch cap fails closed");
+    assert_build_reason(&report, "policy_violation", "$.scene.environment.preset");
 }
 
 #[cfg(feature = "scene-host")]
@@ -1221,6 +1238,21 @@ fn scene_recipe_build_policy_rejects_fail_open_path_sandboxes() {
         scena::RecipeBuildPolicy::testing().with_allowed_roots([]),
     ))
     .expect_err("empty allowed roots deny absolute paths");
+    assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
+
+    let unknown_builtin_uri = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "part", "uri": "scena://bundled/not-in-the-catalog.gltf" }
+        ]
+    }))
+    .expect("unknown builtin recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &unknown_builtin_uri,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect_err("unknown scena uri is not treated as a trusted builtin");
     assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
 
     let host_file_uri = serde_json::to_string_pretty(&json!({

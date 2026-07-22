@@ -171,6 +171,7 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
         "tests/browser/fr06_semantic_aov.js",
         "tests/release/windows_complete_hardware_proof_validation.js",
         "scripts/run_windows_complete_hardware_proof.ps1",
+        "scripts/build_windows_complete_hardware_bundle.sh",
     ] {
         let destination = fixture_root.join(relative);
         fs::create_dir_all(destination.parent().expect("hardware proof fixture parent"))
@@ -200,9 +201,44 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
             "native present-only counter was not checked",
         ),
         (
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "assertQ01Hardware(report);",
+            "assertNativeHardware(report.adapter, \"Q01 WebGPU parity\");",
+        ),
+        (
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "normalizedArtifactPath(image.path)",
+            "String(image.path)",
+        ),
+        (
             "scripts/run_windows_complete_hardware_proof.ps1",
             "browser:fr06-semantic-aov",
             "removed-browser-fr06-proof",
+        ),
+        (
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "browser:q01-parity",
+            "removed-browser-q01-proof",
+        ),
+        (
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "scena-q04-gpu-resource-lifecycle.exe",
+            "removed-q04-lifecycle-proof",
+        ),
+        (
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "scena-p01-shader-module-cache.exe",
+            "removed-p01-benchmark-proof",
+        ),
+        (
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "Copy-Item -LiteralPath $sourceCommitPath -Destination $ProofRoot -Force",
+            "removed-source-commit-install-copy",
+        ),
+        (
+            "scripts/build_windows_complete_hardware_bundle.sh",
+            "Windows release-evidence bundles require a clean committed checkout",
+            "allowed-dirty-bundle",
         ),
     ];
     for (relative, needle, replacement) in mutations {
@@ -243,8 +279,38 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
         ),
         (
             "RENDER-C09",
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "assertQ01Hardware(report);",
+        ),
+        (
+            "RENDER-C09",
+            "tests/release/windows_complete_hardware_proof_validation.js",
+            "normalizedArtifactPath(image.path)",
+        ),
+        (
+            "RENDER-C09",
             "scripts/run_windows_complete_hardware_proof.ps1",
             "browser:fr06-semantic-aov",
+        ),
+        (
+            "RENDER-C09",
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "browser:q01-parity",
+        ),
+        (
+            "RENDER-C09",
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "scena-q04-gpu-resource-lifecycle.exe",
+        ),
+        (
+            "RENDER-C09",
+            "scripts/run_windows_complete_hardware_proof.ps1",
+            "scena-p01-shader-module-cache.exe",
+        ),
+        (
+            "RENDER-C09",
+            "scripts/build_windows_complete_hardware_bundle.sh",
+            "Windows release-evidence bundles require a clean committed checkout",
         ),
     ] {
         assert!(
@@ -254,6 +320,21 @@ fn doctor_rejects_incomplete_windows_complete_hardware_proof_lane() {
                     && finding.message.contains(needle)
             }),
             "doctor must reject loss of {needle} from {relative}; findings={findings:?}",
+        );
+    }
+}
+
+#[test]
+fn q04_macos_lanes_produce_the_required_physical_lifecycle_artifact() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    for relative in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let source = fs::read_to_string(root.join(relative)).expect("workflow source reads");
+        assert!(
+            source.contains("Required physical GPU resource lifecycle")
+                && source.contains("SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1")
+                && source
+                    .contains("required_hardware_gpu_resource_lifecycle_executes_complete_cycle",),
+            "{relative} macOS Metal lane must produce the physical Q04 artifact consumed by release staging"
         );
     }
 }

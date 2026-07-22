@@ -270,7 +270,7 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
         "DEMO-MATERIAL-PRESETS-PROOF",
         "demo/index.html",
         &[
-            "scena 1.5 live showcase",
+            "scena 1.9.0 live showcase",
             "Beautiful 3D in Rust",
             "Twelve materials. Twelve names.",
             "technical proof",

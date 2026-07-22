@@ -64,7 +64,7 @@ pub(crate) fn easy_scene_setup_contracts_allow_azimuth_elevation_camera_view() {
     write_expanded_material_preset_doctor_fixture(&fixture_root);
     let mut findings = Vec::new();
 
-    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+    crate::app::doctor_easy_scene::check_demo_camera_views_named(&fixture_root, &mut findings);
 
     assert_eq!(findings, Vec::new());
 }

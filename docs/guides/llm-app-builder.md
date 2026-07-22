@@ -11,17 +11,32 @@ or interaction proof.
 Install or run the CLI with the app-builder features:
 
 ```bash
-cargo install scena --features scene-host,inspection
+cargo install scena --features agent
 ```
 
 From a local checkout:
 
 ```bash
-cargo run --bin scena --features scene-host,inspection -- <command>
+cargo run --bin scena --features agent -- <command>
 ```
 
-Most agent-facing commands require `inspection`; recipe rendering and
-interaction verification also require `scene-host`.
+`agent` is the complete opt-in surface. It enables `scene-host`, which already
+enables `inspection`; the default feature set remains empty.
+
+Before choosing a backend or optional effect, distinguish compiled defaults
+from current hardware:
+
+```bash
+scena capabilities --json
+scena capabilities --live --json
+```
+
+Treat `probe.status:"static_no_device"` as planning metadata only. A hardware
+claim requires `probe.status:"measured"`; stop on the command's nonzero
+structured `unavailable` result instead of treating a missing adapter as a
+skip. The live headless probe measures readback but cannot prove presentation.
+Use `scena --version` to inspect every compiled feature before selecting a
+feature-gated command.
 
 ## Public-Surface Workflow
 
@@ -34,27 +49,32 @@ Discover the schema:
 scena schema get scena.scene_recipe.v1 > scene_recipe.schema.json
 ```
 
-Start from a template when possible. There is no `examples agent list`
-subcommand; valid template names are:
+If a schema name is misspelled, read `scena.cli_error.v1.candidates`; do not
+parse the prose message. The same capped structured field appears for unknown
+template names and in recipe diagnostics for node, geometry/mesh-resource,
+material, import, and environment-preset references.
 
-- `primitive_scene`
-- `cad_plate`
-- `dashboard_bars`
-- `machine_state_viewer`
-- `product_configurator`
-- `product-configurator`
-- `live-state-viewer`
-- `web-viewer`
-- `data-visualization`
-- `animated-viewer`
-- `interaction-proof`
-- `cad-inspection`
-- `documentation-renderer`
+Start from a template when possible. Discover canonical names, aliases,
+required features, and status without scraping an error:
+
+```bash
+scena examples agent list
+```
+
+Runtime node, animation, material-variant, anchor, and connector lookup errors
+use that same deterministic candidate ranking. Apply the first candidate only
+when the requested operation makes the correction unambiguous.
+
+Canonical names use kebab-case. Historical underscore inputs remain aliases;
+their generated manifest contains a migration note. In particular,
+`product_configurator` is the compatibility alias for
+`product-configurator-starter`, while `product-configurator` is the imported
+material-variant workflow.
 
 Generate a template:
 
 ```bash
-scena examples agent get primitive_scene --out target/scena-agent/primitive_scene > target/scena-agent/primitive_scene.manifest.json
+scena examples agent get primitive-scene --out target/scena-agent/primitive-scene > target/scena-agent/primitive-scene.manifest.json
 ```
 
 The command prints an `scena.agent_smoke_template.v1` manifest to stdout and
@@ -67,11 +87,18 @@ above:
 RECIPE=target/scena-agent/primitive_scene/recipe.json
 ```
 
+The installed template catalog is self-contained. Generate and execute it from
+any working directory: imported template fixtures and the licensed `studio`
+HDR are embedded in the package, and presentation defaults preserve any
+explicitly authored `scene.environment`.
+
 Validate before rendering:
 
-For assembly/viewer snapshots, use persistent recipe ids in `anchors`,
+For assembly/viewer snapshots, use recipe-local stable IDs in `anchors`,
 `connectors`, `bounds`, and `named_states`; never persist the numeric handles
-from `scena.scene_recipe_build.v1`. Spatial targets are typed objects such as
+from `scena.scene_recipe_build.v1`. These recipe IDs correlate build, patch,
+and proof output but are not application-persistence identities. The host owns
+durable identity and document migration. Spatial targets are typed objects such as
 `{"kind":"node","id":"shaft"}` or
 `{"kind":"import_node","import":"pump","path":"Root/Flange"}`. Authored
 offsets, snap tolerances, clearances, and bounds are scene meters. A connector
@@ -80,8 +107,26 @@ transform, tint, and visibility. See
 `docs/specs/recipe-spatial-state-v1.md` for inheritance and failure rules.
 
 ```bash
-scena validate-recipe "$RECIPE"
+scena validate-recipe "$RECIPE" --full
 ```
+
+Full validation resolves imports, environments, fonts, authored textures, and
+nested glTF dependencies through the build policy and reports the normalized
+resource plan. Use `--syntax-only` only while editing shape; it performs no I/O
+and returns `execution_equivalent:false`.
+
+If the operator supplies a model library outside the working directory, use
+one narrow, repeatable root option and carry it through the loop:
+
+```bash
+scena policy recipe --allow-root /srv/models
+scena validate-recipe "$RECIPE" --full --allow-root /srv/models
+scena recipe render "$RECIPE" --introspect --out frame.png --allow-root /srv/models
+```
+
+Confirm the canonical directory appears in `policy.allowed_roots` with
+`source:"operator_override"`. Never emulate a sandbox-disable flag or widen to
+an unrelated parent; traversal and symlink escapes intentionally remain denied.
 
 Render with introspection:
 
@@ -91,12 +136,17 @@ scena recipe render "$RECIPE" --introspect --out frame.png
 
 Success means the command exits 0 and the top-level report says `ok:true`.
 Never claim success from a PNG path or nonzero byte length alone.
+All asset-or-recipe commands route a parsed recipe through the same
+policy-aware SceneHost builder. A later rejected import fails the command with
+`scena.recipe_build_result.v1`; it cannot be silently omitted. Raw glTF/GLB
+inputs remain on the direct asset path.
 When the recipe has an `expect` block, add `--verify`; that mode emits the
 combined recipe build/capture/introspection/verification report instead of the
 plain render-introspection report.
 For presentation or beauty output, add `--gpu`; CPU remains the default, and
-the report `capabilities.backend` / `gpu_device` fields say which backend
-actually ran.
+the top-level `backend_selection` object records whether the request came from
+the default or `cli_flag`, the requested and selected backend, and any CPU
+fallback. `SCENA_USE_GPU` never changes CLI execution.
 
 For CAD imports that render as an edge sliver or white-on-white blob, run the
 inspection preset instead of hand-tuning a single camera:
@@ -109,8 +159,10 @@ It generates broad-face, top-feature, and overview recipes, renders each through
 `recipe render --introspect --verify`, then writes PNGs and
 `scena.cad_inspection_result.v1`. Generated CAD inspection recipes apply
 presentation-only `imports[].material`, `imports[].edge_emphasis`, and a
-principal-face camera where appropriate; these controls do not change the
-source geometry or CAD truth.
+principal-face camera where appropriate. They use the oriented studio rig and
+a small +0.25 EV presentation adjustment so each generated view receives
+reviewable key, fill, and rim illumination instead of three co-directional
+light nodes; these controls do not change the source geometry or CAD truth.
 
 For a general review sequence, reuse the same SceneHost and capture lifecycle:
 
@@ -232,9 +284,9 @@ structured reflections where a smooth/flat environment makes chrome look black.
 Use `studio` or `neutral_gray` for model/product inspection, `dark_studio` for
 dashboards and twin state views, `white` or `transparent` for documentation
 exports, and `custom` only when the user gave an explicit color. The default
-environment is flat; the bundled HDRI
-(`tests/assets/environment/polyhaven/studio_small_03_1k.hdr`) gives reflections
-and material response.
+environment is flat; the packaged `studio` preset gives reflections and
+material response without exposing or requiring a repository-relative HDR
+path.
 Use real glTF/GLB assets for realistic products and digital twins. Use authored
 primitives for functional/CAD/diagram/chart scenes and tests. For visible
 primitive boxes or cylinders in product-style scenes, add a small `bevel` or
@@ -243,7 +295,10 @@ fields instead of ignoring them. For large scenes with repeated distant parts,
 author explicit high/low geometry resources and add node `lods[]` thresholds so
 small-on-screen parts render with cheaper geometry; scena switches among those
 declared resources and does not invent simplifications.
-Use `quality:"high"` / `anti_aliasing:"msaa4"` for smooth geometry edges.
+Use `quality:"high"` for portable smooth edges. Browser WebGPU/WebGL2 currently
+degrade its automatic MSAA choice to FXAA with a structured capability warning.
+Use `anti_aliasing:"msaa4"` only as an exact request on a backend whose
+`render_sample_counts` and `depth_sample_counts` advertise 4.
 For product-style floor reflections, enable `scene.grid.reflection`; it adds a
 verified structured floor reflection preset without requiring material SSR. If
 the reflection is load-bearing, add
@@ -366,6 +421,11 @@ When placement, scale, or orientation is load-bearing, add `expect_transform`
 for the authored/imported node target with the expected world-space
 `translation`, `scale`, and/or intrinsic X/Y/Z `rotation_degrees`. Treat
 `transform_conformance_mismatch` as a real placement/composition failure.
+Author both `imports[].transform` and `nodes[].transform` with an explicit
+`kind`. Prefer `kind:"trs"` for agent-authored degree rotations and reserve
+`kind:"raw"` for a known quaternion in `[x,y,z,w]` order. Do not emit the old
+untagged import shape: it is read only as a 1.8.0 migration alias and produces
+`legacy_transform_shape`; applying the suggested fix adds `kind:"raw"`.
 When two declared parts must not intersect, add `expect_separation` with
 targets `a` and `b`. Use `min_gap` only when clearance matters; otherwise
 `min_gap:0` proves no world-bounds intersection. Treat
@@ -407,6 +467,12 @@ scena inspect "$RECIPE"
 scena diagnose "$RECIPE" --visibility --handle <handle>
 scena repair "$RECIPE" --from diagnosis.json
 ```
+
+The positional target is validated before the report is planned. Raw assets
+run through asset doctor; recipes run through their full effective sandbox and
+build. Treat `asset_doctor`, `scene_recipe_validation`, or
+`recipe_build_result` output as a target problem to correct first. A second
+positional target is invalid.
 
 Apply only repairs that return an explicit visual patch or recipe edit. If a
 report says `auto_fixable:false`, stop and ask for host/user input.

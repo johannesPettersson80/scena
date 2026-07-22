@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 
 use crate::scena_input::{RecipeReadError, read_recipe_text};
-use crate::scena_output::{CliOutcome, json_outcome};
+use crate::scena_output::{
+    CliBackendSelectionV1, CliOutcome, json_outcome, json_outcome_with_backend_selection,
+};
 
 #[path = "capture_sequence/animation.rs"]
 mod animation;
@@ -72,7 +74,12 @@ pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, 
         Ok(build) => build,
         Err(manifest) => {
             let result = scena::SceneRecipeRenderResultV1::build_failed(manifest);
-            return json_outcome(&result, 1, "failed to serialize recipe capture failure");
+            return json_outcome_with_backend_selection(
+                &result,
+                1,
+                "failed to serialize recipe capture failure",
+                CliBackendSelectionV1::new(args.gpu, None),
+            );
         }
     };
     let manifest = build.manifest;
@@ -206,9 +213,17 @@ pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, 
         "frames": frames,
         "contact_sheet": contact_sheet,
     });
-    json_outcome(&report, 0, "failed to serialize capture sequence result")
+    json_outcome_with_backend_selection(
+        &report,
+        0,
+        "failed to serialize capture sequence result",
+        CliBackendSelectionV1::new(args.gpu, Some(host.backend())),
+    )
 }
 
+// Keep capture identity and sequence metadata explicit at the one frame-write
+// boundary; a positional helper struct would only move these arguments.
+#[allow(clippy::too_many_arguments)]
 fn push_frame(
     host: &mut scena::SceneHostCore,
     out_dir: &std::path::Path,
@@ -235,7 +250,7 @@ impl CaptureSequenceArgs {
         let mut turntable = None;
         let mut clip = None;
         let mut clip_frames = None;
-        let mut gpu = crate::scena_input::gpu_requested_from_env();
+        let mut gpu = false;
         let mut max_imports = None;
         let mut index = 1;
         while index < args.len() {

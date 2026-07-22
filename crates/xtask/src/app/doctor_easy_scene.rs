@@ -3,6 +3,7 @@ use crate::app::prelude::*;
 mod asset_validation;
 mod camera_control_kit;
 mod environment_presets;
+pub(crate) use environment_presets::check_c02_portable_agent_asset_contracts;
 mod khronos_samples;
 mod material_presets;
 mod material_presets_baseline;
@@ -10,6 +11,8 @@ mod material_presets_browser;
 pub(super) mod material_presets_cloudflare;
 mod next_release;
 mod picking_outline_hover;
+mod presentable_defaults;
+pub(crate) use presentable_defaults::check_c06_presentable_viewer_defaults;
 mod production_asset_profile;
 mod reference_image_regression;
 mod round_a_primitives;
@@ -199,6 +202,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     camera_control_kit::check_camera_control_kit(root, findings);
     asset_validation::check_asset_validation_doctor(root, findings);
     picking_outline_hover::check_picking_outline_hover(root, findings);
+    presentable_defaults::check_c06_presentable_viewer_defaults(root, findings);
     reference_image_regression::check_reference_image_regression(root, findings);
     scena_viewer_element::check_scena_viewer_element(root, findings);
     next_release::check_asset_hot_reload(root, findings);
@@ -270,7 +274,7 @@ fn check_easy_scene_guide_snippet(root: &Path, findings: &mut Vec<Finding>) {
     ));
 }
 
-fn check_demo_camera_views_named(root: &Path, findings: &mut Vec<Finding>) {
+pub(crate) fn check_demo_camera_views_named(root: &Path, findings: &mut Vec<Finding>) {
     for rel in demo_page_source_files(root) {
         let path = root.join(&rel);
         let Ok(text) = fs::read_to_string(&path) else {

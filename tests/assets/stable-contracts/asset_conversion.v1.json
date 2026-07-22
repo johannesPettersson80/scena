@@ -1,0 +1,17 @@
+{
+  "schema": "scena.asset_conversion.v1",
+  "ok": true,
+  "status": "planned",
+  "workflow": "fbx_to_gltf",
+  "tool": "FBX2glTF",
+  "input": "model.fbx",
+  "output": "model.glb",
+  "command": [
+    "FBX2glTF",
+    "--input",
+    "model.fbx",
+    "--output",
+    "model.glb"
+  ],
+  "message": "conversion planned; no external tool was started"
+}

@@ -48,13 +48,15 @@ Status: active evidence index
   Shadow must visibly darken its receiver, IBL must visibly alter PBR material
   response, and the remaining effects must meet their masked footprint and
   direction thresholds.
-- [x] M2 references use `quadrant-mean-rgba-v1`: every pixel contributes to a
-  tolerant per-quadrant RGBA/occupancy comparison. The retired three-sample
-  `rgba_hash` contract is absent, fixture/reference mode disagreement fails,
-  and both quadrant corruption and erased effect masks are known-bad tests.
-- [x] `Q05-EFFECT-FOOTPRINTS` rejects missing pairs/masks, retired exact/hash
-  metadata, incomplete quadrant references, or removal of either corruption
-  test.
+- [x] M2 references use `local-structure-v2`: committed source frames are
+  compared with windowed SSIM, dilated Sobel-edge IoU, and dilated foreground
+  IoU. Broad quadrant means are diagnostic only. Heatmaps and worst-region
+  boxes are emitted for every fixture, and mean-preserving structure mutations
+  that rotate or collapse content inside each quadrant are rejected.
+- [x] `Q03-M2-LOCAL-STRUCTURE` rejects missing source frames, weakened local
+  thresholds, missing heatmap/region evidence, or removal of the
+  mean-preserving mutation tests. `Q05-EFFECT-FOOTPRINTS` continues to reject
+  missing effect pairs/masks and retired exact/hash metadata.
 - [x] Browser smoke runs with
   `node tests/browser/m2_browser_lighting_clipping_smoke.js`, writes
   `m2-browser-lighting-clipping-smoke.json`, and is registered by

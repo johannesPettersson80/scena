@@ -65,6 +65,13 @@ compatibility `gpu_polled` boolean is true only for `Confirmed`.
 
 Additive public API changes in Unreleased:
 
+- `RecipeValidationModeV1`, `SceneRecipeResourceResolutionV1`,
+  `SceneRecipeResourceStatusV1`, and `SceneRecipeDiagnosticResourceV1` for the
+  shared validation/build resource-resolution contract
+- `Capabilities::render_sample_counts`,
+  `Capabilities::depth_sample_counts`, and
+  `Capabilities::explicit_msaa`
+- `DiagnosticCode::MultisampleFallback`
 - `RenderReadbackMode`, `Renderer::render_with_readback_mode`,
   `Renderer::render_batch_with_async_readback`, and
   `Renderer::output_resources_revision`
@@ -123,6 +130,7 @@ Additive public API changes in Unreleased:
   `SceneRecipeGeometryV1`, `SceneRecipeMeshV1`, `SceneRecipePrimitiveV1`,
   `SceneRecipeMaterialV1`, `SceneRecipeTextureSlotV1`,
   `SceneRecipeTextureColorSpaceV1`, `SceneRecipeNodeV1`,
+  `SceneRecipeTransformV1`, `SceneRecipeTransformConversionError`,
   `SceneRecipeCameraV1`, `SceneRecipeLightV1`, `SceneRecipeTargetV1`,
   `SceneRecipeBuildV1`, `SceneRecipeBuildImportV1`,
   `SceneRecipeBuildResourceV1`, `SceneRecipeBuildTargetV1`,
@@ -131,6 +139,12 @@ Additive public API changes in Unreleased:
   `validate_scene_recipe_value`, `validate_scene_recipe_value_with_policy`,
   `parse_valid_scene_recipe_json`, `parse_valid_scene_recipe_json_with_policy`,
   and `recipe_too_large_report`
+- `Transform::try_from(&SceneRecipeTransformV1)` is the shared local transform
+  resolver for recipe imports and authored nodes. `raw` validates and
+  normalizes `[x,y,z,w]`; `trs` applies degree rotations in intrinsic X, then
+  Y, then Z call order. Placement transform variants require scene context and
+  return `SceneRecipeTransformConversionError::PlacementRequiresScene` from
+  this local-only conversion.
 - `SCENE_PLACEMENT_RESULT_SCHEMA_V1`, `ScenePlacementResultV1`,
   `ScenePlacementDiagnosticV1`, `placement_center_transform`,
   `placement_ground_transform`, `placement_fit_to_size_transform`,
@@ -141,9 +155,11 @@ Additive public API changes in Unreleased:
   `schema_catalog_v1`, `schema_catalog_entry`, `schema_entry_report_v1`,
   and `nearest_schema_name`; `vocabulary_report_v1` / `vocabulary_v1` expose
   closed renderer and recipe vocabularies, and
-  `RecipeBuildPolicy::to_schema_report` exposes the effective sandbox and
-  limits used by recipe commands
-- `SceneRecipePatchResultV1` is the source-digest-bound, persistent recipe-ID
+  `RecipeBuildPolicy::with_allowed_root` adds one operator-owned root without
+  removing compiled defaults, while `RecipeBuildPolicy::to_schema_report`
+  exposes the effective sandbox, per-root source, and limits used by recipe
+  commands
+- `SceneRecipePatchResultV1` is the source-digest-bound, recipe-local stable-ID
   placement update returned by `scena place --apply`; it carries a complete
   canonical updated recipe and makes no formatting-preservation promise
 - `CameraState`, `CameraBookmark`, `CameraFlyTo`, `CameraTransitionError`,
@@ -245,20 +261,37 @@ Additive public API changes in Unreleased:
   `layout_scena_viewer_annotations` for deterministic custom-element
   annotation clamping and decluttering reports
 - The `scena` binary with `schema list`, `schema get <schema>`,
-  `validate-recipe <recipe.json>`, `place <recipe.json> --import <id>
+  `policy recipe [--allow-root <directory>]...`,
+  `validate-recipe <recipe.json> [--full|--syntax-only] [--allow-root
+  <directory>]...`, `place <recipe.json> --import <id>
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`,
-  `recipe build <recipe.json> [--max-imports <n>]`,
-  `recipe render <recipe.json> --introspect --verify --out <png>`,
+  `recipe build <recipe.json> [--max-imports <n>] [--allow-root
+  <directory>]...`, `recipe render <recipe.json> --introspect --verify --out
+  <png> [--allow-root <directory>]...`,
   `recipe inspect-cad <recipe.json> --out-dir <dir>`,
   `recipe capture <recipe.json> --out-dir <dir> [--views
   front,top,right,isometric|none] [--turntable <frames>] [--clip <name>
   --frames <n>]`, `recipe aov <recipe.json> --out-dir <dir> [--passes
   id,depth,normal]`, `diff <before.recipe.json> <after.recipe.json>
-  [--numeric-tolerance <n>] [--render --out-dir <dir>]`, and,
+  [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]`,
+  `examples agent list`, `examples agent get <template> [--out <dir>]`, and,
   when built with `inspection`, asset-or-recipe-input
   `render --introspect`, `inspect`, `diagnose --visibility`, and
   `repair --from <report.json>`, and
   `verify appearance --expect <appearance-expectation.json>` JSON commands
+- Global and per-command `--help`/`-h` are successful
+  `scena.cli_help.v1` stdout reports. Diff inequality exits 0 unless the caller
+  explicitly selects `--exit-code` CI semantics.
+- Asset-or-recipe commands parse the input kind once. Raw glTF/GLB uses the
+  direct asset loader, while every recipe is resolved through the same
+  `RecipeBuildPolicy` and SceneHost build manifest as `recipe build`; no CLI
+  adapter constructs a scene from only `imports[0]`. Recipe build rejection
+  emits `scena.recipe_build_result.v1` with a nonzero exit.
+- Recipe-aware validation, build, render, inspect, diagnose, doctor, and repair
+  accept the same repeatable `--allow-root <directory>` option. Each directory
+  is canonicalized before policy construction; direct asset inputs reject the
+  option because it governs authored recipe references. Successful and
+  structured recipe-failure results expose the effective top-level `policy`.
 - `scena browser-proof [scene-host|m6] [--backend webgl2] [--dry-run]`
   for a machine-readable wrapper over the wasm-pack + Playwright browser lanes;
   the M6 lane rebuilds its browser-probe package before running Playwright
@@ -273,7 +306,7 @@ Additive public API changes in Unreleased:
   `setSemanticAovCaptureEnabled` and async `captureSemanticAovs` with typed ID,
   depth, normal, and RGBA arrays on WebGPU and WebGL2.
 - `SceneRecipeBuildInstanceV1` and additive
-  `SceneRecipeBuildV1::instances` rows mapping persistent authored instance IDs
+  `SceneRecipeBuildV1::instances` rows mapping recipe-local authored instance IDs
   to runtime-scoped set/instance identity
 
 Additive public API changes in 1.7.0:
@@ -335,11 +368,17 @@ Transform mutation invariant:
 - `ASSET_LOAD_REPORT_SCHEMA_V1`
 - `AssetLoadReportV1`, `AssetLoadWarningV1`, `AssetLoadProgressV1`,
   `AssetExternalResourceV1`, and `AssetMaterialFallbackV1`
+- `AssetLoadWarningV1::ComputedFlatNormals` and
+  `AssetLoadWarningV1::SkinInfluencesTruncated` expose geometry computation and
+  four-influence degradation instead of leaving importer decisions implicit
 - `AssetMaterialSource` and `AssetMaterialSourceKind`
 - `AssetLoadReport<SceneAsset>::to_schema_report`
 - `AssetLoadReport<SceneAsset>::to_schema_json`
+- `AssetLoadReport::options` and `AssetLoadReport::cache_entry_options` expose
+  active-request policy and the provenance of compatible cache evidence
 - `AssetLoadOptions::with_strict_external_resources` for referenced buffers and
-  `AssetLoadOptions::with_strict_textures` for referenced images
+  `AssetLoadOptions::with_strict_textures` for referenced images, plus
+  `AssetLoadOptions::with_fetch_byte_limit` for the combined source-byte budget
 - `AssetProvenance` and `AssetDerivative`
 - `SceneAsset::provenance`
 - `TextureDesc::provenance`
@@ -392,6 +431,11 @@ Transform mutation invariant:
   `CaptureBaselineError`
 - `fnv1a64_hex`, `sample_rgba8`, `summarize_rgba8`,
   `summarize_pixel_readback`, and `auto_frame_metadata`
+
+For a complete agent/self-verification build, select the opt-in `agent`
+feature. It enables `scene-host`, and `scene-host` already enables
+`inspection`; default builds remain feature-empty. Select either lower-level
+feature directly only when its smaller owner surface is intentional.
 
 The `scene-host` feature also exports a WASM `SceneHost` wrapper on
 `wasm32`. Its node, import, instance-root, and animation handles are opaque
@@ -623,6 +667,11 @@ Additive public API changes in 1.4.0:
 
 Named primitives — "write a name, not a number":
 
+`GeometryDesc::cylinder` and `GeometryDesc::cone` emit seam-safe side UVs: the
+closing side vertex is duplicated at `u=1`, and cone tips retain face-local UVs.
+This changes generated cylinder vertex counts but preserves cap topology and
+prevents the last side quad from sampling backward across the texture.
+
 - `Color::TRANSPARENT`, `Color::BLACK`, `Color::WHITE`, `Color::GRAY`,
   `Color::LIGHT_GRAY`, `Color::DARK_GRAY`, `Color::CHARCOAL`,
   `Color::STUDIO_BACKDROP`, `Color::WARM_WHITE`, `Color::COOL_WHITE`,
@@ -697,8 +746,12 @@ Viewer ergonomics — pointer callbacks, screenshots, hot reload, URL state:
   `ViewerCaptureError`, `ViewerPngError`
 - `Assets::watch_scene_for_hot_reload`,
   `Assets::reload_scene`,
-  `AssetHotReloadWatcher`, `AssetHotReloadError`
-  (gated behind the `hot-reload` feature)
+  `Assets::reload_scene_with_report`
+- `AssetReloadError` (`path`, underlying `AssetError`, and
+  `previous_asset_preserved` failure evidence)
+- `AssetHotReloadWatcher`, `AssetHotReloadError`
+  (the filesystem watcher is gated behind the `hot-reload` feature; explicit
+  reload is part of the base asset API)
 - `CameraOrbitUrlState`
 - `FollowControls`, `FlyControls`
 - `ReferenceImage::from_rgba8`, `ReferenceImage::regress`,
@@ -771,6 +824,7 @@ Additive public API changes in 1.5.0:
 | `Assets` | Owns logical resources: geometry, materials, textures, environments, parsed glTF/GLB assets, cache identity, reload, and retain policy. |
 | `Renderer` | Owns rendering state: backend resources, prepared scene data, surfaces, targets, stats, diagnostics, capability reports, and frame output. |
 | `SceneImport` | Represents an instantiated imported asset with roots, names, paths, anchors, connectors, bounds, clips, and stale-import checks. |
+| `Transform` | Stores TRS state. `with_scale(Vec3)` and `with_uniform_scale(f32)` replace scale; `scale_by(f32)` multiplies the current scale, matching the compositional `rotate_*_deg` helpers. |
 
 The common pattern is:
 
@@ -806,6 +860,59 @@ renderer.render(&scene, camera)?;
 ```
 
 See the exact signatures on docs.rs and the runnable examples in `examples/`.
+
+`Scene::frame_all_with_options` frames bounds stored directly in the scene;
+`Scene::frame_all_with_assets_and_options` also resolves geometry owned by
+`Assets`. Both frame aggregate visible world bounds using an explicit target
+viewport:
+
+```rust
+let framing = scene.frame_all_with_assets_and_options(
+    camera,
+    &assets,
+    FramingOptions::new()
+        .three_quarter_front_right()
+        .fill(0.72)
+        .margin_px(24.0)
+        .tighten_depth_range(true)
+        .include_helpers(false)
+        .viewport(output_width, output_height),
+)?;
+```
+
+`Scene::frame_import_with_options` applies the same contract to one import.
+Hidden nodes are excluded, and inspection-helper geometry is excluded unless
+`FramingOptions::include_helpers(true)` is explicit. Legacy `Scene::frame_all`
+and `Scene::frame_import` retain their no-options signatures and derive a
+viewport from the camera's current aspect; high-level viewers instead pass the
+actual output dimensions and default to a three-quarter view.
+
+`Scene::move_origin_to` moves a node origin to a world-space point.
+`Scene::center_visible_bounds_on` translates the node so the center of its
+visible, non-helper subtree reaches that point. `Scene::center_on` is deprecated
+because its name did not reveal that it moved only the origin.
+
+Fallible geometry construction is the default for runtime data. Use
+`GeometryDesc::try_polyline(&points)`, which returns
+`GeometryError::PolylineTooShort { point_count }` for zero or one point without
+unwinding. `GeometryDesc::polyline` remains only as a deprecated compatibility
+wrapper for fixed, trusted point literals; new code should not use it.
+
+Transform builder order is explicit:
+
+```rust
+let scaled = Transform::IDENTITY
+    .with_scale(Vec3::new(2.0, 3.0, 4.0))
+    .scale_by(0.5); // [1.0, 1.5, 2.0]
+
+let replaced = scaled.with_uniform_scale(3.0); // [3.0, 3.0, 3.0]
+```
+
+`Transform::scale_by` preserves translation and rotation;
+`Transform::with_scale` and `Transform::with_uniform_scale` replace scale. In
+published v1.8.0, `scale_by` replaced scale despite its compositional name; use
+`with_uniform_scale` when migrating code that intentionally depended on that
+old behavior.
 
 ## Typed handles
 
@@ -948,6 +1055,13 @@ cache keyed by the exact deformed world-position bits plus deterministic light
 and occluder-state signatures; the cache is discarded before the next prepare.
 `PickingMetrics` and `PrepareWorkMetrics` separate BVH bounds work, cache
 hits/misses, and exact ray/triangle tests for scaling evidence.
+Prepare metrics also report GPU shader-module creations and triangle-shader
+cache hits/misses, nonblocking/blocking prepare polls, and the retained resource
+work attributed to the current prepare. `RenderWorkMetrics` reports native
+scene-color passes and queue submissions, final CPU output encodes, row-bin
+candidate work, and the one-time primitive-flag scan. These are deterministic
+work counters; wall-clock performance claims still require a controlled
+adapter-specific distribution.
 
 Common public event and output types:
 
@@ -1029,6 +1143,16 @@ background, environment, lighting, grid, picking styles, and optional orbit
 controls; it does not create a separate viewer engine or own the host event
 loop.
 
+Without a profile, `headless_gltf_viewer`, `interactive_gltf_viewer`, and
+`first_render_gltf_headless` still promise a neutral first presentation. They
+preserve authored light/environment choices; otherwise they add a directional
+fallback and studio background. Read `FirstRender::diagnostics()` or viewer
+`diagnostics()` for the structured `MissingLightingOrEnvironment` warning,
+including `Diagnostic::setting()` and `Diagnostic::fallback_applied()`. Use
+`without_default_lighting()` for an intentional diagnostic opt-out. Direct
+`Renderer` constructors remain explicit and retain the black/no-light
+low-level contract.
+
 Transform gizmos are platform-neutral manipulation helpers. Build a
 `TransformGizmo` with a `GizmoMode`, optional `GizmoConstraint`, and
 `GizmoSpace`; pass caller-derived `GizmoRay` values to `drag_transform(...)`;
@@ -1057,6 +1181,9 @@ Public failures use structured errors such as:
 - `InstantiateError`
 - `LookupError`
 - `PrepareError`
+- `PrepareError::GpuDeviceRebuildRequired` distinguishes terminal Device/Queue
+  loss from recoverable context loss; rebuild the renderer before preparing
+  retained scene/assets
 - `RenderError`
 - `AnimationError`
 - `ConnectionError`
@@ -1070,7 +1197,11 @@ Public failures use structured errors such as:
 
 Most errors include a stable category plus contextual data. Use pattern matching
 for application behavior and `.help()` or diagnostics output for user-facing
-messages.
+recovery. Named `LookupError` variants and `AnimationError::ClipNotFound` carry
+up to three normalized, deterministically ranked `candidates`;
+`SceneHostError::candidates()` preserves them through host and JSON conversion.
+`RenderError::NoActiveCamera` names both `Scene::add_default_camera` and
+`Scene::set_active_camera`, including after conversion to `SceneHostError`.
 
 glTF extension diagnostics from `SceneAsset::extension_diagnostics()` also
 include `suggested_fix()` and `decoder_policy()` so importer and asset-review
@@ -1087,6 +1218,14 @@ UIs can show the same actionable remediation used by the asset doctor.
 
 Use capability reports when selecting optional effects or platform-specific
 paths. Use stats for testing, diagnostics, and performance visibility.
+Use `scena capabilities --json` for an explicitly static, no-device planning
+report before a renderer exists. `scena capabilities --live --json` strictly
+requests a headless GPU and reports measured adapter/device identity, limits,
+features, target formats, usable sample counts, and readback constraints. A
+live failure remains `scena.capability_report.v1` on stdout with exit status 1
+and a structured reason; it never falls back to a static row while claiming a
+probe. `Renderer::live_capability_probe` exposes the same live metadata for an
+already-created GPU renderer.
 Native CPU rendering bounds deterministic parallel work to eight workers and
 also respects Rayon's process-level `RAYON_NUM_THREADS` setting. Work invoked
 from an existing Rayon worker and all WASM rendering remain serial to avoid
@@ -1101,6 +1240,10 @@ meaning until the next schema version. Use `RendererStats::gpu_draw_submissions`
 for the actual number of GPU draw/draw-indexed/draw-instanced calls submitted
 last frame, and `RendererStats::instances` for the number of visible per-instance
 records drawn last frame.
+`RendererStats::surface_timeout_skips` and
+`RendererStats::surface_occluded_skips` distinguish non-submitted diagnostic
+surface skips. `surface_reconfigurations` and `surface_acquire_retries` expose
+recoverable native surface churn instead of hiding it behind `Ok(...)`.
 `Capabilities::wide_gamut_output` is intentionally capability-gated: headless
 and unattached reports stay disabled, attached browser reports stay degraded
 until the browser smoke probe records Display P3 canvas support for the active

@@ -38,7 +38,7 @@ struct CachedGlyph {
     width: usize,
     height: usize,
     advance_width: f32,
-    alpha: Vec<u8>,
+    alpha: Arc<[u8]>,
 }
 
 impl LabelFontFace {
@@ -72,7 +72,7 @@ impl LabelFontFace {
             width: metrics.width,
             height: metrics.height,
             advance_width: metrics.advance_width,
-            alpha,
+            alpha: Arc::from(alpha),
         };
         if let Ok(mut cache) = self.glyph_cache.lock() {
             cache.insert(key, glyph.clone());
@@ -239,4 +239,18 @@ fn stable_font_fingerprint(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cached_glyph_bitmap_clones_share_immutable_bytes() {
+        let font = default_label_font_face();
+        let first = font.cached_glyph('A', 32.0);
+        let second = font.cached_glyph('A', 32.0);
+
+        assert!(Arc::ptr_eq(&first.alpha, &second.alpha));
+    }
 }

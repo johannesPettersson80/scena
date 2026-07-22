@@ -5,8 +5,14 @@ encoding = "srgb8"
 dimensions = "per-fixture"
 artifact_dir = "target/gate-artifacts/m2-visual"
 reference = "tests/visual/references/m2-headless-core.toml"
-reference_mode = "quadrant-mean-rgba-v1"
-max_abs_diff = 3
+reference_frames = "tests/visual/references/m2-headless-core-frames.toml"
+reference_mode = "local-structure-v2"
+window_size = 8
+window_stride = 4
+mean_window_ssim_min = 0.97
+worst_window_ssim_min = 0.70
+edge_iou_min = 0.85
+foreground_iou_min = 0.95
 status = "artifact-proof"
 
 [[fixture]]

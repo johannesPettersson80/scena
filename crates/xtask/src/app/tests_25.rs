@@ -161,6 +161,8 @@ pub(crate) fn q02_doctor_rejects_shared_evaluator_mutation_or_workflow_drift() {
     for relative in [
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
+        "CHANGELOG.md",
+        "README.md",
         "crates/xtask/src/app/release/lane_artifacts.rs",
         "crates/xtask/src/app/release/review_artifacts.rs",
         "crates/xtask/src/app/release/round_e_material_results.rs",
@@ -168,8 +170,11 @@ pub(crate) fn q02_doctor_rejects_shared_evaluator_mutation_or_workflow_drift() {
         "scripts/probe_cloudflare_material_presets.mjs",
         "scripts/round_e_material_evaluator.cjs",
         "scripts/tests/round_e_material_evaluator_test.cjs",
+        "docs/release-notes/v1.8.0.md",
+        "docs/rendering.md",
         "tests/browser/m6_rust_wasm_renderer_probe.js",
         "tests/examples_visual_proof.rs",
+        "tests/m8_visual_proof.rs",
         "tests/visual/references/round_e_material_thresholds.toml",
     ] {
         let source = root.join(relative);
@@ -203,6 +208,12 @@ pub(crate) fn q02_doctor_rejects_shared_evaluator_mutation_or_workflow_drift() {
             "({ status: \"pass\" })",
             "evaluateRequiredWebgpuMaterialProof",
         ),
+        (
+            "tests/m8_visual_proof.rs",
+            "two_lsb_effect_nudge_rejected",
+            "subvisible_effect_was_accepted",
+            "two_lsb_effect_nudge_rejected",
+        ),
     ];
     for (relative, needle, replacement, expected) in mutations {
         let path = fixture_root.join(relative);
@@ -211,7 +222,7 @@ pub(crate) fn q02_doctor_rejects_shared_evaluator_mutation_or_workflow_drift() {
             original.contains(needle),
             "Q02 mutation needle exists: {needle}"
         );
-        fs::write(&path, original.replacen(needle, replacement, 1))
+        fs::write(&path, original.replace(needle, replacement))
             .expect("Q02 doctor mutation writes");
         let mut findings = Vec::new();
         check_q02_round_e_material_proof(&fixture_root, &mut findings);

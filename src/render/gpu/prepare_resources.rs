@@ -8,16 +8,16 @@ use super::super::prepare::{
 };
 #[cfg(target_arch = "wasm32")]
 use super::browser_readback::create_browser_readback_resources;
-use super::instancing::INSTANCE_BYTE_LEN;
 use super::material_support::reject_unsupported_volume_texture_slots;
 use super::materials::{create_material_bind_group_layout, create_material_resources};
 use super::output::{create_output_bind_group_layout, create_output_uniform_buffer};
-#[cfg(not(target_arch = "wasm32"))]
 use super::pipeline::GPU_COLOR_FORMAT;
 use super::pipeline::create_unlit_pipeline_set;
+use super::prepare_resources_support::{
+    build_semantic_attribution, create_geometry_buffers, validate_sample_count,
+};
 use super::resource_encoding::{
     encode_draw_resources, encode_retained_vertices, retained_draw_uniform_capacity,
-    retained_instance_buffer_capacity,
 };
 use super::stats::GpuResourceStats;
 use super::vertices::VERTEX_BYTE_LEN;
@@ -67,41 +67,15 @@ impl GpuDeviceState {
         }
         reject_unsupported_volume_texture_slots(target, material_slots)?;
 
-        let sample_count = output_plan.sample_count();
-        let scene_format = if output_plan.post_enabled() {
-            super::post::scene_color_format()
-        } else {
-            GPU_COLOR_FORMAT
-        };
-        let maximum_sample_count = super::msaa::max_supported_sample_count(
-            &self.device,
-            &self.adapter,
-            &[scene_format, wgpu::TextureFormat::Depth32Float],
-        );
-        if sample_count > maximum_sample_count {
-            return Err(crate::PrepareError::UnsupportedSampleCount {
-                backend: target.backend,
-                requested: sample_count,
-                maximum: maximum_sample_count,
-            });
-        }
-
-        let semantic_attribution = semantic_aov_capture_enabled
-            .then(|| {
-                crate::render::semantic_aov::build_gpu_semantic_attribution(
-                    draw_primitives,
-                    draw_instances,
-                    draw_strokes.len(),
-                    draw_labels.quads().len(),
-                )
-            })
-            .transpose()
-            .map_err(|entries| crate::PrepareError::GpuResourceUpload {
-                backend: target.backend,
-                reason: format!(
-                    "semantic AOV requires {entries} palette entries, exceeding the 24-bit limit"
-                ),
-            })?;
+        let (sample_count, scene_format) = validate_sample_count(self, target, output_plan)?;
+        let semantic_attribution = build_semantic_attribution(
+            target,
+            semantic_aov_capture_enabled,
+            draw_primitives,
+            draw_instances,
+            draw_strokes,
+            draw_labels,
+        )?;
         let vertex_bytes = encode_retained_vertices(retained_primitives, retained_instances);
         let encoded_draw_resources = encode_draw_resources(
             draw_primitives,
@@ -119,34 +93,17 @@ impl GpuDeviceState {
                     .saturating_mul(output::DRAW_UNIFORM_ENTRY_STRIDE),
             );
         }
-        let instance_bytes = &encoded_draw_resources.instance_bytes;
-        let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
-        let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("scena.m0.scene_vertices"),
-            size: vertex_buffer_size,
-            usage: wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: true,
-        });
-        if !vertex_bytes.is_empty() {
-            let mut mapped = vertex_buffer.slice(..).get_mapped_range_mut();
-            mapped.copy_from_slice(&vertex_bytes);
-        }
-        vertex_buffer.unmap();
-        let instance_buffer_capacity = retained_instance_buffer_capacity(retained_instances);
-        let instance_buffer_size = (instance_buffer_capacity * INSTANCE_BYTE_LEN).max(4) as u64;
-        let instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("scena.m4.scene_instances"),
-            size: instance_buffer_size,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: true,
-        });
-        {
-            let mut initial_instance_bytes = instance_bytes.clone();
-            initial_instance_bytes.resize(instance_buffer_size as usize, 0);
-            let mut mapped = instance_buffer.slice(..).get_mapped_range_mut();
-            mapped.copy_from_slice(&initial_instance_bytes);
-        }
-        instance_buffer.unmap();
+        let geometry_buffers = create_geometry_buffers(
+            &self.device,
+            &vertex_bytes,
+            &encoded_draw_resources.instance_bytes,
+            retained_instances,
+        );
+        let vertex_buffer_size = geometry_buffers.vertex_buffer_size;
+        let instance_buffer_size = geometry_buffers.instance_buffer_size;
+        let instance_buffer_capacity = geometry_buffers.instance_buffer_capacity;
+        let vertex_buffer = geometry_buffers.vertex_buffer;
+        let instance_buffer = geometry_buffers.instance_buffer;
 
         let super::headless_target::HeadlessTargetResources {
             texture,
@@ -157,6 +114,14 @@ impl GpuDeviceState {
         } = super::headless_target::create(&self.device, target);
         let output_bind_group_layout = create_output_bind_group_layout(&self.device, true);
         let texture_binding_mode = material_texture_binding_mode(target);
+        let triangle_shader_lookup = self
+            .triangle_shader_modules
+            .get_or_create(&self.device, texture_binding_mode);
+        let triangle_shader_cache_hit = triangle_shader_lookup.hit;
+        if let Some(work) = work {
+            work.record_gpu_triangle_shader_cache(triangle_shader_cache_hit);
+        }
+        let triangle_shader = triangle_shader_lookup.module;
         let material_bind_group_layout =
             create_material_bind_group_layout(&self.device, texture_binding_mode);
         let output_uniform = create_output_uniform_buffer(&self.device);
@@ -207,12 +172,12 @@ impl GpuDeviceState {
             .map(|depth_prepass| depth_prepass.color_compare);
         let transmission = transmission::create_transmission_resources(
             &self.device,
+            &triangle_shader,
             target,
             GPU_COLOR_FORMAT,
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
-            texture_binding_mode,
             depth_compare,
         );
         let environment::OutputResources {
@@ -239,48 +204,52 @@ impl GpuDeviceState {
         );
         let offscreen_pipelines = create_unlit_pipeline_set(
             &self.device,
+            &triangle_shader,
             GPU_COLOR_FORMAT,
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
-            texture_binding_mode,
             depth_compare,
             1,
         );
         let offscreen_msaa4_pipelines = create_unlit_pipeline_set(
             &self.device,
+            &triangle_shader,
             GPU_COLOR_FORMAT,
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
-            texture_binding_mode,
             depth_compare,
             4,
         );
         let offscreen_msaa8_pipelines = (sample_count == 8).then(|| {
             create_unlit_pipeline_set(
                 &self.device,
+                &triangle_shader,
                 GPU_COLOR_FORMAT,
                 &output_bind_group_layout,
                 &material_bind_group_layout,
                 &draw_bind_group_layout,
-                texture_binding_mode,
                 depth_compare,
                 8,
             )
         });
-        let surface_pipeline = self.surface.as_ref().map(|surface| {
-            create_unlit_pipeline_set(
-                &self.device,
-                surface.config.format,
-                &output_bind_group_layout,
-                &material_bind_group_layout,
-                &draw_bind_group_layout,
-                texture_binding_mode,
-                depth_compare,
-                1,
-            )
-        });
+        let surface_pipeline = self
+            .surface
+            .as_ref()
+            .filter(|_| !output_plan.post_enabled())
+            .map(|surface| {
+                create_unlit_pipeline_set(
+                    &self.device,
+                    &triangle_shader,
+                    surface.config.format,
+                    &output_bind_group_layout,
+                    &material_bind_group_layout,
+                    &draw_bind_group_layout,
+                    depth_compare,
+                    sample_count,
+                )
+            });
         let strokes = (!retained_strokes.is_empty()).then(|| {
             super::strokes::create_resources(
                 &self.device,
@@ -316,7 +285,7 @@ impl GpuDeviceState {
                     output_layout: &output_bind_group_layout,
                     material_layout: &material_bind_group_layout,
                     draw_layout: &draw_bind_group_layout,
-                    texture_binding_mode,
+                    triangle_shader: &triangle_shader,
                     reversed_z: depth_stats.reversed_z,
                     attribution,
                 },
@@ -325,11 +294,11 @@ impl GpuDeviceState {
         let mut post = output_plan.post_enabled().then(|| {
             super::post::create_resources(
                 &self.device,
+                &triangle_shader,
                 target,
                 &output_bind_group_layout,
                 &material_bind_group_layout,
                 &draw_bind_group_layout,
-                texture_binding_mode,
                 depth_compare,
                 self.surface.as_ref().map(|surface| surface.config.format),
                 depth_prepass
@@ -343,12 +312,12 @@ impl GpuDeviceState {
             super::post::ensure_scene_msaa8_pipelines(
                 &self.adapter,
                 &self.device,
+                &triangle_shader,
                 post_resources,
                 target,
                 &output_bind_group_layout,
                 &material_bind_group_layout,
                 &draw_bind_group_layout,
-                texture_binding_mode,
                 depth_compare,
             )
             .map_err(|error| match error {
@@ -375,6 +344,18 @@ impl GpuDeviceState {
                 sample_count,
             )
         });
+        let surface_msaa_color = if sample_count > 1 && !output_plan.post_enabled() {
+            self.surface.as_ref().map(|surface| {
+                super::msaa::create_msaa_color_resources(
+                    &self.device,
+                    target,
+                    surface.config.format,
+                    sample_count,
+                )
+            })
+        } else {
+            None
+        };
         let overlay_depth_prepass = depth_prepass.as_ref().and_then(|depth_prepass| {
             (sample_count > 1).then(|| {
                 depth::create_depth_prepass_resources(
@@ -397,9 +378,8 @@ impl GpuDeviceState {
                 + u64::from(offscreen_msaa8_pipelines.is_some()) * 2
                 + u64::from(surface_pipeline.is_some()) * 2,
             bind_groups: 1,
-            shader_modules: 4
-                + u64::from(offscreen_msaa8_pipelines.is_some()) * 2
-                + u64::from(surface_pipeline.is_some()) * 2,
+            shader_modules: 1,
+            shader_module_creations: u64::from(!triangle_shader_cache_hit),
             approximate_gpu_memory_bytes: vertex_buffer_size
                 .saturating_add(instance_buffer_size)
                 .saturating_add(
@@ -452,6 +432,18 @@ impl GpuDeviceState {
                 ..GpuResourceStats::default()
             });
         }
+        if let Some(resources) = &surface_msaa_color {
+            stats.add_assign(GpuResourceStats {
+                textures: 1,
+                render_targets: 1,
+                approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(
+                    resources.target,
+                    4,
+                    resources.sample_count,
+                ),
+                ..GpuResourceStats::default()
+            });
+        }
 
         self.resources = Some(GpuPreparedResources {
             target,
@@ -493,6 +485,7 @@ impl GpuDeviceState {
             offscreen_msaa4_pipelines,
             offscreen_msaa8_pipelines,
             msaa_color,
+            surface_msaa_color,
             surface_pipeline,
             padded_bytes_per_row,
             unpadded_bytes_per_row,

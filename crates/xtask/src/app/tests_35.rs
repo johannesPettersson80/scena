@@ -26,6 +26,7 @@ fn fr01_fr04_contract_discovery_doctor_rejects_missing_emits_registry() {
         "src/scene/recipe/types/build_manifest.rs",
         "src/scene/placement.rs",
         "src/schema_catalog.rs",
+        "src/schema_catalog/entries.rs",
         "src/schema_catalog/reports.rs",
         "docs/schema-contracts.md",
         "tests/scena_cli_schema.rs",

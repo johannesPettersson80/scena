@@ -20,7 +20,7 @@ use crate::{AnimationMixerKey, CameraKey, InstanceId, NodeKey, SceneImportInspec
 
 #[derive(Debug)]
 pub(super) enum RendererSlot {
-    Active(Renderer),
+    Active(Box<Renderer>),
     ManifestOnly,
 }
 
@@ -80,7 +80,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         let mut host = Self {
             assets,
             scene,
-            renderer: RendererSlot::Active(renderer),
+            renderer: RendererSlot::Active(Box::new(renderer)),
             backend_selection_report: None,
             viewport,
             active_camera,

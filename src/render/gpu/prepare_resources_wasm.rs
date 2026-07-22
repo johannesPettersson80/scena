@@ -8,7 +8,9 @@ use crate::render::prepare::{
 };
 
 #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
-use super::browser_readback::create_browser_readback_resources;
+use super::browser_readback::{
+    BrowserReadbackResourceDescriptor, create_browser_readback_resources,
+};
 use super::instancing::INSTANCE_BYTE_LEN;
 use super::material_support::reject_unsupported_volume_texture_slots;
 use super::materials::{create_material_bind_group_layout, create_material_resources};
@@ -129,6 +131,14 @@ impl GpuDeviceState {
         let output_bind_group_layout =
             create_output_bind_group_layout(&self.device, include_tiled_light_storage);
         let texture_binding_mode = material_texture_binding_mode(target);
+        let triangle_shader_lookup = self
+            .triangle_shader_modules
+            .get_or_create(&self.device, texture_binding_mode);
+        let triangle_shader_cache_hit = triangle_shader_lookup.hit;
+        if let Some(work) = work {
+            work.record_gpu_triangle_shader_cache(triangle_shader_cache_hit);
+        }
+        let triangle_shader = triangle_shader_lookup.module;
         let material_bind_group_layout =
             create_material_bind_group_layout(&self.device, texture_binding_mode);
         let output_uniform = create_output_uniform_buffer(&self.device);
@@ -181,12 +191,12 @@ impl GpuDeviceState {
             .map(|depth_prepass| depth_prepass.color_compare);
         let transmission = transmission::create_transmission_resources(
             &self.device,
+            &triangle_shader,
             target,
             surface.config.format,
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
-            texture_binding_mode,
             depth_compare,
         );
         let environment::OutputResources {
@@ -213,11 +223,11 @@ impl GpuDeviceState {
         );
         let surface_pipeline = create_unlit_pipeline_set(
             &self.device,
+            &triangle_shader,
             surface.config.format,
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
-            texture_binding_mode,
             depth_compare,
             1,
         );
@@ -256,7 +266,7 @@ impl GpuDeviceState {
                     output_layout: &output_bind_group_layout,
                     material_layout: &material_bind_group_layout,
                     draw_layout: &draw_bind_group_layout,
-                    texture_binding_mode,
+                    triangle_shader: &triangle_shader,
                     reversed_z: depth_stats.reversed_z,
                     attribution,
                     webgl2_surface_format: (target.backend == Backend::WebGl2)
@@ -268,12 +278,15 @@ impl GpuDeviceState {
         let readback = (target.backend == Backend::WebGpu).then(|| {
             create_browser_readback_resources(
                 &self.device,
-                target,
-                &output_bind_group_layout,
-                &material_bind_group_layout,
-                &draw_bind_group_layout,
-                texture_binding_mode,
-                depth_compare,
+                BrowserReadbackResourceDescriptor {
+                    target,
+                    surface_format: surface.config.format,
+                    output_bind_group_layout: &output_bind_group_layout,
+                    material_bind_group_layout: &material_bind_group_layout,
+                    draw_bind_group_layout: &draw_bind_group_layout,
+                    triangle_shader: &triangle_shader,
+                    depth_compare,
+                },
             )
         });
         #[cfg(not(any(feature = "browser-probe", feature = "scene-host")))]
@@ -281,11 +294,11 @@ impl GpuDeviceState {
         let post = output_plan.post_enabled().then(|| {
             super::post::create_resources(
                 &self.device,
+                &triangle_shader,
                 target,
                 &output_bind_group_layout,
                 &material_bind_group_layout,
                 &draw_bind_group_layout,
-                texture_binding_mode,
                 depth_compare,
                 Some(surface.config.format),
                 depth_prepass
@@ -298,7 +311,8 @@ impl GpuDeviceState {
             buffers: 4,
             pipelines: 2,
             bind_groups: 1,
-            shader_modules: 2,
+            shader_modules: 1,
+            shader_module_creations: u64::from(!triangle_shader_cache_hit),
             approximate_gpu_memory_bytes: vertex_buffer_size
                 .saturating_add(instance_buffer_size)
                 .saturating_add(output::OUTPUT_UNIFORM_BYTE_LEN)

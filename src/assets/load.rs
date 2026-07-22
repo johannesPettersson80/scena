@@ -8,7 +8,11 @@ use crate::diagnostics::AssetError;
 use super::{AssetPath, AssetProvenance, SceneAsset, SceneAssetGeometrySummary};
 
 mod fallback;
+mod options;
+mod warnings;
 pub use fallback::{AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1};
+pub use options::AssetLoadOptions;
+pub use warnings::{AssetLoadWarning, AssetLoadWarningV1};
 
 pub const ASSET_LOAD_REPORT_SCHEMA_V1: &str = "scena.asset_load_report.v1";
 
@@ -22,6 +26,10 @@ pub struct AssetLoadReport<T> {
     pub(super) asset: T,
     pub(super) path: AssetPath,
     pub(super) cache_hit: bool,
+    #[serde(default)]
+    pub(super) requested_options: AssetLoadOptions,
+    #[serde(default)]
+    pub(super) cache_entry_options: AssetLoadOptions,
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
     pub(super) external_images: usize,
@@ -30,25 +38,11 @@ pub struct AssetLoadReport<T> {
     pub(super) progress_events: Vec<AssetLoadProgress>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct AssetLoadOptions {
-    strict_textures: bool,
-    strict_external_resources: bool,
-    fetch_byte_limit: Option<usize>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum AssetLoadWarning {
-    ExternalBufferMissing {
-        path: AssetPath,
-        index: usize,
-        reason: String,
-    },
-    ExternalImageMissing {
-        path: AssetPath,
-        reason: String,
-    },
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssetReloadError {
+    pub(super) path: AssetPath,
+    pub(super) error: AssetError,
+    pub(super) previous_asset_preserved: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +91,10 @@ pub struct AssetLoadReportV1 {
     pub schema: String,
     pub path: String,
     pub cache_hit: bool,
+    #[serde(default)]
+    pub requested_options: AssetLoadOptions,
+    #[serde(default)]
+    pub cache_entry_options: AssetLoadOptions,
     pub fetched_bytes: usize,
     pub external_buffers: usize,
     pub external_images: usize,
@@ -108,20 +106,6 @@ pub struct AssetLoadReportV1 {
     pub external_resources: Vec<AssetExternalResourceV1>,
     #[serde(default)]
     pub material_fallbacks: Vec<AssetMaterialFallbackV1>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum AssetLoadWarningV1 {
-    ExternalBufferMissing {
-        path: String,
-        index: usize,
-        reason: String,
-    },
-    ExternalImageMissing {
-        path: String,
-        reason: String,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,6 +223,20 @@ impl<T> AssetLoadReport<T> {
         self.cache_hit
     }
 
+    /// Semantic policy requested for this load operation.
+    pub const fn options(&self) -> AssetLoadOptions {
+        self.requested_options
+    }
+
+    /// Policy under which a reused cache entry was originally produced.
+    ///
+    /// This equals [`Self::options`] on cache misses and exact-policy hits. It
+    /// may differ on a cache hit when stored evidence proves that a stricter or
+    /// otherwise compatible entry satisfies the requested policy.
+    pub const fn cache_entry_options(&self) -> AssetLoadOptions {
+        self.cache_entry_options
+    }
+
     pub const fn fetched_bytes(&self) -> usize {
         self.fetched_bytes
     }
@@ -264,40 +262,39 @@ impl<T> AssetLoadReport<T> {
     }
 }
 
-impl AssetLoadOptions {
-    pub const fn new() -> Self {
-        Self {
-            strict_textures: false,
-            strict_external_resources: false,
-            fetch_byte_limit: None,
-        }
+impl AssetReloadError {
+    pub fn path(&self) -> &AssetPath {
+        &self.path
     }
 
-    pub const fn with_strict_textures(mut self, strict_textures: bool) -> Self {
-        self.strict_textures = strict_textures;
-        self
+    pub fn error(&self) -> &AssetError {
+        &self.error
     }
 
-    pub const fn strict_textures(&self) -> bool {
-        self.strict_textures
+    pub const fn previous_asset_preserved(&self) -> bool {
+        self.previous_asset_preserved
     }
 
-    pub const fn with_strict_external_resources(mut self, strict_external_resources: bool) -> Self {
-        self.strict_external_resources = strict_external_resources;
-        self
+    pub fn into_asset_error(self) -> AssetError {
+        self.error
     }
+}
 
-    pub const fn strict_external_resources(&self) -> bool {
-        self.strict_external_resources
+impl std::fmt::Display for AssetReloadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "asset reload failed for {} (previous asset preserved={}): {}",
+            self.path.as_str(),
+            self.previous_asset_preserved,
+            self.error
+        )
     }
+}
 
-    pub const fn with_fetch_byte_limit(mut self, fetch_byte_limit: usize) -> Self {
-        self.fetch_byte_limit = Some(fetch_byte_limit);
-        self
-    }
-
-    pub const fn fetch_byte_limit(&self) -> Option<usize> {
-        self.fetch_byte_limit
+impl std::error::Error for AssetReloadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
     }
 }
 
@@ -307,6 +304,8 @@ impl AssetLoadReport<SceneAsset> {
             schema: ASSET_LOAD_REPORT_SCHEMA_V1.to_owned(),
             path: self.path.as_str().to_owned(),
             cache_hit: self.cache_hit,
+            requested_options: self.requested_options,
+            cache_entry_options: self.cache_entry_options,
             fetched_bytes: self.fetched_bytes,
             external_buffers: self.external_buffers,
             external_images: self.external_images,
@@ -335,26 +334,6 @@ impl AssetLoadReport<SceneAsset> {
     pub fn to_schema_json(&self) -> serde_json::Value {
         serde_json::to_value(self.to_schema_report())
             .expect("asset load report schema contains only serializable fields")
-    }
-}
-
-impl From<&AssetLoadWarning> for AssetLoadWarningV1 {
-    fn from(warning: &AssetLoadWarning) -> Self {
-        match warning {
-            AssetLoadWarning::ExternalBufferMissing {
-                path,
-                index,
-                reason,
-            } => Self::ExternalBufferMissing {
-                path: path.as_str().to_owned(),
-                index: *index,
-                reason: reason.clone(),
-            },
-            AssetLoadWarning::ExternalImageMissing { path, reason } => Self::ExternalImageMissing {
-                path: path.as_str().to_owned(),
-                reason: reason.clone(),
-            },
-        }
     }
 }
 

@@ -8,7 +8,7 @@ use super::{AnimationClip, AnimationLoopMode, AnimationMixer, AnimationPlaybackS
 impl AnimationMixer {
     pub fn new(clip: AnimationClip, import_live: Arc<AtomicBool>) -> Self {
         Self {
-            clip,
+            clip: Arc::new(clip),
             state: AnimationPlaybackState::Stopped,
             time_seconds: 0.0,
             speed: 1.0,
@@ -34,7 +34,11 @@ impl AnimationMixer {
     }
 
     pub fn clip(&self) -> &AnimationClip {
-        &self.clip
+        self.clip.as_ref()
+    }
+
+    pub(crate) fn shared_clip(&self) -> Arc<AnimationClip> {
+        Arc::clone(&self.clip)
     }
 
     pub(crate) fn is_stale(&self) -> bool {

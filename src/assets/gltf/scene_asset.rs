@@ -12,7 +12,8 @@ use super::{
     SceneAssetSkin,
 };
 use crate::assets::{
-    AssetMaterialFallback, AssetPath, AssetProvenance, GeometryHandle, MaterialHandle,
+    AssetLoadWarning, AssetMaterialFallback, AssetPath, AssetProvenance, GeometryHandle,
+    MaterialHandle,
 };
 
 pub const ASSET_GEOMETRY_SUMMARY_SCHEMA_V1: &str = "scena.asset_geometry_summary.v1";
@@ -47,6 +48,7 @@ pub(in crate::assets::gltf) struct SceneAssetData {
     pub(in crate::assets::gltf) extension_diagnostics: Vec<GltfExtensionDiagnostic>,
     pub(in crate::assets::gltf) material_variants: Vec<String>,
     pub(in crate::assets::gltf) material_fallbacks: Vec<AssetMaterialFallback>,
+    pub(in crate::assets::gltf) load_warnings: Vec<AssetLoadWarning>,
     pub(in crate::assets::gltf) provenance: AssetProvenance,
     pub(in crate::assets::gltf) retained_source_bytes: Option<Arc<[u8]>>,
 }
@@ -99,6 +101,7 @@ impl SceneAsset {
                 extension_diagnostics: Vec::new(),
                 material_variants: Vec::new(),
                 material_fallbacks: Vec::new(),
+                load_warnings: Vec::new(),
                 provenance: AssetProvenance::new("memory:empty"),
                 retained_source_bytes: None,
             }),
@@ -180,6 +183,10 @@ impl SceneAsset {
 
     pub fn material_fallbacks(&self) -> &[AssetMaterialFallback] {
         &self.inner.material_fallbacks
+    }
+
+    pub(crate) fn load_warnings(&self) -> &[AssetLoadWarning] {
+        &self.inner.load_warnings
     }
 
     pub fn retained_source_bytes_len(&self) -> Option<usize> {

@@ -47,6 +47,24 @@ pub fn validate_scene_recipe_json_with_policy(
     }
 }
 
+/// Performs structural validation and inventories authored resources without I/O.
+///
+/// The returned report is explicitly marked `syntax_only` and never claims
+/// execution equivalence. Use the asset-aware validator for full resolution.
+pub fn validate_scene_recipe_json_syntax_with_policy(
+    text: &str,
+    policy: &RecipeBuildPolicy,
+) -> SceneRecipeValidationReportV1 {
+    let mut report = validate_scene_recipe_json_with_policy(text, policy);
+    report.policy = Some(Box::new(policy.to_schema_report()));
+    if report.ok
+        && let Ok(recipe) = serde_json::from_str::<SceneRecipeV1>(text)
+    {
+        report.resources = policy.recipe_resource_inventory(&recipe).reports();
+    }
+    report
+}
+
 pub fn validate_scene_recipe_value(value: Value) -> SceneRecipeValidationReportV1 {
     validate_scene_recipe_value_with_policy(value, &RecipeBuildPolicy::default())
 }
@@ -289,6 +307,10 @@ fn validation_report(diagnostics: Vec<SceneRecipeDiagnosticV1>) -> SceneRecipeVa
         ok: !diagnostics
             .iter()
             .any(|diagnostic| diagnostic.severity == "error"),
+        validation_mode: super::types::RecipeValidationModeV1::SyntaxOnly,
+        execution_equivalent: false,
+        policy: None,
+        resources: Vec::new(),
         diagnostics,
     }
 }
@@ -309,6 +331,8 @@ pub(super) fn diagnostic(
         message: message.into(),
         help: help.into(),
         suggestion,
+        candidates: Vec::new(),
         auto_fixable,
+        resource: None,
     }
 }

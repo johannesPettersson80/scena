@@ -9,37 +9,38 @@ impl fmt::Display for LookupError {
             Self::CannotRemoveRootNode(_) => {
                 write!(formatter, "the scene root node cannot be removed")
             }
-            Self::NodeNameNotFound { name } => {
-                write!(formatter, "imported scene has no node named '{name}'")
+            Self::NodeNameNotFound { name, candidates } => {
+                write_missing_with_candidates(formatter, "node", name, candidates)
             }
             Self::AmbiguousNodeName { name, matches } => write!(
                 formatter,
                 "imported scene node name '{name}' is ambiguous across {} nodes",
                 matches.len()
             ),
-            Self::AnchorNotFound { name } => {
-                write!(formatter, "imported scene has no anchor named '{name}'")
+            Self::AnchorNotFound { name, candidates } => {
+                write_missing_with_candidates(formatter, "anchor", name, candidates)
             }
             Self::AmbiguousAnchorName { name, hosts } => write!(
                 formatter,
                 "imported scene anchor name '{name}' is ambiguous across {} host nodes",
                 hosts.len()
             ),
-            Self::ConnectorNotFound { name } => {
-                write!(formatter, "imported scene has no connector named '{name}'")
+            Self::ConnectorNotFound { name, candidates } => {
+                write_missing_with_candidates(formatter, "connector", name, candidates)
             }
             Self::AmbiguousConnectorName { name, hosts } => write!(
                 formatter,
                 "imported scene connector name '{name}' is ambiguous across {} host nodes",
                 hosts.len()
             ),
-            Self::ClipNotFound { name } => write!(
+            Self::ClipNotFound { name, candidates } => {
+                write_missing_with_candidates(formatter, "animation clip", name, candidates)
+            }
+            Self::VariantNotFound { name, candidates } => write_missing_with_candidates(
                 formatter,
-                "imported scene has no animation clip named '{name}'"
-            ),
-            Self::VariantNotFound { name } => write!(
-                formatter,
-                "imported scene has no KHR_materials_variants variant named '{name}'"
+                "KHR_materials_variants variant",
+                name,
+                candidates,
             ),
             Self::AmbiguousVariantName { name, matches } => write!(
                 formatter,
@@ -135,4 +136,17 @@ impl fmt::Display for LookupError {
             }
         }
     }
+}
+
+fn write_missing_with_candidates(
+    formatter: &mut fmt::Formatter<'_>,
+    kind: &str,
+    name: &str,
+    candidates: &[String],
+) -> fmt::Result {
+    write!(formatter, "imported scene has no {kind} named '{name}'")?;
+    if !candidates.is_empty() {
+        write!(formatter, "; nearest candidates: {}", candidates.join(", "))?;
+    }
+    Ok(())
 }

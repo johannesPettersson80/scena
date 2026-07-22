@@ -1,4 +1,4 @@
-use super::create_post_pipeline;
+use super::{create_post_pipeline, resources::POST_COLOR_FORMAT};
 
 const SHADER: &str = include_str!("ssao.wgsl");
 
@@ -11,7 +11,7 @@ pub(super) fn create_pipeline(
         "scena.gpu_post.ssao_pipeline",
         SHADER,
         pipeline_layout,
-        wgpu::TextureFormat::Rgba8Unorm,
+        POST_COLOR_FORMAT,
     )
 }
 

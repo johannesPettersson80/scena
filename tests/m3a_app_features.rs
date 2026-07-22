@@ -336,7 +336,7 @@ fn scene_import_rejects_duplicate_anchor_names_on_same_host() {
 }
 
 #[test]
-fn scene_import_rejects_invalid_anchor_extras_data() {
+fn asset_load_rejects_invalid_anchor_extras_data() {
     for (suffix, anchor_json, reason_fragment) in [
         ("blank-name", r#"{ "name": "   " }"#, "name"),
         (
@@ -369,18 +369,14 @@ fn scene_import_rejects_invalid_anchor_extras_data() {
             }}"#
         );
         let assets = Assets::with_fetcher(MemoryFetcher::new(path.as_str(), source));
-        let scene_asset = pollster::block_on(assets.load_scene(path.as_str()))
-            .expect("invalid anchor glTF loads");
-        let mut scene = Scene::new();
-
-        let error = scene
-            .instantiate(&scene_asset)
-            .expect_err("invalid anchor extras are rejected during instantiation");
-
+        let error = pollster::block_on(assets.load_scene(path.as_str()))
+            .expect_err("invalid anchor extras must abort the asset transaction");
         assert!(matches!(
             error,
-            InstantiateError::InvalidAnchorExtras { ref node, ref reason }
-                if node == "Root" && reason.contains(reason_fragment)
+            AssetError::Parse { ref path, ref reason }
+                if path.contains(suffix)
+                    && reason.contains("nodes[0].extras.scena.anchors[0]")
+                    && reason.contains(reason_fragment)
         ));
     }
 }
@@ -1084,7 +1080,7 @@ fn gltf_loader_preserves_multi_primitive_meshes_as_child_mesh_nodes() {
             "buffers": [
                 {
                     "byteLength": 48,
-                    "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAAAAEAAgAAAAEAAgA="
+                    "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIAAAACAAEA"
                 }
             ],
             "bufferViews": [

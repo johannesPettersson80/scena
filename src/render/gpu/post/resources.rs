@@ -1,25 +1,24 @@
 use super::super::super::RasterTarget;
-use super::super::material_bindings::MaterialTextureBindingMode;
 use super::super::pipeline::{GPU_COLOR_FORMAT, create_unlit_pipeline_set};
 use super::super::stats::GpuResourceStats;
 use super::types::{POST_UNIFORM_BYTE_LEN, POST_UNIFORM_SLOT_COUNT, PostResources};
 use super::{blit, bloom, bloom_fxaa, dof, fxaa, ssao, ssr};
 
-pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::render::gpu) fn create_resources(
     device: &wgpu::Device,
+    triangle_shader: &wgpu::ShaderModule,
     target: RasterTarget,
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
     surface_format: Option<wgpu::TextureFormat>,
     depth_color_view: Option<&wgpu::TextureView>,
 ) -> PostResources {
-    let scene = create_post_texture(device, target, "scena.gpu_post.scene_encoded_srgb");
+    let scene = create_post_texture(device, target, "scena.gpu_post.scene_linear_sampling");
     let ping = create_post_texture(device, target, "scena.gpu_post.ping");
     let pong = create_post_texture(device, target, "scena.gpu_post.pong");
     let uniform = device.create_buffer(&wgpu::BufferDescriptor {
@@ -159,26 +158,26 @@ pub(in crate::render::gpu) fn create_resources(
     });
     let scene_pipelines = create_unlit_pipeline_set(
         device,
+        triangle_shader,
         POST_COLOR_FORMAT,
         output_bind_group_layout,
         material_bind_group_layout,
         draw_bind_group_layout,
-        texture_binding_mode,
         depth_compare,
         1,
     );
     let scene_msaa4_pipelines = create_unlit_pipeline_set(
         device,
+        triangle_shader,
         POST_COLOR_FORMAT,
         output_bind_group_layout,
         material_bind_group_layout,
         draw_bind_group_layout,
-        texture_binding_mode,
         depth_compare,
         4,
     );
     let output_blit_pipeline =
-        blit::create_srgb_pipeline(device, &texture_pipeline_layout, GPU_COLOR_FORMAT);
+        blit::create_target_pipeline(device, &texture_pipeline_layout, GPU_COLOR_FORMAT);
     let surface_blit_pipeline = surface_format
         .map(|format| blit::create_surface_pipeline(device, &texture_pipeline_layout, format));
     let surface_bloom_fxaa_pipeline = surface_format.map(|format| {
@@ -224,7 +223,10 @@ pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuRe
         + u64::from(resources.surface_fxaa_pipeline.is_some())
         + u64::from(resources.surface_bloom_fxaa_pipeline.is_some());
     let pipelines = mesh_pipelines + optional_surface_pipelines + 6;
-    let shader_modules = pipelines - u64::from(resources.surface_fxaa_pipeline.is_some());
+    // The mesh pipelines share the device-owned triangle module. The FXAA
+    // target and optional surface pipelines share one post shader module.
+    let shader_modules =
+        optional_surface_pipelines + 6 - u64::from(resources.surface_fxaa_pipeline.is_some());
     GpuResourceStats {
         buffers: 2,
         textures: 3,
@@ -236,6 +238,7 @@ pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuRe
                 .as_ref()
                 .map_or(0, |groups| groups.len() as u64),
         shader_modules,
+        shader_module_creations: shader_modules,
         approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(resources.target, 4, 1)
             .saturating_mul(3)
             .saturating_add(POST_UNIFORM_BYTE_LEN)

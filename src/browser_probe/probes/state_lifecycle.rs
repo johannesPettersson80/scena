@@ -187,8 +187,8 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     dirty_state.insert(
         "context_recovery".to_owned(),
         json!({
-            "context": recovery.context,
-            "device": recovery.device,
+            "context": recovery,
+            "device": null,
         }),
     );
     events.push("context-recovery");

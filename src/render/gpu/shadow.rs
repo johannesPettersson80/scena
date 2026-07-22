@@ -2,20 +2,21 @@ use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatc
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
-/// Comparison sampler for the directional shadow map. Linear filtering with
-/// `CompareFunction::LessEqual` runs the hardware percentage-closer filter,
-/// turning each `textureSampleCompareLevel` call into a 2×2 PCF tap. Address
-/// mode `ClampToEdge` is sentinel-safe — the fragment shader gates the sample
-/// on the receiver's NDC frustum (review F6) so border reads never produce
-/// false self-shadow streaks.
+/// Comparison sampler for the directional shadow map. The fragment shader
+/// averages an explicit 3×3 texel grid, so nearest filtering keeps each of its
+/// nine `textureSampleCompareLevel` calls to one comparison instead of silently
+/// widening every grid point into another 2×2 footprint. Address mode
+/// `ClampToEdge` is sentinel-safe — the fragment shader gates the sample on the
+/// receiver's NDC frustum (review F6) so border reads never produce false
+/// self-shadow streaks.
 pub(super) fn create_shadow_sampler(device: &wgpu::Device) -> wgpu::Sampler {
     device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("scena.m2.shadow_sampler"),
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
         address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Nearest,
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         compare: Some(wgpu::CompareFunction::LessEqual),
         ..Default::default()

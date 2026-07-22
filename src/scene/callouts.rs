@@ -299,6 +299,7 @@ impl Scene {
                     .get(anchor)
                     .ok_or(LookupError::AnchorNotFound {
                         name: format!("{anchor:?}"),
+                        candidates: Vec::new(),
                     })?;
                 if !self.nodes.contains_key(frame.node()) {
                     return Err(LookupError::NodeNotFound(frame.node()));
@@ -320,6 +321,7 @@ impl Scene {
                         .get(connector)
                         .ok_or(LookupError::ConnectorNotFound {
                             name: format!("{connector:?}"),
+                            candidates: Vec::new(),
                         })?;
                 if !self.nodes.contains_key(frame.node()) {
                     return Err(LookupError::NodeNotFound(frame.node()));

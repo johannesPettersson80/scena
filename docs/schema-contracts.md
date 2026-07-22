@@ -33,6 +33,9 @@ Rules:
   - `scena.visual_repair_plan.v1`
   - `scena.agent_loop_result.v1`
   - `scena.agent_smoke_template.v1`
+  - `scena.agent_template_catalog.v1`
+  - `scena.q01.required_webgpu_pixel_parity.v1`
+  - `scena.q04.required_gpu_resource_lifecycle.v1`
   - `scena.appearance_expectation.v1`
   - `scena.appearance_introspection.v1`
   - `scena.animation_introspection.v1`
@@ -45,6 +48,7 @@ Rules:
   - `scena.placement_result.v1`
   - `scena.asset_load_report.v1`
   - `scena.asset_geometry_summary.v1`
+  - `scena.asset_conversion.v1`
   - `scena.annotation_projection.v1`
   - `scena.subtree.v1`
   - `scena.scene_host_visual_state.v1`
@@ -597,12 +601,12 @@ Stable fixtures:
 
 ### `scena.agent_smoke_template.v1`
 
-The `scena examples agent <template> [--out <dir>]` CLI command writes a small
+The `scena examples agent get <template> [--out <dir>]` CLI command writes a small
 set of recipe, expectation, and artifact-path files for a named smoke template
 and emits a manifest with schema `scena.agent_smoke_template.v1`. The
-`scena examples agent get <name> [--out <dir>]` form emits authored-from-scratch
-starter snippets such as `primitive_scene`, `cad_plate`, `dashboard_bars`,
-`machine_state_viewer`, and `product_configurator`.
+Authored-from-scratch starter snippets have canonical names such as
+`primitive-scene`, `cad-plate`, `dashboard-bars`, `machine-state-viewer`, and
+`product-configurator-starter`.
 
 The manifest contains:
 
@@ -622,6 +626,15 @@ are runnable smoke templates for asset load, render introspection, visibility
 diagnosis, recipe-authored section boxes, measurements, callouts, and exploded
 views.
 
+### `scena.agent_template_catalog.v1`
+
+Produced by `scena examples agent list`. Each `templates` row includes one
+kebab-case canonical `name`, compatibility `aliases`, `status`,
+`required_features`, and a summary. Alias generation retains the canonical
+manifest name and adds a migration diagnostic; callers never need to parse an
+unknown-template error to discover names. The stable fixture is
+`tests/assets/stable-contracts/agent_template_catalog.v1.json`.
+
 Stable fixture:
 `tests/assets/stable-contracts/agent_smoke_template.v1.json`.
 
@@ -639,6 +652,34 @@ stderr tails when the underlying command produced them.
 
 Stable fixture:
 `tests/assets/stable-contracts/browser_proof_run.v1.json`.
+
+### `scena.q01.required_webgpu_pixel_parity.v1`
+
+The required browser M6 hardware lane emits this source-bound comparison
+artifact after evaluating the live renderer-owned WebGPU readback against the
+CPU oracle. It records exact frame normalization and thresholds, mask policy,
+metric summary, worst-region bounding box, six known-bad mutation outcomes,
+adapter identity, reproducing command/environment, image paths and hashes,
+source commit, producer, timestamp, and producer-source checksums. A software
+adapter may emit the same pixel comparison as conformance evidence, but cannot
+claim required hardware parity.
+
+Stable fixture:
+`tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json`.
+
+### `scena.q04.required_gpu_resource_lifecycle.v1`
+
+The required native hardware lane emits this artifact only after it creates an
+accepted physical adapter, prepares baseline and expanded GPU resource sets,
+renders the expanded set, returns retained resources to the baseline shape,
+and confirms destruction of every queued object through device polling. The
+artifact records adapter provenance, all three resource-counter snapshots,
+poll counters/status, the executed assertion count, producer command, source
+commit, and timestamp. Optional developer-smoke skip artifacts use a different
+proof class and cannot satisfy release readiness.
+
+Stable fixture:
+`tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json`.
 
 ## Renderer stats JSON
 
@@ -666,6 +707,12 @@ Required top-level fields:
 
 - `schema`
 - `capabilities`
+
+When this report is emitted by a backend-selecting `scena` CLI command, the CLI
+envelope also includes `backend_selection` with `source` (`default` or
+`cli_flag`), `requested`, `selected`, and `fallback_used`. The library-produced
+typed report remains backend-selection-policy neutral. Recipe render, capture,
+and CAD inspection CLI envelopes use the same object.
 - `adapter`
 - `diagnostics`
 
@@ -673,9 +720,27 @@ Additive optional fields:
 
 - `post_processing`: active/available post-processing pass metadata for the
   current renderer configuration.
+- `probe`: pre-render discovery provenance emitted by `scena capabilities`.
+  `mode` separates `static` from `live_adapter`; `status` is
+  `static_no_device`, `measured`, or `unavailable`. It records source/time,
+  requested and selected backend, requested-device features/limits, color and
+  depth target format/sample-count evidence, readback/presentation constraints,
+  and a structured unavailable reason. Old v1 documents without `probe`
+  continue to deserialize.
 
 Capability enum values use serde names such as `headless`, `supported`,
 `degraded`, and `feature_disabled`.
+
+`capabilities.color_target_format` is live renderer metadata when a surface is
+attached and may be `Rgba8Unorm`, `Rgba8UnormSrgb`, `Bgra8Unorm`, or
+`Bgra8UnormSrgb`. It is not a readback-transfer flag: the default RGBA8 output
+contract remains sRGB display bytes for all four attachment formats.
+
+`scena capabilities [--live] [--json]` emits this schema before rendering.
+The device-free default labels target facts as unmeasured. The live command
+uses the selected renderer target and wgpu format features, exits 1 with the
+same schema when adapter/device creation is unavailable, and does not claim
+surface presentation from its headless probe.
 
 ### `scena.scene_inspection.v1`
 
@@ -1097,6 +1162,16 @@ the iteration budget, remaining reasons, skipped actions, confidence, and
 whether host input is required. The `scena repair` command writes this JSON to
 stdout and exits non-zero when no safe automatic fix exists.
 
+The positional target is not advisory. Before consuming `--from`, repair loads
+a raw asset through `Assets::doctor_asset_path`, or fully validates/builds a
+recipe through its effective `RecipeBuildPolicy`. Missing or malformed assets
+return `scena.asset_doctor.v1`; invalid recipes return
+`scena.scene_recipe_validation.v1`; build/policy rejection returns
+`scena.recipe_build_result.v1`. Only a valid target reaches repair planning,
+and a second positional target is rejected as an argument error. The report
+still owns the proposed changes; this validation does not claim that an older
+report is cryptographically bound to the target.
+
 The stable fixtures live at
 `tests/assets/stable-contracts/visual_repair_plan.v1.json` and
 `tests/assets/stable-contracts/agent_loop_result.v1.json`.
@@ -1202,9 +1277,21 @@ The stable fixture lives at
 
 Produced and consumed by `validate_scene_recipe_json`,
 `validate_scene_recipe_value`, `parse_valid_scene_recipe_json`, and the `scena
-validate-recipe <recipe.json>` command. A recipe is a transient declarative
-snapshot input for Scena, not a project file, workflow script, host document
-model, or persisted application state.
+validate-recipe <recipe.json>` command. A recipe is a versioned interchange/build input
+for Scena and may be stored or transmitted as a v1
+authoring snapshot. It is not the canonical persisted application document,
+project file, workflow script, or host state model.
+
+Same-version parsing followed by serialization produces same-version canonical output
+for known fields; empty or default fields may normalize. Serde currently
+ignores unknown top-level fields, so they are dropped from canonical output,
+while many nested structures reject unknown fields with `deny_unknown_fields`.
+There is no generic extension-data bag and no cross-version lossless round-trip
+guarantee. The host owns migrations, domain persistence, undo, and history.
+Schema versioning and deliberate additive fields are the extension mechanism.
+Caller-authored recipe IDs are stable for recipe-local build and patch
+correlation, not runtime handles or application-persistence identities. URI
+access remains constrained by the operator-owned build policy and allowed roots.
 
 The current v1 recipe slice supports:
 
@@ -1212,6 +1299,16 @@ The current v1 recipe slice supports:
 - `imports[]` entries with stable caller `id`, glTF/GLB `uri`, optional
   `optional` skip policy, optional `transform`, and optional
   `expected_extent`
+- Import and node local transforms share the tagged `TransformSpec` grammar.
+  Imports accept `kind:"trs"` and `kind:"raw"`; node-only placement kinds
+  remain unavailable on imports because they require a built scene. Every
+  numeric component must fit finite `f32`. Raw quaternions use `[x,y,z,w]`,
+  must be non-zero, and are normalized. TRS rotations are degrees and compose
+  by calling X, then Y, then Z before scale is assigned. The published 1.8.0
+  untagged import object is accepted only as an exact compatibility alias,
+  emits `legacy_transform_shape` with an auto-fix suggestion, and serializes
+  back as canonical `kind:"raw"`; an explicit `kind` is never reinterpreted
+  through that alias.
 - `colors` map entries with stable caller ids and direct `#RRGGBB`, `srgb8`,
   linear RGB, Kelvin, or named `Color` constants. Named constants include the
   public Rust color helpers such as `white`, `black`, `gray`, `light_gray`,
@@ -1275,7 +1372,7 @@ The current v1 recipe slice supports:
   simplifies meshes.
 - `anchors[]`, `connectors[]`, `bounds[]`, and `named_states[]` follow the
   accepted contract in `docs/specs/recipe-spatial-state-v1.md`. Every row has
-  a persistent recipe id. Targets are closed `node`, `import_root`, or exact
+  a recipe-local stable id. Targets are closed `node`, `import_root`, or exact
   `import_node` objects; authored positions and bounds are scene meters in
   glTF Y-up right-handed axes. Imported anchor/connector aliases preserve
   converted source-unit and coordinate metadata. Connector mates run through
@@ -1421,8 +1518,12 @@ and sequencing.
 
 `scena.scene_recipe_validation.v1` contains `ok` plus deterministic diagnostics
 with `code`, `severity`, JSON `path`, `message`, `help`, optional
-`suggestion`, and `auto_fixable`. Unknown-field suggestions use bounded string
-distance, for example `importe` suggests `imports`.
+`suggestion`, optional structured `candidates`, and `auto_fixable`. Unknown
+node, geometry/mesh-resource, material, import, and environment-preset
+references use the same normalized, deterministic ranking as runtime lookups,
+cap candidates at three, and mirror the first candidate into `suggestion` for
+older consumers. Unknown-field suggestions use bounded string distance, for
+example `importe` suggests `imports`.
 
 `scena.scene_recipe_build.v1` is emitted by `SceneHostCore::build_recipe_json`.
 It maps caller-authored recipe ids to runtime-scoped SceneHost handles that later
@@ -1452,9 +1553,24 @@ font entries report the loaded font resource kind.
 `RecipeBuildPolicy` is operator-owned configuration, not part of the authored
 recipe schema, and fail-closed policy or required-load failures appear as
 deterministic build diagnostics.
+The CLI default root is its current directory. Repeatable
+`--allow-root <directory>` options add canonical, existing operator roots
+without disabling that sandbox. Resource paths are canonicalized independently
+before containment checks: a `..` path or a symlink inside an allowed root
+cannot authorize a target outside it. The same effective policy is used by
+full validation, recipe build/render, and asset-or-recipe inspect, diagnose,
+doctor, and repair paths.
+Resolved scene assets retain the semantic `AssetLoadOptions` and evidence used
+to populate their cache entry. A cache hit under the same path cannot bypass a
+later stricter missing-resource rule or smaller fetch budget; cross-policy reuse
+is allowed only when the retained load evidence proves the active operator
+policy was already satisfied.
 
 `scena.recipe_build_result.v1` is emitted by
-`scena recipe build <recipe.json> [--max-imports <n>]`. It nests the existing
+`scena recipe build <recipe.json> [--max-imports <n>] [--allow-root
+<directory>]...`, by `scena doctor` for a
+recipe, and as the structured rejection result when an asset-or-recipe command
+cannot build the complete recipe. It nests the existing
 `scena.scene_recipe_build.v1` manifest, the effective
 `scena.recipe_policy.v1`, and execution counters. This command constructs only
 assets, scene graph state, build budgets, and SceneHost handle tables; it does
@@ -1525,7 +1641,7 @@ id,depth,normal]`. CPU v1 emits deterministic paletted RGBA8 node/instance IDs,
 16-bit grayscale linear camera-distance depth, and RGBA8 world normals from one
 prepared SceneHost state. Palette index zero is transparent background. Every
 other palette entry has a legend row containing a runtime-scoped host node
-handle, optional runtime instance identity, and a persistent recipe node or
+handle, optional runtime instance identity, and a recipe-local stable node or
 instance ID when the build manifest owns one. Runtime handles are explicitly not persistence identifiers.
 
 The report pins single-center sampling, nearest-opaque-fragment occlusion,
@@ -1544,11 +1660,16 @@ changes with stable IDs, add/remove/modify/reorder kinds, field paths, and an
 explicit numeric tolerance. Generic arbitrary-JSON diffing is intentionally
 outside renderer ownership.
 
+Inequality is a successful comparison and therefore exits 0 by default with
+`exit_policy:"report_only"`. Add `--exit-code` for CI; an unequal report still
+stays on stdout but exits 1 with `exit_policy:"difference_is_failure"`. Parse,
+policy, build, and I/O failures remain distinct command failures.
+
 `--render --out-dir <dir>` additionally renders both recipes through the same
 CPU SceneHost lifecycle, reuses `scena.capture_baseline.v1` for the aggregate
 RGBA8 comparison, and writes `before.png`, `after.png`, `diff.png`, and the
 complete result JSON. Changed color pixels are sampled against each recipe's
-semantic ID AOV and grouped by persistent recipe node, imported-node, or
+semantic ID AOV and grouped by recipe-local stable node, imported-node, or
 authored-instance candidate. The summary is an exact partition:
 `changed_pixels = attributed_pixels + ambiguous_pixels + unattributed_pixels`.
 
@@ -1560,13 +1681,22 @@ attribution for those surfaces or for post-processing. No competitive uniqueness
 is made without a dated, source-backed cross-product matrix. The stable fixture
 is `tests/assets/stable-contracts/scene_recipe_diff_result.v1.json`.
 
-`scena validate-recipe <recipe.json>` first runs shape validation without
-rendering, then loads declared assets far enough to validate asset presence and
-optional `expected_extent` scale sanity. Missing or unloadable assets emit an
-`asset_load_failed` error diagnostic and make `ok=false`. Assets whose maximum
-extent falls outside an import's expected range emit warning-level
-`extent_out_of_range`; warnings remain visible in JSON but do not make
-`ok=false`.
+`scena validate-recipe <recipe.json>` defaults to `full_resolution`: it first
+runs shape validation without rendering, then resolves the same resource plan
+consumed by `recipe build`. The plan inventories imports, environment URI or
+builtin preset, fonts, every authored material texture slot, and nested glTF
+dependencies reached while loading an import. Each resource row carries its
+JSON path, kind, authored URI, normalized URI, required state, and status. The
+report also carries the effective `RecipeBuildPolicy` roots and limits.
+Resource diagnostics repeat the normalized URI, required state, allowed roots,
+and an actionable remedy. Missing required resources make `ok=false`; optional
+resources become warnings with `optional_skipped` status. Assets whose maximum
+extent falls outside an import's expected range emit `extent_out_of_range`.
+
+`--syntax-only` is the explicit no-I/O alternative. It inventories authored
+resources as `not_checked`, sets `validation_mode:"syntax_only"` and
+`execution_equivalent:false`, and must not be presented as proof that a build
+can start. `--full` spells the default mode explicitly.
 
 The stable fixtures live at
 `tests/assets/stable-contracts/scene_recipe.v1.json` and
@@ -1622,12 +1752,18 @@ placement JSON on stdout and a non-zero exit.
 The stable fixture lives at
 `tests/assets/stable-contracts/placement_result.v1.json`.
 
+Placement and recipe-patch transforms use the same canonical raw discriminator
+(`kind:"raw"`), quaternion order, and default omission as recipe transforms;
+zero translation and unit scale may therefore be absent. Readers keep accepting
+the pre-discriminator v1 result shape, but every newly serialized result
+includes the discriminator.
+
 ### `scena.recipe_patch.v1`
 
 Produced by adding `--apply` to `scena place`. The default placement command
 remains a side-effect-free preview. Apply mode is also filesystem-safe: it
 emits a complete canonical `updated_recipe` document rather than editing the
-source in place. The patch is addressed by persistent recipe import ID, never
+source in place. The patch is addressed by recipe-local stable import ID, never
 by a transient SceneHost handle, and includes the previous/new transform plus
 a semantic JSON-path change summary. `formatting_preserved=false` explicitly
 states that canonical JSON output does not promise source whitespace or key
@@ -1693,12 +1829,15 @@ The stable fixture lives at `tests/assets/stable-contracts/vocab.v1.json`.
 
 ### `scena.recipe_policy.v1`
 
-Produced by `RecipeBuildPolicy::to_schema_report` and `scena policy recipe`.
+Produced by `RecipeBuildPolicy::to_schema_report` and `scena policy recipe
+[--allow-root <directory>]...`.
 The report exposes the effective network switch, URI schemes, canonical local
 roots, and every recipe/resource/output limit. Every value carries its source;
-the standalone discovery command reports `compiled_default`, while commands
-that add operator overrides must report those overrides in their own result
-policy block rather than implying that a recipe changed policy.
+the standalone discovery command reports `compiled_default` for defaults and
+`operator_override` for each added canonical root. Commands that add operator
+roots report the same effective policy in their result rather than implying
+that a recipe changed policy. Missing/non-directory roots are argument errors;
+there is no global sandbox-disable option.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/recipe_policy.v1.json`.
@@ -1718,6 +1857,11 @@ and `emits.error` schema sets. Command-specific reports remain on stdout;
 dispatch and argument failures that cannot produce one use
 `scena.cli_error.v1` on stderr. Fatal stdout write failures remain the distinct
 `scena.cli_io_error.v1` contract.
+
+`scena.cli_error.v1` includes a structured `candidates` array. Unknown schema
+and agent-template names populate it from the live catalog using the shared
+normalized ranking algorithm; unrelated argument failures emit an empty list.
+Consumers must use this field instead of parsing “did you mean” prose.
 
 The declarations are checked against a command/schema/outcome evidence matrix.
 Every non-`cli_error` row names a real CLI integration fixture, while a fast
@@ -1752,7 +1896,7 @@ their built-in stable precision when the option is omitted.
 
 Produced by `Assets::doctor_asset_path`, `Assets::doctor_loaded_asset`,
 `SceneHostCore::asset_doctor_json`, the browser `SceneHost.assetDoctorJson()`
-method, and the `scena doctor <asset-or-recipe>` CLI. The report is a
+method, and `scena doctor <asset.gltf|asset.glb>`. The report is a
 renderer-owned asset readiness diagnosis for agents and host tools that need
 actionable load/material/extension findings without compiling Rust in the
 loop.
@@ -1768,8 +1912,36 @@ loadable. Each finding has a stable `severity`, `code`, optional
 The `scena doctor` CLI writes the report to stdout and exits non-zero when
 `ok=false`.
 
+For a parsed scene recipe, `scena doctor <recipe.json>` instead emits
+`scena.recipe_build_result.v1`. That path validates and resolves every import
+with the same `RecipeBuildPolicy` and manifest builder used by `scena recipe
+build`; a rejected later import cannot be hidden behind a successful doctor
+result for import 1.
+
 The stable fixture lives at
 `tests/assets/stable-contracts/asset_doctor.v1.json`.
+
+### `scena.asset_conversion.v1`
+
+Produced by `scena-convert` for every machine-mode conversion plan, completed
+conversion, invalid request, unavailable converter, or converter failure. The
+top-level `ok`, `status`, `workflow`, and `message` fields are always present.
+When known, `tool`, `input`, `output`, and the exact `command` are included;
+`tool_exit_code` records a completed external process, including nonzero
+failure. Status is one of `planned`, `converted`, `invalid_request`,
+`tool_unavailable`, or `conversion_failed`.
+
+External tool output is never written beside the machine document. Each
+non-empty tool line becomes a `diagnostics[]` row with `stream`, `severity`,
+and `message`. Stdout is informational; stderr is warning severity after a
+successful conversion and error severity after failure. Domain errors keep the
+single report on stdout and use exit 2 for invalid requests or exit 1 for tool
+startup/conversion failures. Fatal CLI I/O remains
+`scena.cli_io_error.v1` on stderr. `--human` is the explicit plain-text and
+live-tool-output mode; `--json` explicitly selects the stable machine mode.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/asset_conversion.v1.json`.
 
 ### `scena.connector_browser.v1`
 
@@ -2027,6 +2199,8 @@ Required top-level fields:
 - `schema`
 - `path`
 - `cache_hit`
+- `requested_options`
+- `cache_entry_options`
 - `fetched_bytes`
 - `external_buffers`
 - `external_images`
@@ -2040,10 +2214,15 @@ Required top-level fields:
 `provenance` is the loaded asset's `AssetProvenance` value. `geometry` is the
 loaded asset's `scena.asset_geometry_summary.v1` report and carries the same
 provenance value. Warnings are typed and currently include
-`external_image_missing` and `external_buffer_missing`. Cache-hit reports
-preserve warnings, external-resource status rows, material fallback provenance,
-and external resource counts from the original load, while `fetched_bytes`
-remains `0` for the cache-hit call itself.
+`external_image_missing` and `external_buffer_missing`. `requested_options`
+records the semantic policy of this call; `cache_entry_options` records the
+policy that produced reused evidence. They differ only for a compatible cache
+hit whose retained warnings and fetched-byte total prove the active request was
+satisfied. Cache-hit reports preserve warnings, external-resource status rows,
+material fallback provenance, and external resource counts from the original
+load, while `fetched_bytes` remains `0` for the cache-hit call itself. Both
+option fields are additive in v1 and deserialize to lenient, unlimited defaults
+when absent.
 
 `external_resources` is a deterministic status table for external buffers and
 images discovered from the glTF. Each row has `kind` (`buffer` or `image`),
@@ -2064,6 +2243,16 @@ Small example:
   "schema": "scena.asset_load_report.v1",
   "path": "models/cell.glb",
   "cache_hit": false,
+  "requested_options": {
+    "strict_textures": false,
+    "strict_external_resources": false,
+    "fetch_byte_limit": null
+  },
+  "cache_entry_options": {
+    "strict_textures": false,
+    "strict_external_resources": false,
+    "fetch_byte_limit": null
+  },
   "fetched_bytes": 4096,
   "external_buffers": 1,
   "external_images": 0,

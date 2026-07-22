@@ -1,11 +1,301 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::fs;
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use scena::{
-    AntiAliasing, Assets, CaptureError, DepthOfFieldConfig, DevicePollStatus, PerspectiveCamera,
-    PostBloomConfig, PrepareError, Primitive, RenderError, RenderReadbackMode, Renderer,
-    RendererStats, Scene, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig,
-    SurfaceEvent, Transform, Vec3,
+    AdapterLimitsReport, AntiAliasing, Assets, CaptureError, DepthOfFieldConfig, DevicePollStatus,
+    GpuAdapterReport, PerspectiveCamera, PostBloomConfig, PrepareError, Primitive, RenderError,
+    RenderReadbackMode, Renderer, RendererStats, Scene, ScreenSpaceAmbientOcclusionConfig,
+    ScreenSpaceReflectionConfig, SurfaceEvent, Transform, Vec3,
 };
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+const REQUIRED_LIFECYCLE_ENV: &str = "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE";
+const LIFECYCLE_ARTIFACT_DIR: &str = "target/gate-artifacts/c09-gpu-resource-lifecycle";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+struct ResourceCounters {
+    buffers: u64,
+    gpu_textures: u64,
+    render_targets: u64,
+    pipelines: u64,
+    bind_groups: u64,
+    shader_modules: u64,
+    pending_destructions: u64,
+}
+
+impl From<RendererStats> for ResourceCounters {
+    fn from(stats: RendererStats) -> Self {
+        Self {
+            buffers: stats.buffers,
+            gpu_textures: stats.gpu_textures,
+            render_targets: stats.render_targets,
+            pipelines: stats.pipelines,
+            bind_groups: stats.bind_groups,
+            shader_modules: stats.shader_modules,
+            pending_destructions: stats.pending_destructions,
+        }
+    }
+}
+
+impl ResourceCounters {
+    const fn retained_shape(self) -> [u64; 6] {
+        [
+            self.buffers,
+            self.gpu_textures,
+            self.render_targets,
+            self.pipelines,
+            self.bind_groups,
+            self.shader_modules,
+        ]
+    }
+
+    fn retained_total(self) -> u64 {
+        self.retained_shape().into_iter().sum()
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RequiredLifecycleEvidence {
+    schema: String,
+    status: String,
+    proof_class: String,
+    producer: String,
+    command: String,
+    commit_sha: String,
+    timestamp_unix_seconds: u64,
+    source_checksums: Vec<SourceChecksum>,
+    adapter: Option<GpuAdapterReport>,
+    baseline: ResourceCounters,
+    prepared: ResourceCounters,
+    released: ResourceCounters,
+    poll_status: String,
+    poll_pending_before: u64,
+    poll_destroyed_resources: u64,
+    poll_pending_after: u64,
+    assertions_executed: u64,
+    complete_lifecycle: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SourceChecksum {
+    path: String,
+    sha256: String,
+}
+
+impl RequiredLifecycleEvidence {
+    fn known_good() -> Self {
+        Self {
+            schema: "scena.q04.required_gpu_resource_lifecycle.v1".to_string(),
+            status: "passed".to_string(),
+            proof_class: "physical-hardware-required".to_string(),
+            producer: "mutation-test".to_string(),
+            command: "mutation-test".to_string(),
+            commit_sha: "test-commit".to_string(),
+            timestamp_unix_seconds: 1,
+            source_checksums: vec![SourceChecksum {
+                path: "tests/c09_gpu_resource_lifecycle.rs".to_string(),
+                sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_string(),
+            }],
+            adapter: Some(GpuAdapterReport {
+                name: "Mutation Test GPU".to_string(),
+                backend: "Vulkan".to_string(),
+                device_type: "DiscreteGpu".to_string(),
+                vendor: 1,
+                device: 2,
+                driver: "test-driver".to_string(),
+                driver_info: "hardware".to_string(),
+                features: String::new(),
+                limits: AdapterLimitsReport {
+                    max_texture_dimension_2d: 8192,
+                    max_bind_groups: 4,
+                    max_uniform_buffer_binding_size: 65_536,
+                    max_vertex_attributes: 16,
+                },
+            }),
+            baseline: ResourceCounters {
+                buffers: 10,
+                gpu_textures: 20,
+                render_targets: 4,
+                pipelines: 9,
+                bind_groups: 6,
+                shader_modules: 3,
+                pending_destructions: 0,
+            },
+            prepared: ResourceCounters {
+                buffers: 12,
+                gpu_textures: 27,
+                render_targets: 11,
+                pipelines: 21,
+                bind_groups: 12,
+                shader_modules: 10,
+                pending_destructions: 0,
+            },
+            released: ResourceCounters {
+                buffers: 10,
+                gpu_textures: 20,
+                render_targets: 4,
+                pipelines: 9,
+                bind_groups: 6,
+                shader_modules: 3,
+                pending_destructions: 72,
+            },
+            poll_status: "Confirmed".to_string(),
+            poll_pending_before: 72,
+            poll_destroyed_resources: 72,
+            poll_pending_after: 0,
+            assertions_executed: 12,
+            complete_lifecycle: true,
+        }
+    }
+}
+
+fn validate_required_lifecycle_evidence(
+    evidence: &RequiredLifecycleEvidence,
+) -> Result<(), String> {
+    if evidence.schema != "scena.q04.required_gpu_resource_lifecycle.v1" {
+        return Err("required lifecycle evidence has the wrong schema".to_string());
+    }
+    if evidence.status != "passed" || evidence.proof_class != "physical-hardware-required" {
+        return Err("required lifecycle evidence is not a passed hardware proof".to_string());
+    }
+    if evidence.source_checksums.is_empty()
+        || evidence.source_checksums.iter().any(|checksum| {
+            checksum.path.trim().is_empty()
+                || checksum.sha256.len() != 64
+                || !checksum.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || checksum.sha256.bytes().all(|byte| byte == b'0')
+        })
+    {
+        return Err("required lifecycle evidence is missing valid source checksums".to_string());
+    }
+    let adapter = evidence
+        .adapter
+        .as_ref()
+        .ok_or_else(|| "required lifecycle evidence is missing adapter provenance".to_string())?;
+    require_hardware_adapter(adapter)?;
+    if !evidence.complete_lifecycle || evidence.assertions_executed < 10 {
+        return Err(
+            "required lifecycle evidence did not execute the complete assertion set".into(),
+        );
+    }
+    if evidence.prepared.retained_total() <= evidence.baseline.retained_total() {
+        return Err("heavy preparation did not add tracked GPU resources".to_string());
+    }
+    if evidence.released.retained_shape() != evidence.baseline.retained_shape() {
+        return Err("released resource shape did not return to baseline".to_string());
+    }
+    if evidence.released.pending_destructions == 0
+        || evidence.poll_pending_before != evidence.released.pending_destructions
+        || evidence.poll_destroyed_resources != evidence.poll_pending_before
+        || evidence.poll_pending_after != evidence.baseline.pending_destructions
+    {
+        return Err("pending destructions were not completely confirmed and retired".to_string());
+    }
+    if evidence.poll_status != "Confirmed" {
+        return Err("device poll did not confirm GPU completion".to_string());
+    }
+    Ok(())
+}
+
+fn require_hardware_adapter(adapter: &GpuAdapterReport) -> Result<(), String> {
+    if !matches!(
+        adapter.device_type.as_str(),
+        "DiscreteGpu" | "IntegratedGpu" | "VirtualGpu"
+    ) {
+        return Err(format!(
+            "required lifecycle adapter is not a hardware device type: {}",
+            adapter.device_type
+        ));
+    }
+    let identity = format!(
+        "{} {} {} {}",
+        adapter.name, adapter.device_type, adapter.driver, adapter.driver_info
+    )
+    .to_ascii_lowercase();
+    for marker in [
+        "swiftshader",
+        "llvmpipe",
+        "lavapipe",
+        "software rasterizer",
+        "microsoft basic render",
+    ] {
+        if identity.contains(marker) {
+            return Err(format!(
+                "required lifecycle adapter contains software marker {marker}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn optional_gpu_renderer(test_name: &str) -> Option<Renderer> {
+    match Renderer::headless_gpu(16, 16) {
+        Ok(renderer) => Some(renderer),
+        Err(error) => {
+            write_lifecycle_artifact(
+                &format!("optional-{test_name}.json"),
+                &serde_json::json!({
+                    "schema": "scena.q04.optional_gpu_resource_lifecycle_smoke.v1",
+                    "status": "skipped",
+                    "proof_class": "optional-developer-smoke",
+                    "test": test_name,
+                    "reason": format!("{error:?}"),
+                    "producer": "cargo test --test c09_gpu_resource_lifecycle",
+                    "commit_sha": current_commit_label(),
+                    "timestamp_unix_seconds": current_timestamp_unix_seconds(),
+                }),
+            );
+            None
+        }
+    }
+}
+
+fn write_lifecycle_artifact(name: &str, value: &impl Serialize) {
+    let path = Path::new(LIFECYCLE_ARTIFACT_DIR).join(name);
+    fs::create_dir_all(path.parent().expect("Q04 artifact parent exists"))
+        .expect("Q04 artifact directory creates");
+    let body = serde_json::to_string_pretty(value).expect("Q04 artifact serializes");
+    fs::write(&path, format!("{body}\n")).expect("Q04 artifact writes");
+}
+
+fn required_lifecycle_source_checksums() -> Vec<SourceChecksum> {
+    vec![
+        embedded_source_checksum("Cargo.lock", include_bytes!("../Cargo.lock")),
+        embedded_source_checksum(
+            "tests/c09_gpu_resource_lifecycle.rs",
+            include_bytes!("c09_gpu_resource_lifecycle.rs"),
+        ),
+    ]
+}
+
+fn embedded_source_checksum(relative: &str, bytes: &[u8]) -> SourceChecksum {
+    SourceChecksum {
+        path: relative.to_string(),
+        sha256: Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    }
+}
+
+fn current_commit_label() -> String {
+    std::env::var("GITHUB_SHA")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "local-checkout".to_string())
+}
+
+fn current_timestamp_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
 
 fn gpu_scene() -> (Scene, scena::CameraKey) {
     let mut scene = Scene::new();
@@ -23,8 +313,60 @@ fn gpu_scene() -> (Scene, scena::CameraKey) {
 }
 
 #[test]
-fn msaa8_is_fully_prepared_or_rejected_before_render() {
-    let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+fn required_lifecycle_evaluator_rejects_known_leak_and_missing_adapter() {
+    let valid = RequiredLifecycleEvidence::known_good();
+    assert!(validate_required_lifecycle_evidence(&valid).is_ok());
+
+    let mut leaked = valid.clone();
+    leaked.poll_pending_after = 1;
+    assert!(
+        validate_required_lifecycle_evidence(&leaked)
+            .expect_err("known leak must fail")
+            .contains("pending destructions")
+    );
+
+    let mut missing_adapter = valid;
+    missing_adapter.adapter = None;
+    assert!(
+        validate_required_lifecycle_evidence(&missing_adapter)
+            .expect_err("missing adapter must fail")
+            .contains("adapter")
+    );
+
+    let mut missing_source_checksums = RequiredLifecycleEvidence::known_good();
+    missing_source_checksums.source_checksums.clear();
+    assert!(
+        validate_required_lifecycle_evidence(&missing_source_checksums)
+            .expect_err("missing source checksums must fail")
+            .contains("source checksums")
+    );
+}
+
+#[test]
+fn required_lifecycle_source_provenance_is_embedded_for_portable_executables() {
+    let source = include_str!("c09_gpu_resource_lifecycle.rs");
+    let cargo_lock_embedding = ["include_", "bytes!(\"../Cargo.lock\")"].concat();
+    let lifecycle_source_embedding =
+        ["include_", "bytes!(\"c09_gpu_resource_lifecycle.rs\")"].concat();
+    let runtime_manifest_lookup = ["env!", "(\"CARGO_MANIFEST_DIR\")"].concat();
+
+    assert!(
+        source.contains(&cargo_lock_embedding),
+        "portable Q04 executables must embed Cargo.lock provenance at compile time"
+    );
+    assert!(
+        source.contains(&lifecycle_source_embedding),
+        "portable Q04 executables must embed their lifecycle source at compile time"
+    );
+    assert!(
+        !source.contains(&runtime_manifest_lookup),
+        "portable Q04 executables must not read the cross-builder manifest path at runtime"
+    );
+}
+
+#[test]
+fn msaa8_is_fully_prepared_or_rejected_before_render_optional_gpu_smoke() {
+    let Some(mut renderer) = optional_gpu_renderer("msaa8") else {
         return;
     };
     let (mut scene, camera) = gpu_scene();
@@ -45,8 +387,8 @@ fn msaa8_is_fully_prepared_or_rejected_before_render() {
                     prepared.bind_groups,
                     prepared.shader_modules,
                 ),
-                (10, 22, 6, 13, 6, 11),
-                "supported MSAA8 owns its pipeline set, color target, and overlay depth set before render"
+                (10, 22, 6, 13, 6, 4),
+                "supported MSAA8 owns its pipeline set, color target, overlay depth set, and shared triangle shader before render"
             );
             assert!(prepared.approximate_gpu_memory_bytes > baseline.approximate_gpu_memory_bytes);
             let signature = resource_signature(prepared);
@@ -96,8 +438,9 @@ fn disable_heavy_output(renderer: &mut Renderer) {
 }
 
 #[test]
-fn output_resource_changes_require_prepare_and_stats_are_complete_before_render() {
-    let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+fn output_resource_changes_require_prepare_and_stats_are_complete_before_render_optional_gpu_smoke()
+{
+    let Some(mut renderer) = optional_gpu_renderer("output-resource-changes") else {
         return;
     };
     let (mut scene, camera) = gpu_scene();
@@ -113,7 +456,7 @@ fn output_resource_changes_require_prepare_and_stats_are_complete_before_render(
             baseline.bind_groups,
             baseline.shader_modules,
         ),
-        (10, 20, 4, 9, 6, 8),
+        (10, 20, 4, 9, 6, 3),
         "the simple native baseline inventories core, light assignment, fallback material, shadow/environment, transmission, and depth owners exactly"
     );
     assert!(
@@ -143,7 +486,7 @@ fn output_resource_changes_require_prepare_and_stats_are_complete_before_render(
             prepared.bind_groups,
             prepared.shader_modules,
         ),
-        (12, 27, 11, 21, 12, 19),
+        (12, 27, 11, 21, 12, 10),
         "MSAA4 + post + command-ordered uniform staging + depth-color + overlay owners are additive and exact"
     );
     assert!(
@@ -220,8 +563,9 @@ fn cpu_poll_reports_explicitly_unsupported_instead_of_success() {
 }
 
 #[test]
-fn output_revision_and_native_readback_modes_are_explicit_and_render_allocates_no_gpu_resources() {
-    let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+fn output_revision_and_native_readback_modes_are_explicit_and_render_allocates_no_gpu_resources_optional_gpu_smoke()
+ {
+    let Some(mut renderer) = optional_gpu_renderer("readback-modes") else {
         return;
     };
     let (mut scene, camera) = gpu_scene();
@@ -276,8 +620,8 @@ fn output_revision_and_native_readback_modes_are_explicit_and_render_allocates_n
 }
 
 #[test]
-fn double_buffered_async_readback_batch_preserves_input_order() {
-    let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+fn double_buffered_async_readback_batch_preserves_input_order_optional_gpu_smoke() {
+    let Some(mut renderer) = optional_gpu_renderer("async-readback") else {
         return;
     };
     let (mut scene, camera) = gpu_scene();
@@ -312,8 +656,8 @@ fn double_buffered_async_readback_batch_preserves_input_order() {
 }
 
 #[test]
-fn resize_and_context_recovery_rebuild_the_same_resource_shape() {
-    let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+fn resize_and_context_recovery_rebuild_the_same_resource_shape_optional_gpu_smoke() {
+    let Some(mut renderer) = optional_gpu_renderer("resize-context-recovery") else {
         return;
     };
     let assets = Assets::new();
@@ -378,4 +722,82 @@ fn resize_and_context_recovery_rebuild_the_same_resource_shape() {
         resource_signature(resized),
         "context recovery must rebuild the complete optional resource shape"
     );
+}
+
+#[test]
+fn required_hardware_gpu_resource_lifecycle_executes_complete_cycle() {
+    if std::env::var(REQUIRED_LIFECYCLE_ENV).as_deref() != Ok("1") {
+        write_lifecycle_artifact(
+            "required-skip.json",
+            &serde_json::json!({
+                "schema": "scena.q04.required_gpu_resource_lifecycle.v1",
+                "status": "skipped",
+                "proof_class": "diagnostic-without-required-hardware-policy",
+                "reason": format!("set {REQUIRED_LIFECYCLE_ENV}=1 on a physical GPU lane"),
+                "producer": "cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
+                "commit_sha": current_commit_label(),
+                "timestamp_unix_seconds": current_timestamp_unix_seconds(),
+            }),
+        );
+        return;
+    }
+
+    let mut renderer = Renderer::headless_gpu(16, 16).unwrap_or_else(|error| {
+        panic!("required lifecycle lane could not create GPU renderer: {error:?}")
+    });
+    let adapter = renderer
+        .capability_report()
+        .adapter()
+        .cloned()
+        .expect("required lifecycle GPU renderer reports live adapter provenance");
+    require_hardware_adapter(&adapter).expect("required lifecycle lane uses physical hardware");
+
+    let (mut scene, camera) = gpu_scene();
+    disable_heavy_output(&mut renderer);
+    renderer.prepare(&mut scene).expect("baseline prepares");
+    let baseline = ResourceCounters::from(renderer.stats());
+
+    enable_heavy_output(&mut renderer);
+    renderer.prepare(&mut scene).expect("heavy output prepares");
+    let prepared = ResourceCounters::from(renderer.stats());
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
+        .expect("heavy output renders before retirement");
+    assert_eq!(
+        ResourceCounters::from(renderer.stats()).retained_shape(),
+        prepared.retained_shape()
+    );
+
+    disable_heavy_output(&mut renderer);
+    renderer
+        .prepare(&mut scene)
+        .expect("baseline output reprepares after release");
+    let released = ResourceCounters::from(renderer.stats());
+    let poll = renderer.poll_device();
+
+    let evidence = RequiredLifecycleEvidence {
+        schema: "scena.q04.required_gpu_resource_lifecycle.v1".to_string(),
+        status: "passed".to_string(),
+        proof_class: "physical-hardware-required".to_string(),
+        producer: "cargo test --test c09_gpu_resource_lifecycle".to_string(),
+        command: format!(
+            "{REQUIRED_LIFECYCLE_ENV}=1 cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture"
+        ),
+        commit_sha: current_commit_label(),
+        timestamp_unix_seconds: current_timestamp_unix_seconds(),
+        source_checksums: required_lifecycle_source_checksums(),
+        adapter: Some(adapter),
+        baseline,
+        prepared,
+        released,
+        poll_status: format!("{:?}", poll.status),
+        poll_pending_before: poll.pending_destructions_before,
+        poll_destroyed_resources: poll.destroyed_resources,
+        poll_pending_after: poll.pending_destructions_after,
+        assertions_executed: 12,
+        complete_lifecycle: true,
+    };
+    validate_required_lifecycle_evidence(&evidence)
+        .expect("required lifecycle evidence validates before publication");
+    write_lifecycle_artifact("required-result.json", &evidence);
 }

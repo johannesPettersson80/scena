@@ -7,7 +7,9 @@ pub(crate) fn run() {
         Ok(Command::ArchitectureMap) => run_architecture_map(),
         Ok(Command::ClaimAudit) => run_claim_audit(),
         Ok(Command::ReleaseLaneArtifact(lane)) => run_release_lane_artifact(&lane),
-        Ok(Command::ReleaseReadiness) => run_release_readiness(),
+        Ok(Command::ReleaseReadiness { artifact_root }) => {
+            run_release_readiness(artifact_root.as_deref())
+        }
         Ok(Command::PrerenderEnvironment { input, resolution }) => {
             run_prerender_environment(&input, resolution)
         }
@@ -53,7 +55,9 @@ pub(crate) enum Command {
     ArchitectureMap,
     ClaimAudit,
     ReleaseLaneArtifact(String),
-    ReleaseReadiness,
+    ReleaseReadiness {
+        artifact_root: Option<String>,
+    },
     PrerenderEnvironment {
         input: String,
         resolution: Option<u32>,
@@ -92,7 +96,7 @@ impl Finding {
 
 pub(crate) fn finding_reference(rule: &str) -> &'static str {
     if rule.starts_with("RELEASE") || rule.starts_with("CLAIM") || rule.starts_with("M10") {
-        "docs/release-notes/v1.8.0.md"
+        "docs/release-notes/v1.9.0.md"
     } else if rule.contains("STATE-OF-ART")
         || rule == "ARCH-RENDER-TRUTH"
         || rule == "ARCH-RENDER-STANDARD-MATH"
@@ -174,9 +178,18 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
     if args.first().map(String::as_str) == Some("release-readiness") {
         if args.len() == 1 {
-            return Ok(Command::ReleaseReadiness);
+            return Ok(Command::ReleaseReadiness {
+                artifact_root: None,
+            });
         }
-        return Err("release-readiness accepts no arguments".to_string());
+        if args.len() == 3 && args[1] == "--artifact-root" {
+            return Ok(Command::ReleaseReadiness {
+                artifact_root: Some(args[2].clone()),
+            });
+        }
+        return Err(
+            "release-readiness expects [--artifact-root <staged-artifact-root>]".to_string(),
+        );
     }
 
     if args.first().map(String::as_str) == Some("prerender-environment") {
@@ -260,6 +273,6 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 pub(crate) fn print_usage() {
     println!(
-        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- prerender-environment <input.hdr> [--resolution <face_px>]\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
+        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness [--artifact-root <staged-artifact-root>]\n  cargo run -p xtask -- prerender-environment <input.hdr> [--resolution <face_px>]\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
     );
 }

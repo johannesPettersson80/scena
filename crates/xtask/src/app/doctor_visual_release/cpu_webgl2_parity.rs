@@ -60,6 +60,7 @@ pub(crate) fn check_q04_cpu_webgl2_parity_contracts(root: &Path, findings: &mut 
         "tests/browser/m6_rust_wasm_renderer_probe.js",
         &[
             "function assertCpuWebGl2Parity(result)",
+            "postProcessing === \"off\" && backend.toLowerCase() === \"webgl2\"",
             "cpu.rgba8_base64",
             "gpu.rgba8_base64",
             "metrics.rmse <= 0.08",

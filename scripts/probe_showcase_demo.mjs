@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
 
 const baseUrl = new URL(process.argv[2] || "http://127.0.0.1:18133/");
+const crateVersion = readFileSync("Cargo.toml", "utf8").match(
+  /^version\s*=\s*"([^"]+)"/m,
+)?.[1];
 const outDir = path.resolve("target/gate-artifacts/showcase-demo");
 const connectorOnly = process.env.SCENA_SHOWCASE_CONNECTOR_ONLY === "1";
 const HARDWARE_SECTION_ACTIVATION_BUDGET_MS = 800;
@@ -389,7 +392,7 @@ try {
   });
 
   const title = await page.title();
-  if (title !== "scena 1.5 live showcase") {
+  if (title !== `scena ${crateVersion} live showcase`) {
     throw new Error(`unexpected showcase title: ${title}`);
   }
   const sectionCount = await page.locator("main > section").count();

@@ -1,6 +1,7 @@
 use crate::diagnostics::{Backend, BuildError, OutputColorSpace};
 use crate::platform::SurfaceSize;
 
+use super::surface_frame::{GpuRuntimeFaultState, install_gpu_error_callback};
 use super::{GpuDeviceState, GpuSurfaceState};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,6 +23,8 @@ pub(in crate::render) async fn request_headless_gpu(
         return Err(BuildError::RequestDevice { backend });
     }
     let (device, queue) = request_device_with_downlevel_fallback(&adapter, backend).await?;
+    let runtime_fault = GpuRuntimeFaultState::default();
+    install_gpu_error_callback(&device, runtime_fault.clone());
 
     Ok(GpuDeviceState {
         instance,
@@ -29,7 +32,9 @@ pub(in crate::render) async fn request_headless_gpu(
         device,
         queue,
         surface: None,
+        runtime_fault,
         pending_destructions: 0,
+        triangle_shader_modules: Default::default(),
         #[cfg(target_arch = "wasm32")]
         last_poll_observation: "not-polled",
         resources: None,
@@ -210,12 +215,8 @@ async fn request_gpu_for_surface(
     } else {
         request_device_with_downlevel_fallback(&adapter, backend).await?
     };
-    #[cfg(target_arch = "wasm32")]
-    device.on_uncaptured_error(std::sync::Arc::new(|error| {
-        web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "scena wgpu uncaptured error: {error:?}"
-        )));
-    }));
+    let runtime_fault = GpuRuntimeFaultState::default();
+    install_gpu_error_callback(&device, runtime_fault.clone());
     let effective_size =
         clamp_surface_size_to_adapter_limits(size, device.limits().max_texture_dimension_2d);
     let mut config = surface
@@ -237,7 +238,9 @@ async fn request_gpu_for_surface(
         device,
         queue,
         surface: Some(GpuSurfaceState { surface, config }),
+        runtime_fault,
         pending_destructions: 0,
+        triangle_shader_modules: Default::default(),
         #[cfg(target_arch = "wasm32")]
         last_poll_observation: "not-polled",
         resources: None,
@@ -248,7 +251,7 @@ async fn request_gpu_for_surface(
     })
 }
 
-fn enable_scene_host_surface_readback(
+pub(super) fn enable_scene_host_surface_readback(
     config: &mut wgpu::SurfaceConfiguration,
     capabilities: &wgpu::SurfaceCapabilities,
 ) {

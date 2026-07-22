@@ -50,8 +50,46 @@ impl Transform {
         self
     }
 
-    pub const fn scale_by(mut self, scale: f32) -> Self {
+    /// Replaces the current nonuniform scale.
+    ///
+    /// Use [`Self::scale_by`] when the intent is to multiply the current scale
+    /// instead of replacing it.
+    pub const fn with_scale(mut self, scale: Vec3) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    /// Replaces the current scale with the same value on all three axes.
+    ///
+    /// This is the migration path for code that used `scale_by` as a setter
+    /// in published v1.8.0. Use [`Self::scale_by`] for multiplicative
+    /// composition.
+    pub const fn with_uniform_scale(mut self, scale: f32) -> Self {
         self.scale = Vec3::new(scale, scale, scale);
+        self
+    }
+
+    /// Multiplies the current scale uniformly.
+    ///
+    /// Like the `rotate_*_deg` helpers, repeated calls compose in call order.
+    /// Translation and rotation are preserved.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Transform, Vec3};
+    ///
+    /// let transform = Transform::IDENTITY
+    ///     .with_scale(Vec3::new(2.0, 3.0, 4.0))
+    ///     .scale_by(0.5);
+    /// assert_eq!(transform.scale, Vec3::new(1.0, 1.5, 2.0));
+    /// ```
+    pub const fn scale_by(mut self, scale: f32) -> Self {
+        self.scale = Vec3::new(
+            self.scale.x * scale,
+            self.scale.y * scale,
+            self.scale.z * scale,
+        );
         self
     }
 

@@ -3,7 +3,7 @@ use crate::material::Color;
 
 use super::super::RasterTarget;
 use super::browser_readback::{BrowserReadbackPass, encode_browser_readback_pass};
-use super::draw_common::wgpu_clear_color;
+use super::draw_common::wgpu_clear_color_for_target;
 use super::overlays::{OverlayPasses, encode_overlay_passes};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
@@ -77,7 +77,10 @@ pub(super) fn render_browser_probe(
                 transmission_view: &resources.transmission.view,
                 transmission_pipelines: resources.transmission.pipelines.refs(),
                 force_scene_color_pass: post_settings.reflections().is_some(),
-                clear_color: wgpu_clear_color(background_color),
+                clear_color: wgpu_clear_color_for_target(
+                    background_color,
+                    post::scene_color_format(),
+                ),
                 base_label: "scena.browser.proof_post_scene_pass",
                 draw_submissions: &mut draw_submissions,
             },
@@ -132,7 +135,7 @@ pub(super) fn render_browser_probe(
                 instance_batches: &resources.instance_batches,
                 identity_instance: resources.identity_instance,
                 transmission: &resources.transmission,
-                clear_color: wgpu_clear_color(background_color),
+                clear_color: wgpu_clear_color_for_target(background_color, readback.format),
                 draw_submissions: &mut draw_submissions,
             },
         );

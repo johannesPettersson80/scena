@@ -2,7 +2,6 @@ use crate::diagnostics::RenderError;
 
 use super::super::RasterTarget;
 use super::depth;
-use super::material_bindings::MaterialTextureBindingMode;
 use super::pipeline::{UnlitPipelines, create_unlit_pipeline_set};
 #[cfg(target_arch = "wasm32")]
 use crate::render::PostBloomConfig;
@@ -49,12 +48,12 @@ pub(super) fn scene_pipelines(resources: &PostResources, sample_count: u32) -> U
 pub(super) fn ensure_scene_msaa8_pipelines(
     adapter: &wgpu::Adapter,
     device: &wgpu::Device,
+    triangle_shader: &wgpu::ShaderModule,
     resources: &mut PostResources,
     target: RasterTarget,
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
-    texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
 ) -> Result<(), RenderError> {
     if resources.scene_msaa8_pipelines.is_some() {
@@ -74,11 +73,11 @@ pub(super) fn ensure_scene_msaa8_pipelines(
     }
     resources.scene_msaa8_pipelines = Some(create_unlit_pipeline_set(
         device,
+        triangle_shader,
         scene_color_format(),
         output_bind_group_layout,
         material_bind_group_layout,
         draw_bind_group_layout,
-        texture_binding_mode,
         depth_compare,
         8,
     ));
@@ -230,7 +229,7 @@ pub(super) fn encode_chain(
             [
                 resources.target.width as f32,
                 resources.target.height as f32,
-                config.threshold_srgb() as f32 / 255.0,
+                srgb8_threshold_to_linear(config.threshold_srgb()),
                 config.intensity(),
                 config.radius_px() as f32,
                 0.0,
@@ -348,7 +347,7 @@ pub(super) fn encode_bloom_fxaa_to_view(
         [
             resources.target.width as f32,
             resources.target.height as f32,
-            inputs.config.threshold_srgb() as f32 / 255.0,
+            srgb8_threshold_to_linear(inputs.config.threshold_srgb()),
             inputs.config.intensity(),
             inputs.config.radius_px() as f32,
             0.0,
@@ -363,6 +362,10 @@ pub(super) fn encode_bloom_fxaa_to_view(
         inputs.target_view,
         inputs.draw_submissions,
     );
+}
+
+fn srgb8_threshold_to_linear(value: u8) -> f32 {
+    crate::render::color_contract::srgb_channel_to_linear(f32::from(value) / 255.0)
 }
 
 #[cfg(target_arch = "wasm32")]

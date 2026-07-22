@@ -27,8 +27,11 @@ const PAIRED_CALIBRATION_SWEEPS: &[(&str, &str, &[&str])] = &[
 /// closed-form math, so they legitimately need no analytic oracle. Listed so a
 /// new parity sweep cannot silently skip the calibration requirement.
 const NON_CALIBRATION_SWEEPS: &[&str] = &[
+    "tests/c13_depth_clipping_parity.rs",
+    "tests/c14_gltf_semantic_parity.rs",
     "tests/dynamic_transform_parity.rs",
     "tests/m6_browser_renderer_parity.rs",
+    "tests/m6_browser_webgpu_readback.rs",
     "tests/pf08_texture_bake_parity.rs",
 ];
 

@@ -32,8 +32,14 @@ impl Scene {
     ) -> Result<AnimationMixerKey, AnimationError> {
         let clip = import
             .clip(clip_name)
-            .map_err(|_| AnimationError::ClipNotFound {
-                name: clip_name.to_string(),
+            .map_err(|error| match error {
+                crate::LookupError::ClipNotFound { name, candidates } => {
+                    AnimationError::ClipNotFound { name, candidates }
+                }
+                _ => AnimationError::ClipNotFound {
+                    name: clip_name.to_string(),
+                    candidates: Vec::new(),
+                },
             })?
             .clip();
         Ok(self
@@ -127,7 +133,7 @@ impl Scene {
         let clip = {
             let mixer = self.animation_mixer_mut(mixer)?;
             mixer.stop();
-            mixer.clip().clone()
+            mixer.shared_clip()
         };
         self.apply_animation_clip(&clip, 0.0);
         Ok(())
@@ -143,7 +149,7 @@ impl Scene {
         let (clip, time_seconds) = {
             let mixer = self.animation_mixer_mut(mixer)?;
             mixer.seek(time_seconds);
-            (mixer.clip().clone(), mixer.time_seconds())
+            (mixer.shared_clip(), mixer.time_seconds())
         };
         self.apply_animation_clip(&clip, time_seconds);
         Ok(())
@@ -202,10 +208,7 @@ impl Scene {
             let mixer = self.animation_mixer_mut(mixer)?;
             let was_playing = mixer.state() == AnimationPlaybackState::Playing;
             mixer.advance(delta_seconds);
-            if PROFILE {
-                metrics.clip_clone_bytes = mixer.clip().cloned_payload_bytes();
-            }
-            (mixer.clip().clone(), mixer.time_seconds(), was_playing)
+            (mixer.shared_clip(), mixer.time_seconds(), was_playing)
         };
         if was_playing {
             self.apply_animation_clip_impl::<PROFILE>(&clip, time_seconds, &mut metrics);

@@ -1,0 +1,64 @@
+{
+  "schema": "scena.q04.required_gpu_resource_lifecycle.v1",
+  "status": "passed",
+  "proof_class": "physical-hardware-required",
+  "producer": "cargo test --test c09_gpu_resource_lifecycle",
+  "command": "SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE=1 cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
+  "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+  "timestamp_unix_seconds": 1784590000,
+  "source_checksums": [
+    {
+      "path": "tests/c09_gpu_resource_lifecycle.rs",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  ],
+  "adapter": {
+    "name": "example-hardware-adapter",
+    "backend": "Vulkan",
+    "device_type": "DiscreteGpu",
+    "vendor": 4318,
+    "device": 1,
+    "driver": "example-driver",
+    "driver_info": "physical hardware",
+    "features": "",
+    "limits": {
+      "max_texture_dimension_2d": 8192,
+      "max_bind_groups": 4,
+      "max_uniform_buffer_binding_size": 65536,
+      "max_vertex_attributes": 16
+    }
+  },
+  "baseline": {
+    "buffers": 10,
+    "gpu_textures": 20,
+    "render_targets": 4,
+    "pipelines": 9,
+    "bind_groups": 6,
+    "shader_modules": 8,
+    "pending_destructions": 0
+  },
+  "prepared": {
+    "buffers": 12,
+    "gpu_textures": 27,
+    "render_targets": 11,
+    "pipelines": 21,
+    "bind_groups": 12,
+    "shader_modules": 19,
+    "pending_destructions": 0
+  },
+  "released": {
+    "buffers": 10,
+    "gpu_textures": 20,
+    "render_targets": 4,
+    "pipelines": 9,
+    "bind_groups": 6,
+    "shader_modules": 8,
+    "pending_destructions": 72
+  },
+  "poll_status": "Confirmed",
+  "poll_pending_before": 72,
+  "poll_destroyed_resources": 72,
+  "poll_pending_after": 0,
+  "assertions_executed": 12,
+  "complete_lifecycle": true
+}

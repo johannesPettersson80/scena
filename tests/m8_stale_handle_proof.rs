@@ -277,7 +277,7 @@ fn coloured_triangle_gltf(base_color: [f32; 4]) -> String {
             "nodes": [{{ "name": "Root", "mesh": 0 }}],
             "buffers": [{{
                 "byteLength": 42,
-                "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAAAAAAAAABAAIA"
+                "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA"
             }}],
             "bufferViews": [
                 {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},

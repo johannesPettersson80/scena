@@ -2,6 +2,14 @@
   "schema": "scena.feature_ownership.v1",
   "features": [
     {
+      "name": "agent",
+      "owner": "scene_host",
+      "kind": "feature-composition",
+      "implementation": { "path": "Cargo.toml", "token": "agent = [\"scene-host\"]" },
+      "test": { "path": "tests/a09_feature_discoverability.rs", "token": "agent_feature_enables_the_complete_self_verification_surface" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`agent`" }
+    },
+    {
       "name": "controls",
       "owner": "controls",
       "kind": "compatibility-marker",

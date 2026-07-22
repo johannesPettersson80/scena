@@ -55,7 +55,56 @@ impl RecipeBuildResultV1 {
 pub struct SceneRecipeValidationReportV1 {
     pub schema: String,
     pub ok: bool,
+    #[serde(default)]
+    pub validation_mode: RecipeValidationModeV1,
+    #[serde(default)]
+    pub execution_equivalent: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<Box<RecipeBuildPolicyReportV1>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resources: Vec<SceneRecipeResourceResolutionV1>,
     pub diagnostics: Vec<SceneRecipeDiagnosticV1>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecipeValidationModeV1 {
+    #[default]
+    SyntaxOnly,
+    FullResolution,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneRecipeResourceStatusV1 {
+    NotChecked,
+    Resolved,
+    Builtin,
+    Loaded,
+    OptionalSkipped,
+    ResolutionFailed,
+    LoadFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeResourceResolutionV1 {
+    pub path: String,
+    pub kind: String,
+    pub authored_uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normalized_uri: Option<String>,
+    pub required: bool,
+    pub status: SceneRecipeResourceStatusV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeDiagnosticResourceV1 {
+    pub kind: String,
+    pub authored_uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normalized_uri: Option<String>,
+    pub required: bool,
+    pub allowed_roots: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -213,6 +262,21 @@ pub struct SceneRecipeDiagnosticV1 {
     pub help: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggestion: Option<String>,
+    /// Deterministically ranked valid names for lookup failures.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
     #[serde(default)]
     pub auto_fixable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource: Option<SceneRecipeDiagnosticResourceV1>,
+}
+
+impl SceneRecipeDiagnosticV1 {
+    pub(crate) fn with_candidates(mut self, candidates: Vec<String>) -> Self {
+        if self.suggestion.is_none() {
+            self.suggestion = candidates.first().cloned();
+        }
+        self.candidates = candidates;
+        self
+    }
 }

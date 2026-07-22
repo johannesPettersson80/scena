@@ -1,12 +1,24 @@
 use super::capability_status::*;
 use super::post_processing::PostProcessingReportV1;
 use super::{Diagnostic, DiagnosticCode};
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{Deserialize, Deserializer, Serialize};
 
+mod capability_probe;
 mod capability_types;
+mod color_formats;
+mod sample_counts;
+pub use capability_probe::{
+    CapabilityConstraintProbeV1, CapabilityConstraintStatusV1, CapabilityProbeModeV1,
+    CapabilityProbeStatusV1, CapabilityProbeUnavailableV1, CapabilityProbeV1,
+    CapabilityTargetProbeV1, GpuDeviceReport,
+};
 pub use capability_types::{
     AlphaPipelineStatus, Backend, CapabilityStatus, HardwareTier, OutputColorSpace,
     OutputStageStatus,
+};
+use color_formats::static_color_target_format;
+use sample_counts::{
+    explicit_msaa_default, explicit_msaa_status, renderer_sample_counts, single_sample_counts,
 };
 
 pub const CAPABILITY_REPORT_SCHEMA_V1: &str = "scena.capability_report.v1";
@@ -47,6 +59,8 @@ pub struct CapabilityReportV1 {
     pub adapter: Option<GpuAdapterReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_processing: Option<PostProcessingReportV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe: Option<CapabilityProbeV1>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -55,6 +69,12 @@ pub struct CapabilityReportV1 {
 pub struct Capabilities {
     pub backend: Backend,
     pub color_target_format: &'static str,
+    /// Renderer-owned color attachment sample counts. Zero entries are unused.
+    pub render_sample_counts: [u32; 3],
+    /// Renderer-owned depth attachment sample counts. Zero entries are unused.
+    pub depth_sample_counts: [u32; 3],
+    /// Whether an exact caller-selected multisample count can be honored.
+    pub explicit_msaa: CapabilityStatus,
     pub gpu_device: bool,
     pub surface_attached: bool,
     pub hardware_tier: HardwareTier,
@@ -105,6 +125,12 @@ pub struct Capabilities {
 struct CapabilitiesDeserialize {
     backend: Backend,
     color_target_format: String,
+    #[serde(default = "single_sample_counts")]
+    render_sample_counts: [u32; 3],
+    #[serde(default = "single_sample_counts")]
+    depth_sample_counts: [u32; 3],
+    #[serde(default = "explicit_msaa_default")]
+    explicit_msaa: CapabilityStatus,
     gpu_device: bool,
     surface_attached: bool,
     hardware_tier: HardwareTier,
@@ -150,6 +176,9 @@ impl<'de> Deserialize<'de> for Capabilities {
         Ok(Self {
             backend: value.backend,
             color_target_format: static_color_target_format(&value.color_target_format)?,
+            render_sample_counts: value.render_sample_counts,
+            depth_sample_counts: value.depth_sample_counts,
+            explicit_msaa: value.explicit_msaa,
             gpu_device: value.gpu_device,
             surface_attached: value.surface_attached,
             hardware_tier: value.hardware_tier,
@@ -188,19 +217,6 @@ impl<'de> Deserialize<'de> for Capabilities {
     }
 }
 
-const COLOR_TARGET_FORMATS: &[&str] = &["Rgba8UnormSrgb", "Rgba8UnormSrgb+DisplayP3Canvas"];
-
-fn static_color_target_format<E>(value: &str) -> Result<&'static str, E>
-where
-    E: de::Error,
-{
-    match value {
-        "Rgba8UnormSrgb" => Ok("Rgba8UnormSrgb"),
-        "Rgba8UnormSrgb+DisplayP3Canvas" => Ok("Rgba8UnormSrgb+DisplayP3Canvas"),
-        unknown => Err(de::Error::unknown_variant(unknown, COLOR_TARGET_FORMATS)),
-    }
-}
-
 impl Capabilities {
     pub const fn headless() -> Self {
         Self::for_backend(Backend::Headless)
@@ -210,6 +226,9 @@ impl Capabilities {
         Self {
             backend,
             color_target_format: "Rgba8UnormSrgb",
+            render_sample_counts: renderer_sample_counts(backend),
+            depth_sample_counts: renderer_sample_counts(backend),
+            explicit_msaa: explicit_msaa_status(backend),
             gpu_device: false,
             surface_attached: false,
             hardware_tier: hardware_tier(backend, false),
@@ -251,6 +270,9 @@ impl Capabilities {
         Self {
             backend,
             color_target_format: "Rgba8UnormSrgb",
+            render_sample_counts: renderer_sample_counts(backend),
+            depth_sample_counts: renderer_sample_counts(backend),
+            explicit_msaa: explicit_msaa_status(backend),
             gpu_device: true,
             surface_attached: false,
             hardware_tier: hardware_tier(backend, true),
@@ -292,6 +314,9 @@ impl Capabilities {
         Self {
             backend,
             color_target_format: "Rgba8UnormSrgb",
+            render_sample_counts: renderer_sample_counts(backend),
+            depth_sample_counts: renderer_sample_counts(backend),
+            explicit_msaa: explicit_msaa_status(backend),
             gpu_device: true,
             surface_attached: true,
             hardware_tier: hardware_tier(backend, true),
@@ -339,6 +364,14 @@ impl Capabilities {
             self.output_stage = OutputStageStatus::PbrNeutralDisplayP3;
             self.wide_gamut_output = CapabilityStatus::Supported;
         }
+        self
+    }
+
+    pub(crate) const fn with_color_target_format(
+        mut self,
+        color_target_format: &'static str,
+    ) -> Self {
+        self.color_target_format = color_target_format;
         self
     }
 
@@ -486,6 +519,7 @@ impl CapabilityReport {
             capabilities: self.capabilities,
             adapter: self.adapter.clone(),
             post_processing: self.post_processing.clone(),
+            probe: None,
             diagnostics: self.diagnostics.clone(),
         }
     }

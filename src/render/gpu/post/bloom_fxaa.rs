@@ -1,6 +1,17 @@
 use super::create_post_pipeline;
 
-const SHADER: &str = include_str!("bloom_fxaa.wgsl");
+const LINEAR_TARGET_SHADER: &str = concat!(
+    include_str!("bloom_fxaa.wgsl"),
+    "\n",
+    include_str!("post_output_linear.wgsl")
+);
+const SRGB_BYTE_TARGET_SHADER: &str = concat!(
+    include_str!("bloom_fxaa.wgsl"),
+    "\n",
+    include_str!("post_output_srgb.wgsl"),
+    "\n",
+    include_str!("../../color_contract.wgsl")
+);
 
 pub(super) fn create_surface_pipeline(
     device: &wgpu::Device,
@@ -10,10 +21,19 @@ pub(super) fn create_surface_pipeline(
     create_post_pipeline(
         device,
         "scena.gpu_post.surface_bloom_fxaa_pipeline",
-        SHADER,
+        shader_for_target(format),
         pipeline_layout,
         format,
     )
+}
+
+const fn shader_for_target(format: wgpu::TextureFormat) -> &'static str {
+    match format {
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm => {
+            SRGB_BYTE_TARGET_SHADER
+        }
+        _ => LINEAR_TARGET_SHADER,
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

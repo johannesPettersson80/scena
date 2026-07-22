@@ -3,7 +3,7 @@
 use scena::{
     AnimationError, AnimationLoopMode, AnimationPlaybackState, AnimationTarget, AssetError,
     AssetFetcher, AssetPath, Assets, ChangeKind, NotPreparedReason, PerspectiveCamera, RenderError,
-    Renderer, Scene, SourceUnits, Transform, Vec3,
+    Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
 };
 use std::collections::BTreeMap;
 use std::future::{Ready, ready};
@@ -11,6 +11,131 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+
+const Z_UP_ROTATION_FIXTURE: &str = "tests/assets/gltf/z_up_animated_rotation.gltf";
+
+#[test]
+fn z_up_rotation_animation_preserves_rest_pose_and_world_axis_trajectory() {
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(assets.load_scene(Z_UP_ROTATION_FIXTURE))
+        .expect("Z-up animated rotation fixture loads");
+    let options = scena::ImportOptions::gltf_default()
+        .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded);
+    let source_30 = Transform::IDENTITY.rotate_z_deg(30.0).rotation;
+    let source_60 = Transform::IDENTITY.rotate_z_deg(60.0).rotation;
+    let source_90 = Transform::IDENTITY.rotate_z_deg(90.0).rotation;
+    let expected_30 = SourceCoordinateSystem::ZUpRightHanded
+        .convert_connector_transform(Transform {
+            rotation: source_30,
+            ..Transform::IDENTITY
+        })
+        .rotation;
+    let expected_60 = SourceCoordinateSystem::ZUpRightHanded
+        .convert_connector_transform(Transform {
+            rotation: source_60,
+            ..Transform::IDENTITY
+        })
+        .rotation;
+    let expected_90 = SourceCoordinateSystem::ZUpRightHanded
+        .convert_connector_transform(Transform {
+            rotation: source_90,
+            ..Transform::IDENTITY
+        })
+        .rotation;
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate_with(&scene_asset, options)
+        .expect("Z-up animated rotation fixture instantiates");
+    let animated = import
+        .node("AnimatedZUp")
+        .expect("animated fixture node resolves");
+    let rest = scene
+        .world_transform(animated)
+        .expect("rest world transform resolves");
+    assert_quat_same_orientation(rest.rotation, expected_30);
+    assert_vec3_near(rest.translation, Vec3::ZERO);
+    assert_vec3_near(rest.scale, Vec3::ONE);
+    assert_vec3_near(
+        rotate_vec3(rest.rotation, Vec3::new(1.0, 0.0, 0.0)),
+        Vec3::new(30.0_f32.to_radians().cos(), 0.0, -0.5),
+    );
+
+    let linear = scene
+        .create_animation_mixer(&import, "LinearZ")
+        .expect("linear Z-up mixer creates");
+    scene
+        .seek_animation(linear, 0.5)
+        .expect("linear midpoint samples");
+    assert_quat_same_orientation(
+        scene
+            .world_transform(animated)
+            .expect("linear midpoint world transform resolves")
+            .rotation,
+        expected_60,
+    );
+    scene
+        .seek_animation(linear, 1.0)
+        .expect("linear endpoint samples");
+    let end = scene
+        .world_transform(animated)
+        .expect("linear endpoint world transform resolves");
+    assert_quat_same_orientation(end.rotation, expected_90);
+    assert_vec3_near(
+        rotate_vec3(end.rotation, Vec3::new(1.0, 0.0, 0.0)),
+        Vec3::new(0.0, 0.0, -1.0),
+    );
+
+    scene
+        .stop_animation(linear)
+        .expect("linear mixer resets before step proof");
+    let step = scene
+        .create_animation_mixer(&import, "StepZ")
+        .expect("step Z-up mixer creates");
+    scene
+        .seek_animation(step, 0.5)
+        .expect("step midpoint samples");
+    assert_quat_same_orientation(
+        scene
+            .world_transform(animated)
+            .expect("step midpoint world transform resolves")
+            .rotation,
+        expected_30,
+    );
+
+    scene
+        .stop_animation(step)
+        .expect("step mixer resets before cubic proof");
+    let cubic = scene
+        .create_animation_mixer(&import, "CubicZ")
+        .expect("cubic Z-up mixer creates");
+    scene
+        .seek_animation(cubic, 0.5)
+        .expect("cubic midpoint samples");
+    let cubic_midpoint = scene
+        .world_transform(animated)
+        .expect("cubic midpoint world transform resolves")
+        .rotation;
+    let cubic_axis = rotate_vec3(cubic_midpoint, Vec3::new(1.0, 0.0, 0.0));
+    assert!(
+        cubic_axis.y.abs() <= 0.0001
+            && cubic_axis.x > 0.0
+            && cubic_axis.x < 30.0_f32.to_radians().cos()
+            && cubic_axis.z < -0.5
+            && cubic_axis.z > -1.0,
+        "cubic Z-up motion must remain on the converted world XZ trajectory: {cubic_axis:?}"
+    );
+    scene
+        .seek_animation(cubic, 1.0)
+        .expect("cubic endpoint samples");
+    assert_quat_same_orientation(
+        scene
+            .world_transform(animated)
+            .expect("cubic endpoint world transform resolves")
+            .rotation,
+        expected_90,
+    );
+}
 
 #[test]
 fn mixer_controls_rebind_translation_channels_to_import_local_nodes() {
@@ -1299,6 +1424,32 @@ fn assert_vec3_near(actual: Vec3, expected: Vec3) {
             && (actual.z - expected.z).abs() <= EPSILON,
         "expected {actual:?} to be within {EPSILON} of {expected:?}"
     );
+}
+
+fn assert_quat_same_orientation(actual: scena::Quat, expected: scena::Quat) {
+    let dot = actual.x * expected.x
+        + actual.y * expected.y
+        + actual.z * expected.z
+        + actual.w * expected.w;
+    assert!(
+        dot.abs() >= 0.9999,
+        "quaternion orientations differ: actual={actual:?} expected={expected:?} dot={dot}"
+    );
+}
+
+fn rotate_vec3(rotation: scena::Quat, value: Vec3) -> Vec3 {
+    let q = Vec3::new(rotation.x, rotation.y, rotation.z);
+    let uv = cross_vec3(q, value);
+    let uuv = cross_vec3(q, uv);
+    value + uv * (2.0 * rotation.w) + uuv * 2.0
+}
+
+fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
 }
 
 fn assert_scene_changed(renderer: &mut Renderer, scene: &Scene, camera: scena::CameraKey) {

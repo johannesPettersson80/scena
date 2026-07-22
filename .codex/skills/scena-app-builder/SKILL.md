@@ -23,17 +23,31 @@ verification report says it is complete.
 For an installed CLI:
 
 ```bash
-cargo install scena --features scene-host,inspection
+cargo install scena --features agent
 ```
 
 From a local checkout:
 
 ```bash
-cargo run --bin scena --features scene-host,inspection -- <command>
+cargo run --bin scena --features agent -- <command>
 ```
 
-Most app-builder commands need `inspection`; recipe rendering and interaction
-verification also need `scene-host`.
+`agent` enables the complete app-builder surface through `scene-host`, which
+already enables `inspection`. Defaults stay empty.
+
+Before selecting a backend or feature-gated workflow, inspect the compiled
+feature set and distinguish static planning data from current hardware:
+
+```bash
+scena --version
+scena capabilities --json
+scena capabilities --live --json
+```
+
+Only `probe.status:"measured"` is live hardware evidence. Treat
+`static_no_device` as a compiled contract and stop on a nonzero structured
+`unavailable` report. The live command is headless: it measures readback but
+does not prove window or browser presentation.
 
 2. Discover the current contract:
 
@@ -44,19 +58,23 @@ scena schema get scena.scene_recipe.v1
 If `scena` is not installed but you are inside the repository, use:
 
 ```bash
-cargo run --bin scena --features scene-host,inspection -- schema get scena.scene_recipe.v1
+cargo run --bin scena --features agent -- schema get scena.scene_recipe.v1
 ```
 
-3. Start from a template when possible. There is no `examples agent list`
-command. Use one of:
-
-`primitive_scene`, `cad_plate`, `dashboard_bars`, `machine_state_viewer`,
-`product_configurator`, `product-configurator`, `live-state-viewer`,
-`web-viewer`, `data-visualization`, `animated-viewer`, `interaction-proof`,
-`cad-inspection`, `documentation-renderer`.
+3. Start from a template when possible. Read the machine catalog rather than
+guessing names or scraping an error:
 
 ```bash
-scena examples agent get primitive_scene --out target/scena-agent/primitive_scene > target/scena-agent/primitive_scene.manifest.json
+scena examples agent list
+```
+
+Use its kebab-case canonical names. Historical underscore inputs are aliases
+whose manifests include a migration note. `product_configurator` maps to the
+authored `product-configurator-starter`; `product-configurator` is the imported
+material-variant workflow.
+
+```bash
+scena examples agent get primitive-scene --out target/scena-agent/primitive-scene > target/scena-agent/primitive-scene.manifest.json
 ```
 
 The command prints an `scena.agent_smoke_template.v1` manifest to stdout and
@@ -69,10 +87,26 @@ the manifest `files[]`; for the command above:
 RECIPE=target/scena-agent/primitive_scene/recipe.json
 ```
 
+Installed templates are portable from any working directory. Their imported
+fixtures and licensed studio HDR are package-embedded, and template defaults do
+not overwrite an explicitly authored `scene.environment`.
+
+For an operator-owned external model library, choose the narrowest existing
+directory and repeat it on every recipe-aware command:
+
+```bash
+scena policy recipe --allow-root /srv/models
+scena validate-recipe "$RECIPE" --full --allow-root /srv/models
+scena recipe render "$RECIPE" --introspect --out frame.png --allow-root /srv/models
+```
+
+Do not invent an unsandboxed mode. Inspect the returned `policy.allowed_roots`
+and stop if the canonical operator root is absent or a resource is still denied.
+
 4. Validate before rendering:
 
 ```bash
-scena validate-recipe "$RECIPE"
+scena validate-recipe "$RECIPE" --full
 ```
 
 5. Render with introspection, not just capture:
@@ -84,6 +118,9 @@ scena recipe render "$RECIPE" --introspect --out frame.png
 This emits `scena.render_introspection.v1`. Add `--verify` when the recipe has
 an `expect` block and you need the combined recipe build/capture/introspection/
 verification result.
+Asset-or-recipe verbs dispatch parsed recipes through the complete
+policy-aware SceneHost build. If any import is rejected, stop on the nonzero
+`scena.recipe_build_result.v1`; never retry only `imports[0]` as a raw asset.
 For beauty renders, add `--gpu`; CPU remains the default, and the report
 `capabilities.backend` / `gpu_device` fields say which backend actually ran.
 
@@ -144,8 +181,8 @@ the subject sphere must be densely tessellated (segments>=256, rings>=192).
 Use `studio` or `neutral_gray` for product/model inspection, `dark_studio` for
 dashboards and status views, `white`/`transparent` for documentation exports,
 and `custom` only when the user gives a color. The default environment is flat;
-the bundled HDRI (`tests/assets/environment/polyhaven/studio_small_03_1k.hdr`)
-gives reflections and better material response. Import real
+the packaged `studio` preset gives reflections and better material response
+without requiring a repository-relative HDR path. Import real
 glTF/GLB assets for realistic products or twins; primitives are best for
 functional scenes, CAD plates, diagrams, charts, and tests. For visible
 primitive boxes or cylinders in product-style scenes, add a small `bevel` or
@@ -239,6 +276,12 @@ scena inspect "$RECIPE"
 scena diagnose "$RECIPE" --visibility --handle <handle>
 scena repair "$RECIPE" --from diagnosis.json
 ```
+
+The repair positional is an enforced target, not a label. A raw asset must
+pass asset doctor and a recipe must complete policy-aware validation/build
+before the report is planned. If repair returns `asset_doctor`,
+`scene_recipe_validation`, or `recipe_build_result`, correct or authorize the
+target first. Never supply a second positional target.
 
 ## Workflow Selection
 
@@ -336,7 +379,7 @@ scena verify interaction "$RECIPE" --expect interaction-expectation.json
 For a local checkout, prefix each command with:
 
 ```bash
-cargo run --bin scena --features scene-host,inspection --
+cargo run --bin scena --features agent --
 ```
 
 ## Scope Boundaries

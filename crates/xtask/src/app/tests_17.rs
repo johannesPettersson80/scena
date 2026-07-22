@@ -379,7 +379,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
     append_fixture_text(
         fixture_root,
         "demo/index.html",
-        " scena 1.5 live showcase Beautiful 3D in Rust Twelve materials. Twelve names. technical proof ",
+        " scena 1.9.0 live showcase Beautiful 3D in Rust Twelve materials. Twelve names. technical proof ",
     );
     append_fixture_text(
         fixture_root,

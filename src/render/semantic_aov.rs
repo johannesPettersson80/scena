@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostics::{Backend, RenderError};
-use crate::scene::{CameraKey, InstanceId, NodeKey, Scene, Vec3};
+use crate::scene::{CameraKey, InstanceId, NodeKey, Scene};
 
-use super::camera::{CameraProjection, ProjectedVertex};
+use super::camera::CameraProjection;
 use super::prepare::{PreparedInstanceSet, PreparedPrimitive};
 use super::{RasterTarget, Renderer};
 
@@ -286,26 +286,6 @@ impl Renderer {
     }
 }
 
-#[derive(Clone, Copy)]
-struct ScreenVertex {
-    x: f32,
-    y: f32,
-    world: Vec3,
-    projected: ProjectedVertex,
-}
-
-impl ScreenVertex {
-    fn new(world: Vec3, target: RasterTarget, camera: &CameraProjection) -> Option<Self> {
-        let projected = camera.project(world)?;
-        Some(Self {
-            x: (projected.ndc_x * 0.5 + 0.5) * target.width.saturating_sub(1) as f32,
-            y: (1.0 - (projected.ndc_y * 0.5 + 0.5)) * target.height.saturating_sub(1) as f32,
-            world,
-            projected,
-        })
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn rasterize_primitive(
     capture: &mut RawSemanticAovCapture,
@@ -316,17 +296,35 @@ fn rasterize_primitive(
     clipping_planes: &[crate::scene::ClippingPlane],
     section_box: Option<crate::scene::SectionBox>,
 ) {
-    let [vertex_a, vertex_b, vertex_c] = *primitive.vertices();
-    let Some(a) = ScreenVertex::new(vertex_a.position, target, camera) else {
-        return;
-    };
-    let Some(b) = ScreenVertex::new(vertex_b.position, target, camera) else {
-        return;
-    };
-    let Some(c) = ScreenVertex::new(vertex_c.position, target, camera) else {
-        return;
-    };
-    let area = edge(a, b, c.x, c.y);
+    let projected = super::cpu_geometry::project_clipped_primitive(primitive, target, camera);
+    for triangle in projected.triangles() {
+        rasterize_projected_primitive(
+            capture,
+            primitive,
+            palette_index,
+            *triangle,
+            target,
+            camera,
+            clipping_planes,
+            section_box,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rasterize_projected_primitive(
+    capture: &mut RawSemanticAovCapture,
+    primitive: &PreparedPrimitive,
+    palette_index: u32,
+    triangle: super::cpu_geometry::CpuScreenTriangle,
+    target: RasterTarget,
+    camera: &CameraProjection,
+    clipping_planes: &[crate::scene::ClippingPlane],
+    section_box: Option<crate::scene::SectionBox>,
+) {
+    let vertices = triangle.vertices();
+    let [a, b, c] = vertices;
+    let area = super::cpu_geometry::edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON || (!primitive.double_sided() && area < 0.0) {
         return;
     }
@@ -345,38 +343,35 @@ fn rasterize_primitive(
     if min_x > max_x || min_y > max_y {
         return;
     }
-    let projected = [a.projected, b.projected, c.projected];
-    let attributes = primitive.vertex_attributes();
     for y in min_y..=max_y {
         for x in min_x..=max_x {
             let px = x as f32 + 0.5;
             let py = y as f32 + 0.5;
             let affine = [
-                edge(b, c, px, py) / area,
-                edge(c, a, px, py) / area,
-                edge(a, b, px, py) / area,
+                super::cpu_geometry::edge(b, c, px, py) / area,
+                super::cpu_geometry::edge(c, a, px, py) / area,
+                super::cpu_geometry::edge(a, b, px, py) / area,
             ];
-            if affine.iter().any(|weight| *weight < 0.0) {
+            if !super::cpu_geometry::barycentric_sample_is_inside(affine) {
                 continue;
             }
-            let world = weighted_vec3([a.world, b.world, c.world], affine);
-            if clipping_planes.iter().any(|plane| !plane.contains(world))
-                || section_box.is_some_and(|section| section.clips(world))
-            {
+            let weights = super::cpu_geometry::perspective_weights(camera, vertices, affine);
+            let world =
+                super::cpu_geometry::weighted_vec3([a.position, b.position, c.position], weights);
+            if super::cpu_geometry::point_is_clipped(world, clipping_planes, section_box) {
                 continue;
             }
-            let weights = camera.interpolation_weights(projected, affine);
             if let Some(cutoff) = primitive.semantic_alpha_cutoff() {
-                let alpha = vertex_a.color.a * primitive.tint().a * weights[0]
-                    + vertex_b.color.a * primitive.tint().a * weights[1]
-                    + vertex_c.color.a * primitive.tint().a * weights[2];
+                let alpha = a.color.a * primitive.tint().a * weights[0]
+                    + b.color.a * primitive.tint().a * weights[1]
+                    + c.color.a * primitive.tint().a * weights[2];
                 if !alpha.is_finite() || alpha < cutoff {
                     continue;
                 }
             }
-            let depth = projected[0].view_depth * weights[0]
-                + projected[1].view_depth * weights[1]
-                + projected[2].view_depth * weights[2];
+            let depth = a.projected.view_depth * weights[0]
+                + b.projected.view_depth * weights[1]
+                + c.projected.view_depth * weights[2];
             if !depth.is_finite() || depth <= 0.0 {
                 continue;
             }
@@ -388,18 +383,18 @@ fn rasterize_primitive(
             if !closer && !(tied && (current_id == 0 || palette_index < current_id)) {
                 continue;
             }
-            let mut normal = weighted_vec3(
+            let mut normal = super::cpu_geometry::weighted_vec3(
                 [
-                    attributes[0].normal,
-                    attributes[1].normal,
-                    attributes[2].normal,
+                    a.attributes.normal,
+                    b.attributes.normal,
+                    c.attributes.normal,
                 ],
                 weights,
             )
             .normalize_or_zero();
             if normal.length_squared() <= f32::EPSILON {
-                normal = (b.world - a.world)
-                    .cross(c.world - a.world)
+                normal = (b.position - a.position)
+                    .cross(c.position - a.position)
                     .normalize_or_zero();
             }
             capture.id_indices[pixel] = palette_index;
@@ -409,10 +404,75 @@ fn rasterize_primitive(
     }
 }
 
-fn edge(a: ScreenVertex, b: ScreenVertex, x: f32, y: f32) -> f32 {
-    (x - a.x) * (b.y - a.y) - (y - a.y) * (b.x - a.x)
-}
+#[cfg(test)]
+mod depth_clipping_tests {
+    use super::*;
+    use crate::geometry::{Primitive, Vertex};
+    use crate::material::Color;
+    use crate::scene::{DepthRange, PerspectiveCamera, Transform};
 
-fn weighted_vec3(values: [Vec3; 3], weights: [f32; 3]) -> Vec3 {
-    values[0] * weights[0] + values[1] * weights[1] + values[2] * weights[2]
+    #[test]
+    fn semantic_aov_preserves_identity_depth_and_normals_across_near_clip() {
+        let target = RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::Headless,
+        };
+        let mut scene = Scene::new();
+        let camera_key = scene
+            .add_perspective_camera(
+                scene.root(),
+                PerspectiveCamera::default().with_depth_range(DepthRange::new(0.5, 5.0)),
+                Transform::default(),
+            )
+            .expect("camera inserts");
+        let camera =
+            CameraProjection::from_scene(&scene, camera_key, target).expect("projection builds");
+        let primitive = PreparedPrimitive::new(
+            Primitive::triangle([
+                vertex(-0.4, -0.4, -1.0),
+                vertex(0.4, -0.4, -1.0),
+                vertex(0.0, 0.4, -0.25),
+            ]),
+            None,
+            Color::WHITE,
+        );
+        let mut capture = RawSemanticAovCapture {
+            width: target.width,
+            height: target.height,
+            near: 0.5,
+            far: 5.0,
+            id_indices: vec![0; target.pixel_len()],
+            depth_meters: vec![f32::INFINITY; target.pixel_len()],
+            world_normals: vec![[0.0; 3]; target.pixel_len()],
+            legend: Vec::new(),
+            exclusions: RawSemanticAovExclusions::default(),
+        };
+
+        rasterize_primitive(&mut capture, &primitive, 7, target, &camera, &[], None);
+
+        let covered = capture
+            .id_indices
+            .iter()
+            .enumerate()
+            .filter(|(_, identity)| **identity == 7)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        assert!(covered.len() > 100);
+        assert!(covered.iter().all(|index| {
+            capture.depth_meters[*index].is_finite()
+                && capture.depth_meters[*index] >= 0.5
+                && capture.depth_meters[*index] <= 5.0
+                && capture.world_normals[*index]
+                    .iter()
+                    .all(|value| value.is_finite())
+        }));
+    }
+
+    fn vertex(x: f32, y: f32, z: f32) -> Vertex {
+        Vertex {
+            position: crate::scene::Vec3::new(x, y, z),
+            color: Color::WHITE,
+        }
+    }
 }

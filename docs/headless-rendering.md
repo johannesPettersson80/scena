@@ -115,6 +115,23 @@ work and `build_recipe_json_prefer_gpu()` for an explicitly reported fallback.
 Applications should use capability reports and renderer metadata when they need
 to distinguish CPU, native GPU, WebGPU, and WebGL2 output.
 
+The `scena` CLI keeps this choice explicit: CPU is the default and `--gpu` is
+the only execution selector. `SCENA_USE_GPU` is test/proof metadata and is
+ignored by CLI argument parsing. Successful render, recipe-render, capture, and
+CAD inspection envelopes include `backend_selection` with `source`,
+`requested`, `selected`, and `fallback_used`.
+
+## CPU camera-depth clipping
+
+The deterministic CPU rasterizer clips every triangle against the active
+camera's near and far planes before perspective division. A triangle is not
+discarded merely because one source vertex lies outside the depth range.
+Generated intersection vertices retain interpolated color, UV, normal,
+tangent, shadow visibility, and material behavior; opaque, weighted-OIT,
+physical-transmission, and semantic AOV paths consume the same clipped
+projection. Degenerate or wholly out-of-range results remain intentionally
+empty.
+
 Proof/release jobs must use a strict constructor and assert the GPU backend. A
 preferred-GPU report that selected `Backend::Headless` is an honest application
 fallback, never GPU evidence.

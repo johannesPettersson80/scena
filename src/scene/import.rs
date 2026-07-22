@@ -30,6 +30,7 @@ mod lookups;
 mod options;
 mod prevalidation;
 mod skin_bindings;
+mod source_node_index;
 #[cfg(test)]
 mod transaction_tests;
 mod types;
@@ -201,13 +202,14 @@ impl Scene {
         if let Some(unit_root) = unit_root {
             import.roots.push(unit_root);
         }
+        let source_nodes = source_node_index::SourceNodeIndex::new(&import.records);
         self.resolve_import_skin_bindings(
             scene_asset,
-            &import.records,
+            &source_nodes,
             pending_skin_bindings.as_slice(),
         )?;
         import.clips =
-            animation_bindings::rebind_import_clips(scene_asset, &import.records, options)?;
+            animation_bindings::rebind_import_clips(scene_asset, &source_nodes, options)?;
         Ok(import)
     }
 
