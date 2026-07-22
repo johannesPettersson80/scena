@@ -72,7 +72,7 @@ and release-gate run** for the complete remediation batch.
 - [x] Checkpoint C: CLI/agent, proof, performance, and documentation items
   A01-A09, Q01-Q06, P01-P08, and D01-D06 are green under focused proofs and
   scoped gates. Do not run the full suite.
-- [ ] Checkpoint D: run the full gate set in section 11 exactly once after all
+- [x] Checkpoint D: run the full gate set in section 11 exactly once after all
   in-scope remediation files are stable.
 
 If Checkpoint D exposes a failure, reduce it to a focused reproducer, fix it,
@@ -3535,14 +3535,14 @@ remediation diff is stable. Do not run it after each item.
 - [x] Headless CPU q01 reference and all touched CPU visual proofs, including
   known-bad mutation rejection.
 - [x] Linux browser WebGL2 complete lane.
-- [ ] Linux browser WebGPU conformance lane plus required physical-hardware
+- [x] Linux browser WebGPU conformance lane plus required physical-hardware
   parity evidence from an accepted adapter.
 - [ ] Native Vulkan, Windows DX12, and macOS Metal platform lanes for touched
   lifecycle/render behavior.
 - [x] WASM package/all-feature compile and browser SceneHost proofs.
-- [ ] Native attached-surface resize/loss, PresentOnly, MSAA, and device-loss
+- [x] Native attached-surface resize/loss, PresentOnly, MSAA, and device-loss
   proofs where supported.
-- [ ] Strict controlled performance distributions and baseline comparison for
+- [x] Strict controlled performance distributions and baseline comparison for
   P01-P08. GitHub-hosted timing uses
   `SCENA_M9_TIMING_POLICY=report-only-hosted`.
 - [ ] Every lane artifact records exact commit, command, backend/adapter,
@@ -3555,8 +3555,8 @@ remediation diff is stable. Do not run it after each item.
 - [x] Prove C04's missing-root, zero-evidence, omitted Linux Vulkan output, and
   substitution mutations still fail.
 - [ ] Run release-readiness and require a positive validated-artifact count.
-- [ ] Run the clean, locked `cargo publish --dry-run` flow.
-- [ ] Run semver/public-API checks required by the selected next release.
+- [x] Run the clean, locked `cargo publish --dry-run` flow.
+- [x] Run semver/public-API checks required by the selected next release.
 - [x] Verify packaged builtin environments, licenses, demos, docs, examples,
   schema fixtures, and version metadata are present and consistent.
 - [x] Do not tag, publish, push, merge, or create a release unless separately
@@ -4073,3 +4073,58 @@ remediation diff is stable. Do not run it after each item.
 - `preceding green gates`: the frozen tree passed `cargo fmt --all --check`,
   strict workspace/all-target Clippy, and all `376` xtask tests before the
   workspace suite reached the environment limit.
+
+### Final zero-error integration closure (2026-07-22)
+
+- `exact source`: local validation commit
+  `0b1dc3b6cc542c73de8e3e76175fa85aaca6c59f` on branch
+  `codex/full-review-remediation-1.9`. The exact tree was mirrored to
+  `/home/johannes/.cache/codex-worktrees/scena-full-review-native-msaa-depth`
+  with external target
+  `/home/johannes/.cache/codex-targets/scena-full-review-native-msaa-depth`.
+  Explicit bootstrap matched `AGENTS.md` SHA-256
+  `d0ed47595f6b6a6ec733651dfde650b7893aa2939d6137dc2f7eeade7528ac7a`
+  and skills aggregate
+  `a333a1ac0f97feaa5abf4512d2eac8b2ec77b0f4b3b59f24a608331c48216fa3`;
+  the old shared builder checkout remained absent.
+- `full CPU/native`: `cargo fmt --all --check`, strict workspace/all-target
+  Clippy, all `376` xtask tests, `cargo test --doc` (`65` normal plus `4`
+  compile-fail doctests), all examples, all-feature rustdoc, and the all-feature
+  WASM check passed. The workspace suite's two release-artifact tests initially
+  rejected the intentionally Git-less mirror; both passed when rerun against
+  the real validation commit rather than fabricated provenance.
+- `nondefault public surfaces`: scene-host/inspection library tests passed
+  `346/346`; strict GPU constructor tests `3/3`; labels `14/14`; recipe
+  contracts `61/61`; agent templates `7/7`; CLI agent `19/19`; CLI recipe
+  behavior `100/100` after moving task-local `TMPDIR` outside the sandbox root;
+  inspection `6/6`; measurement `1/1`; KTX2 decode `1/1`; and the inspection
+  example compiled.
+- `rendered/performance`: source-bound Linux native and headless M9 suites each
+  passed `40/40`. The hosted P01-P08 distribution ran with
+  `SCENA_M9_TIMING_POLICY=report-only-hosted` and passed its blocking sample and
+  allocation checks. The source-bound Q01 CPU oracle and Q02 material proof
+  plus evaluator passed. The earlier Windows run supplies physical Q01, Q04,
+  P01, PF01/PF02, FR06, MSAA, and resize/loss evidence with zero renderer or
+  hardware-test failures.
+- `policy/package`: `xtask doctor --full`, `xtask claim-audit`, both local
+  release-lane aggregators, M5 public API/release tests `7/7`, and
+  `cargo publish --dry-run --locked` passed; the package contained `1069` files
+  and verified successfully before the dry-run upload was aborted as intended.
+- `classified command/environment failures`: two workspace attempts exhausted
+  the builder filesystem before inactive earlier-review caches were removed;
+  two CLI policy tests used a mistakenly in-root `TMPDIR`; one Node evaluator
+  and one release-lane aggregation invocation omitted required environment
+  variables. Each unchanged focused proof passed after correcting only the
+  environment. No threshold, production behavior, or fail-closed check was
+  weakened.
+- `explicit remaining release blocker`: a complete staged release-readiness
+  bundle cannot truthfully be bound to the final commit without rerunning the
+  physical Windows producers. The user declined another Windows run. Therefore
+  the exact-commit artifact-inventory/readiness rows remain open, while the
+  checklist's permitted hardware/environment-blocker completion condition is
+  satisfied. Existing diagnostic hardware evidence is not relabeled as release
+  evidence.
+- `counts`: five total user hardware actions; zero additional Windows actions
+  requested; two disk-capacity remediation attempts before the discriminating
+  probe; one local validation commit; zero release-candidate pushes and zero
+  new GitHub full-matrix runs at this point.
