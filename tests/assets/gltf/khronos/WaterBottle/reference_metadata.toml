@@ -19,15 +19,32 @@ color_space = "sRGB output"
 row_orientation = "top-to-bottom; PNG row zero is the rendered top row"
 alpha_contract = "opaque RGBA8"
 comparison = "RGB Chebyshev <=4 for at least 99.5% of pixels, RGB RMSE <=2.0, zero alpha mismatches"
-mutations = "flattened reflectance, wrong material hue, and wrong-camera background-only outputs must each fail the same oracle"
+mutations = "one post-hoc-pixel mutation (flattened reflectance) plus fresh rendered-scene mutations for wrong material and wrong camera must each fail the same oracle"
 known_bad_mutations = ["flattened_chrome", "wrong_material", "wrong_camera"]
+mutation_provenance = "every mutation records its PNG hash, failing metrics, mutation_stage, render_count, and pipeline_coverage; wrong material/camera are changed before prepare and rendered through the importer/resources/CPU material or camera/tonemap/output path"
+
+[scena_cpu_256.regeneration]
+candidate_command = "scripts/stage_q01_waterbottle_reference_candidate.sh"
+promotion_command = "node scripts/promote_q01_waterbottle_reference.cjs <candidate-dir> <approval.json>"
+candidate_only = true
+clean_checkout_required = true
+generator_version = "scena 1.9.0 / rustc 1.93.1"
+source_asset_sha256 = "0596f4e61dc781439d254fdfb5e3462daf1762c18715e3e3ac13001aa8f3f547"
+external_anchor_sha256 = "17db39248ce1966ae60c3b85d09491ebfb7f654777dc2d150a64db4e938a6883"
+approval_schema = "scena.q11.reference_approval.v1"
+approval_template = "docs/reference-approval-q11.example.json"
+approval_requirements = "separately authored named-human approval bound to generator commit, candidate hash, prior-reference hash, diff heatmap hash, and reviewed Blender external anchor"
+tolerance_policy = "Chebyshev/RMSE/fraction thresholds may not be loosened during regeneration; any future policy change requires separate measured cross-architecture evidence and review"
+stability_artifacts = ["q11-reference-stability/linux-x86_64.json", "q11-reference-stability/macos-aarch64.json", "q11-reference-stability/windows-x86_64.json"]
+legacy_baseline_lineage_commit = "ac3e0539ecf8a3535f3749b5ebc714f75ebb4d2f"
 
 [scena_gold]
 # Regression-prevention baseline. Bit-identical to scena's GPU output
 # at the time Phase 1 landed; consumed by Phase 2's tight per-region
-# asserts + RGB Chebyshev diff (gated by SCENA_REFERENCE_DIFF=1). Any drift trips
-# the test, so this catches every scena-internal regression: parser
-# swap, shader edit, capability flip, mip-generation change.
+# asserts + required full-frame RGB Chebyshev diff in native release lanes
+# (`SCENA_REFERENCE_DIFF=1`). The same oracle must reject a horizontal mirror;
+# sparse region/histogram checks alone are diagnostic and cannot claim release
+# evidence.
 relative_path = "reference_512.png"
 sha256 = "4db449cdacf2340f8fa53937c28e5c4b5e2c7deaea73cbe0987dcd51eb93c751"
 width = 512
@@ -35,7 +52,34 @@ height = 512
 generated_at = "2026-05-12"
 generated_by = "scena GPU pipeline (llvmpipe Mesa lavapipe Vulkan, Khronos PBR Neutral)"
 purpose = "scena-gold regression baseline"
-diff_tolerance = "tight (RGB Chebyshev ≤16, 95% pixel match after 4x supersampled GPU render downsampled to 512px)"
+diff_tolerance = "required release oracle: RGB Chebyshev ≤16 for at least 95% of pixels; horizontal mirror must fail; diff heatmap and worst-region bbox retained"
+
+[adapter_expectations]
+schema = "scena.m8.waterbottle_adapter_expectation.v1"
+policy = "region expectations are selected by a structured adapter key; free-form adapter names never select acceptance policy"
+default_profile = "portable-physical-gpu-v1"
+default_region_chebyshev = 25
+
+[adapter_expectations.portable_physical_gpu]
+profile_id = "portable-physical-gpu-v1"
+region_chebyshev = 25
+owner = "scena-renderer-quality"
+reviewed_at = "2026-07-23"
+expires_at = "none"
+evidence_png_sha256 = "4db449cdacf2340f8fa53937c28e5c4b5e2c7deaea73cbe0987dcd51eb93c751"
+measured_olive_samples = ["upper_body=[153,134,48]", "body_olive_mid=[163,143,53]", "body_olive_low=[132,114,32]"]
+
+[adapter_expectations.github_macos_14]
+profile_id = "github-macos-14-apple-paravirtual-metal-v1"
+structured_key = "backend=Metal,vendor=0,device=0,device_type=IntegratedGpu,driver='',driver_info=''"
+region_chebyshev = 25
+owner = "scena-renderer-quality"
+reviewed_at = "2026-07-22"
+expires_at = "2026-10-31"
+evidence_commit = "a28f2149c39290aac7a059232b4e21de266ea88c"
+evidence_workflow_run = 29918670156
+evidence_png_sha256 = "2239bbb25313877e32dd5431fdae14660608257a4c11c60c383804fecbf6285f"
+measured_olive_samples = ["upper_body=[145,126,43]", "body_olive_mid=[150,131,44]", "body_olive_low=[121,104,26]"]
 
 [blender_cycles]
 # Third-party PBR reference. Produced by Blender's Cycles path tracer

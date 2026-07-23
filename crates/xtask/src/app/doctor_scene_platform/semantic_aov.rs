@@ -85,10 +85,10 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
                 "semantic AOV readback failed",
             ],
         ),
+        ("src/render/gpu/semantic_aov.rs", &["blit_srgb.wgsl"]),
         (
             "src/render/gpu/semantic_aov/webgl2.rs",
             &[
-                "blit_srgb.wgsl",
                 "read_webgl2_canvas_rgba8",
                 "get_current_texture",
                 "surface_output.present()",

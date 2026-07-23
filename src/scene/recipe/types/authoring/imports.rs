@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use super::super::{default_true, is_false, is_true};
 use super::SceneRecipeTransformV1;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SceneRecipeImportV1 {
     pub id: String,
     pub uri: String,
@@ -56,7 +56,7 @@ where
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SceneRecipeExpectedExtentV1 {
     pub min: f64,
     pub max: f64,
@@ -64,7 +64,7 @@ pub struct SceneRecipeExpectedExtentV1 {
     pub unit: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeImportMaterialV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,7 +79,7 @@ pub struct SceneRecipeImportMaterialV1 {
     pub double_sided: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeImportEdgeEmphasisV1 {
     #[serde(default = "default_true", skip_serializing_if = "is_true")]

@@ -1,5 +1,6 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -141,6 +142,198 @@ fn exploded_view_supports_axis_and_hierarchy_depth_modes() {
 }
 
 #[test]
+fn hierarchy_depth_plan_applies_each_world_offset_exactly_once() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.2, 0.2, 0.2));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    let assembly = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("assembly inserts");
+    let parent = scene
+        .mesh(geometry, material)
+        .parent(assembly)
+        .transform(Transform::at(Vec3::new(1.0, 0.0, 0.0)))
+        .add()
+        .expect("parent inserts");
+    let child = scene
+        .mesh(geometry, material)
+        .parent(parent)
+        .transform(Transform::at(Vec3::new(0.5, 0.0, 0.0)))
+        .add()
+        .expect("child inserts");
+
+    let original_parent_world = scene.world_transform(parent).unwrap();
+    let original_child_world = scene.world_transform(child).unwrap();
+    let plan = ExplodedView::from_node(assembly)
+        .by_hierarchy_depth()
+        .along_axis(Vec3::X)
+        .factor(1.0)
+        .distance(0.5)
+        .transforms(&scene, &assets)
+        .expect("hierarchy plan computes");
+    scene
+        .set_transforms(&plan.as_transform_updates())
+        .expect("hierarchy plan applies");
+
+    assert_eq!(
+        scene.world_transform(parent).unwrap().translation,
+        original_parent_world.translation + Vec3::new(0.5, 0.0, 0.0),
+    );
+    assert_eq!(
+        scene.world_transform(child).unwrap().translation,
+        original_child_world.translation + Vec3::new(1.0, 0.0, 0.0),
+        "the child target is an absolute world offset; its parent's offset must not be added twice",
+    );
+
+    scene
+        .set_transforms(
+            &plan
+                .updates()
+                .iter()
+                .map(|update| (update.node, update.original))
+                .collect::<Vec<_>>(),
+        )
+        .expect("restore applies");
+    assert_eq!(
+        scene.world_transform(parent).unwrap(),
+        original_parent_world
+    );
+    assert_eq!(scene.world_transform(child).unwrap(), original_child_world);
+}
+
+#[test]
+fn hierarchy_world_offsets_survive_rotated_scaled_parents_siblings_and_zero_bounds() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.2, 0.2, 0.2));
+    let point_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.0, 0.0, 0.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    let host = scene
+        .add_empty(
+            scene.root(),
+            Transform::at(Vec3::new(2.0, -1.0, 0.5))
+                .rotate_z_deg(25.0)
+                .scale_by(1.5),
+        )
+        .unwrap();
+    let assembly = scene.add_empty(host, Transform::IDENTITY).unwrap();
+    let left = scene
+        .mesh(geometry, material)
+        .parent(assembly)
+        .transform(
+            Transform::at(Vec3::new(-1.0, 0.0, 0.0))
+                .rotate_y_deg(15.0)
+                .scale_by(0.75),
+        )
+        .add()
+        .unwrap();
+    let right = scene
+        .mesh(geometry, material)
+        .parent(assembly)
+        .transform(Transform::at(Vec3::new(1.0, 0.0, 0.0)).rotate_x_deg(-20.0))
+        .add()
+        .unwrap();
+    let nested = scene
+        .mesh(geometry, material)
+        .parent(right)
+        .transform(Transform::at(Vec3::new(0.5, 0.25, 0.0)).scale_by(1.2))
+        .add()
+        .unwrap();
+    let point = scene
+        .mesh(point_geometry, material)
+        .parent(assembly)
+        .transform(Transform::at(Vec3::new(0.0, 0.0, 1.0)))
+        .add()
+        .unwrap();
+    let originals = [left, right, nested, point]
+        .into_iter()
+        .map(|node| (node, scene.world_transform(node).unwrap()))
+        .collect::<BTreeMap<_, _>>();
+
+    let plan = ExplodedView::from_node(assembly)
+        .by_hierarchy_depth()
+        .along_axis(Vec3::X)
+        .factor(1.0)
+        .distance(0.5)
+        .transforms(&scene, &assets)
+        .unwrap();
+    scene.set_transforms(&plan.as_transform_updates()).unwrap();
+
+    for node in [left, right, point] {
+        let delta = scene.world_transform(node).unwrap().translation - originals[&node].translation;
+        assert_close(delta.y, 0.0);
+        assert_close(delta.z, 0.0);
+        assert_close(delta.x.abs(), 0.5);
+    }
+    let nested_delta =
+        scene.world_transform(nested).unwrap().translation - originals[&nested].translation;
+    assert_close(nested_delta.y, 0.0);
+    assert_close(nested_delta.z, 0.0);
+    assert_close(nested_delta.x.abs(), 1.0);
+
+    let exploded_locals = plan.as_transform_updates();
+    scene.set_transforms(&exploded_locals).unwrap();
+    let restores = plan
+        .updates()
+        .iter()
+        .map(|update| (update.node, update.original))
+        .collect::<Vec<_>>();
+    scene.set_transforms(&restores).unwrap();
+    scene.set_transforms(&restores).unwrap();
+    for update in plan.updates() {
+        assert_eq!(
+            scene.node(update.node).unwrap().transform(),
+            update.original
+        );
+    }
+}
+
+#[test]
+fn nested_import_exploded_plan_restores_exact_host_local_state() {
+    let assets = Assets::new();
+    let asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/exploded_view_assembly.gltf"))
+            .unwrap();
+    let mut scene = Scene::new();
+    let host = scene
+        .add_empty(
+            scene.root(),
+            Transform::at(Vec3::new(3.0, 2.0, -1.0))
+                .rotate_y_deg(35.0)
+                .scale_by(1.25),
+        )
+        .unwrap();
+    let import = scene
+        .instantiate_under(host, &asset, scena::ImportOptions::gltf_default())
+        .unwrap();
+    let plan = ExplodedView::from_import(&import)
+        .by_hierarchy_depth()
+        .distance(0.35)
+        .transforms(&scene, &assets)
+        .unwrap();
+    let host_before = scene.node(host).unwrap().transform();
+    scene.set_transforms(&plan.as_transform_updates()).unwrap();
+    assert_eq!(scene.node(host).unwrap().transform(), host_before);
+    scene
+        .set_transforms(
+            &plan
+                .updates()
+                .iter()
+                .map(|update| (update.node, update.original))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    assert_eq!(scene.node(host).unwrap().transform(), host_before);
+    for update in plan.updates() {
+        assert_eq!(
+            scene.node(update.node).unwrap().transform(),
+            update.original
+        );
+    }
+}
+
+#[test]
 #[cfg(feature = "scene-host")]
 fn scene_host_exploded_view_emits_visual_patch_transform_channels() {
     let mut host = SceneHostCore::headless(128, 96).expect("host builds");
@@ -271,6 +464,13 @@ fn transform_for(plan: &scena::ExplodedViewPlan, node: scena::NodeKey) -> Transf
         .find(|update| update.node == node)
         .expect("node update appears")
         .transform
+}
+
+fn assert_close(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() <= 1.0e-4,
+        "expected {actual} to be close to {expected}"
+    );
 }
 
 fn render_frame(scene: &mut Scene, assets: &Assets) -> Vec<u8> {

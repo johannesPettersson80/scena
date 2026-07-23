@@ -123,13 +123,13 @@ fn recipe_lookup_diagnostics_carry_node_geometry_material_and_preset_candidates(
 #[test]
 fn cli_schema_and_template_lookup_errors_expose_structured_candidates() {
     let schema = run_scena(&["schema", "get", "scena.render_introspect.v1"]);
-    assert_eq!(schema.status.code(), Some(2));
+    assert_eq!(schema.status.code(), Some(65));
     let schema: serde_json::Value =
         serde_json::from_slice(&schema.stderr).expect("schema error is JSON");
     assert_eq!(schema["candidates"][0], "scena.render_introspection.v1");
 
     let template = run_scena(&["examples", "agent", "get", "primitive-scne"]);
-    assert_eq!(template.status.code(), Some(2));
+    assert_eq!(template.status.code(), Some(65));
     let template: serde_json::Value =
         serde_json::from_slice(&template.stderr).expect("template error is JSON");
     assert_eq!(template["candidates"][0], "primitive-scene");

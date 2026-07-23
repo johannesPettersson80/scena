@@ -442,7 +442,6 @@ fn add_common_commands(out_dir: &Path, recipe: &Path, builder: &mut TemplateBuil
             "recipe",
             "render",
             &path_for_json(recipe),
-            "--introspect",
             "--out",
             &path_for_json(&frame),
         ],

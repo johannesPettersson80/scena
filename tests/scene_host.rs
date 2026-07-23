@@ -15,7 +15,7 @@ use scena::{
     SceneHostErrorCode, SceneHostGroundingPathV1, SceneHostSectionBoxReportV1,
     SceneHostSubtreeReportV1, SceneHostVisualStateV1, SceneHostVisualStatesReportV1,
     SceneInspectionReportV1, SceneSetupPreset, ScreenSpaceAmbientOcclusionConfig, SurfaceEvent,
-    Transform, VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1,
+    SurfaceViewport, Transform, VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1,
     VisualPatchAnimationTimeV1, VisualPatchCameraEasedV1, VisualPatchHoverV1,
     VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
     VisualPatchResultV1, VisualPatchSectionBoxV1, VisualPatchSelectionV1, VisualPatchTintEasedV1,
@@ -1443,9 +1443,9 @@ fn scene_host_events_emit_interaction_capture_surface_asset_and_diagnostics() {
         event,
         HostEventV1::Hover {
             phase: HostEventHoverPhaseV1::Left,
-            hit: None,
+            hit: Some(hit),
             ..
-        }
+        } if hit.handle == mesh
     )));
     assert!(batch.events.iter().any(|event| matches!(
         event,
@@ -1653,6 +1653,142 @@ fn scene_host_event_handles_do_not_alias_after_remove() {
         pick_hit.handle, replacement,
         "event payloads must not alias a replacement node after removal"
     );
+}
+
+#[test]
+fn resize_event_updates_host_viewport_before_picking_and_emitting() {
+    let mut host = SceneHostCore::headless(640, 480).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+    )))
+    .expect("asset instantiates");
+    let mesh = host
+        .node_handle(import, "ColoredTriangle")
+        .expect("mesh resolves");
+    host.frame_node(mesh).expect("mesh frames");
+    assert_eq!(host.pick(320.0, 240.0).expect("initial pick"), Some(mesh));
+    host.drain_events();
+
+    host.handle_surface_event(SurfaceEvent::Resize {
+        width: 1280,
+        height: 960,
+    })
+    .expect("physical resize applies");
+
+    assert_eq!(
+        host.pick(640.0, 480.0).expect("resized center picks"),
+        Some(mesh),
+        "picking must normalize against the resized 1280x960 viewport",
+    );
+    assert!(host.drain_events().iter().any(|event| matches!(
+        event,
+        HostEventV1::SurfaceResized {
+            width_css_px,
+            height_css_px,
+            width_physical_px: 1280,
+            height_physical_px: 960,
+            device_pixel_ratio,
+        } if *width_css_px == 1280.0
+            && *height_css_px == 960.0
+            && *device_pixel_ratio == 1.0
+    )));
+}
+
+#[test]
+fn resize_scale_viewport_and_direct_resize_share_one_coordinate_policy() {
+    fn assert_last_resize(
+        host: &SceneHostCore,
+        logical: (f32, f32),
+        physical: (u32, u32),
+        dpr: f32,
+    ) {
+        assert!(host.drain_events().iter().rev().any(|event| matches!(
+            event,
+            HostEventV1::SurfaceResized {
+                width_css_px,
+                height_css_px,
+                width_physical_px,
+                height_physical_px,
+                device_pixel_ratio,
+            } if (*width_css_px - logical.0).abs() <= 1.0e-4
+                && (*height_css_px - logical.1).abs() <= 1.0e-4
+                && *width_physical_px == physical.0
+                && *height_physical_px == physical.1
+                && (*device_pixel_ratio - dpr).abs() <= 1.0e-4
+        )));
+    }
+
+    fn assert_camera_aspect(host: &SceneHostCore, expected: f32) {
+        let camera = host.scene().active_camera().unwrap();
+        let scena::Camera::Perspective(camera) = host.scene().camera(camera).unwrap() else {
+            panic!("host camera must be perspective");
+        };
+        assert!((camera.aspect - expected).abs() <= 1.0e-4);
+    }
+
+    let mut scale_then_resize = SceneHostCore::headless(640, 480).unwrap();
+    scale_then_resize.drain_events();
+    scale_then_resize
+        .handle_surface_event(SurfaceEvent::ScaleFactorChanged { scale_factor: 1.25 })
+        .unwrap();
+    scale_then_resize.drain_events();
+    scale_then_resize
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: 1000,
+            height: 750,
+        })
+        .unwrap();
+    assert_last_resize(&scale_then_resize, (800.0, 600.0), (1000, 750), 1.25);
+    assert_camera_aspect(&scale_then_resize, 4.0 / 3.0);
+    let revision = scale_then_resize.scene().dirty_state().camera_revision;
+
+    scale_then_resize
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: 1000,
+            height: 750,
+        })
+        .unwrap();
+    assert_eq!(
+        scale_then_resize.scene().dirty_state().camera_revision,
+        revision,
+        "repeated resize with the same aspect is a camera no-op"
+    );
+    scale_then_resize.drain_events();
+    scale_then_resize.resize(800.0, 600.0, 1.25).unwrap();
+    assert_last_resize(&scale_then_resize, (800.0, 600.0), (1000, 750), 1.25);
+
+    let mut resize_then_scale = SceneHostCore::headless(640, 480).unwrap();
+    resize_then_scale.drain_events();
+    resize_then_scale
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: 1000,
+            height: 750,
+        })
+        .unwrap();
+    resize_then_scale.drain_events();
+    resize_then_scale
+        .handle_surface_event(SurfaceEvent::ScaleFactorChanged { scale_factor: 1.25 })
+        .unwrap();
+    assert_last_resize(&resize_then_scale, (800.0, 600.0), (1000, 750), 1.25);
+    assert_camera_aspect(&resize_then_scale, 4.0 / 3.0);
+
+    resize_then_scale.drain_events();
+    resize_then_scale
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: 0,
+            height: 0,
+        })
+        .unwrap();
+    assert_last_resize(&resize_then_scale, (0.0, 0.0), (0, 0), 1.25);
+    assert_camera_aspect(&resize_then_scale, 4.0 / 3.0);
+
+    let viewport = SurfaceViewport::new(800.0, 600.0, 2.0).unwrap();
+    resize_then_scale.drain_events();
+    resize_then_scale
+        .handle_surface_event(SurfaceEvent::ViewportChanged(viewport))
+        .unwrap();
+    assert_last_resize(&resize_then_scale, (800.0, 600.0), (1600, 1200), 2.0);
+    assert_camera_aspect(&resize_then_scale, 4.0 / 3.0);
 }
 
 #[test]
@@ -2026,6 +2162,21 @@ fn scene_host_distance_measurement_overlay_reports_stable_line_handle() {
     assert_eq!(report["kind"], "distance");
     assert_eq!(report["value"], json!(0.333));
     assert_eq!(report["formatted_value"], "0.333 m");
+    assert_eq!(
+        report["measurement_authority"]["scope"],
+        "scene_space_visualization"
+    );
+    assert_eq!(report["measurement_authority"]["authoritative"], false);
+    assert_eq!(report["measurement_authority"]["calibrated"], false);
+    assert_eq!(report["measurement_authority"]["scene_units"], "meters");
+    assert_eq!(
+        report["measurement_authority"]["precision"],
+        "f32_transformed_scene_coordinates"
+    );
+    assert_eq!(
+        report["measurement_authority"]["occlusion_policy"],
+        "presentation_overlay_not_metrology_occlusion_proof"
+    );
     assert_eq!(report["label_projection"]["x_css_px"], json!(70.928));
     assert_eq!(report["label_projection"]["y_css_px"], json!(48.0));
     assert_eq!(report["label_projection"]["visible"], true);

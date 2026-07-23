@@ -67,7 +67,8 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
                 hosts: matches,
             }
         }
-        LookupError::NodeNameNotFound { .. }
+        LookupError::NoActiveCamera
+        | LookupError::NodeNameNotFound { .. }
         | LookupError::AnchorNotFound { .. }
         | LookupError::AmbiguousAnchorName { .. }
         | LookupError::ClipNotFound { .. }
@@ -83,6 +84,7 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::NodeIsNotMesh { .. }
         | LookupError::NonInvertibleParentTransform { .. }
         | LookupError::InvalidTransform { .. }
+        | LookupError::InvalidCameraProjection { .. }
         | LookupError::GeometryNotFound { .. }
         | LookupError::InvalidSkinBinding { .. }
         | LookupError::CameraNotFound(_)

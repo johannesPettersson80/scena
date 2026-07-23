@@ -6,9 +6,10 @@ use std::path::PathBuf;
 use scena::{
     Aabb, Assets, Backend, CAPTURE_SCHEMA_V1, CaptureDescriptor, CaptureError, CaptureOptions,
     CapturePayloadKind, CaptureRevisions, Color, FramingOptions, GeometryDesc, MaterialDesc,
-    NodeKey, PerspectiveCamera, ReferenceImageTolerance, Renderer, Scene, Transform, Vec3,
-    capture_contact_sheet_rgba8, capture_rgba8, capture_rgba8_from_pixels,
-    compare_captures_with_tolerance, headless_gltf_viewer,
+    NodeKey, PerspectiveCamera, PlatformSurface, ReferenceImageTolerance, RenderMode,
+    RenderReadbackMode, Renderer, RendererOptions, Scene, SurfaceEvent, Tonemapper, Transform,
+    Vec3, capture_contact_sheet_rgba8, capture_rgba8, capture_rgba8_from_pixels,
+    capture_unverified_rgba8_from_pixels, compare_captures_with_tolerance, headless_gltf_viewer,
 };
 #[cfg(feature = "scene-host")]
 use scena::{SceneHostCore, SceneInspectionReportV1};
@@ -32,6 +33,7 @@ fn capture_descriptor_schema_round_trips_and_binds_revisions_to_inspection() {
         CaptureRevisions {
             structure: inspection.revisions.structure,
             transform: inspection.revisions.transform,
+            camera: inspection.revisions.camera,
             appearance: inspection.revisions.appearance,
             interaction: inspection.revisions.interaction,
         }
@@ -48,6 +50,26 @@ fn capture_descriptor_schema_round_trips_and_binds_revisions_to_inspection() {
         Some("perspective")
     ));
     assert_eq!(capture.descriptor.backend, Backend::Headless);
+    assert_eq!(
+        capture.descriptor.frame.pixel_source,
+        "renderer_owned_readback"
+    );
+    assert_eq!(
+        capture.descriptor.frame.state_binding,
+        "exact_readback_completion"
+    );
+    assert!(capture.descriptor.frame.release_evidence);
+    assert_eq!(
+        capture.descriptor.frame.output_color_space,
+        scena::OutputColorSpace::Srgb
+    );
+    assert!(
+        capture
+            .descriptor
+            .frame
+            .readback_completed_unix_ms
+            .is_some()
+    );
     assert_eq!(capture.descriptor.viewport.device_pixel_ratio, 1.0);
     assert!(capture.descriptor.pixels.nonblack > 0);
     assert!(capture.descriptor.pixels.bbox.is_some());
@@ -160,7 +182,7 @@ fn capture_from_supplied_rgba8_uses_supplied_pixels_and_rendered_state() {
     let (_assets, scene, renderer) = rendered_box_scene(1, 1);
     let rgba8 = vec![4, 5, 6, 255];
 
-    let capture = capture_rgba8_from_pixels(
+    let capture = capture_unverified_rgba8_from_pixels(
         &scene,
         &renderer,
         CaptureOptions::default(),
@@ -171,6 +193,8 @@ fn capture_from_supplied_rgba8_uses_supplied_pixels_and_rendered_state() {
     .expect("capture from supplied pixels succeeds");
 
     assert_eq!(capture.rgba8, rgba8);
+    assert!(!capture.descriptor.frame.release_evidence);
+    assert_eq!(capture.descriptor.frame.pixel_source, "caller_supplied");
     assert_eq!(capture.descriptor.payload.byte_length, 4);
     assert_eq!(capture.descriptor.pixels.nonblack, 1);
     assert_eq!(capture.descriptor.pixels.center, [4, 5, 6, 255]);
@@ -292,6 +316,178 @@ fn capture_requires_a_rendered_frame() {
 }
 
 #[test]
+fn capture_rejects_pixels_when_the_latest_render_has_no_matching_readback() {
+    let (assets, mut scene, _cpu_renderer, mesh) = box_scene_with_camera_and_mesh(32, 32);
+    let mut renderer = Renderer::headless_gpu(32, 32)
+        .expect("C03 provenance contract requires the remote builder GPU adapter");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene A prepares");
+    let camera = scene.active_camera().expect("camera exists");
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
+        .expect("scene A renders with readback");
+    let stale_a = renderer.read_pixels().into_rgba8();
+
+    scene
+        .set_transform(mesh, Transform::at(Vec3::new(0.5, 0.0, 0.0)))
+        .expect("scene B mutates");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene B prepares");
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
+        .expect("scene B renders without readback");
+
+    let error = capture_rgba8_from_pixels(
+        &scene,
+        &renderer,
+        CaptureOptions::default(),
+        32,
+        32,
+        stale_a,
+    )
+    .expect_err("A pixels must not be certified with B rendered state");
+    assert!(
+        error.to_string().contains("readback"),
+        "error must explain that no pixel readback matches the rendered frame: {error}",
+    );
+}
+
+#[test]
+fn unverified_capture_accepts_caller_pixels_after_present_only_render() {
+    let (assets, mut scene, _cpu_renderer, _mesh) = box_scene_with_camera_and_mesh(32, 24);
+    let mut renderer = Renderer::headless_gpu(32, 24)
+        .expect("C03 provenance contract requires the remote builder GPU adapter");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    let camera = scene.active_camera().expect("camera exists");
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
+        .expect("scene renders without renderer-owned readback");
+
+    let capture = capture_unverified_rgba8_from_pixels(
+        &scene,
+        &renderer,
+        CaptureOptions::default(),
+        32,
+        24,
+        vec![0; 32 * 24 * 4],
+    )
+    .expect("caller-owned browser canvas pixels remain available as non-release evidence");
+
+    assert!(!capture.descriptor.frame.release_evidence);
+    assert_eq!(capture.descriptor.frame.pixel_source, "caller_supplied");
+    assert_eq!(
+        capture.descriptor.frame.state_binding,
+        "unverified_caller_supplied"
+    );
+    assert_eq!(capture.descriptor.frame.readback_completed_unix_ms, None);
+}
+
+#[test]
+fn capture_rejects_pixels_swapped_from_an_older_readback_with_matching_dimensions() {
+    let (assets, mut scene, mut renderer, mesh) = rendered_box_scene_with_mesh(32, 32);
+    let camera = scene.active_camera().expect("active camera");
+    let pixels_a = renderer.read_pixels().into_rgba8();
+    scene
+        .set_transform(mesh, Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+        .expect("mesh remains present");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene B prepares");
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
+        .expect("scene B renders with readback");
+
+    let error = capture_rgba8_from_pixels(
+        &scene,
+        &renderer,
+        CaptureOptions::default(),
+        32,
+        32,
+        pixels_a,
+    )
+    .expect_err("scene A pixels must not be certified with scene B readback state");
+    assert!(
+        matches!(error, CaptureError::PixelReadbackMismatch { .. }),
+        "swapped pixels need a structured mismatch error: {error}"
+    );
+}
+
+#[test]
+fn capture_provenance_survives_skips_and_invalidates_on_output_resize_and_loss() {
+    let (assets, mut scene, _unused, _mesh) = box_scene_with_camera_and_mesh(32, 24);
+    let mut renderer = Renderer::headless_with_options(
+        32,
+        24,
+        RendererOptions::default().with_render_mode(RenderMode::OnChange),
+    )
+    .expect("on-change renderer builds");
+    renderer.prepare_with_assets(&mut scene, &assets).unwrap();
+    renderer.render_active(&scene).unwrap();
+    let first = capture_rgba8(&scene, &renderer, CaptureOptions::default()).unwrap();
+    let skipped = renderer
+        .render_active(&scene)
+        .expect("unchanged frame skips");
+    assert!(skipped.skipped);
+    let after_skip = capture_rgba8(&scene, &renderer, CaptureOptions::default()).unwrap();
+    assert_eq!(after_skip.rgba8, first.rgba8);
+    assert_eq!(
+        after_skip.descriptor.frame.render_generation,
+        first.descriptor.frame.render_generation
+    );
+
+    renderer.set_tonemapper(Tonemapper::Aces);
+    assert!(matches!(
+        capture_rgba8(&scene, &renderer, CaptureOptions::default()),
+        Err(CaptureError::NoRenderedFrame)
+    ));
+    renderer.render_active(&scene).unwrap();
+    let aces = capture_rgba8(&scene, &renderer, CaptureOptions::default()).unwrap();
+    assert_eq!(aces.descriptor.frame.tonemapper, "aces");
+
+    renderer
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: 40,
+            height: 30,
+        })
+        .unwrap();
+    assert!(matches!(
+        capture_rgba8(&scene, &renderer, CaptureOptions::default()),
+        Err(CaptureError::NoRenderedFrame)
+    ));
+    renderer.prepare_with_assets(&mut scene, &assets).unwrap();
+    renderer.render_active(&scene).unwrap();
+    let resized = capture_rgba8(&scene, &renderer, CaptureOptions::default()).unwrap();
+    assert_eq!(
+        (resized.descriptor.width, resized.descriptor.height),
+        (40, 30)
+    );
+
+    renderer.handle_surface_event(SurfaceEvent::Lost).unwrap();
+    assert!(matches!(
+        capture_rgba8(&scene, &renderer, CaptureOptions::default()),
+        Err(CaptureError::NoRenderedFrame)
+    ));
+    renderer
+        .recover_surface(PlatformSurface::native_window(40, 30))
+        .expect("descriptor surface recovers");
+    renderer.prepare_with_assets(&mut scene, &assets).unwrap();
+    renderer.render_active(&scene).unwrap();
+    assert!(capture_rgba8(&scene, &renderer, CaptureOptions::default()).is_ok());
+
+    renderer
+        .handle_surface_event(SurfaceEvent::DeviceLost { recoverable: true })
+        .unwrap();
+    assert!(matches!(
+        capture_rgba8(&scene, &renderer, CaptureOptions::default()),
+        Err(CaptureError::NoRenderedFrame)
+    ));
+}
+
+#[test]
 fn capture_fails_closed_when_active_camera_changes_after_render() {
     let (assets, mut scene, mut renderer, _mesh) = box_scene_with_camera_and_mesh(48, 48);
     let rendered_camera = scene.active_camera().expect("default camera exists");
@@ -364,6 +560,7 @@ fn scene_host_capture_uses_rendered_state_revisions_and_pixels() {
         CaptureRevisions {
             structure: inspection.revisions.structure,
             transform: inspection.revisions.transform,
+            camera: inspection.revisions.camera,
             appearance: inspection.revisions.appearance,
             interaction: inspection.revisions.interaction,
         }

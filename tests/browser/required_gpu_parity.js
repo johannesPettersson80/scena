@@ -493,7 +493,54 @@ function evaluateRequiredHardwareAdapter({
   };
 }
 
+function classifyBrowserEvidence({ required, selectedBackends, evaluations }) {
+  const backends = Array.isArray(selectedBackends) ? selectedBackends.map(normalizedBackend) : [];
+  const entries = Array.isArray(evaluations) ? evaluations : [];
+  const webgpu = entries.find(
+    (entry) => normalizedBackend(entry && entry.backend) === "webgpu",
+  );
+  const pixelPassed = Boolean(webgpu && webgpu.pixel_parity && webgpu.pixel_parity.status === "passed");
+  const parityScope = pixelPassed ? ["webgpu:m6-identical-unlit-triangle-v1"] : [];
+  const requiredPassed =
+    required === true &&
+    backends.includes("webgpu") &&
+    pixelPassed &&
+    entries.length > 0 &&
+    entries.every((entry) => entry && entry.status === "passed");
+  if (requiredPassed) {
+    return {
+      proof_class: "renderer-smoke-with-required-webgpu-full-frame-parity",
+      release_evidence: true,
+      parity_claim: "full-frame-reference-diff",
+      parity_scope: parityScope,
+    };
+  }
+  if (required === true) {
+    return {
+      proof_class: "required-webgpu-parity-failed",
+      release_evidence: false,
+      parity_claim: "failed",
+      parity_scope: parityScope,
+    };
+  }
+  if (pixelPassed) {
+    return {
+      proof_class: "renderer-conformance-with-diagnostic-webgpu-pixel-diff",
+      release_evidence: false,
+      parity_claim: "diagnostic-only",
+      parity_scope: parityScope,
+    };
+  }
+  return {
+    proof_class: "renderer-smoke",
+    release_evidence: false,
+    parity_claim: "not-claimed",
+    parity_scope: [],
+  };
+}
+
 module.exports = {
+  classifyBrowserEvidence,
   evaluateRequiredGpuParity,
   evaluateRequiredPixelParity,
   evaluateRequiredHardwareAdapter,

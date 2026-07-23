@@ -23,6 +23,18 @@ pub fn nearest_schema_name(input: &str) -> Option<&'static str> {
 fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
     &[
         (
+            "scena.agent_guide.v1",
+            include_str!("../../tests/assets/stable-contracts/agent_guide.v1.json"),
+        ),
+        (
+            "scena.contract_validation.v1",
+            include_str!("../../tests/assets/stable-contracts/contract_validation.v1.json"),
+        ),
+        (
+            "scena.json_schema_export.v1",
+            include_str!("../../tests/assets/stable-contracts/json_schema_export.v1.json"),
+        ),
+        (
             SCHEMA_CATALOG_SCHEMA_V1,
             include_str!("../../tests/assets/stable-contracts/schema_catalog.v1.json"),
         ),

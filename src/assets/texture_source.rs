@@ -1,3 +1,5 @@
+#[cfg(any(target_arch = "wasm32", test))]
+use crate::assets::AssetLoadWarning;
 use crate::assets::AssetPath;
 use crate::diagnostics::AssetError;
 
@@ -20,6 +22,7 @@ pub(super) fn resolve_texture_source_bytes(
         TextureSourceFormat::Png | TextureSourceFormat::Jpeg | TextureSourceFormat::Webp => {
             Ok(None)
         }
+        TextureSourceFormat::MemoryRgba8 | TextureSourceFormat::MemoryRgba16Float => Ok(None),
     }
 }
 
@@ -47,6 +50,25 @@ pub(crate) fn browser_texture_resize_dimensions(
     Some((resize_axis(width), resize_axis(height)))
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn browser_texture_resize_warning(
+    path: &AssetPath,
+    width: u32,
+    height: u32,
+    max_dimension: u32,
+) -> Option<AssetLoadWarning> {
+    let (decoded_width, decoded_height) =
+        browser_texture_resize_dimensions(width, height, max_dimension)?;
+    Some(AssetLoadWarning::TextureDownscaled {
+        path: path.clone(),
+        original_width: width,
+        original_height: height,
+        decoded_width,
+        decoded_height,
+        maximum_dimension: max_dimension,
+    })
+}
+
 #[cfg(target_arch = "wasm32")]
 pub(super) fn browser_native_decode_format(source_format: TextureSourceFormat) -> bool {
     matches!(
@@ -59,7 +81,7 @@ pub(super) fn browser_native_decode_format(source_format: TextureSourceFormat) -
 pub(crate) async fn decode_browser_image_bitmap(
     path: &AssetPath,
     bytes: std::sync::Arc<[u8]>,
-) -> Result<web_sys::ImageBitmap, AssetError> {
+) -> Result<(web_sys::ImageBitmap, Option<AssetLoadWarning>), AssetError> {
     let window = web_sys::window().ok_or_else(|| AssetError::Io {
         path: path.as_str().to_string(),
         reason: "browser image decode requires a Window".to_string(),
@@ -83,11 +105,20 @@ pub(crate) async fn decode_browser_image_bitmap(
     )
     .await?;
 
-    if let Some((width, height)) = browser_texture_resize_dimensions(
+    if let Some(warning) = browser_texture_resize_warning(
+        path,
         image.width(),
         image.height(),
         BROWSER_TEXTURE_MAX_DIMENSION_2D,
     ) {
+        let AssetLoadWarning::TextureDownscaled {
+            decoded_width: width,
+            decoded_height: height,
+            ..
+        } = &warning
+        else {
+            unreachable!("resize warning helper returns the downscale variant")
+        };
         web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
             "scena resized browser texture '{}' from {}x{} to {}x{} to fit the WebGL2-safe {}px texture limit",
             path.as_str(),
@@ -98,9 +129,9 @@ pub(crate) async fn decode_browser_image_bitmap(
             BROWSER_TEXTURE_MAX_DIMENSION_2D
         )));
         let options = web_sys::ImageBitmapOptions::new();
-        options.set_resize_width(width);
-        options.set_resize_height(height);
-        return await_browser_image_bitmap(
+        options.set_resize_width(*width);
+        options.set_resize_height(*height);
+        let resized = await_browser_image_bitmap(
             path,
             window
                 .create_image_bitmap_with_blob_and_image_bitmap_options(&blob, &options)
@@ -109,10 +140,11 @@ pub(crate) async fn decode_browser_image_bitmap(
                 })?,
             "createImageBitmap resize",
         )
-        .await;
+        .await?;
+        return Ok((resized, Some(warning)));
     }
 
-    Ok(image)
+    Ok((image, None))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -181,6 +213,24 @@ mod tests {
         assert_eq!(
             browser_texture_resize_dimensions(4096, 4096, BROWSER_TEXTURE_MAX_DIMENSION_2D),
             Some((2048, 2048))
+        );
+    }
+
+    #[test]
+    fn a14_browser_texture_resize_emits_structured_warning() {
+        let path = AssetPath::from("textures/oversized.png");
+        let warning = browser_texture_resize_warning(&path, 4096, 2048, 2048)
+            .expect("oversized texture reports its resize");
+        assert_eq!(
+            warning,
+            AssetLoadWarning::TextureDownscaled {
+                path,
+                original_width: 4096,
+                original_height: 2048,
+                decoded_width: 2048,
+                decoded_height: 1024,
+                maximum_dimension: 2048,
+            }
         );
     }
 

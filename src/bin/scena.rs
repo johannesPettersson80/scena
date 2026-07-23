@@ -11,6 +11,8 @@ mod scena_args;
 mod scena_browser_proof;
 #[path = "scena/capabilities.rs"]
 mod scena_capabilities;
+#[path = "scena/cli_error.rs"]
+mod scena_cli_error;
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 #[path = "scena/diff.rs"]
 mod scena_diff;
@@ -19,6 +21,8 @@ mod scena_doctor;
 #[cfg(feature = "inspection")]
 #[path = "scena/examples_agent.rs"]
 mod scena_examples_agent;
+#[path = "scena/guide.rs"]
+mod scena_guide;
 #[path = "scena/help.rs"]
 mod scena_help;
 #[path = "scena/input.rs"]
@@ -37,6 +41,8 @@ mod scena_recipe;
 mod scena_scene_commands;
 #[path = "scena/schema.rs"]
 mod scena_schema;
+#[path = "scena/validate.rs"]
+mod scena_validate;
 #[path = "scena/validate_recipe.rs"]
 mod scena_validate_recipe;
 #[cfg(feature = "inspection")]
@@ -51,17 +57,25 @@ mod scena_verify_interaction;
 #[path = "scena/vocab.rs"]
 mod scena_vocab;
 
-use scena_output::{CliOutcome, apply_output_format, parse_output_format_args, success};
+use scena_cli_error::CliError;
+use scena_output::{
+    CliJsonStyle, CliOutcome, apply_output_format, parse_output_format_args, requested_json_style,
+    serialize_json, success,
+};
 
 fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
+    let json_style = requested_json_style(&args);
     match run(args.clone()) {
         Ok(outcome) => {
             if let Err(error) = process_output::write_stdout_line(&outcome.stdout) {
                 if error.kind() == io::ErrorKind::BrokenPipe {
                     return;
                 }
-                process_output::write_stdout_error(&error);
+                process_output::write_stdout_error(
+                    &error,
+                    matches!(json_style, CliJsonStyle::Pretty),
+                );
                 process::exit(process_output::IO_ERROR_EXIT_CODE);
             }
             if outcome.exit_code != 0 {
@@ -69,20 +83,11 @@ fn main() {
             }
         }
         Err(error) => {
-            let code = if error.starts_with("unknown command") {
-                "invalid_command"
-            } else {
-                "invalid_arguments"
-            };
-            let report = serde_json::json!({
-                "schema": "scena.cli_error.v1",
-                "ok": false,
-                "code": code,
-                "message": error,
-                "candidates": cli_error_candidates(&args),
-            });
-            process_output::write_stderr_line(&report.to_string());
-            process::exit(2);
+            let report = error.report();
+            let text = serialize_json(&report, json_style)
+                .unwrap_or_else(|serialize_error| format!("{{\"schema\":\"scena.cli_error.v1\",\"ok\":false,\"code\":\"internal_error\",\"message\":\"failed to serialize CLI error: {serialize_error}\"}}"));
+            process_output::write_stderr_line(&text);
+            process::exit(error.exit_code());
         }
     }
 }
@@ -126,16 +131,27 @@ fn examples_agent_error_candidates(_args: &[String]) -> Vec<String> {
     Vec::new()
 }
 
-fn run(args: Vec<String>) -> Result<CliOutcome, String> {
-    let (args, output_format) = parse_output_format_args(args)?;
+fn run(args: Vec<String>) -> Result<CliOutcome, Box<CliError>> {
+    let original_args = args.clone();
+    let (args, output_format) = parse_output_format_args(args)
+        .map_err(|message| Box::new(CliError::invalid_arguments(&original_args, message)))?;
     if args.is_empty() || args == ["--help"] || args == ["-h"] {
-        return Ok(success(scena_help::help_json()));
+        let mut outcome = success(scena_help::help_json());
+        apply_output_format(&mut outcome, output_format)
+            .map_err(|message| Box::new(CliError::internal(&args, message)))?;
+        return Ok(outcome);
     }
     if let Some(help) = scena_help::command_help_json(&args) {
-        return Ok(success(help));
+        let mut outcome = success(help);
+        apply_output_format(&mut outcome, output_format)
+            .map_err(|message| Box::new(CliError::internal(&args, message)))?;
+        return Ok(outcome);
     }
     if args == ["--version"] || args == ["version"] {
-        return Ok(success(version_json()));
+        let mut outcome = success(version_json());
+        apply_output_format(&mut outcome, output_format)
+            .map_err(|message| Box::new(CliError::internal(&args, message)))?;
+        return Ok(outcome);
     }
 
     let mut outcome = match args.as_slice() {
@@ -144,6 +160,12 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         }
         [command, subcommand, schema] if command == "schema" && subcommand == "get" => {
             scena_schema::run_schema_get_command(schema)
+        }
+        [command, subcommand, schema] if command == "schema" && subcommand == "json" => {
+            scena_schema::run_schema_json_command(schema)
+        }
+        [command, subcommand, rest @ ..] if command == "guide" && subcommand == "agent" => {
+            scena_guide::run_agent_guide_command(rest)
         }
         [command, subcommand] if command == "vocab" && subcommand == "list" => {
             scena_vocab::run_vocab_list_command()
@@ -159,6 +181,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         }
         [command, rest @ ..] if command == "validate-recipe" => {
             scena_validate_recipe::run_validate_recipe_command(rest)
+        }
+        [command, rest @ ..] if command == "validate" => {
+            scena_validate::run_validate_command(rest)
         }
         [command, rest @ ..] if command == "place" => scena_place::run_place_command(rest),
         [command, rest @ ..] if command == "diff" => run_diff_command(rest),
@@ -197,15 +222,18 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, subcommand, rest @ ..] if command == "verify" && subcommand == "interaction" => {
             run_verify_interaction_command(rest)
         }
-        _ => Err(
-            "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
+        _ => {
+            return Err(Box::new(CliError::invalid_command(
+                &args,
+                "unknown command; expected 'schema list', 'schema get <scena.*.vN>', 'schema json <scena.*.vN>', 'guide agent [--json|--markdown]', \
              'vocab list', 'vocab get <name>', 'policy recipe [--allow-root <directory>]...', \
              'capabilities [--live] [--json]', \
+             'validate <file>', \
              'validate-recipe <recipe.json> [--allow-root <directory>]...', \
-             'place <recipe.json> --import <id> --verb <verb>', \
+             'place <recipe.json> (--import <id>|--node <id>) --verb <verb>', \
              'diff <before.recipe.json> <after.recipe.json> [--render --out-dir <dir>] [--exit-code]', \
              'recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...', \
-             'recipe render <recipe.json> --introspect --verify --out <png> [--allow-root <directory>]...', \
+             'recipe render <recipe.json> --verify --out <png> [--allow-root <directory>]...', \
              'recipe inspect-cad <recipe.json> --out-dir <dir>', \
              'recipe capture <recipe.json> --out-dir <dir> [--views front,top,right,isometric|none] [--turntable <frames>] [--clip <name> --frames <n>] [--gpu] [--max-imports <n>]', \
              'recipe aov <recipe.json> --out-dir <dir> [--passes id,depth,normal] [--max-imports <n>]', \
@@ -220,9 +248,18 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
              'verify animation <asset-or-recipe> --clip <name> --times <seconds>', or \
              'verify interaction <asset-or-recipe> --expect <json>'"
                 .to_string(),
-        ),
-    }?;
-    apply_output_format(&mut outcome, output_format)?;
+            )));
+        }
+    }
+    .map_err(|message| {
+        Box::new(CliError::classify(
+            &args,
+            message,
+            cli_error_candidates(&args),
+        ))
+    })?;
+    apply_output_format(&mut outcome, output_format)
+        .map_err(|message| Box::new(CliError::internal(&args, message)))?;
     Ok(outcome)
 }
 
@@ -245,7 +282,7 @@ fn run_diff_command(_args: &[String]) -> Result<CliOutcome, String> {
 
 fn version_json() -> String {
     let git_commit = option_env!("SCENA_GIT_COMMIT").filter(|value| !value.is_empty());
-    serde_json::json!({
+    serde_json::to_string_pretty(&serde_json::json!({
         "schema": "scena.cli_version.v1",
         "package_name": "scena",
         "package_version": env!("CARGO_PKG_VERSION"),
@@ -268,8 +305,8 @@ fn version_json() -> String {
             "scene_host": cfg!(feature = "scene-host"),
             "viewer_element": cfg!(feature = "viewer-element")
         }
-    })
-    .to_string()
+    }))
+    .expect("CLI version serialization is infallible")
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
@@ -339,7 +376,7 @@ fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
 
 #[cfg(not(feature = "inspection"))]
 fn run_render_command(_args: &[String]) -> Result<CliOutcome, String> {
-    Err(feature_required("render --introspect", "inspection"))
+    Err(feature_required("render", "agent"))
 }
 
 #[cfg(feature = "inspection")]
@@ -349,7 +386,7 @@ fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
 
 #[cfg(not(feature = "inspection"))]
 fn run_inspect_command(_args: &[String]) -> Result<CliOutcome, String> {
-    Err(feature_required("inspect", "inspection"))
+    Err(feature_required("inspect", "agent"))
 }
 
 #[cfg(feature = "inspection")]
@@ -359,7 +396,7 @@ fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
 
 #[cfg(not(feature = "inspection"))]
 fn run_diagnose_command(_args: &[String]) -> Result<CliOutcome, String> {
-    Err(feature_required("diagnose --visibility", "inspection"))
+    Err(feature_required("diagnose --visibility", "agent"))
 }
 
 #[cfg(feature = "inspection")]
@@ -369,7 +406,7 @@ fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> {
 
 #[cfg(not(feature = "inspection"))]
 fn run_repair_command(_args: &[String]) -> Result<CliOutcome, String> {
-    Err(feature_required("repair", "inspection"))
+    Err(feature_required("repair", "agent"))
 }
 
 #[cfg(feature = "inspection")]
@@ -379,7 +416,7 @@ fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcome, String> 
 
 #[cfg(not(feature = "inspection"))]
 fn run_verify_appearance_command(_args: &[String]) -> Result<CliOutcome, String> {
-    Err(feature_required("verify appearance", "inspection"))
+    Err(feature_required("verify appearance", "agent"))
 }
 
 #[cfg(feature = "inspection")]
@@ -389,7 +426,7 @@ fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome, String> {
 
 #[cfg(not(feature = "inspection"))]
 fn run_verify_animation_command(_args: &[String]) -> Result<CliOutcome, String> {
-    Err(feature_required("verify animation", "inspection"))
+    Err(feature_required("verify animation", "agent"))
 }
 
 #[cfg(feature = "scene-host")]

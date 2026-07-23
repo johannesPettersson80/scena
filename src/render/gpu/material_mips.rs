@@ -44,6 +44,41 @@ pub(super) fn downsample_rgba8_mip(
     resized.into_raw()
 }
 
+pub(super) fn downsample_rgba16f_mip(
+    previous: &[u16],
+    previous_width: u32,
+    previous_height: u32,
+    next_width: u32,
+    next_height: u32,
+) -> Vec<u16> {
+    let mut output = Vec::with_capacity(next_width as usize * next_height as usize * 4);
+    for y in 0..next_height {
+        let y0 = (u64::from(y) * u64::from(previous_height) / u64::from(next_height)) as u32;
+        let y1 = ((u64::from(y + 1) * u64::from(previous_height)).div_ceil(u64::from(next_height)))
+            .max(u64::from(y0 + 1))
+            .min(u64::from(previous_height)) as u32;
+        for x in 0..next_width {
+            let x0 = (u64::from(x) * u64::from(previous_width) / u64::from(next_width)) as u32;
+            let x1 = ((u64::from(x + 1) * u64::from(previous_width))
+                .div_ceil(u64::from(next_width)))
+            .max(u64::from(x0 + 1))
+            .min(u64::from(previous_width)) as u32;
+            let sample_count = ((x1 - x0) * (y1 - y0)) as f32;
+            for channel in 0..4 {
+                let mut sum = 0.0f32;
+                for source_y in y0..y1 {
+                    for source_x in x0..x1 {
+                        let index = ((source_y * previous_width + source_x) * 4 + channel) as usize;
+                        sum += half::f16::from_bits(previous[index]).to_f32();
+                    }
+                }
+                output.push(half::f16::from_f32(sum / sample_count).to_bits());
+            }
+        }
+    }
+    output
+}
+
 fn texture_filter_uses_mipmaps(filter: Option<TextureFilter>) -> bool {
     matches!(
         filter,
@@ -67,6 +102,7 @@ mod tests {
             width: 4,
             height: 2,
             rgba8: &[255; 32],
+            rgba16f_bits: None,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             sampler: TextureSamplerDesc::new(
                 None,
@@ -74,6 +110,7 @@ mod tests {
                 TextureWrap::Repeat,
                 TextureWrap::Repeat,
             ),
+            mip_policy: crate::assets::TextureMipPolicy::Generate,
             #[cfg(target_arch = "wasm32")]
             browser_image: None,
             uses_decoded_texture: true,
@@ -131,5 +168,22 @@ mod tests {
             assert_eq!(mip[i + 2], 0, "pixel {px} B");
             assert_eq!(mip[i + 3], 255, "pixel {px} A");
         }
+    }
+
+    #[test]
+    fn a14_linear_float_mip_downsample_preserves_hdr_range() {
+        let previous = [
+            half::f16::from_f32(2.0).to_bits(),
+            half::f16::from_f32(0.0).to_bits(),
+            half::f16::from_f32(0.0).to_bits(),
+            half::f16::from_f32(1.0).to_bits(),
+            half::f16::from_f32(4.0).to_bits(),
+            half::f16::from_f32(0.0).to_bits(),
+            half::f16::from_f32(0.0).to_bits(),
+            half::f16::from_f32(1.0).to_bits(),
+        ];
+        let mip = super::downsample_rgba16f_mip(&previous, 2, 1, 1, 1);
+        assert_eq!(half::f16::from_bits(mip[0]).to_f32(), 3.0);
+        assert_eq!(half::f16::from_bits(mip[3]).to_f32(), 1.0);
     }
 }

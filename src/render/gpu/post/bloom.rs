@@ -1,6 +1,7 @@
 use super::{create_post_pipeline, resources::POST_COLOR_FORMAT};
+use crate::render::gpu::shader_manifest::ShaderVariantId;
 
-const SHADER: &str = include_str!("bloom.wgsl");
+pub(in crate::render::gpu) const SHADER: &str = include_str!("bloom.wgsl");
 
 pub(super) fn create_pipeline(
     device: &wgpu::Device,
@@ -9,7 +10,7 @@ pub(super) fn create_pipeline(
     create_post_pipeline(
         device,
         "scena.gpu_post.bloom_pipeline",
-        SHADER,
+        ShaderVariantId::PostBloom,
         pipeline_layout,
         POST_COLOR_FORMAT,
     )

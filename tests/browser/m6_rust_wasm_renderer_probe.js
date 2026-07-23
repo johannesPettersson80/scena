@@ -7,7 +7,10 @@ const zlib = require("zlib");
 const {
   attachReleaseArtifactProvenance,
 } = require("../release/release_artifact_provenance.js");
-const { evaluateRequiredGpuParity } = require("./required_gpu_parity.js");
+const {
+  classifyBrowserEvidence,
+  evaluateRequiredGpuParity,
+} = require("./required_gpu_parity.js");
 const { collectBrowserGpuEvidence } = require("./hardware_browser.js");
 const {
   cropRoundEMaterialTiles,
@@ -501,6 +504,10 @@ function compactBrowserProbeArtifact(artifact) {
     gate: artifact.gate,
     status: artifact.status,
     renderer: artifact.renderer,
+    proof_class: artifact.proof_class,
+    release_evidence: artifact.release_evidence,
+    parity_claim: artifact.parity_claim,
+    parity_scope: artifact.parity_scope,
     results: artifact.results.map(compactBrowserProbeResult),
   };
 }
@@ -1812,7 +1819,10 @@ function assertScenaViewerMobileA11yProof(result) {
     ["orbit_delta_x", 26],
     ["orbit_delta_y", 14],
     ["wheel_action", "wheel-zoom"],
-    ["wheel_delta_y", -120],
+    ["wheel_delta_y", -1.2],
+    ["wheel_raw_delta_y", -120],
+    ["wheel_default_prevented", true],
+    ["zero_wheel_default_prevented", false],
     ["keyboard_action", "reset-view"],
     ["pointer_capture_outside_release", true],
     ["pointer_capture_reentry_clean", true],
@@ -2558,10 +2568,16 @@ async function main() {
       );
     }
   }
+  const evidenceClassification = classifyBrowserEvidence({
+    required: requiredParity,
+    selectedBackends,
+    evaluations: requiredParityEvaluations,
+  });
   const artifact = attachReleaseArtifactProvenance({
     gate: "m6-rust-wasm-renderer-probe",
     status: results.some((result) => result.status === "unavailable") ? "unavailable" : "passed",
     renderer: "scena Rust/WASM",
+    ...evidenceClassification,
     required_parity: {
       enabled: requiredParity,
       status:

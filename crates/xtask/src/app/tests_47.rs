@@ -31,7 +31,7 @@ fn c10_doctor_rejects_cache_lookup_that_discards_the_active_policy() {
     let loading = fixture_root.join("src/assets/scene_loading.rs");
     let source = fs::read_to_string(&loading).expect("C10 scene-loading source reads");
     let mutated = source.replace(
-        "storage.cached_scene(&path, options)",
+        "storage.cached_scene(&path, options.clone())",
         "storage.cached_scene(&path, AssetLoadOptions::default())",
     );
     assert_ne!(
@@ -46,7 +46,7 @@ fn c10_doctor_rejects_cache_lookup_that_discards_the_active_policy() {
             finding.rule == "C10-SEMANTIC-SCENE-CACHE-POLICY"
                 && finding
                     .message
-                    .contains("storage.cached_scene(&path, options)")
+                    .contains("storage.cached_scene(&path, options.clone())")
         }),
         "discarding the active cache policy must fail doctor: {findings:?}"
     );

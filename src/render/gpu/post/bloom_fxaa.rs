@@ -1,11 +1,12 @@
 use super::create_post_pipeline;
+use crate::render::gpu::shader_manifest::{ShaderVariantId, variant_for_srgb_target};
 
-const LINEAR_TARGET_SHADER: &str = concat!(
+pub(in crate::render::gpu) const LINEAR_TARGET_SHADER: &str = concat!(
     include_str!("bloom_fxaa.wgsl"),
     "\n",
     include_str!("post_output_linear.wgsl")
 );
-const SRGB_BYTE_TARGET_SHADER: &str = concat!(
+pub(in crate::render::gpu) const SRGB_BYTE_TARGET_SHADER: &str = concat!(
     include_str!("bloom_fxaa.wgsl"),
     "\n",
     include_str!("post_output_srgb.wgsl"),
@@ -27,13 +28,12 @@ pub(super) fn create_surface_pipeline(
     )
 }
 
-const fn shader_for_target(format: wgpu::TextureFormat) -> &'static str {
-    match format {
-        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm => {
-            SRGB_BYTE_TARGET_SHADER
-        }
-        _ => LINEAR_TARGET_SHADER,
-    }
+const fn shader_for_target(format: wgpu::TextureFormat) -> ShaderVariantId {
+    variant_for_srgb_target(
+        format,
+        ShaderVariantId::PostBloomFxaaLinear,
+        ShaderVariantId::PostBloomFxaaSrgbBytes,
+    )
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -11,6 +11,7 @@
   "revisions": {
     "structure": 3,
     "transform": 2,
+    "camera": 0,
     "appearance": 0,
     "interaction": 0
   },
@@ -85,6 +86,24 @@
     "uniform_buffer_max_bytes": 0,
     "uniform_buffers": "feature_disabled",
     "wide_gamut_output": "feature_disabled"
+  },
+  "frame": {
+    "pixel_source": "renderer_owned_readback",
+    "state_binding": "exact_readback_completion",
+    "release_evidence": true,
+    "render_generation": 7,
+    "target_revision": 1,
+    "output_resources_revision": 2,
+    "output_color_space": "srgb",
+    "exposure_ev": 0.0,
+    "tonemapper": "pbr_neutral",
+    "anti_aliasing": "fxaa",
+    "supersample_factor": 1,
+    "bloom": false,
+    "screen_space_ambient_occlusion": false,
+    "screen_space_reflections": false,
+    "depth_of_field": false,
+    "readback_completed_unix_ms": 1784736000000
   },
   "auto_frame": null,
   "pixels": {

@@ -54,12 +54,18 @@ impl AssetFetcher for FileAssetFetcher {
     type Future<'a> = std::future::Ready<Result<Vec<u8>, AssetError>>;
 
     fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
-        std::future::ready(
-            std::fs::read(path.as_str()).map_err(|error| AssetError::Io {
-                path: path.as_str().to_string(),
-                reason: error.to_string(),
-            }),
-        )
+        std::future::ready(std::fs::read(path.as_str()).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                AssetError::NotFound {
+                    path: path.as_str().to_string(),
+                }
+            } else {
+                AssetError::Io {
+                    path: path.as_str().to_string(),
+                    reason: error.to_string(),
+                }
+            }
+        }))
     }
 }
 

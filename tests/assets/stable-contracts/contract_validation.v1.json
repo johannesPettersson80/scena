@@ -1,0 +1,10 @@
+{
+  "schema": "scena.contract_validation.v1",
+  "ok": true,
+  "contract": "scena.scene_recipe.v1",
+  "validation_level": "typed",
+  "diagnostics": [],
+  "limitations": [
+    "recipe validation is syntax/semantic only; run `validate-recipe --full` for resource and sandbox resolution"
+  ]
+}

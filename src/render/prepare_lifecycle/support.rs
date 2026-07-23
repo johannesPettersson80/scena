@@ -34,6 +34,9 @@ impl Renderer {
         if prepared.structure_revision != scene.structure_revision() {
             return Some("structure revision changed");
         }
+        if prepared.camera_revision != scene.camera_revision() {
+            return Some("camera descriptor revision changed");
+        }
         if prepared.environment_revision != self.environment_revision {
             return Some("environment revision changed");
         }
@@ -48,6 +51,9 @@ impl Renderer {
         }
         if scene.model_nodes().next().is_some() {
             return Some("model nodes present");
+        }
+        if scene.has_mesh_lods() {
+            return Some("mesh LOD selection is view-dependent");
         }
         if scene.label_nodes().next().is_some() {
             return Some("label nodes present");

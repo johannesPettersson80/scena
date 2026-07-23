@@ -1,0 +1,22 @@
+{
+  "schema": "scena.json_schema_export.v1",
+  "contract": "scena.capability_report.v1",
+  "json_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://scena.rs/schema/scena.capability_report.v1",
+    "type": "object",
+    "required": [
+      "schema"
+    ],
+    "properties": {
+      "schema": {
+        "const": "scena.capability_report.v1"
+      }
+    },
+    "additionalProperties": true
+  },
+  "limitations": [
+    "this export validates the versioned envelope only; use `scena validate` for typed owner validation when available",
+    "runtime, cross-field, filesystem, policy, and backend semantics are outside this JSON Schema"
+  ]
+}

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeSceneV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -13,7 +13,7 @@ pub struct SceneRecipeSceneV1 {
     pub grid: Option<SceneRecipeGridV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeBackgroundV1 {
     pub kind: String,
@@ -21,7 +21,7 @@ pub struct SceneRecipeBackgroundV1 {
     pub color: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeEnvironmentV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -34,7 +34,7 @@ pub struct SceneRecipeEnvironmentV1 {
     pub optional: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeGridV1 {
     #[serde(default = "default_grid_enabled", skip_serializing_if = "is_true")]
@@ -59,7 +59,7 @@ pub struct SceneRecipeGridV1 {
     pub reflection: Option<SceneRecipeGridReflectionV1>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeGridReflectionV1 {
     #[serde(
@@ -71,7 +71,7 @@ pub struct SceneRecipeGridReflectionV1 {
     pub strength: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeRenderV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,7 +100,7 @@ pub struct SceneRecipeRenderV1 {
     pub tonemapper: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum SceneRecipeAutoExposureV1 {
     Preset(String),
@@ -117,7 +117,7 @@ pub enum SceneRecipeAutoExposureV1 {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeBloomV1 {
     pub threshold_srgb: u8,
@@ -125,7 +125,7 @@ pub struct SceneRecipeBloomV1 {
     pub radius_px: u8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeSsaoV1 {
     pub radius_px: u8,
@@ -133,7 +133,7 @@ pub struct SceneRecipeSsaoV1 {
     pub depth_threshold: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeScreenSpaceReflectionsV1 {
     pub strength: f64,
@@ -142,7 +142,7 @@ pub struct SceneRecipeScreenSpaceReflectionsV1 {
     pub fade: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeDepthOfFieldV1 {
     pub focus_distance: f64,

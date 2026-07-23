@@ -40,6 +40,31 @@ pub(crate) fn doctor_rejects_shader_clip_position_passthrough_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_shader_module_creation_outside_generated_manifest() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/shader-manifest-bypass");
+    let bypass_path = fixture_root.join("src/render/gpu/new_pipeline.rs");
+    fs::create_dir_all(bypass_path.parent().expect("shader bypass parent")).expect("fixture dir");
+    fs::write(
+        &bypass_path,
+        "fn bypass(device: &wgpu::Device, source: &str) { device.create_shader_module(todo!()); }\n",
+    )
+    .expect("shader bypass fixture");
+    let mut findings = Vec::new();
+
+    check_renderer_truth_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-SHADER-MANIFEST"
+                && finding.message.contains("new_pipeline.rs")
+                && finding.message.contains("outside")
+        }),
+        "doctor must reject production shader modules that bypass the generated manifest: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_supported_forward_pbr_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/supported-pbr");
@@ -581,104 +606,5 @@ pub(crate) fn doctor_rejects_diagnostics_missing_typed_code_regression() {
         }),
         "doctor must reject Diagnostic types that drop the typed code/severity \
          contract: {findings:?}",
-    );
-}
-
-#[test]
-pub(crate) fn doctor_rejects_renderer_stats_missing_required_counters_regression() {
-    // ARCH-RENDER-STATS: diagnostics.rs must expose RendererStats with the required
-    // resource-lifetime counters. A stub that drops them regresses the contract.
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-doctor-regressions/renderer-stats-stub");
-    let diagnostics_path = fixture_root.join("src/diagnostics.rs");
-    fs::create_dir_all(diagnostics_path.parent().expect("diagnostics parent"))
-        .expect("fixture dir");
-    fs::write(
-        &diagnostics_path,
-        "pub struct RendererStats { pub frames_rendered: u64 }\n",
-    )
-    .expect("diagnostics fixture");
-    let mut findings = Vec::new();
-
-    require_contains(
-        &fixture_root,
-        &mut findings,
-        "ARCH-RENDER-STATS",
-        "src/diagnostics.rs",
-        &[
-            "pub struct RendererStats",
-            "pub buffers: u64",
-            "pub textures: u64",
-            "pub materials: u64",
-        ],
-    );
-
-    assert!(
-        findings.iter().any(|finding| {
-            finding.rule == "ARCH-RENDER-STATS" && finding.message.contains("pub buffers: u64")
-        }),
-        "doctor must reject RendererStats that drops the resource-lifetime counter \
-         contract: {findings:?}",
-    );
-}
-
-#[test]
-pub(crate) fn doctor_rejects_camera_depth_missing_perspective_camera_regression() {
-    // ARCH-CAMERA-DEPTH: src/scene/camera.rs must expose Camera/PerspectiveCamera/
-    // OrthographicCamera/DepthRange. A stub that drops them regresses the contract.
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-doctor-regressions/camera-depth-stub");
-    let camera_path = fixture_root.join("src/scene/camera.rs");
-    fs::create_dir_all(camera_path.parent().expect("camera parent")).expect("fixture dir");
-    fs::write(&camera_path, "pub struct CameraStub {}\n").expect("camera fixture");
-    let mut findings = Vec::new();
-
-    require_contains(
-        &fixture_root,
-        &mut findings,
-        "ARCH-CAMERA-DEPTH",
-        "src/scene/camera.rs",
-        &[
-            "pub enum Camera",
-            "pub struct PerspectiveCamera",
-            "pub struct OrthographicCamera",
-            "pub struct DepthRange",
-        ],
-    );
-
-    assert!(
-        findings.iter().any(|finding| {
-            finding.rule == "ARCH-CAMERA-DEPTH" && finding.message.contains("PerspectiveCamera")
-        }),
-        "doctor must reject camera modules that drop the typed-camera contract: \
-         {findings:?}",
-    );
-}
-
-#[test]
-pub(crate) fn doctor_rejects_clipping_missing_clipping_plane_key_regression() {
-    // ARCH-CLIPPING: src/scene.rs must expose ClippingPlaneKey for typed clipping
-    // plane handles.
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-doctor-regressions/clipping-stub");
-    let scene_path = fixture_root.join("src/scene.rs");
-    fs::create_dir_all(scene_path.parent().expect("scene parent")).expect("fixture dir");
-    fs::write(&scene_path, "pub struct Scene {}\n").expect("scene fixture");
-    let mut findings = Vec::new();
-
-    require_contains(
-        &fixture_root,
-        &mut findings,
-        "ARCH-CLIPPING",
-        "src/scene.rs",
-        &["pub struct ClippingPlaneKey"],
-    );
-
-    assert!(
-        findings.iter().any(|finding| {
-            finding.rule == "ARCH-CLIPPING" && finding.message.contains("ClippingPlaneKey")
-        }),
-        "doctor must reject scene modules that drop the typed clipping-plane handle: \
-         {findings:?}",
     );
 }

@@ -78,6 +78,20 @@ pub(crate) fn run_release_readiness(cli_root: Option<&str>) -> Result<(), Vec<Fi
             None
         }
     };
+    if let Some(resolved) = &resolved {
+        if env::var("SCENA_REQUIRE_CI_PROVENANCE").as_deref() != Ok("1") {
+            findings.push(Finding::new(
+                "RELEASE-CI-PROVENANCE",
+                "release-readiness requires SCENA_REQUIRE_CI_PROVENANCE=1 and live verification of the staged CI attestation",
+            ));
+        } else if let Err(message) = super::ci_provenance::verify_staged_ci_provenance(
+            &root,
+            &resolved.path,
+            &release_artifact_commit_label(&root),
+        ) {
+            findings.push(Finding::new("RELEASE-CI-PROVENANCE", message));
+        }
+    }
     let summary = resolved.as_ref().map_or(
         ReleaseArtifactBundleSummary {
             discovered_artifact_count: 0,

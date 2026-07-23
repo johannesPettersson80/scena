@@ -667,6 +667,16 @@ claim required hardware parity.
 Stable fixture:
 `tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json`.
 
+The aggregate `scena.m6.rust_wasm_renderer_probe.v1` labels evidence scope
+separately from status. Nonblack/draw/submission output is `renderer-smoke`; a
+software WebGPU run with the Q01 comparison is
+`renderer-conformance-with-diagnostic-webgpu-pixel-diff`; and only the strict
+physical lane with the complete Q01 oracle is
+`renderer-smoke-with-required-webgpu-full-frame-parity`. Smoke-only aggregates
+always record `release_evidence: false`. The required class records the exact
+`webgpu:m6-identical-unlit-triangle-v1` parity scope, so it cannot imply parity
+for WebGL2 or for lit/textured native scenes.
+
 ### `scena.q04.required_gpu_resource_lifecycle.v1`
 
 The required native hardware lane emits this artifact only after it creates an
@@ -707,14 +717,16 @@ Required top-level fields:
 
 - `schema`
 - `capabilities`
+- `adapter`
+- `diagnostics`
 
 When this report is emitted by a backend-selecting `scena` CLI command, the CLI
 envelope also includes `backend_selection` with `source` (`default` or
-`cli_flag`), `requested`, `selected`, and `fallback_used`. The library-produced
-typed report remains backend-selection-policy neutral. Recipe render, capture,
-and CAD inspection CLI envelopes use the same object.
-- `adapter`
-- `diagnostics`
+`cli_flag`), `requested`, `selected`, `fallback_used`, `reason`, and `remedy`.
+Fallback diagnostics stay inside this object; machine-mode stderr remains
+empty. The library-produced typed report remains backend-selection-policy
+neutral. Recipe render, capture, and CAD inspection CLI envelopes use the same
+object.
 
 Additive optional fields:
 
@@ -842,6 +854,7 @@ Required top-level fields:
 - `viewport`
 - `backend`
 - `capabilities`
+- `frame`
 - `auto_frame`
 - `pixels`
 
@@ -850,6 +863,16 @@ the browser `capture().rgba8` / awaited `captureAsync().rgba8` typed array. PNG
 bytes are returned outside JSON through native byte vectors/files or browser
 `capturePng().png` / awaited `capturePngAsync().png`. JSON carries byte length,
 dimensions, format, and FNV-1a hash metadata.
+
+`frame` is the provenance binding for the pixel payload. Evidence-bearing
+captures use `pixel_source: "renderer_owned_readback"`,
+`state_binding: "exact_readback_completion"`, and `release_evidence: true`.
+The record carries render/target/output-resource revisions, the exact output
+color space, exposure, tonemapper, anti-aliasing and enabled post passes, plus
+the readback-completion Unix timestamp. `capture_rgba8_from_pixels` accepts
+only bytes identical to the renderer's latest completed readback. The separate
+`capture_unverified_rgba8_from_pixels` diagnostic helper labels caller bytes as
+`release_evidence: false`; release or trust consumers must reject that form.
 
 The descriptor binds to the renderer's last rendered frame state. If scene
 revisions or the active camera changed after `render()` and before `capture()`,
@@ -918,9 +941,10 @@ outside JSON, referenced through explicit paths or the nested capture summary.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/render_introspection.v1.json`. The `scena`
-binary's first CLI transport is `scena render <asset-or-recipe> --introspect
---out <png>` when built with the `inspection` feature. It writes the PNG and
-capture descriptor artifacts, then emits this report on stdout.
+binary's first CLI transport is `scena render <asset-or-recipe> --out <png>`
+when built with the `inspection` feature. It writes the PNG and capture
+descriptor artifacts, then emits this report on stdout. Introspection is the
+default; `--introspect` remains an accepted compatibility no-op.
 
 ### `scena.render_quality.v1`
 
@@ -1593,7 +1617,7 @@ recipe ids resolved through `scena.scene_recipe_build.v1`; missing ids fail
 closed as verification reasons.
 
 `scena.recipe_render_result.v1` is emitted by
-`scena recipe render <recipe.json> --introspect --verify --out <png>`. It
+`scena recipe render <recipe.json> --verify --out <png>`. It
 nests the build manifest, capture descriptor, render-introspection report, and
 aggregate verification report. Verification includes a nested
 `scena.scene_composition.v1` report for declared-element composition
@@ -1723,12 +1747,18 @@ diagnostics when they land.
 
 ### `scena.placement_result.v1`
 
-Produced by the `scena place <recipe.json> --import <id> --verb <verb>` CLI
+Produced by the `scena place <recipe.json> (--import <id>|--node <id>) --verb <verb>` CLI
 command and represented by `ScenePlacementResultV1`. A placement result is a
-preview: it proposes a `Transform` for the requested recipe import and does not
+preview: it proposes a `Transform` for the requested recipe import or authored
+node and does not
 mutate a host document or rewrite the recipe file.
 
-The v1 placement result supports bounds-authored recipe import placement:
+The additive typed `target:{kind:"import"|"node",id}` identifies the target;
+the legacy `import_id` string remains populated for v1 readers. Bounds verbs
+support imported assets and authored nodes with direct geometry. Anchor and
+connector verbs remain explicitly import-only.
+
+The v1 placement result supports bounds-authored placement:
 
 - `center`: translate the import so its transformed bounds center reaches
   `--target x,y,z`, defaulting to the world origin.
@@ -1743,8 +1773,9 @@ The v1 placement result supports bounds-authored recipe import placement:
   authored anchor/connector point while preserving source orientation.
 
 `ok=false` reports include deterministic diagnostics with `code`, `severity`,
-JSON `path`, `message`, `help`, optional `suggestion`, and `auto_fixable`.
-Unknown imports, unsupported verbs, missing bounds, invalid size ranges, and
+JSON `path`, `message`, `help`, optional `suggestion`, namespace-aware
+`candidates`, and `auto_fixable`. Unknown imports or nodes, unsupported verbs,
+missing bounds, invalid size ranges, and
 asset load failures return placement JSON on stdout with a non-zero exit.
 Missing or ambiguous authored anchors/connectors also fail closed with
 placement JSON on stdout and a non-zero exit.
@@ -1763,9 +1794,9 @@ includes the discriminator.
 Produced by adding `--apply` to `scena place`. The default placement command
 remains a side-effect-free preview. Apply mode is also filesystem-safe: it
 emits a complete canonical `updated_recipe` document rather than editing the
-source in place. The patch is addressed by recipe-local stable import ID, never
-by a transient SceneHost handle, and includes the previous/new transform plus
-a semantic JSON-path change summary. `formatting_preserved=false` explicitly
+source in place. The patch is addressed by a typed recipe-local import or node
+ID, never by a transient SceneHost handle, and includes the previous/new
+transform plus a semantic JSON-path change summary. `formatting_preserved=false` explicitly
 states that canonical JSON output does not promise source whitespace or key
 order.
 
@@ -1796,15 +1827,50 @@ when one is available.
 For `scena.scene_recipe.v1`, `schema get` also includes an authoritative
 `scena.field_model.v1` table. Each row names a JSON path and exposes its type,
 requiredness, closed enum values, numeric bounds, default when one exists,
-deprecation state, and examples. The model is owned by
-`scene/recipe/field_model`; recipe root/import/capture field acceptance and the
-render/primitive closed vocabularies consume the same constants, so discovery
-does not scrape or hand-copy validator help text. Round-trip and invalid
+deprecation state, examples, owning contract, feature requirements, and
+cross-field constraints. The complete path set is generated from the
+`SceneRecipeV1` serde/JSON-Schema definition; curated validation metadata may
+only enrich those generated rows. A bidirectional parity test and an omitted
+SSR-field mutation prevent the public model from drifting behind accepted
+camera/framing, lighting/environment, material/texture, animation, post,
+capture, import, placement, or expectation fields. Round-trip and invalid
 fixtures live under `tests/assets/schema-field-model/`.
 
 The stable fixtures live at
 `tests/assets/stable-contracts/schema_catalog.v1.json` and
 `tests/assets/stable-contracts/schema_entry.v1.json`.
+
+### `scena.contract_validation.v1` and `scena.json_schema_export.v1`
+
+`scena validate <file>` reads the embedded versioned `schema` field and
+dispatches to the owning typed validator for scene recipes, appearance and
+interaction expectations, recipe patches, and capability reports. Malformed
+JSON, missing or unknown schemas, and typed mismatches return the same
+`scena.contract_validation.v1` envelope on stdout with exit 65. Unknown names
+include nearest catalog candidates. Other cataloged output/report contracts
+receive explicit envelope validation and a limitation directing callers to
+their producing workflow for runtime semantics.
+
+`scena schema json <scena.*.vN>` emits `scena.json_schema_export.v1`. The scene
+recipe export is generated from the same Rust/serde types used by the runtime.
+Contracts without a complete generated schema receive a draft 2020-12 envelope
+schema, never invented field constraints. Every export declares that JSON
+Schema cannot prove runtime resources, filesystem policy, cross-resource
+identity, backend capabilities, or other consuming-workflow semantics.
+
+Use generic validation before invoking a consumer, then use the owning workflow
+when its runtime checks matter:
+
+```bash
+scena validate expectation.json
+scena schema json scena.scene_recipe.v1 > scene-recipe.schema.json
+scena validate recipe.json
+scena validate-recipe recipe.json --full
+```
+
+The stable fixtures live at
+`tests/assets/stable-contracts/contract_validation.v1.json` and
+`tests/assets/stable-contracts/json_schema_export.v1.json`.
 
 ### `scena.field_model.v1`
 
@@ -1814,16 +1880,38 @@ the modeled public schema and `fields[]` carries path-level constraints. Empty
 or absent enum/range/default members mean no narrower constraint is promised;
 they must not be inferred from the representative example.
 
+The additive `owner`, `feature_requirements`, and `constraints` members default
+when omitted, preserving old v1 fixtures. They make capability and cross-field
+requirements discoverable without changing the recipe envelope version.
+
 The stable fixture lives at
 `tests/assets/stable-contracts/field_model.v1.json`.
+
+### `scena.agent_guide.v1`
+
+Produced by `agent_guide_v1` and `scena guide agent --json`. The contract embeds
+the packaged public LLM application-builder guide and indexes its canonical
+commands, schemas, policy rules, and template-discovery surface. It is available
+in the default CLI build and uses only package-owned public documentation; root
+`AGENTS.md`, private builder access, and untracked `.codex` files are never
+runtime dependencies. `scena guide agent --markdown` is the explicit raw
+Markdown export.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/agent_guide.v1.json`.
 
 ### `scena.vocab.v1`
 
 Produced by `vocabulary_report_v1` and the `scena vocab list` / `scena vocab
 get <name>` commands. Each closed vocabulary has a stable name, integer
-version, owning module, and ordered value list. Renderer backends, recipe
-material kinds, placement verbs, alpha modes, texture color spaces, cameras,
-and lights are discoverable without scraping help text.
+version, owning module, ordered value list, and value metadata for aliases,
+deprecation, feature requirements, and capability requirements. Renderer
+backends, recipe material kinds, material/lens/framing/scene/environment/
+exposure/quality presets, named colors, placement verbs, alpha modes, texture
+color spaces, tonemappers, easing curves, cameras, light kinds, and per-kind
+light presets are discoverable without scraping help text. The value list is
+generated from the same registries used by validation; a parity validator and
+known-bad omission test prevent advertised and accepted sets from diverging.
 
 The stable fixture lives at `tests/assets/stable-contracts/vocab.v1.json`.
 
@@ -1853,15 +1941,22 @@ rebasing is semantic-preserving canonicalization.
 
 `scena.cli_help.v1` retains the stable command strings and adds one
 `command_contracts` row per command. Each row declares non-empty `emits.success`
-and `emits.error` schema sets. Command-specific reports remain on stdout;
+and `emits.error` schema sets plus its `failure_exit_classes`. The top-level
+`error_taxonomy` binds comparison, usage, input, unsupported, runtime, internal,
+I/O, policy, and interruption classes to stable process statuses.
+Command-specific reports remain on stdout;
 dispatch and argument failures that cannot produce one use
 `scena.cli_error.v1` on stderr. Fatal stdout write failures remain the distinct
 `scena.cli_io_error.v1` contract.
 
-`scena.cli_error.v1` includes a structured `candidates` array. Unknown schema
+`scena.cli_error.v1` carries `code`, `exit_class`, `exit_code`, `message`,
+optional `path`, command `context`, curated `help`, structured `candidates`, and
+an optional machine-applicable `fix`. Unknown schema
 and agent-template names populate it from the live catalog using the shared
 normalized ranking algorithm; unrelated argument failures emit an empty list.
 Consumers must use this field instead of parsing “did you mean” prose.
+In short, `scena.cli_error.v1` includes a structured `candidates` array for
+machine repair.
 
 The declarations are checked against a command/schema/outcome evidence matrix.
 Every non-`cli_error` row names a real CLI integration fixture, while a fast
@@ -1888,9 +1983,13 @@ All `scena` CLI commands write stable JSON to stdout. Human-readable command
 errors use stderr only when no contract report can be produced. Asset-loading
 failures for agent-facing asset commands emit `scena.asset_doctor.v1` on
 stdout with a non-zero exit instead of prose-only command errors. The global
-`--round-floats <0..6>` option rounds floating-point JSON numbers after report
-generation while preserving integer handles and counts; commands default to
-their built-in stable precision when the option is omitted.
+`--compact` emits one-line JSON and `--pretty` explicitly selects the
+deterministic indented default. These global flags apply to success envelopes,
+domain failures on stdout, CLI errors on stderr, and help; they are mutually
+exclusive and never change envelope semantics. `--round-floats <0..6>` rounds
+floating-point JSON numbers after report generation while preserving integer
+handles and counts; commands default to their built-in stable precision when
+the option is omitted.
 
 ### `scena.asset_doctor.v1`
 

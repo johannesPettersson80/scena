@@ -1,0 +1,14 @@
+{
+  "schema": "scena.q11.reference_approval.v1",
+  "status": "approved",
+  "reviewer": "named human reviewer",
+  "reviewed_at": "YYYY-MM-DD",
+  "reviewed_generator_commit": "40-hex commit copied from candidate.json",
+  "candidate_sha256": "candidate.png SHA-256 copied from candidate.json",
+  "before_reference_sha256": "prior reference SHA-256 copied from candidate.json",
+  "external_anchor_sha256": "Blender anchor SHA-256 copied from candidate.json",
+  "diff_sha256": "diff-heatmap SHA-256 copied from candidate.json",
+  "external_anchor_reviewed": true,
+  "before_after_diff_reviewed": true,
+  "tolerance_change_approved": false
+}

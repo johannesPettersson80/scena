@@ -38,8 +38,8 @@ pub(crate) use recipe_policy::{
 };
 pub(crate) use repair_inputs::check_a06_repair_and_doctor_inputs;
 pub(crate) use runner::{
-    REQUIRED_DOCS, check_no_ignored_release_tests, check_test_control_flow_policy,
-    find_env_var_names,
+    REQUIRED_DOCS, check_current_release_document_version, check_no_ignored_release_tests,
+    check_test_control_flow_policy, find_env_var_names,
 };
 pub(crate) use runner::{
     check_cpu_ibl_gap_documented, check_m8_real_asset_dual_lane, check_tests_env_flags_documented,

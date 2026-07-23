@@ -1,5 +1,8 @@
 use crate::app::prelude::*;
 
+mod provenance;
+pub(crate) use provenance::{check_ci_attestation_contracts, check_m10_claim_audit_contract};
+
 use super::ci_release_policy::{
     HOSTED_M9_TIMING_POLICY_ENV, check_agent_template_cli_isolation, check_hosted_m9_timing_policy,
     check_m9_platform_benchmark_isolation,
@@ -11,6 +14,7 @@ const ISOLATED_M9_PLATFORM_BENCHMARK_COMMAND: &str = "cargo test --test m9_platf
 
 pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
     check_workflow_action_pins(root, findings);
+    check_ci_attestation_contracts(root, findings);
     check_hosted_m9_timing_policy(root, findings);
     check_agent_template_cli_isolation(root, findings);
     require_contains(
@@ -47,7 +51,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             ISOLATED_M9_PLATFORM_BENCHMARK_ENV,
             HOSTED_M9_TIMING_POLICY_ENV,
             ISOLATED_M9_PLATFORM_BENCHMARK_COMMAND,
-            "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
+            "SCENA_REFERENCE_DIFF=1 SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
             "m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact",
             "SCENA_BROWSER_BACKENDS: webgl2",
             "SCENA_BROWSER_BACKENDS: webgpu",
@@ -113,7 +117,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "cargo publish",
             "gh release create",
             "cargo run -p xtask -- release-readiness",
-            "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
+            "SCENA_REFERENCE_DIFF=1 SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
             "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0",
             "SCENA_RELEASE_ARTIFACT_ROOT",
             "Stage release artifacts for readiness",
@@ -487,49 +491,6 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
         &["\"production_claim\": true"],
     );
     check_m9_platform_benchmark_isolation(root, findings);
-}
-
-pub(crate) fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {
-    require_contains_in_xtask_app_tree(
-        root,
-        findings,
-        "CLAIM-AUDIT-M10",
-        &[
-            "claim-audit",
-            "m10-claim-audit.json",
-            "scena.m10.claim_audit.v1",
-            "required_final_gates",
-            "release-readiness",
-            "REQUIRED_RELEASE_ARTIFACT_SUFFIXES",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "CLAIM-AUDIT-M10",
-        "docs/checklists/m10-threejs-replacement-acceptance.md",
-        &["m10-claim-audit.json", "claim audit"],
-    );
-    require_contains(
-        root,
-        findings,
-        "CLAIM-AUDIT-M10",
-        "docs/api/m10-public-api-diff.md",
-        &[
-            "M10 Public API Diff From M5 Baseline",
-            "Renderer::diagnose_scene",
-            "AssetLoadControl",
-            "AssetError::UnsupportedTextureFormat",
-            "Semver Decision",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "CLAIM-AUDIT-M10",
-        "docs/release-notes/v1.3.0.md",
-        &["scena v1.3.0 Release Notes", "Easy Scene Setup", "Install"],
-    );
 }
 
 pub(crate) fn require_contains_in_xtask_app_tree(

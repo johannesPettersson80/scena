@@ -14,7 +14,7 @@ pub use types::{
     RenderIntrospectionCaptureSummaryV1, RenderIntrospectionFixV1, RenderIntrospectionFramingV1,
     RenderIntrospectionLuminanceV1, RenderIntrospectionNodeDetailV1,
     RenderIntrospectionNodesSummaryV1, RenderIntrospectionOptions, RenderIntrospectionReasonV1,
-    RenderIntrospectionRectV1, RenderIntrospectionReportV1,
+    RenderIntrospectionRectV1, RenderIntrospectionReportV1, RenderIntrospectionTimingsV1,
 };
 
 pub const RENDER_INTROSPECTION_SCHEMA_V1: &str = "scena.render_introspection.v1";
@@ -199,6 +199,7 @@ impl RenderIntrospectionReportV1 {
                     .capabilities
                     .readback_headless_screenshots,
             },
+            timings: options.timings.unwrap_or_default(),
         }
     }
 

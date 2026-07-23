@@ -204,7 +204,7 @@ mod tests {
         let options = ImportOptions::gltf_default()
             .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded);
         let source_rotation = Transform::IDENTITY.rotate_z_deg(90.0).rotation;
-        let clip = AnimationSourceClip::new(
+        let clip = AnimationSourceClip::try_new(
             Some("z-up-rotation".to_owned()),
             vec![AnimationSourceChannel::new(
                 0,
@@ -214,7 +214,8 @@ mod tests {
                 AnimationInterpolation::Linear,
             )],
             1.0,
-        );
+        )
+        .expect("source animation is valid");
         let rebound = clip
             .rebind_imported_many(
                 AnimationClipKey::fresh(),
@@ -243,7 +244,7 @@ mod tests {
         let options = ImportOptions::gltf_default()
             .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded);
         let end = Transform::IDENTITY.rotate_z_deg(90.0).rotation;
-        let source = AnimationSourceClip::new(
+        let source = AnimationSourceClip::try_new(
             Some("z-up-cubic-rotation".to_owned()),
             vec![AnimationSourceChannel::new(
                 0,
@@ -260,12 +261,15 @@ mod tests {
                 AnimationInterpolation::CubicSpline,
             )],
             1.0,
-        );
-        let source_rebound = source.rebind(
-            AnimationClipKey::fresh(),
-            |_| Some(NodeKey::null()),
-            |_, value| value,
-        );
+        )
+        .expect("source animation is valid");
+        let source_rebound = source
+            .try_rebind(
+                AnimationClipKey::fresh(),
+                |_| Some(NodeKey::null()),
+                |_, value| value,
+            )
+            .expect("source animation remains valid");
         let converted = source
             .rebind_imported_many(
                 AnimationClipKey::fresh(),

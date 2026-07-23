@@ -59,5 +59,11 @@
     "hardware_tier": "low",
     "forward_pbr": "degraded",
     "readback_headless_screenshots": "supported"
+  },
+  "timings": {
+    "status": "unavailable",
+    "clock": "unavailable",
+    "source": "not_measured",
+    "unavailable_reason": "request CLI observational timing with --timings; deterministic reports omit wall-clock measurements"
   }
 }

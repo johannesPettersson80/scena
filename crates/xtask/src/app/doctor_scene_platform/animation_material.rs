@@ -226,12 +226,18 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-M3B-ANIMATION",
+        "src/assets/gltf/meshes/accessors.rs",
+        &["read_vec3_accessor", "read_tangent_attribute"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
         "src/assets/gltf/meshes.rs",
         &[
-            "read_morph_targets",
+            ".morph_targets()",
             "GeometryMorphTarget::new",
             "GeometryMorphTarget::new_with_semantics",
-            "normals.map(Vec3::from_array)",
             "read_joints",
             "read_weights",
             "GeometrySkin::new",

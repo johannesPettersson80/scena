@@ -1,5 +1,6 @@
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
+use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 /// Comparison sampler for the directional shadow map. The fragment shader
@@ -132,10 +133,11 @@ pub(super) fn create_shadow_caster_resources(
 ) -> ShadowCasterResources {
     let texture = create_shadow_texture(device, resolution);
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.m2.shadow_caster_shader"),
-        source: wgpu::ShaderSource::Wgsl(SHADOW_CASTER_SHADER.into()),
-    });
+    let shader = create_shader_module(
+        device,
+        ShaderVariantId::ShadowDirectional,
+        "scena.m2.shadow_caster_shader",
+    );
     // Shadow caster needs only the camera uniform. We must NOT bind the
     // unlit pass's `output_bind_group` here because that group also
     // references the shadow_map (as a resource); binding it inside the

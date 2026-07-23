@@ -3,6 +3,53 @@
 `scena` uses structured errors so applications can recover predictably and show
 useful messages.
 
+## CLI error and exit taxonomy
+
+Machine-mode dispatch failures are one `scena.cli_error.v1` JSON document on
+stderr. The document carries a stable `code`, `exit_class`, numeric
+`exit_code`, `message`, optional `path`, command `context`, curated `help`,
+structured `candidates`, and an optional machine-applicable `fix`. Runtime
+failures are never mislabeled as `invalid_arguments`.
+
+| Exit class | Status | Meaning |
+|---|---:|---|
+| `comparison` | 1 | a valid comparison found inequality |
+| `usage` | 2 | unknown command or invalid arguments |
+| `input` | 65 | missing, malformed, or unknown input contract |
+| `unsupported` | 69 | required feature, capability, or backend unavailable |
+| `runtime` | 70 | execution failed after valid dispatch |
+| `internal` | 70 | serialization or invariant failure |
+| `io` | 74 | output or filesystem I/O failure |
+| `policy` | 77 | sandbox or operator policy rejected the request |
+| `interrupted` | 130 | process interrupted or cancelled |
+
+`scena --help` is the machine-authoritative command table: each
+`command_contracts[]` row declares its success/error schemas and applicable
+`failure_exit_classes`. A closed stdout pipe is quiet success; another stdout
+write failure emits `scena.cli_io_error.v1` with the same `io`/74 classification.
+
+## Complete CLI process contract
+
+`scena --help` is also the complete per-command process table; automation does
+not need to inspect Rust source or join undocumented conventions. Every
+`command_contracts[]` row contains:
+
+- `emits.success[]` and `emits.error[]`: every possible top-level versioned
+  result family for that command;
+- `streams`: success and domain-failure JSON use stdout; CLI dispatch and runtime errors use stderr;
+- `failure_exits[]`: the applicable typed class, numeric code, schema, and
+  stream together in one row, including I/O 74;
+- `feature_requirements[]`: the installable Cargo feature set, explicitly `[]`
+  for core commands and `["agent"]` for the one-step application-builder
+  surface.
+
+The older `failure_exit_classes[]` and top-level `error_taxonomy[]` remain in
+the v1 help envelope for compatibility. `failure_exits[]` is the direct form
+new automation should consume. Domain-result envelopes can report a failed
+validation or comparison on stdout; `scena.cli_error.v1` is reserved for
+dispatch, input, unsupported, policy, runtime, internal, I/O, and interruption
+errors on stderr.
+
 ## Error families
 
 | Error | Typical cause |
@@ -20,7 +67,18 @@ useful messages.
 | `ColorParseError` | color parsing failed |
 | `SceneHostError` | browser/native host facade operation failed; carries a stable `SceneHostErrorCode` |
 
+The eight top-level renderer/asset error families expose uniform recovery
+methods. Call `.help()` for curated guidance or `.diagnostic()` for an owned,
+serializable `ErrorDiagnostic { code, message, help, context }`. Converting a
+family into top-level `scena::Error` preserves and delegates the same remedy;
+`Display` intentionally remains the concise failure message.
+
 ## Pattern matching
+
+CLI JSON uses deterministic pretty formatting by default across success and
+failure streams. Global `--compact` selects one-line JSON and `--pretty`
+explicitly selects the default; the flags may appear anywhere, are mutually
+exclusive, and do not alter schemas, exit codes, or field values.
 
 Use Rust pattern matching for application logic:
 
@@ -75,9 +133,10 @@ as preparing again after stale renderer state.
 | Browser backend unavailable | choose another backend or show a capability message |
 | Capture invalid DPR | update the stored viewport/DPR before capture |
 | Capture before render | call `prepare()` and `render()` before `capture()` |
-| Synchronous capture on WebGPU | await `captureAsync()`, `capturePngAsync()`, `captureJsonAsync()`, or `renderIntrospectionJsonAsync()` so GPU-buffer mapping can complete |
+| Synchronous browser GPU capture without an accessible completed readback | await `captureAsync()`, `capturePngAsync()`, `captureJsonAsync()`, or `renderIntrospectionJsonAsync()` so renderer-owned WebGPU/WebGL2 readback can complete and bind pixels to frame provenance |
 | Capture stale render | render again after mutating the scene or active camera |
 | Capture auto-frame projection failure | frame the active camera to the bounds, use valid bounds, or capture without auto-frame metadata |
+| `AnimationError::InvalidClip` | use `AnimationSourceClip::try_new` / `try_rebind`; fix the named channel time, output shape, finite value, or duration before creating a mixer |
 | `MissingLightingOrEnvironment` | on a high-level glTF viewer, inspect `setting` and `fallback_applied`; author a light/environment to replace the neutral fallback. On a low-level renderer, add lighting/environment explicitly |
 | `InvisibleScene` | inspect camera/frustum, visibility, material opacity, and lighting diagnostics before accepting captured bytes as a successful visual result |
 

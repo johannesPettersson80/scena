@@ -47,6 +47,14 @@ fi
 git worktree add --detach "$worktree_dir" "$resolved_commit" 2>&1 \
   | tee -a "$log_path"
 
+# Agent files are intentionally not Git-owned, so a detached worktree does not
+# receive them automatically. Bootstrap the validation worktree explicitly.
+install -m 0644 "$repo_root/AGENTS.md" "$worktree_dir/AGENTS.md"
+mkdir -p "$worktree_dir/.codex/skills"
+cp -a "$repo_root/.codex/skills/." "$worktree_dir/.codex/skills/"
+cmp -s "$repo_root/AGENTS.md" "$worktree_dir/AGENTS.md"
+diff -qr "$repo_root/.codex/skills" "$worktree_dir/.codex/skills" >/dev/null
+
 cleanup() {
   cd "$repo_root"
   git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
@@ -86,7 +94,7 @@ echo "artifact: ${log_path}" | tee -a "$log_path"
 run_step "cargo fmt --check"          cargo fmt --check
 run_step "cargo clippy"               cargo clippy --all-targets -- -D warnings
 run_step "cargo test"                 cargo test
-run_step "cargo check --examples"     cargo check --examples
+run_step "cargo check --examples --all-features" cargo check --examples --all-features
 RUSTDOCFLAGS="-D warnings" run_step "cargo doc"  cargo doc --no-deps --all-features
 if [ ! -x node_modules/.bin/wasm-opt ] && [ -x "${repo_root}/node_modules/.bin/wasm-opt" ]; then
   ln -s "${repo_root}/node_modules" node_modules

@@ -14,7 +14,7 @@
       "owner": "controls",
       "kind": "compatibility-marker",
       "implementation": { "path": "src/controls.rs", "token": "pub struct OrbitControls" },
-      "test": { "path": "tests/m4_performance_platform.rs", "token": "orbit_controls_are_platform_neutral_pointer_actions" },
+      "test": { "path": "tests/a15_rust_ergonomics.rs", "token": "controls_features_remain_documented_metadata_only_aliases" },
       "documentation": { "path": "docs/feature-flags.md", "token": "`controls`" }
     },
     {
@@ -22,7 +22,7 @@
       "owner": "controls",
       "kind": "compatibility-alias",
       "implementation": { "path": "Cargo.toml", "token": "controls-winit = [\"controls\"]" },
-      "test": { "path": "tests/m4_performance_platform.rs", "token": "orbit_controls_are_platform_neutral_pointer_actions" },
+      "test": { "path": "tests/a15_rust_ergonomics.rs", "token": "controls_features_remain_documented_metadata_only_aliases" },
       "documentation": { "path": "docs/feature-flags.md", "token": "`controls-winit`" }
     },
     {
@@ -30,7 +30,7 @@
       "owner": "controls",
       "kind": "compatibility-alias",
       "implementation": { "path": "Cargo.toml", "token": "controls-web = [\"controls\"]" },
-      "test": { "path": "tests/m4_performance_platform.rs", "token": "orbit_controls_are_platform_neutral_pointer_actions" },
+      "test": { "path": "tests/a15_rust_ergonomics.rs", "token": "controls_features_remain_documented_metadata_only_aliases" },
       "documentation": { "path": "docs/feature-flags.md", "token": "`controls-web`" }
     },
     {

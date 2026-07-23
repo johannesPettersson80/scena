@@ -435,18 +435,6 @@ impl EnvironmentDesc {
         self.prefilter_sidecar(profile).is_some()
     }
 
-    pub(crate) fn prefilter_sidecar_identity(&self) -> Option<String> {
-        self.prefilter_sidecar.as_ref().map(|sidecar| {
-            format!(
-                "{}|{}|{}|{}",
-                sidecar.profile().name(),
-                sidecar.source_sha256_hex(),
-                sidecar.cubemap_resolution(),
-                sidecar.brdf_lut_size()
-            )
-        })
-    }
-
     /// Returns the bundled cubemap radiance for this environment when one is
     /// available. Phase 1C step 1: only the bundled `neutral-studio` preview
     /// fixture decodes today. Equirectangular HDR sources will gain a real

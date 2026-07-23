@@ -158,13 +158,35 @@ See:
 
 ## Supported asset features
 
+### glTF scene selection
+
+By default, scena imports the document's declared default scene, otherwise the
+first declared scene, otherwise the implicit forest roots when the document has
+no `scenes` array. Select another scene without rewriting the asset by passing
+`AssetLoadOptions::with_gltf_scene_index(index)` or
+`AssetLoadOptions::with_gltf_scene_name(name)` to
+`Assets::load_scene_with_options`. Invalid index/name requests fail closed and
+list available scenes. Empty scenes are valid, shared scene roots retain their
+identity, and nodes reachable only from other scenes are not instantiated.
+
+`SceneAsset::selected_gltf_scene()` and `scena.asset_load_report.v1` record the
+resolved source index, optional name, and whether selection was default,
+explicit-index, or explicit-name. The scene selector is part of the cache key,
+so a cached default scene can never satisfy a later explicit selection.
+
 ### Quantized geometry, morphs, animation, and skins
 
 `KHR_mesh_quantization` POSITION accessors accept every extension-defined
 signed or unsigned BYTE/SHORT representation, including non-normalized integer
 `POSITION` values whose dequantization is carried by the node transform.
-Malformed or unsupported integer NORMAL encodings fail with a semantic-specific
-asset error instead of being treated as an absent normal stream.
+TANGENT accepts normalized signed BYTE/SHORT and F32 while preserving its
+handedness component. Morph POSITION deltas accept normalized and
+non-normalized signed/unsigned BYTE/SHORT plus F32; morph NORMAL and TANGENT
+deltas accept normalized signed BYTE/SHORT plus F32. Integer streams require
+an explicit `KHR_mesh_quantization` declaration. Stride and sparse overrides
+are honored, decoded values must be finite, and malformed, truncated, or
+overflowing byte ranges fail with a semantic-specific asset error instead of
+panicking, zero-filling, or being treated as an absent stream.
 
 Triangle primitives that omit `NORMAL` use glTF flat shading. Scena computes
 the geometric face normal and splits indexed geometry into one vertex per
@@ -304,6 +326,14 @@ retains the underlying structured `AssetError`, reload path, and
 descriptors remain cached and usable. The compatibility `reload_scene` method
 continues to return `AssetError` directly. Ordinary `load_scene` calls retain
 immutable cache provenance and do not silently turn into source replacement.
+
+`Scene::replace_import` preserves host-owned root state deterministically.
+Replacement roots are paired with prior roots by source-root ordinal; each
+matched root keeps its host parent, local transform, direct visibility, and
+host-added tags even if its source name changed. Removed roots are discarded.
+Added roots attach to the first prior host parent while retaining the new
+asset-authored local state. If instantiation fails, no old root or host override
+is removed.
 
 Draco mesh compression is intentionally not decoder-backed yet. On native and
 browser targets, optional `KHR_draco_mesh_compression` reports structured

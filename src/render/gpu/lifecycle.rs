@@ -123,6 +123,7 @@ impl GpuDeviceState {
     }
 
     #[cfg(target_arch = "wasm32")]
+    #[cfg_attr(not(feature = "browser-probe"), allow(dead_code))]
     pub(in crate::render) fn last_poll_observation(&self) -> &'static str {
         self.last_poll_observation
     }

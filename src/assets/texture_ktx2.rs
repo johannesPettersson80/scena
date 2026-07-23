@@ -194,32 +194,26 @@ fn decode_ktx2_basisu_rgba8_with_parser(
                 .to_string(),
         });
     }
-    if header.pixel_width > super::texture_limits::IMAGE_DECODE_MAX_DIMENSION
+    let declared_rgba8_bytes = u64::from(header.pixel_width)
+        .checked_mul(u64::from(header.pixel_height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .unwrap_or(u64::MAX);
+    if header.pixel_width == 0
+        || header.pixel_height == 0
+        || header.pixel_width > super::texture_limits::IMAGE_DECODE_MAX_DIMENSION
         || header.pixel_height > super::texture_limits::IMAGE_DECODE_MAX_DIMENSION
+        || declared_rgba8_bytes > super::texture_limits::IMAGE_DECODE_MAX_ALLOC_BYTES
     {
-        return Err(AssetError::PolicyViolation {
+        return Err(AssetError::TextureSizeLimit {
             path: path.as_str().to_string(),
-            reason: format!(
-                "KTX2/Basis dimensions {}x{} exceed texture decode max dimension {}",
-                header.pixel_width,
-                header.pixel_height,
-                super::texture_limits::IMAGE_DECODE_MAX_DIMENSION
-            ),
-            help: "use a smaller texture or split the asset before loading",
+            width: header.pixel_width,
+            height: header.pixel_height,
+            maximum_dimension: super::texture_limits::IMAGE_DECODE_MAX_DIMENSION,
+            required_bytes: declared_rgba8_bytes,
+            maximum_bytes: super::texture_limits::IMAGE_DECODE_MAX_ALLOC_BYTES,
         });
     }
-    let declared_rgba8_len =
-        checked_rgba8_len(path, header.pixel_width.max(1), header.pixel_height.max(1))?;
-    if declared_rgba8_len as u64 > super::texture_limits::IMAGE_DECODE_MAX_ALLOC_BYTES {
-        return Err(AssetError::PolicyViolation {
-            path: path.as_str().to_string(),
-            reason: format!(
-                "KTX2/Basis base level would decode to {declared_rgba8_len} bytes, exceeding texture decode allocation budget {}",
-                super::texture_limits::IMAGE_DECODE_MAX_ALLOC_BYTES
-            ),
-            help: "use a smaller texture or split the asset before loading",
-        });
-    }
+    checked_rgba8_len(path, header.pixel_width, header.pixel_height)?;
 
     use basisu_c_sys::TranscodeTargetFormat;
     use basisu_c_sys::extra::{

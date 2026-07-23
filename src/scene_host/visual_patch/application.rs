@@ -12,6 +12,7 @@ use crate::{AnnotationAnchor, AssetFetcher, Color, HitTarget, SceneDirtyState, V
 struct RevisionSnapshot {
     structure: u64,
     transform: u64,
+    camera: u64,
     appearance: u64,
     visibility: u64,
     interaction: u64,
@@ -22,6 +23,7 @@ impl RevisionSnapshot {
         Self {
             structure: dirty.structure_revision,
             transform: dirty.transform_revision,
+            camera: dirty.camera_revision,
             appearance: dirty.appearance_revision,
             visibility: dirty.visibility_revision,
             interaction: dirty.interaction_revision,
@@ -32,6 +34,7 @@ impl RevisionSnapshot {
         VisualPatchRevisionDeltaV1 {
             structure: self.structure.saturating_sub(before.structure),
             transform: self.transform.saturating_sub(before.transform),
+            camera: self.camera.saturating_sub(before.camera),
             appearance: self.appearance.saturating_sub(before.appearance),
             visibility: self.visibility.saturating_sub(before.visibility),
             interaction: self.interaction.saturating_sub(before.interaction),

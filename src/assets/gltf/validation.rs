@@ -6,6 +6,11 @@ use crate::diagnostics::AssetError;
 
 use super::super::AssetPath;
 
+mod accessors;
+use accessors::{validate_accessor_storage_range, validate_sparse_accessor_storage_ranges};
+mod support;
+use support::{array_len, parse_error, required_index, values};
+
 #[derive(Debug, Clone)]
 pub(super) struct ExtensionDeclarations {
     pub(super) used: Vec<String>,
@@ -38,7 +43,7 @@ pub(super) fn validate_document_structure(
 
     validate_node_graph(path, root.get("nodes"), nodes, meshes, skins, cameras)?;
     validate_meshes(path, root.get("meshes"), accessors, materials)?;
-    validate_accessors(path, root.get("accessors"), buffer_views)?;
+    validate_accessors(path, root.get("accessors"), root.get("bufferViews"))?;
     validate_buffer_views(path, root.get("bufferViews"), buffers)?;
     validate_textures(path, root.get("textures"), images, samplers)?;
     validate_material_texture_refs(path, root.get("materials"), textures)?;
@@ -58,14 +63,23 @@ fn validate_material_texture_refs(
     let Some(materials) = value.and_then(Value::as_array) else {
         return Ok(());
     };
-    for material in materials {
-        validate_texture_slots_recursive(path, material, texture_count)?;
+    for (material_index, material) in materials.iter().enumerate() {
+        let material_name = material.get("name").and_then(Value::as_str);
+        validate_texture_slots_recursive(
+            path,
+            material_index,
+            material_name,
+            material,
+            texture_count,
+        )?;
     }
     Ok(())
 }
 
 fn validate_texture_slots_recursive(
     path: &AssetPath,
+    material_index: usize,
+    material_name: Option<&str>,
     value: &Value,
     texture_count: usize,
 ) -> Result<(), AssetError> {
@@ -80,15 +94,35 @@ fn validate_texture_slots_recursive(
                         path: path.as_str().to_owned(),
                         material_slot: key.clone(),
                         texture_index: usize::try_from(texture_index).unwrap_or(usize::MAX),
+                        context: Box::new(crate::diagnostics::MissingTextureDetails {
+                            material_index: Some(material_index),
+                            material_name: material_name.map(str::to_owned),
+                            image_source: None,
+                            reason: format!(
+                                "texture index {texture_index} is outside the document texture table of length {texture_count}"
+                            ),
+                        }),
                         help: "export the referenced image or remove the broken material slot",
                     });
                 }
-                validate_texture_slots_recursive(path, child, texture_count)?;
+                validate_texture_slots_recursive(
+                    path,
+                    material_index,
+                    material_name,
+                    child,
+                    texture_count,
+                )?;
             }
         }
         Value::Array(values) => {
             for child in values {
-                validate_texture_slots_recursive(path, child, texture_count)?;
+                validate_texture_slots_recursive(
+                    path,
+                    material_index,
+                    material_name,
+                    child,
+                    texture_count,
+                )?;
             }
         }
         _ => {}
@@ -269,8 +303,13 @@ fn validate_meshes(
 fn validate_accessors(
     path: &AssetPath,
     value: Option<&Value>,
-    buffer_view_count: usize,
+    buffer_views: Option<&Value>,
 ) -> Result<(), AssetError> {
+    let buffer_view_count = array_len(buffer_views);
+    let buffer_views = buffer_views
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     for (index, accessor) in values(value).enumerate() {
         let base = format!("$.accessors[{index}]");
         validate_index(
@@ -279,6 +318,7 @@ fn validate_accessors(
             &format!("{base}.bufferView"),
             buffer_view_count,
         )?;
+        validate_accessor_storage_range(path, index, accessor, buffer_views)?;
         if let Some(sparse) = accessor.get("sparse") {
             validate_index(
                 path,
@@ -296,6 +336,7 @@ fn validate_accessors(
                 &format!("{base}.sparse.values.bufferView"),
                 buffer_view_count,
             )?;
+            validate_sparse_accessor_storage_ranges(path, index, accessor, sparse, buffer_views)?;
         }
     }
     Ok(())
@@ -459,47 +500,4 @@ fn validate_index(
         return Ok(());
     };
     required_index(path, value, json_path, length).map(|_| ())
-}
-
-fn required_index(
-    path: &AssetPath,
-    value: &Value,
-    json_path: &str,
-    length: usize,
-) -> Result<usize, AssetError> {
-    let Some(index) = value.as_u64() else {
-        return Err(parse_error(
-            path,
-            format!("{json_path} must be a non-negative integer index"),
-        ));
-    };
-    if index >= length as u64 {
-        return Err(parse_error(
-            path,
-            format!(
-                "{json_path} references index {index}, but the target array length is {length}"
-            ),
-        ));
-    }
-    usize::try_from(index).map_err(|_| {
-        parse_error(
-            path,
-            format!("{json_path} index {index} does not fit usize"),
-        )
-    })
-}
-
-fn values(value: Option<&Value>) -> impl Iterator<Item = &Value> {
-    value.and_then(Value::as_array).into_iter().flatten()
-}
-
-fn array_len(value: Option<&Value>) -> usize {
-    value.and_then(Value::as_array).map_or(0, Vec::len)
-}
-
-fn parse_error(path: &AssetPath, reason: impl Into<String>) -> AssetError {
-    AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: reason.into(),
-    }
 }

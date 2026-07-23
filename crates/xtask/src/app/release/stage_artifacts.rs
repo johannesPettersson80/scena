@@ -1,5 +1,8 @@
 use crate::app::prelude::*;
 
+mod capabilities;
+use capabilities::write_aggregated_capability_matrix;
+
 const RELEASE_LANES: &[&str] = &[
     "linux-native-vulkan",
     "headless-cpu",
@@ -14,8 +17,22 @@ pub(crate) fn run_stage_release_artifacts(input: &str, output: &str) -> Result<(
     let root = repo_root().map_err(|message| vec![Finding::new("RELEASE-STAGE", message)])?;
     let input = resolve_stage_path(&root, input);
     let output = resolve_stage_path(&root, output);
-    stage_release_artifacts(&root, &input, &output)
-        .map_err(|message| vec![Finding::new("RELEASE-STAGE", message)])?;
+    let expected_commit = release_artifact_commit_label(&root);
+    let verified_ci_provenance = if env::var("SCENA_REQUIRE_CI_PROVENANCE").as_deref() == Ok("1") {
+        Some(
+            super::ci_provenance::verify_ci_provenance(&root, &input, &expected_commit)
+                .map_err(|message| vec![Finding::new("RELEASE-CI-PROVENANCE", message)])?,
+        )
+    } else {
+        None
+    };
+    stage_release_artifacts_for_commit_with_provenance(
+        &input,
+        &output,
+        &expected_commit,
+        verified_ci_provenance.as_ref(),
+    )
+    .map_err(|message| vec![Finding::new("RELEASE-STAGE", message)])?;
     println!("{}", output.display());
     Ok(())
 }
@@ -29,19 +46,20 @@ fn resolve_stage_path(root: &Path, path: &str) -> PathBuf {
     }
 }
 
-pub(crate) fn stage_release_artifacts(
-    root: &Path,
-    input: &Path,
-    output: &Path,
-) -> Result<(), String> {
-    let expected_commit = release_artifact_commit_label(root);
-    stage_release_artifacts_for_commit(input, output, &expected_commit)
-}
-
+#[cfg(test)]
 pub(crate) fn stage_release_artifacts_for_commit(
     input: &Path,
     output: &Path,
     expected_commit: &str,
+) -> Result<(), String> {
+    stage_release_artifacts_for_commit_with_provenance(input, output, expected_commit, None)
+}
+
+fn stage_release_artifacts_for_commit_with_provenance(
+    input: &Path,
+    output: &Path,
+    expected_commit: &str,
+    verified_ci_provenance: Option<&super::ci_provenance::VerifiedCiProvenance>,
 ) -> Result<(), String> {
     validate_release_commit_label(expected_commit)
         .map_err(|error| coded_stage_error("RELEASE-SOURCE-COMMIT", error))?;
@@ -66,13 +84,38 @@ pub(crate) fn stage_release_artifacts_for_commit(
         .map_err(|error| coded_stage_error("RELEASE-SOURCE-ROOT", error))?;
     copy_required_artifacts(&files, output, expected_commit)
         .map_err(|error| coded_stage_error("RELEASE-SOURCE-EVIDENCE", error))?;
+    if let Some(source) = select_stage_source(&files, "q07-antialiasing-effect/msaa8.ppm") {
+        copy_stage_file(
+            &source,
+            &output.join("q07-antialiasing-effect/msaa8.ppm"),
+            "q07-antialiasing-effect/msaa8.ppm",
+            expected_commit,
+        )
+        .map_err(|error| coded_stage_error("RELEASE-SOURCE-EVIDENCE", error))?;
+    }
+    super::q07_antialiasing::validate_q07_antialiasing_result(output, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-ANTIALIASING-PROOF", error))?;
+    super::q08_parity::validate_q08_parity_results(output, expected_commit)
+        .map_err(|error| coded_stage_error("RELEASE-PHYSICAL-PARITY", error))?;
     write_merged_browser_probe(&files, output, expected_commit)
         .map_err(|error| coded_stage_error("RELEASE-BROWSER-PROOF", error))?;
     write_aggregated_capability_matrix(output, &files, expected_commit)
         .map_err(|error| coded_stage_error("RELEASE-CAPABILITY-AGGREGATION", error))?;
     super::stage_visual_proofs::write_visual_proof_artifacts(output, &files, expected_commit)
         .map_err(|error| coded_stage_error("RELEASE-VISUAL-PROOF", error))?;
-    write_staging_metadata(output, expected_commit)
+    if verified_ci_provenance.is_some() {
+        fs::copy(
+            input.join("ci-provenance.json"),
+            output.join("ci-provenance.json"),
+        )
+        .map_err(|error| {
+            coded_stage_error(
+                "RELEASE-CI-PROVENANCE",
+                format!("failed to retain signed CI provenance manifest: {error}"),
+            )
+        })?;
+    }
+    write_staging_metadata(output, expected_commit, verified_ci_provenance)
         .map_err(|error| coded_stage_error("RELEASE-STAGING-METADATA", error))?;
     Ok(())
 }
@@ -141,6 +184,7 @@ fn generated_stage_suffix(suffix: &str) -> bool {
     matches!(
         suffix,
         "staging-metadata.json"
+            | "ci-provenance.json"
             | "m6-rust-wasm-renderer-probe.json"
             | "m9-platform/m9-capability-matrix.json"
             | "visual-proof/waterbottle-gpu.json"
@@ -151,11 +195,41 @@ fn generated_stage_suffix(suffix: &str) -> bool {
     )
 }
 
-fn write_staging_metadata(output: &Path, expected_commit: &str) -> Result<(), String> {
+fn write_staging_metadata(
+    output: &Path,
+    expected_commit: &str,
+    verified_ci_provenance: Option<&super::ci_provenance::VerifiedCiProvenance>,
+) -> Result<(), String> {
     let staged_at_unix_seconds = current_unix_seconds();
+    let ci_provenance = verified_ci_provenance.map_or_else(
+        || {
+            json!({
+                "schema": "scena.ci_provenance.v1",
+                "verification_status": "unavailable",
+                "reason": "local staging did not require and cryptographically verify a CI-issued attestation",
+            })
+        },
+        |verified| {
+            let mut summary = verified.manifest.clone();
+            summary["release_evidence"] = json!(true);
+            summary["release_rejection_codes"] = json!([]);
+            summary["attestation"]["verification_status"] = json!("verified");
+            summary["attestation"]["verification_receipt_sha256"] =
+                json!(&verified.verification_receipt_sha256);
+            summary
+        },
+    );
+    let release_evidence = verified_ci_provenance.is_some();
     let metadata = json!({
         "schema": "scena.release.staging.v1",
         "status": "passed",
+        "release_evidence": release_evidence,
+        "release_rejection_codes": if release_evidence {
+            json!([])
+        } else {
+            json!(["CI_PROVENANCE_UNVERIFIED"])
+        },
+        "ci_provenance": ci_provenance,
         "producer": "cargo run -p xtask -- stage-release-artifacts",
         "source_commit_sha": expected_commit,
         "commit_sha": expected_commit,
@@ -234,6 +308,15 @@ fn copy_stage_file(
         let value = serde_json::from_str::<Value>(&text)
             .map_err(|error| format!("failed to parse {}: {error}", source.display()))?;
         super::stage_provenance::validate_release_json_metadata(&value, suffix, expected_commit)?;
+        if let Some((os, arch)) = match suffix {
+            "q11-reference-stability/linux-x86_64.json" => Some(("linux", "x86_64")),
+            "q11-reference-stability/macos-aarch64.json" => Some(("macos", "aarch64")),
+            "q11-reference-stability/windows-x86_64.json" => Some(("windows", "x86_64")),
+            _ => None,
+        } {
+            validate_q11_reference_stability_result(&value, os, arch)
+                .map_err(|error| format!("RELEASE-Q11-REFERENCE-STABILITY: {error}"))?;
+        }
         fs::copy(source, target).map_err(|error| {
             format!(
                 "failed to copy provenance-bearing release artifact {} to {}: {error}",
@@ -284,6 +367,9 @@ fn write_merged_browser_probe(
         "gate": "m6-rust-wasm-renderer-probe",
         "status": "passed",
         "renderer": "scena Rust/WASM",
+        "proof_class": "renderer-conformance-aggregate",
+        "release_evidence": false,
+        "parity_claim": "backend-scoped-diagnostics-only",
         "producer": "cargo run -p xtask -- stage-release-artifacts",
         "evidence_phase": "staging-aggregation",
         "commit_sha": expected_commit,
@@ -418,129 +504,6 @@ pub(super) fn browser_nonblack_pixels(result: &Value) -> u64 {
         .and_then(|pixels| pixels.get("nonblack"))
         .and_then(Value::as_u64)
         .unwrap_or(0)
-}
-
-fn write_aggregated_capability_matrix(
-    output: &Path,
-    files: &[PathBuf],
-    expected_commit: &str,
-) -> Result<(), String> {
-    let browser_results = browser_release_results(files)?;
-    let mut lanes = Vec::new();
-    for lane in RELEASE_LANES {
-        let row = match *lane {
-            "linux-webgl2-chromium" => browser_capability_row(
-                lane,
-                validate_browser_backend_result(&browser_results, "webgl2")?,
-                expected_commit,
-            ),
-            "linux-webgpu-chromium" => browser_capability_row(
-                lane,
-                validate_browser_backend_result(&browser_results, "webgpu")?,
-                expected_commit,
-            ),
-            "wasm32-unknown-unknown" => wasm_capability_row(output, lane, expected_commit)?,
-            _ => native_capability_row(output, lane, expected_commit)?,
-        };
-        lanes.push(row);
-    }
-    let source_paths = [
-        "m6-rust-wasm-renderer-probe.json",
-        "m9-wasm-size.json",
-        "m9-platform/linux-native-vulkan/capabilities.json",
-        "m9-platform/headless-cpu/capabilities.json",
-        "m9-platform/macos-metal/capabilities.json",
-        "m9-platform/windows-dx12/capabilities.json",
-    ]
-    .into_iter()
-    .map(|relative| (output.join(relative), relative.to_string()))
-    .filter(|(path, _)| path.is_file())
-    .collect::<Vec<_>>();
-    let source_checksums = super::stage_provenance::checksum_entries(
-        source_paths
-            .iter()
-            .map(|(path, label)| (path.as_path(), label.as_str())),
-    )?;
-    let matrix = json!({
-        "schema": "scena.m9.capability_matrix.v1",
-        "status": "passed",
-        "status_reason": "canonical release bundle aggregated measured lane artifacts from the completed release workflow",
-        "producer": "cargo run -p xtask -- stage-release-artifacts",
-        "evidence_phase": "staging-aggregation",
-        "commit_sha": expected_commit,
-        "timestamp_unix_seconds": current_unix_seconds(),
-        "source_checksums": source_checksums,
-        "lanes": lanes,
-    });
-    write_stage_json(
-        &output.join("m9-platform/m9-capability-matrix.json"),
-        &matrix,
-    )
-}
-
-fn native_capability_row(
-    output: &Path,
-    lane: &str,
-    expected_commit: &str,
-) -> Result<Value, String> {
-    let suffix = format!("m9-platform/{lane}/capabilities.json");
-    let path = output.join(&suffix);
-    let text =
-        fs::read_to_string(&path).map_err(|error| format!("failed to read {suffix}: {error}"))?;
-    let value = serde_json::from_str::<Value>(&text)
-        .map_err(|error| format!("failed to parse {suffix}: {error}"))?;
-    Ok(json!({
-        "lane": lane,
-        "status": "measured",
-        "measurement_source": "lane-renderer-runtime",
-        "commit_sha": expected_commit,
-        "timestamp_unix_seconds": current_unix_seconds(),
-        "backend": value.get("backend").cloned().unwrap_or(Value::Null),
-        "adapter": value.get("adapter").cloned().unwrap_or(Value::Null),
-        "host_gpu_available": value
-            .get("adapter")
-            .and_then(|adapter| adapter.get("available"))
-            .cloned()
-            .unwrap_or(Value::Bool(false)),
-        "capabilities": value.get("features").cloned().unwrap_or(Value::Null),
-        "diagnostics": value.get("diagnostics").cloned().unwrap_or_else(|| json!([])),
-    }))
-}
-
-fn browser_capability_row(lane: &str, result: Value, expected_commit: &str) -> Value {
-    json!({
-        "lane": lane,
-        "status": "measured",
-        "measurement_source": "browser-probe-runtime",
-        "commit_sha": expected_commit,
-        "timestamp_unix_seconds": current_unix_seconds(),
-        "backend": result.get("backend").cloned().unwrap_or(Value::Null),
-        "capabilities": result.get("capabilities").cloned().unwrap_or(Value::Null),
-        "pixel_statistics": result
-            .get("renderer_readback")
-            .and_then(|readback| readback.get("pixel_statistics"))
-            .cloned()
-            .or_else(|| result.get("pixels").cloned())
-            .unwrap_or(Value::Null),
-    })
-}
-
-fn wasm_capability_row(output: &Path, lane: &str, expected_commit: &str) -> Result<Value, String> {
-    let path = output.join("m9-wasm-size.json");
-    let text = fs::read_to_string(&path)
-        .map_err(|error| format!("failed to read m9-wasm-size.json: {error}"))?;
-    let value = serde_json::from_str::<Value>(&text)
-        .map_err(|error| format!("failed to parse m9-wasm-size.json: {error}"))?;
-    Ok(json!({
-        "lane": lane,
-        "status": "measured",
-        "measurement_source": "wasm-size-gate-runtime",
-        "commit_sha": expected_commit,
-        "timestamp_unix_seconds": current_unix_seconds(),
-        "capabilities": {
-            "wasm_bundle": value,
-        },
-    }))
 }
 
 pub(super) fn write_stage_json(path: &Path, value: &Value) -> Result<(), String> {

@@ -1,6 +1,37 @@
 use crate::app::prelude::*;
 
 #[test]
+pub(crate) fn doctor_rejects_public_example_gate_without_all_features() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/public-example-features");
+    let workflow = fixture_root.join(".github/workflows/ci.yml");
+    fs::create_dir_all(workflow.parent().expect("workflow parent")).expect("fixture dir");
+    fs::write(&workflow, "run: cargo check --examples\n").expect("workflow fixture");
+    let mut findings = Vec::new();
+
+    crate::app::doctor_scene_platform::check_public_example_compile_coverage(
+        &fixture_root,
+        &mut findings,
+    );
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-PUBLIC-EXAMPLE-COVERAGE"
+                && finding.message.contains("--all-features")
+        }),
+        "doctor must reject a public-example gate that skips required-feature examples: {findings:?}"
+    );
+}
+
+#[test]
+pub(crate) fn public_example_compile_coverage_is_green_for_the_real_tree() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let mut findings = Vec::new();
+    crate::app::doctor_scene_platform::check_public_example_compile_coverage(&root, &mut findings);
+    assert_eq!(findings, Vec::new());
+}
+
+#[test]
 pub(crate) fn doctor_rejects_world_baked_prepare_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");

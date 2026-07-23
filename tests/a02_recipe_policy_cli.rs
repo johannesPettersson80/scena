@@ -32,9 +32,10 @@ fn policy_recipe_discovers_repeatable_canonical_operator_roots() {
 
     let missing = root.join("missing");
     let rejected = scena(&["policy", "recipe", "--allow-root", path_str(&missing)]);
-    assert_eq!(rejected.status.code(), Some(2), "{rejected:?}");
+    assert_eq!(rejected.status.code(), Some(65), "{rejected:?}");
     let error: Value = serde_json::from_slice(&rejected.stderr).expect("CLI error is JSON");
-    assert_eq!(error["code"], "invalid_arguments");
+    assert_eq!(error["code"], "input_not_found");
+    assert_eq!(error["exit_class"], "input");
     assert!(
         error["message"]
             .as_str()

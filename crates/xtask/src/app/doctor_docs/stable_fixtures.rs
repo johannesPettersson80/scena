@@ -1,5 +1,17 @@
 pub(super) const FIXTURES: &[(&str, &str)] = &[
     (
+        "docs/reference-approval-q11.example.json",
+        "scena.q11.reference_approval.v1",
+    ),
+    (
+        "tests/assets/stable-contracts/contract_validation.v1.json",
+        "scena.contract_validation.v1",
+    ),
+    (
+        "tests/assets/stable-contracts/json_schema_export.v1.json",
+        "scena.json_schema_export.v1",
+    ),
+    (
         "tests/assets/stable-contracts/capability_report.v1.json",
         "scena.capability_report.v1",
     ),
@@ -94,6 +106,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
     (
         "tests/assets/stable-contracts/agent_template_catalog.v1.json",
         "scena.agent_template_catalog.v1",
+    ),
+    (
+        "tests/assets/stable-contracts/agent_guide.v1.json",
+        "scena.agent_guide.v1",
     ),
     (
         "tests/assets/stable-contracts/browser_proof_run.v1.json",

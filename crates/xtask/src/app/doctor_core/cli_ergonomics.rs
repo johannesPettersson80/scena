@@ -8,7 +8,8 @@ pub(crate) fn check_a04_cli_ergonomics(root: &Path, findings: &mut Vec<Finding>)
             "src/bin/scena.rs",
             &[
                 "scena_help::command_help_json(&args)",
-                "return Ok(success(help))",
+                "let mut outcome = success(help)",
+                "apply_output_format(&mut outcome, output_format)",
                 "examples agent list",
                 "[--exit-code]",
                 "if error.kind() == io::ErrorKind::BrokenPipe",

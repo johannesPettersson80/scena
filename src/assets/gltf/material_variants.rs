@@ -3,7 +3,53 @@
 
 use ::gltf::{Document, Primitive};
 
-use crate::assets::MaterialHandle;
+use crate::assets::{AssetLoadWarning, AssetPath, MaterialHandle};
+
+pub(super) type RawMaterialVariantMaterialIndices = Vec<Vec<Vec<Option<usize>>>>;
+
+/// Preserve the raw material slot from every variant mapping before the
+/// upstream `gltf` facade replaces an out-of-range material with its implicit
+/// default material. The nested vectors retain mesh, primitive, and mapping
+/// order exactly as authored.
+pub(super) fn raw_material_variant_material_indices(
+    bytes: &[u8],
+) -> RawMaterialVariantMaterialIndices {
+    let glb = bytes
+        .starts_with(b"glTF")
+        .then(|| ::gltf::binary::Glb::from_slice(bytes).ok())
+        .flatten();
+    let json = glb.as_ref().map_or(bytes, |glb| glb.json.as_ref());
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    value
+        .get("meshes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|mesh| {
+            mesh.get("primitives")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|primitive| {
+                    primitive
+                        .pointer("/extensions/KHR_materials_variants/mappings")
+                        .and_then(serde_json::Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .map(|mapping| {
+                            mapping
+                                .get("material")
+                                .and_then(serde_json::Value::as_u64)
+                                .and_then(|index| usize::try_from(index).ok())
+                        })
+                        .collect()
+                })
+                .collect()
+        })
+        .collect()
+}
 
 /// Phase 2B step 2: a per-primitive entry of the
 /// `KHR_materials_variants.mappings[]` array. Maps a list of variant
@@ -57,13 +103,46 @@ pub(super) fn parse_material_variant_names(document: &Document) -> Vec<String> {
 pub(super) fn parse_primitive_material_variant_bindings(
     primitive: &Primitive,
     materials: &[MaterialHandle],
+    raw_material_indices: &[Option<usize>],
+    path: &AssetPath,
+    mesh_index: usize,
+    primitive_index: usize,
+    load_warnings: &mut Vec<AssetLoadWarning>,
 ) -> Vec<MaterialVariantBinding> {
     primitive
         .mappings()
-        .filter_map(|mapping| {
-            let material_index = mapping.material().index()?;
-            let material = materials.get(material_index).copied()?;
+        .enumerate()
+        .filter_map(|(mapping_index, mapping)| {
             let variants = mapping.variants().to_vec();
+            let material_index = raw_material_indices
+                .get(mapping_index)
+                .copied()
+                .flatten()
+                .or_else(|| mapping.material().index());
+            let Some(material_index) = material_index else {
+                load_warnings.push(AssetLoadWarning::InvalidMaterialVariantMapping {
+                    path: path.clone(),
+                    mesh_index,
+                    primitive_index,
+                    mapping_index,
+                    material_index: None,
+                    variant_indices: variants,
+                    material_count: materials.len(),
+                });
+                return None;
+            };
+            let Some(material) = materials.get(material_index).copied() else {
+                load_warnings.push(AssetLoadWarning::InvalidMaterialVariantMapping {
+                    path: path.clone(),
+                    mesh_index,
+                    primitive_index,
+                    mapping_index,
+                    material_index: Some(material_index),
+                    variant_indices: variants,
+                    material_count: materials.len(),
+                });
+                return None;
+            };
             Some(MaterialVariantBinding { variants, material })
         })
         .collect()
@@ -71,8 +150,11 @@ pub(super) fn parse_primitive_material_variant_bindings(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_material_variant_names, parse_primitive_material_variant_bindings};
-    use crate::assets::Assets;
+    use super::{
+        parse_material_variant_names, parse_primitive_material_variant_bindings,
+        raw_material_variant_material_indices,
+    };
+    use crate::assets::{AssetLoadWarning, AssetPath, Assets};
     use crate::material::{Color, MaterialDesc};
     use serde_json::json;
 
@@ -181,11 +263,79 @@ mod tests {
             .primitives()
             .next()
             .unwrap();
-        let bindings = parse_primitive_material_variant_bindings(&primitive, &materials);
+        let mut warnings = Vec::new();
+        let bindings = parse_primitive_material_variant_bindings(
+            &primitive,
+            &materials,
+            &[Some(0), Some(1)],
+            &AssetPath::from("memory://valid-variants.gltf"),
+            0,
+            0,
+            &mut warnings,
+        );
+        assert!(warnings.is_empty());
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].material(), red);
         assert_eq!(bindings[0].variants(), &[0, 2]);
         assert_eq!(bindings[1].material(), blue);
         assert_eq!(bindings[1].variants(), &[1]);
+    }
+
+    #[test]
+    fn primitive_parser_warns_when_a_variant_material_index_cannot_resolve() {
+        let assets = Assets::new();
+        let valid_material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+        let source = json!({
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_variants"],
+            "extensions": { "KHR_materials_variants": { "variants": [{ "name": "a" }] } },
+            "buffers": [{ "byteLength": 12 }],
+            "bufferViews": [{ "buffer": 0, "byteLength": 12 }],
+            "accessors": [{
+                "bufferView": 0, "componentType": 5126, "count": 1,
+                "type": "VEC3", "min": [0.0, 0.0, 0.0], "max": [0.0, 0.0, 0.0]
+            }],
+            "materials": [{}],
+            "meshes": [{ "primitives": [{
+                "attributes": { "POSITION": 0 },
+                "extensions": { "KHR_materials_variants": { "mappings": [
+                    { "material": 7, "variants": [0] },
+                    { "material": 0, "variants": [0] }
+                ] } }
+            }] }]
+        });
+        let raw_indices = raw_material_variant_material_indices(
+            &serde_json::to_vec(&source).expect("source JSON serializes"),
+        );
+        let document = document_from_json(source);
+        let primitive = document
+            .meshes()
+            .next()
+            .unwrap()
+            .primitives()
+            .next()
+            .unwrap();
+        let mut warnings = Vec::new();
+        let bindings = parse_primitive_material_variant_bindings(
+            &primitive,
+            &[valid_material],
+            &raw_indices[0][0],
+            &AssetPath::from("memory://invalid-variant.gltf"),
+            0,
+            0,
+            &mut warnings,
+        );
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].material(), valid_material);
+        assert!(matches!(
+            warnings.as_slice(),
+            [AssetLoadWarning::InvalidMaterialVariantMapping {
+                material_index: Some(7),
+                material_count: 1,
+                variant_indices,
+                ..
+            }] if variant_indices == &[0]
+        ));
     }
 }

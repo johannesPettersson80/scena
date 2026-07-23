@@ -16,13 +16,13 @@ impl SceneCacheKey {
         &self.path
     }
 
-    pub(super) const fn options(&self) -> AssetLoadOptions {
-        self.options
+    pub(super) fn options(&self) -> AssetLoadOptions {
+        self.options.clone()
     }
 }
 
 impl AssetLoadTelemetry {
-    fn satisfies(&self, requested: AssetLoadOptions) -> bool {
+    fn satisfies(&self, requested: &AssetLoadOptions) -> bool {
         if requested.strict_textures()
             && self
                 .warnings
@@ -51,7 +51,7 @@ impl AssetStorage {
         path: &AssetPath,
         requested: AssetLoadOptions,
     ) -> Option<(SceneAsset, AssetLoadTelemetry, AssetLoadOptions)> {
-        let exact_key = SceneCacheKey::new(path.clone(), requested);
+        let exact_key = SceneCacheKey::new(path.clone(), requested.clone());
         if let Some(scene) = self.scene_lookup.get(&exact_key) {
             let telemetry = self
                 .scene_load_telemetry
@@ -65,9 +65,12 @@ impl AssetStorage {
             if key.path() != path {
                 return None;
             }
+            if key.options().gltf_scene() != requested.gltf_scene() {
+                return None;
+            }
             let telemetry = self.scene_load_telemetry.get(key)?.clone();
             telemetry
-                .satisfies(requested)
+                .satisfies(&requested)
                 .then(|| (scene.clone(), telemetry, key.options()))
         })
     }

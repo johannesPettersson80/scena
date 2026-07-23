@@ -92,6 +92,8 @@ pub struct OrbitControls {
     max_distance: f32,
     orbiting: bool,
     panning: bool,
+    orbit_button: Option<PointerButton>,
+    pan_button: Option<PointerButton>,
 }
 
 impl OrbitControls {
@@ -106,6 +108,8 @@ impl OrbitControls {
             max_distance: f32::INFINITY,
             orbiting: false,
             panning: false,
+            orbit_button: None,
+            pan_button: None,
         }
     }
 
@@ -246,10 +250,12 @@ impl OrbitControls {
             PointerEventKind::Pressed => match event.button {
                 Some(PointerButton::Primary) => {
                     self.orbiting = true;
+                    self.orbit_button = Some(PointerButton::Primary);
                     OrbitControlAction::BeginOrbit
                 }
                 Some(PointerButton::Secondary) => {
                     self.panning = true;
+                    self.pan_button = Some(PointerButton::Secondary);
                     OrbitControlAction::Pan
                 }
                 Some(PointerButton::Auxiliary) | None => OrbitControlAction::None,
@@ -265,14 +271,11 @@ impl OrbitControls {
                 OrbitControlAction::Pan
             }
             PointerEventKind::Wheel => {
-                let zoom = (1.0 + event.scroll_delta * ZOOM_SCALE).max(0.05);
-                self.distance = self.clamp_distance((self.distance * zoom).max(MIN_DISTANCE));
+                self.apply_zoom_delta(event.scroll_delta);
                 OrbitControlAction::Zoom
             }
             PointerEventKind::Released | PointerEventKind::Cancelled => {
-                self.orbiting = false;
-                self.panning = false;
-                OrbitControlAction::End
+                self.end_pointer_gesture(event.button)
             }
             PointerEventKind::Moved => OrbitControlAction::None,
         }
@@ -285,6 +288,7 @@ impl OrbitControls {
         match event.kind {
             TouchEventKind::Started => {
                 self.orbiting = true;
+                self.orbit_button = None;
                 OrbitControlAction::BeginOrbit
             }
             TouchEventKind::Moved if self.orbiting => {
@@ -298,6 +302,8 @@ impl OrbitControls {
             TouchEventKind::Ended | TouchEventKind::Cancelled => {
                 self.orbiting = false;
                 self.panning = false;
+                self.orbit_button = None;
+                self.pan_button = None;
                 OrbitControlAction::End
             }
             TouchEventKind::Moved => OrbitControlAction::None,
@@ -369,7 +375,7 @@ impl OrbitControls {
     }
 
     fn apply_zoom_delta(&mut self, delta: f32) {
-        let zoom = (1.0 + delta * ZOOM_SCALE).max(0.05);
+        let zoom = ZOOM_FACTOR_PER_STEP.powf(delta.clamp(-MAX_ZOOM_STEPS, MAX_ZOOM_STEPS));
         self.distance = self.clamp_distance((self.distance * zoom).max(MIN_DISTANCE));
     }
 
@@ -384,6 +390,36 @@ impl OrbitControls {
 
     fn clamp_distance(&self, distance: f32) -> f32 {
         distance.clamp(self.min_distance, self.max_distance)
+    }
+
+    fn end_pointer_gesture(&mut self, button: Option<PointerButton>) -> OrbitControlAction {
+        let mut ended = false;
+        match button {
+            Some(button) => {
+                if self.orbit_button == Some(button) {
+                    self.orbiting = false;
+                    self.orbit_button = None;
+                    ended = true;
+                }
+                if self.pan_button == Some(button) {
+                    self.panning = false;
+                    self.pan_button = None;
+                    ended = true;
+                }
+            }
+            None => {
+                ended = self.orbiting || self.panning;
+                self.orbiting = false;
+                self.panning = false;
+                self.orbit_button = None;
+                self.pan_button = None;
+            }
+        }
+        if ended {
+            OrbitControlAction::End
+        } else {
+            OrbitControlAction::None
+        }
     }
 }
 
@@ -406,6 +442,16 @@ impl PointerEvent {
         }
     }
 
+    pub const fn button_released(x: f32, y: f32, button: PointerButton) -> Self {
+        Self {
+            kind: PointerEventKind::Released,
+            position: (x, y),
+            button: Some(button),
+            delta: (0.0, 0.0),
+            scroll_delta: 0.0,
+        }
+    }
+
     pub const fn moved(x: f32, y: f32, delta_x: f32, delta_y: f32) -> Self {
         Self {
             kind: PointerEventKind::Moved,
@@ -416,6 +462,11 @@ impl PointerEvent {
         }
     }
 
+    /// Creates a wheel event from a normalized scroll delta.
+    ///
+    /// A delta of `1.0` increases camera distance by 10%; `-1.0` applies the
+    /// reciprocal zoom. Browser integrations should convert pixel, line, and
+    /// page deltas to this normalized unit before calling the controller.
     pub const fn wheel(x: f32, y: f32, scroll_delta: f32) -> Self {
         Self {
             kind: PointerEventKind::Wheel,
@@ -486,7 +537,8 @@ impl TouchEvent {
 
 const ORBIT_RADIANS_PER_PIXEL: f32 = 0.01;
 const PAN_UNITS_PER_PIXEL: f32 = 0.001;
-const ZOOM_SCALE: f32 = 0.1;
+const ZOOM_FACTOR_PER_STEP: f32 = 1.1;
+const MAX_ZOOM_STEPS: f32 = 4.0;
 const MIN_DISTANCE: f32 = 0.001;
 const MAX_PITCH_RADIANS: f32 = 1.553_343;
 

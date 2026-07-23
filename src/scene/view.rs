@@ -31,6 +31,11 @@ impl Scene {
             .ok_or(LookupError::CameraNotFound(camera))?;
         let center = bounds.center();
         let radius = bounds.bounding_sphere_radius().max(MIN_FRAME_RADIUS);
+        let camera_before = self
+            .cameras
+            .get(camera)
+            .cloned()
+            .ok_or(LookupError::CameraNotFound(camera))?;
         let camera_descriptor = self
             .cameras
             .get_mut(camera)
@@ -72,6 +77,10 @@ impl Scene {
                 }
             }
         };
+
+        if self.cameras.get(camera) != Some(&camera_before) {
+            self.camera_revision = self.camera_revision.saturating_add(1);
+        }
 
         let transform = self.local_transform_for_world(camera_node, transform)?;
         self.set_node_transform_and_mark_changed(camera_node, transform)
@@ -213,13 +222,25 @@ impl Scene {
 
     /// Frames the world-space bounds of a node and any bounded descendants.
     pub fn frame_node(&mut self, camera: CameraKey, node: NodeKey) -> Result<(), LookupError> {
+        let options = self.legacy_framing_options(camera)?;
+        self.frame_node_with_options(camera, node, options)
+            .map(|_| ())
+    }
+
+    /// Frames a visible node subtree with an explicit target viewport and view.
+    pub fn frame_node_with_options(
+        &mut self,
+        camera: CameraKey,
+        node: NodeKey,
+        options: super::FramingOptions,
+    ) -> Result<super::FramingOutcome, LookupError> {
         if !self.nodes.contains_key(node) {
             return Err(LookupError::NodeNotFound(node));
         }
         let bounds = self
-            .node_subtree_bounds_world(node)
+            .visible_node_subtree_bounds_world(node, options.includes_helpers())
             .ok_or(LookupError::ImportHasNoBounds)?;
-        self.frame(camera, bounds)
+        self.frame_bounds(camera, bounds, options)
     }
 
     /// Frames a node or bounded descendants, resolving direct geometry handles through
@@ -230,16 +251,31 @@ impl Scene {
         node: NodeKey,
         assets: &Assets<F>,
     ) -> Result<(), LookupError> {
+        let options = self.legacy_framing_options(camera)?;
+        self.frame_node_with_assets_and_options(camera, node, assets, options)
+            .map(|_| ())
+    }
+
+    /// Frames a visible node subtree, resolving geometry through `Assets`,
+    /// with the same explicit options contract as aggregate/import framing.
+    pub fn frame_node_with_assets_and_options<F>(
+        &mut self,
+        camera: CameraKey,
+        node: NodeKey,
+        assets: &Assets<F>,
+        options: super::FramingOptions,
+    ) -> Result<super::FramingOutcome, LookupError> {
         if !self.nodes.contains_key(node) {
             return Err(LookupError::NodeNotFound(node));
         }
         let bounds = self
-            .node_subtree_bounds_world(node)
-            .into_iter()
-            .chain(self.asset_backed_node_subtree_bounds_world(node, assets))
-            .reduce(union_aabb)
+            .visible_asset_backed_node_subtree_bounds_world(
+                node,
+                assets,
+                options.includes_helpers(),
+            )
             .ok_or(LookupError::ImportHasNoBounds)?;
-        self.frame(camera, bounds)
+        self.frame_bounds(camera, bounds, options)
     }
 
     /// Returns the world-space bounds for a node subtree, including geometry

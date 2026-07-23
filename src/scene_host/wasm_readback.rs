@@ -24,19 +24,8 @@ pub(super) fn browser_canvas_rgba8(
         .map_err(browser_readback_error)?
         .dyn_into::<js_sys::Function>()
         .map_err(browser_readback_error)?;
-    let options = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &options,
-        &JsValue::from_str("preserveDrawingBuffer"),
-        &JsValue::TRUE,
-    )
-    .map_err(browser_readback_error)?;
     let context = get_context
-        .call2(
-            canvas.as_ref(),
-            &JsValue::from_str("webgl2"),
-            options.as_ref(),
-        )
+        .call1(canvas.as_ref(), &JsValue::from_str("webgl2"))
         .map_err(browser_readback_error)?;
     if context.is_null() || context.is_undefined() {
         return Ok(None);
@@ -66,7 +55,17 @@ pub(super) fn browser_canvas_rgba8(
 
     let mut rgba8 = vec![0; len as usize];
     bytes.copy_to(rgba8.as_mut_slice());
+    flip_rgba8_rows_to_top_left(&mut rgba8, width, height);
     Ok(Some((width, height, rgba8)))
+}
+
+fn flip_rgba8_rows_to_top_left(rgba8: &mut [u8], width: u32, height: u32) {
+    let row_bytes = width as usize * 4;
+    for top in 0..height as usize / 2 {
+        let bottom = height as usize - 1 - top;
+        let (prefix, suffix) = rgba8.split_at_mut(bottom * row_bytes);
+        prefix[top * row_bytes..(top + 1) * row_bytes].swap_with_slice(&mut suffix[..row_bytes]);
+    }
 }
 
 fn browser_readback_error(error: JsValue) -> SceneHostError {

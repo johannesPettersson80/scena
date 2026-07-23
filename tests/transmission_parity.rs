@@ -10,7 +10,7 @@ use scena::{
     OrderIndependentTransparencyConfig, PerspectiveCamera, Scene, Transform, Vec3,
 };
 use support::parity::{
-    ParitySweep, PixelRegion, render_scene_cpu_gpu_pair_with_renderer,
+    ParitySweep, PixelRegion, record_cpu_gpu_parity_pass, render_scene_cpu_gpu_pair_with_renderer,
     require_cpu_gpu_parity_adapter_or_skip,
 };
 
@@ -46,6 +46,7 @@ fn physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep() {
 
     let artifacts = artifact_dir();
     let mut sweep = ParitySweep::new(SCHEMA);
+    let mut gpu_adapter = None;
 
     for case in transmission_cases() {
         let pair = render_scene_cpu_gpu_pair_with_renderer(
@@ -61,6 +62,9 @@ fn physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep() {
             },
             move |scene, assets| build_transmission_scene(scene, assets, case),
         );
+        if gpu_adapter.is_none() {
+            gpu_adapter = pair.gpu.gpu_adapter.clone();
+        }
         fs::write(
             artifacts.join(format!("{}-cpu.rgba", case.name)),
             &pair.cpu.rgba8,
@@ -103,6 +107,13 @@ fn physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep() {
     sweep.write_json(
         &artifacts.join("physical-glass-transmission-parity.json"),
         &[],
+    );
+    record_cpu_gpu_parity_pass(
+        "physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep",
+        gpu_adapter
+            .as_ref()
+            .expect("transmission GPU adapter is recorded"),
+        12,
     );
 }
 

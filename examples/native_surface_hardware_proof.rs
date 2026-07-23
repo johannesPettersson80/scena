@@ -1,12 +1,15 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use scena::{
-    AntiAliasing, Assets, Background, Color, GeometryDesc, MaterialDesc, NotPreparedReason,
-    PlatformSurface, PostBloomConfig, RenderError, RenderReadbackMode, Renderer, Scene,
-    SurfaceEvent,
+    AntiAliasing, Assets, AutoExposureConfig, AutoExposureStatus, Background, Color, GeometryDesc,
+    MaterialDesc, NotPreparedReason, PlatformSurface, PostBloomConfig, RenderError,
+    RenderReadbackMode, Renderer, Scene, SurfaceEvent,
 };
 use serde_json::json;
 use winit::application::ApplicationHandler;
@@ -17,6 +20,70 @@ use winit::window::{Window, WindowId};
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
+
+#[global_allocator]
+static ALLOCATOR: ProofAllocator = ProofAllocator;
+
+static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
+static ALLOCATION_COUNT: AtomicU64 = AtomicU64::new(0);
+static ALLOCATION_BYTES: AtomicU64 = AtomicU64::new(0);
+
+struct ProofAllocator;
+
+unsafe impl GlobalAlloc for ProofAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the original layout is delegated unchanged.
+        let pointer = unsafe { System.alloc(layout) };
+        record_allocation(pointer, layout.size());
+        pointer
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the original layout is delegated unchanged.
+        let pointer = unsafe { System.alloc_zeroed(layout) };
+        record_allocation(pointer, layout.size());
+        pointer
+    }
+
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // SAFETY: the original pointer/layout and new size are delegated unchanged.
+        let resized = unsafe { System.realloc(pointer, layout, new_size) };
+        record_allocation(resized, new_size);
+        resized
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: the original pointer and layout are delegated unchanged.
+        unsafe { System.dealloc(pointer, layout) }
+    }
+}
+
+fn record_allocation(pointer: *mut u8, bytes: usize) {
+    if !pointer.is_null() && COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+        ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+        ALLOCATION_BYTES.fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AllocationMeasurement {
+    count: u64,
+    bytes: u64,
+}
+
+fn start_allocation_measurement() {
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    ALLOCATION_BYTES.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
+}
+
+fn finish_allocation_measurement() -> AllocationMeasurement {
+    COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    AllocationMeasurement {
+        count: ALLOCATION_COUNT.load(Ordering::Relaxed),
+        bytes: ALLOCATION_BYTES.load(Ordering::Relaxed),
+    }
+}
 
 struct PhaseProof {
     id: &'static str,
@@ -109,9 +176,13 @@ fn run_proof(event_loop: &ActiveEventLoop) -> Result<(), String> {
         .map_err(|error| format!("native proof prepare failed: {error:?}"))?;
     eprintln!("native-surface-proof: render-present-only");
     let before = renderer.stats();
+    start_allocation_measurement();
+    let present_only_start = Instant::now();
     renderer
         .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
         .map_err(|error| format!("native present-only render failed: {error:?}"))?;
+    let present_only_duration_ns = present_only_start.elapsed().as_nanos();
+    let present_only_allocations = finish_allocation_measurement();
     eprintln!("native-surface-proof: render-complete");
     let after = renderer.stats();
     let metrics = renderer.last_render_work_metrics();
@@ -151,6 +222,71 @@ fn run_proof(event_loop: &ActiveEventLoop) -> Result<(), String> {
             "present-only render changed prepared GPU resource ownership: before={before_resources:?}, after={after_resources:?}"
         ));
     }
+
+    renderer.set_auto_exposure(AutoExposureConfig::mixed());
+    start_allocation_measurement();
+    let auto_exposure_first_start = Instant::now();
+    renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
+        .map_err(|error| format!("native auto-exposure first render failed: {error:?}"))?;
+    let auto_exposure_first_duration_ns = auto_exposure_first_start.elapsed().as_nanos();
+    let auto_exposure_first_allocations = finish_allocation_measurement();
+    let auto_exposure_first = renderer.last_render_work_metrics();
+    if renderer.auto_exposure_status() != AutoExposureStatus::Pending
+        || auto_exposure_first.native_scene_color_passes != 1
+        || auto_exposure_first.gpu_queue_submissions != 1
+        || auto_exposure_first.auto_exposure_meter_submissions != 1
+        || auto_exposure_first.auto_exposure_meter_samples != 256
+        || auto_exposure_first.readback_copies != 0
+        || auto_exposure_first.blocking_polls != 0
+        || auto_exposure_first.blocking_waits != 0
+    {
+        return Err(format!(
+            "native auto-exposure first frame was not one bounded asynchronous meter pass: status={:?}, metrics={auto_exposure_first:?}",
+            renderer.auto_exposure_status()
+        ));
+    }
+    let mut auto_exposure_poll_count = 0_u32;
+    let mut auto_exposure_sequence = vec![json!({
+        "frame": 0,
+        "status": "pending",
+        "exposure_ev": renderer.last_auto_exposure().map(|result| result.exposure_ev()),
+    })];
+    start_allocation_measurement();
+    let auto_exposure_convergence_start = Instant::now();
+    while renderer.auto_exposure_status() != AutoExposureStatus::Converged
+        && auto_exposure_poll_count < 100
+    {
+        std::thread::sleep(Duration::from_millis(2));
+        renderer
+            .render_with_readback_mode(&scene, camera, RenderReadbackMode::PresentOnly)
+            .map_err(|error| format!("native auto-exposure convergence failed: {error:?}"))?;
+        auto_exposure_poll_count = auto_exposure_poll_count.saturating_add(1);
+        auto_exposure_sequence.push(json!({
+            "frame": auto_exposure_poll_count,
+            "status": format!("{:?}", renderer.auto_exposure_status()).to_ascii_lowercase(),
+            "exposure_ev": renderer.last_auto_exposure().map(|result| result.exposure_ev()),
+        }));
+    }
+    let auto_exposure_convergence_duration_ns =
+        auto_exposure_convergence_start.elapsed().as_nanos();
+    let auto_exposure_convergence_allocations = finish_allocation_measurement();
+    if renderer.auto_exposure_status() != AutoExposureStatus::Converged {
+        return Err(format!(
+            "native auto-exposure did not converge from its bounded prior-frame meter after {auto_exposure_poll_count} polls"
+        ));
+    }
+    let auto_exposure_converged = renderer.last_render_work_metrics();
+    if auto_exposure_converged.readback_copies != 0
+        || auto_exposure_converged.blocking_polls != 0
+        || auto_exposure_converged.blocking_waits != 0
+        || auto_exposure_converged.native_scene_color_passes > 1
+    {
+        return Err(format!(
+            "native auto-exposure convergence used forbidden synchronous or duplicate scene work: {auto_exposure_converged:?}"
+        ));
+    }
+    renderer.clear_auto_exposure();
 
     let resized_width = WIDTH + 32;
     let resized_height = HEIGHT + 16;
@@ -326,6 +462,30 @@ fn run_proof(event_loop: &ActiveEventLoop) -> Result<(), String> {
             "gpu_shader_module_creations": metrics.gpu_shader_module_creations,
             "native_scene_color_passes": metrics.native_scene_color_passes,
             "gpu_queue_submissions": metrics.gpu_queue_submissions,
+            "duration_ns": present_only_duration_ns,
+            "allocation_count": present_only_allocations.count,
+            "allocated_bytes": present_only_allocations.bytes,
+        },
+        "auto_exposure": {
+            "status": "passed",
+            "first_frame_status": "pending",
+            "final_status": "converged",
+            "poll_count": auto_exposure_poll_count,
+            "meter_submissions": auto_exposure_first.auto_exposure_meter_submissions,
+            "meter_samples": auto_exposure_first.auto_exposure_meter_samples,
+            "readback_copies": auto_exposure_first.readback_copies,
+            "blocking_polls": auto_exposure_first.blocking_polls,
+            "blocking_waits": auto_exposure_first.blocking_waits,
+            "native_scene_color_passes": auto_exposure_first.native_scene_color_passes,
+            "gpu_queue_submissions": auto_exposure_first.gpu_queue_submissions,
+            "first_frame_duration_ns": auto_exposure_first_duration_ns,
+            "first_frame_allocation_count": auto_exposure_first_allocations.count,
+            "first_frame_allocated_bytes": auto_exposure_first_allocations.bytes,
+            "convergence_duration_ns": auto_exposure_convergence_duration_ns,
+            "convergence_allocation_count": auto_exposure_convergence_allocations.count,
+            "convergence_allocated_bytes": auto_exposure_convergence_allocations.bytes,
+            "sequence": auto_exposure_sequence,
+            "timing_policy": "observational_report_only",
         },
         "msaa4_present_only": {
             "native_scene_color_passes": msaa4_present_metrics.native_scene_color_passes,

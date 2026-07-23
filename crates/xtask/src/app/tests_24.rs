@@ -137,11 +137,17 @@ pub(crate) fn q01_cpu_finalizer_binds_command_log_and_rejects_tampered_live_png(
     .map(|(name, relative)| {
         let path = artifact_root.join(relative);
         fs::write(&path, format!("{name} PNG fixture")).expect("Q01 mutation fixture writes");
+        let (mutation_kind, mutation_stage, render_count, pipeline_coverage) =
+            q01_mutation_provenance(name);
         json!({
             "name": name,
             "path": relative,
             "sha256": sha256_hex(&path).expect("Q01 mutation hash"),
             "oracle_rejected": true,
+            "mutation_kind": mutation_kind,
+            "mutation_stage": mutation_stage,
+            "render_count": render_count,
+            "pipeline_coverage": pipeline_coverage,
             "metrics": {"passed": false}
         })
     });
@@ -185,6 +191,15 @@ test result: ok. 1 passed; 0 failed\n",
             "row_orientation": "top-to-bottom",
             "alpha_contract": "opaque",
             "live_png_sha256": sha256_hex(&live_path).expect("Q01 live hash"),
+            "determinism": {
+                "comparison_order": "independent-render-before-committed-reference",
+                "repeat_count": 2,
+                "byte_identical": true,
+                "rgba8_sha256": [
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                ]
+            },
             "metrics": {"passed": true},
             "mutations": mutations,
             "source_checksums": []
@@ -209,6 +224,39 @@ test result: ok. 1 passed; 0 failed\n",
             .and_then(Value::as_str),
         Some(command_hash.as_str())
     );
+
+    let mut post_hoc_material = finalized.clone();
+    let wrong_material = post_hoc_material["mutations"]
+        .as_array_mut()
+        .expect("Q01 mutations array")
+        .iter_mut()
+        .find(|mutation| mutation["name"] == "wrong_material")
+        .expect("Q01 wrong-material mutation");
+    wrong_material["mutation_kind"] = json!("post-hoc-pixel");
+    wrong_material["render_count"] = json!(0);
+    fs::write(
+        &result_path,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&post_hoc_material)
+                .expect("mutated Q01 result serializes")
+        ),
+    )
+    .expect("mutated Q01 result writes");
+    let provenance_error = finalize_waterbottle_cpu_result(&fixture_root)
+        .expect_err("post-hoc wrong-material output must not finalize");
+    assert!(
+        provenance_error.contains("wrong_material") && provenance_error.contains("rendered-scene"),
+        "unexpected Q10 provenance error: {provenance_error}"
+    );
+    fs::write(
+        &result_path,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&finalized).expect("restored Q01 result serializes")
+        ),
+    )
+    .expect("restored Q01 result writes");
 
     fs::write(&live_path, b"tampered live PNG").expect("Q01 tampered live fixture writes");
     let error = finalize_waterbottle_cpu_result(&fixture_root)
@@ -274,11 +322,17 @@ pub(crate) fn write_q01_cpu_proof_fixture(artifact_root: &Path, commit: &str) {
     let mutations = mutation_specs.map(|(name, file, offset)| {
         let path = q01_root.join(file);
         write_q01_fixture_png(&path, offset);
+        let (mutation_kind, mutation_stage, render_count, pipeline_coverage) =
+            q01_mutation_provenance(name);
         json!({
             "name": name,
             "path": format!("q01-waterbottle-cpu/{file}"),
             "sha256": sha256_hex(&path).expect("Q01 fixture mutation hash"),
             "oracle_rejected": true,
+            "mutation_kind": mutation_kind,
+            "mutation_stage": mutation_stage,
+            "render_count": render_count,
+            "pipeline_coverage": pipeline_coverage,
             "metrics": {"passed": false}
         })
     });
@@ -339,6 +393,15 @@ test result: ok. 1 passed; 0 failed\n",
         "live_png_sha256": live_sha,
         "reference_path": "tests/assets/gltf/khronos/WaterBottle/reference_cpu_256.png",
         "reference_sha256": "922cc35e0c6420d2b3f8e533891291a9d4f9396697ae366f0b93de3c15973da4",
+        "determinism": {
+            "comparison_order": "independent-render-before-committed-reference",
+            "repeat_count": 2,
+            "byte_identical": true,
+            "rgba8_sha256": [
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ]
+        },
         "metrics": {
             "passed": true,
             "alpha_mismatch_pixels": 0,
@@ -366,6 +429,47 @@ test result: ok. 1 passed; 0 failed\n",
         ),
     )
     .expect("Q01 fixture result writes");
+}
+
+fn q01_mutation_provenance(name: &str) -> (&'static str, &'static str, u64, Vec<&'static str>) {
+    match name {
+        "flattened_chrome" => (
+            "post-hoc-pixel",
+            "output-rgba8",
+            0,
+            vec!["oracle-evaluator"],
+        ),
+        "wrong_material" => (
+            "rendered-scene",
+            "scene-mesh-material-before-prepare",
+            1,
+            vec![
+                "gltf-import",
+                "texture-resources-loaded",
+                "scene-material-override",
+                "cpu-material-resolution",
+                "prepare",
+                "render",
+                "pbr-neutral-tonemap",
+                "srgb8-output",
+            ],
+        ),
+        "wrong_camera" => (
+            "rendered-scene",
+            "active-camera-transform-before-prepare",
+            1,
+            vec![
+                "gltf-import",
+                "texture-resources-loaded",
+                "active-camera",
+                "prepare",
+                "render",
+                "pbr-neutral-tonemap",
+                "srgb8-output",
+            ],
+        ),
+        _ => panic!("unknown Q01 mutation {name}"),
+    }
 }
 
 fn write_q01_fixture_png(path: &Path, offset: u8) {

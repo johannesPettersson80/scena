@@ -2211,8 +2211,9 @@ fn scene_cache_strict_then_lenient_keeps_policy_specific_evidence() {
     let assets = Assets::with_fetcher(fetcher.clone());
 
     let strict_options = AssetLoadOptions::default().with_strict_textures(true);
-    let strict = pollster::block_on(assets.load_scene_with_report_options(path, strict_options))
-        .expect("strict load validates the present image");
+    let strict =
+        pollster::block_on(assets.load_scene_with_report_options(path, strict_options.clone()))
+            .expect("strict load validates the present image");
     assert!(!strict.cache_hit());
     assert_eq!(strict.options(), strict_options);
     assert_eq!(strict.cache_entry_options(), strict_options);

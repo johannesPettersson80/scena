@@ -69,6 +69,10 @@ impl Scene {
     pub(crate) fn mesh_lods(&self, node: NodeKey) -> Option<&[MeshLodLevel]> {
         self.mesh_lods.get(&node).map(Vec::as_slice)
     }
+
+    pub(crate) fn has_mesh_lods(&self) -> bool {
+        !self.mesh_lods.is_empty()
+    }
 }
 
 #[cfg(test)]

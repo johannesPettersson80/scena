@@ -262,18 +262,15 @@ pub(crate) fn check_clipping_contracts(root: &Path, findings: &mut Vec<Finding>)
         root,
         findings,
         "ARCH-CLIPPING",
-        "src/render.rs",
-        &[
-            "clipping_planes: Vec<ClippingPlane>",
-            "prepared.clipping_planes.clone()",
-        ],
+        "src/render/state.rs",
+        &["clipping_planes: Arc<[ClippingPlane]>"],
     );
     require_contains(
         root,
         findings,
         "ARCH-CLIPPING",
         "src/render/prepare_lifecycle.rs",
-        &["scene.active_clipping_plane_values().collect()"],
+        &["active_clipping_plane_values()", "Arc::from("],
     );
     require_contains(
         root,

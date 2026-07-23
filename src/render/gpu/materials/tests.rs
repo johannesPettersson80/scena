@@ -5,6 +5,7 @@ use crate::material::TextureColorSpace;
 fn material_resources_define_shader_visible_texture_bindings() {
     let source = include_str!("../materials.rs");
     let bind_group_source = include_str!("bind_group.rs");
+    let texture_resource_source = include_str!("texture_resource.rs");
     let bindings_source = include_str!("../material_bindings.rs");
     let batched_source = include_str!("../material_batched.rs");
     assert!(
@@ -29,20 +30,20 @@ fn material_resources_define_shader_visible_texture_bindings() {
             && source.contains("MaterialUniformUpload")
             && source.contains("binding: 2")
             && source.contains("scena.material.uniform")
-            && source.contains("scena.material.base_color")
-            && source.contains("scena.material.normal")
-            && source.contains("scena.material.metallic_roughness")
-            && source.contains("scena.material.occlusion")
-            && source.contains("scena.material.emissive")
-            && source.contains("scena.material.clearcoat")
-            && source.contains("scena.material.clearcoat_roughness")
-            && source.contains("scena.material.clearcoat_normal")
-            && source.contains("scena.material.sheen_color")
-            && source.contains("scena.material.sheen_roughness")
-            && source.contains("scena.material.anisotropy")
-            && source.contains("scena.material.iridescence")
-            && source.contains("scena.material.iridescence_thickness")
-            && source.contains("scena.material.fallback_base_color")
+            && texture_resource_source.contains("scena.material.base_color")
+            && texture_resource_source.contains("scena.material.normal")
+            && texture_resource_source.contains("scena.material.metallic_roughness")
+            && texture_resource_source.contains("scena.material.occlusion")
+            && texture_resource_source.contains("scena.material.emissive")
+            && texture_resource_source.contains("scena.material.clearcoat")
+            && texture_resource_source.contains("scena.material.clearcoat_roughness")
+            && texture_resource_source.contains("scena.material.clearcoat_normal")
+            && texture_resource_source.contains("scena.material.sheen_color")
+            && texture_resource_source.contains("scena.material.sheen_roughness")
+            && texture_resource_source.contains("scena.material.anisotropy")
+            && texture_resource_source.contains("scena.material.iridescence")
+            && texture_resource_source.contains("scena.material.iridescence_thickness")
+            && texture_resource_source.contains("scena.material.fallback_base_color")
             && bind_group_source.contains("scena.material.fallback_bind_group")
             && batched_source.contains("scena.material.batched_uniform")
             && batched_source.contains("scena.material.batched_clearcoat")
@@ -85,14 +86,14 @@ fn decoded_base_color_texture_becomes_backend_upload() {
 
 #[test]
 fn wgpu_material_upload_uses_texture_sampler_metadata() {
-    let source = include_str!("../materials.rs");
+    let texture_resource_source = include_str!("texture_resource.rs");
     let upload_source = include_str!("../material_upload.rs");
     assert!(
-        source.contains("address_mode(upload.sampler.wrap_s())")
-            && source.contains("address_mode(upload.sampler.wrap_t())")
-            && source.contains("filter_mode(upload.sampler.mag_filter())")
-            && source.contains("filter_mode(upload.sampler.min_filter())")
-            && source.contains("mipmap_filter_mode(upload.sampler.min_filter())")
+        texture_resource_source.contains("address_mode(upload.sampler.wrap_s())")
+            && texture_resource_source.contains("address_mode(upload.sampler.wrap_t())")
+            && texture_resource_source.contains("filter_mode(upload.sampler.mag_filter())")
+            && texture_resource_source.contains("filter_mode(upload.sampler.min_filter())")
+            && texture_resource_source.contains("mipmap_filter_mode(upload.sampler.min_filter())")
             && upload_source
                 .contains("TextureWrap::MirroredRepeat => wgpu::AddressMode::MirrorRepeat")
             && upload_source.contains("TextureWrap::Repeat => wgpu::AddressMode::Repeat")

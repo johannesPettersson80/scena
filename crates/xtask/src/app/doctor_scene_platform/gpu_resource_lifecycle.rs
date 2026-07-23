@@ -249,7 +249,7 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "combined output is identical to FXAA-only",
                 "off-again output is not deterministic",
                 "render changed its prepared resource shape",
-                "module.exports = { validateOutputToggleResult }",
+                "module.exports = { validateFxaaEffect, validateOutputToggleResult }",
             ],
         ),
         (

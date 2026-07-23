@@ -41,10 +41,12 @@ and deterministic headless rendering.
 
 ### Active open backlog
 
-- [v1.8.0 full-repo review remediation checklist](checklists/full-repo-review-v1.8.0-remediation.md)
+- [v1.9.0 full-repo review remediation checklist](checklists/full-repo-review-v1.9.0-remediation.md)
+- [Deferred pre-render lint profile design](specs/lint-profile-v1.md)
 
 ### Historical evidence
 
+- [v1.8.0 full-repo review remediation checklist](checklists/full-repo-review-v1.8.0-remediation.md)
 - [ADR-0002: eliminate hand-written rendering paths](decisions/ADR-0002-eliminate-handmade-rendering.md)
 - [Eliminate hand-written rendering checklist](checklists/eliminate-handmade-rendering.md)
 - [WASM scene host and stable contract checklist](checklists/wasm-scene-host-and-stable-contracts.md)
@@ -75,5 +77,5 @@ cargo run --example glb_model_viewer
 Compile all public examples:
 
 ```bash
-cargo check --examples
+cargo check --examples --all-features
 ```

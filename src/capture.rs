@@ -13,6 +13,8 @@ use crate::scene::{Scene, Transform};
 
 mod metadata;
 mod pixels;
+mod provenance;
+pub use provenance::CaptureFrameProvenance;
 mod png;
 mod projection;
 mod proof;
@@ -50,6 +52,11 @@ pub struct CaptureDescriptor {
     pub viewport: CaptureViewport,
     pub backend: Backend,
     pub capabilities: Capabilities,
+    #[serde(
+        default,
+        skip_serializing_if = "CaptureFrameProvenance::is_legacy_unspecified"
+    )]
+    pub frame: CaptureFrameProvenance,
     pub auto_frame: Option<CaptureAutoFrame>,
     pub pixels: CapturePixelSummary,
 }
@@ -71,6 +78,8 @@ pub enum CapturePayloadKind {
 pub struct CaptureRevisions {
     pub structure: u64,
     pub transform: u64,
+    #[serde(default)]
+    pub camera: u64,
     #[serde(default)]
     pub appearance: u64,
     pub interaction: u64,
@@ -173,6 +182,11 @@ pub enum CaptureError {
     },
     NoActiveCameraForAutoFrame,
     NoRenderedFrame,
+    NoReadbackFrame,
+    PixelReadbackMismatch {
+        expected_fnv1a64: String,
+        actual_fnv1a64: String,
+    },
     StaleRender {
         rendered: CaptureRevisions,
         current: CaptureRevisions,
@@ -258,9 +272,6 @@ pub fn capture_rgba8(
     renderer: &Renderer,
     options: CaptureOptions,
 ) -> Result<CaptureRgba8, CaptureError> {
-    renderer
-        .readback_frame_state()
-        .ok_or(CaptureError::NoRenderedFrame)?;
     let readback = renderer.read_pixels();
     let width = readback.width();
     let height = readback.height();
@@ -276,25 +287,86 @@ pub fn capture_rgba8_from_pixels(
     height: u32,
     rgba8: Vec<u8>,
 ) -> Result<CaptureRgba8, CaptureError> {
+    capture_rgba8_from_pixels_impl(scene, renderer, options, width, height, rgba8, true)
+}
+
+/// Builds a diagnostic capture from caller-supplied pixels without claiming
+/// that those bytes came from the renderer's completed readback.
+///
+/// The returned descriptor always records `release_evidence: false` and an
+/// `unverified_caller_supplied` state binding. Use [`capture_rgba8`] or
+/// [`capture_rgba8_from_pixels`] for evidence-bearing renderer output.
+pub fn capture_unverified_rgba8_from_pixels(
+    scene: &Scene,
+    renderer: &Renderer,
+    options: CaptureOptions,
+    width: u32,
+    height: u32,
+    rgba8: Vec<u8>,
+) -> Result<CaptureRgba8, CaptureError> {
+    capture_rgba8_from_pixels_impl(scene, renderer, options, width, height, rgba8, false)
+}
+
+fn capture_rgba8_from_pixels_impl(
+    scene: &Scene,
+    renderer: &Renderer,
+    options: CaptureOptions,
+    width: u32,
+    height: u32,
+    rgba8: Vec<u8>,
+    require_renderer_owned_pixels: bool,
+) -> Result<CaptureRgba8, CaptureError> {
     let rendered = renderer
         .rendered_frame_state()
         .ok_or(CaptureError::NoRenderedFrame)?;
-    let rendered_revisions = revisions_from_dirty(rendered.dirty_state());
+    let provenance = if require_renderer_owned_pixels {
+        let readback = renderer
+            .readback_frame_state()
+            .ok_or(CaptureError::NoReadbackFrame)?;
+        if !readback.describes_same_render(rendered) {
+            return Err(CaptureError::NoReadbackFrame);
+        }
+        let renderer_pixels = renderer.read_pixels();
+        let expected_hash = fnv1a64_hex(renderer_pixels.rgba8());
+        let actual_hash = fnv1a64_hex(rgba8.as_slice());
+        if renderer_pixels.width() != width
+            || renderer_pixels.height() != height
+            || renderer_pixels.rgba8() != rgba8.as_slice()
+        {
+            return Err(CaptureError::PixelReadbackMismatch {
+                expected_fnv1a64: expected_hash,
+                actual_fnv1a64: actual_hash,
+            });
+        }
+        readback
+    } else {
+        rendered
+    };
+    let rendered_revisions = revisions_from_dirty(provenance.dirty_state());
     let current_revisions = revisions_from_dirty(scene.dirty_state());
-    if rendered_revisions != current_revisions || scene.active_camera() != Some(rendered.camera()) {
+    if rendered_revisions != current_revisions || scene.active_camera() != Some(provenance.camera())
+    {
         return Err(CaptureError::StaleRender {
             rendered: rendered_revisions,
             current: current_revisions,
         });
     }
-    let camera = capture_camera(scene, rendered.camera());
-    let capabilities = *renderer.capabilities();
-    let backend = capabilities.backend;
+    let camera = capture_camera(scene, provenance.camera());
+    if width != provenance.width() || height != provenance.height() {
+        return Err(CaptureError::InvalidPixelBuffer {
+            width,
+            height,
+            expected_len: provenance.width() as usize * provenance.height() as usize * 4,
+            actual_len: rgba8.len(),
+        });
+    }
+    let capabilities = provenance.capabilities();
+    let backend = provenance.backend();
     pixels::validate_rgba8_len(width, height, rgba8.len())?;
     let pixels = summarize_rgba8(width, height, rgba8.as_slice())?;
     let auto_frame = capture_auto_frame(
         scene,
-        rendered.camera(),
+        provenance.camera(),
         options.auto_frame_bounds,
         width,
         height,
@@ -316,6 +388,34 @@ pub fn capture_rgba8_from_pixels(
         viewport,
         backend,
         capabilities,
+        frame: CaptureFrameProvenance {
+            pixel_source: if require_renderer_owned_pixels {
+                "renderer_owned_readback"
+            } else {
+                "caller_supplied"
+            }
+            .to_owned(),
+            state_binding: if require_renderer_owned_pixels {
+                "exact_readback_completion"
+            } else {
+                "unverified_caller_supplied"
+            }
+            .to_owned(),
+            release_evidence: require_renderer_owned_pixels,
+            render_generation: provenance.render_generation(),
+            target_revision: provenance.target_revision(),
+            output_resources_revision: provenance.output_resources_revision(),
+            output_color_space: provenance.output_color_space(),
+            exposure_ev: provenance.exposure_ev(),
+            tonemapper: provenance.tonemapper().to_owned(),
+            anti_aliasing: provenance.anti_aliasing().to_owned(),
+            supersample_factor: provenance.supersample_factor(),
+            bloom: provenance.bloom(),
+            screen_space_ambient_occlusion: provenance.screen_space_ambient_occlusion(),
+            screen_space_reflections: provenance.screen_space_reflections(),
+            depth_of_field: provenance.depth_of_field(),
+            readback_completed_unix_ms: provenance.readback_completed_unix_ms(),
+        },
         auto_frame,
         pixels,
     };
@@ -382,6 +482,19 @@ impl fmt::Display for CaptureError {
                     "capture requested before the renderer produced a frame"
                 )
             }
+            Self::NoReadbackFrame => {
+                write!(
+                    formatter,
+                    "capture requested after a render that produced no matching pixel readback; render with synchronous readback or complete the pending asynchronous readback first"
+                )
+            }
+            Self::PixelReadbackMismatch {
+                expected_fnv1a64,
+                actual_fnv1a64,
+            } => write!(
+                formatter,
+                "capture pixels do not match the renderer's latest completed readback (expected FNV-1a-64 {expected_fnv1a64}, got {actual_fnv1a64}); request a fresh renderer readback and capture those exact bytes"
+            ),
             Self::StaleRender { rendered, current } => {
                 write!(
                     formatter,

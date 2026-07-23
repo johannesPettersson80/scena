@@ -2,7 +2,7 @@
 
 Status: archived historical evidence
 Canonical active backlog:
-`docs/checklists/full-repo-review-v1.8.0-remediation.md`
+`docs/checklists/full-repo-review-v1.9.0-remediation.md`
 Date: 2026-06-01
 Scope: expose generic `scena` scene/asset/render primitives to browser/WASM
 hosts and ship stable JSON contracts for inspection, capability, capture, and

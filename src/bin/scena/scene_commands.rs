@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::{Duration, Instant};
 
 use super::scena_args::{
     DiagnoseCommandArgs, InspectCommandArgs, RenderCommandArgs, RepairCommandArgs,
@@ -23,6 +24,7 @@ use super::scena_output::add_backend_selection_to_outcome;
 
 pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = RenderCommandArgs::parse(args)?;
+    let total_started = Instant::now();
     let policy = effective_recipe_policy(&args.allow_roots, None)?;
     let input = match resolve_scene_input(&args.input, policy) {
         Ok(input) => input,
@@ -50,10 +52,11 @@ pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> 
             return asset_doctor_outcome_or_error(&input.asset, "render", error.to_string());
         }
     };
-    warn_gpu_fallback(args.gpu, first.renderer().capabilities().backend);
+    let capture_started = Instant::now();
     let capture = first
         .capture()
         .map_err(|error| format!("failed to capture '{}': {error}", input.asset))?;
+    let capture_duration = capture_started.elapsed();
 
     ensure_parent_dir(&args.out)?;
     capture
@@ -78,9 +81,17 @@ pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> 
         .scene()
         .inspect_with_assets(first.assets())
         .to_schema_report();
-    let options = render_introspection_options(args.detail)
+    let mut options = render_introspection_options(args.detail)
         .with_capture_png_path(path_for_json(&args.out))
         .with_capture_descriptor_path(path_for_json(&descriptor_path));
+    if args.timings {
+        options = options.with_timings(scena::RenderIntrospectionTimingsV1::measured_monotonic(
+            duration_ms(first.prepare_duration()),
+            duration_ms(first.render_duration()),
+            duration_ms(capture_duration),
+            duration_ms(total_started.elapsed()),
+        ));
+    }
     let report = first
         .renderer()
         .introspect_capture(&capture, &inspection, options);
@@ -93,14 +104,6 @@ pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> 
     )
 }
 
-fn warn_gpu_fallback(requested_gpu: bool, backend: scena::Backend) {
-    if requested_gpu && backend != scena::Backend::HeadlessGpu {
-        eprintln!(
-            "scena: --gpu requested but HeadlessGpu was unavailable; rendered with {backend:?}"
-        );
-    }
-}
-
 #[cfg(feature = "scene-host")]
 fn run_render_scene_host_recipe(
     input: super::scena_input::ResolvedSceneInput,
@@ -108,6 +111,7 @@ fn run_render_scene_host_recipe(
     height: u32,
     args: RenderCommandArgs,
 ) -> Result<CliOutcome, String> {
+    let total_started = Instant::now();
     let policy = input.policy.to_schema_report();
     let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, args.gpu,
@@ -124,14 +128,19 @@ fn run_render_scene_host_recipe(
             );
         }
     };
-    warn_gpu_fallback(args.gpu, host.backend());
+    let prepare_started = Instant::now();
     host.prepare()
         .map_err(|error| format!("failed to prepare recipe scene: {error}"))?;
+    let prepare_duration = prepare_started.elapsed();
+    let render_started = Instant::now();
     host.render()
         .map_err(|error| format!("failed to render recipe scene: {error}"))?;
+    let render_duration = render_started.elapsed();
+    let capture_started = Instant::now();
     let capture = host
         .capture()
         .map_err(|error| format!("failed to capture recipe scene: {error}"))?;
+    let capture_duration = capture_started.elapsed();
 
     ensure_parent_dir(&args.out)?;
     capture
@@ -157,9 +166,17 @@ fn run_render_scene_host_recipe(
         .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
     let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
         .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
-    let options = render_introspection_options(args.detail)
+    let mut options = render_introspection_options(args.detail)
         .with_capture_png_path(path_for_json(&args.out))
         .with_capture_descriptor_path(path_for_json(&descriptor_path));
+    if args.timings {
+        options = options.with_timings(scena::RenderIntrospectionTimingsV1::measured_monotonic(
+            duration_ms(prepare_duration),
+            duration_ms(render_duration),
+            duration_ms(capture_duration),
+            duration_ms(total_started.elapsed()),
+        ));
+    }
     let report = host
         .renderer()
         .introspect_capture(&capture, &inspection, options);
@@ -173,6 +190,10 @@ fn run_render_scene_host_recipe(
         )?,
         &policy,
     )
+}
+
+fn duration_ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 #[cfg(not(feature = "scene-host"))]

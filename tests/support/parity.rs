@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-use scena::{AntiAliasing, Assets, CameraKey, Renderer, Scene};
+use scena::{AntiAliasing, Assets, CameraKey, GpuAdapterReport, Renderer, Scene};
 
 #[allow(dead_code)]
 const LAVAPIPE_ICD: &str = "/usr/share/vulkan/icd.d/lvp_icd.json";
@@ -74,6 +74,7 @@ pub struct OwnedRgbaFrame {
     pub rgba8: Vec<u8>,
     pub width: u32,
     pub height: u32,
+    pub gpu_adapter: Option<GpuAdapterReport>,
 }
 
 impl OwnedRgbaFrame {
@@ -90,19 +91,183 @@ pub struct CpuGpuFramePair {
     pub gpu: OwnedRgbaFrame,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParityExecutionPolicy {
+    SkipDiagnostic,
+    DiagnosticGpuConformance,
+    RequiredPhysicalHardware,
+}
+
+pub const fn parity_execution_policy(
+    strict_required: bool,
+    adapter_hint_present: bool,
+    lavapipe_available: bool,
+) -> ParityExecutionPolicy {
+    if strict_required {
+        ParityExecutionPolicy::RequiredPhysicalHardware
+    } else if adapter_hint_present || lavapipe_available {
+        ParityExecutionPolicy::DiagnosticGpuConformance
+    } else {
+        ParityExecutionPolicy::SkipDiagnostic
+    }
+}
+
 #[allow(dead_code)]
 pub fn require_cpu_gpu_parity_adapter_or_skip(test_name: &str) -> bool {
-    if std::env::var_os("SCENA_USE_GPU").is_none()
-        && std::env::var_os("VK_ICD_FILENAMES").is_none()
-        && !Path::new(LAVAPIPE_ICD).exists()
-    {
+    let policy = parity_execution_policy(
+        std::env::var("SCENA_REQUIRE_GPU_PARITY").as_deref() == Ok("1"),
+        std::env::var_os("VK_ICD_FILENAMES").is_some(),
+        Path::new(LAVAPIPE_ICD).exists(),
+    );
+    if policy == ParityExecutionPolicy::SkipDiagnostic {
+        write_parity_gate_result(test_name, None, 0, "skipped", false, "adapter-unavailable");
         eprintln!(
-            "skipping {test_name}; set SCENA_USE_GPU=1 or install lavapipe at {LAVAPIPE_ICD} to require CPU/GPU parity proof"
+            "skipping {test_name}; set SCENA_REQUIRE_GPU_PARITY=1 on a physical-hardware lane or install/configure a diagnostic GPU adapter"
         );
         return false;
     }
-    configure_lavapipe_adapter();
+    if policy == ParityExecutionPolicy::DiagnosticGpuConformance {
+        configure_lavapipe_adapter();
+    }
     true
+}
+
+#[allow(dead_code)]
+pub fn record_cpu_gpu_parity_pass(
+    test_name: &str,
+    adapter: &GpuAdapterReport,
+    assertions_executed: u64,
+) {
+    assert!(
+        assertions_executed > 0,
+        "required parity proof must record executed assertions"
+    );
+    let strict = std::env::var("SCENA_REQUIRE_GPU_PARITY").as_deref() == Ok("1");
+    let hardware = matches!(
+        adapter.device_type.as_str(),
+        "DiscreteGpu" | "IntegratedGpu" | "VirtualGpu"
+    ) && ![
+        "llvmpipe",
+        "lavapipe",
+        "swiftshader",
+        "software",
+        "basic render",
+    ]
+    .iter()
+    .any(|marker| {
+        format!(
+            "{} {} {}",
+            adapter.name, adapter.driver, adapter.driver_info
+        )
+        .to_ascii_lowercase()
+        .contains(marker)
+    });
+    let release_evidence = strict && hardware;
+    write_parity_gate_result(
+        test_name,
+        Some(adapter),
+        assertions_executed,
+        "passed",
+        release_evidence,
+        if release_evidence {
+            "physical-hardware-required"
+        } else {
+            "diagnostic-gpu-conformance"
+        },
+    );
+    assert!(
+        !strict || hardware,
+        "SCENA_REQUIRE_GPU_PARITY=1 requires a physical hardware adapter, got {adapter:?}"
+    );
+}
+
+fn write_parity_gate_result(
+    test_name: &str,
+    adapter: Option<&GpuAdapterReport>,
+    assertions_executed: u64,
+    status: &str,
+    release_evidence: bool,
+    proof_class: &str,
+) {
+    let artifact_dir = Path::new("target/gate-artifacts/q08-required-parity");
+    fs::create_dir_all(artifact_dir).expect("Q08 parity artifact directory creates");
+    let artifact = serde_json::json!({
+        "schema": "scena.q08.required_cpu_gpu_parity.v1",
+        "status": status,
+        "release_evidence": release_evidence,
+        "release_rejection_codes": if release_evidence {
+            serde_json::json!([])
+        } else {
+            serde_json::json!(["PHYSICAL_GPU_PARITY_NOT_EXECUTED"])
+        },
+        "proof_class": proof_class,
+        "test_name": test_name,
+        "producer": format!("cargo test --test {} {test_name} -- --exact", parity_test_target(test_name)),
+        "commit_sha": release_commit(),
+        "timestamp_unix_seconds": release_timestamp(),
+        "assertions_executed": assertions_executed,
+        "adapter": adapter,
+        "backend": adapter.map(|value| value.backend.as_str()),
+        "source_checksums": [{
+            "path": format!("tests/{}.rs", parity_test_target(test_name)),
+            "sha256": parity_source_sha256(test_name),
+        }],
+    });
+    fs::write(
+        artifact_dir.join(format!("{}.json", parity_artifact_name(test_name))),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&artifact).expect("Q08 parity result serializes")
+        ),
+    )
+    .expect("Q08 parity result writes");
+}
+
+fn parity_test_target(test_name: &str) -> &'static str {
+    match test_name {
+        "physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep" => {
+            "transmission_parity"
+        }
+        "core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep" => "pbr_brdf_parity",
+        "pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu" => {
+            "pf08_texture_bake_parity"
+        }
+        "close_camera_near_clip_matches_cpu_and_gpu_rendered_output" => "c13_depth_clipping_parity",
+        "dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports"
+        | "z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion" => {
+            "dynamic_transform_parity"
+        }
+        _ => panic!("unregistered Q08 parity test {test_name}"),
+    }
+}
+
+fn parity_artifact_name(test_name: &str) -> String {
+    test_name.replace('_', "-")
+}
+
+fn parity_source_sha256(test_name: &str) -> String {
+    use sha2::Digest as _;
+    let path = format!("tests/{}.rs", parity_test_target(test_name));
+    let bytes = fs::read(&path).unwrap_or_else(|error| panic!("failed to read {path}: {error}"));
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn release_commit() -> String {
+    std::env::var("SCENA_RELEASE_COMMIT")
+        .or_else(|_| std::env::var("GITHUB_SHA"))
+        .ok()
+        .filter(|value| value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .unwrap_or_else(|| "local-checkout".to_string())
+}
+
+fn release_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time follows Unix epoch")
+        .as_secs()
 }
 
 #[allow(dead_code)]
@@ -172,6 +337,7 @@ pub fn render_scene_frame_with_renderer(
         rgba8: renderer.frame_rgba8().to_vec(),
         width,
         height,
+        gpu_adapter: renderer.gpu_adapter_report(),
     }
 }
 

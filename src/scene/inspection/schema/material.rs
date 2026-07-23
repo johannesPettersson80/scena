@@ -145,6 +145,8 @@ fn texture_source_format_name(format: TextureSourceFormat) -> &'static str {
         TextureSourceFormat::Jpeg => "jpeg",
         TextureSourceFormat::Webp => "webp",
         TextureSourceFormat::Ktx2Basisu => "ktx2_basisu",
+        TextureSourceFormat::MemoryRgba8 => "memory_rgba8",
+        TextureSourceFormat::MemoryRgba16Float => "memory_rgba16_float",
     }
 }
 

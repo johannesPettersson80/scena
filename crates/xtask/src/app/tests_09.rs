@@ -420,6 +420,12 @@ pub(crate) fn release_lane_artifact_supports_separate_headless_cpu_proof_lane() 
         &fixture_root.join("target/gate-artifacts"),
         "0123456789abcdef0123456789abcdef01234567",
     );
+    crate::app::tests_19::write_q11_reference_stability_fixture(
+        &fixture_root.join("target/gate-artifacts"),
+        "0123456789abcdef0123456789abcdef01234567",
+        "linux",
+        "x86_64",
+    );
     crate::app::tests_26::write_q02_release_proof_fixtures(
         &fixture_root,
         "0123456789abcdef0123456789abcdef01234567",

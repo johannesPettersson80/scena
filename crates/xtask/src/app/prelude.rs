@@ -20,8 +20,9 @@ pub(crate) use crate::app::asset_validation::{
     scena_native_asset_guidance,
 };
 pub(crate) use crate::app::core::{
-    Command, DoctorMode, Finding, VisualProofCommand, finding_reference, parse_command,
-    print_usage, run,
+    CURRENT_RELEASE_NOTES, CURRENT_RELEASE_VERSION, CURRENT_REMEDIATION_CHECKLIST,
+    CURRENT_REVIEW_REPORT, Command, DoctorMode, Finding, VisualProofCommand, finding_reference,
+    parse_command, print_usage, run,
 };
 pub(crate) use crate::app::doctor_architecture::{
     check_architecture_contract, check_architecture_dependency_direction, check_module_boundaries,
@@ -41,9 +42,10 @@ pub(crate) use crate::app::doctor_core::{
     check_a05_scena_convert_contract, check_a06_repair_and_doctor_inputs,
     check_a07_name_candidates_and_remedies, check_a08_transform_grammar,
     check_a09_feature_discoverability, check_agent_contracts, check_cli_output_contracts,
-    check_cpu_ibl_gap_documented, check_feature_gated_contract_tests_documented,
-    check_feature_ownership_contracts, check_full_review_q06_silent_failure_contracts,
-    check_m8_real_asset_dual_lane, check_no_ignored_release_tests, check_q07_claim_truth_contracts,
+    check_cpu_ibl_gap_documented, check_current_release_document_version,
+    check_feature_gated_contract_tests_documented, check_feature_ownership_contracts,
+    check_full_review_q06_silent_failure_contracts, check_m8_real_asset_dual_lane,
+    check_no_ignored_release_tests, check_q07_claim_truth_contracts,
     check_recipe_build_policy_boundary, check_test_control_flow_policy,
     check_tests_env_flags_documented, check_waterbottle_third_party_reference, find_env_var_names,
     repo_root, require_files, run_architecture_doctor, run_docs_doctor, run_doctor,
@@ -109,23 +111,29 @@ pub(crate) use crate::app::doctor_scene_platform::{
     check_webgl2_depth_contracts, contains_scope_term, directional_shadow_shader_has_pcf3x3,
 };
 pub(crate) use crate::app::doctor_visual_release::{
-    check_c04_release_readiness_contract, check_default_environment_derivative_payload,
-    check_default_environment_manifest, check_feature_specific_visual_oracles,
-    check_m1_browser_rendered_output, check_m2_browser_rendered_output,
-    check_m2_visual_fixture_metadata, check_m6_browser_renderer_probe, check_m9_ci_release_lanes,
-    check_m10_claim_audit_contract, check_ndc_smoke_fixture_classification,
-    check_pf00_performance_truth_contracts, check_pf03_pf05_hot_path_contracts,
-    check_pf06_spatial_acceleration_contracts, check_pf07_pf08_cpu_prepare_contracts,
-    check_pf09_parallel_work_contracts, check_pf10_hot_path_contracts,
-    check_q01_required_webgpu_pixel_parity, check_q01_waterbottle_cpu_proof,
-    check_q02_round_e_material_proof, check_q03_m2_local_structure,
+    check_c04_release_readiness_contract, check_ci_attestation_contracts,
+    check_default_environment_derivative_payload, check_default_environment_manifest,
+    check_feature_specific_visual_oracles, check_m1_browser_rendered_output,
+    check_m2_browser_rendered_output, check_m2_visual_fixture_metadata,
+    check_m6_browser_renderer_probe, check_m9_ci_release_lanes, check_m10_claim_audit_contract,
+    check_ndc_smoke_fixture_classification, check_pf00_performance_truth_contracts,
+    check_pf03_pf05_hot_path_contracts, check_pf06_spatial_acceleration_contracts,
+    check_pf07_pf08_cpu_prepare_contracts, check_pf09_parallel_work_contracts,
+    check_pf10_hot_path_contracts, check_q01_required_webgpu_pixel_parity,
+    check_q01_waterbottle_cpu_proof, check_q02_round_e_material_proof,
+    check_q03_m2_local_structure, check_q04_browser_evidence_classification,
     check_q04_cpu_webgl2_parity_contracts, check_q05_effect_footprint_contracts,
-    check_q06_required_gpu_lane_contracts, check_release_publish_dry_run_helper,
+    check_q06_required_gpu_lane_contracts, check_q07_antialiasing_effect_contract,
+    check_q08_required_physical_parity, check_q09_structured_adapter_expectations,
+    check_q10_rendered_waterbottle_mutations, check_q11_reference_stability,
+    check_q12_semantic_doctor_contracts, check_release_publish_dry_run_helper,
     check_release_readiness_ci_fail_closed, check_visual_fixture_metadata,
     check_workflow_action_pins, fixture_block, jobs_with_continue_on_error_release_readiness,
     require_contains_in_xtask_app_tree,
 };
 pub(crate) use crate::app::prerender_environment::run_prerender_environment;
+#[cfg(test)]
+pub(crate) use crate::app::release::stage_release_artifacts_for_commit;
 pub(crate) use crate::app::release::{
     MIN_BENCHMARK_SAMPLE_COUNT, RELEASE_ARTIFACT_MAX_AGE_SECONDS,
     RELEASE_ARTIFACT_MAX_FUTURE_SKEW_SECONDS, RELEASE_LANE_ARTIFACT_SUFFIXES,
@@ -145,8 +153,8 @@ pub(crate) use crate::app::release::{
     release_readiness_report, require_gpu_resource_lifecycle_proof, require_json_status_passed,
     required_browser_gpu_parity_passes, required_gpu_resource_lifecycle_proof_passes,
     resolve_release_artifact_root, run_claim_audit, run_release_lane_artifact,
-    run_release_readiness, run_stage_release_artifacts, stage_release_artifacts,
-    stage_release_artifacts_for_commit, utc_rfc3339_from_unix, validate_browser_backend_result,
+    run_release_readiness, run_stage_release_artifacts, utc_rfc3339_from_unix,
+    validate_browser_backend_result, validate_q11_reference_stability_result,
     validate_waterbottle_cpu_result,
 };
 pub(crate) use crate::app::util::{

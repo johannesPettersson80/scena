@@ -234,7 +234,13 @@ impl Renderer {
             _ => 0,
         };
         self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
-            output::apply_bloom_rgba8(self.target, &mut self.frame, &mut self.bloom_scratch, bloom)
+            output::apply_bloom_rgba8(
+                self.target,
+                &mut self.frame,
+                &mut self.bloom_scratch,
+                &mut self.fxaa_scratch,
+                bloom,
+            )
         });
         self.stats.fxaa_passes = match self.anti_aliasing {
             AntiAliasing::None | AntiAliasing::Msaa4 | AntiAliasing::Msaa8 => 0,

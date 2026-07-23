@@ -92,7 +92,9 @@ impl HeadlessGltfViewerBuilder {
         } else if self.common.default_environment {
             renderer.set_environment(assets.default_environment());
         }
+        let prepare_started = std::time::Instant::now();
         renderer.prepare_with_assets(&mut scene, &assets)?;
+        let last_prepare_duration = prepare_started.elapsed();
 
         Ok(HeadlessGltfViewer {
             assets,
@@ -103,6 +105,8 @@ impl HeadlessGltfViewerBuilder {
             load_progress_events,
             camera_bookmarks: self.common.camera_bookmarks,
             setup_diagnostics,
+            last_prepare_duration,
+            last_render_duration: None,
         })
     }
 
@@ -123,6 +127,8 @@ impl HeadlessGltfViewerBuilder {
             load_progress_events,
             camera_bookmarks,
             setup_diagnostics: _,
+            last_prepare_duration,
+            last_render_duration,
         } = viewer;
 
         Ok(FirstRender {
@@ -135,6 +141,9 @@ impl HeadlessGltfViewerBuilder {
             diagnostics,
             load_progress_events,
             camera_bookmarks,
+            prepare_duration: last_prepare_duration,
+            render_duration: last_render_duration
+                .expect("render_next_frame records first-render duration"),
         })
     }
 }

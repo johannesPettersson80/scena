@@ -43,6 +43,8 @@ jobs:
           test -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}"
           command -v vulkaninfo
           vulkaninfo --summary
+      - name: Validate every production shader variant offline
+        run: cargo test --lib render::gpu::shader_manifest::tests -- --nocapture
       - name: Install pinned browser proof tools
         run: |
           npm ci

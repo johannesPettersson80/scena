@@ -1,6 +1,6 @@
 use scena::{
-    Assets, Color, GeometryDesc, InspectionHelperKind, MaterialDesc, SceneVisibilitySnapshot,
-    Transform, Vec3,
+    Assets, Color, GeometryDesc, InspectionHelperKind, MaterialDesc, Scene,
+    SceneVisibilitySnapshot, Transform, Vec3,
 };
 
 #[test]
@@ -41,6 +41,34 @@ fn isolate_and_restore_preserve_prior_visibility() {
             .visible(already_hidden)
             .expect("original hidden node remains hidden")
     );
+}
+
+#[test]
+fn restore_visibility_skips_removed_entries_and_clears_isolate_state() {
+    let mut scene = Scene::new();
+    let keep = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("kept node inserts");
+    let removed = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("removed node inserts");
+    let later_live = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("later node inserts");
+    let snapshot = scene.isolate([keep]).expect("isolate succeeds");
+    assert_eq!(scene.visible(later_live), Some(false));
+    scene.remove_node(removed).expect("snapshot node removes");
+
+    let restore = scene
+        .restore_visibility_with_report(&snapshot)
+        .expect("stale snapshot entries are skipped");
+
+    assert_eq!(scene.visible(later_live), Some(true));
+    assert!(restore.restored.contains(&later_live));
+    assert_eq!(restore.skipped_stale, vec![removed]);
+    let report = scene.inspection_toolkit_report();
+    assert!(report.isolated_nodes.is_empty());
+    assert_eq!(report.hidden_by_isolate_count, 0);
 }
 
 #[test]

@@ -1,9 +1,11 @@
-use super::scena_args::PlaceCommandArgs;
+use super::scena_args::{PlaceCommandArgs, PlaceTargetArg};
 use super::scena_input::{RecipeReadError, read_recipe_text, resolve_recipe_asset_uri};
 use super::scena_output::{CliOutcome, json_outcome};
 use sha2::{Digest, Sha256};
 
 mod authored_features;
+mod authored_nodes;
+use authored_nodes::{public_placement_target, run_authored_node_placement};
 
 pub(crate) fn run_place_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = PlaceCommandArgs::parse(args)?;
@@ -38,16 +40,23 @@ pub(crate) fn run_place_command(args: &[String]) -> Result<CliOutcome, String> {
         .recipe
         .to_str()
         .ok_or_else(|| format!("recipe path '{}' is not valid UTF-8", args.recipe.display()))?;
-    let verb = normalize_place_verb(&args.verb);
+    let verb = match args.verb.as_str() {
+        "fit-to-size" => "fit_to_size".to_owned(),
+        other => other.to_owned(),
+    };
+    if matches!(args.target_subject, PlaceTargetArg::Node(_)) {
+        return run_authored_node_placement(&args, &text, recipe, verb);
+    }
+    let import_id = args.target_subject.id();
     let runtime = match load_placement_runtime(recipe_path, &recipe, &verb) {
         Ok(runtime) => runtime,
         Err(report) => return json_outcome(&*report, 1, "failed to serialize placement result"),
     };
-    let Some(source_index) = runtime.import_index(&args.import_id) else {
+    let Some(source_index) = runtime.import_index(import_id) else {
         let report = scena::ScenePlacementResultV1::failure(
-            args.import_id.clone(),
+            import_id,
             verb,
-            unknown_import_diagnostic(&recipe, &args.import_id, "$.imports"),
+            unknown_import_diagnostic(&recipe, import_id, "$.imports"),
         );
         return json_outcome(&report, 1, "failed to serialize placement result");
     };
@@ -127,15 +136,17 @@ fn emit_recipe_patch(
     mut recipe: scena::SceneRecipeV1,
     placement: scena::ScenePlacementResultV1,
 ) -> Result<CliOutcome, String> {
+    let target_id = args.target_subject.id();
+    let public_target = public_placement_target(&args.target_subject);
     let source_sha256 = sha256_hex(source_text.as_bytes());
     let source_path = args.recipe.display().to_string();
     if let Some(expected) = args.expected_source_sha256.as_deref()
         && expected != source_sha256
     {
-        let report = scena::SceneRecipePatchResultV1::failure(
+        let report = scena::SceneRecipePatchResultV1::failure_for_target(
             source_path,
             source_sha256.clone(),
-            args.import_id.clone(),
+            public_target.clone(),
             placement.verb,
             scena::ScenePlacementDiagnosticV1::new(
                 "stale_source",
@@ -147,10 +158,10 @@ fn emit_recipe_patch(
         return json_outcome(&report, 1, "failed to serialize recipe patch result");
     }
     let Some(transform) = placement.transform else {
-        let report = scena::SceneRecipePatchResultV1::failure(
+        let report = scena::SceneRecipePatchResultV1::failure_for_target(
             source_path,
             source_sha256,
-            args.import_id.clone(),
+            public_target.clone(),
             placement.verb,
             placement.diagnostics.into_iter().next().unwrap_or_else(|| {
                 scena::ScenePlacementDiagnosticV1::new(
@@ -163,38 +174,68 @@ fn emit_recipe_patch(
         );
         return json_outcome(&report, 1, "failed to serialize recipe patch result");
     };
-    let Some((import_index, import)) = recipe
-        .imports
-        .iter_mut()
-        .enumerate()
-        .find(|(_, import)| import.id == args.import_id)
-    else {
-        return Err("validated placement import disappeared before patch emission".to_owned());
+    let (previous_transform, semantic_path) = match &args.target_subject {
+        PlaceTargetArg::Import(_) => {
+            let Some((index, import)) = recipe
+                .imports
+                .iter_mut()
+                .enumerate()
+                .find(|(_, import)| import.id == target_id)
+            else {
+                return Err(
+                    "validated placement import disappeared before patch emission".to_owned(),
+                );
+            };
+            let previous = import
+                .transform
+                .as_ref()
+                .map(scena::Transform::try_from)
+                .transpose()
+                .map_err(|error| {
+                    format!("validated import transform failed to resolve: {error}")
+                })?;
+            import.transform = Some(scena::SceneRecipeTransformV1::from(transform));
+            (previous, format!("$.imports[{index}].transform"))
+        }
+        PlaceTargetArg::Node(_) => {
+            let Some((index, node)) = recipe
+                .nodes
+                .iter_mut()
+                .enumerate()
+                .find(|(_, node)| node.id == target_id)
+            else {
+                return Err("validated placement node disappeared before patch emission".to_owned());
+            };
+            let previous = node
+                .transform
+                .as_ref()
+                .map(scena::Transform::try_from)
+                .transpose()
+                .map_err(|error| format!("validated node transform failed to resolve: {error}"))?;
+            node.transform = Some(scena::SceneRecipeTransformV1::from(transform));
+            (previous, format!("$.nodes[{index}].transform"))
+        }
     };
-    let previous_transform = import
-        .transform
-        .as_ref()
-        .map(scena::Transform::try_from)
-        .transpose()
-        .map_err(|error| format!("validated import transform failed to resolve: {error}"))?;
-    import.transform = Some(scena::SceneRecipeTransformV1::from(transform));
     rebase_recipe_resource_uris(&source_path, &mut recipe);
     let updated_recipe = serde_json::to_value(&recipe)
         .map_err(|error| format!("failed to serialize updated recipe: {error}"))?;
-    let report = scena::SceneRecipePatchResultV1::success(scena::SceneRecipePatchSuccessInputV1 {
-        source_path,
-        source_sha256,
-        import_id: args.import_id.clone(),
-        verb: placement.verb,
-        previous_transform,
-        transform,
-        updated_recipe,
-        semantic_change: scena::SceneRecipeSemanticChangeV1::transform(
-            format!("$.imports[{import_index}].transform"),
+    let report = scena::SceneRecipePatchResultV1::success_for_target(
+        scena::SceneRecipePatchSuccessInputV1 {
+            source_path,
+            source_sha256,
+            import_id: target_id.to_owned(),
+            verb: placement.verb,
             previous_transform,
             transform,
-        ),
-    });
+            updated_recipe,
+            semantic_change: scena::SceneRecipeSemanticChangeV1::transform(
+                semantic_path,
+                previous_transform,
+                transform,
+            ),
+        },
+        public_target,
+    );
     json_outcome(&report, 0, "failed to serialize recipe patch result")
 }
 
@@ -398,16 +439,30 @@ fn unknown_import_diagnostic(
     import_id: &str,
     path: &str,
 ) -> scena::ScenePlacementDiagnosticV1 {
+    if recipe.nodes.iter().any(|node| node.id == import_id) {
+        return scena::ScenePlacementDiagnosticV1::new(
+            "wrong_target_namespace",
+            path,
+            format!("'{import_id}' is an authored node, not an import"),
+            format!("use --node {import_id}"),
+        )
+        .with_candidates(vec![format!("--node {import_id}")]);
+    }
     let mut diagnostic = scena::ScenePlacementDiagnosticV1::new(
         "unknown_import",
         path,
         format!("recipe import '{import_id}' was not found"),
         "pass an import id declared in the recipe",
     );
-    if let Some(first) = recipe.imports.first() {
-        diagnostic = diagnostic.with_suggestion(first.id.clone());
+    let candidates = scena::nearest_name_candidates(
+        import_id,
+        recipe.imports.iter().map(|import| import.id.as_str()),
+        3,
+    );
+    if let Some(first) = candidates.first() {
+        diagnostic = diagnostic.with_suggestion(first.clone());
     }
-    diagnostic
+    diagnostic.with_candidates(candidates)
 }
 
 fn source_world_transform(runtime: &PlacementRuntime, source_index: usize) -> scena::Transform {
@@ -457,11 +512,4 @@ fn placement_target_point(
                 "choose a target point or an import with renderable bounds",
             ))
         })
-}
-
-fn normalize_place_verb(verb: &str) -> String {
-    match verb {
-        "fit-to-size" => "fit_to_size".to_owned(),
-        other => other.to_owned(),
-    }
 }

@@ -53,11 +53,17 @@ pub(crate) fn check_pf03_pf05_hot_path_contracts(root: &Path, findings: &mut Vec
             "Arc<[prepare::PreparedPrimitive]>",
             "share_model_space_vertex_buffer",
             "collect_depth_prepass_stats_iter",
+            "retained_primitives",
+            "culling::cull_prepared_primitives",
         ],
-        &[
-            "retained_primitives.clone()",
-            "let mut depth_primitives = primitives.clone()",
-        ],
+        &["let mut depth_primitives = primitives.clone()"],
+    );
+    require_contains(
+        root,
+        findings,
+        "PF03-PF05-HOT-PATH-CONTRACTS",
+        "src/render/phase5_tests.rs",
+        &["off_frustum_source_stays_in_retained_template_across_camera_motion"],
     );
     check_hot_path_source_contract(
         root,

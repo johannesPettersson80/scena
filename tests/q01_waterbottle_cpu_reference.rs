@@ -8,7 +8,9 @@
 use std::fs::File;
 use std::io::BufWriter;
 
-use scena::{Assets, Color, Renderer, Scene, Tonemapper, Transform, Vec3};
+use scena::{
+    Assets, CameraKey, Color, MaterialDesc, NodeKey, Renderer, Scene, Tonemapper, Transform, Vec3,
+};
 
 const SIZE: u32 = 256;
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
@@ -23,6 +25,8 @@ const WRONG_MATERIAL_PNG: &str =
 const WRONG_CAMERA_PNG: &str =
     "target/gate-artifacts/q01-waterbottle-cpu/known_bad_wrong_camera.png";
 const RESULT_JSON: &str = "target/gate-artifacts/q01-waterbottle-cpu/result.json";
+const WATERBOTTLE_GLTF_SHA256: &str =
+    "0596f4e61dc781439d254fdfb5e3462daf1762c18715e3e3ac13001aa8f3f547";
 const RGB_CHEBYSHEV_TOLERANCE: u8 = 4;
 const MIN_WITHIN_TOLERANCE_FRACTION: f64 = 0.995;
 const MAX_RGB_RMSE: f64 = 2.0;
@@ -30,15 +34,17 @@ const MAX_RGB_RMSE: f64 = 2.0;
 #[test]
 fn q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders() {
     std::fs::create_dir_all(ARTIFACT_DIR).expect("Q01 artifact directory creates");
-    let (assets, mut scene) = build_waterbottle_scene();
+    let mut fixture = build_waterbottle_scene();
+    let mut renderer = configured_cpu_renderer();
 
-    let mut renderer = Renderer::headless(SIZE, SIZE).expect("Q01 CPU renderer builds");
-    renderer.set_background_color(Color::from_srgb_u8(216, 196, 170));
-    renderer.set_tonemapper(Tonemapper::PbrNeutral);
-    renderer.set_exposure_ev(0.0);
-
-    let live = render_current(&mut renderer, &mut scene, &assets);
+    let live = render_current(&mut renderer, &mut fixture.scene, &fixture.assets);
     write_png(&live, LIVE_PNG);
+
+    let repeat = render_baseline_repeat();
+    assert_eq!(
+        live, repeat,
+        "independent in-process WaterBottle renders must be byte-identical before the committed reference is consulted"
+    );
 
     let reference = read_reference_png();
     assert_eq!(sha256_hex(&reference.encoded), REFERENCE_SHA256);
@@ -57,7 +63,7 @@ fn q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders()
         "flattened chrome must be rejected by the live reference oracle: {flat_chrome_metrics:#?}"
     );
 
-    let wrong_material_frame = wrong_material_mutation(&live);
+    let wrong_material_frame = render_wrong_material_scene();
     write_png(&wrong_material_frame, WRONG_MATERIAL_PNG);
     let wrong_material_metrics = compare_rgba8(&wrong_material_frame, &reference.rgba);
     assert!(
@@ -65,7 +71,7 @@ fn q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders()
         "wrong material must be rejected by the live reference oracle: {wrong_material_metrics:#?}"
     );
 
-    let wrong_camera_frame = wrong_camera_mutation(&live);
+    let wrong_camera_frame = render_wrong_camera_scene();
     write_png(&wrong_camera_frame, WRONG_CAMERA_PNG);
     let wrong_camera_metrics = compare_rgba8(&wrong_camera_frame, &reference.rgba);
     assert!(
@@ -75,6 +81,7 @@ fn q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders()
 
     write_result(
         &live,
+        &repeat,
         &reference.encoded,
         &live_metrics,
         &flat_chrome_metrics,
@@ -83,7 +90,47 @@ fn q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders()
     );
 }
 
-fn build_waterbottle_scene() -> (Assets, Scene) {
+#[test]
+fn q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison() {
+    let first = render_baseline_repeat();
+    let second = render_baseline_repeat();
+    assert_eq!(
+        first, second,
+        "independent in-process WaterBottle renders must be byte-identical before the committed reference is consulted"
+    );
+
+    let reference = read_reference_png();
+    assert_eq!(sha256_hex(&reference.encoded), REFERENCE_SHA256);
+    let first_metrics = compare_rgba8(&first, &reference.rgba);
+    let second_metrics = compare_rgba8(&second, &reference.rgba);
+    if let Ok(candidate_dir) = std::env::var("SCENA_Q11_REFERENCE_CANDIDATE_DIR") {
+        write_reference_candidate(
+            &candidate_dir,
+            &first,
+            &reference.rgba,
+            &reference.encoded,
+            &first_metrics,
+        );
+    }
+    assert!(
+        first_metrics.passes(),
+        "first Q11 render failed: {first_metrics:#?}"
+    );
+    assert!(
+        second_metrics.passes(),
+        "second Q11 render failed: {second_metrics:#?}"
+    );
+    write_q11_result(&first, &second, &first_metrics, &second_metrics);
+}
+
+struct WaterBottleScene {
+    assets: Assets,
+    scene: Scene,
+    mesh: NodeKey,
+    camera: CameraKey,
+}
+
+fn build_waterbottle_scene() -> WaterBottleScene {
     let assets = Assets::new();
     let scene_asset =
         pollster::block_on(assets.load_scene(WATERBOTTLE_PATH)).expect("WaterBottle loads");
@@ -116,7 +163,56 @@ fn build_waterbottle_scene() -> (Assets, Scene) {
         !import.roots().is_empty(),
         "WaterBottle imports scene roots"
     );
-    (assets, scene)
+    let mesh = import
+        .node("WaterBottle")
+        .expect("WaterBottle imported mesh remains addressable");
+    WaterBottleScene {
+        assets,
+        scene,
+        mesh,
+        camera,
+    }
+}
+
+fn configured_cpu_renderer() -> Renderer {
+    let mut renderer = Renderer::headless(SIZE, SIZE).expect("Q01 CPU renderer builds");
+    renderer.set_background_color(Color::from_srgb_u8(216, 196, 170));
+    renderer.set_tonemapper(Tonemapper::PbrNeutral);
+    renderer.set_exposure_ev(0.0);
+    renderer
+}
+
+fn render_baseline_repeat() -> Vec<u8> {
+    let mut fixture = build_waterbottle_scene();
+    let mut renderer = configured_cpu_renderer();
+    render_current(&mut renderer, &mut fixture.scene, &fixture.assets)
+}
+
+fn render_wrong_material_scene() -> Vec<u8> {
+    let mut fixture = build_waterbottle_scene();
+    let wrong_material = fixture
+        .assets
+        .create_material(MaterialDesc::unlit(Color::MAGENTA));
+    fixture
+        .scene
+        .set_mesh_material(fixture.mesh, wrong_material)
+        .expect("wrong-material scene mutation targets the imported mesh");
+    let mut renderer = configured_cpu_renderer();
+    render_current(&mut renderer, &mut fixture.scene, &fixture.assets)
+}
+
+fn render_wrong_camera_scene() -> Vec<u8> {
+    let mut fixture = build_waterbottle_scene();
+    let camera_node = fixture
+        .scene
+        .camera_node(fixture.camera)
+        .expect("active WaterBottle camera owns a scene node");
+    fixture
+        .scene
+        .set_transform(camera_node, Transform::at(Vec3::new(50.0, 50.0, 50.0)))
+        .expect("wrong-camera scene mutation updates the active camera node");
+    let mut renderer = configured_cpu_renderer();
+    render_current(&mut renderer, &mut fixture.scene, &fixture.assets)
 }
 
 fn render_current(renderer: &mut Renderer, scene: &mut Scene, assets: &Assets) -> Vec<u8> {
@@ -136,15 +232,6 @@ fn flattened_chrome_mutation(source: &[u8]) -> Vec<u8> {
         let flattened = (luma / 2 + 48).min(255) as u8;
         [flattened, flattened, flattened, pixel[3]]
     })
-}
-
-fn wrong_material_mutation(source: &[u8]) -> Vec<u8> {
-    mutate_foreground(source, |pixel| [230, 24, 180, pixel[3]])
-}
-
-fn wrong_camera_mutation(source: &[u8]) -> Vec<u8> {
-    let background = [source[0], source[1], source[2], source[3]];
-    background.repeat((SIZE * SIZE) as usize)
 }
 
 fn mutate_foreground(source: &[u8], mutation: impl Fn([u8; 4]) -> [u8; 4]) -> Vec<u8> {
@@ -259,6 +346,7 @@ fn read_reference_png() -> ReferenceImage {
 
 fn write_result(
     live: &[u8],
+    repeat: &[u8],
     reference_png: &[u8],
     live_metrics: &ReferenceMetrics,
     flat_chrome_metrics: &ReferenceMetrics,
@@ -286,11 +374,38 @@ fn write_result(
         "live_png_sha256": sha256_hex_file(LIVE_PNG),
         "reference_path": "tests/assets/gltf/khronos/WaterBottle/reference_cpu_256.png",
         "reference_sha256": sha256_hex(reference_png),
+        "determinism": {
+            "comparison_order": "independent-render-before-committed-reference",
+            "repeat_count": 2,
+            "byte_identical": live == repeat,
+            "rgba8_sha256": [sha256_hex(live), sha256_hex(repeat)],
+        },
         "metrics": live_metrics.json(),
         "mutations": [
-            mutation_json("flattened_chrome", FLAT_CHROME_PNG, flat_chrome_metrics),
-            mutation_json("wrong_material", WRONG_MATERIAL_PNG, wrong_material_metrics),
-            mutation_json("wrong_camera", WRONG_CAMERA_PNG, wrong_camera_metrics),
+            mutation_json(
+                "flattened_chrome",
+                FLAT_CHROME_PNG,
+                flat_chrome_metrics,
+                "post-hoc-pixel",
+                "output-rgba8",
+                &["oracle-evaluator"]
+            ),
+            mutation_json(
+                "wrong_material",
+                WRONG_MATERIAL_PNG,
+                wrong_material_metrics,
+                "rendered-scene",
+                "scene-mesh-material-before-prepare",
+                &["gltf-import", "texture-resources-loaded", "scene-material-override", "cpu-material-resolution", "prepare", "render", "pbr-neutral-tonemap", "srgb8-output"]
+            ),
+            mutation_json(
+                "wrong_camera",
+                WRONG_CAMERA_PNG,
+                wrong_camera_metrics,
+                "rendered-scene",
+                "active-camera-transform-before-prepare",
+                &["gltf-import", "texture-resources-loaded", "active-camera", "prepare", "render", "pbr-neutral-tonemap", "srgb8-output"]
+            ),
         ],
         "rust_test_output_observed": false,
         "command_record_path": "release-lanes/headless-cpu.commands.jsonl",
@@ -313,12 +428,152 @@ fn write_result(
     assert_eq!(live.len(), (SIZE * SIZE * 4) as usize);
 }
 
-fn mutation_json(name: &str, path: &str, metrics: &ReferenceMetrics) -> serde_json::Value {
+fn write_q11_result(
+    first: &[u8],
+    second: &[u8],
+    first_metrics: &ReferenceMetrics,
+    second_metrics: &ReferenceMetrics,
+) {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let artifact_dir = "target/gate-artifacts/q11-reference-stability";
+    std::fs::create_dir_all(artifact_dir).expect("Q11 artifact directory creates");
+    let result_path = format!("{artifact_dir}/{os}-{arch}.json");
+    let commit_sha = current_release_commit();
+    let artifact = serde_json::json!({
+        "schema": "scena.q11.reference_stability.v1",
+        "status": "passed",
+        "release_evidence": true,
+        "test_name": "q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison",
+        "producer": "cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact",
+        "commit_sha": commit_sha,
+        "timestamp_unix_seconds": current_unix_seconds(),
+        "os": os,
+        "arch": arch,
+        "backend": "Headless",
+        "adapter": "software-rasterizer",
+        "width": SIZE,
+        "height": SIZE,
+        "comparison_order": "independent-render-before-committed-reference",
+        "repeat_count": 2,
+        "byte_identical": first == second,
+        "rgba8_sha256": [sha256_hex(first), sha256_hex(second)],
+        "metric_distribution": [first_metrics.json(), second_metrics.json()],
+        "reference": {
+            "path": REFERENCE_PATH,
+            "sha256": REFERENCE_SHA256,
+            "rgb_chebyshev_tolerance": RGB_CHEBYSHEV_TOLERANCE,
+            "min_within_tolerance_fraction": MIN_WITHIN_TOLERANCE_FRACTION,
+            "max_rgb_rmse": MAX_RGB_RMSE,
+        },
+        "source_asset": {
+            "path": WATERBOTTLE_PATH,
+            "sha256": WATERBOTTLE_GLTF_SHA256,
+        },
+        "generator": {
+            "crate_version": env!("CARGO_PKG_VERSION"),
+            "rustc": "1.93.1",
+            "profile": option_env!("PROFILE").unwrap_or("cargo-test"),
+        }
+    });
+    std::fs::write(
+        &result_path,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&artifact).expect("Q11 result serializes")
+        ),
+    )
+    .expect("Q11 result writes");
+}
+
+fn write_reference_candidate(
+    candidate_dir: &str,
+    candidate: &[u8],
+    reference: &[u8],
+    reference_png: &[u8],
+    metrics: &ReferenceMetrics,
+) {
+    let normalized = candidate_dir.replace('\\', "/");
+    assert!(
+        normalized.starts_with("target/reference-candidates/q01-waterbottle-")
+            && !normalized.split('/').any(|part| part == ".."),
+        "Q11 candidate output must be a task-specific target/reference-candidates/q01-waterbottle-* directory"
+    );
+    std::fs::create_dir_all(candidate_dir).expect("Q11 candidate directory creates");
+    let candidate_path = format!("{candidate_dir}/candidate.png");
+    let diff_path = format!("{candidate_dir}/diff-heatmap.png");
+    write_png(candidate, &candidate_path);
+    let diff = candidate
+        .chunks_exact(4)
+        .zip(reference.chunks_exact(4))
+        .flat_map(|(candidate, reference)| {
+            [
+                candidate[0].abs_diff(reference[0]).saturating_mul(4),
+                candidate[1].abs_diff(reference[1]).saturating_mul(4),
+                candidate[2].abs_diff(reference[2]).saturating_mul(4),
+                255,
+            ]
+        })
+        .collect::<Vec<_>>();
+    write_png(&diff, &diff_path);
+    let manifest = serde_json::json!({
+        "schema": "scena.q11.reference_candidate.v1",
+        "status": "review-required",
+        "release_evidence": false,
+        "candidate_only": true,
+        "approval": null,
+        "generator_commit": current_release_commit(),
+        "generator_version": env!("CARGO_PKG_VERSION"),
+        "rustc": "1.93.1",
+        "generated_at_unix_seconds": current_unix_seconds(),
+        "command": "scripts/stage_q01_waterbottle_reference_candidate.sh",
+        "source_asset": {"path": WATERBOTTLE_PATH, "sha256": WATERBOTTLE_GLTF_SHA256},
+        "current_reference": {"path": REFERENCE_PATH, "sha256": sha256_hex(reference_png)},
+        "external_anchor": {
+            "path": "tests/assets/gltf/khronos/WaterBottle/reference_blender_cycles_512.png",
+            "sha256": "17db39248ce1966ae60c3b85d09491ebfb7f654777dc2d150a64db4e938a6883",
+            "required_for_approval": true,
+        },
+        "candidate": {"path": "candidate.png", "sha256": sha256_hex_file(&candidate_path)},
+        "diff": {"path": "diff-heatmap.png", "sha256": sha256_hex_file(&diff_path)},
+        "metrics_against_current_reference": metrics.json(),
+        "tolerance_change_allowed": false,
+        "promotion_requires": [
+            "separate approval file not generated by this command",
+            "named human reviewer",
+            "candidate and before-reference SHA-256 bindings",
+            "external-anchor review",
+            "before/after diff review",
+            "three-architecture stability evidence after promotion"
+        ]
+    });
+    std::fs::write(
+        format!("{candidate_dir}/candidate.json"),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&manifest).expect("Q11 candidate manifest serializes")
+        ),
+    )
+    .expect("Q11 candidate manifest writes");
+}
+
+fn mutation_json(
+    name: &str,
+    path: &str,
+    metrics: &ReferenceMetrics,
+    mutation_kind: &str,
+    mutation_stage: &str,
+    pipeline_coverage: &[&str],
+) -> serde_json::Value {
     serde_json::json!({
         "name": name,
         "path": path.strip_prefix("target/gate-artifacts/").unwrap_or(path),
         "sha256": sha256_hex_file(path),
         "oracle_rejected": !metrics.passes(),
+        "mutation_kind": mutation_kind,
+        "mutation_stage": mutation_stage,
+        "render_count": u8::from(mutation_kind == "rendered-scene"),
+        "pipeline_coverage": pipeline_coverage,
         "metrics": metrics.json(),
     })
 }

@@ -4,6 +4,7 @@
 
 use ::gltf::Document;
 use ::gltf::Primitive;
+use ::gltf::accessor::Accessor;
 use ::gltf::accessor::Iter as AccessorIter;
 use ::gltf::accessor::{DataType, Dimensions};
 use ::gltf::mesh::{Mode, Semantic};
@@ -19,7 +20,12 @@ use super::super::{
 use super::SceneAssetMesh;
 use super::buffers::ResolvedGltfBuffers;
 
+mod accessors;
 mod flat_normals;
+use accessors::{
+    Vec3Encoding, joint_indices, read_tangent_attribute, read_vec3_accessor, read_vec3_attribute,
+    reject_skin_sets_above_one, validate_skin_weight_accessor,
+};
 mod skin_influences;
 
 pub(super) fn parse_meshes(
@@ -27,9 +33,13 @@ pub(super) fn parse_meshes(
     document: &Document,
     buffers: &ResolvedGltfBuffers,
     materials: &[MaterialHandle],
+    raw_material_variant_material_indices: &super::material_variants::RawMaterialVariantMaterialIndices,
     storage: &mut AssetStorage,
     load_warnings: &mut Vec<AssetLoadWarning>,
 ) -> Result<Vec<Vec<SceneAssetMesh>>, AssetError> {
+    let mesh_quantization_declared = document
+        .extensions_used()
+        .any(|extension| extension == "KHR_mesh_quantization");
     document
         .meshes()
         .enumerate()
@@ -46,8 +56,14 @@ pub(super) fn parse_meshes(
                         buffers,
                         mesh_weights: &mesh_weights,
                         materials,
+                        raw_material_indices: raw_material_variant_material_indices
+                            .get(mesh_index)
+                            .and_then(|mesh| mesh.get(primitive_index))
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
                         storage,
                         load_warnings,
+                        mesh_quantization_declared,
                     })
                 })
                 .collect()
@@ -63,8 +79,10 @@ struct PrimitiveParseInputs<'a> {
     buffers: &'a ResolvedGltfBuffers,
     mesh_weights: &'a [f32],
     materials: &'a [MaterialHandle],
+    raw_material_indices: &'a [Option<usize>],
     storage: &'a mut AssetStorage,
     load_warnings: &'a mut Vec<AssetLoadWarning>,
+    mesh_quantization_declared: bool,
 }
 
 fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, AssetError> {
@@ -76,16 +94,30 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         buffers,
         mesh_weights,
         materials,
+        raw_material_indices,
         storage,
         load_warnings,
+        mesh_quantization_declared,
     } = inputs;
     let reader = primitive.reader(|buffer| buffers.reader_buffer(buffer.index()));
-    let positions = read_vec3_attribute(path, primitive, buffers, &Semantic::Positions)?
-        .ok_or_else(|| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: "glTF primitive is missing POSITION attribute".to_string(),
-        })?;
-    let normals = read_vec3_attribute(path, primitive, buffers, &Semantic::Normals)?;
+    let positions = read_vec3_attribute(
+        path,
+        primitive,
+        buffers,
+        &Semantic::Positions,
+        mesh_quantization_declared,
+    )?
+    .ok_or_else(|| AssetError::Parse {
+        path: path.as_str().to_string(),
+        reason: "glTF primitive is missing POSITION attribute".to_string(),
+    })?;
+    let normals = read_vec3_attribute(
+        path,
+        primitive,
+        buffers,
+        &Semantic::Normals,
+        mesh_quantization_declared,
+    )?;
     let vertex_colors: Option<Vec<Color>> = reader.read_colors(0).map(|colors| {
         colors
             .into_rgba_f32()
@@ -95,7 +127,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
     let tex_coords0: Option<Vec<[f32; 2]>> = reader
         .read_tex_coords(0)
         .map(|tex| tex.into_f32().collect());
-    let tangents: Option<Vec<[f32; 4]>> = reader.read_tangents().map(|iter| iter.collect());
+    let tangents = read_tangent_attribute(path, primitive, buffers, mesh_quantization_declared)?;
     reject_skin_sets_above_one(path, primitive)?;
     validate_skin_weight_accessor(path, primitive, 0)?;
     validate_skin_weight_accessor(path, primitive, 1)?;
@@ -130,19 +162,54 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
     }
     let skin = skin.skin;
     let vertex_count = positions.len();
-    let morph_targets = reader
-        .read_morph_targets()
-        .map(|(positions, normals, tangents)| {
-            let position_deltas = positions
-                .map(|positions| positions.map(Vec3::from_array).collect::<Vec<_>>())
-                .unwrap_or_else(|| vec![Vec3::ZERO; vertex_count]);
-            let normal_deltas =
-                normals.map(|normals| normals.map(Vec3::from_array).collect::<Vec<_>>());
-            let tangent_deltas =
-                tangents.map(|tangents| tangents.map(Vec3::from_array).collect::<Vec<_>>());
-            GeometryMorphTarget::new_with_semantics(position_deltas, normal_deltas, tangent_deltas)
+    let morph_targets = primitive
+        .morph_targets()
+        .enumerate()
+        .map(|(target_index, target)| {
+            let position_deltas = match target.positions() {
+                Some(accessor) => read_vec3_accessor(
+                    path,
+                    buffers,
+                    accessor,
+                    &format!("morph target {target_index} POSITION"),
+                    Vec3Encoding::Position,
+                    mesh_quantization_declared,
+                )?,
+                None => vec![Vec3::ZERO; vertex_count],
+            };
+            let normal_deltas = target
+                .normals()
+                .map(|accessor| {
+                    read_vec3_accessor(
+                        path,
+                        buffers,
+                        accessor,
+                        &format!("morph target {target_index} NORMAL"),
+                        Vec3Encoding::SignedUnit,
+                        mesh_quantization_declared,
+                    )
+                })
+                .transpose()?;
+            let tangent_deltas = target
+                .tangents()
+                .map(|accessor| {
+                    read_vec3_accessor(
+                        path,
+                        buffers,
+                        accessor,
+                        &format!("morph target {target_index} TANGENT"),
+                        Vec3Encoding::SignedUnit,
+                        mesh_quantization_declared,
+                    )
+                })
+                .transpose()?;
+            Ok(GeometryMorphTarget::new_with_semantics(
+                position_deltas,
+                normal_deltas,
+                tangent_deltas,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, AssetError>>()?;
     let indices: Vec<u32> = reader
         .read_indices()
         .map(|reader| reader.into_u32().collect())
@@ -249,7 +316,15 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             handle
         });
     let material_variant_bindings =
-        super::material_variants::parse_primitive_material_variant_bindings(primitive, materials);
+        super::material_variants::parse_primitive_material_variant_bindings(
+            primitive,
+            materials,
+            raw_material_indices,
+            path,
+            mesh_index,
+            primitive_index,
+            load_warnings,
+        );
     Ok(SceneAssetMesh {
         geometry,
         material,
@@ -258,207 +333,4 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         morph_weights: mesh_weights.to_vec(),
         material_variant_bindings,
     })
-}
-
-/// Read a VEC3 attribute, handling normalized integer accessors that
-/// the gltf crate's typed `read_positions/normals` helpers reject due
-/// to their hard-coded `[f32; 3]` size assertion. This path is needed
-/// for KHR_mesh_quantization where positions/normals can be normalized
-/// SHORT or BYTE.
-fn read_vec3_attribute(
-    path: &AssetPath,
-    primitive: &Primitive<'_>,
-    buffers: &ResolvedGltfBuffers,
-    semantic: &Semantic,
-) -> Result<Option<Vec<Vec3>>, AssetError> {
-    let Some(accessor) = primitive.get(semantic) else {
-        return Ok(None);
-    };
-    if accessor.dimensions() != Dimensions::Vec3 {
-        return Err(invalid_attribute(
-            path,
-            semantic,
-            format!("must use VEC3, found {:?}", accessor.dimensions()),
-        ));
-    }
-    let get_buffer = |buffer: ::gltf::Buffer<'_>| buffers.reader_buffer(buffer.index());
-    macro_rules! read_vec3 {
-        ($component:ty, $convert:expr) => {
-            AccessorIter::<$component>::new(accessor, get_buffer)
-                .map(|iter| iter.map($convert).collect::<Vec<_>>())
-        };
-    }
-    let values = match (semantic, accessor.data_type(), accessor.normalized()) {
-        (_, DataType::F32, _) => read_vec3!([f32; 3], Vec3::from_array),
-        (Semantic::Positions, DataType::I8, true) => {
-            read_vec3!([i8; 3], normalize_i8_vec3)
-        }
-        (Semantic::Positions, DataType::U8, true) => {
-            read_vec3!([u8; 3], normalize_u8_vec3)
-        }
-        (Semantic::Positions, DataType::I16, true) => {
-            read_vec3!([i16; 3], normalize_i16_vec3)
-        }
-        (Semantic::Positions, DataType::U16, true) => {
-            read_vec3!([u16; 3], normalize_u16_vec3)
-        }
-        (Semantic::Positions, DataType::I8, false) => {
-            read_vec3!([i8; 3], raw_i8_vec3)
-        }
-        (Semantic::Positions, DataType::U8, false) => {
-            read_vec3!([u8; 3], raw_u8_vec3)
-        }
-        (Semantic::Positions, DataType::I16, false) => {
-            read_vec3!([i16; 3], raw_i16_vec3)
-        }
-        (Semantic::Positions, DataType::U16, false) => {
-            read_vec3!([u16; 3], raw_u16_vec3)
-        }
-        (Semantic::Normals, DataType::I8, true) => {
-            read_vec3!([i8; 3], normalize_i8_vec3)
-        }
-        (Semantic::Normals, DataType::I16, true) => {
-            read_vec3!([i16; 3], normalize_i16_vec3)
-        }
-        (Semantic::Normals, data_type, normalized) => {
-            return Err(invalid_attribute(
-                path,
-                semantic,
-                format!(
-                    "must use FLOAT or normalized signed BYTE/SHORT; found {data_type:?} with normalized={normalized}"
-                ),
-            ));
-        }
-        (_, data_type, normalized) => {
-            return Err(invalid_attribute(
-                path,
-                semantic,
-                format!("unsupported {data_type:?} encoding with normalized={normalized}"),
-            ));
-        }
-    }
-    .ok_or_else(|| {
-        invalid_attribute(
-            path,
-            semantic,
-            "buffer view could not be resolved".to_string(),
-        )
-    })?;
-    Ok(Some(values))
-}
-
-fn invalid_attribute(path: &AssetPath, semantic: &Semantic, reason: String) -> AssetError {
-    let semantic = match semantic {
-        Semantic::Positions => "POSITION".to_string(),
-        Semantic::Normals => "NORMAL".to_string(),
-        other => format!("{other:?}"),
-    };
-    AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: format!("glTF {semantic} attribute {reason}"),
-    }
-}
-
-fn raw_i8_vec3(values: [i8; 3]) -> Vec3 {
-    Vec3::new(values[0] as f32, values[1] as f32, values[2] as f32)
-}
-
-fn raw_u8_vec3(values: [u8; 3]) -> Vec3 {
-    Vec3::new(values[0] as f32, values[1] as f32, values[2] as f32)
-}
-
-fn raw_i16_vec3(values: [i16; 3]) -> Vec3 {
-    Vec3::new(values[0] as f32, values[1] as f32, values[2] as f32)
-}
-
-fn raw_u16_vec3(values: [u16; 3]) -> Vec3 {
-    Vec3::new(values[0] as f32, values[1] as f32, values[2] as f32)
-}
-
-fn validate_skin_weight_accessor(
-    path: &AssetPath,
-    primitive: &Primitive<'_>,
-    set: u32,
-) -> Result<(), AssetError> {
-    let Some(accessor) = primitive.get(&Semantic::Weights(set)) else {
-        return Ok(());
-    };
-    let valid = matches!(
-        (accessor.data_type(), accessor.normalized()),
-        (DataType::F32, false) | (DataType::U8 | DataType::U16, true)
-    );
-    if valid {
-        Ok(())
-    } else {
-        Err(AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!(
-                "glTF WEIGHTS_{set} must use FLOAT or normalized unsigned BYTE/SHORT; found {:?} with normalized={}",
-                accessor.data_type(),
-                accessor.normalized(),
-            ),
-        })
-    }
-}
-
-fn reject_skin_sets_above_one(
-    path: &AssetPath,
-    primitive: &Primitive<'_>,
-) -> Result<(), AssetError> {
-    for (semantic, _) in primitive.attributes() {
-        let set = match semantic {
-            Semantic::Joints(set) | Semantic::Weights(set) => set,
-            _ => continue,
-        };
-        if set > 1 {
-            return Err(AssetError::Parse {
-                path: path.as_str().to_owned(),
-                reason: format!(
-                    "glTF skin attribute set {set} exceeds scena's supported JOINTS_0/1 and WEIGHTS_0/1 input limit"
-                ),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn joint_indices(joint: [u16; 4]) -> [usize; 4] {
-    [
-        joint[0] as usize,
-        joint[1] as usize,
-        joint[2] as usize,
-        joint[3] as usize,
-    ]
-}
-
-fn normalize_i8_vec3(values: [i8; 3]) -> Vec3 {
-    Vec3::new(
-        (values[0] as f32 / 127.0).max(-1.0),
-        (values[1] as f32 / 127.0).max(-1.0),
-        (values[2] as f32 / 127.0).max(-1.0),
-    )
-}
-
-fn normalize_u8_vec3(values: [u8; 3]) -> Vec3 {
-    Vec3::new(
-        values[0] as f32 / 255.0,
-        values[1] as f32 / 255.0,
-        values[2] as f32 / 255.0,
-    )
-}
-
-fn normalize_i16_vec3(values: [i16; 3]) -> Vec3 {
-    Vec3::new(
-        (values[0] as f32 / 32767.0).max(-1.0),
-        (values[1] as f32 / 32767.0).max(-1.0),
-        (values[2] as f32 / 32767.0).max(-1.0),
-    )
-}
-
-fn normalize_u16_vec3(values: [u16; 3]) -> Vec3 {
-    Vec3::new(
-        values[0] as f32 / 65535.0,
-        values[1] as f32 / 65535.0,
-        values[2] as f32 / 65535.0,
-    )
 }

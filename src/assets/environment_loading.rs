@@ -67,7 +67,7 @@ impl<F> Assets<F> {
             return Ok(handle);
         }
         let sidecar = if is_equirectangular_hdr_path(&path) {
-            self.try_load_environment_sidecar_with_options(&path, options)
+            self.try_load_environment_sidecar_with_options(&path, options.clone())
                 .await?
         } else {
             None

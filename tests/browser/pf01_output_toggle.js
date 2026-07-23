@@ -159,6 +159,45 @@ async function captureBackend(page, backend) {
         stats.buffers, stats.gpu_textures, stats.render_targets,
         stats.pipelines, stats.bind_groups, stats.shader_modules,
       ];
+      const aaEdgeMetrics = (rgba8) => {
+        const luma = new Uint8Array(width * height);
+        let minLuma = 255;
+        let maxLuma = 0;
+        let intermediateLumaPixels = 0;
+        for (let index = 0, offset = 0; index < luma.length; index += 1, offset += 4) {
+          const value = Math.floor(
+            (rgba8[offset] * 54 + rgba8[offset + 1] * 183 + rgba8[offset + 2] * 19) / 256,
+          );
+          luma[index] = value;
+          minLuma = Math.min(minLuma, value);
+          maxLuma = Math.max(maxLuma, value);
+          if (value > 8 && value < 247) intermediateLumaPixels += 1;
+        }
+        const lumaRange = maxLuma - minLuma;
+        const hardThreshold = lumaRange / 2;
+        let relativeHardTransitions = 0;
+        let squaredEdgeEnergy = 0;
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const index = y * width + x;
+            const neighbors = [];
+            if (x + 1 < width) neighbors.push(index + 1);
+            if (y + 1 < height) neighbors.push(index + width);
+            for (const neighbor of neighbors) {
+              const delta = Math.abs(luma[index] - luma[neighbor]);
+              squaredEdgeEnergy += delta * delta;
+              if (delta >= hardThreshold) relativeHardTransitions += 1;
+            }
+          }
+        }
+        return {
+          intermediate_luma_pixels: intermediateLumaPixels,
+          relative_hard_transitions: relativeHardTransitions,
+          squared_edge_energy: squaredEdgeEnergy,
+          normalized_squared_edge_energy: squaredEdgeEnergy / Math.max(1, lumaRange * lumaRange),
+          luma_range: lumaRange,
+        };
+      };
       const capture = async (id, { fxaa, bloom }) => {
         mark(`${id}: configure output`);
         host.setAntiAliasing(fxaa ? "fxaa" : "none");
@@ -198,6 +237,7 @@ async function captureBackend(page, backend) {
           opaque,
           max_rgb: maxRgb,
           fnv1a64: hash(rgba8),
+          aa_edge_metrics: aaEdgeMetrics(rgba8),
         };
         console.info(`PF01 ${backend}: ${id}: pixel diagnostic ${JSON.stringify(diagnostic)}`);
         const proofCanvas = document.createElement("canvas");
@@ -212,6 +252,7 @@ async function captureBackend(page, backend) {
           fnv1a64: hash(rgba8),
           pixel_source: "scene-host-capture",
           nonblack,
+          aa_edge_metrics: diagnostic.aa_edge_metrics,
           diagnostic,
           resources_before_render: resourceSignature(before),
           resources_after_render: resourceSignature(after),

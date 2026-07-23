@@ -4,16 +4,8 @@ use crate::render::RasterTarget;
 use super::capture::decode_capture;
 use super::{SemanticAovResources, encode_pass, write_camera_uniform};
 use crate::render::camera::CameraProjection;
+use crate::render::gpu::shader_manifest::{ShaderVariantId, create_shader_module};
 use crate::scene::{ClippingPlane, SectionBox};
-
-// WebGL2 canvas surfaces are sRGB encoded. Convert each byte-oriented AOV
-// sample to linear before the surface write so the attachment's transfer
-// function restores the original encoded byte for readPixels.
-const SHADER: &str = concat!(
-    include_str!("../post/blit_srgb.wgsl"),
-    "\n",
-    include_str!("../../color_contract.wgsl")
-);
 
 #[derive(Debug)]
 pub(super) struct WebGl2ReadbackResources {
@@ -44,10 +36,11 @@ pub(super) fn create_resources(
         bind_group_layouts: &[Some(&bind_group_layout)],
         immediate_size: 0,
     });
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.semantic_aov.webgl2_surface_shader"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-    });
+    let shader = create_shader_module(
+        device,
+        ShaderVariantId::SemanticAovWebgl2Readback,
+        "scena.semantic_aov.webgl2_surface_shader",
+    );
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("scena.semantic_aov.webgl2_surface_pipeline"),
         layout: Some(&pipeline_layout),

@@ -6,6 +6,11 @@ or another shell-capable LLM to build a `scena` model viewer, CAD inspection
 scene, digital twin, product configurator, dashboard, documentation renderer,
 or interaction proof.
 
+Installed users can export this exact package-embedded guide without locating a
+repository checkout: use `scena guide agent --json` for the versioned
+`scena.agent_guide.v1` contract or `scena guide agent --markdown` for raw
+Markdown. Root `AGENTS.md` remains contributor-only repository governance.
+
 ## Required CLI Build
 
 Install or run the CLI with the app-builder features:
@@ -17,8 +22,12 @@ cargo install scena --features agent
 From a local checkout:
 
 ```bash
-cargo run --bin scena --features agent -- <command>
+cargo build --release --bin scena --features agent
+target/release/scena <command>
 ```
+
+Use `cargo run` without `--release` only while developing the CLI itself. Do
+not use debug-profile render latency to judge renderer performance.
 
 `agent` is the complete opt-in surface. It enables `scene-host`, which already
 enables `inspection`; the default feature set remains empty.
@@ -49,10 +58,29 @@ Discover the schema:
 scena schema get scena.scene_recipe.v1 > scene_recipe.schema.json
 ```
 
+Discover accepted names before inventing a preset:
+
+```bash
+scena vocab list > scena-vocabulary.json
+```
+
+The report includes material, camera-lens, framing, named-color, scene,
+environment, exposure, render-quality, tonemapper, easing, placement, and
+per-light-kind registries. Each value also discloses accepted aliases,
+deprecation, and required features or capabilities.
+
 If a schema name is misspelled, read `scena.cli_error.v1.candidates`; do not
 parse the prose message. The same capped structured field appears for unknown
 template names and in recipe diagnostics for node, geometry/mesh-resource,
 material, import, and environment-preset references.
+
+For every CLI failure, branch on `exit_class` and `code`, not message text:
+`usage` (2) means repair the command, `input` (65) means repair or locate the
+contract, `unsupported` (69) means re-plan for features/capabilities,
+`runtime`/`internal` (70) means inspect diagnostics, `io` (74) means repair the
+stream or filesystem, `policy` (77) requires an operator-owned policy change,
+and `interrupted` (130) is retryable. `comparison` (1) is a valid unequal
+result. The authoritative per-command mapping is emitted by `scena --help`.
 
 Start from a template when possible. Discover canonical names, aliases,
 required features, and status without scraping an error:
@@ -74,6 +102,7 @@ material-variant workflow.
 Generate a template:
 
 ```bash
+mkdir -p target/scena-agent
 scena examples agent get primitive-scene --out target/scena-agent/primitive-scene > target/scena-agent/primitive-scene.manifest.json
 ```
 
@@ -84,15 +113,49 @@ manifest as a recipe. Set `RECIPE` to the manifest recipe path; for the command
 above:
 
 ```bash
-RECIPE=target/scena-agent/primitive_scene/recipe.json
+RECIPE=target/scena-agent/primitive-scene/recipe.json
 ```
+
+The following marked block is the canonical clean-directory smoke workflow.
+Release validation extracts and executes it verbatim with both the repository
+binary and the packaged installed binary.
+
+<!-- SCENA_CANONICAL_AGENT_SMOKE_BEGIN -->
+```bash
+mkdir -p target/scena-agent
+scena schema get scena.scene_recipe.v1 > target/scena-agent/scene-recipe.schema.json
+scena examples agent list > target/scena-agent/templates.json
+scena examples agent get primitive-scene --out target/scena-agent/primitive-scene > target/scena-agent/primitive-scene.manifest.json
+RECIPE=target/scena-agent/primitive-scene/recipe.json
+scena validate "$RECIPE" > target/scena-agent/contract-validation.json
+scena validate-recipe "$RECIPE" --full > target/scena-agent/validation.json
+scena recipe build "$RECIPE" > target/scena-agent/build.json
+scena recipe render "$RECIPE" --timings --out target/scena-agent/frame.png > target/scena-agent/render.json
+```
+<!-- SCENA_CANONICAL_AGENT_SMOKE_END -->
 
 The installed template catalog is self-contained. Generate and execute it from
 any working directory: imported template fixtures and the licensed `studio`
 HDR are embedded in the package, and presentation defaults preserve any
 explicitly authored `scene.environment`.
 
+Render introspection is the machine-safe default. `--introspect` remains an
+accepted compatibility no-op, but new commands and generated templates omit it.
+
 Validate before rendering:
+
+Use the generic schema dispatcher for recipes, expectation files, patches, and
+capability reports before invoking their consuming workflow. It fails closed on
+malformed, unknown, or mismatched contracts and suggests near schema names:
+
+```bash
+scena validate "$RECIPE"
+scena schema json scena.scene_recipe.v1 > target/scena-agent/scene-recipe.json-schema.json
+```
+
+JSON Schema export cannot prove runtime resources, sandbox policy, cross-field
+semantics, or backend capabilities. Follow it with the owner-specific full
+validation when those checks matter.
 
 For assembly/viewer snapshots, use recipe-local stable IDs in `anchors`,
 `connectors`, `bounds`, and `named_states`; never persist the numeric handles
@@ -105,6 +168,14 @@ offsets, snap tolerances, clearances, and bounds are scene meters. A connector
 `mate` names another connector id, while an active named state may apply only
 transform, tint, and visibility. See
 `docs/specs/recipe-spatial-state-v1.md` for inheritance and failure rules.
+
+Scene measurements are visualization/inspection aids, not calibrated or
+authoritative metrology. They use current world transforms and `f32` scene
+coordinates after the selected import-unit conversion. Display precision is
+formatting, not measurement accuracy; snapping, occlusion, manufacturing
+tolerances, survey accuracy, and certified dimensional claims are outside this
+contract. Preserve the returned `measurement_authority` metadata when showing
+measurement results to users.
 
 ```bash
 scena validate-recipe "$RECIPE" --full
@@ -121,7 +192,7 @@ one narrow, repeatable root option and carry it through the loop:
 ```bash
 scena policy recipe --allow-root /srv/models
 scena validate-recipe "$RECIPE" --full --allow-root /srv/models
-scena recipe render "$RECIPE" --introspect --out frame.png --allow-root /srv/models
+scena recipe render "$RECIPE" --out frame.png --allow-root /srv/models
 ```
 
 Confirm the canonical directory appears in `policy.allowed_roots` with
@@ -131,7 +202,7 @@ an unrelated parent; traversal and symlink escapes intentionally remain denied.
 Render with introspection:
 
 ```bash
-scena recipe render "$RECIPE" --introspect --out frame.png
+scena recipe render "$RECIPE" --out frame.png
 ```
 
 Success means the command exits 0 and the top-level report says `ok:true`.
@@ -145,8 +216,9 @@ combined recipe build/capture/introspection/verification report instead of the
 plain render-introspection report.
 For presentation or beauty output, add `--gpu`; CPU remains the default, and
 the top-level `backend_selection` object records whether the request came from
-the default or `cli_flag`, the requested and selected backend, and any CPU
-fallback. `SCENA_USE_GPU` never changes CLI execution.
+the flag, which backend was selected, and actionable `reason`/`remedy` fields
+when a CPU fallback was required. It does not emit unversioned fallback prose.
+`SCENA_USE_GPU` never changes CLI execution.
 
 For CAD imports that render as an edge sliver or white-on-white blob, run the
 inspection preset instead of hand-tuning a single camera:
@@ -156,7 +228,7 @@ scena recipe inspect-cad "$RECIPE" --out-dir target/cad-inspection
 ```
 
 It generates broad-face, top-feature, and overview recipes, renders each through
-`recipe render --introspect --verify`, then writes PNGs and
+`recipe render --verify`, then writes PNGs and
 `scena.cad_inspection_result.v1`. Generated CAD inspection recipes apply
 presentation-only `imports[].material`, `imports[].edge_emphasis`, and a
 principal-face camera where appropriate. They use the oriented studio rig and

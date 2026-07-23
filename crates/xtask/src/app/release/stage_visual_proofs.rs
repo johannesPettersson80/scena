@@ -1,5 +1,13 @@
 use crate::app::prelude::*;
 
+mod output;
+use output::{
+    valid_sha256, visual_proof_base, write_browser_visual_proof, write_native_gpu_visual_proof,
+};
+
+const WATERBOTTLE_REFERENCE_SHA256: &str =
+    "4db449cdacf2340f8fa53937c28e5c4b5e2c7deaea73cbe0987dcd51eb93c751";
+
 pub(super) fn write_visual_proof_artifacts(
     output: &Path,
     files: &[PathBuf],
@@ -162,6 +170,25 @@ fn validate_waterbottle_cpu_result(
             "WaterBottle CPU result does not bind the approved committed reference".to_string(),
         );
     }
+    let determinism = result
+        .get("determinism")
+        .ok_or_else(|| "WaterBottle CPU result is missing determinism evidence".to_string())?;
+    let hashes = determinism
+        .get("rgba8_sha256")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "WaterBottle CPU determinism hashes must be an array".to_string())?;
+    if determinism.get("comparison_order").and_then(Value::as_str)
+        != Some("independent-render-before-committed-reference")
+        || determinism.get("repeat_count").and_then(Value::as_u64) != Some(2)
+        || determinism.get("byte_identical").and_then(Value::as_bool) != Some(true)
+        || hashes.len() != 2
+        || hashes[0] != hashes[1]
+    {
+        return Err(
+            "WaterBottle CPU result must prove two byte-identical independent renders before reference comparison"
+                .to_string(),
+        );
+    }
     let command_sha = result
         .get("command_record_sha256")
         .and_then(Value::as_str)
@@ -196,6 +223,7 @@ fn validate_waterbottle_cpu_result(
             .iter()
             .find(|mutation| mutation.get("name").and_then(Value::as_str) == Some(name))
             .ok_or_else(|| format!("WaterBottle CPU result is missing mutation {name}"))?;
+        super::waterbottle_results::validate_waterbottle_mutation_provenance(mutation, name)?;
         let sha = mutation.get("sha256").and_then(Value::as_str).unwrap_or("");
         if mutation.get("path").and_then(Value::as_str) != Some(relative)
             || mutation.get("oracle_rejected").and_then(Value::as_bool) != Some(true)
@@ -224,12 +252,18 @@ fn write_waterbottle_visual_proof(
     let bytes = fs::read(&source)
         .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
     let png_sha256 = sha256_hex(&source).map_err(|error| error.to_string())?;
+    let diff_source =
+        super::stage_artifacts::select_stage_source(files, "m8-real-asset/waterbottle_diff.png")
+            .ok_or_else(|| {
+                "missing WaterBottle GPU full-frame diff PNG for visual proof".to_string()
+            })?;
+    let diff_sha256 = sha256_hex(&diff_source).map_err(|error| error.to_string())?;
     let result_path = output.join("m8-real-asset/waterbottle_gpu_result.json");
     let result_text = fs::read_to_string(&result_path)
         .map_err(|error| format!("failed to read {}: {error}", result_path.display()))?;
     let result = serde_json::from_str::<Value>(&result_text)
         .map_err(|error| format!("failed to parse {}: {error}", result_path.display()))?;
-    validate_waterbottle_result(&result, expected_commit, &png_sha256)?;
+    validate_waterbottle_result(&result, expected_commit, &png_sha256, &diff_sha256)?;
     let decoded =
         image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).map_err(|error| {
             format!(
@@ -279,6 +313,10 @@ fn write_waterbottle_visual_proof(
             "png_sha256": png_sha256,
             "result_artifact": "m8-real-asset/waterbottle_gpu_result.json",
             "result_sha256": sha256_hex(&result_path).map_err(|error| error.to_string())?,
+            "diff_artifact": "m8-real-asset/waterbottle_diff.png",
+            "diff_sha256": diff_sha256,
+            "reference_path": result.get("reference_path").cloned().unwrap_or(Value::Null),
+            "reference_sha256": result.get("reference_sha256").cloned().unwrap_or(Value::Null),
             "byte_len": bytes.len(),
             "width": 512,
             "height": 512,
@@ -310,6 +348,7 @@ fn validate_waterbottle_result(
     result: &Value,
     expected_commit: &str,
     png_sha256: &str,
+    diff_sha256: &str,
 ) -> Result<(), String> {
     for (field, expected) in [
         ("schema", "scena.m8.waterbottle_gpu_result.v1"),
@@ -317,6 +356,13 @@ fn validate_waterbottle_result(
         ("test_name", "m8_real_asset_waterbottle_gpu_headline"),
         ("commit_sha", expected_commit),
         ("png_sha256", png_sha256),
+        ("diff_sha256", diff_sha256),
+        ("reference_sha256", WATERBOTTLE_REFERENCE_SHA256),
+        (
+            "reference_path",
+            "tests/assets/gltf/khronos/WaterBottle/reference_512.png",
+        ),
+        ("diff_path", "m8-real-asset/waterbottle_diff.png"),
     ] {
         if result.get(field).and_then(Value::as_str) != Some(expected) {
             if field == "png_sha256" {
@@ -361,6 +407,29 @@ fn validate_waterbottle_result(
             "WaterBottle GPU result adapter {adapter:?} is missing or disallowed"
         ));
     }
+    let adapter_key = result
+        .get("adapter_key")
+        .ok_or_else(|| "WaterBottle GPU result is missing adapter_key".to_string())?;
+    if adapter_key.get("schema").and_then(Value::as_str) != Some("scena.gpu_adapter_key.v1")
+        || adapter_key.get("backend").and_then(Value::as_str) != Some(backend)
+        || adapter_key.get("vendor").and_then(Value::as_u64).is_none()
+        || adapter_key.get("device").and_then(Value::as_u64).is_none()
+        || adapter_key
+            .get("device_type")
+            .and_then(Value::as_str)
+            .is_none()
+        || adapter_key.get("driver").and_then(Value::as_str).is_none()
+        || adapter_key
+            .get("driver_info")
+            .and_then(Value::as_str)
+            .is_none()
+    {
+        return Err(
+            "WaterBottle GPU result adapter_key must be a structured scena.gpu_adapter_key.v1 matching the backend"
+                .to_string(),
+        );
+    }
+    super::waterbottle_results::validate_waterbottle_adapter_expectation(result)?;
     let command_sha = result
         .get("command_record_sha256")
         .and_then(Value::as_str)
@@ -382,6 +451,51 @@ fn validate_waterbottle_result(
             ));
         }
     }
+    if result
+        .pointer("/metrics/reference_diff")
+        .and_then(Value::as_str)
+        != Some("passed")
+        || result
+            .pointer("/metrics/full_frame/compared_pixels")
+            .and_then(Value::as_u64)
+            != Some(512 * 512)
+        || result
+            .pointer("/metrics/full_frame/within_tolerance_fraction")
+            .and_then(Value::as_f64)
+            .is_none_or(|fraction| fraction < 0.95)
+        || result
+            .pointer("/metrics/full_frame/worst_region_bbox")
+            .and_then(Value::as_array)
+            .is_none_or(|bbox| bbox.len() != 4)
+        || result
+            .pointer("/metrics/thresholds/rgb_chebyshev_max")
+            .and_then(Value::as_u64)
+            != Some(16)
+        || result
+            .pointer("/metrics/thresholds/within_tolerance_fraction_min")
+            .and_then(Value::as_f64)
+            != Some(0.95)
+    {
+        return Err(
+            "WaterBottle GPU result must carry the passed 512x512 full-frame reference-diff metrics and fixed thresholds"
+                .to_string(),
+        );
+    }
+    let mirror_rejected = result
+        .get("known_bad_mutations")
+        .and_then(Value::as_array)
+        .is_some_and(|mutations| {
+            mutations.iter().any(|mutation| {
+                mutation.get("name").and_then(Value::as_str) == Some("horizontal_mirror")
+                    && mutation.get("rejected").and_then(Value::as_bool) == Some(true)
+            })
+        });
+    if !mirror_rejected {
+        return Err(
+            "WaterBottle GPU result must prove the full-frame oracle rejected horizontal_mirror"
+                .to_string(),
+        );
+    }
     let checksums = result
         .get("source_checksums")
         .and_then(Value::as_array)
@@ -397,121 +511,19 @@ fn validate_waterbottle_result(
             .is_some_and(|path| path.ends_with("macos-metal.commands.jsonl"))
             && entry.get("sha256").and_then(Value::as_str) == Some(command_sha)
     });
-    if !bound_png || !bound_command {
+    let bound_diff = checksums.iter().any(|entry| {
+        entry.get("path").and_then(Value::as_str) == Some("m8-real-asset/waterbottle_diff.png")
+            && entry.get("sha256").and_then(Value::as_str) == Some(diff_sha256)
+    });
+    let bound_reference = checksums.iter().any(|entry| {
+        entry.get("path").and_then(Value::as_str)
+            == Some("tests/assets/gltf/khronos/WaterBottle/reference_512.png")
+            && entry.get("sha256").and_then(Value::as_str) == Some(WATERBOTTLE_REFERENCE_SHA256)
+    });
+    if !bound_png || !bound_diff || !bound_reference || !bound_command {
         return Err(
-            "WaterBottle GPU result source_checksums must bind the PNG and command record"
-                .to_string(),
+            "WaterBottle GPU result source_checksums must bind the render, diff, committed reference, and command record".to_string(),
         );
     }
     Ok(())
-}
-
-fn valid_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && !value.bytes().all(|byte| byte == b'0')
-}
-
-fn write_browser_visual_proof(
-    output: &Path,
-    files: &[PathBuf],
-    expected_commit: &str,
-    backend: &str,
-    lane: &str,
-) -> Result<(), String> {
-    let results = super::stage_artifacts::browser_release_results(files)?;
-    let result = super::stage_artifacts::validate_browser_backend_result(&results, backend)?;
-    let proof = visual_proof_base(lane, expected_commit, "browser-rust-wasm-rendered-output")
-        .with_source(
-            &output.join("m6-rust-wasm-renderer-probe.json"),
-            "m6-rust-wasm-renderer-probe.json",
-        )?
-        .with_extra(json!({
-            "backend": backend,
-            "pixel_source": "renderer-owned-gpu-copy",
-            "nonblack_pixels": super::stage_artifacts::browser_nonblack_pixels(&result),
-            "renderer_readback": result.get("renderer_readback").cloned().unwrap_or(Value::Null),
-            "screenshot_metadata": result.get("screenshot_metadata").cloned().unwrap_or(Value::Null),
-        }))
-        .finish();
-    super::stage_artifacts::write_stage_json(
-        &output.join(format!("visual-proof/{lane}.json")),
-        &proof,
-    )
-}
-
-fn write_native_gpu_visual_proof(output: &Path, expected_commit: &str) -> Result<(), String> {
-    for lane in ["macos-metal", "windows-dx12", "linux-native-vulkan"] {
-        let suffix = format!("m9-platform/{lane}/rendered-output.json");
-        let path = output.join(&suffix);
-        if !path.is_file() {
-            continue;
-        }
-        let text = fs::read_to_string(&path)
-            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let value = serde_json::from_str::<Value>(&text)
-            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        if native_gpu_render_proof_passes(&value) {
-            let proof =
-                visual_proof_base("native-gpu", expected_commit, "native-gpu-rendered-output")
-                    .with_source(&path, &suffix)?
-                    .with_extra(json!({
-                        "source_lane": lane,
-                        "source_artifact": suffix,
-                        "backend": value.get("backend").cloned().unwrap_or(Value::Null),
-                        "gpu_proof": true,
-                    }))
-                    .finish();
-            return super::stage_artifacts::write_stage_json(
-                &output.join("visual-proof/native-gpu.json"),
-                &proof,
-            );
-        }
-    }
-    Err("no native GPU rendered-output artifact proves GPU output".to_string())
-}
-
-struct VisualProofBuilder {
-    value: Value,
-}
-
-fn visual_proof_base(lane: &str, expected_commit: &str, proof_class: &str) -> VisualProofBuilder {
-    VisualProofBuilder {
-        value: json!({
-            "schema": "scena.visual_proof.v1",
-            "producer": "cargo run -p xtask -- stage-release-artifacts",
-            "lane": lane,
-            "status": "passed",
-            "preview_only": false,
-            "rust_test_command": false,
-            "rust_test_output_observed": false,
-            "skip_marker_observed": false,
-            "release_evidence": true,
-            "proof_class": proof_class,
-            "commit_sha": expected_commit,
-            "timestamp_unix_seconds": current_unix_seconds(),
-        }),
-    }
-}
-
-impl VisualProofBuilder {
-    fn with_source(mut self, source: &Path, relative: &str) -> Result<Self, String> {
-        self.value["source_artifact_path"] = json!(relative);
-        self.value["source_artifact_sha256"] =
-            json!(sha256_hex(source).map_err(|error| error.to_string())?);
-        Ok(self)
-    }
-
-    fn with_extra(mut self, extra: Value) -> Self {
-        if let (Some(target), Some(extra)) = (self.value.as_object_mut(), extra.as_object()) {
-            for (key, value) in extra {
-                target.insert(key.clone(), value.clone());
-            }
-        }
-        self
-    }
-
-    fn finish(self) -> Value {
-        self.value
-    }
 }

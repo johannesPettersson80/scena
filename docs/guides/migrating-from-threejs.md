@@ -84,6 +84,12 @@ objects on portrait/mobile viewports do not get clipped or under-filled.
 When the scene contains several imports, prefer the aggregate helper and pass
 the capture or canvas dimensions rather than reusing a stale camera aspect:
 
+Use `Scene::set_camera` for a camera already installed in the scene. It
+validates FOV/aspect/depth and advances the camera-descriptor revision, so a
+change to aspect, FOV, near, or far cannot be skipped by on-change rendering.
+`PerspectiveCamera::default()` uses aspect `0` only as a target-aspect sentinel;
+all explicit aspect values must be finite and positive.
+
 ```rust
 let framing = scene.frame_all_with_assets_and_options(
     camera,

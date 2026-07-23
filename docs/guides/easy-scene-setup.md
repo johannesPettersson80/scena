@@ -230,6 +230,14 @@ When a project genuinely needs a non-preset field of view, the
 see its rustdoc on docs.rs. Keep that escape-hatch call inside a
 project-local helper so the first-path examples stay on named presets.
 
+Camera projections are validated when inserted or replaced. Perspective FOV
+must be finite and strictly between 0 and 180 degrees, depth requires
+`0 < near < far`, and an explicit aspect must be finite and positive. The
+default descriptor keeps `aspect == 0` as the documented target-aspect sentinel;
+viewer and framing APIs resolve it from the current viewport. Change an
+installed descriptor with `Scene::set_camera` so intrinsic-only updates advance
+the camera revision and invalidate on-change rendering and capture provenance.
+
 ## Orbit controls
 
 After framing, pass the returned `FramingOutcome` to controls so the first user
@@ -477,6 +485,14 @@ evidence and returns `AssetReloadError` with `previous_asset_preserved()` on
 failure; call `reload_scene` when only the replacement asset and compatibility
 `AssetError` are needed.
 
+`Scene::replace_import` maps replacement roots to prior roots by source-root
+ordinal, not by name. Matched roots retain their host parent, local transform,
+direct visibility, and host-added tags even when an exporter renames them.
+Removed roots are discarded. New roots are attached to the first prior host
+parent and retain their newly authored local state. The replacement remains
+transactional: a failed import leaves the old graph and its host overrides
+unchanged.
+
 ![Asset reload before / after — sphere colour changes when the bytes change on disk](../assets/easy-scene-showcase/animated-hot-reload.gif)
 
 ## Environment presets
@@ -668,6 +684,14 @@ loading, records base-color, normal, metallic-roughness, occlusion, and
 emissive source texture roles, frames the imported geometry with
 `Scene::frame`, lights it with a real `DirectionalLight`, and renders
 generated-unlit, source-glTF-material, and generated-PBR comparison lanes.
+
+glTF texture references keep their original document indices across every
+core and extension-owned material slot. An unused texture entry with no image
+source does not shift later bindings. If a material references that entry,
+loading fails closed with the material index/name, slot, raw texture index,
+image source, and resolution reason; scena never substitutes a neighboring
+texture. Data URIs, external URIs, GLB buffer-view images, duplicate image
+references, and per-texture samplers share this index-preserving contract.
 
 ## Browser viewer surfaces
 

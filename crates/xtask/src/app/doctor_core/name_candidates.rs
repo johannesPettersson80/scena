@@ -84,7 +84,8 @@ pub(crate) fn check_a07_name_candidates_and_remedies(root: &Path, findings: &mut
         (
             "src/bin/scena.rs",
             &[
-                "\"candidates\": cli_error_candidates(&args)",
+                "CliError::classify(",
+                "cli_error_candidates(&args)",
                 "fn cli_error_candidates",
                 "fn examples_agent_error_candidates",
             ][..],

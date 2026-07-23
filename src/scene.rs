@@ -93,7 +93,8 @@ pub use inspection::{
 use inspection_tools::InspectionToolkitState;
 pub use inspection_tools::{
     InspectionHelperKind, InspectionHelperReport, InspectionToolkitReport, SceneTintSnapshot,
-    SceneTintSnapshotEntry, SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry,
+    SceneTintSnapshotEntry, SceneVisibilityRestoreReport, SceneVisibilitySnapshot,
+    SceneVisibilitySnapshotEntry,
 };
 pub use instances::{Instance, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelFontError, LabelFontFace, LabelMetrics};
@@ -109,9 +110,10 @@ pub use measurements::{
 };
 pub use particles::{Particle, ParticleSet, ParticleSetError};
 pub use placement::{
-    SCENE_PLACEMENT_RESULT_SCHEMA_V1, SCENE_RECIPE_PATCH_SCHEMA_V1, ScenePlacementDiagnosticV1,
-    ScenePlacementResultV1, SceneRecipePatchResultV1, SceneRecipePatchSuccessInputV1,
-    SceneRecipeSemanticChangeV1, placement_align_to_feature_transform, placement_center_transform,
+    PLACEMENT_VERBS, SCENE_PLACEMENT_RESULT_SCHEMA_V1, SCENE_RECIPE_PATCH_SCHEMA_V1,
+    ScenePlacementDiagnosticV1, ScenePlacementResultV1, ScenePlacementTargetV1,
+    SceneRecipePatchResultV1, SceneRecipePatchSuccessInputV1, SceneRecipeSemanticChangeV1,
+    placement_align_to_feature_transform, placement_center_transform,
     placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
     placement_place_on_feature_transform,
 };
@@ -130,10 +132,6 @@ new_key_type! {
     pub struct ConnectorKey;
 }
 
-fn slot_index<K: slotmap::Key>(key: K) -> u32 {
-    key.data().as_ffi() as u32
-}
-
 #[derive(Debug)]
 pub struct Scene {
     identity: Arc<()>,
@@ -145,13 +143,13 @@ pub struct Scene {
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
     anchors: SlotMap<AnchorKey, AnchorFrame>,
-    retired_anchors: BTreeMap<u32, (AnchorKey, Option<String>)>,
+    retired_anchors: BTreeMap<AnchorKey, Option<String>>,
     annotations: BTreeMap<String, AnnotationAnchor>,
     callouts: BTreeMap<String, callouts::SceneCalloutState>,
     measurements: BTreeMap<String, measurements::SceneMeasurementOverlayState>,
     overlay_owners: BTreeMap<NodeKey, overlay_ownership::OverlayOwner>,
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
-    retired_connectors: BTreeMap<u32, (ConnectorKey, Option<String>)>,
+    retired_connectors: BTreeMap<ConnectorKey, Option<String>>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
     section_box: Option<clipping::SceneSectionBoxState>,
@@ -168,6 +166,7 @@ pub struct Scene {
     inspection_toolkit: InspectionToolkitState,
     structure_revision: u64,
     transform_revision: u64,
+    camera_revision: u64,
     appearance_revision: u64,
     visibility_revision: u64,
     resolved_cache: RefCell<resolved_cache::ResolvedSceneCache>,
@@ -254,6 +253,7 @@ impl Scene {
             inspection_toolkit: InspectionToolkitState::default(),
             structure_revision: 0,
             transform_revision: 0,
+            camera_revision: 0,
             appearance_revision: 0,
             visibility_revision: 0,
             resolved_cache: RefCell::new(resolved_cache::ResolvedSceneCache::default()),
@@ -284,6 +284,21 @@ impl Scene {
 
     pub fn camera(&self, camera: CameraKey) -> Option<&Camera> {
         self.cameras.get(camera)
+    }
+
+    pub fn set_camera(&mut self, camera: CameraKey, descriptor: Camera) -> Result<(), LookupError> {
+        descriptor
+            .validate()
+            .map_err(|reason| LookupError::InvalidCameraProjection { reason })?;
+        let current = self
+            .cameras
+            .get_mut(camera)
+            .ok_or(LookupError::CameraNotFound(camera))?;
+        if *current != descriptor {
+            *current = descriptor;
+            self.camera_revision = self.camera_revision.saturating_add(1);
+        }
+        Ok(())
     }
 
     pub fn add_empty(
@@ -364,6 +379,10 @@ impl Scene {
         self.transform_revision
     }
 
+    pub(crate) const fn camera_revision(&self) -> u64 {
+        self.camera_revision
+    }
+
     pub(crate) const fn appearance_revision(&self) -> u64 {
         self.appearance_revision
     }
@@ -378,6 +397,9 @@ impl Scene {
         camera: Camera,
         transform: Transform,
     ) -> Result<CameraKey, LookupError> {
+        camera
+            .validate()
+            .map_err(|reason| LookupError::InvalidCameraProjection { reason })?;
         let camera = self.cameras.insert(camera);
         if let Err(error) = self.insert_node(parent, NodeKind::Camera(camera), transform) {
             self.cameras.remove(camera);

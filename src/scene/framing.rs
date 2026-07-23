@@ -524,6 +524,11 @@ impl Scene {
         let camera_node = self
             .camera_node(camera)
             .ok_or(LookupError::CameraNotFound(camera))?;
+        let camera_before = self
+            .cameras
+            .get(camera)
+            .cloned()
+            .ok_or(LookupError::CameraNotFound(camera))?;
         let camera_desc = self
             .cameras
             .get_mut(camera)
@@ -544,6 +549,10 @@ impl Scene {
             let depth = DepthRange::fit_sphere(fit.distance, fit.depth_radius);
             perspective.near = depth.near();
             perspective.far = depth.far();
+        }
+
+        if self.cameras.get(camera) != Some(&camera_before) {
+            self.camera_revision = self.camera_revision.saturating_add(1);
         }
 
         self.align_to(camera_node, fit.camera_transform)?;

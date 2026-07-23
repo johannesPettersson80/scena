@@ -1,13 +1,12 @@
 # Rust-native 3D renderer charter
 
 Status: canonical charter, owner-ratified 2026-06-01
-Last updated: 2026-06-01
+Last updated: 2026-07-22
 
 `scena` is a Rust-native scene-graph renderer for glTF/GLB model viewing,
 industrial visualization, CAD/viewer workflows, browser/native applications,
-and deterministic headless rendering. It is the proposed project-level source
-of truth for architectural scope and public vocabulary until owner ratification
-records it as canonical.
+and deterministic headless rendering. It is the project-level source of truth
+for architectural scope and public vocabulary.
 
 ## Mission
 
@@ -49,8 +48,11 @@ engine, world, or application-specific abstractions.
 - Browser/WASM adapters that expose renderer primitives without owning the host
   application loop.
 - GPU post-processing as renderer-owned presentation quality controls,
-  including FXAA, bloom, and screen-space ambient occlusion where backend
-  capabilities allow them.
+  including FXAA, bloom, screen-space ambient occlusion, screen-space
+  reflections, and depth of field where backend capabilities allow them.
+- Renderer-owned lighting and visibility acceleration, including directional
+  shadows, LTC area-light evaluation, tiled light assignment, level of detail,
+  and occlusion/frustum culling where backend capabilities allow them.
 - GPU instancing for repeated renderable imports without duplicating shared
   geometry, while keeping host-owned instance handles for transforms,
   visibility, tinting, picking, and inspection.
@@ -61,8 +63,8 @@ engine, world, or application-specific abstractions.
   smoothing for visual state pushed by the host application; they are not
   simulation, robotics, PLC/process logic, physics, or gameplay behavior.
 - Structured diagnostics, capability reports, inspection reports, capture
-  descriptors, asset-load reports, provenance, release gates, doctor rules, and
-  deterministic proof artifacts.
+  descriptors, semantic AOV capture, asset-load reports, provenance, release
+  gates, doctor rules, and deterministic proof artifacts.
 
 ## Non-goals
 
@@ -92,7 +94,7 @@ semantics, networking, gameplay ECS, audio, or application business logic.
 
 - Full-repo correctness, agent-contract, proof, performance, and documentation
   remediation:
-  `docs/checklists/full-repo-review-v1.8.0-remediation.md`.
+  `docs/checklists/full-repo-review-v1.9.0-remediation.md`.
 
 ### Historical evidence tracks
 
@@ -101,6 +103,8 @@ status tags are historical records, not current prioritization:
 
 - Easy-use and renderer-quality evidence log:
   `docs/checklists/next-release-easy-use-and-state-of-the-art.md`.
+- Completed v1.8.0 full-repository remediation:
+  `docs/checklists/full-repo-review-v1.8.0-remediation.md`.
 - WASM scene host and stable JSON contracts:
   `docs/checklists/wasm-scene-host-and-stable-contracts.md`.
 - Browser renderer-fidelity dependencies:

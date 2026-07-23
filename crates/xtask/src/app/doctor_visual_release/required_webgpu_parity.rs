@@ -236,6 +236,85 @@ pub(crate) fn check_q01_required_webgpu_pixel_parity(root: &Path, findings: &mut
     );
 }
 
+pub(crate) fn check_q04_browser_evidence_classification(root: &Path, findings: &mut Vec<Finding>) {
+    const Q04_RULE: &str = "Q04-BROWSER-EVIDENCE-CLASSIFICATION";
+    let mut require = |relative: &str, required: &[&str]| {
+        let text = match fs::read_to_string(root.join(relative)) {
+            Ok(text) => text,
+            Err(error) => {
+                findings.push(Finding::new(
+                    Q04_RULE,
+                    format!("could not read {relative}: {error}"),
+                ));
+                return;
+            }
+        };
+        for token in required {
+            if !text.contains(token) {
+                findings.push(Finding::new(
+                    Q04_RULE,
+                    format!("{relative} is missing browser evidence classification {token}"),
+                ));
+            }
+        }
+    };
+    require(
+        "tests/browser/required_gpu_parity.js",
+        &[
+            "classifyBrowserEvidence",
+            "renderer-smoke",
+            "renderer-conformance-with-diagnostic-webgpu-pixel-diff",
+            "renderer-smoke-with-required-webgpu-full-frame-parity",
+            "release_evidence: false",
+            "release_evidence: true",
+            "webgpu:m6-identical-unlit-triangle-v1",
+        ],
+    );
+    require(
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "classifyBrowserEvidence",
+            "evidenceClassification",
+            "...evidenceClassification",
+        ],
+    );
+    require(
+        "crates/xtask/src/app/release/required_gpu_parity.rs",
+        &[
+            "browser_evidence_classification_matches",
+            "renderer-smoke-with-required-webgpu-full-frame-parity",
+            "renderer-conformance-with-diagnostic-webgpu-pixel-diff",
+            "full-frame-reference-diff",
+        ],
+    );
+    require(
+        "crates/xtask/src/app/release/stage_artifacts.rs",
+        &[
+            "renderer-conformance-aggregate",
+            "\"release_evidence\": false",
+            "backend-scoped-diagnostics-only",
+        ],
+    );
+    require(
+        "tests/browser/browser_evidence_classification_test.js",
+        &[
+            "renderer-smoke",
+            "release_evidence, false",
+            "required-webgpu-parity-failed",
+            "browser evidence classification: pass",
+        ],
+    );
+    require(
+        "docs/schema-contracts.md",
+        &[
+            "renderer-smoke-with-required-webgpu-full-frame-parity",
+            "renderer-conformance-with-diagnostic-webgpu-pixel-diff",
+            "Smoke-only aggregates",
+            "`release_evidence: false`",
+        ],
+    );
+}
+
 fn require_tokens(root: &Path, findings: &mut Vec<Finding>, relative: &str, required: &[&str]) {
     let text = match fs::read_to_string(root.join(relative)) {
         Ok(text) => text,

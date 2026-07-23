@@ -28,10 +28,11 @@ impl Scene {
 
     /// Atomically replaces an import-owned graph.
     ///
-    /// Source units and coordinate-system policy carry forward. User-authored
-    /// runtime overrides (visibility, tint, active material variant, animation
-    /// state, and similar per-instance state) intentionally start fresh on the
-    /// replacement graph; callers may reapply selected overrides after success.
+    /// Source units and coordinate-system policy carry forward. Replacement
+    /// roots are paired to prior roots by source-root ordinal and retain their
+    /// host parent, local transform, direct visibility, and host-added tags.
+    /// Other per-instance state, including child overrides, tint, material
+    /// variants, and animation state, starts fresh on the replacement graph.
     pub fn replace_import(
         &mut self,
         import: &SceneImport,
@@ -43,28 +44,75 @@ impl Scene {
         if !import.belongs_to(self) {
             return Err(InstantiateError::ForeignReplacementImport);
         }
-        let removed = import
+        let placements = import
             .roots()
             .iter()
             .copied()
             .map(|root| {
-                if root == self.root() || self.node(root).is_none() {
+                let Some(node) = self.node(root) else {
+                    return Err(InstantiateError::MissingReplacementRoot { root });
+                };
+                if root == self.root() {
                     return Err(InstantiateError::MissingReplacementRoot { root });
                 }
-                self.subtree_nodes(root)
-                    .map_err(|_| InstantiateError::MissingReplacementRoot { root })
+                let parent = node
+                    .parent()
+                    .ok_or(InstantiateError::MissingReplacementRoot { root })?;
+                let removed = self
+                    .subtree_nodes(root)
+                    .map_err(|_| InstantiateError::MissingReplacementRoot { root })?;
+                Ok((
+                    parent,
+                    node.transform(),
+                    node.visible,
+                    node.tags.clone(),
+                    removed,
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, InstantiateError>>()?;
         let options = ImportOptions::gltf_default()
             .with_source_units(import.source_units)
             .with_source_coordinate_system(import.source_coordinate_system);
         let mut transaction = SceneTransaction::new(self);
         let replacement = transaction.scene().instantiate_with(scene_asset, options)?;
-        for nodes in removed {
+        let fallback_parent = placements.first().map(|(parent, _, _, _, _)| *parent);
+        for (index, replacement_root) in replacement.roots().iter().copied().enumerate() {
+            if let Some((parent, transform, visible, tags, _)) = placements.get(index) {
+                reparent_replacement_root(transaction.scene(), replacement_root, *parent);
+                transaction.scene().nodes[replacement_root].transform = *transform;
+                transaction.scene().nodes[replacement_root].visible = *visible;
+                transaction.scene().nodes[replacement_root].tags = tags.clone();
+            } else if let Some(parent) = fallback_parent {
+                reparent_replacement_root(transaction.scene(), replacement_root, parent);
+            }
+        }
+        for (_, _, _, _, nodes) in placements {
             transaction.scene().remove_nodes_unchecked(&nodes);
         }
         transaction.commit();
         import.mark_stale();
         Ok(replacement)
     }
+}
+
+pub(super) fn reparent_replacement_root(
+    scene: &mut Scene,
+    node: crate::scene::NodeKey,
+    parent: crate::scene::NodeKey,
+) {
+    let old_parent = scene.nodes[node].parent();
+    if old_parent == Some(parent) {
+        return;
+    }
+    if let Some(old_parent) = old_parent {
+        scene.nodes[old_parent]
+            .children
+            .retain(|child| *child != node);
+    }
+    scene.nodes[node].parent = Some(parent);
+    if !scene.nodes[parent].children.contains(&node) {
+        scene.nodes[parent].children.push(node);
+    }
+    scene.structure_revision = scene.structure_revision.saturating_add(1);
+    scene.transform_revision = scene.transform_revision.saturating_add(1);
 }

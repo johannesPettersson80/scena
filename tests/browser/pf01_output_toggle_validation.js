@@ -4,6 +4,32 @@ function sameResourceShape(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function validateFxaaEffect(baseline, candidate, backend) {
+  const left = baseline?.aa_edge_metrics;
+  const right = candidate?.aa_edge_metrics;
+  if (!left || !right) {
+    throw new Error(`${backend} FXAA effect proof is missing edge metrics`);
+  }
+  if (right.intermediate_luma_pixels <= left.intermediate_luma_pixels) {
+    throw new Error(`${backend} FXAA did not add intermediate-luma edge coverage`);
+  }
+  if (right.relative_hard_transitions >= left.relative_hard_transitions) {
+    throw new Error(`${backend} FXAA did not reduce relative hard transitions`);
+  }
+  if (
+    right.normalized_squared_edge_energy
+      >= left.normalized_squared_edge_energy * 0.9
+  ) {
+    throw new Error(`${backend} FXAA did not materially reduce normalized edge energy`);
+  }
+  if (right.luma_range < left.luma_range * 0.9) {
+    throw new Error(`${backend} FXAA collapsed global contrast`);
+  }
+  if (candidate.nonblack > baseline.nonblack * 1.25) {
+    throw new Error(`${backend} FXAA spread coverage beyond the edge-local bound`);
+  }
+}
+
 function validateOutputToggleResult(result) {
   const backend = result?.backend || "unknown backend";
   const phases = result?.phases;
@@ -45,6 +71,7 @@ function validateOutputToggleResult(result) {
   if (off.fnv1a64 !== offAgain.fnv1a64) {
     throw new Error(`${backend} off-again output is not deterministic`);
   }
+  validateFxaaEffect(off, fxaaOnly, backend);
 
   for (const phase of [bloomOnly, fxaaOnly, on]) {
     if (sameResourceShape(off.resources_before_render, phase.resources_before_render)) {
@@ -58,4 +85,4 @@ function validateOutputToggleResult(result) {
   return result;
 }
 
-module.exports = { validateOutputToggleResult };
+module.exports = { validateFxaaEffect, validateOutputToggleResult };

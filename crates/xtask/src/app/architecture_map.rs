@@ -151,8 +151,10 @@ pub(crate) fn architecture_dependencies_dot(root: &Path) -> String {
 
 pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
     let path = path_to_forward_slash(rel);
-    if path == "src/lib.rs" {
+    if path == "src/lib.rs" || path == "src/prelude.rs" {
         "crate-root"
+    } else if path == "src/contract_validation.rs" {
+        "diagnostics"
     } else if path.starts_with("src/assets") {
         "assets"
     } else if path.starts_with("src/scene") {

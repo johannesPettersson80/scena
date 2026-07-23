@@ -21,6 +21,12 @@ pub struct SceneVisibilitySnapshotEntry {
     pub visible: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SceneVisibilityRestoreReport {
+    pub restored: Vec<NodeKey>,
+    pub skipped_stale: Vec<NodeKey>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SceneTintSnapshot {
     entries: Vec<SceneTintSnapshotEntry>,
@@ -151,12 +157,27 @@ impl Scene {
         &mut self,
         snapshot: &SceneVisibilitySnapshot,
     ) -> Result<(), LookupError> {
-        for entry in &snapshot.entries {
-            self.set_visible(entry.node, entry.visible)?;
-        }
+        self.restore_visibility_with_report(snapshot).map(|_| ())
+    }
+
+    /// Restores every live snapshot entry and reports entries whose node handle
+    /// became stale after the snapshot was taken.
+    pub fn restore_visibility_with_report(
+        &mut self,
+        snapshot: &SceneVisibilitySnapshot,
+    ) -> Result<SceneVisibilityRestoreReport, LookupError> {
         self.inspection_toolkit.isolated_nodes.clear();
         self.inspection_toolkit.hidden_by_isolate.clear();
-        Ok(())
+        let mut report = SceneVisibilityRestoreReport::default();
+        for entry in &snapshot.entries {
+            if !self.nodes.contains_key(entry.node) {
+                report.skipped_stale.push(entry.node);
+                continue;
+            }
+            self.set_visible(entry.node, entry.visible)?;
+            report.restored.push(entry.node);
+        }
+        Ok(report)
     }
 
     pub fn ghost(&mut self, node: NodeKey, alpha: f32) -> Result<SceneTintSnapshot, LookupError> {

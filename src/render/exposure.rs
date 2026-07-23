@@ -1,7 +1,14 @@
+#[cfg(not(target_arch = "wasm32"))]
+use crate::diagnostics::RenderError;
 use crate::{diagnostics::Backend, material::Color};
 
 use super::Renderer;
 use super::color_contract::linear_rgba_to_srgb8;
+
+mod meter;
+#[cfg(test)]
+use meter::LuminanceHistogram;
+use meter::LuminanceMeter;
 
 const DEFAULT_TARGET_LUMINANCE: f32 = 0.18;
 const DEFAULT_MIN_EV: f32 = -4.0;
@@ -11,6 +18,11 @@ const DEFAULT_HIGHLIGHT_TARGET_LUMINANCE: f32 = 0.85;
 const LUMINANCE_EPSILON: f32 = 1.0e-4;
 const AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8: u8 = 2;
 const MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES: usize = 64;
+const LUMINANCE_HISTOGRAM_BINS: usize = 1_024;
+const LUMINANCE_HISTOGRAM_MIN_EV: f32 = -16.0;
+const LUMINANCE_HISTOGRAM_MAX_EV: f32 = 16.0;
+const LUMINANCE_HISTOGRAM_BIN_EV: f32 =
+    (LUMINANCE_HISTOGRAM_MAX_EV - LUMINANCE_HISTOGRAM_MIN_EV) / LUMINANCE_HISTOGRAM_BINS as f32;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AutoExposureConfig {
@@ -28,6 +40,34 @@ pub struct AutoExposureResult {
     exposure_ev: f32,
     sample_count: u32,
     clamped: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AutoExposureStatus {
+    #[default]
+    Disabled,
+    Pending,
+    Converged,
+    /// The attached surface cannot be copied into the bounded meter.
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AutoExposureFramePolicy {
+    ImmediateDeterministic,
+    PriorAsyncMeterSample,
+}
+
+pub(crate) const fn auto_exposure_frame_policy(
+    gpu_active: bool,
+    surface_attached: bool,
+) -> AutoExposureFramePolicy {
+    if gpu_active && surface_attached {
+        AutoExposureFramePolicy::PriorAsyncMeterSample
+    } else {
+        AutoExposureFramePolicy::ImmediateDeterministic
+    }
 }
 
 impl AutoExposureConfig {
@@ -230,55 +270,28 @@ pub fn estimate_auto_exposure_from_linear_colors(
     colors: &[Color],
     config: AutoExposureConfig,
 ) -> Option<AutoExposureResult> {
-    let mut log_luminance_sum = 0.0_f32;
-    let mut luminances = Vec::with_capacity(colors.len());
-    let mut sample_count = 0_u32;
+    let mut meter = LuminanceMeter::default();
     for color in colors {
-        if color.a <= 0.0 {
-            continue;
-        }
-        let luminance = linear_luminance(*color);
-        if !luminance.is_finite() {
-            continue;
-        }
-        let luminance = luminance.max(LUMINANCE_EPSILON);
-        log_luminance_sum += luminance.ln();
-        luminances.push(luminance);
-        sample_count = sample_count.saturating_add(1);
+        meter.record(*color);
     }
-    if sample_count == 0 {
-        return None;
-    }
-
-    let measured_luminance = (log_luminance_sum / sample_count as f32).exp();
-    let target_luminance = config.target_luminance();
-    let raw_ev = (target_luminance / measured_luminance.max(LUMINANCE_EPSILON)).log2();
-    let highlight_ev = highlight_guard_ev(&mut luminances, config);
-    let guarded_ev = raw_ev.min(highlight_ev);
-    let min_ev = config.min_ev();
-    let max_ev = config.max_ev();
-    let exposure_ev = guarded_ev.clamp(min_ev, max_ev);
-    Some(AutoExposureResult {
-        measured_luminance,
-        target_luminance,
-        exposure_ev,
-        sample_count,
-        clamped: (exposure_ev - guarded_ev).abs() > f32::EPSILON,
-    })
+    meter.finish(config)
 }
 
 pub fn estimate_auto_exposure_from_srgb8(
     rgba8: &[u8],
     config: AutoExposureConfig,
 ) -> Option<AutoExposureResult> {
-    let colors: Vec<Color> = rgba8
-        .chunks_exact(4)
-        .map(|pixel| {
-            let color = Color::from_srgb_u8(pixel[0], pixel[1], pixel[2]);
-            Color::from_linear_rgba(color.r, color.g, color.b, f32::from(pixel[3]) / 255.0)
-        })
-        .collect();
-    estimate_auto_exposure_from_linear_colors(&colors, config)
+    let mut meter = LuminanceMeter::default();
+    for pixel in rgba8.chunks_exact(4) {
+        let color = Color::from_srgb_u8(pixel[0], pixel[1], pixel[2]);
+        meter.record(Color::from_linear_rgba(
+            color.r,
+            color.g,
+            color.b,
+            f32::from(pixel[3]) / 255.0,
+        ));
+    }
+    meter.finish(config)
 }
 
 fn estimate_auto_exposure_from_linear_colors_with_background(
@@ -287,22 +300,24 @@ fn estimate_auto_exposure_from_linear_colors_with_background(
     config: AutoExposureConfig,
 ) -> Option<AutoExposureResult> {
     let background = linear_rgba_to_srgb8(background);
-    let foreground = colors
-        .iter()
-        .copied()
-        .filter(|color| {
-            color.a > 0.0
-                && color_differs_from_background(
-                    linear_rgba_to_srgb8(*color).as_slice(),
-                    background,
-                    AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8,
-                )
-        })
-        .collect::<Vec<_>>();
-    if foreground.len() >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
-        estimate_auto_exposure_from_linear_colors(&foreground, config)
+    let mut all = LuminanceMeter::default();
+    let mut foreground = LuminanceMeter::default();
+    for color in colors.iter().copied() {
+        all.record(color);
+        if color.a > 0.0
+            && color_differs_from_background(
+                linear_rgba_to_srgb8(color).as_slice(),
+                background,
+                AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8,
+            )
+        {
+            foreground.record(color);
+        }
+    }
+    if foreground.sample_count() as usize >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
+        foreground.finish(config)
     } else {
-        estimate_auto_exposure_from_linear_colors(colors, config)
+        all.finish(config)
     }
 }
 
@@ -312,12 +327,12 @@ fn estimate_auto_exposure_from_srgb8_with_background(
     config: AutoExposureConfig,
 ) -> Option<AutoExposureResult> {
     let background = linear_rgba_to_srgb8(background);
-    let mut colors = Vec::with_capacity(rgba8.len() / 4);
-    let mut foreground = Vec::new();
+    let mut all = LuminanceMeter::default();
+    let mut foreground = LuminanceMeter::default();
     for pixel in rgba8.chunks_exact(4) {
         let color = Color::from_srgb_u8(pixel[0], pixel[1], pixel[2]);
         let color = Color::from_linear_rgba(color.r, color.g, color.b, f32::from(pixel[3]) / 255.0);
-        colors.push(color);
+        all.record(color);
         if color.a > 0.0
             && color_differs_from_background(
                 pixel,
@@ -325,26 +340,71 @@ fn estimate_auto_exposure_from_srgb8_with_background(
                 AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8,
             )
         {
-            foreground.push(color);
+            foreground.record(color);
         }
     }
-    if foreground.len() >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
-        estimate_auto_exposure_from_linear_colors(&foreground, config)
+    if foreground.sample_count() as usize >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
+        foreground.finish(config)
     } else {
-        estimate_auto_exposure_from_linear_colors(&colors, config)
+        all.finish(config)
     }
 }
 
 impl Renderer {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn apply_pending_surface_auto_exposure(&mut self) -> Result<(), RenderError> {
+        let Some(config) = self.auto_exposure else {
+            self.auto_exposure_status = AutoExposureStatus::Disabled;
+            return Ok(());
+        };
+        if !self
+            .gpu
+            .as_ref()
+            .expect("surface auto exposure requires a GPU device")
+            .auto_exposure_meter_supported()
+        {
+            self.auto_exposure_status = AutoExposureStatus::Unavailable;
+            return Ok(());
+        }
+        let Some(sample_rgba8) = self
+            .gpu
+            .as_mut()
+            .expect("surface auto exposure requires a GPU device")
+            .poll_auto_exposure_meter(self.target.backend)?
+        else {
+            if self.last_auto_exposure.is_none() {
+                self.auto_exposure_status = AutoExposureStatus::Pending;
+            }
+            return Ok(());
+        };
+        let Some(result) = estimate_auto_exposure_from_srgb8_with_background(
+            &sample_rgba8,
+            self.background_color(),
+            config,
+        ) else {
+            self.auto_exposure_status = AutoExposureStatus::Pending;
+            return Ok(());
+        };
+        let exposure_changed = (self.exposure_ev() - result.exposure_ev()).abs() > 0.01;
+        self.last_auto_exposure = Some(result);
+        self.auto_exposure_status = AutoExposureStatus::Converged;
+        if exposure_changed {
+            self.set_exposure_ev(result.exposure_ev());
+        }
+        Ok(())
+    }
+
     pub fn set_auto_exposure(&mut self, config: AutoExposureConfig) {
         self.auto_exposure = Some(config);
         self.last_auto_exposure = None;
+        self.auto_exposure_status = AutoExposureStatus::Pending;
         self.mark_output_changed();
     }
 
     pub fn clear_auto_exposure(&mut self) {
         if self.auto_exposure.take().is_some() {
             self.last_auto_exposure = None;
+            self.auto_exposure_status = AutoExposureStatus::Disabled;
             self.mark_output_changed();
         }
     }
@@ -355,6 +415,10 @@ impl Renderer {
 
     pub const fn last_auto_exposure(&self) -> Option<AutoExposureResult> {
         self.last_auto_exposure
+    }
+
+    pub const fn auto_exposure_status(&self) -> AutoExposureStatus {
+        self.auto_exposure_status
     }
 
     pub fn estimate_auto_exposure_from_last_cpu_frame(
@@ -380,14 +444,17 @@ impl Renderer {
     pub(super) fn apply_managed_auto_exposure_after_render(&mut self) -> bool {
         let Some(config) = self.auto_exposure else {
             self.last_auto_exposure = None;
+            self.auto_exposure_status = AutoExposureStatus::Disabled;
             return false;
         };
         let Some(result) = self.estimate_auto_exposure_from_current_frame(config) else {
             self.last_auto_exposure = None;
+            self.auto_exposure_status = AutoExposureStatus::Pending;
             return false;
         };
         let exposure_changed = (self.exposure_ev() - result.exposure_ev()).abs() > 0.01;
         self.last_auto_exposure = Some(result);
+        self.auto_exposure_status = AutoExposureStatus::Converged;
         if exposure_changed {
             self.set_exposure_ev(result.exposure_ev());
         }
@@ -425,9 +492,13 @@ impl Renderer {
 }
 
 fn linear_luminance(color: Color) -> f32 {
+    if !color.r.is_finite() || !color.g.is_finite() || !color.b.is_finite() {
+        return f32::NAN;
+    }
     0.2126 * color.r.max(0.0) + 0.7152 * color.g.max(0.0) + 0.0722 * color.b.max(0.0)
 }
 
+#[cfg(test)]
 fn highlight_guard_ev(luminances: &mut [f32], config: AutoExposureConfig) -> f32 {
     if luminances.is_empty() {
         return config.max_ev();
@@ -458,6 +529,101 @@ fn color_differs_from_background(pixel: &[u8], background: [u8; 4], tolerance: u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_histogram_matches_sorted_highlight_reference_within_one_bin() {
+        let luminances = (0..4_096)
+            .map(|index| 2.0_f32.powf(-12.0 + index as f32 * 24.0 / 4_095.0))
+            .collect::<Vec<_>>();
+        let config = AutoExposureConfig::mixed().with_highlight_guard(0.95, 0.85);
+        let mut sorted = luminances.clone();
+        let reference = highlight_guard_ev(&mut sorted, config);
+        let mut histogram = LuminanceHistogram::default();
+        for luminance in luminances {
+            histogram.record(luminance);
+        }
+        let bounded = histogram.highlight_guard_ev(config);
+
+        assert!(
+            (bounded - reference).abs() <= LUMINANCE_HISTOGRAM_BIN_EV,
+            "bounded percentile must stay within one EV bin: bounded={bounded} reference={reference}",
+        );
+    }
+
+    #[test]
+    fn bounded_meter_covers_exact_flat_outlier_and_invalid_distributions() {
+        let config = AutoExposureConfig::mixed().with_ev_range(-16.0, 16.0);
+        let flat = vec![Color::from_linear_rgb(0.25, 0.25, 0.25); 4_096];
+        let flat_result = estimate_auto_exposure_from_linear_colors(&flat, config)
+            .expect("flat luminance distribution meters");
+        assert!((flat_result.measured_luminance() - 0.25).abs() <= 1.0e-5);
+        assert!(
+            (flat_result.exposure_ev() - (config.target_luminance() / 0.25).log2()).abs() <= 1.0e-5,
+            "flat distribution must preserve the exact geometric-mean solution",
+        );
+
+        let guarded = AutoExposureConfig::mixed()
+            .with_ev_range(-16.0, 16.0)
+            .with_highlight_guard(0.95, 0.85);
+        let mut histogram = LuminanceHistogram::default();
+        for _ in 0..999 {
+            histogram.record(0.25);
+        }
+        histogram.record(65_536.0);
+        let expected_guard = (guarded.highlight_target_luminance() / 0.25).log2();
+        assert!(
+            (histogram.highlight_guard_ev(guarded) - expected_guard).abs()
+                <= LUMINANCE_HISTOGRAM_BIN_EV,
+            "a single extreme outlier above the configured percentile must not move the guard by more than one histogram bin",
+        );
+
+        let invalid = [
+            Color::from_linear_rgba(f32::NAN, 0.0, 0.0, 1.0),
+            Color::from_linear_rgba(1.0, 1.0, 1.0, 0.0),
+            Color::from_linear_rgb(0.5, 0.5, 0.5),
+        ];
+        let invalid_result = estimate_auto_exposure_from_linear_colors(&invalid, config)
+            .expect("one finite opaque sample meters");
+        assert_eq!(invalid_result.sample_count(), 1);
+        assert!((invalid_result.measured_luminance() - 0.5).abs() <= 1.0e-5);
+    }
+
+    #[test]
+    fn luminance_meter_storage_is_resolution_independent() {
+        assert!(
+            std::mem::size_of::<LuminanceMeter>() <= 8 * 1_024,
+            "auto-exposure metering must use fixed bounded storage",
+        );
+    }
+
+    #[test]
+    fn attached_gpu_auto_exposure_uses_prior_async_meter_sample() {
+        assert_eq!(
+            auto_exposure_frame_policy(true, true),
+            AutoExposureFramePolicy::PriorAsyncMeterSample,
+        );
+        assert_eq!(
+            auto_exposure_frame_policy(true, false),
+            AutoExposureFramePolicy::ImmediateDeterministic,
+        );
+        assert_eq!(
+            auto_exposure_frame_policy(false, false),
+            AutoExposureFramePolicy::ImmediateDeterministic,
+        );
+
+        let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+        assert_eq!(
+            renderer.auto_exposure_status(),
+            AutoExposureStatus::Disabled
+        );
+        renderer.set_auto_exposure(AutoExposureConfig::mixed());
+        assert_eq!(renderer.auto_exposure_status(), AutoExposureStatus::Pending);
+        renderer.clear_auto_exposure();
+        assert_eq!(
+            renderer.auto_exposure_status(),
+            AutoExposureStatus::Disabled
+        );
+    }
 
     #[test]
     fn auto_exposure_prefers_foreground_over_flat_background() {

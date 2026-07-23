@@ -93,6 +93,7 @@ impl ExplodedView {
         let assembly_center = assembly_bounds.center();
         let targets = self.targets(scene)?;
         let mut updates = Vec::new();
+        let mut planned_worlds = BTreeMap::new();
 
         for (index, target) in targets.into_iter().enumerate() {
             let Some(bounds) = scene.node_world_bounds(target.node, assets)? else {
@@ -115,7 +116,9 @@ impl ExplodedView {
             };
             let offset = direction * self.distance * self.factor * depth_multiplier;
             let target_world = world.with_translation(world.translation + offset);
-            let transform = local_transform_for_node(scene, target.node, target_world)?;
+            let transform =
+                local_transform_for_node(scene, target.node, target_world, &planned_worlds)?;
+            planned_worlds.insert(target.node, target_world);
             updates.push(ExplodedTransformUpdate {
                 node: target.node,
                 original,
@@ -221,6 +224,7 @@ fn local_transform_for_node(
     scene: &Scene,
     node: NodeKey,
     world: Transform,
+    planned_worlds: &BTreeMap<NodeKey, Transform>,
 ) -> Result<Transform, LookupError> {
     let parent = scene
         .node(node)
@@ -229,9 +233,12 @@ fn local_transform_for_node(
     let Some(parent) = parent else {
         return Ok(world);
     };
-    let parent_world = scene
-        .world_transform(parent)
-        .ok_or(LookupError::NodeNotFound(parent))?;
+    let parent_world = match planned_worlds.get(&parent).copied() {
+        Some(world) => world,
+        None => scene
+            .world_transform(parent)
+            .ok_or(LookupError::NodeNotFound(parent))?,
+    };
     local_transform_from_world(parent_world, world)
         .ok_or(LookupError::NonInvertibleParentTransform { node, parent })
 }
@@ -301,3 +308,4 @@ fn fallback_direction(index: usize) -> Vec3 {
 fn fallback_sign(index: usize) -> f32 {
     if index.is_multiple_of(2) { 1.0 } else { -1.0 }
 }
+use std::collections::BTreeMap;

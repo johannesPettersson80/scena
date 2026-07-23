@@ -14,15 +14,24 @@ pub(crate) fn write_stderr_line(text: &str) {
     let _ = write_line(&mut stderr, text);
 }
 
-pub(crate) fn write_stdout_error(error: &io::Error) {
+pub(crate) fn write_stdout_error(error: &io::Error, pretty: bool) {
     let report = serde_json::json!({
         "schema": "scena.cli_io_error.v1",
         "ok": false,
+        "code": "io_error",
+        "exit_class": "io",
+        "exit_code": IO_ERROR_EXIT_CODE,
         "stream": "stdout",
         "error_kind": format!("{:?}", error.kind()),
         "message": error.to_string(),
+        "help": "check the output stream, permissions, and free space",
     });
-    if let Ok(text) = serde_json::to_string(&report) {
+    let text = if pretty {
+        serde_json::to_string_pretty(&report)
+    } else {
+        serde_json::to_string(&report)
+    };
+    if let Ok(text) = text {
         write_stderr_line(&text);
     }
 }

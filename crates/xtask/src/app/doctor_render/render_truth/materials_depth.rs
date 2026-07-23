@@ -88,7 +88,7 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
             "MaterialTextureResources",
             "MaterialTextureUpload",
             "MaterialUniformUpload",
-            "MATERIAL_UNIFORM_BYTE_LEN",
+            "material_uniform_min_binding_size",
             "create_material_bind_group_layout",
             "create_material_resources",
             "Vec<MaterialTextureResources>",
@@ -180,7 +180,7 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
         "src/render/gpu/material_uniform.rs",
         &[
             "MaterialUniformUpload",
-            "MATERIAL_UNIFORM_BYTE_LEN",
+            "material_uniform_layout_encode_and_bind_size_are_consistent",
             "from_material",
             "from_transform",
             "base_color_factor",

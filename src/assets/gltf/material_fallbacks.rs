@@ -2,7 +2,7 @@ use crate::diagnostics::AssetError;
 use crate::material::TextureColorSpace;
 
 use super::super::{AssetMaterialFallback, AssetPath, AssetStorage, TextureHandle};
-use super::textures::{GltfTexture, texture_slot};
+use super::textures::{GltfTexture, IndexedGltfTextures, TextureSlotRequest, texture_slot};
 
 pub(super) struct TextureSlotFallbackRequest<'a> {
     pub(super) path: &'a AssetPath,
@@ -37,20 +37,24 @@ impl<'a> TextureSlotFallbackRequest<'a> {
 
 pub(super) fn texture_slot_with_fallback(
     request: TextureSlotFallbackRequest<'_>,
-    textures: &[GltfTexture],
+    textures: &IndexedGltfTextures,
     storage: &mut AssetStorage,
     sinks: &mut MaterialFallbackSinks<'_>,
 ) -> Result<TextureHandle, AssetError> {
     let texture = texture_slot(
-        request.path,
-        request.slot,
-        request.texture_index,
+        TextureSlotRequest {
+            path: request.path,
+            material_index: Some(request.material_index),
+            material_name: None,
+            material_slot: request.slot,
+            texture_index: request.texture_index,
+            color_space: request.color_space,
+        },
         textures,
         storage,
-        request.color_space,
     )?;
     if let Some(fallback) = textures
-        .get(request.texture_index)
+        .resolved(request.texture_index)
         .and_then(GltfTexture::basisu_fallback)
     {
         let fallback = AssetMaterialFallback::texture_basisu_fallback(
@@ -64,7 +68,7 @@ pub(super) fn texture_slot_with_fallback(
         sinks.source.push(fallback);
     }
     if let Some(source) = textures
-        .get(request.texture_index)
+        .resolved(request.texture_index)
         .filter(|texture| texture.source_bytes_missing())
     {
         let fallback = AssetMaterialFallback::missing_texture_fallback(

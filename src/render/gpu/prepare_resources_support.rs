@@ -81,8 +81,7 @@ pub(super) fn validate_sample_count(
     {
         sample_formats.push(surface_format);
     }
-    let maximum =
-        super::msaa::max_supported_sample_count(&gpu.device, &gpu.adapter, &sample_formats);
+    let maximum = gpu.max_supported_sample_count_cached(&sample_formats);
     if sample_count > maximum {
         return Err(PrepareError::UnsupportedSampleCount {
             backend: target.backend,

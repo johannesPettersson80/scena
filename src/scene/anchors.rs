@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use super::import::ImportAnchor;
 use super::{
     AnchorKey, ConnectionError, NodeKey, Scene, SourceCoordinateSystem, SourceUnits, Transform,
-    slot_index,
 };
 
 #[derive(Debug, Clone)]
@@ -146,9 +145,7 @@ impl Scene {
 
     pub fn anchor(&self, anchor: AnchorKey) -> Result<&AnchorFrame, ConnectionError> {
         let Some(frame) = self.anchors.get(anchor) else {
-            if let Some((retired, name)) = self.retired_anchors.get(&slot_index(anchor))
-                && *retired == anchor
-            {
+            if let Some(name) = self.retired_anchors.get(&anchor) {
                 return Err(ConnectionError::StaleAnchorHandle {
                     anchor: Some(anchor),
                     name: name.clone(),

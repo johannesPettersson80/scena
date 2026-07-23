@@ -123,6 +123,14 @@ pub(crate) fn doctor_rejects_release_publish_dry_run_helper_missing_strict_mode_
         "doctor must reject release_publish_dry_run.sh that drops the \
          strict-mode declaration (set -euo pipefail): {findings:?}",
     );
+    for needle in ["AGENTS.md", ".codex/skills", "cmp -s", "diff -qr"] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-PUBLISH-DRY-RUN-RECORD" && finding.message.contains(needle)
+            }),
+            "doctor must reject a publish worktree helper missing {needle}: {findings:?}",
+        );
+    }
 }
 
 #[test]

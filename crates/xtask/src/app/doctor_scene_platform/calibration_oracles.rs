@@ -33,6 +33,7 @@ const NON_CALIBRATION_SWEEPS: &[&str] = &[
     "tests/m6_browser_renderer_parity.rs",
     "tests/m6_browser_webgpu_readback.rs",
     "tests/pf08_texture_bake_parity.rs",
+    "tests/a07_vocabulary_parity.rs",
 ];
 
 /// Meta-rule: every `*_parity` sweep must either be paired with an external

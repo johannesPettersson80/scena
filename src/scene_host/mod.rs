@@ -107,8 +107,8 @@ pub use interaction_verification::{
     InteractionVerificationSummaryV1, InteractionViewportV1, host_event_kind_name, physical_px,
 };
 pub use measurements::{
-    SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementLabelProjectionV1,
-    SceneHostMeasurementOverlayReportV1,
+    SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementAuthorityV1,
+    SceneHostMeasurementLabelProjectionV1, SceneHostMeasurementOverlayReportV1,
 };
 pub use presentation_timeline::{
     PRESENTATION_TIMELINE_SCHEMA_V1, PresentationTimelineActionKindV1,

@@ -9,6 +9,27 @@ pub(super) struct SchemaEntryRow {
 pub(super) fn operational_schema_entry_rows() -> &'static [SchemaEntryRow] {
     &[
         SchemaEntryRow {
+            schema: super::AGENT_GUIDE_SCHEMA_V1,
+            owner_module: "schema_catalog/agent_guide",
+            summary: "Packaged public application-builder workflow, commands, schemas, policies, and templates.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/agent_guide.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: crate::CONTRACT_VALIDATION_SCHEMA_V1,
+            owner_module: "contract_validation",
+            summary: "Schema-dispatched validation result for any cataloged public JSON contract.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/contract_validation.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: crate::JSON_SCHEMA_EXPORT_SCHEMA_V1,
+            owner_module: "contract_validation",
+            summary: "Versioned JSON Schema export with explicit runtime and cross-field limitations.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/json_schema_export.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.release.findings.v1",
             owner_module: "xtask/release",
             summary: "Independent release-review findings register bound to one source commit.",
@@ -28,6 +49,34 @@ pub(super) fn operational_schema_entry_rows() -> &'static [SchemaEntryRow] {
             summary: "Fail-closed staged release-evidence validation result with resolved root and artifact counts.",
             feature_flag: None,
             fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.m8.waterbottle_adapter_expectation.v1",
+            owner_module: "xtask/release",
+            summary: "Structured adapter-specific WaterBottle reference expectations independent of display-name text.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.q08.required_cpu_gpu_parity.v1",
+            owner_module: "renderer-quality",
+            summary: "Fail-closed physical CPU/GPU parity execution and assertion evidence.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.q11.reference_stability.v1",
+            owner_module: "renderer-quality",
+            summary: "Cross-architecture deterministic-reference stability evidence.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: "scena.q11.reference_approval.v1",
+            owner_module: "renderer-quality",
+            summary: "Independent approval bound to an exact reference candidate and source commit.",
+            feature_flag: None,
+            fixture_path: Some("docs/reference-approval-q11.example.json"),
         },
         SchemaEntryRow {
             schema: "scena.recipe_patch.v1",

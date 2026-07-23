@@ -81,7 +81,11 @@ pub(super) fn encode_surface_overlay_pass(
         OverlayPasses {
             view,
             depth_view,
-            output_bind_group: &resources.output_bind_group,
+            output_bind_group: resources.surface_output_bind_group.as_ref().ok_or(
+                RenderError::GpuResourcesNotPrepared {
+                    backend: target.backend,
+                },
+            )?,
             draw_bind_group: &resources.draw_bind_group,
             stroke_resources: resources.strokes.as_ref(),
             stroke_pipeline,

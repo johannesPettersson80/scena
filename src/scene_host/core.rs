@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
+mod surface_events;
+
 use super::camera::controls_from_scene_camera;
-use super::events::{HostEventQueue, HostEventV1};
+use super::events::{HostEventHitV1, HostEventQueue, HostEventV1};
 use super::handles::{HandleKind, HandleTable};
 use super::inputs::validate_transform;
 use super::instances::HostInstanceBinding;
@@ -14,7 +16,7 @@ use crate::Color;
 use crate::{
     Aabb, AssetFetcher, AssetPath, Assets, Backend, DefaultAssetFetcher,
     HeadlessBackendSelectionReport, ImportOptions, OrbitControls, RenderOutcome, Renderer, Scene,
-    SceneImport, SurfaceEvent, SurfaceViewport, Transform, Vec3,
+    SceneImport, SurfaceViewport, Transform, Vec3,
 };
 use crate::{AnimationMixerKey, CameraKey, InstanceId, NodeKey, SceneImportInspectionV1};
 
@@ -60,6 +62,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) transitions: HostTransitions,
     pub(super) events: HostEventQueue,
     pub(super) last_diagnostic_events: Vec<HostEventV1>,
+    pub(super) last_hover_event_hit: Option<HostEventHitV1>,
     pub(super) node_handle_map: BTreeMap<NodeKey, u64>,
     pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
     pub(super) section_box_helper: Option<u64>,
@@ -92,6 +95,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             transitions: HostTransitions::default(),
             events: HostEventQueue::default(),
             last_diagnostic_events: Vec::new(),
+            last_hover_event_hit: None,
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
             section_box_helper: None,
@@ -129,6 +133,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             transitions: HostTransitions::default(),
             events: HostEventQueue::default(),
             last_diagnostic_events: Vec::new(),
+            last_hover_event_hit: None,
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
             section_box_helper: None,
@@ -177,64 +182,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 
     pub fn backend(&self) -> Backend {
         self.renderer.capabilities().backend
-    }
-
-    pub fn resize(
-        &mut self,
-        logical_width: f32,
-        logical_height: f32,
-        device_pixel_ratio: f32,
-    ) -> Result<(), SceneHostError> {
-        let viewport = SurfaceViewport::new(logical_width, logical_height, device_pixel_ratio)
-            .ok_or_else(|| {
-                SceneHostError::new(
-                    SceneHostErrorCode::InvalidViewport,
-                    format!(
-                        "invalid viewport {logical_width}x{logical_height} at DPR {device_pixel_ratio}"
-                    ),
-                )
-            })?;
-        self.viewport = viewport;
-        self.renderer
-            .handle_surface_event(SurfaceEvent::ViewportChanged(viewport))?;
-        self.emit_surface_resized_event(viewport);
-        Ok(())
-    }
-
-    pub fn handle_surface_event(&mut self, event: SurfaceEvent) -> Result<(), SceneHostError> {
-        if let SurfaceEvent::ViewportChanged(viewport) = event {
-            self.viewport = viewport;
-        }
-        self.renderer.handle_surface_event(event)?;
-        match event {
-            SurfaceEvent::Resize { width, height } => {
-                let dpr = self.viewport.device_pixel_ratio();
-                self.emit_event(HostEventV1::SurfaceResized {
-                    width_css_px: width as f32 / dpr,
-                    height_css_px: height as f32 / dpr,
-                    width_physical_px: width,
-                    height_physical_px: height,
-                    device_pixel_ratio: dpr,
-                });
-            }
-            SurfaceEvent::ViewportChanged(viewport) => self.emit_surface_resized_event(viewport),
-            SurfaceEvent::ContextLost { recoverable } => {
-                self.emit_event(HostEventV1::ContextLost { recoverable });
-            }
-            SurfaceEvent::ContextRestored => {
-                self.emit_event(HostEventV1::ContextRestored);
-                self.emit_event(HostEventV1::capability_changed(self.backend()));
-            }
-            SurfaceEvent::DeviceLost { recoverable } => {
-                self.emit_event(HostEventV1::DeviceLost { recoverable });
-            }
-            SurfaceEvent::ScaleFactorChanged { .. }
-            | SurfaceEvent::Occluded { .. }
-            | SurfaceEvent::Hidden
-            | SurfaceEvent::Shown
-            | SurfaceEvent::Lost => {}
-        }
-        Ok(())
     }
 
     #[cfg(target_arch = "wasm32")]

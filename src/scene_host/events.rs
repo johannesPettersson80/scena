@@ -223,24 +223,15 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn hover(&mut self, x: f32, y: f32) -> Result<Option<u64>, SceneHostError> {
-        let previous = self.scene.interaction().hover();
         let hit = self.pick_hit(x, y)?;
         let target = hit.map(|hit| hit.target());
         let event_hit = hit.and_then(|hit| self.host_event_hit(hit));
         let handle = event_hit.as_ref().map(|hit| hit.handle);
         self.scene.set_hover_target(target);
-        let phase = match (previous, target) {
-            (Some(_), None) => HostEventHoverPhaseV1::Left,
-            (Some(previous), Some(current)) if previous == current => HostEventHoverPhaseV1::Moved,
-            (_, Some(_)) => HostEventHoverPhaseV1::Entered,
-            (None, None) => HostEventHoverPhaseV1::Moved,
-        };
-        self.emit_event(HostEventV1::Hover {
-            x_css_px: x,
-            y_css_px: y,
-            phase,
-            hit: event_hit,
-        });
+        for event in hover_transition_events(x, y, self.last_hover_event_hit, event_hit) {
+            self.emit_event(event);
+        }
+        self.last_hover_event_hit = event_hit;
         Ok(handle)
     }
 
@@ -413,6 +404,32 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 }
 
+fn hover_transition_events(
+    x: f32,
+    y: f32,
+    previous: Option<HostEventHitV1>,
+    current: Option<HostEventHitV1>,
+) -> Vec<HostEventV1> {
+    let event = |phase, hit| HostEventV1::Hover {
+        x_css_px: x,
+        y_css_px: y,
+        phase,
+        hit,
+    };
+    match (previous, current) {
+        (None, None) => Vec::new(),
+        (None, Some(current)) => vec![event(HostEventHoverPhaseV1::Entered, Some(current))],
+        (Some(previous), None) => vec![event(HostEventHoverPhaseV1::Left, Some(previous))],
+        (Some(previous), Some(current)) if previous.handle == current.handle => {
+            vec![event(HostEventHoverPhaseV1::Moved, Some(current))]
+        }
+        (Some(previous), Some(current)) => vec![
+            event(HostEventHoverPhaseV1::Left, Some(previous)),
+            event(HostEventHoverPhaseV1::Entered, Some(current)),
+        ],
+    }
+}
+
 fn host_diagnostic_message(diagnostic: &Diagnostic, node_handle: Option<u64>) -> String {
     let Some(handle) = node_handle else {
         return diagnostic.message.clone();
@@ -431,7 +448,75 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use super::{HostEventQueue, HostEventV1};
+    use super::{
+        HostEventHitV1, HostEventHoverPhaseV1, HostEventQueue, HostEventTargetKindV1, HostEventV1,
+        hover_transition_events,
+    };
+    use crate::Vec3;
+
+    fn event_hit(handle: u64) -> HostEventHitV1 {
+        HostEventHitV1 {
+            target: HostEventTargetKindV1::Node,
+            handle,
+            distance: 1.0,
+            world_position: Vec3::ZERO,
+            normal: None,
+        }
+    }
+
+    #[test]
+    fn hover_transition_contract_covers_every_previous_and_current_target_pair() {
+        let entered = hover_transition_events(4.0, 5.0, None, Some(event_hit(10)));
+        assert!(matches!(
+            entered.as_slice(),
+            [HostEventV1::Hover {
+                x_css_px: 4.0,
+                y_css_px: 5.0,
+                phase: HostEventHoverPhaseV1::Entered,
+                hit: Some(hit),
+            }] if hit.handle == 10
+        ));
+
+        let moved = hover_transition_events(4.0, 5.0, Some(event_hit(10)), Some(event_hit(10)));
+        assert!(matches!(
+            moved.as_slice(),
+            [HostEventV1::Hover {
+                phase: HostEventHoverPhaseV1::Moved,
+                hit: Some(hit),
+                ..
+            }] if hit.handle == 10
+        ));
+
+        let events = hover_transition_events(4.0, 5.0, Some(event_hit(10)), Some(event_hit(20)));
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            events[0],
+            HostEventV1::Hover {
+                phase: HostEventHoverPhaseV1::Left,
+                hit: Some(hit),
+                ..
+            } if hit.handle == 10
+        ));
+        assert!(matches!(
+            events[1],
+            HostEventV1::Hover {
+                phase: HostEventHoverPhaseV1::Entered,
+                hit: Some(hit),
+                ..
+            } if hit.handle == 20
+        ));
+
+        let left = hover_transition_events(4.0, 5.0, Some(event_hit(20)), None);
+        assert!(matches!(
+            left.as_slice(),
+            [HostEventV1::Hover {
+                phase: HostEventHoverPhaseV1::Left,
+                hit: Some(hit),
+                ..
+            }] if hit.handle == 20
+        ));
+        assert!(hover_transition_events(4.0, 5.0, None, None).is_empty());
+    }
 
     #[test]
     fn event_queue_sink_can_emit_reentrantly_without_borrow_panic() {

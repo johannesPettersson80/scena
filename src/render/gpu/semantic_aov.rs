@@ -21,6 +21,13 @@ mod capture;
 #[cfg(target_arch = "wasm32")]
 mod webgl2;
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(super) const WEBGL2_READBACK_SHADER: &str = concat!(
+    include_str!("post/blit_srgb.wgsl"),
+    "\n",
+    include_str!("../color_contract.wgsl")
+);
+
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 

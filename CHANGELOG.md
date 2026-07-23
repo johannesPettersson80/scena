@@ -4,6 +4,77 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+- Fix glTF correctness at raw-index and value level: texture entries no longer
+  compact when an earlier source is unresolved; quantized tangent and morph
+  accessors use checked component-aware decoding; default/explicit source-scene
+  selection is honored; and invalid referenced textures fail with material,
+  slot, raw index, image source, and reason. Invalid variant mappings, morph
+  weight widths, non-finite authored/imported animation keys, unsupported UV
+  sets, and malformed accessors now produce structured diagnostics instead of
+  silent rebinding, truncation, defaults, or runtime transform poisoning.
+- Make hot reload atomic while preserving host parentage, root-local placement,
+  visibility, option-sensitive cache identity, changed texture bytes, and load
+  warnings. Failed replacement leaves the live import unchanged; successful
+  replacement retains deterministic root correspondence and generation-safe
+  stale anchor/connector diagnostics.
+- Bind verified capture bytes to the exact completed readback-frame record.
+  Present-only, resize, camera/output change, skip, surface loss, or swapped
+  older pixels can no longer be certified with newer rendered state; verified
+  capture now fails with the fresh-readback remedy. Capture descriptor fixtures
+  include the stronger provenance identity.
+- Correct target-format color transfer on native/browser surface, offscreen,
+  post, readback, and MSAA paths. Non-sRGB targets receive one shader sRGB
+  encode, sRGB targets rely on format conversion exactly once, and selected
+  capability formats describe the actual transfer target.
+- Validate and revision camera intrinsics as scene state, synchronize SceneHost
+  resize/DPR/viewport/picking, and pick through the camera that actually
+  rendered. Invalid projection values fail before blank output; intrinsic-only
+  changes invalidate on-change rendering and capture identity.
+- Normalize browser wheel units and bound exponential zoom; preserve independent
+  pointer-button gesture ownership; emit complete hover leave/enter sequences;
+  fully restore visibility when snapshot entries went stale; and compute nested
+  exploded-view offsets once in world space with exact local-state restore.
+- Keep retained GPU templates source-complete and apply view-dependent culling
+  during dynamic encode. Suboptimal surfaces now refresh actual capabilities,
+  and conservative CPU occlusion refuses to hide insufficiently sampled thin
+  detail while retaining large-occluder wins.
+- Keep machine-mode GPU fallback entirely inside versioned JSON. Backend
+  request/selection, fallback reason, and remedy no longer leak as prose on
+  stderr. CLI validation, error taxonomy, help/exit tables, global JSON
+  formatting, default introspection, authored-node placement, vocabulary, and
+  packaged agent-guide/install contracts are now executable and parity-checked.
+- Strengthen release evidence: every production WGSL variant is Naga-validated
+  through one manifest owner; every public example compiles with its declared
+  feature set; smoke is distinct from image parity; native WaterBottle evidence
+  is full-frame and mirror-sensitive; physical parity cannot silently skip;
+  reference regeneration needs independent approval; and release artifacts need
+  CI-issued provenance rather than self-reported commit metadata.
+- Add checked in-memory RGBA8 and linear-float texture descriptors with stable
+  cache identity, explicit mip policy, and slot-typed sRGB/linear helpers.
+  Native texture limit failures and browser downscaling now emit structured
+  diagnostics instead of generic parse errors or console-only warnings.
+- Add a curated `scena::prelude`, option-bearing node-subtree framing, and a
+  native missing-file `AssetError::NotFound` mapping. Keep the documented
+  `controls*` features as tested metadata-only compatibility aliases.
+- Keep attached-surface auto exposure off the synchronous full-frame capture
+  path. Native surfaces now submit a fixed 16x16 two-slot asynchronous meter,
+  render each presented frame once, and expose pending, converged, or
+  unavailable status; deterministic headless rendering retains same-call
+  convergence. Render work metrics report bounded meter submissions/samples.
+- Add machine-readable measurement-authority metadata to SceneHost overlay
+  reports and document the scene-space inspection boundary: values are not
+  calibrated metrology or manufacturing/survey/tolerance certification.
+- Add a read-only task-cache status command that reports exact isolated
+  checkout/target/temp paths, sizes, ages, reproducibility, retention, and
+  explicit cleanup authority without deleting anything.
+- Reduce measured hot-path work with source-complete retained culling,
+  bounded histogram exposure metering, reciprocal CPU barycentrics, separable
+  CPU bloom, cached device format/sample capabilities, retained clipping-plane
+  storage, and typed environment cache keys. Render introspection can report
+  observational prepare/render/capture/total timings when explicitly requested.
+  Histogram accumulation uses stable `f64` sums and rejects non-finite RGB
+  samples instead of allowing NaN exposure state.
+
 - Fix attached native MSAA rendering so the multisampled surface scene pass
   binds multisampled scene depth while resolved overlays retain single-sample
   depth. Native uncaptured wgpu errors now write their detailed validation
@@ -15,6 +86,17 @@ All notable user-facing changes are recorded here.
   WebGPU adapter metadata only when same-browser Chromium GPU evidence proves a
   physical adapter, while still rejecting software renderers. Normalize Windows
   artifact path separators before enforcing canonical Q01 image locations.
+- Apply `WGPU_BACKEND` filtering to headless native renderers as well as
+  attached surfaces, and require DX12 across every structured native artifact
+  in the Windows proof. Make the AA edge-spread ceiling relative to existing
+  intermediate-tone coverage so legitimate FXAA is not rejected while no-op
+  and whole-frame-blur mutations remain fail-closed. Package the Q07 producer
+  source alongside its Windows executable and install it into the proof
+  workspace before manifest validation, so runtime provenance checks cannot
+  fail after the pixel proof has passed. Apply the same manifest-bound
+  package/install contract to every Q08 physical-parity producer source, and
+  write PBR/PF08 artifacts relative to the runtime proof workspace instead of
+  the Linux cross-builder's compiled manifest path.
 
 ## [1.9.0] - 2026-07-21
 

@@ -3598,40 +3598,28 @@ fn m7_beginner_scene_diagnostics_explain_invisible_setups() {
 }
 
 #[test]
-fn m7_diagnostics_report_invalid_camera_projection_before_empty_frame() {
+fn m7_scene_rejects_invalid_camera_projection_before_it_can_produce_an_empty_frame() {
     let mut scene = Scene::new();
+    let before = scene.dirty_state();
     let invalid_camera = PerspectiveCamera {
         near: 10.0,
         far: 1.0,
         ..PerspectiveCamera::default()
     };
-    let camera = scene
+    let error = scene
         .add_perspective_camera(
             scene.root(),
             invalid_camera,
             Transform::at(Vec3::new(0.0, 0.0, 3.0)),
         )
-        .expect("camera inserts");
-    scene.set_active_camera(camera).expect("camera activates");
-    scene
-        .add_renderable(
-            scene.root(),
-            vec![Primitive::unlit_triangle()],
-            Transform::default(),
-        )
-        .expect("renderable inserts");
-    let renderer = Renderer::headless(32, 32).expect("renderer builds");
-
-    let diagnostics = renderer.diagnose_scene(&scene);
-
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == DiagnosticCode::InvalidCameraProjection
-            && diagnostic.severity == DiagnosticSeverity::Error
-            && diagnostic
-                .help
-                .as_deref()
-                .is_some_and(|help| help.contains("near") && help.contains("far"))
-    }));
+        .expect_err("invalid camera projection must fail before insertion");
+    assert!(matches!(
+        error,
+        LookupError::InvalidCameraProjection { reason }
+            if reason.contains("near") && reason.contains("far")
+    ));
+    assert_eq!(scene.dirty_state(), before);
+    assert_eq!(scene.active_camera(), None);
 }
 
 #[test]

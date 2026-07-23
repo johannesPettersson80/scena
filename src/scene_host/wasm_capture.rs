@@ -6,15 +6,16 @@ use wasm_bindgen::prelude::*;
 
 impl SceneHost {
     pub(super) fn capture_rgba8_for_wasm(&self) -> Result<CaptureRgba8, SceneHostError> {
-        match self
-            .browser_canvas
-            .as_ref()
-            .map(browser_canvas_rgba8)
-            .transpose()?
-            .flatten()
-        {
+        let Some(canvas) = self.browser_canvas.as_ref() else {
+            return self.core.capture();
+        };
+        match browser_canvas_rgba8(canvas)? {
             Some((width, height, rgba8)) => self.core.capture_from_rgba8(width, height, rgba8),
-            None => self.core.capture(),
+            None => self.core.capture_from_rgba8(
+                canvas.width(),
+                canvas.height(),
+                self.core.read_pixels(),
+            ),
         }
     }
 
@@ -34,10 +35,11 @@ impl SceneHost {
                 )
             })?;
         match readback {
-            Some(pixels) => {
-                self.core
-                    .capture_from_rgba8(pixels.width(), pixels.height(), pixels.into_rgba8())
-            }
+            Some(pixels) => self.core.capture_from_renderer_rgba8(
+                pixels.width(),
+                pixels.height(),
+                pixels.into_rgba8(),
+            ),
             None => self.capture_rgba8_for_wasm(),
         }
     }

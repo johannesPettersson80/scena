@@ -2,10 +2,22 @@ const assert = require("assert");
 const { validateOutputToggleResult } = require("./pf01_output_toggle_validation.js");
 
 function phase(id, hash, resources) {
+  const baselineMetrics = {
+    intermediate_luma_pixels: 100,
+    relative_hard_transitions: 100,
+    normalized_squared_edge_energy: 100,
+    luma_range: 200,
+  };
   return {
     id,
     fnv1a64: hash,
     nonblack: 10,
+    aa_edge_metrics: id === "fxaa_only" ? {
+      intermediate_luma_pixels: 150,
+      relative_hard_transitions: 50,
+      normalized_squared_edge_energy: 80,
+      luma_range: 200,
+    } : baselineMetrics,
     resources_before_render: resources,
     resources_after_render: resources,
   };
@@ -54,6 +66,22 @@ inertFxaa.phases.fxaa_only.fnv1a64 = inertFxaa.phases.off.fnv1a64;
 assert.throws(
   () => validateOutputToggleResult(inertFxaa),
   /FXAA-only output is identical to baseline/,
+);
+
+const noOpFxaa = validResult();
+noOpFxaa.phases.fxaa_only.aa_edge_metrics = {
+  ...noOpFxaa.phases.off.aa_edge_metrics,
+};
+assert.throws(
+  () => validateOutputToggleResult(noOpFxaa),
+  /FXAA did not add intermediate-luma edge coverage/,
+);
+
+const blurEverything = validResult();
+blurEverything.phases.fxaa_only.nonblack = 20;
+assert.throws(
+  () => validateOutputToggleResult(blurEverything),
+  /FXAA spread coverage beyond the edge-local bound/,
 );
 
 const unstableResources = validResult();

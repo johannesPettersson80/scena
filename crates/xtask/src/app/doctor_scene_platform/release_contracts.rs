@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 
 pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    check_public_example_compile_coverage(root, findings);
     require_files(root, findings, "ARCH-M5-RELEASE", REQUIRED_EXAMPLES);
     require_contains(
         root,
@@ -158,7 +159,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         &[
             "m5-benchmarks.json",
             "m5-public-api-freeze.json",
-            "cargo check --examples",
+            "cargo check --examples --all-features",
             "SCENA_RELEASE_COMMIT=$COMMIT",
             "payload_sha256",
             "sample_count: 1",
@@ -173,7 +174,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "m5_release",
             "m5-benchmarks.json",
             "m5-public-api-freeze.json",
-            "cargo check --examples",
+            "cargo check --examples --all-features",
             "cargo publish --dry-run",
         ],
     );
@@ -185,10 +186,64 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         &[
             "m5-benchmarks.json",
             "m5-public-api-freeze.json",
-            "cargo check --examples",
+            "cargo check --examples --all-features",
             "cargo publish --dry-run",
         ],
     );
+}
+
+pub(crate) fn check_public_example_compile_coverage(root: &Path, findings: &mut Vec<Finding>) {
+    const RULE: &str = "ARCH-PUBLIC-EXAMPLE-COVERAGE";
+    require_contains(
+        root,
+        findings,
+        RULE,
+        "tests/public_examples_manifest.rs",
+        &[
+            "cargo_metadata_covers_every_public_example_and_required_feature_combination",
+            "validate_manifest_coverage",
+            "scene_host_contracts",
+            "scene_host_release_1_7",
+            "asset_catalog_picker",
+            "product_configurator",
+            "application_builder_lab",
+        ],
+    );
+    for path in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "scripts/local_release_readiness.sh",
+        "scripts/release_publish_dry_run.sh",
+        "README.md",
+        "docs/examples.md",
+        "docs/getting-started.md",
+    ] {
+        require_contains(
+            root,
+            findings,
+            RULE,
+            path,
+            &["cargo check --examples --all-features"],
+        );
+        let Ok(source) = read_source_to_string(root, path) else {
+            continue;
+        };
+        let unsafe_commands = source
+            .lines()
+            .filter(|line| {
+                line.contains("cargo check --examples") && !line.contains("--all-features")
+            })
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        if !unsafe_commands.is_empty() {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "{path} claims public-example coverage without required features: {unsafe_commands:?}; use `cargo check --examples --all-features`"
+                ),
+            ));
+        }
+    }
 }
 
 pub(crate) const REQUIRED_EXAMPLES: &[&str] = &[

@@ -3,8 +3,8 @@
 use scena::{
     Aabb, Assets, Backend, CAPTURE_SCHEMA_V1, ClippingPlane, ClippingPlaneSet, Color, GeometryDesc,
     MaterialDesc, RENDER_INTROSPECTION_SCHEMA_V1, RenderIntrospectionOptions,
-    RenderIntrospectionReportV1, Renderer, RendererStats, Scene, SceneInspectionReportV1,
-    Transform, Vec3, capture_rgba8_from_pixels,
+    RenderIntrospectionReportV1, RenderIntrospectionTimingsV1, Renderer, RendererStats, Scene,
+    SceneInspectionReportV1, Transform, Vec3, capture_unverified_rgba8_from_pixels,
 };
 
 #[test]
@@ -151,7 +151,7 @@ fn render_introspection_uses_configured_background_for_content_detection() {
     let background_rgba8 = [32, 48, 64, 255];
     let (assets, scene, renderer) = rendered_box_scene_with_background(64, 64, background);
     let inspection = scene.inspect_with_assets(&assets).to_schema_report();
-    let capture = capture_rgba8_from_pixels(
+    let capture = capture_unverified_rgba8_from_pixels(
         &scene,
         &renderer,
         Default::default(),
@@ -216,6 +216,26 @@ fn render_introspection_golden_fixture_matches_live_schema() {
     assert!(fixture.ok);
     assert!(fixture.content_bbox_css_px.is_some());
     assert_eq!(fixture.artifacts.capture.schema, CAPTURE_SCHEMA_V1);
+    assert_eq!(fixture.timings.status, "unavailable");
+    assert_eq!(fixture.timings.prepare_ms, None);
+}
+
+#[test]
+fn render_introspection_timings_are_explicit_observations() {
+    let timings = RenderIntrospectionTimingsV1::measured_monotonic(3, 5, 7, 19);
+    let options = RenderIntrospectionOptions::summary().with_timings(timings.clone());
+    let (assets, scene, renderer) = rendered_box_scene(64, 64);
+    let inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let capture = renderer
+        .capture_rgba8(&scene, Default::default())
+        .expect("rendered scene captures");
+
+    let report = renderer.introspect_capture(&capture, &inspection, options);
+
+    assert_eq!(report.timings, timings);
+    assert_eq!(report.timings.clock, "monotonic");
+    assert_eq!(report.timings.source, "scena_cli_stage_timer");
+    assert_eq!(report.timings.total_ms, Some(19));
 }
 
 fn introspect_supplied_pixels(
@@ -225,8 +245,9 @@ fn introspect_supplied_pixels(
     rgba8: Vec<u8>,
     stats: RendererStats,
 ) -> RenderIntrospectionReportV1 {
-    let capture = capture_rgba8_from_pixels(scene, renderer, Default::default(), 64, 64, rgba8)
-        .expect("supplied frame captures against rendered scene state");
+    let capture =
+        capture_unverified_rgba8_from_pixels(scene, renderer, Default::default(), 64, 64, rgba8)
+            .expect("supplied frame captures against rendered scene state");
     RenderIntrospectionReportV1::from_capture(
         &capture,
         inspection,

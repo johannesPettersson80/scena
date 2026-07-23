@@ -1,4 +1,157 @@
-use super::{AssetError, LookupError, PrepareError, RenderError};
+use super::{
+    AnimationError, AssetError, BuildError, Error, ErrorDiagnostic, ImportError, InstantiateError,
+    LookupError, PrepareError, RenderError,
+};
+
+impl BuildError {
+    pub fn help(&self) -> &'static str {
+        match self {
+            Self::InvalidTargetSize { .. } => "use non-zero renderer target dimensions",
+            Self::AsyncSurfaceRequired { .. } => {
+                "construct the attached-surface renderer through the async builder for this target"
+            }
+            Self::CreateSurface { .. } => {
+                "verify the window/display handles remain valid while creating the surface"
+            }
+            Self::NoAdapter { .. } => {
+                "install or enable a compatible graphics adapter, or select the deterministic headless CPU backend"
+            }
+            Self::RequestDevice { .. } => {
+                "inspect adapter limits/features and request a supported renderer quality profile"
+            }
+            Self::SurfaceUnsupported { .. } => {
+                "choose a surface format/present mode supported by the active adapter and window"
+            }
+            Self::UnsupportedBackend { .. } => {
+                "select a backend compiled and supported for the current native or browser target"
+            }
+        }
+    }
+}
+
+impl ImportError {
+    pub fn help(&self) -> &'static str {
+        match self {
+            Self::Asset(error) => error.help(),
+            Self::Instantiate(error) => error.help(),
+        }
+    }
+}
+
+impl InstantiateError {
+    pub fn help(&self) -> &'static str {
+        match self {
+            Self::InvalidChildIndex { .. }
+            | Self::CyclicNodeGraph { .. }
+            | Self::MultipleNodeParents { .. } => {
+                "repair the glTF node hierarchy so child indices exist and each node has at most one acyclic parent"
+            }
+            Self::InvalidSkinIndex { .. } | Self::InvalidSkinJointIndex { .. } => {
+                "repair the glTF skin reference and ensure every joint names an existing node"
+            }
+            Self::InvalidAnimationClip { .. } => {
+                "repair finite keyframe times/values and channel widths before instantiating the clip"
+            }
+            Self::InvalidAnchorExtras { .. } | Self::InvalidConnectorExtras { .. } => {
+                "repair the named extras transform using finite translation/scale and a valid orientation"
+            }
+            Self::StaleReplacementImport => {
+                "resolve the current live SceneImport before attempting replacement"
+            }
+            Self::ForeignReplacementImport => {
+                "replace the import through the same Scene that instantiated it"
+            }
+            Self::MissingReplacementRoot { .. } => {
+                "preserve live import roots until atomic replacement completes"
+            }
+            Self::UnsupportedCoordinateSystem { .. } => {
+                "choose a supported source coordinate system or convert the asset before import"
+            }
+        }
+    }
+}
+
+impl AnimationError {
+    pub fn help(&self) -> &'static str {
+        match self {
+            Self::ClipNotFound { .. } => {
+                "inspect SceneImport::clips and use one of the returned candidate names"
+            }
+            Self::InvalidClip { .. } => {
+                "validate finite ordered keyframes and output widths before creating the mixer"
+            }
+            Self::MixerNotFound(_) => {
+                "use an AnimationMixerKey created by this Scene and not yet removed"
+            }
+            Self::StaleMixer(_) => "create a new mixer after import replacement or mixer removal",
+        }
+    }
+}
+
+impl Error {
+    pub fn help(&self) -> &'static str {
+        match self {
+            Self::Build(error) => error.help(),
+            Self::Asset(error) => error.help(),
+            Self::Import(error) => error.help(),
+            Self::Instantiate(error) => error.help(),
+            Self::Prepare(error) => error.help(),
+            Self::Render(error) => error.help(),
+            Self::Lookup(error) => error.help(),
+            Self::Animation(error) => error.help(),
+        }
+    }
+
+    pub fn diagnostic(&self) -> ErrorDiagnostic {
+        let mut diagnostic = match self {
+            Self::Build(error) => error.diagnostic(),
+            Self::Asset(error) => error.diagnostic(),
+            Self::Import(error) => error.diagnostic(),
+            Self::Instantiate(error) => error.diagnostic(),
+            Self::Prepare(error) => error.diagnostic(),
+            Self::Render(error) => error.diagnostic(),
+            Self::Lookup(error) => error.diagnostic(),
+            Self::Animation(error) => error.diagnostic(),
+        };
+        diagnostic
+            .context
+            .insert("wrapper".to_owned(), "scena::Error".to_owned());
+        diagnostic
+    }
+}
+
+fn structured_error(
+    code: &str,
+    family: &str,
+    message: String,
+    help: &'static str,
+) -> ErrorDiagnostic {
+    ErrorDiagnostic {
+        code: code.to_owned(),
+        message,
+        help: help.to_owned(),
+        context: [("family".to_owned(), family.to_owned())].into(),
+    }
+}
+
+macro_rules! structured_diagnostic {
+    ($error:ty, $code:literal, $family:literal) => {
+        impl $error {
+            pub fn diagnostic(&self) -> ErrorDiagnostic {
+                structured_error($code, $family, self.to_string(), self.help())
+            }
+        }
+    };
+}
+
+structured_diagnostic!(BuildError, "build_error", "build");
+structured_diagnostic!(AssetError, "asset_error", "asset");
+structured_diagnostic!(ImportError, "import_error", "import");
+structured_diagnostic!(InstantiateError, "instantiate_error", "instantiate");
+structured_diagnostic!(PrepareError, "prepare_error", "prepare");
+structured_diagnostic!(RenderError, "render_error", "render");
+structured_diagnostic!(LookupError, "lookup_error", "lookup");
+structured_diagnostic!(AnimationError, "animation_error", "animation");
 
 impl AssetError {
     pub fn help(&self) -> &'static str {
@@ -7,6 +160,24 @@ impl AssetError {
             Self::Io { .. } => "check filesystem or network access in the host application",
             Self::PolicyViolation { help, .. } => help,
             Self::Parse { .. } => "validate the asset with the source tool or glTF validator",
+            Self::InvalidTextureIdentity { .. } => {
+                "use a non-empty stable application-owned identity without control characters"
+            }
+            Self::InvalidTextureData { .. } => {
+                "provide exactly width x height pixels in the constructor's declared format and use only finite float channels"
+            }
+            Self::TextureSizeLimit { .. } => {
+                "resize the texture before loading or raise the explicit application policy on a capable backend"
+            }
+            Self::TextureIdentityCollision { .. } => {
+                "keep an identity bound to immutable pixels/options, or mint a new identity when generated content changes"
+            }
+            Self::TextureColorSpaceMismatch { .. } => {
+                "use the slot-typed constructor/loader so color slots use sRGB and data slots use linear sampling"
+            }
+            Self::MorphWeightWidthMismatch { .. } => {
+                "export exactly one animation weight per morph target for every targeted primitive"
+            }
             Self::UnsupportedRequiredExtension { .. } => {
                 "remove the required extension, export with a supported profile, or enable a decoder feature when one exists"
             }
@@ -134,6 +305,7 @@ impl RenderError {
 impl LookupError {
     pub fn help(&self) -> &'static str {
         match self {
+            Self::NoActiveCamera => "call Scene::add_default_camera or Scene::set_active_camera",
             Self::NodeNotFound(_) => "use a NodeKey created by this Scene",
             Self::CannotRemoveRootNode(_) => {
                 "remove child nodes instead; the root is the permanent scene anchor"
@@ -190,6 +362,9 @@ impl LookupError {
             }
             Self::InvalidTransform { .. } => {
                 "use finite translation, rotation, and scale components"
+            }
+            Self::InvalidCameraProjection { .. } => {
+                "use a finite field of view between 0 and 180 degrees, a non-negative finite aspect (zero selects the target aspect), finite ordered extents, and a valid near/far range"
             }
             Self::GeometryNotFound { .. } => {
                 "call asset-aware helpers with the same Assets store that created or loaded the geometry"

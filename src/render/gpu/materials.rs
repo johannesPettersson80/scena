@@ -4,9 +4,9 @@ use super::material_batched::{MaterialBatchedResources, create_batched_material_
 use super::material_bindings::{
     MaterialTextureBindingMode, create_material_texture_layout_entries,
 };
-use super::material_mips::{downsample_rgba8_mip, mip_level_extents};
+use super::material_mips::{downsample_rgba8_mip, downsample_rgba16f_mip};
 use super::material_uniform::{
-    MATERIAL_UNIFORM_BYTE_LEN, MATERIAL_UNIFORM_ENTRY_STRIDE, MaterialUniformUpload,
+    MATERIAL_UNIFORM_ENTRY_STRIDE, MaterialUniformUpload, material_uniform_min_binding_size,
 };
 pub(super) use super::material_upload::{
     MaterialTextureUpload, address_mode, filter_mode, mipmap_filter_mode,
@@ -16,6 +16,8 @@ mod bind_group;
 pub(super) use bind_group::create_material_bind_group;
 mod resource_stats;
 pub(super) use resource_stats::resource_stats;
+mod texture_resource;
+use texture_resource::create_texture_binding_resource;
 
 /// Plan line 778 commit 2: material GPU resources can take one of two shapes.
 ///
@@ -103,7 +105,7 @@ pub(super) fn create_material_bind_group_layout(
             // batched path can swap material slots without rebinding.
             // Per-material fall-back uses offset 0.
             has_dynamic_offset: true,
-            min_binding_size: std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN),
+            min_binding_size: Some(material_uniform_min_binding_size()),
         },
         count: None,
     });
@@ -325,105 +327,6 @@ fn create_material_resource(
     }
 }
 
-fn create_texture_binding_resource(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    label: &'static str,
-    upload: MaterialTextureUpload<'_>,
-    texture_binding_mode: MaterialTextureBindingMode,
-) -> MaterialTextureBindingResources {
-    let mip_extents = {
-        #[cfg(target_arch = "wasm32")]
-        if upload.browser_image.is_some() {
-            vec![(upload.width.max(1), upload.height.max(1))]
-        } else {
-            mip_level_extents(upload.width, upload.height, upload.sampler.min_filter())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            mip_level_extents(upload.width, upload.height, upload.sampler.min_filter())
-        }
-    };
-    #[cfg(target_arch = "wasm32")]
-    let texture_usage = if upload.browser_image.is_some() {
-        wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST
-            | wgpu::TextureUsages::RENDER_ATTACHMENT
-    } else {
-        wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST
-    };
-    #[cfg(not(target_arch = "wasm32"))]
-    let texture_usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some(if upload.uses_decoded_texture {
-            match label {
-                "base_color" => "scena.material.base_color",
-                "normal" => "scena.material.normal",
-                "metallic_roughness" => "scena.material.metallic_roughness",
-                "occlusion" => "scena.material.occlusion",
-                "emissive" => "scena.material.emissive",
-                "clearcoat" => "scena.material.clearcoat",
-                "clearcoat_roughness" => "scena.material.clearcoat_roughness",
-                "clearcoat_normal" => "scena.material.clearcoat_normal",
-                "sheen_color" => "scena.material.sheen_color",
-                "sheen_roughness" => "scena.material.sheen_roughness",
-                "anisotropy" => "scena.material.anisotropy",
-                "iridescence" => "scena.material.iridescence",
-                "iridescence_thickness" => "scena.material.iridescence_thickness",
-                _ => "scena.material.texture",
-            }
-        } else {
-            match label {
-                "base_color" => "scena.material.fallback_base_color",
-                "normal" => "scena.material.fallback_normal",
-                "metallic_roughness" => "scena.material.fallback_metallic_roughness",
-                "occlusion" => "scena.material.fallback_occlusion",
-                "emissive" => "scena.material.fallback_emissive",
-                "clearcoat" => "scena.material.fallback_clearcoat",
-                "clearcoat_roughness" => "scena.material.fallback_clearcoat_roughness",
-                "clearcoat_normal" => "scena.material.fallback_clearcoat_normal",
-                "sheen_color" => "scena.material.fallback_sheen_color",
-                "sheen_roughness" => "scena.material.fallback_sheen_roughness",
-                "anisotropy" => "scena.material.fallback_anisotropy",
-                "iridescence" => "scena.material.fallback_iridescence",
-                "iridescence_thickness" => "scena.material.fallback_iridescence_thickness",
-                _ => "scena.material.fallback_texture",
-            }
-        }),
-        size: wgpu::Extent3d {
-            width: upload.width,
-            height: upload.height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: mip_extents.len() as u32,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: upload.format,
-        usage: texture_usage,
-        view_formats: &[],
-    });
-    write_material_texture_layer_mips(queue, &texture, upload, &mip_extents, 0);
-    let view = texture.create_view(&wgpu::TextureViewDescriptor {
-        dimension: Some(texture_binding_mode.view_dimension()),
-        ..wgpu::TextureViewDescriptor::default()
-    });
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some(if upload.uses_decoded_texture {
-            "scena.material.sampler"
-        } else {
-            "scena.material.fallback_sampler"
-        }),
-        address_mode_u: address_mode(upload.sampler.wrap_s()),
-        address_mode_v: address_mode(upload.sampler.wrap_t()),
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: filter_mode(upload.sampler.mag_filter()),
-        min_filter: filter_mode(upload.sampler.min_filter()),
-        mipmap_filter: mipmap_filter_mode(upload.sampler.min_filter()),
-        ..wgpu::SamplerDescriptor::default()
-    });
-    MaterialTextureBindingResources::from_parts(texture, view, sampler, upload.byte_len())
-}
-
 pub(super) fn write_material_texture_layer_mips(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
@@ -457,6 +360,47 @@ pub(super) fn write_material_texture_layer_mips(
                 depth_or_array_layers: 1,
             },
         );
+        return;
+    }
+    if let Some(rgba16f_bits) = upload.rgba16f_bits {
+        let mut previous = rgba16f_bits.to_vec();
+        for (mip_level, (width, height)) in mip_extents.iter().copied().enumerate() {
+            let pixels = if mip_level == 0 {
+                rgba16f_bits
+            } else {
+                previous = downsample_rgba16f_mip(
+                    &previous,
+                    mip_extents[mip_level - 1].0,
+                    mip_extents[mip_level - 1].1,
+                    width,
+                    height,
+                );
+                previous.as_slice()
+            };
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: mip_level as u32,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer_index,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(pixels),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width.saturating_mul(8)),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         return;
     }
     let mut previous = upload.rgba8.to_vec();

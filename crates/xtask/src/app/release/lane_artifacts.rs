@@ -1,6 +1,12 @@
 use crate::app::prelude::*;
 use crate::app::release::round_e_material_results::q02_material_result_passes;
 
+mod readiness;
+pub(crate) use readiness::{
+    check_release_readiness, check_release_readiness_adr, check_release_readiness_checklists,
+    run_claim_audit,
+};
+
 pub(crate) fn run_release_lane_artifact(lane: &str) -> Result<(), Vec<Finding>> {
     let root = repo_root().map_err(|message| vec![Finding::new("RELEASE-LANE-ROOT", message)])?;
     if lane == "macos-metal" {
@@ -157,8 +163,15 @@ fn release_lane_content_ok_for_class(
             .map_err(|error| format!("failed to read {}: {error}", q01_path.display()))?;
         let q01 = serde_json::from_str::<Value>(&q01_text)
             .map_err(|error| format!("failed to parse {}: {error}", q01_path.display()))?;
+        let q11_path = root.join("target/gate-artifacts/q11-reference-stability/linux-x86_64.json");
+        let q11 = fs::read_to_string(&q11_path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok());
         return Ok(headless_cpu_render_proof_passes(&value)
             && validate_waterbottle_cpu_result(&root.join("target/gate-artifacts"), &q01).is_ok()
+            && q11.as_ref().is_some_and(|result| {
+                validate_q11_reference_stability_result(result, "linux", "x86_64").is_ok()
+            })
             && q02_material_result_passes(
                 root,
                 "target/gate-artifacts/round-e-cpu-material-proof.json",
@@ -225,6 +238,25 @@ fn release_lane_content_ok_for_class(
     if !native_gpu_render_proof_passes(&value) {
         return Ok(false);
     }
+    if lane == "linux-native-vulkan" {
+        return Ok(true);
+    }
+    let (q11_suffix, q11_os, q11_arch) = if lane == "macos-metal" {
+        ("macos-aarch64.json", "macos", "aarch64")
+    } else {
+        ("windows-x86_64.json", "windows", "x86_64")
+    };
+    let q11_path = root.join(format!(
+        "target/gate-artifacts/q11-reference-stability/{q11_suffix}"
+    ));
+    let q11 = fs::read_to_string(&q11_path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    if !q11.as_ref().is_some_and(|result| {
+        validate_q11_reference_stability_result(result, q11_os, q11_arch).is_ok()
+    }) {
+        return Ok(false);
+    }
     if lane != "macos-metal" {
         return Ok(true);
     }
@@ -252,6 +284,7 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
             "target/gate-artifacts/q01-waterbottle-cpu/known_bad_wrong_material.png".to_string(),
             "target/gate-artifacts/q01-waterbottle-cpu/known_bad_wrong_camera.png".to_string(),
             "target/gate-artifacts/q01-waterbottle-cpu/result.json".to_string(),
+            "target/gate-artifacts/q11-reference-stability/linux-x86_64.json".to_string(),
             "target/gate-artifacts/round-e-cpu-material-proof/live-frame.png".to_string(),
             "target/gate-artifacts/round-e-cpu-material-proof/live-cpu-frame.json".to_string(),
             "target/gate-artifacts/round-e-cpu-material-proof.json".to_string(),
@@ -277,6 +310,25 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
                 artifacts.push(
                     "target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json"
                         .to_string(),
+                );
+                artifacts.extend([
+                    "target/gate-artifacts/q07-antialiasing-effect/result.json".to_string(),
+                    "target/gate-artifacts/q07-antialiasing-effect/none.ppm".to_string(),
+                    "target/gate-artifacts/q07-antialiasing-effect/fxaa.ppm".to_string(),
+                    "target/gate-artifacts/q07-antialiasing-effect/msaa4.ppm".to_string(),
+                    "target/gate-artifacts/q08-required-parity/physical-glass-transmission-matches-cpu-and-gpu-across-volume-sweep.json".to_string(),
+                    "target/gate-artifacts/q08-required-parity/close-camera-near-clip-matches-cpu-and-gpu-rendered-output.json".to_string(),
+                    "target/gate-artifacts/q08-required-parity/dynamic-transform-motion-matches-cpu-and-gpu-for-authored-animation-and-imports.json".to_string(),
+                    "target/gate-artifacts/q08-required-parity/z-up-imported-rotation-frame-matches-cpu-and-gpu-after-basis-conversion.json".to_string(),
+                    "target/gate-artifacts/q08-required-parity/core-pbr-brdf-matches-cpu-and-gpu-across-metallic-roughness-sweep.json".to_string(),
+                    "target/gate-artifacts/q08-required-parity/pf08-adaptive-texture-bake-preserves-seams-perspective-and-material-identity-cpu-gpu.json".to_string(),
+                ]);
+                artifacts.push(
+                    "target/gate-artifacts/q11-reference-stability/macos-aarch64.json".to_string(),
+                );
+            } else if lane == "windows-dx12" {
+                artifacts.push(
+                    "target/gate-artifacts/q11-reference-stability/windows-x86_64.json".to_string(),
                 );
             }
             artifacts
@@ -321,17 +373,31 @@ pub(crate) fn release_lane_expected_commands(lane: &str) -> Vec<&'static str> {
         "headless-cpu" => vec![
             "cargo test --test m9_platform_release",
             "cargo test --test q01_waterbottle_cpu_reference q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders -- --exact",
+            "cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact",
             "cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact",
             "node scripts/evaluate_round_e_cpu_materials.cjs",
         ],
-        "linux-native-vulkan" | "windows-dx12" => vec![
+        "linux-native-vulkan" => vec![
             "cargo test --test m9_platform_release",
-            "cargo check --examples",
+            "cargo check --examples --all-features",
+        ],
+        "windows-dx12" => vec![
+            "cargo test --test m9_platform_release",
+            "cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact",
+            "cargo check --examples --all-features",
         ],
         "macos-metal" => vec![
             "cargo test --test m9_platform_release",
-            "cargo check --examples",
+            "cargo check --examples --all-features",
+            "cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact",
             "cargo test --test c09_gpu_resource_lifecycle required_hardware_gpu_resource_lifecycle_executes_complete_cycle -- --exact --nocapture",
+            "cargo test --test q07_antialiasing_effect q07_required_native_antialiasing_modes_have_pixel_effect -- --exact",
+            "cargo test --test transmission_parity physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep -- --exact",
+            "cargo test --test c13_depth_clipping_parity close_camera_near_clip_matches_cpu_and_gpu_rendered_output -- --exact",
+            "cargo test --test dynamic_transform_parity dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports -- --exact",
+            "cargo test --test dynamic_transform_parity z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion -- --exact",
+            "cargo test --test pbr_brdf_parity core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep -- --exact",
+            "cargo test --test pf08_texture_bake_parity pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu -- --exact",
         ],
         "linux-webgl2-chromium" => vec![
             "wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe",
@@ -532,86 +598,4 @@ pub(crate) fn release_artifact_commit_label(root: &Path) -> String {
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| "local-checkout".to_string())
         })
-}
-
-pub(crate) fn run_claim_audit() -> Result<(), Vec<Finding>> {
-    let root = repo_root().map_err(|message| vec![Finding::new("CLAIM-AUDIT-ROOT", message)])?;
-    let artifact = match build_claim_audit(&root) {
-        Ok(artifact) => artifact,
-        Err(error) => return Err(vec![Finding::new("CLAIM-AUDIT", error)]),
-    };
-    let artifact_dir = root.join("target/gate-artifacts");
-    if let Err(error) = fs::create_dir_all(&artifact_dir) {
-        return Err(vec![Finding::new(
-            "CLAIM-AUDIT",
-            format!("failed to create target/gate-artifacts: {error}"),
-        )]);
-    }
-    let artifact_path = artifact_dir.join("m10-claim-audit.json");
-    let body = serde_json::to_string_pretty(&artifact)
-        .map_err(|error| vec![Finding::new("CLAIM-AUDIT", error.to_string())])?;
-    if let Err(error) = fs::write(&artifact_path, format!("{body}\n")) {
-        return Err(vec![Finding::new(
-            "CLAIM-AUDIT",
-            format!("failed to write {}: {error}", artifact_path.display()),
-        )]);
-    }
-    println!("{}", artifact_path.display());
-    Ok(())
-}
-
-pub(crate) fn check_release_readiness(root: &Path, findings: &mut Vec<Finding>) {
-    run_docs_doctor(root, findings);
-    run_architecture_doctor(root, findings);
-    check_release_readiness_adr(root, findings);
-    check_release_readiness_checklists(root, findings);
-}
-
-pub(crate) fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Finding>) {
-    let rel = "docs/release-notes/v1.9.0.md";
-    let path = root.join(rel);
-    let Ok(text) = fs::read_to_string(&path) else {
-        findings.push(Finding::new(
-            "RELEASE-READY-M10",
-            format!("could not read {rel}"),
-        ));
-        return;
-    };
-    if text.contains("Remaining Release Blockers") || text.contains("open release blocker") {
-        findings.push(Finding::new(
-            "RELEASE-READY-M10",
-            "v1.9.0 release notes still record open release blockers",
-        ));
-    }
-}
-
-pub(crate) fn check_release_readiness_checklists(root: &Path, findings: &mut Vec<Finding>) {
-    for rel in [
-        "README.md",
-        "docs/README.md",
-        "docs/release-notes/v1.9.0.md",
-        "docs/release-notes/v1.8.0.md",
-        "docs/release-notes/v1.7.2.md",
-    ] {
-        let path = root.join(rel);
-        let Ok(text) = fs::read_to_string(&path) else {
-            findings.push(Finding::new(
-                "RELEASE-READY-M10",
-                format!("could not read {rel}"),
-            ));
-            continue;
-        };
-        for (index, line) in text.lines().enumerate() {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("- [ ]") || trimmed.contains("TODO") || trimmed.contains("TBD") {
-                findings.push(Finding::new(
-                    "RELEASE-READY-M10",
-                    format!(
-                        "{rel}:{} has unfinished public release text: {trimmed}",
-                        index + 1
-                    ),
-                ));
-            }
-        }
-    }
 }

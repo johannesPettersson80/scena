@@ -9,7 +9,10 @@ pub(crate) fn check_architecture_dependency_direction(root: &Path, findings: &mu
         let owner = architecture_owner_for_source_path(&rel);
         let dependencies = architecture_dependency_owners(&text);
         let rel_display = rel.display();
-        if owner == "crate-root" && rel != Path::new("src/lib.rs") {
+        if owner == "crate-root"
+            && rel != Path::new("src/lib.rs")
+            && rel != Path::new("src/prelude.rs")
+        {
             findings.push(Finding::new(
                 "ARCH-DEPENDENCY-DIRECTION",
                 format!(

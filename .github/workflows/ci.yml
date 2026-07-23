@@ -61,9 +61,10 @@ jobs:
           SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
           bash scripts/release_lane_command.sh headless-cpu cargo test --test q01_waterbottle_cpu_reference q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders -- --exact
+          bash scripts/release_lane_command.sh headless-cpu cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact
           bash scripts/release_lane_command.sh headless-cpu cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact
           bash scripts/release_lane_command.sh headless-cpu node scripts/evaluate_round_e_cpu_materials.cjs
-          bash scripts/release_lane_command.sh linux-native-vulkan cargo check --examples
+          bash scripts/release_lane_command.sh linux-native-vulkan cargo check --examples --all-features
           cargo check --example scene_inspection --features inspection
           cargo run -p xtask -- doctor --full
           cargo run -p xtask -- claim-audit
@@ -104,6 +105,7 @@ jobs:
         env:
           SCENA_BROWSER_BACKENDS: webgl2
         run: |
+          cargo test --lib render::gpu::shader_manifest::tests -- --nocapture
           wasm-pack test --headless --chrome --test m1_browser_rendered_output
           wasm-pack test --headless --chrome --test m3a_browser_rendered_output
           wasm-pack test --headless --chrome --test m3b_browser_rendered_output
@@ -114,6 +116,7 @@ jobs:
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:fr06-semantic-aov
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run demo:build
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run proof:build
+          SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS=1 cargo run -p xtask -- doctor --full
           python3 -m http.server 18104 --directory demo > target/gate-artifacts/cloudflare-demo-server.log 2>&1 &
           demo_server_pid=$!
           trap 'kill "$demo_server_pid" 2>/dev/null || true' EXIT
@@ -154,6 +157,7 @@ jobs:
           SCENA_BROWSER_BACKENDS: webgpu
           SCENA_GPU_EVIDENCE_CLASS: "software-conformance"
         run: |
+          cargo test --lib render::gpu::shader_manifest::tests -- --nocapture
           npm run test:required-gpu-parity
           bash scripts/release_lane_command.sh linux-webgpu-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
           bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:q02-materials
@@ -217,9 +221,17 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh macos-metal cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact
           SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
-          SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
-          bash scripts/release_lane_command.sh macos-metal cargo check --examples
+          SCENA_REFERENCE_DIFF=1 SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
+          SCENA_REQUIRE_AA_EFFECT_PROOF=1 bash scripts/release_lane_command.sh macos-metal cargo test --test q07_antialiasing_effect q07_required_native_antialiasing_modes_have_pixel_effect -- --exact
+          SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test transmission_parity physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep -- --exact
+          SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test c13_depth_clipping_parity close_camera_near_clip_matches_cpu_and_gpu_rendered_output -- --exact
+          SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test dynamic_transform_parity dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports -- --exact
+          SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test dynamic_transform_parity z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion -- --exact
+          SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test pbr_brdf_parity core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep -- --exact
+          SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test pf08_texture_bake_parity pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu -- --exact
+          bash scripts/release_lane_command.sh macos-metal cargo check --examples --all-features
           cargo run -p xtask -- doctor --full
       - name: Required physical GPU resource lifecycle
         env:
@@ -260,8 +272,9 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh windows-dx12 cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact
           SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
-          bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
+          bash scripts/release_lane_command.sh windows-dx12 cargo check --examples --all-features
           cargo run -p xtask -- doctor --full
       - name: Docs
         env:
@@ -302,6 +315,11 @@ jobs:
   premerge-release-evidence-integrity:
     name: Pre-merge release evidence integrity
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     needs:
       - linux-native-vulkan
       - linux-browser-webgl2
@@ -317,7 +335,16 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: target/release-artifacts
+      - name: Bind downloaded evidence to this workflow run
+        run: node scripts/ci_provenance.js target/release-artifacts target/release-artifacts/ci-provenance.json
+      - name: Attest exact release-evidence manifest
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: target/release-artifacts/ci-provenance.json
       - name: Stage and validate source-provenance release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCENA_REQUIRE_CI_PROVENANCE: "1"
         shell: bash
         run: |
           cargo run -p xtask -- stage-release-artifacts \

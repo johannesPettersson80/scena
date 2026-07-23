@@ -6,12 +6,12 @@ pub(crate) fn check_c04_deformation_contracts(root: &Path, findings: &mut Vec<Fi
         (
             "src/assets/gltf/meshes.rs",
             &[
-                "Semantic::Positions, DataType::I8, false",
-                "Semantic::Positions, DataType::U8, false",
-                "Semantic::Positions, DataType::I16, false",
-                "Semantic::Positions, DataType::U16, false",
-                "Semantic::Normals, DataType::I8, true",
-                "Semantic::Normals, DataType::I16, true",
+                "Vec3Encoding::Position, DataType::I8, false",
+                "Vec3Encoding::Position, DataType::U8, false",
+                "Vec3Encoding::Position, DataType::I16, false",
+                "Vec3Encoding::Position, DataType::U16, false",
+                "Vec3Encoding::SignedUnit, DataType::I8, true",
+                "Vec3Encoding::SignedUnit, DataType::I16, true",
                 "must use FLOAT or normalized signed BYTE/SHORT",
                 "GeometryMorphTarget::new_with_semantics",
                 "vec![Vec3::ZERO; vertex_count]",
@@ -105,6 +105,7 @@ pub(crate) fn check_c04_deformation_contracts(root: &Path, findings: &mut Vec<Fi
         "tests/c04_gltf_deformation_contracts.rs",
         &[
             "quantized_signed_and_unsigned_positions_preserve_vertices_bounds_and_render",
+            "quantized_tangent_and_morph_component_matrix_decodes_exact_values",
             "invalid_integer_normal_is_an_error_not_a_default_normal",
             "cubic_spline_weights_preserve_target_width_and_tangent_influence",
             "multi_primitive_weight_channel_fans_out_to_each_renderable_child",

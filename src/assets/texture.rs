@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::diagnostics::AssetError;
-use crate::material::{Color, TextureColorSpace};
+use crate::material::TextureColorSpace;
 
 use super::{AssetPath, AssetProvenance};
 
@@ -26,6 +26,8 @@ fn log_texture_step(path: &AssetPath, label: &str, start_ms: f64) -> f64 {
     now
 }
 
+mod memory;
+mod sampling;
 #[path = "texture_format.rs"]
 mod texture_format;
 #[path = "texture_image_decode.rs"]
@@ -39,8 +41,12 @@ mod texture_reload;
 #[path = "texture_source.rs"]
 mod texture_source;
 
+use memory::mip_policy_for_sampler;
+pub use memory::{
+    TextureMemoryDesc, TextureMemoryId, TextureMipPolicy, TexturePixelFormat, TextureSlot,
+};
+
 pub(crate) use texture_format::validate_texture_source_format;
-use texture_format::wrap_texture_coordinate;
 use texture_image_decode::{decode_jpeg_rgba8, decode_png_rgba8, decode_webp_rgba8};
 use texture_ktx2::decode_ktx2_basisu_rgba8;
 #[cfg(all(
@@ -64,9 +70,11 @@ use texture_source::resolve_texture_source_bytes;
 #[derive(Debug, Clone)]
 pub struct TextureDesc {
     path: AssetPath,
+    memory_identity: Option<TextureMemoryId>,
     provenance: AssetProvenance,
     color_space: TextureColorSpace,
     sampler: TextureSamplerDesc,
+    mip_policy: TextureMipPolicy,
     source_format: TextureSourceFormat,
     pixels: Option<Arc<TexturePixels>>,
     #[cfg(target_arch = "wasm32")]
@@ -76,8 +84,15 @@ pub struct TextureDesc {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TexturePixels {
-    levels: Vec<TextureMipLevel>,
+pub(crate) enum TexturePixels {
+    Rgba8 {
+        levels: Vec<TextureMipLevel>,
+    },
+    LinearRgba16Float {
+        width: u32,
+        height: u32,
+        rgba16f_bits: Vec<u16>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,7 +104,7 @@ pub(crate) struct TextureMipLevel {
 
 impl TexturePixels {
     fn single_level(width: u32, height: u32, rgba8: Vec<u8>) -> Self {
-        Self {
+        Self::Rgba8 {
             levels: vec![TextureMipLevel {
                 width,
                 height,
@@ -123,27 +138,61 @@ impl TexturePixels {
                     other => other,
                 })?;
         }
-        Ok(Self { levels })
+        Ok(Self::Rgba8 { levels })
     }
 
     fn base_level(&self) -> Option<&TextureMipLevel> {
-        self.levels.first()
+        match self {
+            Self::Rgba8 { levels } => levels.first(),
+            Self::LinearRgba16Float { .. } => None,
+        }
     }
 
     fn mip_metadata(&self) -> Vec<(u32, u32, usize)> {
-        self.levels
-            .iter()
-            .map(|level| (level.width, level.height, level.rgba8.len()))
-            .collect()
+        match self {
+            Self::Rgba8 { levels } => levels
+                .iter()
+                .map(|level| (level.width, level.height, level.rgba8.len()))
+                .collect(),
+            Self::LinearRgba16Float {
+                width,
+                height,
+                rgba16f_bits,
+            } => vec![(
+                *width,
+                *height,
+                rgba16f_bits.len() * std::mem::size_of::<u16>(),
+            )],
+        }
+    }
+
+    fn dimensions(&self) -> Option<(u32, u32)> {
+        match self {
+            Self::Rgba8 { levels } => levels.first().map(|level| (level.width, level.height)),
+            Self::LinearRgba16Float { width, height, .. } => Some((*width, *height)),
+        }
+    }
+
+    fn linear_rgba16f(&self) -> Option<(u32, u32, &[u16])> {
+        match self {
+            Self::LinearRgba16Float {
+                width,
+                height,
+                rgba16f_bits,
+            } => Some((*width, *height, rgba16f_bits)),
+            Self::Rgba8 { .. } => None,
+        }
     }
 }
 
 impl PartialEq for TextureDesc {
     fn eq(&self, other: &Self) -> bool {
         let base = self.path == other.path
+            && self.memory_identity == other.memory_identity
             && self.provenance == other.provenance
             && self.color_space == other.color_space
             && self.sampler == other.sampler
+            && self.mip_policy == other.mip_policy
             && self.source_format == other.source_format
             && self.pixels == other.pixels;
         #[cfg(target_arch = "wasm32")]
@@ -165,6 +214,8 @@ pub enum TextureSourceFormat {
     Jpeg,
     Webp,
     Ktx2Basisu,
+    MemoryRgba8,
+    MemoryRgba16Float,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -221,9 +272,11 @@ impl TextureDesc {
                 resolve_texture_source_bytes(&path, source_format, source_bytes)?.map(Arc::from);
             return Ok(Self {
                 path,
+                memory_identity: None,
                 provenance,
                 color_space,
                 sampler,
+                mip_policy: mip_policy_for_sampler(sampler),
                 source_format,
                 pixels: None,
                 encoded_source_bytes,
@@ -234,9 +287,11 @@ impl TextureDesc {
             decode_texture_pixels(&path, color_space, source_format, source_bytes)?.map(Arc::new);
         Ok(Self {
             path,
+            memory_identity: None,
             provenance,
             color_space,
             sampler,
+            mip_policy: mip_policy_for_sampler(sampler),
             source_format,
             pixels,
             #[cfg(target_arch = "wasm32")]
@@ -250,6 +305,10 @@ impl TextureDesc {
         &self.path
     }
 
+    pub fn memory_identity(&self) -> Option<&TextureMemoryId> {
+        self.memory_identity.as_ref()
+    }
+
     pub fn provenance(&self) -> &AssetProvenance {
         &self.provenance
     }
@@ -260,6 +319,22 @@ impl TextureDesc {
 
     pub const fn sampler(&self) -> TextureSamplerDesc {
         self.sampler
+    }
+
+    pub const fn mip_policy(&self) -> TextureMipPolicy {
+        self.mip_policy
+    }
+
+    pub fn pixel_format(&self) -> TexturePixelFormat {
+        if self.pixels.as_ref().is_some_and(|pixels| {
+            matches!(pixels.as_ref(), TexturePixels::LinearRgba16Float { .. })
+        }) {
+            return TexturePixelFormat::Rgba16Float;
+        }
+        match self.color_space {
+            TextureColorSpace::Srgb => TexturePixelFormat::Rgba8UnormSrgb,
+            TextureColorSpace::Linear => TexturePixelFormat::Rgba8Unorm,
+        }
     }
 
     pub const fn source_format(&self) -> TextureSourceFormat {
@@ -282,10 +357,7 @@ impl TextureDesc {
         if let Some(image) = &self.browser_image {
             return Some((image.width(), image.height()));
         }
-        self.pixels
-            .as_ref()
-            .and_then(|pixels| pixels.base_level())
-            .map(|level| (level.width, level.height))
+        self.pixels.as_ref().and_then(|pixels| pixels.dimensions())
     }
 
     pub fn decoded_rgba8(&self) -> Option<(u32, u32, &[u8])> {
@@ -297,6 +369,12 @@ impl TextureDesc {
 
     pub fn decoded_mip_metadata(&self) -> Option<Vec<(u32, u32, usize)>> {
         self.pixels.as_ref().map(|pixels| pixels.mip_metadata())
+    }
+
+    pub(crate) fn decoded_linear_rgba16f(&self) -> Option<(u32, u32, &[u16])> {
+        self.pixels
+            .as_ref()
+            .and_then(|pixels| pixels.linear_rgba16f())
     }
 
     pub(crate) fn decode_missing_pixels_from_bytes(
@@ -367,56 +445,6 @@ impl TextureDesc {
     pub(crate) fn browser_image(&self) -> Option<&web_sys::ImageBitmap> {
         self.browser_image.as_ref()
     }
-
-    pub(crate) fn sample_bilinear(&self, uv: [f32; 2]) -> Option<Color> {
-        let pixels = self.pixels.as_ref()?;
-        let level = pixels.base_level()?;
-        let u = wrap_texture_coordinate(uv[0], self.sampler.wrap_s);
-        let v = wrap_texture_coordinate(uv[1], self.sampler.wrap_t);
-        let x = u * level.width.saturating_sub(1) as f32;
-        let y = v * level.height.saturating_sub(1) as f32;
-        let x0 = x.floor() as u32;
-        let y0 = y.floor() as u32;
-        let x1 = (x0 + 1).min(level.width.saturating_sub(1));
-        let y1 = (y0 + 1).min(level.height.saturating_sub(1));
-        let tx = x - x0 as f32;
-        let ty = y - y0 as f32;
-        let c00 = self.sample_pixel_color(level, x0, y0)?;
-        let c10 = self.sample_pixel_color(level, x1, y0)?;
-        let c01 = self.sample_pixel_color(level, x0, y1)?;
-        let c11 = self.sample_pixel_color(level, x1, y1)?;
-        Some(lerp_color(
-            lerp_color(c00, c10, tx),
-            lerp_color(c01, c11, tx),
-            ty,
-        ))
-    }
-
-    fn sample_pixel_color(&self, level: &TextureMipLevel, x: u32, y: u32) -> Option<Color> {
-        let offset = ((y * level.width + x) as usize) * 4;
-        let rgba = level.rgba8.get(offset..offset + 4)?;
-        let alpha = f32::from(rgba[3]) / 255.0;
-        let mut color = match self.color_space {
-            TextureColorSpace::Srgb => Color::from_srgb_u8(rgba[0], rgba[1], rgba[2]),
-            TextureColorSpace::Linear => Color::from_linear_rgba(
-                f32::from(rgba[0]) / 255.0,
-                f32::from(rgba[1]) / 255.0,
-                f32::from(rgba[2]) / 255.0,
-                alpha,
-            ),
-        };
-        color.a = alpha;
-        Some(color)
-    }
-}
-
-fn lerp_color(left: Color, right: Color, amount: f32) -> Color {
-    Color::from_linear_rgba(
-        left.r + (right.r - left.r) * amount,
-        left.g + (right.g - left.g) * amount,
-        left.b + (right.b - left.b) * amount,
-        left.a + (right.a - left.a) * amount,
-    )
 }
 
 impl TextureSamplerDesc {
@@ -500,6 +528,12 @@ fn decode_texture_pixels(
         TextureSourceFormat::Webp => decode_webp_rgba8(path, &bytes).map(Some),
         TextureSourceFormat::Ktx2Basisu => {
             decode_ktx2_basisu_rgba8(path, &bytes, color_space).map(Some)
+        }
+        TextureSourceFormat::MemoryRgba8 | TextureSourceFormat::MemoryRgba16Float => {
+            Err(AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: "in-memory texture formats must use TextureMemoryDesc".to_string(),
+            })
         }
     };
     #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]

@@ -8,6 +8,7 @@ mod interaction;
 mod load_progress;
 mod material_variants;
 mod profile;
+mod timings;
 
 pub use asset_catalog_preview::{
     AssetCatalogPreviewError, AssetCatalogPreviewPng, render_asset_catalog_preview_png,
@@ -49,6 +50,8 @@ pub struct FirstRender {
     backend_selection_report: Option<HeadlessBackendSelectionReport>,
     load_progress_events: Vec<AssetLoadProgress>,
     camera_bookmarks: Vec<CameraBookmark>,
+    prepare_duration: std::time::Duration,
+    render_duration: std::time::Duration,
 }
 
 /// Prepared owned state for a headless glTF viewer loop.
@@ -62,6 +65,8 @@ pub struct HeadlessGltfViewer {
     load_progress_events: Vec<AssetLoadProgress>,
     camera_bookmarks: Vec<CameraBookmark>,
     setup_diagnostics: Vec<Diagnostic>,
+    last_prepare_duration: std::time::Duration,
+    last_render_duration: Option<std::time::Duration>,
 }
 
 /// Builder for the first headless glTF render.
@@ -318,18 +323,6 @@ impl HeadlessGltfViewerBuilder {
 }
 
 impl HeadlessGltfViewer {
-    /// Re-runs the explicit prepare step after scene, asset, renderer, or environment changes.
-    pub fn prepare(&mut self) -> crate::Result<()> {
-        self.renderer
-            .prepare_with_assets(&mut self.scene, &self.assets)?;
-        Ok(())
-    }
-
-    /// Renders the next frame using the active camera.
-    pub fn render_next_frame(&mut self) -> crate::Result<RenderOutcome> {
-        Ok(self.renderer.render_active(&self.scene)?)
-    }
-
     pub fn assets(&self) -> &Assets {
         &self.assets
     }

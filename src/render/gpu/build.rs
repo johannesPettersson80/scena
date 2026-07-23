@@ -11,7 +11,7 @@ use crate::platform::BoxedNativeWindow;
 pub(in crate::render) async fn request_headless_gpu(
     backend: Backend,
 ) -> Result<GpuDeviceState, BuildError> {
-    let instance = wgpu::Instance::default();
+    let instance = instance_for_backend(backend);
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions::default())
         .await
@@ -25,6 +25,7 @@ pub(in crate::render) async fn request_headless_gpu(
     let (device, queue) = request_device_with_downlevel_fallback(&adapter, backend).await?;
     let runtime_fault = GpuRuntimeFaultState::default();
     install_gpu_error_callback(&device, runtime_fault.clone());
+    let auto_exposure_meter = super::readback::GpuAutoExposureMeter::new(&device);
 
     Ok(GpuDeviceState {
         instance,
@@ -35,6 +36,8 @@ pub(in crate::render) async fn request_headless_gpu(
         runtime_fault,
         pending_destructions: 0,
         triangle_shader_modules: Default::default(),
+        sample_count_capabilities: Default::default(),
+        auto_exposure_meter,
         #[cfg(target_arch = "wasm32")]
         last_poll_observation: "not-polled",
         resources: None,
@@ -217,6 +220,8 @@ async fn request_gpu_for_surface(
     };
     let runtime_fault = GpuRuntimeFaultState::default();
     install_gpu_error_callback(&device, runtime_fault.clone());
+    #[cfg(not(target_arch = "wasm32"))]
+    let auto_exposure_meter = super::readback::GpuAutoExposureMeter::new(&device);
     let effective_size =
         clamp_surface_size_to_adapter_limits(size, device.limits().max_texture_dimension_2d);
     let mut config = surface
@@ -241,6 +246,9 @@ async fn request_gpu_for_surface(
         runtime_fault,
         pending_destructions: 0,
         triangle_shader_modules: Default::default(),
+        sample_count_capabilities: Default::default(),
+        #[cfg(not(target_arch = "wasm32"))]
+        auto_exposure_meter,
         #[cfg(target_arch = "wasm32")]
         last_poll_observation: "not-polled",
         resources: None,
@@ -255,10 +263,13 @@ pub(super) fn enable_scene_host_surface_readback(
     config: &mut wgpu::SurfaceConfiguration,
     capabilities: &wgpu::SurfaceCapabilities,
 ) {
-    #[cfg(all(
-        target_arch = "wasm32",
-        feature = "scene-host",
-        not(feature = "browser-probe")
+    #[cfg(any(
+        not(target_arch = "wasm32"),
+        all(
+            target_arch = "wasm32",
+            feature = "scene-host",
+            not(feature = "browser-probe")
+        )
     ))]
     if capabilities.usages.contains(wgpu::TextureUsages::COPY_SRC)
         && matches!(
@@ -380,7 +391,16 @@ fn instance_for_backend(backend: Backend) -> wgpu::Instance {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = backend;
-        wgpu::Instance::default()
+        let backends = wgpu::Backends::all().with_env();
+        wgpu::Instance::new(native_instance_descriptor(backends))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn native_instance_descriptor(backends: wgpu::Backends) -> wgpu::InstanceDescriptor {
+    wgpu::InstanceDescriptor {
+        backends,
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     }
 }
 
@@ -416,6 +436,33 @@ mod tests {
             webgpu.backend_options.gl.fence_behavior,
             wgpu::GlFenceBehavior::Normal,
             "the WebGPU backend must retain real queue-completion semantics"
+        );
+    }
+
+    #[test]
+    fn native_instance_honors_wgpu_backend_filter() {
+        let descriptor = super::native_instance_descriptor(wgpu::Backends::DX12);
+        assert_eq!(
+            descriptor.backends,
+            wgpu::Backends::DX12,
+            "native GPU construction must preserve the WGPU_BACKEND filter before adapter \
+             selection so backend-specific release lanes cannot silently run on another native API"
+        );
+    }
+
+    #[test]
+    fn headless_gpu_uses_the_filtered_native_instance_path() {
+        let source = include_str!("build.rs");
+        let headless_constructor = source
+            .split("pub(in crate::render) async fn request_headless_gpu")
+            .nth(1)
+            .and_then(|tail| tail.split("fn is_unstable_v3d_headless_adapter").next())
+            .expect("headless GPU constructor source is present");
+        assert!(
+            headless_constructor.contains("let instance = instance_for_backend(backend);")
+                && !headless_constructor.contains("wgpu::Instance::default()"),
+            "headless GPU construction must use the same WGPU_BACKEND-filtered native instance \
+             path as attached surfaces"
         );
     }
 

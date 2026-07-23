@@ -36,7 +36,6 @@
         "recipe",
         "render",
         "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/recipe.json",
-        "--introspect",
         "--out",
         "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/frame.png"
       ],

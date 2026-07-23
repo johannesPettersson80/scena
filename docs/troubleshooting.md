@@ -1,5 +1,22 @@
 # Troubleshooting
 
+## Task-scoped build/cache disk usage
+
+Inspect an exact task cache without deleting anything:
+
+```bash
+scripts/scena_task_cache_status.sh <task-slug>
+```
+
+The versioned JSON lists the isolated validation checkout, Cargo target, and
+task-local temp directory with exact paths, byte sizes, modification ages,
+reproducibility, retention guidance, and cleanup authority. Run the same script
+over SSH to inspect the maintained builder. Keep caches while their task or
+release evidence is active. A reproducible task cache may be removed only after
+an explicit operator request naming that exact path; never infer deletion from
+this read-only report and never recursively clean a home directory, workspace,
+shared cache root, or unrelated task.
+
 This page lists common problems and the first places to look.
 
 ## Release readiness reports a missing or incomplete artifact root
@@ -86,7 +103,7 @@ The directory must exist. The reported path is canonical, and canonical asset
 paths must remain below it; a symlink or `..` traversal that lands elsewhere is
 still a `policy_violation`. Repeat `--allow-root` for multiple libraries.
 
-For a raw glTF/GLB, use the same asset path with `scena render --introspect`,
+For a raw glTF/GLB, use the same asset path with `scena render`,
 `scena diagnose --visibility`, and `scena repair`. Introspection/verification
 is allowed to fail a provably invisible result even though a low-level capture
 could return bytes.
@@ -137,7 +154,25 @@ Check:
 - optional texture features are enabled when required,
 - unsupported required extensions are reported in the asset error.
 
+`missing_texture` / `AssetError::MissingTexture` reports the material, slot,
+raw glTF texture index, image source, and resolution reason. Repair that exact
+entry; do not renumber later textures to compensate. Unreferenced invalid
+texture entries are tolerated without changing any later material binding.
+
+For application-generated pixels, use `TextureMemoryDesc` rather than a fake
+path. A reused `TextureMemoryId` must keep identical pixels/options. Use
+`rgba8_for_slot` or `load_texture_for_slot` so base-color/emissive/sheen-color
+data is sRGB and normal/metallic/roughness/occlusion-style data is linear.
+Native size/allocation failures are `AssetError::TextureSizeLimit`. Browser
+resizes are reported as `AssetLoadWarning::TextureDownscaled` in structured
+load telemetry and `Assets::texture_warnings()` as well as the console.
+
 See [Assets](assets.md).
+
+On native hosts, an absent file is `AssetError::NotFound` with the requested
+path and curated help. Other filesystem failures remain `AssetError::Io`, so
+callers can distinguish a typo/missing deployment from permissions or device
+errors without parsing prose.
 
 ## Rendering fails after a resize
 
@@ -151,7 +186,8 @@ See [Lifecycle](lifecycle.md).
 Inspect the top-level `backend_selection` object. CPU is the default;
 `source:"cli_flag"` appears only when `--gpu` was passed. The CLI ignores
 `SCENA_USE_GPU`, which remains test/proof metadata, so shell state cannot
-silently switch production rendering. If `fallback_used:true`, the selected
+silently switch production rendering. If `fallback_used:true`, read the
+machine-readable `reason` and `remedy`; the selected
 backend is `headless` because the explicitly requested preferred-GPU path could
 not build. Use strict GPU construction for hardware proof.
 

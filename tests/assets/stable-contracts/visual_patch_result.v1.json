@@ -28,6 +28,7 @@
     "structure": 0,
     "transform": 1,
     "appearance": 0,
+    "camera": 0,
     "visibility": 0,
     "interaction": 0
   }

@@ -51,6 +51,12 @@ pub(crate) fn q02_release_content_accepts_bound_results_and_rejects_surface_tamp
         &artifact_root,
         "0123456789abcdef0123456789abcdef01234567",
     );
+    crate::app::tests_19::write_q11_reference_stability_fixture(
+        &artifact_root,
+        "0123456789abcdef0123456789abcdef01234567",
+        "linux",
+        "x86_64",
+    );
     let mut browser_probe =
         crate::app::tests_30::required_webgpu_fixture("DiscreteGpu", "fixture discrete gpu", 1, 42);
     browser_probe["results"]

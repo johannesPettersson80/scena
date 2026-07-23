@@ -2,10 +2,11 @@ use super::super::RasterTarget;
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::pipeline::{DrawSideFilter, SCENA_FRONT_FACE};
+use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::stats::GpuResourceStats;
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
-const DEPTH_PREPASS_SHADER: &str = r#"
+pub(super) const DEPTH_PREPASS_SHADER: &str = r#"
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,
@@ -217,10 +218,11 @@ pub(super) fn create_depth_prepass_resources(
     } else {
         (None, None, None, None)
     };
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.m2.depth_prepass_shader"),
-        source: wgpu::ShaderSource::Wgsl(DEPTH_PREPASS_SHADER.into()),
-    });
+    let shader = create_shader_module(
+        device,
+        ShaderVariantId::DepthPrepass,
+        "scena.m2.depth_prepass_shader",
+    );
     // Depth prepass binds camera at @group(0) and draw uniform at @group(2)
     // — material bind group is unused but the pipeline layout matches the
     // unlit pipeline so the same vertex buffer + draw indices apply.

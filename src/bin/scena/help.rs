@@ -1,10 +1,11 @@
 const POLICY_RECIPE_COMMAND: &str = "policy recipe [--allow-root <directory>]...";
+const VALIDATE_COMMAND: &str = "validate <file>";
 const VALIDATE_RECIPE_COMMAND: &str = "validate-recipe <recipe.json> [--full|--syntax-only] [--max-imports <n>] [--allow-root <directory>]...";
 const RECIPE_BUILD_COMMAND: &str =
     "recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...";
-const RECIPE_RENDER_COMMAND: &str = "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
+const RECIPE_RENDER_COMMAND: &str = "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
 const RENDER_COMMAND: &str =
-    "render <asset-or-recipe> --introspect --out <png> [--gpu] [--allow-root <directory>]...";
+    "render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--allow-root <directory>]...";
 const INSPECT_COMMAND: &str = "inspect <asset-or-recipe> [--allow-root <directory>]...";
 const DIAGNOSE_COMMAND: &str =
     "diagnose <asset-or-recipe> --visibility [--handle <u64>] [--allow-root <directory>]...";
@@ -13,19 +14,22 @@ const REPAIR_COMMAND: &str =
     "repair <asset-or-recipe> --from <report.json> [--allow-root <directory>]...";
 
 pub(crate) fn help_json() -> String {
-    serde_json::json!({
+    serde_json::to_string_pretty(&serde_json::json!({
         "schema": "scena.cli_help.v1",
         "scope": "global",
         "commands": [
             "--version",
             "schema list",
             "schema get <scena.*.vN>",
+            "schema json <scena.*.vN>",
+            "guide agent [--json|--markdown]",
             "vocab list",
             "vocab get <name>",
             "capabilities [--live] [--json]",
             POLICY_RECIPE_COMMAND,
+            VALIDATE_COMMAND,
             VALIDATE_RECIPE_COMMAND,
-            "place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+            "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
             "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
             RECIPE_BUILD_COMMAND,
             RECIPE_RENDER_COMMAND,
@@ -48,12 +52,15 @@ pub(crate) fn help_json() -> String {
             emits("--version", &["scena.cli_version.v1"], &["scena.cli_error.v1"]),
             emits("schema list", &["scena.schema_catalog.v1"], &["scena.cli_error.v1"]),
             emits("schema get <scena.*.vN>", &["scena.schema_entry.v1"], &["scena.cli_error.v1"]),
+            emits("schema json <scena.*.vN>", &["scena.json_schema_export.v1"], &["scena.cli_error.v1"]),
+            emits("guide agent [--json|--markdown]", &["scena.agent_guide.v1"], &["scena.cli_error.v1"]),
             emits("vocab list", &["scena.vocab.v1"], &["scena.cli_error.v1"]),
             emits("vocab get <name>", &["scena.vocab.v1"], &["scena.cli_error.v1"]),
             emits("capabilities [--live] [--json]", &["scena.capability_report.v1"], &["scena.capability_report.v1", "scena.cli_error.v1"]),
             emits(POLICY_RECIPE_COMMAND, &["scena.recipe_policy.v1"], &["scena.cli_error.v1"]),
+            emits(VALIDATE_COMMAND, &["scena.contract_validation.v1"], &["scena.contract_validation.v1", "scena.cli_error.v1"]),
             emits(VALIDATE_RECIPE_COMMAND, &["scena.scene_recipe_validation.v1"], &["scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
-            emits("place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]", &["scena.placement_result.v1", "scena.recipe_patch.v1"], &["scena.placement_result.v1", "scena.recipe_patch.v1", "scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
+            emits("place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]", &["scena.placement_result.v1", "scena.recipe_patch.v1"], &["scena.placement_result.v1", "scena.recipe_patch.v1", "scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
             emits("diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]", &["scena.scene_recipe_diff_result.v1"], &["scena.scene_recipe_validation.v1", "scena.scene_recipe_build.v1", "scena.cli_error.v1"]),
             emits(RECIPE_BUILD_COMMAND, &["scena.recipe_build_result.v1"], &["scena.recipe_build_result.v1", "scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
             emits(RECIPE_RENDER_COMMAND, &["scena.render_introspection.v1", "scena.recipe_render_result.v1"], &["scena.recipe_render_result.v1", "scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
@@ -74,8 +81,11 @@ pub(crate) fn help_json() -> String {
         ],
         "global_options": [
             "--version",
+            "--compact",
+            "--pretty",
             "--round-floats <0..6>"
         ],
+        "error_taxonomy": super::scena_cli_error::error_taxonomy_json(),
         "backend_selection": {
             "default": "headless",
             "gpu_flag": "--gpu requests headless_gpu with an explicitly reported headless fallback",
@@ -96,8 +106,8 @@ pub(crate) fn help_json() -> String {
                 "summary": "LLM workflow for building and verifying scena apps through public schemas, recipes, CLI diagnostics, and machine-checkable reports."
             }
         ]
-    })
-    .to_string()
+    }))
+    .expect("CLI help serialization is infallible")
 }
 
 pub(crate) fn command_help_json(args: &[String]) -> Option<String> {
@@ -118,7 +128,7 @@ pub(crate) fn command_help_json(args: &[String]) -> Option<String> {
         .and_then(|rows| rows.iter().find(|row| row["command"] == command))
         .cloned();
     Some(
-        serde_json::json!({
+        serde_json::to_string_pretty(&serde_json::json!({
             "schema": "scena.cli_help.v1",
             "scope": "command",
             "command": command,
@@ -126,13 +136,17 @@ pub(crate) fn command_help_json(args: &[String]) -> Option<String> {
             "contract": contract,
             "notes": command_notes(command),
             "global_help": "scena --help"
-        })
-        .to_string(),
+        }))
+        .expect("command help serialization is infallible"),
     )
 }
 
 fn command_notes(command: &str) -> &'static [&'static str] {
     match command {
+        RECIPE_RENDER_COMMAND | RENDER_COMMAND => &[
+            "render introspection is emitted by default",
+            "--introspect remains an accepted compatibility no-op and may be removed from scripts",
+        ],
         REPAIR_COMMAND => &[
             "the target asset is loaded through asset doctor, or the target recipe is fully built through its effective policy, before a repair plan is derived from the report",
             "a second positional target is invalid",
@@ -144,9 +158,15 @@ fn command_notes(command: &str) -> &'static [&'static str] {
 fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
     Some(match path {
         ["version"] => ("--version", "scena --version"),
-        ["schema"] => ("schema", "scena schema <list|get>"),
+        ["schema"] => ("schema", "scena schema <list|get|json>"),
         ["schema", "list"] => ("schema list", "scena schema list"),
         ["schema", "get"] => ("schema get <scena.*.vN>", "scena schema get <scena.*.vN>"),
+        ["schema", "json"] => ("schema json <scena.*.vN>", "scena schema json <scena.*.vN>"),
+        ["guide"] => ("guide", "scena guide agent [--json|--markdown]"),
+        ["guide", "agent"] => (
+            "guide agent [--json|--markdown]",
+            "scena guide agent [--json|--markdown]",
+        ),
         ["vocab"] => ("vocab", "scena vocab <list|get>"),
         ["vocab", "list"] => ("vocab list", "scena vocab list"),
         ["vocab", "get"] => ("vocab get <name>", "scena vocab get <name>"),
@@ -162,13 +182,14 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
             "capabilities [--live] [--json]",
             "scena capabilities [--live] [--json]",
         ),
+        ["validate"] => (VALIDATE_COMMAND, "scena validate <file>"),
         ["validate-recipe"] => (
             VALIDATE_RECIPE_COMMAND,
             "scena validate-recipe <recipe.json> [--full|--syntax-only] [--max-imports <n>] [--allow-root <directory>]...",
         ),
         ["place"] => (
-            "place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
-            "scena place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+            "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+            "scena place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
         ),
         ["diff"] => (
             "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
@@ -184,7 +205,7 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
         ),
         ["recipe", "render"] => (
             RECIPE_RENDER_COMMAND,
-            "scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
+            "scena recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
         ),
         ["recipe", "inspect-cad"] => (
             "recipe inspect-cad <recipe.json> --out-dir <dir> [--width 2560] [--height 1920] [--gpu]",
@@ -212,7 +233,7 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
         ),
         ["render"] => (
             RENDER_COMMAND,
-            "scena render <asset-or-recipe> --introspect --out <png> [--gpu] [--allow-root <directory>]...",
+            "scena render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--allow-root <directory>]...",
         ),
         ["inspect"] => (
             INSPECT_COMMAND,
@@ -252,11 +273,104 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
 }
 
 fn emits(command: &str, success: &[&str], error: &[&str]) -> serde_json::Value {
+    let failure_exit_classes = error_classes_for_command(command);
+    let failure_exits = failure_exit_rows(&failure_exit_classes);
     serde_json::json!({
         "command": command,
         "emits": {
             "success": success,
             "error": error,
-        }
+        },
+        "streams": {
+            "success": "stdout",
+            "domain_failure": "stdout",
+            "cli_error": "stderr",
+        },
+        "failure_exit_classes": failure_exit_classes,
+        "failure_exits": failure_exits,
+        "feature_requirements": feature_requirements_for_command(command),
     })
+}
+
+fn failure_exit_rows(classes: &[&str]) -> Vec<serde_json::Value> {
+    let taxonomy = super::scena_cli_error::error_taxonomy_json();
+    let rows = taxonomy
+        .as_array()
+        .expect("CLI error taxonomy is always an array");
+    classes
+        .iter()
+        .map(|class| {
+            let row = rows
+                .iter()
+                .find(|row| row["class"] == *class)
+                .unwrap_or_else(|| panic!("missing CLI taxonomy row for {class}"));
+            let (schema, stream) = if *class == "comparison" {
+                ("scena.scene_recipe_diff_result.v1", "stdout")
+            } else {
+                ("scena.cli_error.v1", "stderr")
+            };
+            serde_json::json!({
+                "class": class,
+                "exit_code": row["exit_code"],
+                "schema": schema,
+                "stream": stream,
+            })
+        })
+        .collect()
+}
+
+fn feature_requirements_for_command(command: &str) -> &'static [&'static str] {
+    if command.starts_with("diff ")
+        || command.starts_with("recipe ")
+        || command.starts_with("examples agent ")
+        || command.starts_with("render ")
+        || command.starts_with("inspect ")
+        || command.starts_with("diagnose ")
+        || command.starts_with("doctor ")
+        || command.starts_with("repair ")
+        || command.starts_with("verify ")
+    {
+        &["agent"]
+    } else {
+        &[]
+    }
+}
+
+fn error_classes_for_command(command: &str) -> Vec<&'static str> {
+    let mut classes = vec!["usage", "io", "internal", "interrupted"];
+    if !matches!(command, "--version" | "schema list" | "vocab list") {
+        classes.push("input");
+    }
+    if matches!(
+        command,
+        "capabilities [--live] [--json]"
+            | "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]"
+    ) || command.starts_with("recipe ")
+        || command.starts_with("render ")
+        || command.starts_with("inspect ")
+        || command.starts_with("diagnose ")
+        || command.starts_with("doctor ")
+        || command.starts_with("repair ")
+        || command.starts_with("verify ")
+        || command.starts_with("browser-proof ")
+    {
+        classes.extend(["unsupported", "runtime"]);
+    }
+    if command == POLICY_RECIPE_COMMAND
+        || command == VALIDATE_RECIPE_COMMAND
+        || command.starts_with("place ")
+        || command.starts_with("recipe ")
+        || command.starts_with("render ")
+        || command.starts_with("inspect ")
+        || command.starts_with("diagnose ")
+        || command.starts_with("doctor ")
+        || command.starts_with("repair ")
+        || command.starts_with("verify ")
+    {
+        classes.push("policy");
+    }
+    if command.starts_with("diff ") {
+        classes.push("comparison");
+    }
+    classes
 }

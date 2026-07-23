@@ -25,6 +25,41 @@ pub(super) fn validate_clip(
     Ok(())
 }
 
+pub(super) fn validate_source_clip(
+    channels: &[AnimationSourceChannel],
+    duration_seconds: f32,
+) -> Result<(), AnimationError> {
+    validate_authored_header(channels.is_empty(), duration_seconds)?;
+    for (channel_index, channel) in channels.iter().enumerate() {
+        validate_channel_fields(
+            channel_index,
+            channel.target,
+            &channel.input_seconds,
+            &channel.output,
+            channel.interpolation,
+            duration_seconds,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_authored_header(
+    channels_are_empty: bool,
+    duration_seconds: f32,
+) -> Result<(), AnimationError> {
+    if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
+        return Err(AnimationError::InvalidClip {
+            reason: "duration_seconds must be finite and positive".to_owned(),
+        });
+    }
+    if channels_are_empty {
+        return Err(AnimationError::InvalidClip {
+            reason: "clip must contain at least one channel".to_owned(),
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn validate_imported_clip(
     channels: &[AnimationChannel],
     duration_seconds: f32,

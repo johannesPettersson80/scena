@@ -3,7 +3,9 @@
 //! decoded RGBA8 pixel buffer plus the wgpu format / sampler metadata so
 //! both paths produce identical layer content.
 
-use crate::assets::{TextureDesc, TextureFilter, TextureSamplerDesc, TextureWrap};
+use crate::assets::{
+    TextureDesc, TextureFilter, TextureMipPolicy, TextureSamplerDesc, TextureWrap,
+};
 use crate::material::TextureColorSpace;
 
 use super::material_mips::mip_level_extents;
@@ -18,8 +20,10 @@ pub(super) struct MaterialTextureUpload<'a> {
     pub(super) width: u32,
     pub(super) height: u32,
     pub(super) rgba8: &'a [u8],
+    pub(super) rgba16f_bits: Option<&'a [u16]>,
     pub(super) format: wgpu::TextureFormat,
     pub(super) sampler: TextureSamplerDesc,
+    pub(super) mip_policy: TextureMipPolicy,
     pub(super) uses_decoded_texture: bool,
     #[cfg(target_arch = "wasm32")]
     pub(super) browser_image: Option<&'a web_sys::ImageBitmap>,
@@ -95,6 +99,25 @@ impl<'a> MaterialTextureUpload<'a> {
         fallback_format: wgpu::TextureFormat,
     ) -> Self {
         if let Some(texture) = texture
+            && let Some((width, height, rgba16f_bits)) = texture.decoded_linear_rgba16f()
+            && width > 0
+            && height > 0
+            && !rgba16f_bits.is_empty()
+        {
+            return Self {
+                width,
+                height,
+                rgba8: &[],
+                rgba16f_bits: Some(rgba16f_bits),
+                format: wgpu::TextureFormat::Rgba16Float,
+                sampler: texture.sampler(),
+                mip_policy: texture.mip_policy(),
+                uses_decoded_texture: true,
+                #[cfg(target_arch = "wasm32")]
+                browser_image: None,
+            };
+        }
+        if let Some(texture) = texture
             && let Some((width, height, rgba8)) = texture.decoded_rgba8()
             && width > 0
             && height > 0
@@ -108,8 +131,10 @@ impl<'a> MaterialTextureUpload<'a> {
                 width,
                 height,
                 rgba8,
+                rgba16f_bits: None,
                 format,
                 sampler: texture.sampler(),
+                mip_policy: texture.mip_policy(),
                 uses_decoded_texture: true,
                 #[cfg(target_arch = "wasm32")]
                 browser_image: None,
@@ -127,8 +152,10 @@ impl<'a> MaterialTextureUpload<'a> {
                 width: image.width(),
                 height: image.height(),
                 rgba8: fallback_rgba8,
+                rgba16f_bits: None,
                 format,
                 sampler: texture.sampler().without_mipmaps(),
+                mip_policy: TextureMipPolicy::None,
                 uses_decoded_texture: true,
                 browser_image: Some(image),
             };
@@ -138,8 +165,10 @@ impl<'a> MaterialTextureUpload<'a> {
             width: 1,
             height: 1,
             rgba8: fallback_rgba8,
+            rgba16f_bits: None,
             format: fallback_format,
             sampler: TextureSamplerDesc::default(),
+            mip_policy: TextureMipPolicy::None,
             uses_decoded_texture: false,
             #[cfg(target_arch = "wasm32")]
             browser_image: None,
@@ -151,15 +180,22 @@ impl<'a> MaterialTextureUpload<'a> {
     }
 
     pub(super) fn byte_len_for_layers(self, layers: u32) -> u64 {
-        mip_level_extents(self.width, self.height, self.sampler.min_filter())
+        mip_level_extents(self.width, self.height, self.mip_extent_filter())
             .into_iter()
             .map(|(width, height)| {
                 u64::from(width)
                     .saturating_mul(u64::from(height))
-                    .saturating_mul(4)
+                    .saturating_mul(if self.rgba16f_bits.is_some() { 8 } else { 4 })
                     .saturating_mul(u64::from(layers))
             })
             .sum()
+    }
+
+    pub(super) const fn mip_extent_filter(self) -> Option<TextureFilter> {
+        match self.mip_policy {
+            TextureMipPolicy::None => None,
+            TextureMipPolicy::Generate => Some(TextureFilter::NearestMipmapNearest),
+        }
     }
 }
 

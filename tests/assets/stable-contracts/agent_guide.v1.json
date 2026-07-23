@@ -1,0 +1,10 @@
+{
+  "schema": "scena.agent_guide.v1",
+  "name": "llm-app-builder",
+  "version": 1,
+  "markdown": "# LLM App Builder Guide\n",
+  "commands": ["schema get scena.scene_recipe.v1"],
+  "schemas": ["scena.scene_recipe.v1"],
+  "policies": ["branch on structured errors"],
+  "templates": ["primitive-scene"]
+}

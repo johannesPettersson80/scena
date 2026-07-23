@@ -370,6 +370,54 @@ fn interactive_gltf_viewer_pick_at_forwards_to_scene_pick_with_assets() {
 }
 
 #[test]
+fn interactive_viewer_picks_with_the_scene_camera_that_is_currently_active() {
+    let mut viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf",
+        PlatformSurface::native_window(96, 64),
+    )
+    .build()
+    .expect("interactive viewer builds");
+    let hit_coordinate = (0..64)
+        .flat_map(|y| (0..96).map(move |x| (x as f32, y as f32)))
+        .find(|(x, y)| viewer.pick_at(*x, *y).ok().flatten().is_some())
+        .expect("build-time camera sees imported geometry");
+    let root = viewer.scene().root();
+    let replacement = viewer
+        .scene_mut()
+        .add_perspective_camera(
+            root,
+            scena::PerspectiveCamera::standard(),
+            scena::Transform::at(scena::Vec3::new(0.0, 0.0, -3.0)),
+        )
+        .expect("replacement camera inserts");
+    viewer
+        .scene_mut()
+        .set_active_camera(replacement)
+        .expect("replacement camera activates");
+
+    assert_eq!(
+        viewer
+            .pick_at(hit_coordinate.0, hit_coordinate.1)
+            .expect("active-camera pick runs"),
+        None,
+        "the replacement camera faces away; a hit here proves picking still used the build-time camera",
+    );
+
+    let replacement_node = viewer
+        .scene()
+        .camera_node(replacement)
+        .expect("replacement camera node resolves");
+    viewer
+        .scene_mut()
+        .remove_node(replacement_node)
+        .expect("active replacement camera removes");
+    assert!(matches!(
+        viewer.pick_at(hit_coordinate.0, hit_coordinate.1),
+        Err(scena::LookupError::NoActiveCamera)
+    ));
+}
+
+#[test]
 fn interactive_gltf_viewer_pick_and_select_at_updates_interaction_state_on_hit() {
     // When `pick_and_select_at` returns Some, the scene's primary selection
     // must promote to the hit target — proving the convenience method

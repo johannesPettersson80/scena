@@ -478,12 +478,32 @@ fn luma_from_pixel(pixel: &image::Rgba<u8>) -> f32 {
 }
 
 fn check_wasm_size_budget(root: &Path, findings: &mut Vec<Finding>) {
+    check_wasm_size_budget_with_policy(
+        root,
+        findings,
+        env::var("SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS").as_deref() == Ok("1"),
+    );
+}
+
+fn check_wasm_size_budget_with_policy(
+    root: &Path,
+    findings: &mut Vec<Finding>,
+    require_generated_artifacts: bool,
+) {
     let public_path = root.join(PUBLIC_SHOWCASE_WASM_PATH);
     let proof_path = root.join(PROOF_HARNESS_WASM_PATH);
     let public_exists = public_path.exists();
     let proof_exists = proof_path.exists();
 
     if !public_exists && !proof_exists {
+        if require_generated_artifacts {
+            findings.push(Finding::new(
+                "PUBLIC-SHOWCASE-WASM-SIZE",
+                format!(
+                    "explicit generated-artifact release mode requires {PUBLIC_SHOWCASE_WASM_PATH} and {PROOF_HARNESS_WASM_PATH}"
+                ),
+            ));
+        }
         return;
     }
 
@@ -611,4 +631,39 @@ fn read_wasm_size_manifest(path: &Path) -> Result<WasmSizeManifest, String> {
             .and_then(Value::as_u64)
             .ok_or("missing numeric brotli_bytes")?,
     })
+}
+
+#[cfg(test)]
+mod q12_tests {
+    use super::{Finding, check_wasm_size_budget_with_policy, fs, repo_root};
+
+    #[test]
+    fn generated_wasm_absence_is_only_blocking_in_explicit_release_mode() {
+        let root = repo_root()
+            .expect("test runs inside the scena workspace")
+            .join("target/xtask-doctor-regressions/q12-generated-artifacts");
+        if root.exists() {
+            fs::remove_dir_all(&root).expect("Q12 generated-artifact fixture removes");
+        }
+        fs::create_dir_all(&root).expect("Q12 generated-artifact fixture creates");
+
+        let mut ordinary_findings = Vec::new();
+        check_wasm_size_budget_with_policy(&root, &mut ordinary_findings, false);
+        assert!(
+            ordinary_findings.is_empty(),
+            "ordinary source doctor must not claim absent generated bundles: {ordinary_findings:?}"
+        );
+
+        let mut release_findings = Vec::new();
+        check_wasm_size_budget_with_policy(&root, &mut release_findings, true);
+        assert!(
+            release_findings.iter().any(|finding| {
+                finding.rule == "PUBLIC-SHOWCASE-WASM-SIZE"
+                    && finding
+                        .message
+                        .contains("explicit generated-artifact release mode")
+            }),
+            "explicit release mode must fail closed on absent generated bundles: {release_findings:?}"
+        );
+    }
 }

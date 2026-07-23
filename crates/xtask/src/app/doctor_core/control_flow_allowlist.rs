@@ -11,6 +11,11 @@ pub(super) const DIAGNOSTIC_EARLY_RETURNS: &[DiagnosticEarlyReturn] = &[
         rationale: "clearly named optional GPU smoke tests write typed skip artifacts; the separate SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE hardware test and release consumer fail closed",
     },
     DiagnosticEarlyReturn {
+        path: "tests/q07_antialiasing_effect.rs",
+        owner: "renderer-quality/Q07",
+        rationale: "the always-on deterministic effect oracle rejects no-op and whole-frame blur mutations; SCENA_REQUIRE_AA_EFFECT_PROOF turns the separate physical native mode into a fail-closed release lane",
+    },
+    DiagnosticEarlyReturn {
         path: "tests/c13_depth_clipping_parity.rs",
         owner: "renderer-quality/C13",
         rationale: "the default lane writes an explicit non-release parity artifact; the SCENA_REQUIRE_GPU_PARITY lane fails closed and executes the CPU-GPU proof",

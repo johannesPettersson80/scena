@@ -76,7 +76,7 @@ pub const SCENE_RECIPE_SCHEMA_V1: &str = "scena.scene_recipe.v1";
 pub const SCENE_RECIPE_VALIDATION_SCHEMA_V1: &str = "scena.scene_recipe_validation.v1";
 pub const SCENE_RECIPE_BUILD_SCHEMA_V1: &str = "scena.scene_recipe_build.v1";
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SceneRecipeV1 {
     pub schema: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

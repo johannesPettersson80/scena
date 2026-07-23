@@ -291,7 +291,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       authored-only Slice 1 recipe would fail by design.
 - [x] `colors` + one geometry primitive + one material + one node + a camera
       (per the sketch above).
-- [x] `scena render --introspect` over a built-from-scratch recipe.
+- [x] `scena render` over a built-from-scratch recipe (introspection is now the default).
 - [x] Proof: end-to-end test — author → build → manifest `handle`s → render
       introspection `ok`; golden build-manifest fixture.
 
@@ -328,7 +328,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
 ### Slice 5 — Verification expectations
 - [x] `expect_*` compiling to the appearance / interaction / render-introspection
       contracts.
-- [x] `scena recipe render --introspect --verify` → build + render + verify in one
+- [x] `scena recipe render --verify` → build + render + verify in one
       fail-closed report: a new cataloged `recipe_render_result` contract nesting
       `{ build, capture, introspection, verification }`, with top-level `ok` true
       only when build/introspection/verification are ok and a capture exists.
@@ -517,7 +517,7 @@ Recorded for traceability; confirmed closed against source:
   clearcoat/sheen/anisotropy/iridescence/transmission), lights, cameras, keyframe
   animation, skin/morph, fonts, and host-supplied particles — build it, receive a
   typed id→handle manifest, render it, and verify color/visibility/pick in one
-  `scena recipe render --introspect --verify` run, fail-closed.
+  `scena recipe render --verify` run, fail-closed.
 - `ok: true` is true only when no requested renderable directive was skipped.
 - Additive recipe fields update the existing `scene_recipe.v1` fixture/catalog;
   the new `scene_recipe_build` and `recipe_render_result` contracts each have

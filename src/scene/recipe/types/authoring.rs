@@ -15,7 +15,7 @@ pub use transform::{
     SceneRecipeLookAtTargetV1, SceneRecipeTransformConversionError, SceneRecipeTransformV1,
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum SceneRecipeColorV1 {
     Hex(String),
@@ -24,7 +24,7 @@ pub enum SceneRecipeColorV1 {
     Kelvin { kelvin: f64 },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeGeometryV1 {
     pub id: String,
@@ -34,7 +34,7 @@ pub struct SceneRecipeGeometryV1 {
     pub primitive: Option<SceneRecipePrimitiveV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipePrimitiveV1 {
     pub kind: String,
@@ -68,7 +68,7 @@ pub struct SceneRecipePrimitiveV1 {
     pub points: Vec<[f64; 3]>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeMeshV1 {
     pub topology: String,
@@ -82,7 +82,7 @@ pub struct SceneRecipeMeshV1 {
     pub uvs: Vec<[f64; 2]>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeMorphV1 {
     pub id: String,
@@ -91,13 +91,13 @@ pub struct SceneRecipeMorphV1 {
     pub targets: Vec<SceneRecipeMorphTargetV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeMorphTargetV1 {
     pub position_deltas: Vec<[f64; 3]>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeSkinV1 {
     pub id: String,
@@ -112,7 +112,7 @@ impl SceneRecipeSkinV1 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeMaterialV1 {
     pub id: String,
@@ -204,7 +204,7 @@ pub struct SceneRecipeMaterialV1 {
     pub thickness_texture: Option<SceneRecipeTextureSlotV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeAlphaModeV1 {
     Opaque,
@@ -212,14 +212,14 @@ pub enum SceneRecipeAlphaModeV1 {
     Blend,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneRecipeTextureColorSpaceV1 {
     Srgb,
     Linear,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeTextureSlotV1 {
     pub uri: String,
@@ -229,7 +229,7 @@ pub struct SceneRecipeTextureSlotV1 {
     pub optional: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeNodeV1 {
     pub id: String,
@@ -261,14 +261,14 @@ pub struct SceneRecipeNodeV1 {
     pub skin_binding: Option<SceneRecipeNodeSkinBindingV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeNodeLodV1 {
     pub geometry: String,
     pub max_screen_fraction: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeNodeSkinBindingV1 {
     pub joints: Vec<String>,
@@ -281,7 +281,7 @@ impl SceneRecipeNodeSkinBindingV1 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeInstanceSetV1 {
     pub id: String,
@@ -295,7 +295,7 @@ pub struct SceneRecipeInstanceSetV1 {
     pub instances: Vec<SceneRecipeInstanceV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeInstanceV1 {
     pub id: String,
@@ -307,7 +307,7 @@ pub struct SceneRecipeInstanceV1 {
     pub visible: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeParticleSetV1 {
     pub id: String,
@@ -325,7 +325,7 @@ pub struct SceneRecipeParticleSetV1 {
     pub particles: Vec<SceneRecipeParticleV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeParticleV1 {
     pub id: String,
@@ -336,7 +336,7 @@ pub struct SceneRecipeParticleV1 {
     pub rotation_degrees: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeFontV1 {
     pub id: String,
@@ -345,7 +345,7 @@ pub struct SceneRecipeFontV1 {
     pub optional: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeLabelV1 {
     pub id: String,
@@ -366,7 +366,7 @@ pub struct SceneRecipeLabelV1 {
     pub size_px: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeClippingPlaneV1 {
     pub id: String,
@@ -376,7 +376,7 @@ pub struct SceneRecipeClippingPlaneV1 {
     pub active: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeAnimationV1 {
     pub id: String,
@@ -385,7 +385,7 @@ pub struct SceneRecipeAnimationV1 {
     pub channels: Vec<SceneRecipeAnimationChannelV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeAnimationChannelV1 {
     pub target: SceneRecipeTargetV1,
@@ -400,7 +400,7 @@ fn default_animation_interpolation() -> String {
     "linear".to_owned()
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeCameraV1 {
     pub id: String,
@@ -417,7 +417,7 @@ pub struct SceneRecipeCameraV1 {
     pub transform: Option<SceneRecipeTransformV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeCameraFramingV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -432,7 +432,7 @@ pub struct SceneRecipeCameraFramingV1 {
     pub target_region: Option<SceneRecipeTargetRegionV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeLightV1 {
     pub id: String,
