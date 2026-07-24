@@ -80,7 +80,7 @@ jobs:
           cargo run -p xtask -- release-lane-artifact linux-native-vulkan
           cargo run -p xtask -- release-lane-artifact headless-cpu
       - name: Upload gate artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: linux-native-vulkan-gate-artifacts
@@ -131,7 +131,7 @@ jobs:
           trap - EXIT
           cargo run -p xtask -- release-lane-artifact linux-webgl2-chromium
       - name: Upload browser artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: linux-browser-webgl2-gate-artifacts
@@ -170,7 +170,7 @@ jobs:
           bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:fr06-semantic-aov
           cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium
       - name: Upload browser artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: linux-browser-webgpu-gate-artifacts
@@ -203,7 +203,7 @@ jobs:
       - name: Release lane artifact
         run: cargo run -p xtask -- release-lane-artifact wasm32-unknown-unknown
       - name: Upload WASM package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: wasm32-package
@@ -255,7 +255,7 @@ jobs:
         run: |
           cargo run -p xtask -- release-lane-artifact macos-metal
       - name: Upload gate artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: macos-metal-gate-artifacts
@@ -289,7 +289,7 @@ jobs:
         run: |
           cargo run -p xtask -- release-lane-artifact windows-dx12
       - name: Upload gate artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: windows-dx12-gate-artifacts
@@ -310,7 +310,7 @@ jobs:
           SCENA_BENCHMARK_COMMAND: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
         run: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
       - name: Upload 4K benchmark artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: headless-4k-performance-gate-artifacts
@@ -359,7 +359,7 @@ jobs:
             cargo run -p xtask -- release-readiness \
             2>&1 | tee -a target/release-evidence-integrity-report.log
       - name: Upload release evidence integrity report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: premerge-release-evidence-integrity-report
