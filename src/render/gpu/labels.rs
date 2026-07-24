@@ -1,8 +1,9 @@
+use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::stats::GpuResourceStats;
 use crate::render::prepare::PreparedLabelAtlas;
 
-const FINAL_SHADER: &str = include_str!("labels.wgsl");
-const ENCODED_SHADER: &str = concat!(
+pub(super) const FINAL_SHADER: &str = include_str!("labels.wgsl");
+pub(super) const ENCODED_SHADER: &str = concat!(
     include_str!("labels_encoded.wgsl"),
     "\n",
     include_str!("../color_contract.wgsl")
@@ -343,13 +344,10 @@ fn create_pipeline(
     output_bind_group_layout: &wgpu::BindGroupLayout,
     atlas_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
-    shader_source: &'static str,
+    shader_variant: ShaderVariantId,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.gpu_labels.shader"),
-        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-    });
+    let shader = create_shader_module(device, shader_variant, "scena.gpu_labels.shader");
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.gpu_labels.pipeline_layout"),
         bind_group_layouts: &[
@@ -404,10 +402,12 @@ fn create_pipeline(
     })
 }
 
-const fn shader_for_format(format: wgpu::TextureFormat) -> &'static str {
+const fn shader_for_format(format: wgpu::TextureFormat) -> ShaderVariantId {
     match format {
-        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => FINAL_SHADER,
-        _ => ENCODED_SHADER,
+        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => {
+            ShaderVariantId::LabelsFinal
+        }
+        _ => ShaderVariantId::LabelsEncoded,
     }
 }
 

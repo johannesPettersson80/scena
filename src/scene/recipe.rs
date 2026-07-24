@@ -17,8 +17,13 @@ pub use diff::{
     SCENE_RECIPE_DIFF_SCHEMA_V1, SceneRecipeDiffChangeKindV1, SceneRecipeDiffChangeV1,
     SceneRecipeDiffOptions, SceneRecipeDiffReportV1, SceneRecipeDiffScopeV1, diff_scene_recipes,
 };
+pub(crate) use field_model::{
+    AREA_LIGHT_PRESETS, DIRECTIONAL_LIGHT_PRESETS, POINT_LIGHT_PRESETS, RENDER_PROFILES,
+    RENDER_QUALITIES, SCENE_PRESETS, STUDIO_LIGHT_PRESETS, TONEMAPPERS,
+};
 pub use field_model::{
     FIELD_MODEL_SCHEMA_V1, SchemaFieldModelV1, SchemaFieldV1, scene_recipe_field_model_v1,
+    scene_recipe_json_schema_paths_v1, scene_recipe_json_schema_v1,
 };
 pub use types::{
     RECIPE_BUILD_RESULT_SCHEMA_V1, RecipeBuildExecutionV1, RecipeBuildResultV1,

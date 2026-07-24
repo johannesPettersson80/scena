@@ -19,7 +19,7 @@ pub(crate) struct ValidateRecipeCommandArgs {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PlaceCommandArgs {
     pub(crate) recipe: PathBuf,
-    pub(crate) import_id: String,
+    pub(crate) target_subject: PlaceTargetArg,
     pub(crate) verb: String,
     pub(crate) target: Option<scena::Vec3>,
     pub(crate) up: Option<scena::Vec3>,
@@ -33,6 +33,20 @@ pub(crate) struct PlaceCommandArgs {
     pub(crate) target_connector: Option<String>,
     pub(crate) apply: bool,
     pub(crate) expected_source_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PlaceTargetArg {
+    Import(String),
+    Node(String),
+}
+
+impl PlaceTargetArg {
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::Import(id) | Self::Node(id) => id,
+        }
+    }
 }
 
 impl ValidateRecipeCommandArgs {
@@ -91,6 +105,7 @@ impl PlaceCommandArgs {
             return Err(place_usage());
         };
         let mut import_id = None;
+        let mut node_id = None;
         let mut verb = None;
         let mut target = None;
         let mut up = None;
@@ -110,6 +125,10 @@ impl PlaceCommandArgs {
             match args[index].as_str() {
                 "--import" => {
                     import_id = Some(flag_value_any(args, index, "--import")?);
+                    index += 2;
+                }
+                "--node" => {
+                    node_id = Some(flag_value_any(args, index, "--node")?);
                     index += 2;
                 }
                 "--verb" => {
@@ -190,10 +209,26 @@ impl PlaceCommandArgs {
             }
         }
 
+        let target_subject = match (import_id, node_id) {
+            (Some(id), None) => PlaceTargetArg::Import(id),
+            (None, Some(id)) => PlaceTargetArg::Node(id),
+            (None, None) => {
+                return Err(format!(
+                    "missing --import <id> or --node <id>; {}",
+                    place_usage()
+                ));
+            }
+            (Some(_), Some(_)) => {
+                return Err(format!(
+                    "--import and --node are mutually exclusive; {}",
+                    place_usage()
+                ));
+            }
+        };
+
         Ok(Self {
             recipe: PathBuf::from(recipe),
-            import_id: import_id
-                .ok_or_else(|| format!("missing --import <id>; {}", place_usage()))?,
+            target_subject,
             verb: verb.ok_or_else(|| format!("missing --verb <verb>; {}", place_usage()))?,
             target,
             up,
@@ -261,6 +296,6 @@ fn validate_recipe_usage() -> String {
 }
 
 fn place_usage() -> String {
-    "usage: scena place <recipe.json> --import <id> --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on> [--target x,y,z] [--up x,y,z] [--ground-y y] [--min-size n] [--max-size n] [--target-import id] [--source-anchor name|--source-connector name] [--target-anchor name|--target-connector name] [--apply] [--expect-source-sha256 <hex>]"
+    "usage: scena place <recipe.json> (--import <id>|--node <id>) --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on> [--target x,y,z] [--up x,y,z] [--ground-y y] [--min-size n] [--max-size n] [--target-import id] [--source-anchor name|--source-connector name] [--target-anchor name|--target-connector name] [--apply] [--expect-source-sha256 <hex>]"
         .to_string()
 }

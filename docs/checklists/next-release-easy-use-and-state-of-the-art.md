@@ -2,7 +2,7 @@
 
 Status: archived historical evidence
 Canonical active backlog:
-`docs/checklists/full-repo-review-v1.8.0-remediation.md`
+`docs/checklists/full-repo-review-v1.9.0-remediation.md`
 
 Created: 2026-05-18
 Reconciled: 2026-05-19 — staleness pass against current main; shipped items

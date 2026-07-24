@@ -2,8 +2,9 @@
 
 use base64::Engine as _;
 use scena::{
-    AssetError, AssetFetcher, AssetLoadReport, AssetPath, Assets, DirectionalLight,
-    PerspectiveCamera, Renderer, Scene, SceneAsset, Transform, Vec3,
+    AssetError, AssetFetcher, AssetLoadOptions, AssetLoadReport, AssetPath, Assets,
+    DirectionalLight, PerspectiveCamera, Renderer, RetainPolicy, Scene, SceneAsset, Transform,
+    Vec3,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -73,6 +74,48 @@ fn computed_flat_normals_are_recorded_in_the_asset_load_report() {
                 && warning["triangle_count"] == 2
         }),
         "computed-normal behavior must be machine-readable: {warnings:?}",
+    );
+}
+
+#[test]
+fn byte_loaded_scene_cache_preserves_semantic_warnings_and_policy_evidence() {
+    let path = AssetPath::from("memory://c04/byte-cache-warning.gltf");
+    let source = missing_normal_hard_edge_fixture(true, false);
+    let bytes = serde_json::to_vec(&source).expect("fixture serializes");
+
+    let disk_assets = Assets::with_fetcher(MemoryFetcher::new(path.clone(), bytes.clone()));
+    let disk_report = pollster::block_on(disk_assets.load_scene_with_report(path.as_str()))
+        .expect("disk-style first load reports the computed-normal warning");
+    assert_eq!(disk_report.warnings().len(), 1);
+
+    let mut byte_assets = Assets::with_fetcher(MemoryFetcher::new(path.clone(), bytes.clone()));
+    byte_assets.set_retain_policy(RetainPolicy::Always);
+    let byte_scene = pollster::block_on(byte_assets.load_scene_from_bytes(path.clone(), &bytes))
+        .expect("byte load succeeds");
+    assert_eq!(byte_scene.retained_source_bytes_len(), Some(bytes.len()));
+
+    let cached = pollster::block_on(byte_assets.load_scene_with_report_options(
+        path.as_str(),
+        AssetLoadOptions::default().with_strict_textures(true),
+    ))
+    .expect("compatible strict request reuses byte-seeded cache evidence");
+    assert!(cached.cache_hit());
+    assert_eq!(cached.fetched_bytes(), 0);
+    assert_eq!(cached.warnings(), disk_report.warnings());
+
+    let mut changed = source;
+    changed["nodes"][0]["name"] = json!("ChangedAfterByteReload");
+    let changed_bytes = serde_json::to_vec(&changed).expect("changed fixture serializes");
+    pollster::block_on(byte_assets.load_scene_from_bytes(path.clone(), &changed_bytes))
+        .expect("changed bytes under the same path replace cached evidence");
+    let changed_cached = pollster::block_on(byte_assets.load_scene_with_report(path.as_str()))
+        .expect("changed byte load remains cacheable");
+    assert!(changed_cached.cache_hit());
+    assert_eq!(changed_cached.warnings(), disk_report.warnings());
+    assert_eq!(changed_cached.warnings().len(), 1, "warning was duplicated");
+    assert_eq!(
+        changed_cached.asset().nodes()[0].name(),
+        Some("ChangedAfterByteReload")
     );
 }
 
@@ -347,6 +390,270 @@ fn quantized_signed_and_unsigned_positions_preserve_vertices_bounds_and_render()
 }
 
 #[test]
+fn quantized_tangents_and_morph_deltas_decode_without_panics_or_zeroing() {
+    let (assets, scene_asset) = load_document(
+        "quantized-tangent-morph.gltf",
+        quantized_tangent_morph_fixture(),
+    )
+    .expect("KHR_mesh_quantization tangent and morph streams load");
+    let mesh = scene_asset.nodes()[0].mesh().expect("fixture mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+
+    let tangents = geometry.tangents().expect("quantized base tangents decode");
+    assert_eq!(tangents.len(), 3);
+    assert_vec3_near(
+        Vec3::new(tangents[0][0], tangents[0][1], tangents[0][2]),
+        Vec3::new(1.0, 0.0, 0.0),
+    );
+    assert_eq!(tangents[0][3], -1.0);
+
+    let target = &geometry.morph_targets()[0];
+    assert_vec3_near(target.position_deltas()[2], Vec3::new(0.0, 0.0, 2.0));
+    assert_vec3_near(
+        target.normal_deltas().expect("normal deltas decode")[0],
+        Vec3::new(1.0, 0.0, -1.0),
+    );
+    assert_vec3_near(
+        target.tangent_deltas().expect("tangent deltas decode")[0],
+        Vec3::new(-1.0, 1.0, 0.0),
+    );
+}
+
+#[test]
+fn quantized_tangent_and_morph_accessors_require_extension_declaration() {
+    let mut fixture = quantized_tangent_morph_fixture();
+    fixture
+        .as_object_mut()
+        .expect("fixture root is an object")
+        .remove("extensionsUsed");
+    fixture
+        .as_object_mut()
+        .expect("fixture root is an object")
+        .remove("extensionsRequired");
+
+    let error = expect_load_error(
+        "undeclared-quantized-tangent-morph.gltf",
+        fixture,
+        "integer tangent/morph streams require KHR_mesh_quantization",
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("KHR_mesh_quantization") && message.contains("TANGENT"),
+        "error must name the missing extension declaration and semantic: {message}"
+    );
+}
+
+#[test]
+fn non_finite_tangent_and_morph_values_fail_closed() {
+    for (label, fixture, semantic) in [
+        (
+            "non-finite-tangent.gltf",
+            non_finite_mesh_stream_fixture(false),
+            "TANGENT",
+        ),
+        (
+            "non-finite-morph.gltf",
+            non_finite_mesh_stream_fixture(true),
+            "morph target 0 POSITION",
+        ),
+    ] {
+        let error = expect_load_error(label, fixture, "non-finite mesh streams must fail");
+        let message = error.to_string();
+        assert!(
+            message.contains(semantic) && message.contains("non-finite"),
+            "error must identify {semantic} and the finite-value contract: {message}"
+        );
+    }
+}
+
+#[test]
+fn quantized_tangent_and_morph_component_matrix_decodes_exact_values() {
+    for encoding in [
+        QuantizedEncoding::I8Normalized,
+        QuantizedEncoding::I16Normalized,
+        QuantizedEncoding::F32,
+    ] {
+        let (assets, scene_asset) = load_document(
+            "quantized-tangent-matrix.gltf",
+            quantized_component_fixture(QuantizedSemantic::Tangent, encoding),
+        )
+        .unwrap_or_else(|error| panic!("{encoding:?} tangent must load: {error}"));
+        let geometry = assets
+            .geometry(
+                scene_asset.nodes()[0]
+                    .mesh()
+                    .expect("matrix tangent mesh")
+                    .geometry(),
+            )
+            .expect("matrix tangent geometry");
+        let tangent = geometry.tangents().expect("tangent stream")[0];
+        assert_vec3_near(Vec3::new(tangent[0], tangent[1], tangent[2]), Vec3::X);
+        assert_eq!(tangent[3], -1.0, "{encoding:?} handedness changed");
+    }
+
+    for encoding in [
+        QuantizedEncoding::I8,
+        QuantizedEncoding::I8Normalized,
+        QuantizedEncoding::U8,
+        QuantizedEncoding::U8Normalized,
+        QuantizedEncoding::I16,
+        QuantizedEncoding::I16Normalized,
+        QuantizedEncoding::U16,
+        QuantizedEncoding::U16Normalized,
+        QuantizedEncoding::F32,
+    ] {
+        let (assets, scene_asset) = load_document(
+            "quantized-morph-position-matrix.gltf",
+            quantized_component_fixture(QuantizedSemantic::MorphPosition, encoding),
+        )
+        .unwrap_or_else(|error| panic!("{encoding:?} morph POSITION must load: {error}"));
+        let geometry = assets
+            .geometry(
+                scene_asset.nodes()[0]
+                    .mesh()
+                    .expect("matrix morph mesh")
+                    .geometry(),
+            )
+            .expect("matrix morph geometry");
+        let actual = geometry.morph_targets()[0].position_deltas()[2].z;
+        let expected = if encoding.is_normalized() || encoding == QuantizedEncoding::F32 {
+            1.0
+        } else {
+            2.0
+        };
+        assert!(
+            (actual - expected).abs() <= 1e-6,
+            "{encoding:?} morph POSITION decoded {actual}, expected {expected}"
+        );
+
+        let mut scene = Scene::new();
+        let import = scene
+            .instantiate(&scene_asset)
+            .expect("matrix morph instantiates");
+        let node = import.node("MatrixMorph").expect("matrix morph node");
+        let camera = scene.add_default_camera().expect("matrix camera inserts");
+        scene
+            .frame_import(camera, &import)
+            .expect("matrix morph frames");
+        scene
+            .directional_light(DirectionalLight::key_light())
+            .transform(Transform::default().rotate_x_deg(-45.0).rotate_y_deg(30.0))
+            .add()
+            .expect("matrix key light inserts");
+        let mut renderer = Renderer::headless(24, 24).expect("matrix renderer builds");
+        scene.set_morph_weights(node, [0.0]).unwrap();
+        renderer.prepare_with_assets(&mut scene, &assets).unwrap();
+        renderer.render(&scene, camera).unwrap();
+        let base = renderer.frame_rgba8().to_vec();
+        scene.set_morph_weights(node, [1.0]).unwrap();
+        renderer.prepare_with_assets(&mut scene, &assets).unwrap();
+        renderer.render(&scene, camera).unwrap();
+        assert_ne!(
+            renderer.frame_rgba8(),
+            base.as_slice(),
+            "{encoding:?} decoded morph POSITION must affect rendered output"
+        );
+    }
+
+    for semantic in [
+        QuantizedSemantic::MorphNormal,
+        QuantizedSemantic::MorphTangent,
+    ] {
+        for encoding in [
+            QuantizedEncoding::I8Normalized,
+            QuantizedEncoding::I16Normalized,
+            QuantizedEncoding::F32,
+        ] {
+            let (assets, scene_asset) = load_document(
+                "quantized-morph-direction-matrix.gltf",
+                quantized_component_fixture(semantic, encoding),
+            )
+            .unwrap_or_else(|error| panic!("{encoding:?} {semantic:?} must load: {error}"));
+            let geometry = assets
+                .geometry(
+                    scene_asset.nodes()[0]
+                        .mesh()
+                        .expect("matrix directional morph mesh")
+                        .geometry(),
+                )
+                .expect("matrix directional morph geometry");
+            let target = &geometry.morph_targets()[0];
+            let actual = match semantic {
+                QuantizedSemantic::MorphNormal => {
+                    target.normal_deltas().expect("normal deltas are present")[0]
+                }
+                QuantizedSemantic::MorphTangent => {
+                    target.tangent_deltas().expect("tangent deltas are present")[0]
+                }
+                _ => unreachable!(),
+            };
+            assert_vec3_near(actual, Vec3::new(-1.0, 1.0, 0.0));
+        }
+    }
+}
+
+#[test]
+fn quantized_accessors_honor_stride_and_sparse_overrides() {
+    let (assets, scene_asset) = load_document(
+        "quantized-strided-tangent.gltf",
+        quantized_strided_tangent_fixture(),
+    )
+    .expect("strided quantized tangent loads");
+    let geometry = assets
+        .geometry(
+            scene_asset.nodes()[0]
+                .mesh()
+                .expect("strided tangent mesh")
+                .geometry(),
+        )
+        .expect("strided tangent geometry");
+    for tangent in geometry.tangents().expect("strided tangent stream") {
+        assert_vec3_near(Vec3::new(tangent[0], tangent[1], tangent[2]), Vec3::X);
+        assert_eq!(tangent[3], -1.0);
+    }
+
+    let (assets, scene_asset) = load_document(
+        "quantized-sparse-morph.gltf",
+        quantized_sparse_morph_fixture(),
+    )
+    .expect("sparse quantized morph loads");
+    let geometry = assets
+        .geometry(
+            scene_asset.nodes()[0]
+                .mesh()
+                .expect("sparse quantized morph mesh")
+                .geometry(),
+        )
+        .expect("sparse quantized morph geometry");
+    assert_eq!(
+        geometry.morph_targets()[0].position_deltas(),
+        &[Vec3::ZERO, Vec3::ZERO, Vec3::Z],
+        "sparse override must retain target index and normalized value"
+    );
+}
+
+#[test]
+fn malformed_quantized_accessors_return_errors_without_panics() {
+    for (label, fixture) in [
+        (
+            "truncated-quantized-tangent.gltf",
+            malformed_quantized_tangent_fixture(false),
+        ),
+        (
+            "overflow-quantized-tangent.gltf",
+            malformed_quantized_tangent_fixture(true),
+        ),
+    ] {
+        let result = std::panic::catch_unwind(|| load_document(label, fixture));
+        assert!(result.is_ok(), "{label} must not panic");
+        assert!(
+            result.expect("panic already checked").is_err(),
+            "{label} must fail closed"
+        );
+    }
+}
+
+#[test]
 fn invalid_integer_normal_is_an_error_not_a_default_normal() {
     let error = expect_load_error(
         "invalid-normal.gltf",
@@ -415,6 +722,122 @@ fn cubic_spline_weights_preserve_target_width_and_tangent_influence() {
         .morphed_vertices(scene.morph_weights(node).unwrap())
         .expect("morph targets deform");
     assert_vec3_near(deformed[2].position, Vec3::new(0.5, 1.0, 1.0));
+}
+
+#[test]
+fn morph_animation_width_must_match_target_geometry_before_playback() {
+    for (name, target_count) in [("too-few", 3_usize), ("too-many", 1_usize)] {
+        let mut document = cubic_weights_fixture();
+        let targets = document["meshes"][0]["primitives"][0]["targets"]
+            .as_array_mut()
+            .expect("fixture targets are an array");
+        if target_count == 3 {
+            targets.push(targets[0].clone());
+        } else {
+            targets.truncate(1);
+        }
+        document["meshes"][0]["weights"] = Value::Array(vec![json!(0.0); target_count]);
+
+        let error = expect_load_error(
+            &format!("morph-animation-width-{name}.gltf"),
+            document,
+            "morph animation width mismatch must fail during asset loading",
+        );
+        assert!(matches!(
+            error,
+            AssetError::MorphWeightWidthMismatch {
+                clip_index: 0,
+                channel_index: 0,
+                node_index: 0,
+                primitive_index: 0,
+                expected,
+                actual: 2,
+                ..
+            } if expected == target_count
+        ));
+    }
+}
+
+#[test]
+fn morph_animation_width_must_match_every_primitive() {
+    let mut document = multi_primitive_fixture();
+    let second_targets = document["meshes"][0]["primitives"][1]["targets"]
+        .as_array_mut()
+        .expect("second primitive targets are an array");
+    second_targets.push(second_targets[0].clone());
+    document["meshes"][0]["weights"] = json!([0.0, 0.0]);
+
+    let error = expect_load_error(
+        "multi-primitive-morph-animation-width.gltf",
+        document,
+        "every primitive must match the bound weight channel width",
+    );
+    assert!(matches!(
+        error,
+        AssetError::MorphWeightWidthMismatch {
+            clip_index: 0,
+            channel_index: 0,
+            node_index: 0,
+            primitive_index: 1,
+            expected: 2,
+            actual: 1,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn hot_reload_rejects_changed_morph_animation_width_and_preserves_previous_asset() {
+    let directory = std::env::temp_dir().join(format!(
+        "scena-c22-morph-width-reload-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("reload fixture directory creates");
+    let path = directory.join("scene.gltf");
+    let valid = cubic_weights_fixture();
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&valid).expect("valid fixture serializes"),
+    )
+    .expect("valid reload source writes");
+
+    let mut assets = Assets::new();
+    assets.set_retain_policy(RetainPolicy::Always);
+    let original = pollster::block_on(assets.load_scene(path.to_string_lossy().as_ref()))
+        .expect("valid morph animation loads before source changes");
+
+    let mut invalid = valid;
+    invalid["meshes"][0]["primitives"][0]["targets"]
+        .as_array_mut()
+        .expect("fixture targets are an array")
+        .truncate(1);
+    invalid["meshes"][0]["weights"] = json!([0.0]);
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&invalid).expect("invalid fixture serializes"),
+    )
+    .expect("changed reload source writes");
+
+    let failure = pollster::block_on(assets.reload_scene_with_report(&original))
+        .expect_err("changed target width must fail the reload transaction");
+    assert!(failure.previous_asset_preserved());
+    assert!(matches!(
+        failure.error(),
+        AssetError::MorphWeightWidthMismatch {
+            clip_index: 0,
+            channel_index: 0,
+            node_index: 0,
+            primitive_index: 0,
+            expected: 1,
+            actual: 2,
+            ..
+        }
+    ));
+    let cached = pollster::block_on(assets.load_scene(path.to_string_lossy().as_ref()))
+        .expect("failed reload leaves the previous complete cache entry available");
+    assert_eq!(cached.provenance(), original.provenance());
+    std::fs::remove_dir_all(&directory).expect("reload fixture directory removes");
 }
 
 #[test]
@@ -1248,6 +1671,316 @@ fn sparse_morph_fixture() -> Value {
             {"bufferView":7,"componentType":5126,"count":3,"type":"VEC3"}
         ]
     })
+}
+
+fn quantized_tangent_morph_fixture() -> Value {
+    let mut bytes = triangle_positions_indices();
+    let tangents = bytes.len();
+    for _ in 0..3 {
+        bytes.extend_from_slice(&[127_u8, 0, 0, 129]);
+    }
+    let morph_positions = bytes.len();
+    for value in [0_i16, 0, 0, 0, 0, 0, 0, 0, 2] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let morph_normals = bytes.len();
+    for _ in 0..3 {
+        bytes.extend_from_slice(&[127_u8, 0, 129]);
+    }
+    let morph_tangents = bytes.len();
+    for _ in 0..3 {
+        bytes.extend_from_slice(&[129_u8, 127, 0]);
+    }
+    let views = [
+        (0, 36),
+        (36, 6),
+        (tangents, 12),
+        (morph_positions, 18),
+        (morph_normals, 9),
+        (morph_tangents, 9),
+    ];
+    json!({
+        "asset":{"version":"2.0"},
+        "extensionsUsed":["KHR_mesh_quantization"],
+        "extensionsRequired":["KHR_mesh_quantization"],
+        "nodes":[{"name":"QuantizedMorph","mesh":0}],
+        "meshes":[{"weights":[0.0],"primitives":[{
+            "attributes":{"POSITION":0,"TANGENT":2},
+            "indices":1,
+            "targets":[{"POSITION":3,"NORMAL":4,"TANGENT":5}]
+        }]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":views.iter().map(|(offset,length)|json!({
+            "buffer":0,"byteOffset":offset,"byteLength":length
+        })).collect::<Vec<_>>(),
+        "accessors":[
+            position_accessor(),
+            index_accessor(),
+            {"bufferView":2,"componentType":5120,"normalized":true,"count":3,"type":"VEC4"},
+            {"bufferView":3,"componentType":5122,"count":3,"type":"VEC3"},
+            {"bufferView":4,"componentType":5120,"normalized":true,"count":3,"type":"VEC3"},
+            {"bufferView":5,"componentType":5120,"normalized":true,"count":3,"type":"VEC3"}
+        ]
+    })
+}
+
+fn non_finite_mesh_stream_fixture(morph: bool) -> Value {
+    let mut bytes = triangle_positions_indices();
+    let stream_offset = bytes.len();
+    if morph {
+        for values in [[0.0, 0.0, 0.0], [f32::INFINITY, 0.0, 0.0], [0.0, 0.0, 0.0]] {
+            push_f32s(&mut bytes, &values);
+        }
+    } else {
+        for values in [
+            [1.0, 0.0, 0.0, 1.0],
+            [f32::NAN, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+        ] {
+            push_f32s(&mut bytes, &values);
+        }
+    }
+    let stream_length = bytes.len() - stream_offset;
+    let stream_type = if morph { "VEC3" } else { "VEC4" };
+    let primitive = if morph {
+        json!({"attributes":{"POSITION":0},"indices":1,"targets":[{"POSITION":2}]})
+    } else {
+        json!({"attributes":{"POSITION":0,"TANGENT":2},"indices":1})
+    };
+    json!({
+        "asset":{"version":"2.0"},
+        "nodes":[{"name":"MatrixMorph","mesh":0}],
+        "meshes":[{"primitives":[primitive]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":[
+            {"buffer":0,"byteOffset":0,"byteLength":36},
+            {"buffer":0,"byteOffset":36,"byteLength":6},
+            {"buffer":0,"byteOffset":stream_offset,"byteLength":stream_length}
+        ],
+        "accessors":[
+            position_accessor(),
+            index_accessor(),
+            {"bufferView":2,"componentType":5126,"count":3,"type":stream_type}
+        ]
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuantizedEncoding {
+    I8,
+    I8Normalized,
+    U8,
+    U8Normalized,
+    I16,
+    I16Normalized,
+    U16,
+    U16Normalized,
+    F32,
+}
+
+impl QuantizedEncoding {
+    const fn component_type(self) -> u32 {
+        match self {
+            Self::I8 | Self::I8Normalized => 5120,
+            Self::U8 | Self::U8Normalized => 5121,
+            Self::I16 | Self::I16Normalized => 5122,
+            Self::U16 | Self::U16Normalized => 5123,
+            Self::F32 => 5126,
+        }
+    }
+
+    const fn is_normalized(self) -> bool {
+        matches!(
+            self,
+            Self::I8Normalized | Self::U8Normalized | Self::I16Normalized | Self::U16Normalized
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum QuantizedSemantic {
+    Tangent,
+    MorphPosition,
+    MorphNormal,
+    MorphTangent,
+}
+
+fn quantized_component_fixture(semantic: QuantizedSemantic, encoding: QuantizedEncoding) -> Value {
+    let mut bytes = triangle_positions_indices();
+    let stream_offset = bytes.len();
+    let vectors = match semantic {
+        QuantizedSemantic::Tangent => vec![[1.0, 0.0, 0.0, -1.0]; 3],
+        QuantizedSemantic::MorphPosition => vec![
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+        QuantizedSemantic::MorphNormal | QuantizedSemantic::MorphTangent => {
+            vec![[-1.0, 1.0, 0.0, 0.0]; 3]
+        }
+    };
+    for vector in &vectors {
+        push_quantized_vector(
+            &mut bytes,
+            encoding,
+            vector,
+            matches!(semantic, QuantizedSemantic::Tangent),
+        );
+    }
+    let stream_length = bytes.len() - stream_offset;
+    let stream_type = if matches!(semantic, QuantizedSemantic::Tangent) {
+        "VEC4"
+    } else {
+        "VEC3"
+    };
+    let (attributes, targets) = match semantic {
+        QuantizedSemantic::Tangent => (json!({"POSITION":0,"TANGENT":2}), None),
+        QuantizedSemantic::MorphPosition => (json!({"POSITION":0}), Some(json!([{"POSITION":2}]))),
+        QuantizedSemantic::MorphNormal => (json!({"POSITION":0}), Some(json!([{"NORMAL":2}]))),
+        QuantizedSemantic::MorphTangent => (json!({"POSITION":0}), Some(json!([{"TANGENT":2}]))),
+    };
+    let mut primitive = json!({"attributes":attributes,"indices":1});
+    if let Some(targets) = targets {
+        primitive["targets"] = targets;
+    }
+    json!({
+        "asset":{"version":"2.0"},
+        "extensionsUsed":["KHR_mesh_quantization"],
+        "nodes":[{"name":"MatrixMorph","mesh":0}],
+        "meshes":[{"weights":[0.0],"primitives":[primitive]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":[
+            {"buffer":0,"byteOffset":0,"byteLength":36},
+            {"buffer":0,"byteOffset":36,"byteLength":6},
+            {"buffer":0,"byteOffset":stream_offset,"byteLength":stream_length}
+        ],
+        "accessors":[
+            position_accessor(),
+            index_accessor(),
+            {"bufferView":2,"componentType":encoding.component_type(),"normalized":encoding.is_normalized(),"count":3,"type":stream_type}
+        ]
+    })
+}
+
+fn push_quantized_vector(
+    bytes: &mut Vec<u8>,
+    encoding: QuantizedEncoding,
+    vector: &[f32; 4],
+    vec4: bool,
+) {
+    let components = if vec4 { 4 } else { 3 };
+    for value in &vector[..components] {
+        match encoding {
+            QuantizedEncoding::I8 | QuantizedEncoding::I8Normalized => {
+                let value = if encoding.is_normalized() {
+                    if *value < 0.0 {
+                        i8::MIN
+                    } else if *value > 0.0 {
+                        i8::MAX
+                    } else {
+                        0
+                    }
+                } else if *value == 1.0 {
+                    2
+                } else {
+                    *value as i8
+                };
+                bytes.push(value as u8);
+            }
+            QuantizedEncoding::U8 | QuantizedEncoding::U8Normalized => {
+                let value = if encoding.is_normalized() {
+                    if *value > 0.0 { u8::MAX } else { 0 }
+                } else if *value == 1.0 {
+                    2
+                } else {
+                    *value as u8
+                };
+                bytes.push(value);
+            }
+            QuantizedEncoding::I16 | QuantizedEncoding::I16Normalized => {
+                let value = if encoding.is_normalized() {
+                    if *value < 0.0 {
+                        i16::MIN
+                    } else if *value > 0.0 {
+                        i16::MAX
+                    } else {
+                        0
+                    }
+                } else if *value == 1.0 {
+                    2
+                } else {
+                    *value as i16
+                };
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            QuantizedEncoding::U16 | QuantizedEncoding::U16Normalized => {
+                let value = if encoding.is_normalized() {
+                    if *value > 0.0 { u16::MAX } else { 0 }
+                } else if *value == 1.0 {
+                    2
+                } else {
+                    *value as u16
+                };
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            QuantizedEncoding::F32 => bytes.extend_from_slice(&value.to_le_bytes()),
+        }
+    }
+}
+
+fn quantized_strided_tangent_fixture() -> Value {
+    let mut bytes = triangle_positions_indices();
+    let stream_offset = bytes.len();
+    for _ in 0..3 {
+        bytes.extend_from_slice(&[127, 0, 0, 128, 0xaa, 0xbb, 0xcc, 0xdd]);
+    }
+    json!({
+        "asset":{"version":"2.0"},"extensionsUsed":["KHR_mesh_quantization"],
+        "nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"TANGENT":2},"indices":1}]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":[
+            {"buffer":0,"byteOffset":0,"byteLength":36},
+            {"buffer":0,"byteOffset":36,"byteLength":6},
+            {"buffer":0,"byteOffset":stream_offset,"byteLength":24,"byteStride":8}
+        ],
+        "accessors":[position_accessor(),index_accessor(),{"bufferView":2,"componentType":5120,"normalized":true,"count":3,"type":"VEC4"}]
+    })
+}
+
+fn quantized_sparse_morph_fixture() -> Value {
+    let mut bytes = triangle_positions_indices();
+    let base = bytes.len();
+    bytes.extend_from_slice(&[0_u8; 9]);
+    let sparse_index = bytes.len();
+    bytes.push(2);
+    let sparse_value = bytes.len();
+    bytes.extend_from_slice(&[0, 0, 255]);
+    json!({
+        "asset":{"version":"2.0"},"extensionsUsed":["KHR_mesh_quantization"],
+        "nodes":[{"mesh":0}],"meshes":[{"weights":[0.0],"primitives":[{"attributes":{"POSITION":0},"indices":1,"targets":[{"POSITION":2}]}]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":[
+            {"buffer":0,"byteOffset":0,"byteLength":36},
+            {"buffer":0,"byteOffset":36,"byteLength":6},
+            {"buffer":0,"byteOffset":base,"byteLength":9},
+            {"buffer":0,"byteOffset":sparse_index,"byteLength":1},
+            {"buffer":0,"byteOffset":sparse_value,"byteLength":3}
+        ],
+        "accessors":[
+            position_accessor(),index_accessor(),
+            {"bufferView":2,"componentType":5121,"normalized":true,"count":3,"type":"VEC3","sparse":{"count":1,"indices":{"bufferView":3,"componentType":5121},"values":{"bufferView":4}}}
+        ]
+    })
+}
+
+fn malformed_quantized_tangent_fixture(overflow: bool) -> Value {
+    let mut fixture = quantized_strided_tangent_fixture();
+    if overflow {
+        fixture["accessors"][2]["byteOffset"] = json!(u64::MAX);
+    } else {
+        fixture["bufferViews"][2]["byteLength"] = json!(16);
+    }
+    fixture
 }
 
 #[derive(Clone)]

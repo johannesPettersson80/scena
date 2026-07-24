@@ -1,6 +1,29 @@
 use crate::app::prelude::*;
 
 #[test]
+fn hosted_workflows_bound_cargo_disk_and_avoid_broken_pipe_probes() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    for relative in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let source = fs::read_to_string(root.join(relative)).expect("workflow source reads");
+        for required in [
+            "CARGO_PROFILE_DEV_DEBUG: \"0\"",
+            "CARGO_PROFILE_TEST_DEBUG: \"0\"",
+            "cargo test -p xtask -- --list > target/xtask-test-list.txt",
+            "grep -Fqx 'app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact: test' target/xtask-test-list.txt",
+        ] {
+            assert!(
+                source.contains(required),
+                "{relative} must contain hosted-runner resource contract {required:?}"
+            );
+        }
+        assert!(
+            !source.contains("cargo test -p xtask -- --list | grep"),
+            "{relative} must not let an exact-name grep close the cargo test-list pipe early"
+        );
+    }
+}
+
+#[test]
 fn doctor_rejects_parallel_m9_platform_benchmark_gate() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/m9-parallel-benchmark");

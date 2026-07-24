@@ -5,6 +5,10 @@ use super::LookupError;
 impl fmt::Display for LookupError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NoActiveCamera => write!(
+                formatter,
+                "scene has no active camera; call Scene::add_default_camera or Scene::set_active_camera"
+            ),
             Self::NodeNotFound(_) => write!(formatter, "node key does not exist in the scene"),
             Self::CannotRemoveRootNode(_) => {
                 write!(formatter, "the scene root node cannot be removed")
@@ -87,6 +91,9 @@ impl fmt::Display for LookupError {
             ),
             Self::InvalidTransform { reason } => {
                 write!(formatter, "transform is invalid: {reason}")
+            }
+            Self::InvalidCameraProjection { reason } => {
+                write!(formatter, "camera projection is invalid: {reason}")
             }
             Self::GeometryNotFound { node, .. } => write!(
                 formatter,

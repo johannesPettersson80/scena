@@ -2,8 +2,10 @@ use std::collections::BTreeSet;
 
 use crate::diagnostics::LookupError;
 
-use super::{NodeKey, NodeKind, Scene, SceneImport, slot_index};
+use super::{NodeKey, NodeKind, Scene, SceneImport};
 use crate::scene::transaction::SceneTransaction;
+
+const RETIRED_HANDLE_DIAGNOSTIC_LIMIT: usize = 1_024;
 
 impl Scene {
     /// Removes `node` and its descendants from the scene graph.
@@ -148,8 +150,13 @@ impl Scene {
             if let Some(frame) = self.anchors.remove(anchor)
                 && let Some(name) = frame.import_retirement_name()
             {
-                self.retired_anchors
-                    .insert(slot_index(anchor), (anchor, name));
+                self.retired_anchors.insert(anchor, name);
+                while self.retired_anchors.len() > RETIRED_HANDLE_DIAGNOSTIC_LIMIT {
+                    let Some(oldest) = self.retired_anchors.keys().next().copied() else {
+                        break;
+                    };
+                    self.retired_anchors.remove(&oldest);
+                }
             }
         }
 
@@ -181,8 +188,13 @@ impl Scene {
             if let Some(frame) = self.connectors.remove(connector)
                 && let Some(name) = frame.import_retirement_name()
             {
-                self.retired_connectors
-                    .insert(slot_index(connector), (connector, name));
+                self.retired_connectors.insert(connector, name);
+                while self.retired_connectors.len() > RETIRED_HANDLE_DIAGNOSTIC_LIMIT {
+                    let Some(oldest) = self.retired_connectors.keys().next().copied() else {
+                        break;
+                    };
+                    self.retired_connectors.remove(&oldest);
+                }
             }
         }
 

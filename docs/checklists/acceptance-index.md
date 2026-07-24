@@ -7,7 +7,7 @@ and packaging proofs:
 
 - `m5-benchmarks.json`
 - `m5-public-api-freeze.json`
-- `cargo check --examples`
+- `cargo check --examples --all-features`
 - `cargo publish --dry-run`
 
 See the active M1-M6 checklists for feature-specific proof names. A checked

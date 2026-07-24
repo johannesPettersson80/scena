@@ -300,6 +300,7 @@ impl Renderer {
             background_color: Color::BLACK,
             auto_exposure: None,
             last_auto_exposure: None,
+            auto_exposure_status: super::AutoExposureStatus::Disabled,
             environment_revision: 0,
             target_revision: 0,
             output_resources_revision: 0,

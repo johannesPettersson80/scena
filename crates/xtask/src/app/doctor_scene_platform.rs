@@ -63,7 +63,9 @@ pub(crate) use presentation_timeline::check_c08_presentation_timeline_contracts;
 pub(crate) use primitive_uv_seams::check_c19_primitive_uv_seam_contract;
 pub(crate) use recipe_diff::check_fr07_recipe_diff_contracts;
 pub(crate) use recipe_spatial_state::check_fr08_recipe_spatial_state_contracts;
-pub(crate) use release_contracts::{REQUIRED_EXAMPLES, check_m5_release_contracts};
+pub(crate) use release_contracts::{
+    REQUIRED_EXAMPLES, check_m5_release_contracts, check_public_example_compile_coverage,
+};
 pub(crate) use remote_builder::check_remote_builder_bootstrap_contracts;
 pub(crate) use scene_import::check_m3a_scene_import_contracts;
 pub(crate) use semantic_aov::check_fr06_semantic_aov_contracts;

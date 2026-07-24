@@ -28,8 +28,15 @@ while headless GPU rendering keeps synchronous pixel readback for compatibility.
 Call `render_with_readback_mode(..., RenderReadbackMode::PresentOnly)` when a
 native render loop explicitly wants no copy/map/wait, or select
 `RenderReadbackMode::Synchronous` when `frame_rgba8()` must be current before the
-call returns. Managed auto exposure keeps synchronous readback when its native
-GPU luminance input requires it. Browser proof capture remains asynchronous.
+call returns. Managed auto exposure never turns an attached native frame into a
+synchronous full-frame readback: it submits a fixed 16x16 surface sample grid
+with that frame, polls it non-blockingly, and applies a completed prior-frame
+sample on a later render call. `Renderer::auto_exposure_status()` reports
+`Pending` until a valid sample is applied and `Converged` afterward. Headless
+CPU/GPU rendering keeps deterministic same-call convergence for capture and
+reference generation. `Unavailable` means the selected native surface lacks
+the copy/format capability required by the bounded meter; choose fixed exposure
+on that surface. Browser proof capture remains asynchronous.
 After a present-only GPU frame, typed capture returns `CaptureError::NoRenderedFrame`
 instead of relabeling stale CPU bytes as a fresh capture.
 For ordered multi-frame native capture,
@@ -212,6 +219,11 @@ Additive public API changes in Unreleased:
 - `MeasurementOverlay`, `MeasurementKind`, `MeasurementAxis`,
   `MeasurementReport`, `MeasurementOverlayReport`, `UnitFormat`, and
   `Scene::add_measurement_overlay`
+- `SceneHostMeasurementOverlayReportV1` and
+  `SceneHostMeasurementAuthorityV1`; the authority metadata declares that
+  overlay values are uncalibrated scene-space inspection output, names the
+  source-unit/world-transform/`f32` assumptions, and explicitly rejects
+  manufacturing-tolerance, survey-accuracy, and calibrated-metrology claims.
 - `LabelMetrics`, `LabelDesc::metrics`, `LabelDesc::background`,
   `LabelDesc::halo`, `LabelDesc::with_background`,
   `LabelDesc::without_background`, `LabelDesc::with_halo`, and
@@ -219,14 +231,21 @@ Additive public API changes in Unreleased:
   embedded TrueType atlas path.
 - `Scene::isolate`, `Scene::show_only`, `Scene::hide`, `Scene::show`,
   `Scene::toggle_visibility`, `Scene::ghost`, `Scene::restore_visibility`,
+  `Scene::restore_visibility_with_report`,
   `Scene::restore_tints`, `Scene::fit_selection_with_assets`,
   `Scene::add_bounding_box_overlay`, `Scene::add_world_axes_triad`,
   `Scene::add_local_axes_triad`, `Scene::inspection_toolkit_report`,
-  `SceneVisibilitySnapshot`, `SceneTintSnapshot`, `InspectionHelperKind`,
+  `SceneVisibilitySnapshot`, `SceneVisibilityRestoreReport`, `SceneTintSnapshot`,
+  `InspectionHelperKind`,
   `InspectionHelperReport`, and `InspectionToolkitReport`
 - `ExplodedView`, `ExplodedViewPlan`, `ExplodedTransformUpdate`, and
   `ExplodedView::from_node(...).transforms(...)` for reversible
-  presentation-only assembly exploded views
+  presentation-only assembly exploded views. Radial and axis directions are
+  world-space directions. Hierarchy-depth mode assigns each target an absolute
+  world-space offset proportional to its depth, then solves locals against the
+  already planned final parent world so ancestor displacement is applied
+  exactly once. `ExplodedTransformUpdate::original` is the exact local value
+  used for idempotent restore.
 - `SceneHostCore::exploded_view_patch`,
   `SceneHostCore::exploded_view_patch_json`,
   `SceneHostExplodedViewOptionsV1`, and `SceneHostExplodedViewModeV1` for
@@ -263,10 +282,10 @@ Additive public API changes in Unreleased:
 - The `scena` binary with `schema list`, `schema get <schema>`,
   `policy recipe [--allow-root <directory>]...`,
   `validate-recipe <recipe.json> [--full|--syntax-only] [--allow-root
-  <directory>]...`, `place <recipe.json> --import <id>
+  <directory>]...`, `place <recipe.json> (--import <id>|--node <id>)
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`,
   `recipe build <recipe.json> [--max-imports <n>] [--allow-root
-  <directory>]...`, `recipe render <recipe.json> --introspect --verify --out
+  <directory>]...`, `recipe render <recipe.json> --verify --out
   <png> [--allow-root <directory>]...`,
   `recipe inspect-cad <recipe.json> --out-dir <dir>`,
   `recipe capture <recipe.json> --out-dir <dir> [--views
@@ -276,7 +295,7 @@ Additive public API changes in Unreleased:
   [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]`,
   `examples agent list`, `examples agent get <template> [--out <dir>]`, and,
   when built with `inspection`, asset-or-recipe-input
-  `render --introspect`, `inspect`, `diagnose --visibility`, and
+  `render`, `inspect`, `diagnose --visibility`, and
   `repair --from <report.json>`, and
   `verify appearance --expect <appearance-expectation.json>` JSON commands
 - Global and per-command `--help`/`-h` are successful
@@ -498,6 +517,14 @@ Generated overlay ownership invariant:
 - use `clear_measurement_overlay` or `clear_callout` when the overlay ID is the
   natural removal key; these operations enforce the same ownership invariant.
 
+Measurement values are computed from current world-space `f32` positions after
+the import policy converts declared source units into scene meters. Formatting
+can convert those scene meters to millimeters or caller-labeled units, but it
+does not add calibration. Snapping is a separate connector/placement operation,
+and overlay visibility or occlusion is presentation behavior rather than a
+metrology guarantee. Treat these values as inspection aids, not authoritative
+manufacturing, survey, tolerance, or safety measurements.
+
 Labels use an embedded TrueType font by default with `LabelDesc::new`, or an
 explicit TrueType/OpenType face with `LabelFontFace::from_truetype_bytes`,
 `LabelDesc::truetype`, or recipe `fonts[]` plus label `font`. Labels support
@@ -662,6 +689,7 @@ Additive public API changes in 1.3.0:
 - `Renderer::set_auto_exposure`
 - `AutoExposureConfig`
 - `AutoExposureResult`
+- `AutoExposureStatus`
 
 Additive public API changes in 1.4.0:
 
@@ -818,6 +846,11 @@ Additive public API changes in 1.5.0:
 
 ## Core types
 
+Most applications can start with `use scena::prelude::*;`. The curated prelude
+contains stable everyday scene, asset, material, controls, and renderer types;
+versioned JSON/report contracts remain explicit root or owner-module imports so
+schema-heavy wildcard imports do not pollute application code.
+
 | Type | Role |
 |---|---|
 | `Scene` | Owns graph state: nodes, transforms, cameras, lights, renderables, labels, imports, animations, picking targets, and dirty state. |
@@ -861,6 +894,38 @@ renderer.render(&scene, camera)?;
 
 See the exact signatures on docs.rs and the runnable examples in `examples/`.
 
+Application-generated textures use checked, path-free descriptors with a
+stable application identity. Use a slot-typed constructor/loader to avoid
+silently treating data maps as sRGB (or color maps as linear):
+
+```rust
+let pixels = vec![255, 0, 0, 255, 0, 255, 0, 255];
+let texture = assets.create_texture(
+    scena::TextureMemoryDesc::rgba8_for_slot(
+        scena::TextureMemoryId::new("ui/status-strip")?,
+        2,
+        1,
+        pixels,
+        scena::TextureSlot::BaseColor,
+    )
+    .with_mip_policy(scena::TextureMipPolicy::Generate),
+)?;
+```
+
+`TextureMemoryDesc::linear_rgba32f` accepts finite linear HDR values and stores
+them as filterable `Rgba16Float`; values outside the finite half-float range
+fail instead of saturating. `TextureMemoryId` is immutable cache identity:
+identical content deduplicates, while changed pixels/options under the same ID
+return `AssetError::TextureIdentityCollision`. `Assets::load_texture_for_slot`
+applies the same slot color-space contract to path-backed images.
+
+Native decoded images and generated textures share explicit dimension and
+allocation limits. Limit failures return `AssetError::TextureSizeLimit` with
+actual dimensions/bytes and configured maxima. On browsers, a source above the
+WebGL2-safe limit is still resized, but the decision is also available as
+`AssetLoadWarning::TextureDownscaled` through scene-load reports and
+`Assets::texture_warnings()`; console output is not the only signal.
+
 `Scene::frame_all_with_options` frames bounds stored directly in the scene;
 `Scene::frame_all_with_assets_and_options` also resolves geometry owned by
 `Assets`. Both frame aggregate visible world bounds using an explicit target
@@ -881,11 +946,16 @@ let framing = scene.frame_all_with_assets_and_options(
 ```
 
 `Scene::frame_import_with_options` applies the same contract to one import.
+`Scene::frame_node_with_options` and
+`Scene::frame_node_with_assets_and_options` apply it to one visible subtree.
 Hidden nodes are excluded, and inspection-helper geometry is excluded unless
 `FramingOptions::include_helpers(true)` is explicit. Legacy `Scene::frame_all`
-and `Scene::frame_import` retain their no-options signatures and derive a
-viewport from the camera's current aspect; high-level viewers instead pass the
-actual output dimensions and default to a three-quarter view.
+`Scene::frame_import`, `Scene::frame_node`, and their `with_assets` convenience
+forms retain their no-options signatures and derive a viewport from the
+camera's current aspect; high-level viewers instead use the option-bearing
+forms with actual output dimensions. `frame_all_with_overlays` remains a
+purpose-specific wrapper because it derives pixel margin from label metrics;
+it is not a second general framing model.
 
 `Scene::move_origin_to` moves a node origin to a world-space point.
 `Scene::center_visible_bounds_on` translates the node so the center of its
@@ -952,12 +1022,30 @@ handles return structured errors.
 Scene builders return typed keys or handles. Hosts keep application-specific
 state in their own model and map the visible portion into `Scene`.
 
+`SceneHostCore` treats physical size as authoritative for `SurfaceEvent::Resize`
+and retains the current DPR; `ScaleFactorChanged` retains physical size and
+recomputes logical size. Either event order therefore converges on the same
+viewport. `ViewportChanged` and `resize(logical_width, logical_height, dpr)` are
+the explicit all-fields forms. A zero/minimized physical resize is forwarded to
+the renderer and emitted to the host, but does not replace the last valid
+non-zero picking viewport. Every valid path updates perspective aspect through
+`Scene::set_camera` before rendering, picking, or emitting resize metadata.
+
 Common animation calls:
 
 - `Scene::play_animation_by_name`
 - `Scene::update_animation`
 - `Scene::set_animation_loop_mode`
 - `Scene::set_animation_speed`
+
+Caller-authored source clips should use `AnimationSourceClip::try_new` and
+`try_rebind`. Both return `AnimationError::InvalidClip` with a channel/keyframe
+path when duration, time ordering, interpolation shape, output type/width, or
+finite-value validation fails. The legacy unchecked `new` and panic-on-error
+`rebind` wrappers remain only for source compatibility and are deprecated.
+Imported glTF clips pass through the same channel validator before rebinding.
+Mixer sampling also rejects a non-finite computed transform, so even finite but
+overflowing cubic tangents cannot poison scene state.
 
 Viewer helpers also expose `play_clip(name)` for the loaded import. The
 returned mixer key is still scene-owned, so hosts explicitly drive update,
@@ -1195,9 +1283,12 @@ Public failures use structured errors such as:
 - `CaptureContactSheet`
 - `CaptureBaselineReport`
 
-Most errors include a stable category plus contextual data. Use pattern matching
-for application behavior and `.help()` or diagnostics output for user-facing
-recovery. Named `LookupError` variants and `AnimationError::ClipNotFound` carry
+Most errors include a stable category plus contextual data. `BuildError`,
+`AssetError`, `ImportError`, `InstantiateError`, `PrepareError`, `RenderError`,
+`LookupError`, `AnimationError`, and top-level `Error` expose `.help()` plus
+`.diagnostic() -> ErrorDiagnostic { code, message, help, context }`; `Display`
+remains concise. Use pattern matching for application behavior and the
+structured adapter for user-facing recovery. Named `LookupError` variants and `AnimationError::ClipNotFound` carry
 up to three normalized, deterministically ranked `candidates`;
 `SceneHostError::candidates()` preserves them through host and JSON conversion.
 `RenderError::NoActiveCamera` names both `Scene::add_default_camera` and

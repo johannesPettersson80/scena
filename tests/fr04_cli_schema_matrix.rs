@@ -9,13 +9,25 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
     let help = help_report();
     assert_contract(
         &help,
+        "schema json <scena.*.vN>",
+        &["scena.json_schema_export.v1"],
+        &["scena.cli_error.v1"],
+    );
+    assert_contract(
+        &help,
+        "validate <file>",
+        &["scena.contract_validation.v1"],
+        &["scena.contract_validation.v1", "scena.cli_error.v1"],
+    );
+    assert_contract(
+        &help,
         "capabilities [--live] [--json]",
         &["scena.capability_report.v1"],
         &["scena.capability_report.v1", "scena.cli_error.v1"],
     );
     assert_contract(
         &help,
-        "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
         &[
             "scena.render_introspection.v1",
             "scena.recipe_render_result.v1",
@@ -64,7 +76,7 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
     );
     for (command, success) in [
         (
-            "render <asset-or-recipe> --introspect --out <png> [--gpu]",
+            "render <asset-or-recipe> --out <png> [--introspect] [--gpu]",
             "scena.render_introspection.v1",
         ),
         ("inspect <asset-or-recipe>", "scena.scene_inspection.v1"),
@@ -313,10 +325,13 @@ fn fr04_each_command_has_a_real_structured_argument_error_fixture() {
         vec!["--version", "unexpected"],
         vec!["schema", "list", "unexpected"],
         vec!["schema", "get"],
+        vec!["schema", "json"],
+        vec!["guide", "agent", "--unexpected"],
         vec!["vocab", "list", "unexpected"],
         vec!["vocab", "get"],
         vec!["capabilities", "unexpected"],
         vec!["policy", "recipe", "unexpected"],
+        vec!["validate"],
         vec!["validate-recipe"],
         vec!["place"],
         vec!["recipe", "build"],
@@ -452,6 +467,20 @@ const EVIDENCE: &[Evidence] = &[
         "scena_schema_cli_lists_and_gets_stable_contracts"
     ),
     evidence!(
+        "schema json <scena.*.vN>",
+        "success",
+        "scena.json_schema_export.v1",
+        "tests/a09_generic_validation.rs",
+        "schema_json_exports_recipe_schema_and_declares_runtime_limits"
+    ),
+    evidence!(
+        "guide agent [--json|--markdown]",
+        "success",
+        "scena.agent_guide.v1",
+        "tests/a05_public_agent_guide.rs",
+        "installed_cli_exports_public_agent_guidance_outside_the_repository"
+    ),
+    evidence!(
         "vocab list",
         "success",
         "scena.vocab.v1",
@@ -487,6 +516,20 @@ const EVIDENCE: &[Evidence] = &[
         "fr01_vocab_and_fr04_policy_are_machine_discoverable"
     ),
     evidence!(
+        "validate <file>",
+        "success",
+        "scena.contract_validation.v1",
+        "tests/a09_generic_validation.rs",
+        "validate_dispatches_public_input_contracts_by_embedded_schema"
+    ),
+    evidence!(
+        "validate <file>",
+        "error",
+        "scena.contract_validation.v1",
+        "tests/a09_generic_validation.rs",
+        "validate_fails_closed_for_malformed_unknown_and_mismatched_contracts"
+    ),
+    evidence!(
         "validate-recipe <recipe.json> [--full|--syntax-only] [--max-imports <n>]",
         "success",
         "scena.scene_recipe_validation.v1",
@@ -501,35 +544,35 @@ const EVIDENCE: &[Evidence] = &[
         "scena_validate_recipe_cli_checks_asset_presence_and_expected_extents"
     ),
     evidence!(
-        "place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+        "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
         "success",
         "scena.placement_result.v1",
         "tests/scena_cli_recipe.rs",
         "scena_place_cli_emits_bounds_based_transform_previews_for_recipe_import"
     ),
     evidence!(
-        "place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+        "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
         "success",
         "scena.recipe_patch.v1",
         "tests/scena_cli_recipe.rs",
         "fr03_place_apply_emits_persistent_recipe_and_rejects_stale_source"
     ),
     evidence!(
-        "place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+        "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
         "error",
         "scena.placement_result.v1",
         "tests/scena_cli_recipe.rs",
         "scena_recipe_invalid_fixtures_cover_landed_failure_families"
     ),
     evidence!(
-        "place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+        "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
         "error",
         "scena.recipe_patch.v1",
         "tests/scena_cli_recipe.rs",
         "fr03_place_apply_emits_persistent_recipe_and_rejects_stale_source"
     ),
     evidence!(
-        "place <recipe.json> --import <id> --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
+        "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
         "error",
         "scena.scene_recipe_validation.v1",
         "tests/fr04_cli_schema_matrix.rs",
@@ -557,28 +600,28 @@ const EVIDENCE: &[Evidence] = &[
         "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
     evidence!(
-        "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
         "success",
         "scena.render_introspection.v1",
         "tests/scena_cli_recipe.rs",
         "scena_recipe_render_introspect_succeeds_without_verify"
     ),
     evidence!(
-        "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
         "success",
         "scena.recipe_render_result.v1",
         "tests/scena_cli_recipe.rs",
         "scena_recipe_render_verify_passes_color_pick_and_fit_expectations"
     ),
     evidence!(
-        "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
         "error",
         "scena.recipe_render_result.v1",
         "tests/fr04_cli_schema_matrix.rs",
         "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
     evidence!(
-        "recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
         "error",
         "scena.scene_recipe_validation.v1",
         "tests/fr04_cli_schema_matrix.rs",
@@ -676,28 +719,28 @@ const EVIDENCE: &[Evidence] = &[
         "scena_examples_agent_templates_generate_and_run_cli_smoke_commands"
     ),
     evidence!(
-        "render <asset-or-recipe> --introspect --out <png> [--gpu]",
+        "render <asset-or-recipe> --out <png> [--introspect] [--gpu]",
         "success",
         "scena.render_introspection.v1",
         "tests/scena_cli_agent.rs",
         "scena_render_cli_writes_png_descriptor_and_introspection_json"
     ),
     evidence!(
-        "render <asset-or-recipe> --introspect --out <png> [--gpu]",
+        "render <asset-or-recipe> --out <png> [--introspect] [--gpu]",
         "error",
         "scena.asset_doctor.v1",
         "tests/scena_cli_agent.rs",
         "scena_cli_missing_assets_emit_json_not_command_errors"
     ),
     evidence!(
-        "render <asset-or-recipe> --introspect --out <png> [--gpu]",
+        "render <asset-or-recipe> --out <png> [--introspect] [--gpu]",
         "error",
         "scena.recipe_build_result.v1",
         "tests/scena_cli_recipe.rs",
         "recipe_commands_check_policy_for_every_import"
     ),
     evidence!(
-        "render <asset-or-recipe> --introspect --out <png> [--gpu]",
+        "render <asset-or-recipe> --out <png> [--introspect] [--gpu]",
         "error",
         "scena.scene_recipe_validation.v1",
         "tests/fr04_cli_schema_matrix.rs",

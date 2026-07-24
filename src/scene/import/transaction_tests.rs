@@ -315,7 +315,7 @@ fn failed_replace_is_exact_noop_at_every_late_failure_family() {
 }
 
 #[test]
-fn replacement_uses_fresh_runtime_overrides_and_commits_one_revision_boundary() {
+fn replacement_preserves_root_visibility_and_commits_one_revision_boundary() {
     let asset = minimal_asset();
     let mut scene = Scene::new();
     let old = scene.instantiate(&asset).expect("old import succeeds");
@@ -330,7 +330,7 @@ fn replacement_uses_fresh_runtime_overrides_and_commits_one_revision_boundary() 
         .expect("replacement succeeds");
     let new_root = replacement.node("Root").expect("new root exists");
 
-    assert_eq!(scene.visible(new_root), Some(true));
+    assert_eq!(scene.visible(new_root), Some(false));
     assert_eq!(scene.node(old_root), None);
     assert_eq!(
         scene.structure_revision,
@@ -340,10 +340,243 @@ fn replacement_uses_fresh_runtime_overrides_and_commits_one_revision_boundary() 
 }
 
 #[test]
+fn replacement_preserves_host_parent_and_root_placement() {
+    let asset = minimal_asset();
+    let mut scene = Scene::new();
+    let host = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(4.0, 0.0, 0.0)))
+        .expect("host parent inserts");
+    let old = scene
+        .instantiate_under(host, &asset, super::ImportOptions::gltf_default())
+        .expect("nested import instantiates");
+    let old_root = old.node("Root").expect("old root exists");
+    let placement = Transform::at(Vec3::new(1.0, 2.0, 3.0)).rotate_y_deg(25.0);
+    scene
+        .set_transform(old_root, placement)
+        .expect("host-owned root placement applies");
+
+    let replacement = scene
+        .replace_import(&old, &asset)
+        .expect("nested replacement succeeds");
+    let new_root = replacement.node("Root").expect("new root exists");
+
+    assert_eq!(
+        scene.node(new_root).and_then(|node| node.parent()),
+        Some(host)
+    );
+    assert_eq!(
+        scene.node(new_root).map(|node| node.transform()),
+        Some(placement)
+    );
+    assert!(scene.node(old_root).is_none());
+}
+
+#[test]
+fn replacement_parent_and_placement_are_pinned_by_semantic_aov_pixels() {
+    let asset = minimal_asset();
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )
+        .expect("semantic proof camera inserts");
+    let host = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(-0.3, 0.0, 0.0)))
+        .expect("semantic proof host inserts");
+    let old = scene
+        .instantiate_under(host, &asset, super::ImportOptions::gltf_default())
+        .expect("nested import instantiates");
+    let old_root = old.node("Root").expect("old root resolves");
+    let placement = Transform::at(Vec3::new(0.5, 0.0, 0.0));
+    scene
+        .set_transform(old_root, placement)
+        .expect("old root placement applies");
+    scene
+        .add_renderable(
+            old_root,
+            vec![Primitive::unlit_triangle()],
+            Transform::IDENTITY,
+        )
+        .expect("old proof geometry inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("semantic renderer builds");
+    renderer.prepare(&mut scene).expect("old scene prepares");
+    let before = renderer
+        .semantic_aov_raw(&scene, camera)
+        .expect("old semantic AOV captures");
+
+    let replacement = scene
+        .replace_import(&old, &asset)
+        .expect("nested replacement succeeds");
+    let new_root = replacement.node("Root").expect("new root resolves");
+    scene
+        .add_renderable(
+            new_root,
+            vec![Primitive::unlit_triangle()],
+            Transform::IDENTITY,
+        )
+        .expect("replacement proof geometry inserts");
+    renderer
+        .prepare(&mut scene)
+        .expect("replacement scene prepares");
+    let after = renderer
+        .semantic_aov_raw(&scene, camera)
+        .expect("replacement semantic AOV captures");
+
+    let before_mask = before
+        .id_indices
+        .iter()
+        .map(|index| *index != 0)
+        .collect::<Vec<_>>();
+    let after_mask = after
+        .id_indices
+        .iter()
+        .map(|index| *index != 0)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        after_mask, before_mask,
+        "replacement must preserve the rendered semantic footprint"
+    );
+    assert_eq!(
+        after.depth_meters, before.depth_meters,
+        "replacement must preserve exact semantic depth"
+    );
+    assert_eq!(
+        after.world_normals, before.world_normals,
+        "replacement must preserve exact semantic normals"
+    );
+
+    scene
+        .set_transform(new_root, Transform::IDENTITY)
+        .expect("known-bad root-placement mutation applies");
+    renderer
+        .prepare(&mut scene)
+        .expect("known-bad mutation prepares");
+    let mutated = renderer
+        .semantic_aov_raw(&scene, camera)
+        .expect("known-bad semantic AOV captures");
+    let mutated_mask = mutated
+        .id_indices
+        .iter()
+        .map(|index| *index != 0)
+        .collect::<Vec<_>>();
+    assert_ne!(
+        mutated_mask, before_mask,
+        "the semantic oracle must reject the old lost-root-placement behavior"
+    );
+}
+
+#[test]
+fn replacement_preserves_multiple_root_parents_locals_and_host_visibility() {
+    let mut asset = minimal_asset();
+    asset.inject_additional_root_for_transaction_test();
+    let mut scene = Scene::new();
+    let host_a = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(4.0, 0.0, 0.0)))
+        .unwrap();
+    let host_b = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(-4.0, 0.0, 0.0)))
+        .unwrap();
+    let old = scene
+        .instantiate_under(host_a, &asset, super::ImportOptions::gltf_default())
+        .unwrap();
+    let first = old.node("Root").unwrap();
+    let second = old.node("SecondRoot").unwrap();
+    let first_local = Transform::at(Vec3::new(1.0, 2.0, 3.0)).rotate_y_deg(20.0);
+    let second_local = Transform::at(Vec3::new(-2.0, 1.0, 0.5)).scale_by(1.5);
+    scene.set_transform(first, first_local).unwrap();
+    scene.set_transform(second, second_local).unwrap();
+    super::load::reparent_replacement_root(&mut scene, second, host_b);
+    scene.set_visible(first, false).unwrap();
+    scene.add_tag(first, "host-owned").unwrap();
+
+    let replacement = scene.replace_import(&old, &asset).unwrap();
+    let new_first = replacement.node("Root").unwrap();
+    let new_second = replacement.node("SecondRoot").unwrap();
+    assert_eq!(
+        scene.node(new_first).and_then(|node| node.parent()),
+        Some(host_a)
+    );
+    assert_eq!(
+        scene.node(new_second).and_then(|node| node.parent()),
+        Some(host_b)
+    );
+    assert_eq!(
+        scene.node(new_first).map(|node| node.transform()),
+        Some(first_local)
+    );
+    assert_eq!(
+        scene.node(new_second).map(|node| node.transform()),
+        Some(second_local)
+    );
+    assert_eq!(scene.visible(new_first), Some(false));
+    assert_eq!(scene.visible(new_second), Some(true));
+    assert!(scene.has_tag(new_first, "host-owned"));
+}
+
+#[test]
+fn replacement_maps_renamed_roots_by_ordinal_and_discards_removed_roots() {
+    let mut old_asset = minimal_asset();
+    old_asset.inject_additional_root_for_transaction_test();
+    let mut replacement_asset = minimal_asset();
+    replacement_asset.rename_root_for_transaction_test(0, "RenamedRoot");
+    let mut scene = Scene::new();
+    let host = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(4.0, 0.0, 0.0)))
+        .unwrap();
+    let old = scene
+        .instantiate_under(host, &old_asset, super::ImportOptions::gltf_default())
+        .unwrap();
+    let old_first = old.node("Root").unwrap();
+    let old_second = old.node("SecondRoot").unwrap();
+    let placement = Transform::at(Vec3::new(1.0, 2.0, 3.0)).rotate_z_deg(15.0);
+    scene.set_transform(old_first, placement).unwrap();
+    scene.set_visible(old_first, false).unwrap();
+
+    let replacement = scene.replace_import(&old, &replacement_asset).unwrap();
+    let renamed = replacement.node("RenamedRoot").unwrap();
+    assert_eq!(
+        scene.node(renamed).and_then(|node| node.parent()),
+        Some(host)
+    );
+    assert_eq!(
+        scene.node(renamed).map(|node| node.transform()),
+        Some(placement)
+    );
+    assert_eq!(scene.visible(renamed), Some(false));
+    assert!(scene.node(old_first).is_none());
+    assert!(scene.node(old_second).is_none());
+    assert_eq!(replacement.roots().len(), 1);
+}
+
+#[test]
+fn replacement_attaches_added_roots_to_first_prior_host_parent() {
+    let old_asset = minimal_asset();
+    let mut replacement_asset = minimal_asset();
+    replacement_asset.inject_additional_root_for_transaction_test();
+    let mut scene = Scene::new();
+    let host = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(-4.0, 0.0, 0.0)))
+        .unwrap();
+    let old = scene
+        .instantiate_under(host, &old_asset, super::ImportOptions::gltf_default())
+        .unwrap();
+
+    let replacement = scene.replace_import(&old, &replacement_asset).unwrap();
+    let first = replacement.node("Root").unwrap();
+    let added = replacement.node("SecondRoot").unwrap();
+    assert_eq!(scene.node(first).and_then(|node| node.parent()), Some(host));
+    assert_eq!(scene.node(added).and_then(|node| node.parent()), Some(host));
+    assert_eq!(replacement.roots(), &[first, added]);
+}
+
+#[test]
 fn removed_import_anchor_and_connector_handles_remain_stale_without_live_registry_growth() {
     let asset = anchor_asset();
     let mut scene = Scene::new();
     let mut current = scene.instantiate(&asset).expect("first import succeeds");
+    let mut retired = Vec::new();
 
     for iteration in 0..64 {
         let imported_anchor = current
@@ -365,6 +598,7 @@ fn removed_import_anchor_and_connector_handles_remain_stale_without_live_registr
             Err(ConnectionError::StaleAnchorHandle { anchor: stale, name })
                 if stale == Some(anchor) && name.as_deref() == Some("inspection")
         ));
+        retired.push((anchor, connector));
         assert!(matches!(
             scene.connector(connector),
             Err(ConnectionError::StaleConnectorHandle { connector: stale, name })
@@ -376,8 +610,8 @@ fn removed_import_anchor_and_connector_handles_remain_stale_without_live_registr
             "iteration {iteration} anchors bounded"
         );
         assert!(
-            scene.retired_anchors.len() <= 1,
-            "iteration {iteration} retired anchor slots bounded"
+            scene.retired_anchors.len() <= 64,
+            "iteration {iteration} retired anchor generations bounded"
         );
         assert_eq!(
             scene.connectors.len(),
@@ -385,9 +619,22 @@ fn removed_import_anchor_and_connector_handles_remain_stale_without_live_registr
             "iteration {iteration} connectors bounded"
         );
         assert!(
-            scene.retired_connectors.len() <= 1,
-            "iteration {iteration} retired connector slots bounded"
+            scene.retired_connectors.len() <= 64,
+            "iteration {iteration} retired connector generations bounded"
         );
+    }
+
+    for (anchor, connector) in retired {
+        assert!(matches!(
+            scene.anchor(anchor),
+            Err(ConnectionError::StaleAnchorHandle { anchor: stale, name })
+                if stale == Some(anchor) && name.as_deref() == Some("inspection")
+        ));
+        assert!(matches!(
+            scene.connector(connector),
+            Err(ConnectionError::StaleConnectorHandle { connector: stale, name })
+                if stale == Some(connector) && name.as_deref() == Some("inspection")
+        ));
     }
 }
 

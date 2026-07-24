@@ -95,17 +95,17 @@ impl CpuRowBandBins {
             )
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(super) fn band_count(&self) -> usize {
         self.bands.len()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(super) fn bands(&self) -> &[Vec<usize>] {
         &self.bands
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(super) fn capacities(&self) -> Vec<usize> {
         self.bands.iter().map(Vec::capacity).collect()
     }

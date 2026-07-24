@@ -13,8 +13,8 @@ use scena::{
     GeometryVertex, MaterialDesc, PerspectiveCamera, Scene, TextureColorSpace, Transform, Vec3,
 };
 use support::parity::{
-    OwnedRgbaFrame, ParitySweep, PixelRegion, render_scene_cpu_gpu_pair_with_renderer,
-    require_cpu_gpu_parity_adapter_or_skip,
+    OwnedRgbaFrame, ParitySweep, PixelRegion, record_cpu_gpu_parity_pass,
+    render_scene_cpu_gpu_pair_with_renderer, require_cpu_gpu_parity_adapter_or_skip,
 };
 
 const WIDTH: u32 = 192;
@@ -102,6 +102,14 @@ fn pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_
                 "[\"shared-triangle-seam\",\"perspective-interpolation\",\"material-identity\",\"cpu-gpu-comparison\"]".to_owned(),
             ),
         ],
+    );
+    record_cpu_gpu_parity_pass(
+        "pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu",
+        pair.gpu
+            .gpu_adapter
+            .as_ref()
+            .expect("PF08 GPU adapter is recorded"),
+        10,
     );
 }
 
@@ -282,8 +290,7 @@ fn pixel(frame: &OwnedRgbaFrame, x: u32, y: u32) -> [u8; 4] {
 }
 
 fn artifact_dir() -> PathBuf {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/gate-artifacts/pf08-texture-bake-parity");
+    let path = PathBuf::from("target/gate-artifacts/pf08-texture-bake-parity");
     fs::create_dir_all(&path).expect("PF08 artifact directory creates");
     path
 }

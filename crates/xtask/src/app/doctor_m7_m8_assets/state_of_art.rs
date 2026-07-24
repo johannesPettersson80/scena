@@ -8,26 +8,50 @@ pub(crate) fn check_document_governance_truth(root: &Path, findings: &mut Vec<Fi
             "docs/README.md",
             vec![
                 "Active open backlog",
-                "full-repo-review-v1.8.0-remediation.md",
+                "full-repo-review-v1.9.0-remediation.md",
                 "Historical evidence",
+                "full-repo-review-v1.8.0-remediation.md",
             ],
         ),
         (
             "docs/RFC-rust-3d-renderer.md",
             vec![
                 "One active implementation backlog",
-                "full-repo-review-v1.8.0-remediation.md",
+                "full-repo-review-v1.9.0-remediation.md",
                 "Historical evidence tracks",
+                "full-repo-review-v1.8.0-remediation.md",
                 "`SceneRecipeV1` is a versioned interchange/build input",
                 "host owns application persistence",
                 "no cross-version lossless round-trip guarantee",
             ],
         ),
         (
+            "docs/reviews/full-repo-review-v1.9.0.md",
+            vec![
+                "Source baseline: `a28f2149c39290aac7a059232b4e21de266ea88c`",
+                "Claim-by-claim result",
+                "Native macOS m8 WaterBottle headline can claim release evidence",
+                "Supplemental finding adjudication",
+                "Independent findings missed or understated",
+                "full-repo-review-v1.9.0-remediation.md",
+            ],
+        ),
+        (
+            "docs/checklists/full-repo-review-v1.9.0-remediation.md",
+            vec![
+                "Status: **implementation in progress",
+                "Test cadence — focused per fix, full tests once at the end",
+                "C11 — Keep SceneHost viewport, resize, DPR, and picking synchronized",
+                "Q06 — Make native m8 WaterBottle release evidence full-frame",
+                "Single final integration and release checkpoint",
+                "all independently known defects at the frozen baseline",
+            ],
+        ),
+        (
             "docs/checklists/next-release-easy-use-and-state-of-the-art.md",
             vec![
                 "Status: archived historical evidence",
-                "full-repo-review-v1.8.0-remediation.md",
+                "full-repo-review-v1.9.0-remediation.md",
                 "Shipped scoped feature rows remain valid evidence",
                 "F01-F08",
             ],
@@ -36,21 +60,21 @@ pub(crate) fn check_document_governance_truth(root: &Path, findings: &mut Vec<Fi
             "docs/checklists/application-builder-roadmap.md",
             vec![
                 "Status: completed historical evidence",
-                "full-repo-review-v1.8.0-remediation.md",
+                "full-repo-review-v1.9.0-remediation.md",
             ],
         ),
         (
             "docs/checklists/wasm-scene-host-and-stable-contracts.md",
             vec![
                 "Status: archived historical evidence",
-                "full-repo-review-v1.8.0-remediation.md",
+                "full-repo-review-v1.9.0-remediation.md",
             ],
         ),
         (
             "docs/checklists/renderer-fidelity-dependencies.md",
             vec![
                 "Status: archived historical evidence",
-                "full-repo-review-v1.8.0-remediation.md",
+                "full-repo-review-v1.9.0-remediation.md",
             ],
         ),
         (

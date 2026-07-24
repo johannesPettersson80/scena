@@ -169,6 +169,11 @@ pub(super) fn create_browser_readback_resources(
     }
 }
 
+#[cfg(any(
+    not(target_arch = "wasm32"),
+    feature = "browser-probe",
+    feature = "scene-host"
+))]
 const fn readback_format_for_surface(surface_format: wgpu::TextureFormat) -> wgpu::TextureFormat {
     match surface_format {
         wgpu::TextureFormat::Bgra8UnormSrgb | wgpu::TextureFormat::Rgba8UnormSrgb => {
@@ -375,7 +380,14 @@ fn has_transparent_batches(
             .any(|batch| !batch.depth_prepass_eligible)
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        not(target_arch = "wasm32"),
+        feature = "browser-probe",
+        feature = "scene-host"
+    )
+))]
 mod tests {
     use super::readback_format_for_surface;
 

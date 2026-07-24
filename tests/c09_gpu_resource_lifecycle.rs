@@ -599,7 +599,7 @@ fn output_revision_and_native_readback_modes_are_explicit_and_render_allocates_n
     assert_eq!(present.gpu_shader_module_creations, 0);
     assert!(matches!(
         renderer.capture_rgba8(&scene, Default::default()),
-        Err(CaptureError::NoRenderedFrame)
+        Err(CaptureError::NoReadbackFrame)
     ));
 
     renderer

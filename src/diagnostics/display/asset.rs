@@ -15,6 +15,57 @@ impl fmt::Display for AssetError {
             Self::Parse { path, reason } => {
                 write!(formatter, "failed to parse asset {path}: {reason}")
             }
+            Self::InvalidTextureIdentity { identity, reason } => write!(
+                formatter,
+                "invalid in-memory texture identity {identity:?}: {reason}"
+            ),
+            Self::InvalidTextureData {
+                identity,
+                width,
+                height,
+                expected_elements,
+                actual_elements,
+                reason,
+            } => write!(
+                formatter,
+                "invalid in-memory texture {identity:?} ({width}x{height}): expected {expected_elements} elements, got {actual_elements}: {reason}"
+            ),
+            Self::TextureSizeLimit {
+                path,
+                width,
+                height,
+                maximum_dimension,
+                required_bytes,
+                maximum_bytes,
+            } => write!(
+                formatter,
+                "texture {path} dimensions {width}x{height} require {required_bytes} decoded bytes; limits are {maximum_dimension}px per axis and {maximum_bytes} bytes"
+            ),
+            Self::TextureIdentityCollision { identity } => write!(
+                formatter,
+                "in-memory texture identity {identity:?} was reused with different content or options"
+            ),
+            Self::TextureColorSpaceMismatch {
+                identity,
+                slot,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "in-memory texture {identity:?} uses {actual} color data, but material slot {slot} requires {expected}"
+            ),
+            Self::MorphWeightWidthMismatch {
+                path,
+                clip_index,
+                channel_index,
+                node_index,
+                primitive_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "asset {path} animation clip {clip_index} channel {channel_index} targets node {node_index} primitive {primitive_index} with {actual} morph weights per sample, but the geometry has {expected} morph targets"
+            ),
             Self::UnsupportedRequiredExtension { path, extension } => write!(
                 formatter,
                 "asset {path} requires unsupported extension {extension}"
@@ -31,11 +82,25 @@ impl fmt::Display for AssetError {
                 path,
                 material_slot,
                 texture_index,
+                context,
                 help,
-            } => write!(
-                formatter,
-                "asset {path} references missing texture index {texture_index} in material slot {material_slot}: {help}"
-            ),
+            } => {
+                let material = match (context.material_index, context.material_name.as_deref()) {
+                    (Some(index), Some(name)) => format!("material {index} ({name:?})"),
+                    (Some(index), None) => format!("material {index}"),
+                    (None, Some(name)) => format!("material {name:?}"),
+                    (None, None) => "an unknown material".to_owned(),
+                };
+                let image_source = context.image_source.as_deref().map_or_else(
+                    || "unknown image source".to_owned(),
+                    |source| source.to_owned(),
+                );
+                write!(
+                    formatter,
+                    "asset {path} {material} references unresolved texture index {texture_index} in slot {material_slot} from {image_source}: {reason}. {help}",
+                    reason = context.reason,
+                )
+            }
             Self::UnsupportedTextureFormat { path, help } => write!(
                 formatter,
                 "texture {path} uses an unsupported format: {help}"

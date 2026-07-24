@@ -122,10 +122,12 @@ fn template_catalog_has_one_canonical_name_and_aliases_emit_migration_metadata()
     }
 
     let unknown = run(&["examples", "agent", "not-a-template"]);
-    assert_eq!(unknown.status.code(), Some(2));
+    assert_eq!(unknown.status.code(), Some(65));
     assert!(unknown.stdout.is_empty());
     let error: Value = serde_json::from_slice(&unknown.stderr).expect("error is JSON");
     assert_eq!(error["schema"], "scena.cli_error.v1");
+    assert_eq!(error["code"], "unknown_name");
+    assert_eq!(error["exit_class"], "input");
     assert!(error["message"].as_str().is_some_and(|message| {
         message.contains("scena examples agent list") && !message.contains("available templates:")
     }));

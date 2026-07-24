@@ -7,6 +7,13 @@ pub(crate) struct CliOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CliOutputFormat {
     round_floats: Option<u8>,
+    json_style: Option<CliJsonStyle>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CliJsonStyle {
+    Pretty,
+    Compact,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -16,23 +23,32 @@ pub(crate) struct CliBackendSelectionV1 {
     requested: scena::Backend,
     selected: Option<scena::Backend>,
     fallback_used: bool,
+    reason: Option<&'static str>,
+    remedy: Option<&'static str>,
 }
 
 #[cfg(feature = "inspection")]
 impl CliBackendSelectionV1 {
-    pub(crate) const fn new(gpu_flag: bool, selected: Option<scena::Backend>) -> Self {
+    pub(crate) fn new(gpu_flag: bool, selected: Option<scena::Backend>) -> Self {
         let requested = if gpu_flag {
             scena::Backend::HeadlessGpu
         } else {
             scena::Backend::Headless
         };
+        let fallback_used = matches!(
+            (requested, selected),
+            (scena::Backend::HeadlessGpu, Some(scena::Backend::Headless))
+        );
         Self {
             source: if gpu_flag { "cli_flag" } else { "default" },
             requested,
             selected,
-            fallback_used: matches!(
-                (requested, selected),
-                (scena::Backend::HeadlessGpu, Some(scena::Backend::Headless))
+            fallback_used,
+            reason: fallback_used.then_some(
+                "the requested headless GPU backend was unavailable, so the renderer selected the deterministic CPU headless backend",
+            ),
+            remedy: fallback_used.then_some(
+                "run `scena capabilities --gpu` to inspect adapter initialization, then install or configure a supported graphics driver",
             ),
         }
     }
@@ -125,9 +141,23 @@ pub(crate) fn parse_output_format_args(
 ) -> Result<(Vec<String>, CliOutputFormat), String> {
     let mut filtered = Vec::with_capacity(args.len());
     let mut round_floats = None;
+    let mut json_style = None;
     let mut index = 0;
     while index < args.len() {
-        if args[index] == "--round-floats" {
+        if matches!(args[index].as_str(), "--compact" | "--pretty") {
+            let next = if args[index] == "--compact" {
+                CliJsonStyle::Compact
+            } else {
+                CliJsonStyle::Pretty
+            };
+            if let Some(previous) = json_style
+                && previous != next
+            {
+                return Err("--compact and --pretty are mutually exclusive".to_owned());
+            }
+            json_style = Some(next);
+            index += 1;
+        } else if args[index] == "--round-floats" {
             let Some(value) = args.get(index + 1) else {
                 return Err("--round-floats requires a value".to_string());
             };
@@ -146,21 +176,54 @@ pub(crate) fn parse_output_format_args(
             index += 1;
         }
     }
-    Ok((filtered, CliOutputFormat { round_floats }))
+    Ok((
+        filtered,
+        CliOutputFormat {
+            round_floats,
+            json_style,
+        },
+    ))
+}
+
+pub(crate) fn requested_json_style(args: &[String]) -> CliJsonStyle {
+    let compact = args.iter().any(|arg| arg == "--compact");
+    let pretty = args.iter().any(|arg| arg == "--pretty");
+    if compact && !pretty {
+        CliJsonStyle::Compact
+    } else {
+        CliJsonStyle::Pretty
+    }
+}
+
+pub(crate) fn serialize_json<T: serde::Serialize>(
+    value: &T,
+    style: CliJsonStyle,
+) -> Result<String, serde_json::Error> {
+    match style {
+        CliJsonStyle::Pretty => serde_json::to_string_pretty(value),
+        CliJsonStyle::Compact => serde_json::to_string(value),
+    }
 }
 
 pub(crate) fn apply_output_format(
     outcome: &mut CliOutcome,
     output_format: CliOutputFormat,
 ) -> Result<(), String> {
-    let Some(digits) = output_format.round_floats else {
+    if output_format.round_floats.is_none() && output_format.json_style.is_none() {
         return Ok(());
-    };
-    let mut value = serde_json::from_str::<serde_json::Value>(&outcome.stdout)
-        .map_err(|error| format!("failed to apply --round-floats to JSON output: {error}"))?;
-    round_json_numbers(&mut value, digits);
-    outcome.stdout = serde_json::to_string_pretty(&value)
-        .map_err(|error| format!("failed to serialize rounded JSON output: {error}"))?;
+    }
+    let mut value =
+        serde_json::from_str::<serde_json::Value>(&outcome.stdout).map_err(|error| {
+            format!("JSON output formatting requires a JSON command result: {error}")
+        })?;
+    if let Some(digits) = output_format.round_floats {
+        round_json_numbers(&mut value, digits);
+    }
+    outcome.stdout = serialize_json(
+        &value,
+        output_format.json_style.unwrap_or(CliJsonStyle::Pretty),
+    )
+    .map_err(|error| format!("failed to serialize formatted JSON output: {error}"))?;
     Ok(())
 }
 
@@ -198,7 +261,49 @@ fn round_json_numbers(value: &mut serde_json::Value, digits: u8) {
 
 #[cfg(test)]
 mod tests {
-    use super::json_outcome;
+    use super::{CliJsonStyle, json_outcome, serialize_json};
+
+    #[test]
+    fn explicit_json_styles_match_byte_stable_goldens() {
+        let value = serde_json::json!({
+            "ok": true,
+            "schema": "test.a12.format_fixture",
+            "values": [1, 2, 3],
+        });
+        let compact = serialize_json(&value, CliJsonStyle::Compact).expect("compact serializes");
+        let pretty = serialize_json(&value, CliJsonStyle::Pretty).expect("pretty serializes");
+        assert_eq!(
+            compact,
+            include_str!("../../../tests/assets/cli-golden/a12_compact.json").trim_end()
+        );
+        assert_eq!(
+            pretty,
+            include_str!("../../../tests/assets/cli-golden/a12_pretty.json").trim_end()
+        );
+    }
+
+    #[cfg(feature = "inspection")]
+    #[test]
+    fn gpu_fallback_selection_is_actionable_machine_data() {
+        let value = serde_json::to_value(super::CliBackendSelectionV1::new(
+            true,
+            Some(scena::Backend::Headless),
+        ))
+        .expect("backend selection serializes");
+        assert_eq!(value["requested"], "headless_gpu");
+        assert_eq!(value["selected"], "headless");
+        assert_eq!(value["fallback_used"], true);
+        assert!(
+            value["reason"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+        assert!(
+            value["remedy"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+    }
 
     #[test]
     fn machine_json_round_trips_all_controls_and_unicode() {

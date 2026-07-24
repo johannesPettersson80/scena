@@ -1,6 +1,7 @@
 use crate::scene::recipe::SchemaFieldModelV1;
 use serde::{Deserialize, Serialize};
 
+mod agent_guide;
 mod agent_smoke;
 mod entries;
 mod fixtures;
@@ -8,6 +9,7 @@ mod reports;
 
 use entries::SchemaEntryRow;
 
+pub use agent_guide::{AGENT_GUIDE_SCHEMA_V1, AgentGuideV1, agent_guide_v1};
 pub use agent_smoke::{
     AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AGENT_TEMPLATE_CATALOG_SCHEMA_V1, AgentSmokeTemplateCommandV1,
     AgentSmokeTemplateFileV1, AgentSmokeTemplateV1, AgentTemplateCatalogEntryV1,

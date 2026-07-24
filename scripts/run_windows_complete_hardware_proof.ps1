@@ -137,6 +137,8 @@ Copy-Item -Path (Join-Path $bundleRoot "tests\assets\gltf\*") `
     -Destination $assetDir -Recurse -Force
 Copy-Item -Path (Join-Path $bundleRoot "tests\visual\references\*") `
     -Destination $visualReferenceDir -Recurse -Force
+Copy-Item -Path (Join-Path $bundleRoot "tests\*.rs") `
+    -Destination (Join-Path $ProofRoot "tests") -Force
 Copy-Item -Path (Join-Path $bundleRoot "scripts\*") `
     -Destination $scriptsDir -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $bundleRoot "src\browser_probe.rs") `
@@ -176,8 +178,12 @@ foreach ($relative in @(
     "pf01-pf02-native-surface",
     "fr06-semantic-aov",
     "m6-required-webgpu-pixel-parity",
+    "m8-real-asset",
     "c09-gpu-resource-lifecycle",
     "p01-shader-module-cache.json",
+    "q07-antialiasing-effect",
+    "q08-required-parity",
+    "q11-reference-stability",
     "windows-complete-hardware-proof"
 )) {
     Remove-Item -LiteralPath (Join-Path $gateRoot $relative) -Recurse -Force -ErrorAction SilentlyContinue
@@ -195,6 +201,14 @@ $nativeExe = Join-Path $binDir "scena-native-hardware-proof.exe"
 $nativeFr06Exe = Join-Path $binDir "scena-fr06-native-hardware-proof.exe"
 $q04LifecycleExe = Join-Path $binDir "scena-q04-gpu-resource-lifecycle.exe"
 $p01BenchmarkExe = Join-Path $binDir "scena-p01-shader-module-cache.exe"
+$m8WaterBottleExe = Join-Path $binDir "scena-m8-waterbottle-full-frame.exe"
+$q07AntialiasingExe = Join-Path $binDir "scena-q07-antialiasing-effect.exe"
+$q11ReferenceStabilityExe = Join-Path $binDir "scena-q11-reference-stability.exe"
+$q08TransmissionExe = Join-Path $binDir "scena-q08-transmission-parity.exe"
+$q08ClippingExe = Join-Path $binDir "scena-q08-clipping-parity.exe"
+$q08DynamicExe = Join-Path $binDir "scena-q08-dynamic-parity.exe"
+$q08PbrExe = Join-Path $binDir "scena-q08-pbr-parity.exe"
+$q08TextureBakeExe = Join-Path $binDir "scena-q08-texture-bake-parity.exe"
 $failure = $null
 $transcriptStarted = $false
 
@@ -260,6 +274,45 @@ try {
         & $p01BenchmarkExe --exact $p01BenchmarkTest --nocapture --test-threads=1
     }
 
+    $env:SCENA_REFERENCE_DIFF = "1"
+    $env:SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS = "1"
+    $m8WaterBottleTest = "m8_real_asset_waterbottle_gpu_headline"
+    $env:SCENA_HARDWARE_PROOF_COMMAND = ".\bin\scena-m8-waterbottle-full-frame.exe --exact $m8WaterBottleTest --nocapture"
+    Invoke-Checked "native WaterBottle full-frame reference and mirror-rejection proof" {
+        & $m8WaterBottleExe --exact $m8WaterBottleTest --nocapture
+    }
+
+    $env:SCENA_REQUIRE_AA_EFFECT_PROOF = "1"
+    $q07AntialiasingTest = "q07_required_native_antialiasing_modes_have_pixel_effect"
+    $env:SCENA_HARDWARE_PROOF_COMMAND = ".\bin\scena-q07-antialiasing-effect.exe --exact $q07AntialiasingTest --nocapture"
+    Invoke-Checked "native None/FXAA/MSAA pixel-effect proof" {
+        & $q07AntialiasingExe --exact $q07AntialiasingTest --nocapture
+    }
+
+    $q11ReferenceStabilityTest = "q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison"
+    $env:SCENA_HARDWARE_PROOF_COMMAND = ".\bin\scena-q11-reference-stability.exe --exact $q11ReferenceStabilityTest --nocapture"
+    Invoke-Checked "Windows CPU reference determinism and fixed-oracle stability" {
+        & $q11ReferenceStabilityExe --exact $q11ReferenceStabilityTest --nocapture
+    }
+
+    $env:SCENA_REQUIRE_GPU_PARITY = "1"
+    $q08ParityCommands = @(
+        @($q08TransmissionExe, "physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep"),
+        @($q08ClippingExe, "close_camera_near_clip_matches_cpu_and_gpu_rendered_output"),
+        @($q08DynamicExe, "dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports"),
+        @($q08DynamicExe, "z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion"),
+        @($q08PbrExe, "core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep"),
+        @($q08TextureBakeExe, "pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu")
+    )
+    foreach ($entry in $q08ParityCommands) {
+        $executable = $entry[0]
+        $testName = $entry[1]
+        $env:SCENA_HARDWARE_PROOF_COMMAND = "$executable --exact $testName --nocapture"
+        Invoke-Checked "required physical CPU/GPU parity: $testName" {
+            & $executable --exact $testName --nocapture
+        }
+    }
+
     Invoke-Checked "independent complete artifact validation" {
         & node .\tests\release\windows_complete_hardware_proof_validation.js $ProofRoot $summaryPath
     }
@@ -289,6 +342,14 @@ $executionStatus = if ($null -eq $failure) { "passed" } else { "failed" }
     native_fr06_executable_sha256 = (Get-FileHash -LiteralPath $nativeFr06Exe -Algorithm SHA256).Hash
     q04_lifecycle_executable_sha256 = (Get-FileHash -LiteralPath $q04LifecycleExe -Algorithm SHA256).Hash
     p01_benchmark_executable_sha256 = (Get-FileHash -LiteralPath $p01BenchmarkExe -Algorithm SHA256).Hash
+    m8_waterbottle_executable_sha256 = (Get-FileHash -LiteralPath $m8WaterBottleExe -Algorithm SHA256).Hash
+    q07_antialiasing_executable_sha256 = (Get-FileHash -LiteralPath $q07AntialiasingExe -Algorithm SHA256).Hash
+    q11_reference_stability_executable_sha256 = (Get-FileHash -LiteralPath $q11ReferenceStabilityExe -Algorithm SHA256).Hash
+    q08_transmission_executable_sha256 = (Get-FileHash -LiteralPath $q08TransmissionExe -Algorithm SHA256).Hash
+    q08_clipping_executable_sha256 = (Get-FileHash -LiteralPath $q08ClippingExe -Algorithm SHA256).Hash
+    q08_dynamic_executable_sha256 = (Get-FileHash -LiteralPath $q08DynamicExe -Algorithm SHA256).Hash
+    q08_pbr_executable_sha256 = (Get-FileHash -LiteralPath $q08PbrExe -Algorithm SHA256).Hash
+    q08_texture_bake_executable_sha256 = (Get-FileHash -LiteralPath $q08TextureBakeExe -Algorithm SHA256).Hash
     wasm_sha256 = (Get-FileHash -LiteralPath (Join-Path $pf01Package "scena_bg.wasm") -Algorithm SHA256).Hash
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
 
@@ -323,6 +384,11 @@ if ($null -ne $failure) {
     required_webgpu_pixel_parity = $true
     gpu_resource_lifecycle = $true
     shader_module_cache_p95 = $true
+    waterbottle_full_frame_reference = $true
+    waterbottle_horizontal_mirror_rejected = $true
+    antialiasing_pixel_effect = $true
+    reference_stability = $true
+    physical_cpu_gpu_parity = $true
     native_surface_resize_recovery = $true
     summary = $summaryPath
     archive = $archivePath

@@ -1,7 +1,8 @@
 use crate::app::prelude::*;
 use crate::app::tests_19::{
     assert_m5_provenance_mutations_rejected, stamp_stage_json_fixtures,
-    write_stage_waterbottle_result,
+    write_stage_q07_antialiasing_fixture, write_stage_q08_physical_parity_fixtures,
+    write_stage_q11_reference_stability_fixtures, write_stage_waterbottle_result,
 };
 
 pub(crate) const STAGE_TEST_COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -59,6 +60,9 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         [&[0x89, b'P', b'N', b'G'][..], &[1u8; 2048][..]].concat(),
     )
     .expect("waterbottle fixture");
+    write_stage_q07_antialiasing_fixture(&fixture_root);
+    write_stage_q08_physical_parity_fixtures(&fixture_root);
+    write_stage_q11_reference_stability_fixtures(&fixture_root);
     crate::app::tests_24::write_q01_cpu_proof_fixture(
         &fixture_root.join("release-linux-native-vulkan"),
         STAGE_TEST_COMMIT,
@@ -170,6 +174,11 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         &fixture_root.join("release-linux-native-vulkan"),
         STAGE_TEST_COMMIT,
     );
+    fs::copy(
+        &waterbottle,
+        fixture_root.join("release-macos-metal/m8-real-asset/waterbottle_diff.png"),
+    )
+    .expect("WaterBottle diff placeholder writes");
 
     let missing_waterbottle_result =
         stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
@@ -179,6 +188,120 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         "missing WaterBottle companion result must fail explicitly: {missing_waterbottle_result}",
     );
     write_stage_test_png(&waterbottle);
+    write_stage_waterbottle_result(&fixture_root, &waterbottle);
+
+    let q07_result = fixture_root.join("release-macos-metal/q07-antialiasing-effect/result.json");
+    let mut no_op_msaa: Value =
+        serde_json::from_str(&fs::read_to_string(&q07_result).expect("Q07 result fixture reads"))
+            .expect("Q07 result fixture parses");
+    no_op_msaa["modes"]["msaa4"]["metrics"] = no_op_msaa["baseline"]["metrics"].clone();
+    write_stage_test_json(&q07_result, &no_op_msaa);
+    let q07_no_op_error =
+        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
+            .expect_err("no-op MSAA must not satisfy release staging");
+    assert!(
+        q07_no_op_error.contains("RELEASE-ANTIALIASING-PROOF") && q07_no_op_error.contains("msaa4"),
+        "Q07 no-op MSAA must fail explicitly: {q07_no_op_error}",
+    );
+    write_stage_q07_antialiasing_fixture(&fixture_root);
+    write_stage_q08_physical_parity_fixtures(&fixture_root);
+
+    let q08_result = fixture_root.join(
+        "release-macos-metal/q08-required-parity/physical-glass-transmission-matches-cpu-and-gpu-across-volume-sweep.json",
+    );
+    let mut zero_assertions: Value =
+        serde_json::from_str(&fs::read_to_string(&q08_result).expect("Q08 result fixture reads"))
+            .expect("Q08 result fixture parses");
+    zero_assertions["assertions_executed"] = json!(0);
+    write_stage_test_json(&q08_result, &zero_assertions);
+    let q08_early_return_error =
+        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
+            .expect_err("zero-assertion Q08 parity must not satisfy release staging");
+    assert!(
+        q08_early_return_error.contains("RELEASE-PHYSICAL-PARITY")
+            && q08_early_return_error.contains("executed assertions"),
+        "Q08 zero-assertion result must fail explicitly: {q08_early_return_error}",
+    );
+    write_stage_q08_physical_parity_fixtures(&fixture_root);
+
+    let q01_result =
+        fixture_root.join("release-linux-native-vulkan/q01-waterbottle-cpu/result.json");
+    let mut post_hoc_camera: Value = serde_json::from_str(
+        &fs::read_to_string(&q01_result).expect("Q01 result reads for Q10 mutation"),
+    )
+    .expect("Q01 result parses for Q10 mutation");
+    let wrong_camera = post_hoc_camera["mutations"]
+        .as_array_mut()
+        .expect("Q01 mutations array")
+        .iter_mut()
+        .find(|mutation| mutation["name"] == "wrong_camera")
+        .expect("Q01 wrong-camera mutation");
+    wrong_camera["mutation_kind"] = json!("post-hoc-pixel");
+    wrong_camera["render_count"] = json!(0);
+    write_stage_test_json(&q01_result, &post_hoc_camera);
+    let rendered_mutation_error =
+        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
+            .expect_err("post-hoc wrong-camera output must not satisfy release staging");
+    assert!(
+        rendered_mutation_error.contains("wrong_camera")
+            && rendered_mutation_error.contains("rendered-scene"),
+        "Q10 post-hoc camera mutation must fail explicitly: {rendered_mutation_error}",
+    );
+    crate::app::tests_24::write_q01_cpu_proof_fixture(
+        &fixture_root.join("release-linux-native-vulkan"),
+        STAGE_TEST_COMMIT,
+    );
+
+    let q11_windows_result =
+        fixture_root.join("release-windows-dx12/q11-reference-stability/windows-x86_64.json");
+    let mut non_deterministic: Value = serde_json::from_str(
+        &fs::read_to_string(&q11_windows_result).expect("Q11 Windows result reads"),
+    )
+    .expect("Q11 Windows result parses");
+    non_deterministic["byte_identical"] = json!(false);
+    write_stage_test_json(&q11_windows_result, &non_deterministic);
+    let q11_error =
+        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
+            .expect_err("non-deterministic Q11 result must not satisfy release staging");
+    assert!(
+        q11_error.contains("RELEASE-Q11-REFERENCE-STABILITY")
+            && q11_error.contains("byte-identical"),
+        "Q11 non-deterministic result must fail explicitly: {q11_error}",
+    );
+    write_stage_q11_reference_stability_fixtures(&fixture_root);
+
+    let waterbottle_result =
+        fixture_root.join("release-macos-metal/m8-real-asset/waterbottle_gpu_result.json");
+    let mut unknown_adapter_profile: Value = serde_json::from_str(
+        &fs::read_to_string(&waterbottle_result).expect("WaterBottle result reads"),
+    )
+    .expect("WaterBottle result parses");
+    unknown_adapter_profile["adapter_expectation"]["profile_id"] =
+        json!("unreviewed-display-name-profile");
+    write_stage_test_json(&waterbottle_result, &unknown_adapter_profile);
+    let adapter_profile_error =
+        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
+            .expect_err("an unknown adapter display-name profile must not satisfy staging");
+    assert!(
+        adapter_profile_error.contains("adapter expectation")
+            || adapter_profile_error.contains("structured profile"),
+        "unknown WaterBottle adapter profile must fail explicitly: {adapter_profile_error}",
+    );
+    write_stage_waterbottle_result(&fixture_root, &waterbottle);
+
+    let mut sparse_only_result: Value = serde_json::from_str(
+        &fs::read_to_string(&waterbottle_result).expect("WaterBottle result reads"),
+    )
+    .expect("WaterBottle result parses");
+    sparse_only_result["metrics"]["reference_diff"] = json!("not-run");
+    write_stage_test_json(&waterbottle_result, &sparse_only_result);
+    let sparse_only_error =
+        stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)
+            .expect_err("sparse WaterBottle samples must not satisfy release evidence");
+    assert!(
+        sparse_only_error.contains("full-frame") || sparse_only_error.contains("reference-diff"),
+        "sparse-only WaterBottle proof must fail explicitly: {sparse_only_error}",
+    );
     write_stage_waterbottle_result(&fixture_root, &waterbottle);
 
     stage_release_artifacts_for_commit(&fixture_root, &output_root, STAGE_TEST_COMMIT)

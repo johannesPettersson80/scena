@@ -130,6 +130,17 @@ single-sample overlay depth. An uncaptured native wgpu validation message is
 written to stderr before the structured fault is latched, so automatically
 uploaded proof logs retain the driver-level cause.
 
+Attached managed auto exposure is deliberately outside synchronous capture.
+Each eligible native surface frame can add one fixed 16x16 copy into a two-slot
+meter; mapping and polling are nonblocking, and a completed sample changes the
+exposure of a later frame. This makes first-frame latency explicit through
+`AutoExposureStatus::Pending` and steady state explicit through
+`AutoExposureStatus::Converged`, while preserving one scene-color pass per
+presented frame. On-change render loops still poll a pending meter before their
+skip decision, so convergence cannot stall merely because scene state stopped
+changing. Deterministic headless rendering instead meters and applies within
+the same render call, which preserves capture/reference sequence semantics.
+
 ## Why this design matters
 
 The explicit lifecycle keeps frame rendering predictable:
@@ -172,6 +183,12 @@ with viewport/DPR, backend capabilities, and pixel statistics into
 `scena.capture.v1`. If the scene or active camera changes after render and
 before capture, capture fails closed with `CaptureError::StaleRender` instead
 of binding new metadata to old pixels.
+The descriptor's `frame` block also binds target/output configuration
+revisions and the readback completion timestamp. Renderer-owned capture paths
+compare supplied bytes exactly with the retained completed readback, so an old
+same-size frame cannot be certified with newer state. Caller-supplied
+diagnostic pixels use `capture_unverified_rgba8_from_pixels` and are always
+marked `release_evidence: false`.
 Use `CaptureRgba8::to_png_bytes`, `Renderer::capture_png_bytes`,
 SceneHost `capture_png_bytes`, browser `capturePng()` for synchronous WebGL2,
 or `await capturePngAsync()` for WebGPU when the proof artifact should be PNG

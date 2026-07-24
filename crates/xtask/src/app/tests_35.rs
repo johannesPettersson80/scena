@@ -6,6 +6,7 @@ fn fr01_fr04_contract_discovery_doctor_rejects_missing_emits_registry() {
     let fixture_root = root.join("target/xtask-doctor-regressions/fr01-fr04-discovery");
     let _ = fs::remove_dir_all(&fixture_root);
     for relative in [
+        "Cargo.toml",
         "src/vocabulary.rs",
         "src/scene/recipe/build.rs",
         "src/scene/recipe/build/report.rs",
@@ -13,9 +14,19 @@ fn fr01_fr04_contract_discovery_doctor_rejects_missing_emits_registry() {
         "src/scene/recipe/field_model.rs",
         "src/scene/recipe/validation/suggestions.rs",
         "src/assets.rs",
+        "src/assets/memory_textures.rs",
+        "src/assets/texture.rs",
+        "src/assets/texture/memory.rs",
+        "src/assets/load/warnings.rs",
         "src/assets/fetch.rs",
         "src/assets/environment_loading.rs",
+        "src/diagnostics.rs",
+        "src/prelude.rs",
+        "src/scene/view.rs",
         "src/bin/scena/help.rs",
+        "src/bin/scena/output.rs",
+        "src/bin/scena/cli_error.rs",
+        "src/diagnostics/help.rs",
         "src/bin/scena.rs",
         "src/bin/scena/recipe.rs",
         "src/bin/scena/place.rs",
@@ -29,8 +40,15 @@ fn fr01_fr04_contract_discovery_doctor_rejects_missing_emits_registry() {
         "src/schema_catalog/entries.rs",
         "src/schema_catalog/reports.rs",
         "docs/schema-contracts.md",
+        "tests/a01_cli_error_taxonomy.rs",
+        "tests/a02_recipe_field_model.rs",
         "tests/scena_cli_schema.rs",
         "tests/scena_cli_recipe.rs",
+        "tests/a11_authored_node_placement.rs",
+        "tests/a12_json_formatting.rs",
+        "tests/a13_error_remedies.rs",
+        "tests/a14_in_memory_textures.rs",
+        "tests/a15_rust_ergonomics.rs",
         "tests/fr02_recipe_build_cli.rs",
         "tests/fr04_cli_schema_matrix.rs",
     ] {
@@ -60,6 +78,38 @@ fn fr01_fr04_contract_discovery_doctor_rejects_missing_emits_registry() {
     );
 
     fs::copy(root.join("src/bin/scena/help.rs"), &help).expect("help fixture restores");
+    let source = fs::read_to_string(&help)
+        .expect("help fixture reads")
+        .replace("failure_exit_classes", "removed_exit_class_inventory");
+    fs::write(&help, source).expect("exit-class mutation writes");
+    findings.clear();
+    check_fr01_fr04_contract_discovery(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR01-FR04-CONTRACT-DISCOVERY"
+                && finding.message.contains("failure_exit_classes")
+        }),
+        "removing the per-command exit taxonomy must fail: {findings:?}"
+    );
+
+    fs::copy(root.join("src/bin/scena/help.rs"), &help).expect("help fixture restores");
+    let field_model = fixture_root.join("src/scene/recipe/field_model.rs");
+    let source = fs::read_to_string(&field_model)
+        .expect("field-model fixture reads")
+        .replace("collect_fields", "removed_schema_field_collection");
+    fs::write(&field_model, source).expect("field-model parity mutation writes");
+    findings.clear();
+    check_fr01_fr04_contract_discovery(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR01-FR04-CONTRACT-DISCOVERY"
+                && finding.message.contains("collect_fields")
+        }),
+        "removing schema-derived field collection must fail: {findings:?}"
+    );
+
+    fs::copy(root.join("src/scene/recipe/field_model.rs"), &field_model)
+        .expect("field-model fixture restores");
     let field_model = fixture_root.join("src/scene/recipe/field_model.rs");
     let source = fs::read_to_string(&field_model).expect("field-model fixture reads");
     let mutated = source.replace("FIELD_MODEL_SCHEMA_V1", "REMOVED_SCHEMA_V1");
@@ -79,6 +129,93 @@ fn fr01_fr04_contract_discovery_doctor_rejects_missing_emits_registry() {
     );
     fs::copy(root.join("src/scene/recipe/field_model.rs"), &field_model)
         .expect("field-model fixture restores");
+
+    let place = fixture_root.join("src/bin/scena/place.rs");
+    let source = fs::read_to_string(&place).expect("place fixture reads");
+    let mutated = source.replace("success_for_target", "removed_typed_target_success");
+    assert_ne!(source, mutated, "A11 target mutation must alter source");
+    fs::write(&place, mutated).expect("A11 target mutation writes");
+    findings.clear();
+    check_fr01_fr04_contract_discovery(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR01-FR04-CONTRACT-DISCOVERY"
+                && finding.message.contains("success_for_target")
+        }),
+        "removing typed node-placement output must fail: {findings:?}"
+    );
+    fs::copy(root.join("src/bin/scena/place.rs"), &place).expect("place fixture restores");
+
+    let output = fixture_root.join("src/bin/scena/output.rs");
+    let source = fs::read_to_string(&output).expect("output fixture reads");
+    let mutated = source.replace("CliJsonStyle::Compact", "removed_compact_style");
+    assert_ne!(source, mutated, "A12 style mutation must alter source");
+    fs::write(&output, mutated).expect("A12 style mutation writes");
+    findings.clear();
+    check_fr01_fr04_contract_discovery(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR01-FR04-CONTRACT-DISCOVERY"
+                && finding.message.contains("CliJsonStyle::Compact")
+        }),
+        "removing compact JSON formatting must fail: {findings:?}"
+    );
+    fs::copy(root.join("src/bin/scena/output.rs"), &output).expect("output fixture restores");
+
+    let remedies = fixture_root.join("src/diagnostics/help.rs");
+    let source = fs::read_to_string(&remedies).expect("remedy fixture reads");
+    let mutated = source.replace("impl InstantiateError", "removed_instantiate_help");
+    assert_ne!(source, mutated, "A13 remedy mutation must alter source");
+    fs::write(&remedies, mutated).expect("A13 remedy mutation writes");
+    findings.clear();
+    check_fr01_fr04_contract_discovery(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR01-FR04-CONTRACT-DISCOVERY"
+                && finding.message.contains("impl InstantiateError")
+        }),
+        "removing instantiate remedies must fail: {findings:?}"
+    );
+    fs::copy(root.join("src/diagnostics/help.rs"), &remedies).expect("remedy fixture restores");
+
+    let textures = fixture_root.join("src/assets/texture/memory.rs");
+    let source = fs::read_to_string(&textures).expect("texture fixture reads");
+    let mutated = source.replace(
+        "pub struct TextureMemoryDesc",
+        "removed_memory_texture_desc",
+    );
+    assert_ne!(
+        source, mutated,
+        "A14 texture API mutation must alter source"
+    );
+    fs::write(&textures, mutated).expect("A14 texture mutation writes");
+    findings.clear();
+    check_fr01_fr04_contract_discovery(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR01-FR04-CONTRACT-DISCOVERY"
+                && finding.message.contains("TextureMemoryDesc")
+        }),
+        "removing checked in-memory textures must fail: {findings:?}"
+    );
+    fs::copy(root.join("src/assets/texture/memory.rs"), &textures)
+        .expect("texture fixture restores");
+
+    let prelude = fixture_root.join("src/prelude.rs");
+    let source = fs::read_to_string(&prelude).expect("prelude fixture reads");
+    let mutated = source.replace("FramingOptions", "removed_framing_options");
+    assert_ne!(source, mutated, "A15 prelude mutation must alter source");
+    fs::write(&prelude, mutated).expect("A15 prelude mutation writes");
+    findings.clear();
+    check_fr01_fr04_contract_discovery(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR01-FR04-CONTRACT-DISCOVERY"
+                && finding.message.contains("FramingOptions")
+        }),
+        "removing curated prelude framing must fail: {findings:?}"
+    );
+    fs::copy(root.join("src/prelude.rs"), &prelude).expect("prelude fixture restores");
 
     let recipe = fixture_root.join("src/scene_host/recipe/manifest.rs");
     let source = fs::read_to_string(&recipe).expect("recipe fixture reads");

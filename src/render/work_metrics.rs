@@ -69,8 +69,9 @@ pub(super) struct PrepareTelemetry {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RenderReadbackMode {
-    /// Headless GPU rendering captures pixels; attached native/browser
-    /// surfaces present without readback unless managed auto exposure needs it.
+    /// Headless GPU rendering captures pixels. Attached native/browser
+    /// surfaces present without a synchronous full-frame readback; native
+    /// managed auto exposure uses a separate bounded asynchronous meter.
     #[default]
     Automatic,
     /// Submit/present without a texture-to-buffer copy, map, or blocking wait.
@@ -92,11 +93,17 @@ pub struct RenderWorkMetrics {
     pub blocking_polls: u64,
     pub blocking_waits: u64,
     pub cpu_frame_copy_bytes: u64,
+    /// Bounded asynchronous exposure-meter copies submitted with the frame.
+    pub auto_exposure_meter_submissions: u64,
+    /// Individual surface pixels copied into the bounded exposure meter.
+    pub auto_exposure_meter_samples: u64,
     pub gpu_buffer_creations: u64,
     pub gpu_texture_creations: u64,
     pub gpu_pipeline_creations: u64,
     pub gpu_bind_group_creations: u64,
     pub gpu_shader_module_creations: u64,
+    /// Adapter format-feature cache misses observed during this render.
+    pub gpu_format_feature_probes: u64,
     /// Native calls that encode the complete scene-color pass family.
     pub native_scene_color_passes: u64,
     pub gpu_queue_submissions: u64,
@@ -135,5 +142,11 @@ impl RenderWorkMetrics {
         self.cpu_frame_copy_bytes = self
             .cpu_frame_copy_bytes
             .saturating_add(result.cpu_frame_copy_bytes);
+        self.auto_exposure_meter_submissions = self
+            .auto_exposure_meter_submissions
+            .saturating_add(result.auto_exposure_meter_submissions);
+        self.auto_exposure_meter_samples = self
+            .auto_exposure_meter_samples
+            .saturating_add(result.auto_exposure_meter_samples);
     }
 }

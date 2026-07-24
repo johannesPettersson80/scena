@@ -1,7 +1,11 @@
 #![cfg(target_arch = "wasm32")]
 
+#[cfg(feature = "browser-probe")]
 use wasm_bindgen::JsCast;
-use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
+#[cfg(feature = "browser-probe")]
+use wasm_bindgen_test::wasm_bindgen_test;
+use wasm_bindgen_test::wasm_bindgen_test_configure;
+#[cfg(feature = "browser-probe")]
 use web_sys::HtmlCanvasElement;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -44,6 +48,7 @@ async fn m6_cpu_webgpu_parity_uses_the_headline_renderer_readback() {
     );
 }
 
+#[cfg(feature = "browser-probe")]
 fn browser_canvas(width: u32, height: u32) -> HtmlCanvasElement {
     let window = web_sys::window().expect("browser window exists");
     let document = window.document().expect("browser document exists");

@@ -8,6 +8,8 @@ fn c12_doctor_rejects_a_second_recoverable_surface_retry() {
     for relative in [
         "src/render/gpu/surface_frame.rs",
         "src/render/gpu/draw.rs",
+        "src/render/gpu/draw/native.rs",
+        "src/render/gpu/draw/plans.rs",
         "src/render/gpu/draw_surface.rs",
         "src/render/gpu/draw_surface_support.rs",
         "src/render/frame.rs",
@@ -64,6 +66,8 @@ fn c12_doctor_rejects_msaa_depth_mismatch_and_missing_native_fault_detail() {
     for relative in [
         "src/render/gpu/surface_frame.rs",
         "src/render/gpu/draw.rs",
+        "src/render/gpu/draw/native.rs",
+        "src/render/gpu/draw/plans.rs",
         "src/render/gpu/draw_surface.rs",
         "src/render/gpu/draw_surface_support.rs",
         "src/render/frame.rs",
@@ -90,7 +94,7 @@ fn c12_doctor_rejects_msaa_depth_mismatch_and_missing_native_fault_detail() {
     check_full_review_surface_acquisition_contracts(&fixture_root, &mut findings);
     assert_eq!(findings, Vec::new());
 
-    let draw = fixture_root.join("src/render/gpu/draw.rs");
+    let draw = fixture_root.join("src/render/gpu/draw/native.rs");
     let source = fs::read_to_string(&draw).expect("C12 native draw source reads");
     let mutated = source.replace(
         "depth_view: surface_scene_depth_view,",

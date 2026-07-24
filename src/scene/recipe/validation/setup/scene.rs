@@ -54,7 +54,7 @@ fn validate_scene_preset(value: Option<&Value>, diagnostics: &mut Vec<SceneRecip
     super::validate_enum(
         "$.scene.preset",
         value,
-        &["product_studio", "cad_studio", "industrial_studio"],
+        crate::scene::recipe::field_model::SCENE_PRESETS,
         "invalid_scene_preset",
         diagnostics,
     );

@@ -7,8 +7,20 @@ use super::recipe::SceneRecipeTransformV1;
 use super::view_math::transform_aabb;
 use super::{Transform, Vec3};
 
+mod results;
+mod serialization;
+use serialization::{deserialize_transform_option, serialize_transform_option};
+
 pub const SCENE_PLACEMENT_RESULT_SCHEMA_V1: &str = "scena.placement_result.v1";
 pub const SCENE_RECIPE_PATCH_SCHEMA_V1: &str = "scena.recipe_patch.v1";
+pub const PLACEMENT_VERBS: &[&str] = &[
+    "center",
+    "ground",
+    "fit_to_size",
+    "look_at",
+    "align_to_anchor",
+    "place_on",
+];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScenePlacementResultV1 {
@@ -16,6 +28,8 @@ pub struct ScenePlacementResultV1 {
     pub ok: bool,
     pub verb: String,
     pub import_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<ScenePlacementTargetV1>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -33,6 +47,8 @@ pub struct SceneRecipePatchResultV1 {
     pub source_path: String,
     pub source_sha256: String,
     pub import_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<ScenePlacementTargetV1>,
     pub verb: String,
     #[serde(
         default,
@@ -76,6 +92,29 @@ pub struct SceneRecipeSemanticChangeV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ScenePlacementTargetV1 {
+    Import { id: String },
+    Node { id: String },
+}
+
+impl ScenePlacementTargetV1 {
+    pub fn import(id: impl Into<String>) -> Self {
+        Self::Import { id: id.into() }
+    }
+
+    pub fn node(id: impl Into<String>) -> Self {
+        Self::Node { id: id.into() }
+    }
+
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Import { id } | Self::Node { id } => id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScenePlacementDiagnosticV1 {
     pub code: String,
     pub severity: String,
@@ -84,6 +123,8 @@ pub struct ScenePlacementDiagnosticV1 {
     pub help: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggestion: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
     #[serde(default)]
     pub auto_fixable: bool,
 }
@@ -94,11 +135,13 @@ impl ScenePlacementResultV1 {
         verb: impl Into<String>,
         transform: Transform,
     ) -> Self {
+        let import_id = import_id.into();
         Self {
             schema: SCENE_PLACEMENT_RESULT_SCHEMA_V1.to_owned(),
             ok: true,
             verb: verb.into(),
-            import_id: import_id.into(),
+            target: Some(ScenePlacementTargetV1::import(import_id.clone())),
+            import_id,
             transform: Some(round_transform(transform)),
             diagnostics: Vec::new(),
         }
@@ -109,18 +152,91 @@ impl ScenePlacementResultV1 {
         verb: impl Into<String>,
         diagnostic: ScenePlacementDiagnosticV1,
     ) -> Self {
+        let import_id = import_id.into();
         Self {
             schema: SCENE_PLACEMENT_RESULT_SCHEMA_V1.to_owned(),
             ok: false,
             verb: verb.into(),
-            import_id: import_id.into(),
+            target: Some(ScenePlacementTargetV1::import(import_id.clone())),
+            import_id,
             transform: None,
             diagnostics: vec![diagnostic],
         }
     }
+
+    pub fn success_for_target(
+        target: ScenePlacementTargetV1,
+        verb: impl Into<String>,
+        transform: Transform,
+    ) -> Self {
+        let mut result = Self::success(target.id(), verb, transform);
+        result.target = Some(target);
+        result
+    }
+
+    pub fn failure_for_target(
+        target: ScenePlacementTargetV1,
+        verb: impl Into<String>,
+        diagnostic: ScenePlacementDiagnosticV1,
+    ) -> Self {
+        let mut result = Self::failure(target.id(), verb, diagnostic);
+        result.target = Some(target);
+        result
+    }
 }
 
 impl SceneRecipePatchResultV1 {
+    pub fn validate_schema(&self) -> Result<(), String> {
+        if self.schema != SCENE_RECIPE_PATCH_SCHEMA_V1 {
+            return Err(format!(
+                "recipe patch schema must be '{SCENE_RECIPE_PATCH_SCHEMA_V1}', got '{}'",
+                self.schema
+            ));
+        }
+        if self.source_sha256.len() != 64
+            || !self
+                .source_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(
+                "recipe patch source_sha256 must be a 64-character hexadecimal digest".to_owned(),
+            );
+        }
+        if !PLACEMENT_VERBS.contains(&self.verb.as_str()) {
+            return Err(format!(
+                "recipe patch verb must be one of {}, got '{}'",
+                PLACEMENT_VERBS.join(", "),
+                self.verb
+            ));
+        }
+        if self.ok {
+            if self.transform.is_none()
+                || self.updated_recipe.is_none()
+                || self.semantic_changes.is_empty()
+                || !self.diagnostics.is_empty()
+            {
+                return Err("successful recipe patch requires a transform, updated_recipe, semantic change, and no diagnostics".to_owned());
+            }
+            let report = super::recipe::validate_scene_recipe_value(
+                self.updated_recipe
+                    .clone()
+                    .expect("successful patch checked updated_recipe"),
+            );
+            if !report.ok {
+                let detail = report
+                    .diagnostics
+                    .first()
+                    .map(|diagnostic| diagnostic.message.as_str())
+                    .unwrap_or("unknown recipe validation failure");
+                return Err(format!("recipe patch updated_recipe is invalid: {detail}"));
+            }
+        } else if self.diagnostics.is_empty() {
+            return Err("failed recipe patch requires at least one diagnostic".to_owned());
+        }
+        Ok(())
+    }
+
     pub fn success(input: SceneRecipePatchSuccessInputV1) -> Self {
         let SceneRecipePatchSuccessInputV1 {
             source_path,
@@ -137,6 +253,7 @@ impl SceneRecipePatchResultV1 {
             ok: true,
             source_path,
             source_sha256,
+            target: Some(ScenePlacementTargetV1::import(import_id.clone())),
             import_id,
             verb,
             previous_transform,
@@ -155,12 +272,14 @@ impl SceneRecipePatchResultV1 {
         verb: impl Into<String>,
         diagnostic: ScenePlacementDiagnosticV1,
     ) -> Self {
+        let import_id = import_id.into();
         Self {
             schema: SCENE_RECIPE_PATCH_SCHEMA_V1.to_owned(),
             ok: false,
             source_path: source_path.into(),
             source_sha256: source_sha256.into(),
-            import_id: import_id.into(),
+            target: Some(ScenePlacementTargetV1::import(import_id.clone())),
+            import_id,
             verb: verb.into(),
             previous_transform: None,
             transform: None,
@@ -170,42 +289,26 @@ impl SceneRecipePatchResultV1 {
             diagnostics: vec![diagnostic],
         }
     }
-}
 
-impl SceneRecipeSemanticChangeV1 {
-    pub fn transform(path: impl Into<String>, before: Option<Transform>, after: Transform) -> Self {
-        Self {
-            path: path.into(),
-            operation: "replace".to_owned(),
-            before: serde_json::to_value(before.map(stable_transform))
-                .expect("stable transform serialization is infallible"),
-            after: serde_json::to_value(stable_transform(after))
-                .expect("stable transform serialization is infallible"),
-        }
-    }
-}
-
-impl ScenePlacementDiagnosticV1 {
-    pub fn new(
-        code: impl Into<String>,
-        path: impl Into<String>,
-        message: impl Into<String>,
-        help: impl Into<String>,
+    pub fn success_for_target(
+        input: SceneRecipePatchSuccessInputV1,
+        target: ScenePlacementTargetV1,
     ) -> Self {
-        Self {
-            code: code.into(),
-            severity: "error".to_owned(),
-            path: path.into(),
-            message: message.into(),
-            help: help.into(),
-            suggestion: None,
-            auto_fixable: false,
-        }
+        let mut result = Self::success(input);
+        result.target = Some(target);
+        result
     }
 
-    pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
-        self.suggestion = Some(suggestion.into());
-        self
+    pub fn failure_for_target(
+        source_path: impl Into<String>,
+        source_sha256: impl Into<String>,
+        target: ScenePlacementTargetV1,
+        verb: impl Into<String>,
+        diagnostic: ScenePlacementDiagnosticV1,
+    ) -> Self {
+        let mut result = Self::failure(source_path, source_sha256, target.id(), verb, diagnostic);
+        result.target = Some(target);
+        result
     }
 }
 
@@ -428,74 +531,4 @@ fn round3(value: f32) -> f64 {
 
 fn round3_f32(value: f32) -> f32 {
     round3(value) as f32
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(untagged)]
-enum StableTransformCompatibilityV1 {
-    Canonical(SceneRecipeTransformV1),
-    Legacy(LegacyStableTransformV1),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LegacyStableTransformV1 {
-    translation: [f64; 3],
-    rotation: [f64; 4],
-    scale: [f64; 3],
-}
-
-impl From<LegacyStableTransformV1> for SceneRecipeTransformV1 {
-    fn from(transform: LegacyStableTransformV1) -> Self {
-        Self::Raw {
-            translation: transform.translation,
-            rotation: transform.rotation,
-            scale: transform.scale,
-        }
-    }
-}
-
-fn stable_transform(transform: Transform) -> SceneRecipeTransformV1 {
-    SceneRecipeTransformV1::Raw {
-        translation: [
-            round3(transform.translation.x),
-            round3(transform.translation.y),
-            round3(transform.translation.z),
-        ],
-        rotation: [
-            round3(transform.rotation.x),
-            round3(transform.rotation.y),
-            round3(transform.rotation.z),
-            round3(transform.rotation.w),
-        ],
-        scale: [
-            round3(transform.scale.x),
-            round3(transform.scale.y),
-            round3(transform.scale.z),
-        ],
-    }
-}
-
-fn serialize_transform_option<S>(
-    transform: &Option<Transform>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    transform.map(stable_transform).serialize(serializer)
-}
-
-fn deserialize_transform_option<'de, D>(deserializer: D) -> Result<Option<Transform>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let transform = Option::<StableTransformCompatibilityV1>::deserialize(deserializer)?;
-    transform
-        .map(|transform| match transform {
-            StableTransformCompatibilityV1::Canonical(transform) => transform,
-            StableTransformCompatibilityV1::Legacy(transform) => transform.into(),
-        })
-        .map(|transform| Transform::try_from(&transform).map_err(D::Error::custom))
-        .transpose()
 }

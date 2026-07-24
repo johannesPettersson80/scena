@@ -12,10 +12,10 @@ use super::material_support::reject_unsupported_volume_texture_slots;
 use super::materials::{create_material_bind_group_layout, create_material_resources};
 use super::output::{create_output_bind_group_layout, create_output_uniform_buffer};
 use super::pipeline::GPU_COLOR_FORMAT;
-use super::pipeline::create_unlit_pipeline_set;
 use super::prepare_resources_support::{
     build_semantic_attribution, create_geometry_buffers, validate_sample_count,
 };
+mod pipelines;
 use super::resource_encoding::{
     encode_draw_resources, encode_retained_vertices, retained_draw_uniform_capacity,
 };
@@ -30,6 +30,7 @@ use crate::render::prepare::{
     PreparedInstanceSet, PreparedLabelAtlas, PreparedPrimitive, PreparedStrokeSegment,
     TiledLightAssignment,
 };
+use pipelines::create_pipeline_resources;
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
@@ -202,54 +203,32 @@ impl GpuDeviceState {
             lighting_stats.directional_shadow_map_resolution,
             environment_lighting,
         );
-        let offscreen_pipelines = create_unlit_pipeline_set(
+        let pipeline_resources = create_pipeline_resources(
             &self.device,
+            self.surface.as_ref().map(|surface| surface.config.format),
+            output_plan,
+            sample_count,
             &triangle_shader,
-            GPU_COLOR_FORMAT,
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
             depth_compare,
-            1,
+            &shadow_caster.view,
+            &shadow_sampler,
+            &environment_cubemap,
+            &environment_sampler,
+            &transmission.view,
+            &transmission.placeholder_view,
+            &transmission.sampler,
+            &light_assignment,
         );
-        let offscreen_msaa4_pipelines = create_unlit_pipeline_set(
-            &self.device,
-            &triangle_shader,
-            GPU_COLOR_FORMAT,
-            &output_bind_group_layout,
-            &material_bind_group_layout,
-            &draw_bind_group_layout,
-            depth_compare,
-            4,
-        );
-        let offscreen_msaa8_pipelines = (sample_count == 8).then(|| {
-            create_unlit_pipeline_set(
-                &self.device,
-                &triangle_shader,
-                GPU_COLOR_FORMAT,
-                &output_bind_group_layout,
-                &material_bind_group_layout,
-                &draw_bind_group_layout,
-                depth_compare,
-                8,
-            )
-        });
-        let surface_pipeline = self
-            .surface
-            .as_ref()
-            .filter(|_| !output_plan.post_enabled())
-            .map(|surface| {
-                create_unlit_pipeline_set(
-                    &self.device,
-                    &triangle_shader,
-                    surface.config.format,
-                    &output_bind_group_layout,
-                    &material_bind_group_layout,
-                    &draw_bind_group_layout,
-                    depth_compare,
-                    sample_count,
-                )
-            });
+        let surface_output_uniform = pipeline_resources.surface_output_uniform;
+        let surface_output_bind_group = pipeline_resources.surface_output_bind_group;
+        let surface_opaque_output_bind_group = pipeline_resources.surface_opaque_output_bind_group;
+        let offscreen_pipelines = pipeline_resources.offscreen_pipelines;
+        let offscreen_msaa4_pipelines = pipeline_resources.offscreen_msaa4_pipelines;
+        let offscreen_msaa8_pipelines = pipeline_resources.offscreen_msaa8_pipelines;
+        let surface_pipeline = pipeline_resources.surface_pipeline;
         let strokes = (!retained_strokes.is_empty()).then(|| {
             super::strokes::create_resources(
                 &self.device,
@@ -371,13 +350,13 @@ impl GpuDeviceState {
         });
         let texture_bytes = GpuResourceStats::target_bytes(target, 4, 1);
         let mut stats = GpuResourceStats {
-            buffers: 6,
+            buffers: 6 + u64::from(surface_output_uniform.is_some()),
             textures: 1,
             render_targets: 1,
             pipelines: 4
                 + u64::from(offscreen_msaa8_pipelines.is_some()) * 2
                 + u64::from(surface_pipeline.is_some()) * 2,
-            bind_groups: 1,
+            bind_groups: 1 + u64::from(surface_output_uniform.is_some()) * 2,
             shader_modules: 1,
             shader_module_creations: u64::from(!triangle_shader_cache_hit),
             approximate_gpu_memory_bytes: vertex_buffer_size
@@ -388,6 +367,10 @@ impl GpuDeviceState {
                         .saturating_mul(2),
                 )
                 .saturating_add(output::OUTPUT_UNIFORM_BYTE_LEN)
+                .saturating_add(
+                    u64::from(surface_output_uniform.is_some())
+                        .saturating_mul(output::OUTPUT_UNIFORM_BYTE_LEN),
+                )
                 .saturating_add(
                     output::DRAW_UNIFORM_ENTRY_STRIDE
                         .saturating_mul((draw_uniform_capacity as u64).max(1)),
@@ -456,6 +439,9 @@ impl GpuDeviceState {
             output_uniform,
             output_bind_group,
             opaque_output_bind_group,
+            surface_output_uniform,
+            surface_output_bind_group,
+            surface_opaque_output_bind_group,
             light_uniform,
             light_assignment,
             light_from_world,

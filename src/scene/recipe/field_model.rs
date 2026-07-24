@@ -1,7 +1,12 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::SCENE_RECIPE_SCHEMA_V1;
+
+mod schema_generation;
+use schema_generation::{apply_cross_field_metadata, collect_fields, field_owner};
 
 pub const FIELD_MODEL_SCHEMA_V1: &str = "scena.field_model.v1";
 
@@ -46,7 +51,7 @@ pub(super) const IMPORT_FIELDS: &[&str] = &[
     "edge_emphasis",
 ];
 pub(super) const IMPORT_TRANSFORM_KINDS: &[&str] = &["raw", "trs"];
-pub(super) const AUTHORING_TRANSFORM_KINDS: &[&str] = &[
+pub(crate) const AUTHORING_TRANSFORM_KINDS: &[&str] = &[
     "raw",
     "trs",
     "look_at",
@@ -61,12 +66,17 @@ pub(super) const PRIMITIVE_KINDS: &[&str] = &[
     "arrow", "axes", "box", "cone", "cylinder", "disc", "grid", "line", "plane", "polyline",
     "sphere", "torus", "wedge",
 ];
-pub(super) const RENDER_PROFILES: &[&str] =
+pub(crate) const RENDER_PROFILES: &[&str] =
     &["auto", "quality", "balanced", "compatibility", "industrial"];
-pub(super) const RENDER_QUALITIES: &[&str] = &["low", "medium", "high"];
+pub(crate) const RENDER_QUALITIES: &[&str] = &["low", "medium", "high"];
 pub(super) const ANTI_ALIASING_MODES: &[&str] = &["none", "fxaa", "msaa4", "msaa8"];
 pub(super) const RECONSTRUCTION_FILTERS: &[&str] = &["box", "tent", "gaussian"];
-pub(super) const TONEMAPPERS: &[&str] = &["standard", "aces", "pbr_neutral"];
+pub(crate) const TONEMAPPERS: &[&str] = &["standard", "aces", "pbr_neutral"];
+pub(crate) const SCENE_PRESETS: &[&str] = &["product_studio", "cad_studio", "industrial_studio"];
+pub(crate) const DIRECTIONAL_LIGHT_PRESETS: &[&str] = &["sun", "key", "fill", "rim"];
+pub(crate) const POINT_LIGHT_PRESETS: &[&str] = &["softbox", "bulb_warm", "bulb_cool"];
+pub(crate) const AREA_LIGHT_PRESETS: &[&str] = &["softbox"];
+pub(crate) const STUDIO_LIGHT_PRESETS: &[&str] = &["studio_rig"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SchemaFieldModelV1 {
@@ -91,9 +101,58 @@ pub struct SchemaFieldV1 {
     pub default: Option<Value>,
     pub deprecated: bool,
     pub examples: Vec<Value>,
+    #[serde(default = "field_owner")]
+    pub owner: String,
+    #[serde(default)]
+    pub feature_requirements: Vec<String>,
+    #[serde(default)]
+    pub constraints: Vec<String>,
 }
 
 pub fn scene_recipe_field_model_v1() -> SchemaFieldModelV1 {
+    let schema = scene_recipe_json_schema_v1();
+    let mut generated = BTreeMap::new();
+    collect_fields(&schema, &schema, "$", &mut generated);
+    for curated in curated_field_model_v1().fields {
+        let Some(field) = generated.get_mut(&curated.path) else {
+            continue;
+        };
+        if !curated.enum_values.is_empty() {
+            field.enum_values = curated.enum_values;
+        }
+        if curated.minimum.is_some() {
+            field.minimum = curated.minimum;
+        }
+        if curated.maximum.is_some() {
+            field.maximum = curated.maximum;
+        }
+        if curated.default.is_some() {
+            field.default = curated.default;
+        }
+        if !curated.examples.is_empty() {
+            field.examples = curated.examples;
+        }
+    }
+    apply_cross_field_metadata(&mut generated);
+    SchemaFieldModelV1 {
+        schema: FIELD_MODEL_SCHEMA_V1.to_owned(),
+        contract: SCENE_RECIPE_SCHEMA_V1.to_owned(),
+        fields: generated.into_values().collect(),
+    }
+}
+
+pub fn scene_recipe_json_schema_v1() -> Value {
+    serde_json::to_value(schemars::schema_for!(super::SceneRecipeV1))
+        .expect("SceneRecipeV1 JSON Schema serializes")
+}
+
+pub fn scene_recipe_json_schema_paths_v1(schema: &Value) -> BTreeSet<String> {
+    let mut fields = BTreeMap::new();
+    collect_fields(schema, schema, "$", &mut fields);
+    fields.into_keys().collect()
+}
+
+fn curated_field_model_v1() -> SchemaFieldModelV1 {
     let mut fields = vec![
         field("$.schema", "string", true, json!(SCENE_RECIPE_SCHEMA_V1))
             .with_enum_strings(&[SCENE_RECIPE_SCHEMA_V1]),
@@ -355,6 +414,9 @@ fn field(path: &str, value_type: &str, required: bool, example: Value) -> Schema
         default: None,
         deprecated: false,
         examples: vec![example],
+        owner: "scene_recipe_v1".to_owned(),
+        feature_requirements: Vec::new(),
+        constraints: Vec::new(),
     }
 }
 

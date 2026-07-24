@@ -36,7 +36,7 @@ fn main() {
         if error.kind() == io::ErrorKind::BrokenPipe {
             return;
         }
-        process_output::write_stdout_error(&error);
+        process_output::write_stdout_error(&error, true);
         process::exit(process_output::IO_ERROR_EXIT_CODE);
     }
     if let Some(stderr) = outcome.stderr {

@@ -424,6 +424,7 @@
   ],
   "revisions": {
     "appearance": 0,
+    "camera": 1,
     "interaction": 0,
     "structure": 3,
     "transform": 1

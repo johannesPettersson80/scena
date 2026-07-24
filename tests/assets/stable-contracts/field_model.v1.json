@@ -8,7 +8,10 @@
       "required": true,
       "enum": ["scena.scene_recipe.v1"],
       "deprecated": false,
-      "examples": ["scena.scene_recipe.v1"]
+      "examples": ["scena.scene_recipe.v1"],
+      "owner": "scene_recipe_v1",
+      "feature_requirements": [],
+      "constraints": []
     },
     {
       "path": "$.capture.width",
@@ -17,7 +20,10 @@
       "minimum": 1.0,
       "maximum": 4294967295.0,
       "deprecated": false,
-      "examples": [800]
+      "examples": [800],
+      "owner": "scene_recipe_v1",
+      "feature_requirements": [],
+      "constraints": []
     }
   ]
 }

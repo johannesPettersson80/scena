@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeSectionBoxV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -15,7 +15,7 @@ pub struct SceneRecipeSectionBoxV1 {
     pub helper_wireframe: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeTargetV1 {
     Node { id: String },
@@ -23,7 +23,7 @@ pub enum SceneRecipeTargetV1 {
     World { position: [f32; 3] },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeMeasurementV1 {
     pub id: String,
@@ -38,7 +38,7 @@ pub struct SceneRecipeMeasurementV1 {
     pub precision: Option<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeCalloutV1 {
     pub id: String,
@@ -48,7 +48,7 @@ pub struct SceneRecipeCalloutV1 {
     pub label_offset: [f32; 3],
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeCalloutTargetV1 {
     ImportRoot {
@@ -66,7 +66,7 @@ pub enum SceneRecipeCalloutTargetV1 {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeExplodedViewV1 {
     pub import: String,
@@ -80,7 +80,9 @@ pub struct SceneRecipeExplodedViewV1 {
     pub distance: f32,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneRecipeExplodedViewModeV1 {
     #[default]
@@ -89,7 +91,7 @@ pub enum SceneRecipeExplodedViewModeV1 {
     Axis,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SceneRecipeCaptureV1 {
     pub width: u32,
     pub height: u32,

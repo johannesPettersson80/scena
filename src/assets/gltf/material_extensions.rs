@@ -5,6 +5,9 @@ use crate::material::{Color, TextureTransform};
 
 use super::super::AssetPath;
 
+mod types;
+use types::{DispersionExtension, IorExtension};
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct ClearcoatExtension {
     pub(super) factor: f32,
@@ -40,19 +43,9 @@ pub(super) struct IridescenceExtension {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct DispersionExtension {
-    pub(super) factor: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub(super) struct TransmissionExtension {
     pub(super) factor: f32,
     pub(super) texture: Option<ExtensionTextureInfo>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct IorExtension {
-    pub(super) ior: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -257,6 +250,7 @@ pub(super) fn validate_material_texture_indices(
         let pbr = &material.pbr_metallic_roughness;
         validate_texture_info(
             path,
+            material_index,
             "baseColorTexture",
             pbr.base_color_texture
                 .as_ref()
@@ -265,6 +259,7 @@ pub(super) fn validate_material_texture_indices(
         )?;
         validate_texture_info(
             path,
+            material_index,
             "metallicRoughnessTexture",
             pbr.metallic_roughness_texture
                 .as_ref()
@@ -294,7 +289,7 @@ pub(super) fn validate_material_texture_indices(
                     .map(|info| info.index.value()),
             ),
         ] {
-            validate_texture_info(path, slot, index, texture_count)?;
+            validate_texture_info(path, material_index, slot, index, texture_count)?;
         }
         validate_extension_texture_slots(path, material_index, material, texture_count)?;
     }
@@ -402,7 +397,7 @@ fn validate_texture_transform_tex_coords_value(
 
 fn validate_extension_texture_slots(
     path: &AssetPath,
-    _material_index: usize,
+    material_index: usize,
     material: &::gltf::json::material::Material,
     texture_count: usize,
 ) -> Result<(), AssetError> {
@@ -451,6 +446,7 @@ fn validate_extension_texture_slots(
         for (slot, key) in slots {
             validate_texture_info(
                 path,
+                material_index,
                 slot,
                 read_extension_texture_info(value, key).map(|info| info.index),
                 texture_count,
@@ -462,6 +458,7 @@ fn validate_extension_texture_slots(
 
 fn validate_texture_info(
     path: &AssetPath,
+    material_index: usize,
     material_slot: &'static str,
     index: Option<usize>,
     texture_count: usize,
@@ -473,6 +470,14 @@ fn validate_texture_info(
             path: path.as_str().to_string(),
             material_slot: material_slot.to_string(),
             texture_index: index,
+            context: Box::new(crate::diagnostics::MissingTextureDetails {
+                material_index: Some(material_index),
+                material_name: None,
+                image_source: None,
+                reason: format!(
+                    "texture index {index} is outside the document texture table of length {texture_count}"
+                ),
+            }),
             help: "export the referenced image or remove the broken material slot",
         });
     }

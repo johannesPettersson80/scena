@@ -239,6 +239,7 @@ fn pf03_pf05_hot_path_doctor_rejects_prepared_list_cloning() {
         "src/assets.rs",
         "src/render/prepare/materials.rs",
         "src/render/prepare/primitives.rs",
+        "src/render/phase5_tests.rs",
         "src/material/color.rs",
         "src/scene/resolved_cache.rs",
         "src/scene/transforms.rs",

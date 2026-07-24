@@ -107,6 +107,68 @@ fn orbit_pan_uses_camera_right_and_up_at_cardinal_yaws_and_pitch() {
 }
 
 #[test]
+fn releasing_an_unrelated_pointer_button_does_not_end_the_active_gesture() {
+    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0);
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::primary_pressed(0.0, 0.0)),
+        OrbitControlAction::BeginOrbit,
+    );
+    assert_eq!(
+        controls.handle_pointer(PointerEvent {
+            kind: scena::PointerEventKind::Released,
+            position: (0.0, 0.0),
+            button: Some(scena::PointerButton::Secondary),
+            delta: (0.0, 0.0),
+            scroll_delta: 0.0,
+        }),
+        OrbitControlAction::None,
+    );
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::moved(2.0, 0.0, 2.0, 0.0)),
+        OrbitControlAction::Orbit,
+        "the primary-owned orbit must survive a secondary-button release",
+    );
+}
+
+#[test]
+fn simultaneous_orbit_and_pan_end_only_when_their_owning_button_releases() {
+    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0);
+    controls.handle_pointer(PointerEvent::primary_pressed(0.0, 0.0));
+    controls.handle_pointer(PointerEvent::secondary_pressed(0.0, 0.0));
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::moved(1.0, 0.0, 1.0, 0.0)),
+        OrbitControlAction::Orbit,
+    );
+
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::button_released(
+            1.0,
+            0.0,
+            scena::PointerButton::Primary,
+        )),
+        OrbitControlAction::End,
+    );
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::moved(2.0, 0.0, 1.0, 0.0)),
+        OrbitControlAction::Pan,
+        "secondary-owned pan must survive release of the primary-owned orbit",
+    );
+
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::button_released(
+            2.0,
+            0.0,
+            scena::PointerButton::Secondary,
+        )),
+        OrbitControlAction::End,
+    );
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::moved(3.0, 0.0, 1.0, 0.0)),
+        OrbitControlAction::None,
+    );
+}
+
+#[test]
 fn scene_rejects_non_finite_direct_batch_alignment_and_instance_transforms_atomically() {
     for invalid in invalid_transforms() {
         let mut scene = Scene::new();

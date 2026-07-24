@@ -51,6 +51,7 @@ mod resource_encoding;
 mod scene_color;
 #[cfg_attr(not(feature = "scene-host"), allow(dead_code))]
 mod semantic_aov;
+mod shader_manifest;
 mod shadow;
 mod stats;
 mod strokes;
@@ -92,7 +93,11 @@ pub(super) struct GpuDeviceState {
     runtime_fault: surface_frame::GpuRuntimeFaultState,
     pending_destructions: u64,
     triangle_shader_modules: pipeline::TriangleShaderModuleCache,
+    sample_count_capabilities: msaa::SampleCountCapabilityCache,
+    #[cfg(not(target_arch = "wasm32"))]
+    auto_exposure_meter: readback::GpuAutoExposureMeter,
     #[cfg(target_arch = "wasm32")]
+    #[cfg_attr(not(feature = "browser-probe"), allow(dead_code))]
     last_poll_observation: &'static str,
     resources: Option<GpuPreparedResources>,
     output_color_space: OutputColorSpace,
@@ -141,6 +146,8 @@ pub(in crate::render) struct GpuRenderResult {
     pub(in crate::render) blocking_polls: u64,
     pub(in crate::render) blocking_waits: u64,
     pub(in crate::render) cpu_frame_copy_bytes: u64,
+    pub(in crate::render) auto_exposure_meter_submissions: u64,
+    pub(in crate::render) auto_exposure_meter_samples: u64,
     pub(in crate::render) surface_skip: Option<surface_frame::SurfaceFrameSkipReason>,
     pub(in crate::render) surface_reconfigurations: u64,
     pub(in crate::render) surface_acquire_retries: u64,
@@ -159,6 +166,9 @@ struct GpuPreparedResources {
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
+    surface_output_uniform: Option<wgpu::Buffer>,
+    surface_output_bind_group: Option<wgpu::BindGroup>,
+    surface_opaque_output_bind_group: Option<wgpu::BindGroup>,
     light_uniform: PreparedGpuLightUniform,
     #[allow(dead_code)]
     light_assignment: LightAssignmentResources,
@@ -275,6 +285,16 @@ struct GpuPreparedResources {
 }
 
 impl GpuDeviceState {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn max_supported_sample_count_cached(&self, formats: &[wgpu::TextureFormat]) -> u32 {
+        self.sample_count_capabilities
+            .maximum_for_device(&self.device, &self.adapter, formats)
+    }
+
+    pub(super) fn sample_count_capability_probe_count(&self) -> u64 {
+        self.sample_count_capabilities.probe_count()
+    }
+
     pub(in crate::render) fn color_target_format(&self) -> wgpu::TextureFormat {
         self.surface
             .as_ref()

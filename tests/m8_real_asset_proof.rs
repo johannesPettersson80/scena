@@ -16,7 +16,9 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use base64::Engine as _;
-use scena::{Assets, Color, Renderer, Scene, Tonemapper, Transform};
+use scena::{
+    AdapterLimitsReport, Assets, Color, GpuAdapterReport, Renderer, Scene, Tonemapper, Transform,
+};
 
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
 const ARTIFACT_GPU_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle_gpu.png";
@@ -68,6 +70,192 @@ const WATERBOTTLE_BLENDER_REFERENCE_PNG: &str =
     "tests/assets/gltf/khronos/WaterBottle/reference_blender_cycles_512.png";
 const WATERBOTTLE_BLENDER_REFERENCE_SHA256: &str =
     "17db39248ce1966ae60c3b85d09491ebfb7f654777dc2d150a64db4e938a6883";
+
+#[derive(Debug, Clone, Copy)]
+struct WaterBottleRegionExpectation {
+    name: &'static str,
+    x: usize,
+    y: usize,
+    expected: [u8; 3],
+    tolerance: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WaterBottleAdapterExpectationKey {
+    backend: &'static str,
+    vendor: u32,
+    device: u32,
+    device_type: &'static str,
+    driver: &'static str,
+    driver_info: &'static str,
+}
+
+impl WaterBottleAdapterExpectationKey {
+    fn matches(self, report: &GpuAdapterReport) -> bool {
+        report.backend == self.backend
+            && report.vendor == self.vendor
+            && report.device == self.device
+            && report.device_type == self.device_type
+            && report.driver == self.driver
+            && report.driver_info == self.driver_info
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WaterBottleRegionProfile {
+    profile_id: &'static str,
+    match_key: Option<WaterBottleAdapterExpectationKey>,
+    owner: &'static str,
+    reviewed_at: &'static str,
+    expires_at: &'static str,
+    evidence_sha256: &'static str,
+    regions: &'static [WaterBottleRegionExpectation],
+}
+
+const PORTABLE_GPU_REGIONS: &[WaterBottleRegionExpectation] = &[
+    WaterBottleRegionExpectation {
+        name: "cap_dome",
+        x: 250,
+        y: 70,
+        expected: [76, 27, 12],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "cap_dome_left",
+        x: 240,
+        y: 70,
+        expected: [76, 27, 12],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "upper_body",
+        x: 249,
+        y: 130,
+        expected: [153, 134, 48],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "body_olive_mid",
+        x: 249,
+        y: 270,
+        expected: [163, 143, 53],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "body_olive_low",
+        x: 249,
+        y: 330,
+        expected: [132, 114, 32],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "label_metal_r",
+        x: 270,
+        y: 380,
+        expected: [30, 20, 6],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "label_metal_l",
+        x: 255,
+        y: 380,
+        expected: [28, 18, 5],
+        tolerance: 25,
+    },
+];
+
+const GITHUB_MACOS_14_PARAVIRTUAL_METAL_REGIONS: &[WaterBottleRegionExpectation] = &[
+    WaterBottleRegionExpectation {
+        name: "cap_dome",
+        x: 250,
+        y: 70,
+        expected: [76, 28, 12],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "cap_dome_left",
+        x: 240,
+        y: 70,
+        expected: [76, 28, 12],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "upper_body",
+        x: 249,
+        y: 130,
+        expected: [145, 126, 43],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "body_olive_mid",
+        x: 249,
+        y: 270,
+        expected: [150, 131, 44],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "body_olive_low",
+        x: 249,
+        y: 330,
+        expected: [121, 104, 26],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "label_metal_r",
+        x: 270,
+        y: 380,
+        expected: [30, 20, 6],
+        tolerance: 25,
+    },
+    WaterBottleRegionExpectation {
+        name: "label_metal_l",
+        x: 255,
+        y: 380,
+        expected: [28, 19, 5],
+        tolerance: 25,
+    },
+];
+
+const GITHUB_MACOS_14_PARAVIRTUAL_METAL_KEY: WaterBottleAdapterExpectationKey =
+    WaterBottleAdapterExpectationKey {
+        backend: "Metal",
+        vendor: 0,
+        device: 0,
+        device_type: "IntegratedGpu",
+        driver: "",
+        driver_info: "",
+    };
+
+const PORTABLE_GPU_PROFILE: WaterBottleRegionProfile = WaterBottleRegionProfile {
+    profile_id: "portable-physical-gpu-v1",
+    match_key: None,
+    owner: "scena-renderer-quality",
+    reviewed_at: "2026-07-23",
+    expires_at: "none",
+    evidence_sha256: WATERBOTTLE_REFERENCE_SHA256,
+    regions: PORTABLE_GPU_REGIONS,
+};
+
+const GITHUB_MACOS_14_PARAVIRTUAL_METAL_PROFILE: WaterBottleRegionProfile =
+    WaterBottleRegionProfile {
+        profile_id: "github-macos-14-apple-paravirtual-metal-v1",
+        match_key: Some(GITHUB_MACOS_14_PARAVIRTUAL_METAL_KEY),
+        owner: "scena-renderer-quality",
+        reviewed_at: "2026-07-22",
+        expires_at: "2026-10-31",
+        evidence_sha256: "2239bbb25313877e32dd5431fdae14660608257a4c11c60c383804fecbf6285f",
+        regions: GITHUB_MACOS_14_PARAVIRTUAL_METAL_REGIONS,
+    };
+
+fn waterbottle_region_profile(
+    adapter: Option<&GpuAdapterReport>,
+) -> &'static WaterBottleRegionProfile {
+    if adapter.is_some_and(|report| GITHUB_MACOS_14_PARAVIRTUAL_METAL_KEY.matches(report)) {
+        &GITHUB_MACOS_14_PARAVIRTUAL_METAL_PROFILE
+    } else {
+        &PORTABLE_GPU_PROFILE
+    }
+}
 
 /// Lightweight integrity check for the bundled polyhaven HDR. A
 /// cryptographic SHA-256 manifest belongs in the asset matrix (Khronos
@@ -136,6 +324,135 @@ fn waterbottle_reference_png_matches_pinned_sha256() {
          if you intentionally regenerated the reference, update \
          WATERBOTTLE_REFERENCE_SHA256 and reference_metadata.toml in the same commit"
     );
+}
+
+#[test]
+fn waterbottle_full_frame_oracle_rejects_horizontal_mirror() {
+    let reference = decode_reference_png();
+    let exact = evaluate_waterbottle_reference_diff(&reference, &reference)
+        .expect("the pinned reference must pass against itself");
+    assert_eq!(exact.within_tolerance_fraction, 1.0);
+    assert_eq!(exact.max_channel_delta, 0);
+
+    let mirrored = horizontal_mirror_rgba8(
+        &reference,
+        WATERBOTTLE_ARTIFACT_SIZE,
+        WATERBOTTLE_ARTIFACT_SIZE,
+    );
+    assert!(
+        evaluate_waterbottle_reference_diff(&mirrored, &reference).is_err(),
+        "a horizontal mirror must fail the same full-frame oracle used by the live GPU lane"
+    );
+}
+
+fn q09_test_adapter(
+    name: &str,
+    backend: &str,
+    device_type: &str,
+    vendor: u32,
+    device: u32,
+) -> GpuAdapterReport {
+    GpuAdapterReport {
+        name: name.to_string(),
+        backend: backend.to_string(),
+        device_type: device_type.to_string(),
+        vendor,
+        device,
+        driver: String::new(),
+        driver_info: String::new(),
+        features: String::new(),
+        limits: AdapterLimitsReport {
+            max_texture_dimension_2d: 16_384,
+            max_bind_groups: 4,
+            max_uniform_buffer_binding_size: 65_536,
+            max_vertex_attributes: 16,
+        },
+    }
+}
+
+#[test]
+fn waterbottle_adapter_expectations_ignore_display_name_and_reject_label_spoofing() {
+    let renamed = q09_test_adapter("renamed by wgpu", "Metal", "IntegratedGpu", 0, 0);
+    let empty = q09_test_adapter("", "Metal", "IntegratedGpu", 0, 0);
+    let spoofed = q09_test_adapter(
+        "Apple Paravirtual device (Metal)",
+        "Vulkan",
+        "IntegratedGpu",
+        0x10de,
+        0x2684,
+    );
+
+    assert_eq!(
+        waterbottle_region_profile(Some(&renamed)).profile_id,
+        "github-macos-14-apple-paravirtual-metal-v1"
+    );
+    assert_eq!(
+        waterbottle_region_profile(Some(&empty)).profile_id,
+        "github-macos-14-apple-paravirtual-metal-v1"
+    );
+    assert_eq!(
+        waterbottle_region_profile(Some(&spoofed)).profile_id,
+        "portable-physical-gpu-v1",
+        "a display label must not opt an unknown structured adapter into an exception profile"
+    );
+}
+
+#[test]
+fn waterbottle_adapter_profiles_pin_reviewed_samples_at_tolerance_25() {
+    let mac = q09_test_adapter("anything", "Metal", "IntegratedGpu", 0, 0);
+    let profile = waterbottle_region_profile(Some(&mac));
+    assert_eq!(profile.owner, "scena-renderer-quality");
+    assert_eq!(profile.reviewed_at, "2026-07-22");
+    assert_eq!(profile.expires_at, "2026-10-31");
+    assert_eq!(
+        profile.evidence_sha256,
+        "2239bbb25313877e32dd5431fdae14660608257a4c11c60c383804fecbf6285f"
+    );
+    assert!(
+        profile.regions.iter().all(|region| region.tolerance == 25),
+        "structured profiles must use the ordinary Chebyshev-25 tolerance"
+    );
+    let measured = [
+        ("upper_body", [145, 126, 43]),
+        ("body_olive_mid", [150, 131, 44]),
+        ("body_olive_low", [121, 104, 26]),
+    ];
+    for (name, expected) in measured {
+        let region = profile
+            .regions
+            .iter()
+            .find(|region| region.name == name)
+            .expect("reviewed macOS profile contains every measured olive sample");
+        assert_eq!(region.expected, expected);
+    }
+}
+
+#[test]
+fn portable_waterbottle_regions_leave_full_frame_tolerance_headroom() {
+    let reference = decode_reference_png();
+    for region in PORTABLE_GPU_PROFILE.regions {
+        let reference_pixel = pixel_at(&reference, region.x, region.y);
+        let expected_to_reference = region
+            .expected
+            .iter()
+            .zip(reference_pixel)
+            .take(3)
+            .map(|(expected, reference)| expected.abs_diff(reference) as u16)
+            .max()
+            .expect("RGB sample has three channels");
+        let required_headroom = expected_to_reference + u16::from(WATERBOTTLE_REFERENCE_TOLERANCE);
+        assert!(
+            required_headroom <= u16::from(region.tolerance),
+            "portable region {} at ({}, {}) is {} levels from the pinned reference; \
+             sparse tolerance {} must leave {} levels of full-frame tolerance headroom",
+            region.name,
+            region.x,
+            region.y,
+            expected_to_reference,
+            region.tolerance,
+            WATERBOTTLE_REFERENCE_TOLERANCE,
+        );
+    }
 }
 
 /// Phase 5.5: verify the bundled Blender Cycles third-party reference
@@ -364,6 +681,19 @@ fn m8_real_asset_waterbottle_gpu_headline() {
         }
     };
     let adapter_report = renderer.gpu_adapter_report();
+    let gpu_adapter_key = adapter_report
+        .as_ref()
+        .map_or(serde_json::Value::Null, |report| {
+            serde_json::json!({
+                "schema": "scena.gpu_adapter_key.v1",
+                "backend": report.backend,
+                "vendor": report.vendor,
+                "device": report.device,
+                "device_type": report.device_type,
+                "driver": report.driver,
+                "driver_info": report.driver_info,
+            })
+        });
     let (gpu_adapter_label, gpu_backend) = match &adapter_report {
         Some(report) => (
             format!("{} ({})", report.name, report.backend),
@@ -438,50 +768,25 @@ fn m8_real_asset_waterbottle_gpu_headline() {
     // Phase 2 region asserts. The GPU lane is the canonical scena-gold
     // regression baseline; the CPU lane below carries its own measured
     // release-quality tolerance envelope instead of a loose smoke test.
-    let apple_paravirtual_metal = gpu_adapter_label.contains("Apple Paravirtual device")
-        && gpu_adapter_label.contains("Metal");
-    let body_olive_tolerance = if apple_paravirtual_metal {
-        // GitHub's macOS Metal lane renders the WaterBottle olive body a little
-        // darker on the paravirtual adapter. Keep the normal tolerance tight,
-        // but accept that measured lane while the histogram below still proves
-        // the body stays olive/yellow.
-        35
-    } else {
-        25
-    };
+    let region_profile = waterbottle_region_profile(adapter_report.as_ref());
     let muted_olive_min = 10_000;
-    let regions: &[(&str, usize, usize, [u8; 3], u8)] = &[
-        // (name, x, y, expected RGB, tolerance in chebyshev distance)
-        ("cap_dome", 250, 70, [76, 27, 12], 25),
-        ("cap_dome_left", 240, 70, [76, 27, 12], 25),
-        ("upper_body", 249, 130, [153, 134, 48], body_olive_tolerance),
-        (
-            "body_olive_mid",
-            249,
-            270,
-            [171, 152, 78],
-            body_olive_tolerance,
-        ),
-        (
-            "body_olive_low",
-            249,
-            330,
-            [132, 114, 32],
-            body_olive_tolerance,
-        ),
-        ("label_metal_r", 270, 380, [30, 20, 6], 25),
-        ("label_metal_l", 255, 380, [28, 18, 5], 25),
-    ];
     let mut failed_regions = Vec::new();
-    for (name, x, y, expected, tol) in regions {
-        let p = pixel_at(&frame, *x, *y);
-        let dr = (p[0] as i16 - expected[0] as i16).unsigned_abs() as u8;
-        let dg = (p[1] as i16 - expected[1] as i16).unsigned_abs() as u8;
-        let db = (p[2] as i16 - expected[2] as i16).unsigned_abs() as u8;
-        if dr > *tol || dg > *tol || db > *tol {
+    for region in region_profile.regions {
+        let p = pixel_at(&frame, region.x, region.y);
+        let dr = (p[0] as i16 - region.expected[0] as i16).unsigned_abs() as u8;
+        let dg = (p[1] as i16 - region.expected[1] as i16).unsigned_abs() as u8;
+        let db = (p[2] as i16 - region.expected[2] as i16).unsigned_abs() as u8;
+        if dr > region.tolerance || dg > region.tolerance || db > region.tolerance {
             failed_regions.push(format!(
-                "  {name:14} ({x:3},{y:3}): expected {expected:?} ±{tol}, got [{},{},{}]",
-                p[0], p[1], p[2]
+                "  {:14} ({:3},{:3}): expected {:?} ±{}, got [{},{},{}]",
+                region.name,
+                region.x,
+                region.y,
+                region.expected,
+                region.tolerance,
+                p[0],
+                p[1],
+                p[2]
             ));
         }
     }
@@ -531,66 +836,145 @@ fn m8_real_asset_waterbottle_gpu_headline() {
         family_failures.join("\n")
     );
 
-    // Phase 2 reference diff. Hosted paravirtual/software adapters are useful
-    // release visual proof, but not pixel-identical reference generators. Keep
-    // the strict scena-gold diff opt-in for approved reference regeneration
-    // lanes.
-    if std::env::var_os("SCENA_REFERENCE_DIFF").is_some() {
+    // Phase 2 reference diff. Sparse samples remain useful diagnostics, but
+    // only a required full-frame comparison can make this release evidence.
+    let reference_diff_requested = std::env::var("SCENA_REFERENCE_DIFF").as_deref() == Ok("1");
+    let mut reference_diff = None;
+    let mut mirror_rejected = false;
+    if reference_diff_requested {
         let reference = decode_reference_png();
-        assert_eq!(
-            reference.len(),
-            frame.len(),
-            "reference PNG must match render dimensions (512x512 RGBA)"
+        write_diff_visualization(&frame, &reference);
+        let measured =
+            evaluate_waterbottle_reference_diff(&frame, &reference).unwrap_or_else(|error| {
+                panic!(
+                    "WaterBottle render diverged from bundled reference: {error}. \
+                     Diff visualization written to {DIFF_PNG}"
+                )
+            });
+        let mirrored = horizontal_mirror_rgba8(
+            &reference,
+            WATERBOTTLE_ARTIFACT_SIZE,
+            WATERBOTTLE_ARTIFACT_SIZE,
         );
-        let (within_tol, total, max_d) = pixel_diff_summary(&frame, &reference, 16);
-        let fraction = within_tol as f64 / total as f64;
-        if fraction < 0.95 {
-            write_diff_visualization(&frame, &reference);
-            panic!(
-                "WaterBottle render diverged from bundled reference: \
-                 only {:.2}% of pixels are within RGB Chebyshev distance 16 \
-                 (max channel distance: {max_d}). Diff visualization written to {}",
-                fraction * 100.0,
-                DIFF_PNG,
-            );
-        }
+        mirror_rejected = evaluate_waterbottle_reference_diff(&mirrored, &reference).is_err();
+        assert!(
+            mirror_rejected,
+            "the release oracle must reject a horizontally mirrored WaterBottle reference"
+        );
+        reference_diff = Some(measured);
     }
     write_gpu_release_result(
         &gpu_adapter_label,
         &gpu_backend,
-        std::env::var_os("SCENA_REFERENCE_DIFF").is_some(),
+        reference_diff.as_ref(),
+        mirror_rejected,
+        &gpu_adapter_key,
+        region_profile,
     );
 }
 
-fn write_gpu_release_result(adapter: &str, backend: &str, reference_diff_ran: bool) {
+fn write_gpu_release_result(
+    adapter: &str,
+    backend: &str,
+    reference_diff: Option<&WaterBottleReferenceDiff>,
+    mirror_rejected: bool,
+    adapter_key: &serde_json::Value,
+    region_profile: &WaterBottleRegionProfile,
+) {
     let png_bytes = std::fs::read(ARTIFACT_GPU_PNG).expect("WaterBottle GPU PNG reads");
     let png_sha256 = sha256_hex(&png_bytes);
+    let release_evidence = reference_diff.is_some() && mirror_rejected;
+    let diff_sha256 = reference_diff
+        .map(|_| sha256_hex(&std::fs::read(DIFF_PNG).expect("WaterBottle diff PNG reads")));
+    let mut source_checksums = vec![
+        serde_json::json!({"path":"m8-real-asset/waterbottle_gpu.png", "sha256":png_sha256}),
+        serde_json::json!({
+            "path": WATERBOTTLE_REFERENCE_PNG,
+            "sha256": WATERBOTTLE_REFERENCE_SHA256,
+        }),
+    ];
+    if let Some(diff_sha256) = &diff_sha256 {
+        source_checksums.push(serde_json::json!({
+            "path":"m8-real-asset/waterbottle_diff.png",
+            "sha256":diff_sha256,
+        }));
+    }
     let artifact = serde_json::json!({
         "schema": "scena.m8.waterbottle_gpu_result.v1",
-        "status": "passed",
-        "release_evidence": true,
+        "status": if release_evidence { "passed" } else { "incomplete" },
+        "release_evidence": release_evidence,
+        "release_rejection_codes": if release_evidence {
+            serde_json::json!([])
+        } else {
+            serde_json::json!(["FULL_FRAME_REFERENCE_DIFF_NOT_RUN"])
+        },
         "test_name": "m8_real_asset_waterbottle_gpu_headline",
         "producer": "cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact",
         "commit_sha": current_release_commit(),
         "timestamp_unix_seconds": current_release_timestamp(),
         "backend": backend,
         "adapter": adapter,
+        "adapter_key": adapter_key,
+        "adapter_expectation": {
+            "schema": "scena.m8.waterbottle_adapter_expectation.v1",
+            "profile_id": region_profile.profile_id,
+            "match_key": region_profile.match_key.map(|key| serde_json::json!({
+                "backend": key.backend,
+                "vendor": key.vendor,
+                "device": key.device,
+                "device_type": key.device_type,
+                "driver": key.driver,
+                "driver_info": key.driver_info,
+            })),
+            "owner": region_profile.owner,
+            "reviewed_at": region_profile.reviewed_at,
+            "expires_at": region_profile.expires_at,
+            "evidence_sha256": region_profile.evidence_sha256,
+            "regions": region_profile.regions.iter().map(|region| serde_json::json!({
+                "name": region.name,
+                "x": region.x,
+                "y": region.y,
+                "expected": region.expected,
+                "tolerance": region.tolerance,
+            })).collect::<Vec<_>>(),
+        },
         "software_adapter": false,
         "skip_marker_observed": false,
         "fallback_observed": false,
         "rust_test_output_observed": false,
         "png_path": "m8-real-asset/waterbottle_gpu.png",
         "png_sha256": png_sha256,
+        "reference_path": WATERBOTTLE_REFERENCE_PNG,
+        "reference_sha256": WATERBOTTLE_REFERENCE_SHA256,
+        "diff_path": if reference_diff.is_some() {
+            serde_json::Value::String("m8-real-asset/waterbottle_diff.png".to_string())
+        } else {
+            serde_json::Value::Null
+        },
+        "diff_sha256": diff_sha256,
         "command_record_path": "release-lanes/macos-metal.commands.jsonl",
         "metrics": {
             "nonblack_passed": true,
             "region_checks_passed": true,
             "color_family_histograms_passed": true,
-            "reference_diff": if reference_diff_ran { "passed" } else { "not-claimed" }
+            "reference_diff": if release_evidence { "passed" } else { "not-run" },
+            "full_frame": reference_diff.map(|report| serde_json::json!({
+                "compared_pixels": report.compared_pixels,
+                "within_tolerance_fraction": report.within_tolerance_fraction,
+                "max_channel_delta": report.max_channel_delta,
+                "worst_region_bbox": report.worst_region_bbox,
+            })),
+            "thresholds": {
+                "rgb_chebyshev_max": WATERBOTTLE_REFERENCE_TOLERANCE,
+                "within_tolerance_fraction_min": WATERBOTTLE_REFERENCE_WITHIN_FRACTION_MIN,
+            }
         },
-        "source_checksums": [
-            {"path":"m8-real-asset/waterbottle_gpu.png", "sha256":png_sha256}
-        ]
+        "known_bad_mutations": [{
+            "name": "horizontal_mirror",
+            "rejected": mirror_rejected,
+            "oracle": "full-frame-rgba8-chebyshev",
+        }],
+        "source_checksums": source_checksums
     });
     let path = std::path::Path::new(ARTIFACT_GPU_RESULT_JSON);
     std::fs::write(
@@ -867,6 +1251,16 @@ impl ColourFamilyCounts {
 }
 
 const DIFF_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle_diff.png";
+const WATERBOTTLE_REFERENCE_TOLERANCE: u8 = 16;
+const WATERBOTTLE_REFERENCE_WITHIN_FRACTION_MIN: f64 = 0.95;
+
+#[derive(Debug, Clone, Copy)]
+struct WaterBottleReferenceDiff {
+    compared_pixels: usize,
+    within_tolerance_fraction: f64,
+    max_channel_delta: u8,
+    worst_region_bbox: [u32; 4],
+}
 
 fn decode_reference_png() -> Vec<u8> {
     let bytes = std::fs::read(WATERBOTTLE_REFERENCE_PNG).expect("bundled reference is readable");
@@ -904,6 +1298,84 @@ fn pixel_diff_summary(live: &[u8], reference: &[u8], tol: u8) -> (usize, usize, 
         }
     }
     (within, total, max_d)
+}
+
+fn evaluate_waterbottle_reference_diff(
+    live: &[u8],
+    reference: &[u8],
+) -> Result<WaterBottleReferenceDiff, String> {
+    if live.len() != reference.len()
+        || live.len() != (WATERBOTTLE_ARTIFACT_SIZE * WATERBOTTLE_ARTIFACT_SIZE * 4) as usize
+    {
+        return Err(format!(
+            "WaterBottle full-frame diff requires two {}x{} RGBA8 frames, got {} and {} bytes",
+            WATERBOTTLE_ARTIFACT_SIZE,
+            WATERBOTTLE_ARTIFACT_SIZE,
+            live.len(),
+            reference.len()
+        ));
+    }
+    let (within, total, max_channel_delta) =
+        pixel_diff_summary(live, reference, WATERBOTTLE_REFERENCE_TOLERANCE);
+    let within_tolerance_fraction = within as f64 / total as f64;
+    let mut min_x = WATERBOTTLE_ARTIFACT_SIZE;
+    let mut min_y = WATERBOTTLE_ARTIFACT_SIZE;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut has_outlier = false;
+    for (index, (left, right)) in live
+        .chunks_exact(4)
+        .zip(reference.chunks_exact(4))
+        .enumerate()
+    {
+        let delta = left[0]
+            .abs_diff(right[0])
+            .max(left[1].abs_diff(right[1]))
+            .max(left[2].abs_diff(right[2]));
+        if delta > WATERBOTTLE_REFERENCE_TOLERANCE {
+            let x = index as u32 % WATERBOTTLE_ARTIFACT_SIZE;
+            let y = index as u32 / WATERBOTTLE_ARTIFACT_SIZE;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+            has_outlier = true;
+        }
+    }
+    let report = WaterBottleReferenceDiff {
+        compared_pixels: total,
+        within_tolerance_fraction,
+        max_channel_delta,
+        worst_region_bbox: if has_outlier {
+            [min_x, min_y, max_x, max_y]
+        } else {
+            [0, 0, 0, 0]
+        },
+    };
+    if within_tolerance_fraction < WATERBOTTLE_REFERENCE_WITHIN_FRACTION_MIN {
+        return Err(format!(
+            "only {:.2}% of pixels are within RGB Chebyshev distance {} (required {:.2}%; max channel delta {})",
+            within_tolerance_fraction * 100.0,
+            WATERBOTTLE_REFERENCE_TOLERANCE,
+            WATERBOTTLE_REFERENCE_WITHIN_FRACTION_MIN * 100.0,
+            max_channel_delta,
+        ));
+    }
+    Ok(report)
+}
+
+fn horizontal_mirror_rgba8(source: &[u8], width: u32, height: u32) -> Vec<u8> {
+    assert_eq!(source.len(), (width * height * 4) as usize);
+    let mut mirrored = vec![0; source.len()];
+    for y in 0..height {
+        for x in 0..width {
+            let source_offset = ((y * width + x) * 4) as usize;
+            let target_offset = ((y * width + (width - 1 - x)) * 4) as usize;
+            mirrored[target_offset..target_offset + 4]
+                .copy_from_slice(&source[source_offset..source_offset + 4]);
+        }
+    }
+    mirrored
 }
 
 fn write_diff_visualization(live: &[u8], reference: &[u8]) {

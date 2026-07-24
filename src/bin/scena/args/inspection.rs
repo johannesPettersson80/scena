@@ -16,6 +16,7 @@ pub(crate) struct RenderCommandArgs {
     pub(crate) height: Option<u32>,
     pub(crate) detail: bool,
     pub(crate) gpu: bool,
+    pub(crate) timings: bool,
     pub(crate) allow_roots: Vec<PathBuf>,
 }
 
@@ -74,18 +75,17 @@ impl RenderCommandArgs {
         let Some(input) = args.first() else {
             return Err(render_usage());
         };
-        let mut introspect = false;
         let mut out = None;
         let mut width = None;
         let mut height = None;
         let mut detail = false;
         let mut gpu = false;
+        let mut timings = false;
         let mut allow_roots = Vec::new();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
                 "--introspect" => {
-                    introspect = true;
                     index += 1;
                 }
                 "--out" => {
@@ -114,6 +114,10 @@ impl RenderCommandArgs {
                     gpu = true;
                     index += 1;
                 }
+                "--timings" => {
+                    timings = true;
+                    index += 1;
+                }
                 "--allow-root" => {
                     push_allow_root(args, index, &mut allow_roots)?;
                     index += 2;
@@ -122,9 +126,6 @@ impl RenderCommandArgs {
                 flag => return Err(format!("unknown render flag '{flag}'; {}", render_usage())),
             }
         }
-        if !introspect {
-            return Err(format!("missing --introspect; {}", render_usage()));
-        }
         Ok(Self {
             input: input.clone(),
             out: out.ok_or_else(|| format!("missing --out <png>; {}", render_usage()))?,
@@ -132,6 +133,7 @@ impl RenderCommandArgs {
             height,
             detail,
             gpu,
+            timings,
             allow_roots,
         })
     }
@@ -320,7 +322,7 @@ fn parse_u64(flag: &str, value: String) -> Result<u64, String> {
 }
 
 fn render_usage() -> String {
-    "usage: scena render <asset-or-recipe> --introspect --out <png> [--gpu] [--width <px>] [--height <px>] [--detail] [--allow-root <directory>]... [--round-floats <0..6>]"
+    "usage: scena render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--timings] [--width <px>] [--height <px>] [--detail] [--allow-root <directory>]... [--round-floats <0..6>]"
         .to_string()
 }
 

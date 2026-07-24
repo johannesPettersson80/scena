@@ -12,9 +12,11 @@ fn d05_d06_doctor_rejects_multiple_active_backlogs_and_persistence_overclaim() {
         "docs/schema-contracts.md",
         "docs/checklists/application-builder-roadmap.md",
         "docs/checklists/full-repo-review-v1.8.0-remediation.md",
+        "docs/checklists/full-repo-review-v1.9.0-remediation.md",
         "docs/checklists/next-release-easy-use-and-state-of-the-art.md",
         "docs/checklists/renderer-fidelity-dependencies.md",
         "docs/checklists/wasm-scene-host-and-stable-contracts.md",
+        "docs/reviews/full-repo-review-v1.9.0.md",
         "crates/xtask/src/app/tests_72.rs",
     ] {
         let destination = fixture_root.join(relative);
@@ -26,6 +28,70 @@ fn d05_d06_doctor_rejects_multiple_active_backlogs_and_persistence_overclaim() {
     let mut findings = Vec::new();
     check_document_governance_truth(&fixture_root, &mut findings);
     assert_eq!(findings, Vec::new());
+
+    let rfc = fixture_root.join("docs/RFC-rust-3d-renderer.md");
+    let source = fs::read_to_string(&rfc).expect("RFC fixture reads");
+    let mutated = source.replace(
+        "full-repo-review-v1.9.0-remediation.md",
+        "full-repo-review-v1.8.0-remediation.md",
+    );
+    assert_ne!(
+        source, mutated,
+        "active-backlog mutation must alter the RFC"
+    );
+    fs::write(&rfc, mutated).expect("active-backlog mutation writes");
+    findings.clear();
+    check_document_governance_truth(&fixture_root, &mut findings);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "D05-D06-DOCUMENT-GOVERNANCE"),
+        "stale active-backlog pointer must fail doctor: {findings:?}"
+    );
+    fs::write(&rfc, source).expect("active-backlog fixture restores");
+
+    let historical =
+        fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md");
+    let source = fs::read_to_string(&historical).expect("historical backlog pointer reads");
+    let mutated = source.replace(
+        "full-repo-review-v1.9.0-remediation.md",
+        "full-repo-review-v1.8.0-remediation.md",
+    );
+    assert_ne!(
+        source, mutated,
+        "stale historical pointer mutation alters source"
+    );
+    fs::write(&historical, mutated).expect("stale historical pointer mutation writes");
+    findings.clear();
+    check_document_governance_truth(&fixture_root, &mut findings);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "D05-D06-DOCUMENT-GOVERNANCE"),
+        "every historical index must point to the one current backlog: {findings:?}",
+    );
+    fs::write(&historical, source).expect("historical backlog pointer restores");
+
+    let checklist = fixture_root.join("docs/checklists/full-repo-review-v1.9.0-remediation.md");
+    let source = fs::read_to_string(&checklist).expect("v1.9 remediation checklist reads");
+    let mutated = source.replace(
+        "Q06 — Make native m8 WaterBottle release evidence full-frame",
+        "Q06 — Treat browser Q01 as native WaterBottle evidence",
+    );
+    assert_ne!(
+        source, mutated,
+        "native-m8 proof mutation must alter the checklist"
+    );
+    fs::write(&checklist, mutated).expect("native-m8 proof mutation writes");
+    findings.clear();
+    check_document_governance_truth(&fixture_root, &mut findings);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "D05-D06-DOCUMENT-GOVERNANCE"),
+        "conflating browser Q01 with native m8 proof must fail doctor: {findings:?}"
+    );
+    fs::write(&checklist, source).expect("native-m8 proof fixture restores");
 
     let docs_index = fixture_root.join("docs/README.md");
     let source = fs::read_to_string(&docs_index).expect("docs index fixture reads");

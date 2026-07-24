@@ -106,8 +106,12 @@ impl InteractiveGltfViewer {
     /// `viewer.scene.pick_with_assets(...)` directly.
     pub fn pick_at(&self, physical_x: f32, physical_y: f32) -> Result<Option<Hit>, LookupError> {
         let viewport = self.viewport_for_pick()?;
+        let camera = self
+            .scene
+            .active_camera()
+            .ok_or(LookupError::NoActiveCamera)?;
         self.scene.pick_with_assets(
-            self.camera,
+            camera,
             CursorPosition::physical(physical_x, physical_y),
             viewport,
             &self.assets,
@@ -124,8 +128,12 @@ impl InteractiveGltfViewer {
         physical_y: f32,
     ) -> Result<Option<Hit>, LookupError> {
         let viewport = self.viewport_for_pick()?;
+        let camera = self
+            .scene
+            .active_camera()
+            .ok_or(LookupError::NoActiveCamera)?;
         self.scene.pick_and_select_with_assets(
-            self.camera,
+            camera,
             CursorPosition::physical(physical_x, physical_y),
             viewport,
             &self.assets,
@@ -155,8 +163,12 @@ impl InteractiveGltfViewer {
         physical_y: f32,
     ) -> Result<Option<Hit>, LookupError> {
         let viewport = self.viewport_for_pick()?;
+        let camera = self
+            .scene
+            .active_camera()
+            .ok_or(LookupError::NoActiveCamera)?;
         self.scene.pick_and_hover_with_assets(
-            self.camera,
+            camera,
             CursorPosition::physical(physical_x, physical_y),
             viewport,
             &self.assets,

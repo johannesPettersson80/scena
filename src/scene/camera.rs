@@ -30,6 +30,15 @@ pub struct DepthRange {
     far: f32,
 }
 
+impl Camera {
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            Self::Perspective(camera) => camera.validate(),
+            Self::Orthographic(camera) => camera.validate(),
+        }
+    }
+}
+
 impl Default for PerspectiveCamera {
     fn default() -> Self {
         Self {
@@ -141,6 +150,28 @@ impl PerspectiveCamera {
         self.far = range.far;
         self
     }
+
+    pub(crate) fn validate(self) -> Result<(), &'static str> {
+        let fov = self.vertical_fov.radians();
+        if !fov.is_finite() || fov <= 0.0 || fov >= std::f32::consts::PI {
+            return Err(
+                "perspective vertical field of view must be finite and between 0 and 180 degrees",
+            );
+        }
+        if !self.aspect.is_finite() || self.aspect < 0.0 {
+            return Err(
+                "perspective aspect must be finite and non-negative; zero selects target aspect",
+            );
+        }
+        if !self.near.is_finite()
+            || !self.far.is_finite()
+            || self.near <= 0.0
+            || self.far <= self.near
+        {
+            return Err("perspective near/far must be finite with 0 < near < far");
+        }
+        Ok(())
+    }
 }
 
 impl Default for OrthographicCamera {
@@ -161,6 +192,22 @@ impl OrthographicCamera {
         self.near = range.near;
         self.far = range.far;
         self
+    }
+
+    pub(crate) fn validate(self) -> Result<(), &'static str> {
+        if !self.left.is_finite()
+            || !self.right.is_finite()
+            || !self.bottom.is_finite()
+            || !self.top.is_finite()
+            || self.left >= self.right
+            || self.bottom >= self.top
+        {
+            return Err("orthographic extents must be finite with left < right and bottom < top");
+        }
+        if !self.near.is_finite() || !self.far.is_finite() || self.near >= self.far {
+            return Err("orthographic near/far must be finite with near < far");
+        }
+        Ok(())
     }
 }
 

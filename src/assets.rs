@@ -34,6 +34,7 @@ mod khronos;
 mod load;
 mod material_presets;
 mod material_source;
+mod memory_textures;
 #[cfg(feature = "obj")]
 mod obj;
 mod provenance;
@@ -42,6 +43,7 @@ mod scene_cache;
 mod scene_loading;
 mod store_id;
 mod texture;
+mod texture_fetch;
 pub(crate) use builtin::{bundled_scene_bytes, is_bundled_scene_uri};
 pub use catalog::{
     ASSET_CATALOG_SCHEMA_V1, ASSET_READINESS_REPORT_SCHEMA_V1, AssetCatalogAssetV1,
@@ -78,7 +80,7 @@ pub use fetch::{AssetFetcher, DefaultAssetFetcher};
 pub use gltf::{
     ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, GltfDecoderPolicy, GltfExtensionDiagnostic,
     GltfExtensionStatus, MaterialVariantBinding, SceneAsset, SceneAssetAnchor, SceneAssetClip,
-    SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+    SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh, SceneAssetNode, SelectedGltfScene,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};
@@ -89,7 +91,7 @@ pub use load::{
     AssetExternalResourceStatus, AssetExternalResourceV1, AssetLoadControl, AssetLoadOptions,
     AssetLoadProgress, AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning,
     AssetLoadWarningV1, AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1,
-    AssetReloadError,
+    AssetReloadError, GltfSceneSelection,
 };
 pub use material_presets::{
     MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
@@ -102,8 +104,10 @@ pub use recipe_validation::{
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub(crate) use texture::BROWSER_TEXTURE_MAX_DIMENSION_2D;
 pub use texture::{
-    TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
+    TextureDesc, TextureFilter, TextureMemoryDesc, TextureMemoryId, TextureMipPolicy,
+    TexturePixelFormat, TextureSamplerDesc, TextureSlot, TextureSourceFormat, TextureWrap,
 };
+use texture_fetch::{texture_format_has_cpu_decoder, warn_optional_texture_fetch_failed};
 
 use self::fetch::TrackedAssetFetcher;
 use self::texture::{TextureCacheKey, TextureCacheUpdatePolicy, validate_texture_source_format};
@@ -167,6 +171,8 @@ struct AssetStorage {
     scene_lookup: BTreeMap<scene_cache::SceneCacheKey, SceneAsset>,
     scene_load_telemetry: BTreeMap<scene_cache::SceneCacheKey, load::AssetLoadTelemetry>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
+    memory_texture_lookup: BTreeMap<TextureMemoryId, TextureHandle>,
+    texture_warnings: Vec<AssetLoadWarning>,
     texture_cache_update_policy: TextureCacheUpdatePolicy,
     environment_lookup: BTreeMap<AssetPath, EnvironmentHandle>,
     // Tracks descriptors minted directly by `Assets::create_<kind>` (user-created)
@@ -205,6 +211,8 @@ impl<F> Assets<F> {
                 scene_lookup: BTreeMap::new(),
                 scene_load_telemetry: BTreeMap::new(),
                 texture_lookup: BTreeMap::new(),
+                memory_texture_lookup: BTreeMap::new(),
+                texture_warnings: Vec::new(),
                 texture_cache_update_policy: TextureCacheUpdatePolicy::Immutable,
                 environment_lookup: BTreeMap::new(),
                 user_created_geometries: std::collections::BTreeSet::new(),
@@ -269,6 +277,12 @@ impl<F> Assets<F> {
     /// Returns true when `handle` resolves to a live texture descriptor.
     pub fn contains_texture(&self, handle: TextureHandle) -> bool {
         self.storage().textures.contains_key(handle)
+    }
+
+    /// Returns structured warnings emitted while decoding path-backed
+    /// textures, including browser downscaling decisions.
+    pub fn texture_warnings(&self) -> Vec<AssetLoadWarning> {
+        self.storage().texture_warnings.clone()
     }
 
     /// Returns true when `handle` resolves to a live environment descriptor.
@@ -568,34 +582,15 @@ impl<F> Assets<F> {
             return Ok(());
         };
 
-        let image = self::texture::decode_browser_image_bitmap(&path, bytes).await?;
+        let (image, warning) = self::texture::decode_browser_image_bitmap(&path, bytes).await?;
         if let Some(texture) = self.storage().textures.get_mut(handle) {
             Arc::make_mut(texture).set_browser_image(image);
         }
+        if let Some(warning) = warning {
+            self.storage().texture_warnings.push(warning);
+        }
         Ok(())
     }
-}
-
-fn warn_optional_texture_fetch_failed(path: &AssetPath, reason: &str) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "scena asset warning: optional texture fetch failed for '{}': {}",
-            path.as_str(),
-            reason
-        )));
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (path, reason);
-    }
-}
-
-const fn texture_format_has_cpu_decoder(source_format: TextureSourceFormat) -> bool {
-    matches!(
-        source_format,
-        TextureSourceFormat::Png | TextureSourceFormat::Jpeg | TextureSourceFormat::Webp
-    ) || (matches!(source_format, TextureSourceFormat::Ktx2Basisu) && cfg!(feature = "ktx2"))
 }
 
 impl AssetPath {

@@ -14,11 +14,49 @@ pub struct SceneHostMeasurementOverlayReportV1 {
     #[serde(serialize_with = "serialize_round3_f32")]
     pub value: f32,
     pub formatted_value: String,
+    #[serde(default = "SceneHostMeasurementAuthorityV1::scene_space_visualization")]
+    pub measurement_authority: SceneHostMeasurementAuthorityV1,
     pub line_node: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label_text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label_projection: Option<SceneHostMeasurementLabelProjectionV1>,
+}
+
+/// Machine-readable boundary for scene-space measurement overlays.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneHostMeasurementAuthorityV1 {
+    pub scope: String,
+    pub authoritative: bool,
+    pub calibrated: bool,
+    pub scene_units: String,
+    pub source_unit_conversion: String,
+    pub transform_space: String,
+    pub precision: String,
+    pub snapping_policy: String,
+    pub occlusion_policy: String,
+    pub unsupported_claims: Vec<String>,
+}
+
+impl SceneHostMeasurementAuthorityV1 {
+    pub fn scene_space_visualization() -> Self {
+        Self {
+            scope: "scene_space_visualization".to_owned(),
+            authoritative: false,
+            calibrated: false,
+            scene_units: "meters".to_owned(),
+            source_unit_conversion: "import_policy_to_scene_meters".to_owned(),
+            transform_space: "current_world_transform".to_owned(),
+            precision: "f32_transformed_scene_coordinates".to_owned(),
+            snapping_policy: "measurement_does_not_apply_snapping".to_owned(),
+            occlusion_policy: "presentation_overlay_not_metrology_occlusion_proof".to_owned(),
+            unsupported_claims: vec![
+                "manufacturing_tolerance".to_owned(),
+                "survey_accuracy".to_owned(),
+                "calibrated_metrology".to_owned(),
+            ],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -64,6 +102,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             kind: measurement_kind_name(report.kind).to_owned(),
             value: round3(report.value),
             formatted_value: report.formatted_value,
+            measurement_authority: SceneHostMeasurementAuthorityV1::scene_space_visualization(),
             line_node,
             label_text,
             label_projection,

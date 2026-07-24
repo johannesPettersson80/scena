@@ -30,6 +30,11 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
                 "FIELD_MODEL_SCHEMA_V1",
                 "struct SchemaFieldModelV1",
                 "struct SchemaFieldV1",
+                "scene_recipe_json_schema_v1",
+                "scene_recipe_json_schema_paths_v1",
+                "schemars::schema_for!",
+                "collect_fields",
+                "apply_cross_field_metadata",
                 "ROOT_FIELDS",
                 "CAPTURE_FIELDS",
                 "PRIMITIVE_KINDS",
@@ -38,6 +43,7 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
                 "examples",
             ][..],
         ),
+        ("Cargo.toml", &["schemars = \"1\""][..]),
         (
             "src/scene/recipe/validation/suggestions.rs",
             &[
@@ -52,16 +58,55 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
             &[
                 "command_contracts",
                 "\"emits\"",
+                "failure_exit_classes",
+                "error_taxonomy",
                 "scena.asset_doctor.v1",
                 "scena.cli_error.v1",
                 "scena.recipe_policy.v1",
+                "--compact",
+                "--pretty",
+            ][..],
+        ),
+        (
+            "src/bin/scena/output.rs",
+            &[
+                "enum CliJsonStyle",
+                "CliJsonStyle::Compact",
+                "CliJsonStyle::Pretty",
+                "--compact and --pretty are mutually exclusive",
+                "serialize_json",
+            ][..],
+        ),
+        (
+            "src/bin/scena/cli_error.rs",
+            &[
+                "struct CliError",
+                "enum CliExitClass",
+                "unknown_schema",
+                "feature_unavailable",
+                "runtime_error",
+                "policy_violation",
+                "interrupted",
+                "error_taxonomy_json",
+            ][..],
+        ),
+        (
+            "src/diagnostics/help.rs",
+            &[
+                "impl BuildError",
+                "impl ImportError",
+                "impl InstantiateError",
+                "impl AnimationError",
+                "impl Error",
+                "pub fn diagnostic(&self) -> ErrorDiagnostic",
+                "structured_diagnostic!(RenderError",
             ][..],
         ),
         (
             "src/bin/scena.rs",
             &[
-                "scena.cli_error.v1",
-                "invalid_command",
+                "CliError::invalid_command",
+                "CliError::classify",
                 "scena_vocab::run_vocab_list_command",
                 "scena_policy::run_recipe_policy_command",
                 "run_recipe_build_command",
@@ -105,6 +150,35 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
                 "fetch_attempts: Arc<AtomicU64>",
                 "fn tracked_fetcher",
                 "pub fn fetch_attempts",
+                "pub fn create_texture(",
+                "pub fn create_texture_for_slot(",
+                "pub async fn load_texture_for_slot(",
+                "pub fn texture_warnings(",
+            ][..],
+        ),
+        (
+            "src/assets/texture.rs",
+            &[
+                "pub struct TextureMemoryId",
+                "pub struct TextureMemoryDesc",
+                "pub enum TextureMipPolicy",
+                "pub enum TexturePixelFormat",
+                "pub enum TextureSlot",
+                "pub fn rgba8_for_slot(",
+                "pub fn linear_rgba32f(",
+            ][..],
+        ),
+        (
+            "src/assets/load/warnings.rs",
+            &["TextureDownscaled", "original_width", "decoded_width"][..],
+        ),
+        (
+            "src/diagnostics.rs",
+            &[
+                "InvalidTextureData",
+                "TextureSizeLimit",
+                "TextureIdentityCollision",
+                "TextureColorSpaceMismatch",
             ][..],
         ),
         (
@@ -112,6 +186,34 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
             &[
                 "struct TrackedAssetFetcher",
                 "fetch_add(1, Ordering::Relaxed)",
+                "ErrorKind::NotFound",
+                "AssetError::NotFound",
+            ][..],
+        ),
+        (
+            "src/prelude.rs",
+            &[
+                "pub use crate::{",
+                "Assets",
+                "FramingOptions",
+                "Renderer",
+                "TextureMemoryDesc",
+            ][..],
+        ),
+        (
+            "src/scene/view.rs",
+            &[
+                "pub fn frame_node_with_options(",
+                "pub fn frame_node_with_assets_and_options",
+                "visible_asset_backed_node_subtree_bounds_world",
+            ][..],
+        ),
+        (
+            "tests/a15_rust_ergonomics.rs",
+            &[
+                "use scena::prelude::*",
+                "native_missing_file_is_curated_not_found",
+                "controls_features_remain_documented_metadata_only_aliases",
             ][..],
         ),
         (
@@ -145,6 +247,9 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
                 "expected_source_sha256",
                 "stale_source",
                 "SceneRecipeSemanticChangeV1::transform",
+                "PlaceTargetArg::Node",
+                "success_for_target",
+                "wrong_target_namespace",
             ][..],
         ),
         (
@@ -154,6 +259,8 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
                 "struct SceneRecipePatchResultV1",
                 "formatting_preserved",
                 "updated_recipe",
+                "enum ScenePlacementTargetV1",
+                "candidates: Vec<String>",
             ][..],
         ),
         (
@@ -175,10 +282,30 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
                 "### `scena.vocab.v1`",
                 "### `scena.recipe_policy.v1`",
                 "`command_contracts`",
+                "`failure_exit_classes`",
+                "`exit_class`",
                 "internal gate artifacts",
                 "### `scena.recipe_patch.v1`",
+                "target:{kind:\"import\"|\"node\",id}",
                 "`scena.recipe_build_result.v1`",
                 "`scena.field_model.v1`",
+                "`--compact` emits one-line JSON",
+            ][..],
+        ),
+        (
+            "tests/a01_cli_error_taxonomy.rs",
+            &[
+                "cli_errors_expose_stable_typed_exit_taxonomy",
+                "runtime_and_feature_failures_are_not_invalid_arguments",
+                "every_declared_command_has_error_schema_and_exit_class_inventory",
+            ][..],
+        ),
+        (
+            "tests/a02_recipe_field_model.rs",
+            &[
+                "recipe_field_model_covers_authoring_and_rendering_surface",
+                "recipe_json_schema_and_field_model_have_bidirectional_path_parity",
+                "recipe_field_model_parity_rejects_an_omitted_promoted_field",
             ][..],
         ),
         (
@@ -193,6 +320,29 @@ pub(crate) fn check_fr01_fr04_contract_discovery(root: &Path, findings: &mut Vec
         (
             "tests/scena_cli_recipe.rs",
             &["fr03_place_apply_emits_persistent_recipe_and_rejects_stale_source"][..],
+        ),
+        (
+            "tests/a11_authored_node_placement.rs",
+            &[
+                "authored_node_bounds_verbs_preview_apply_and_round_trip",
+                "authored_node_target_errors_are_namespace_aware_and_import_features_stay_import_only",
+                "authored_starter_manifest_teaches_node_place_and_apply",
+            ][..],
+        ),
+        (
+            "tests/a12_json_formatting.rs",
+            &[
+                "compact_and_pretty_are_global_deterministic_and_semantically_identical",
+                "formatting_applies_to_domain_failures_and_cli_errors_without_changing_envelopes",
+                "conflicting_json_styles_fail_with_typed_usage_error",
+            ][..],
+        ),
+        (
+            "tests/a13_error_remedies.rs",
+            &[
+                "every_build_instantiate_and_animation_variant_has_curated_help",
+                "import_and_top_level_errors_delegate_help_and_structured_diagnostics",
+            ][..],
         ),
         (
             "tests/fr02_recipe_build_cli.rs",

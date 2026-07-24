@@ -5,7 +5,7 @@ use crate::animation::{
 };
 use crate::assets::Assets;
 use crate::geometry::{GeometryDesc, GeometrySkin};
-use crate::material::{Color, MaterialDesc};
+use crate::material::{AlphaMode, Color, MaterialDesc};
 use crate::scene::{Scene, SceneSkinBinding, Transform, Vec3};
 
 use super::{PrepareTelemetry, Renderer};
@@ -24,6 +24,187 @@ impl Renderer {
         let handles = slots.iter().map(|slot| slot.handle).collect::<Vec<_>>();
         self.dynamic_gpu_prepare_rejection_reason(scene, &handles)
     }
+
+    fn phase5_retained_primitive_count_for_test(&self) -> usize {
+        self.prepared
+            .as_ref()
+            .map(|prepared| prepared.retained_primitives.len())
+            .unwrap_or(0)
+    }
+
+    fn phase5_visible_primitive_count_for_test(&self) -> usize {
+        self.prepared
+            .as_ref()
+            .map(|prepared| prepared.primitives.len())
+            .unwrap_or(0)
+    }
+
+    fn phase5_clipping_storage_for_test(&self) -> std::sync::Arc<[crate::scene::ClippingPlane]> {
+        std::sync::Arc::clone(
+            &self
+                .prepared
+                .as_ref()
+                .expect("phase5 test renderer is prepared")
+                .clipping_planes,
+        )
+    }
+}
+
+#[test]
+fn off_frustum_source_stays_in_retained_template_across_camera_motion() {
+    let Some(mut renderer) = headless_gpu_for_phase5_test(48, 48) else {
+        return;
+    };
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let _node = scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(100.0, 0.0, 0.0)))
+        .add()
+        .expect("off-frustum mesh inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("initial GPU prepare succeeds");
+    let first = renderer.phase5_prepare_telemetry_for_test();
+    assert!(
+        renderer.phase5_retained_primitive_count_for_test() > 0,
+        "view-dependent culling must not remove source geometry from the retained template",
+    );
+    assert_eq!(
+        renderer.phase5_visible_primitive_count_for_test(),
+        0,
+        "the initial full prepare must still cull the off-frustum draw",
+    );
+
+    let camera_node = scene.camera_node(camera).expect("camera node resolves");
+    scene
+        .set_transform(camera_node, Transform::at(Vec3::new(100.0, 0.0, 2.0)))
+        .expect("camera pans to the off-frustum mesh");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("re-entry prepares");
+    let clipping_storage = renderer.phase5_clipping_storage_for_test();
+    renderer.render(&scene, camera).expect("re-entry renders");
+    assert!(
+        std::sync::Arc::ptr_eq(
+            &clipping_storage,
+            &renderer.phase5_clipping_storage_for_test(),
+        ),
+        "GPU encoding must borrow retained clipping storage instead of cloning its Vec",
+    );
+    assert_eq!(
+        renderer
+            .last_render_work_metrics()
+            .gpu_format_feature_probes,
+        0,
+        "steady rendering must consume prepare-time sample-count capabilities without re-probing the adapter",
+    );
+    let second = renderer.phase5_prepare_telemetry_for_test();
+
+    assert_eq!(
+        second.prepared_primitive_collections, first.prepared_primitive_collections,
+        "re-entry must reuse the source-complete retained template",
+    );
+    assert_eq!(
+        second.draw_uniform_only_updates,
+        first.draw_uniform_only_updates + 1,
+        "re-entry should use the dynamic draw-state path",
+    );
+    assert!(
+        visible_centroid_x(renderer.frame_rgba8(), 48).is_some(),
+        "the re-entered object must produce pixels",
+    );
+    assert!(
+        renderer.phase5_visible_primitive_count_for_test() > 0,
+        "the dynamic draw set must include the re-entered object",
+    );
+
+    let dynamic_frame = renderer.frame_rgba8().to_vec();
+    let Some(mut forced_full_renderer) = headless_gpu_for_phase5_test(48, 48) else {
+        return;
+    };
+    forced_full_renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("fresh renderer performs a full prepare");
+    forced_full_renderer
+        .render(&scene, camera)
+        .expect("fresh renderer renders");
+    assert_eq!(
+        dynamic_frame,
+        forced_full_renderer.frame_rgba8(),
+        "camera-motion dynamic prepare must match a forced full prepare exactly",
+    );
+
+    scene
+        .set_transform(camera_node, Transform::at(Vec3::new(0.0, 0.0, 2.0)))
+        .expect("camera pans away from the mesh again");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("exit prepares");
+    renderer.render(&scene, camera).expect("exit renders");
+    let third = renderer.phase5_prepare_telemetry_for_test();
+    assert_eq!(
+        third.prepared_primitive_collections, second.prepared_primitive_collections,
+        "exiting the frustum must keep using the retained dynamic path",
+    );
+    assert_eq!(
+        renderer.phase5_visible_primitive_count_for_test(),
+        0,
+        "dynamic preparation must cull draws that leave the active frustum",
+    );
+    assert!(
+        visible_centroid_x(renderer.frame_rgba8(), 48).is_none(),
+        "a dynamically culled object must not contribute pixels",
+    );
+}
+
+#[test]
+fn off_frustum_transparency_prevents_unsafe_dynamic_reentry() {
+    let Some(mut renderer) = headless_gpu_for_phase5_test(48, 48) else {
+        return;
+    };
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
+    let opaque = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let transparent = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(1.0, 1.0, 1.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("camera inserts");
+    scene
+        .mesh(geometry, opaque)
+        .add()
+        .expect("visible opaque mesh inserts");
+    scene
+        .mesh(geometry, transparent)
+        .transform(Transform::at(Vec3::new(100.0, 0.0, 0.0)))
+        .add()
+        .expect("off-frustum transparent mesh inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("initial GPU prepare succeeds");
+    assert_eq!(
+        renderer.phase5_visible_primitive_count_for_test(),
+        12,
+        "only the twelve triangles of the opaque box start in the draw set",
+    );
+    let camera_node = scene.camera_node(camera).expect("camera node resolves");
+    scene
+        .set_transform(camera_node, Transform::at(Vec3::new(100.0, 0.0, 2.0)))
+        .expect("camera pans to transparent mesh");
+
+    assert_eq!(
+        renderer.phase5_dynamic_rejection_reason_for_test(&scene, &assets),
+        Some("moving mesh missing GPU material slot"),
+        "off-frustum transparency must force a full prepare because its material was not uploaded into the visible draw slots",
+    );
 }
 
 #[test]

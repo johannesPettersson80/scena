@@ -15,7 +15,43 @@ const JSON_ARTIFACTS = {
   q01Parity: "target/gate-artifacts/m6-required-webgpu-pixel-parity/result.json",
   q04Lifecycle: "target/gate-artifacts/c09-gpu-resource-lifecycle/required-result.json",
   p01Benchmark: "target/gate-artifacts/p01-shader-module-cache.json",
+  m8WaterBottle: "target/gate-artifacts/m8-real-asset/waterbottle_gpu_result.json",
+  q07Antialiasing: "target/gate-artifacts/q07-antialiasing-effect/result.json",
+  q11ReferenceStability: "target/gate-artifacts/q11-reference-stability/windows-x86_64.json",
 };
+
+const Q08_ARTIFACTS = [
+  [
+    "target/gate-artifacts/q08-required-parity/physical-glass-transmission-matches-cpu-and-gpu-across-volume-sweep.json",
+    "physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep",
+    "tests/transmission_parity.rs",
+  ],
+  [
+    "target/gate-artifacts/q08-required-parity/close-camera-near-clip-matches-cpu-and-gpu-rendered-output.json",
+    "close_camera_near_clip_matches_cpu_and_gpu_rendered_output",
+    "tests/c13_depth_clipping_parity.rs",
+  ],
+  [
+    "target/gate-artifacts/q08-required-parity/dynamic-transform-motion-matches-cpu-and-gpu-for-authored-animation-and-imports.json",
+    "dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports",
+    "tests/dynamic_transform_parity.rs",
+  ],
+  [
+    "target/gate-artifacts/q08-required-parity/z-up-imported-rotation-frame-matches-cpu-and-gpu-after-basis-conversion.json",
+    "z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion",
+    "tests/dynamic_transform_parity.rs",
+  ],
+  [
+    "target/gate-artifacts/q08-required-parity/core-pbr-brdf-matches-cpu-and-gpu-across-metallic-roughness-sweep.json",
+    "core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep",
+    "tests/pbr_brdf_parity.rs",
+  ],
+  [
+    "target/gate-artifacts/q08-required-parity/pf08-adaptive-texture-bake-preserves-seams-perspective-and-material-identity-cpu-gpu.json",
+    "pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu",
+    "tests/pf08_texture_bake_parity.rs",
+  ],
+];
 
 const VISUAL_ARTIFACTS = [
   "target/gate-artifacts/fr06-semantic-aov/browser/webgpu-id.png",
@@ -28,6 +64,11 @@ const VISUAL_ARTIFACTS = [
   "target/gate-artifacts/m6-required-webgpu-pixel-parity/cpu-reference.png",
   "target/gate-artifacts/m6-required-webgpu-pixel-parity/gpu-live.png",
   "target/gate-artifacts/m6-required-webgpu-pixel-parity/diff-heatmap.png",
+  "target/gate-artifacts/m8-real-asset/waterbottle_gpu.png",
+  "target/gate-artifacts/m8-real-asset/waterbottle_diff.png",
+  "target/gate-artifacts/q07-antialiasing-effect/none.ppm",
+  "target/gate-artifacts/q07-antialiasing-effect/fxaa.ppm",
+  "target/gate-artifacts/q07-antialiasing-effect/msaa4.ppm",
 ];
 
 const SOFTWARE_MARKERS = [
@@ -106,6 +147,10 @@ function assertBrowserHardware(backend, label) {
 
 function assertNativeHardware(adapter, label) {
   invariant(adapter && typeof adapter === "object", `${label} has no adapter report`);
+  invariant(
+    normalizedBackend(adapter.backend) === "dx12",
+    `${label} must use Dx12 on Windows, got ${adapter.backend}`,
+  );
   invariant(
     ["DiscreteGpu", "IntegratedGpu", "VirtualGpu"].includes(String(adapter.device_type || "")),
     `${label} adapter is not a hardware device type: ${adapter.device_type}`,
@@ -412,6 +457,219 @@ function validateP01Benchmark(report) {
   return report;
 }
 
+function validateM8WaterBottle(report, root) {
+  invariant(report.schema === "scena.m8.waterbottle_gpu_result.v1", "unexpected M8 WaterBottle schema");
+  invariant(
+    report.status === "passed" && report.release_evidence === true,
+    "M8 WaterBottle is not passed full-frame release evidence",
+  );
+  assertProvenance(report, "M8 WaterBottle");
+  invariant(report.backend === "Dx12", `M8 WaterBottle must use Dx12 on Windows, got ${report.backend}`);
+  invariant(
+    report.adapter_key
+      && report.adapter_key.schema === "scena.gpu_adapter_key.v1"
+      && report.adapter_key.backend === "Dx12"
+      && Number.isInteger(report.adapter_key.vendor)
+      && Number.isInteger(report.adapter_key.device),
+    "M8 WaterBottle has no structured DX12 adapter key",
+  );
+  const adapterExpectation = report.adapter_expectation || {};
+  invariant(
+    adapterExpectation.schema === "scena.m8.waterbottle_adapter_expectation.v1"
+      && adapterExpectation.profile_id === "portable-physical-gpu-v1"
+      && adapterExpectation.match_key === null
+      && adapterExpectation.owner === "scena-renderer-quality"
+      && adapterExpectation.reviewed_at === "2026-07-23"
+      && adapterExpectation.expires_at === "none"
+      && adapterExpectation.evidence_sha256 === "4db449cdacf2340f8fa53937c28e5c4b5e2c7deaea73cbe0987dcd51eb93c751",
+    "M8 WaterBottle DX12 adapter expectation is not the reviewed structured portable profile",
+  );
+  const expectedRegions = new Map([
+    ["cap_dome", [250, 70, [76, 27, 12]]],
+    ["cap_dome_left", [240, 70, [76, 27, 12]]],
+    ["upper_body", [249, 130, [153, 134, 48]]],
+    ["body_olive_mid", [249, 270, [163, 143, 53]]],
+    ["body_olive_low", [249, 330, [132, 114, 32]]],
+    ["label_metal_r", [270, 380, [30, 20, 6]]],
+    ["label_metal_l", [255, 380, [28, 18, 5]]],
+  ]);
+  invariant(
+    Array.isArray(adapterExpectation.regions)
+      && adapterExpectation.regions.length === expectedRegions.size,
+    "M8 WaterBottle adapter expectation region set is incomplete",
+  );
+  for (const region of adapterExpectation.regions) {
+    const expected = expectedRegions.get(region.name);
+    invariant(
+      expected
+        && region.x === expected[0]
+        && region.y === expected[1]
+        && JSON.stringify(region.expected) === JSON.stringify(expected[2])
+        && region.tolerance === 25,
+      `M8 WaterBottle adapter expectation region ${region.name} is not the reviewed Chebyshev-25 sample`,
+    );
+  }
+  const adapter = String(report.adapter || "").toLowerCase();
+  invariant(adapter.length > 0, "M8 WaterBottle has no adapter identity");
+  for (const marker of SOFTWARE_MARKERS) {
+    invariant(!adapter.includes(marker), `M8 WaterBottle uses a software adapter marker: ${marker}`);
+  }
+  invariant(report.metrics && report.metrics.reference_diff === "passed", "M8 WaterBottle full-frame diff did not pass");
+  const fullFrame = report.metrics.full_frame || {};
+  invariant(Number(fullFrame.compared_pixels) === 512 * 512, "M8 WaterBottle did not compare the complete 512x512 frame");
+  invariant(
+    Number(fullFrame.within_tolerance_fraction) >= 0.95,
+    "M8 WaterBottle full-frame fraction is below 0.95",
+  );
+  invariant(
+    Array.isArray(fullFrame.worst_region_bbox) && fullFrame.worst_region_bbox.length === 4,
+    "M8 WaterBottle has no worst-region bbox",
+  );
+  invariant(
+    report.metrics.thresholds
+      && report.metrics.thresholds.rgb_chebyshev_max === 16
+      && report.metrics.thresholds.within_tolerance_fraction_min === 0.95,
+    "M8 WaterBottle full-frame thresholds changed",
+  );
+  invariant(
+    Array.isArray(report.known_bad_mutations)
+      && report.known_bad_mutations.some((mutation) =>
+        mutation.name === "horizontal_mirror" && mutation.rejected === true),
+    "M8 WaterBottle horizontal-mirror mutation was not rejected",
+  );
+  invariant(
+    report.reference_sha256 === "4db449cdacf2340f8fa53937c28e5c4b5e2c7deaea73cbe0987dcd51eb93c751",
+    "M8 WaterBottle reference hash is not the pinned scena-gold image",
+  );
+  for (const [field, relative] of [
+    ["png_sha256", "target/gate-artifacts/m8-real-asset/waterbottle_gpu.png"],
+    ["diff_sha256", "target/gate-artifacts/m8-real-asset/waterbottle_diff.png"],
+  ]) {
+    const file = path.join(root, relative);
+    invariant(fs.existsSync(file), `M8 WaterBottle is missing ${relative}`);
+    invariant(report[field] === artifactHash(file), `M8 WaterBottle ${field} does not match its artifact`);
+  }
+  return report;
+}
+
+function q07EffectPasses(baseline, candidate) {
+  const minimumIntermediate = Number(baseline.intermediate_luma_pixels) + 20;
+  const maximumIntermediate = Math.max(
+    Number(baseline.intermediate_luma_pixels)
+      + Number(baseline.hard_transition_count) * 6,
+    minimumIntermediate,
+  );
+  return Number(candidate.intermediate_luma_pixels) >= minimumIntermediate
+    && Number(candidate.intermediate_luma_pixels) <= maximumIntermediate
+    && Number(candidate.hard_transition_count) < Number(baseline.hard_transition_count)
+    && Number(candidate.squared_edge_energy) * 100 < Number(baseline.squared_edge_energy) * 98
+    && Number(candidate.luma_range) * 10 >= Number(baseline.luma_range) * 9;
+}
+
+function validateQ07Antialiasing(report) {
+  invariant(report.schema === "scena.q07.antialiasing_effect.v1", "unexpected Q07 AA schema");
+  invariant(report.status === "passed" && report.release_evidence === true, "Q07 AA proof did not pass");
+  assertProvenance(report, "Q07 AA proof");
+  invariant(report.fixture === "high-contrast-asymmetric-diagonal-v1", "Q07 AA fixture is not the pinned diagonal");
+  assertNativeHardware(report.adapter, "Q07 AA proof");
+  const baseline = report.baseline && report.baseline.metrics;
+  invariant(baseline, "Q07 AA proof has no baseline metrics");
+  for (const mode of ["fxaa", "msaa4"]) {
+    const result = report.modes && report.modes[mode];
+    invariant(result && result.status === "passed", `Q07 ${mode} did not pass`);
+    invariant(q07EffectPasses(baseline, result.metrics || {}), `Q07 ${mode} has no measured AA pixel effect`);
+  }
+  const msaa8 = report.modes && report.modes.msaa8;
+  invariant(
+    msaa8 && (msaa8.status === "passed"
+      ? q07EffectPasses(baseline, msaa8.metrics || {})
+      : msaa8.status === "degraded"
+        && msaa8.reason_code === "UNSUPPORTED_SAMPLE_COUNT"
+        && Number(msaa8.requested) === 8
+        && Number(msaa8.maximum) >= 1),
+    "Q07 MSAA8 neither passed nor recorded explicit sample-count degradation",
+  );
+  for (const mutation of ["no_op", "blur_everything"]) {
+    invariant(
+      Array.isArray(report.known_bad_mutations)
+        && report.known_bad_mutations.some((entry) => entry.name === mutation && entry.rejected === true),
+      `Q07 AA mutation ${mutation} was not rejected`,
+    );
+  }
+  return report;
+}
+
+function validateQ08Parity(report, root, expectedCommit, expectedTest, expectedSource) {
+  invariant(
+    report.schema === "scena.q08.required_cpu_gpu_parity.v1",
+    `unexpected Q08 parity schema for ${expectedTest}`,
+  );
+  invariant(
+    report.status === "passed"
+      && report.release_evidence === true
+      && report.proof_class === "physical-hardware-required",
+    `Q08 parity ${expectedTest} is not passed physical-hardware release evidence`,
+  );
+  assertProvenance(report, `Q08 parity ${expectedTest}`);
+  invariant(report.commit_sha === expectedCommit, `Q08 parity ${expectedTest} is from a different source commit`);
+  invariant(report.test_name === expectedTest, `Q08 parity result names the wrong test: ${report.test_name}`);
+  invariant(Number(report.assertions_executed) > 0, `Q08 parity ${expectedTest} executed zero assertions`);
+  assertNativeHardware(report.adapter, `Q08 parity ${expectedTest}`);
+  invariant(normalizedBackend(report.adapter.backend).length > 0, `Q08 parity ${expectedTest} has no backend`);
+  const source = path.join(root, expectedSource);
+  invariant(fs.existsSync(source), `Q08 parity ${expectedTest} is missing source ${expectedSource}`);
+  const expectedSha256 = artifactHash(source);
+  invariant(
+    Array.isArray(report.source_checksums)
+      && report.source_checksums.some((entry) =>
+        normalizedArtifactPath(entry.path) === expectedSource
+          && entry.sha256 === expectedSha256),
+    `Q08 parity ${expectedTest} is not bound to source ${expectedSource}`,
+  );
+  return report;
+}
+
+function validateQ11ReferenceStability(report, expectedCommit) {
+  invariant(report.schema === "scena.q11.reference_stability.v1", "unexpected Q11 reference-stability schema");
+  invariant(report.status === "passed" && report.release_evidence === true, "Q11 reference stability did not pass");
+  assertProvenance(report, "Q11 reference stability");
+  invariant(report.commit_sha === expectedCommit, "Q11 reference stability is from a different source commit");
+  invariant(report.os === "windows" && report.arch === "x86_64", "Q11 reference stability is not Windows x86_64 evidence");
+  invariant(report.backend === "Headless" && report.adapter === "software-rasterizer", "Q11 did not use the CPU oracle backend");
+  invariant(
+    report.comparison_order === "independent-render-before-committed-reference"
+      && report.repeat_count === 2
+      && report.byte_identical === true,
+    "Q11 did not compare two independent renders before consulting the reference",
+  );
+  invariant(
+    Array.isArray(report.rgba8_sha256)
+      && report.rgba8_sha256.length === 2
+      && report.rgba8_sha256[0] === report.rgba8_sha256[1]
+      && /^[0-9a-f]{64}$/i.test(report.rgba8_sha256[0]),
+    "Q11 renders are not byte-identical",
+  );
+  invariant(
+    report.reference
+      && report.reference.sha256 === "922cc35e0c6420d2b3f8e533891291a9d4f9396697ae366f0b93de3c15973da4"
+      && report.reference.rgb_chebyshev_tolerance === 4
+      && report.reference.min_within_tolerance_fraction === 0.995
+      && report.reference.max_rgb_rmse === 2,
+    "Q11 fixed reference or thresholds changed",
+  );
+  invariant(
+    Array.isArray(report.metric_distribution)
+      && report.metric_distribution.length === 2
+      && report.metric_distribution.every((metrics) =>
+        metrics.passed === true
+          && Number(metrics.within_tolerance_fraction) >= 0.995
+          && Number(metrics.rgb_rmse) <= 2
+          && Number(metrics.alpha_mismatch_pixels) === 0),
+    "Q11 metric distribution exceeds the fixed oracle",
+  );
+  return report;
+}
+
 function validateNativeFr06(report) {
   invariant(report.schema === "scena.fr06.native_semantic_aov_proof.v1", "unexpected native FR06 schema");
   invariant(report.status === "passed", "native FR06 status is not passed");
@@ -486,13 +744,26 @@ function validateProofRoot(root) {
   const fr06Browser = validateFr06Browser(readJson(proofRoot, JSON_ARTIFACTS.fr06Browser));
   const nativeSurface = validateNativeSurface(readJson(proofRoot, JSON_ARTIFACTS.nativeSurface));
   const nativeFr06 = validateNativeFr06(readJson(proofRoot, JSON_ARTIFACTS.nativeFr06));
-  validateQ01Parity(readJson(proofRoot, JSON_ARTIFACTS.q01Parity), proofRoot);
+  const q01Parity = validateQ01Parity(readJson(proofRoot, JSON_ARTIFACTS.q01Parity), proofRoot);
   validateQ04Lifecycle(readJson(proofRoot, JSON_ARTIFACTS.q04Lifecycle));
   validateP01Benchmark(readJson(proofRoot, JSON_ARTIFACTS.p01Benchmark));
+  validateM8WaterBottle(readJson(proofRoot, JSON_ARTIFACTS.m8WaterBottle), proofRoot);
+  validateQ07Antialiasing(readJson(proofRoot, JSON_ARTIFACTS.q07Antialiasing));
+  validateQ11ReferenceStability(
+    readJson(proofRoot, JSON_ARTIFACTS.q11ReferenceStability),
+    q01Parity.commit_sha,
+  );
+  for (const [relative, testName, source] of Q08_ARTIFACTS) {
+    validateQ08Parity(readJson(proofRoot, relative), proofRoot, q01Parity.commit_sha, testName, source);
+  }
   validateVisualArtifacts(proofRoot);
 
   const artifactSha256 = {};
-  for (const relative of [...Object.values(JSON_ARTIFACTS), ...VISUAL_ARTIFACTS]) {
+  for (const relative of [
+    ...Object.values(JSON_ARTIFACTS),
+    ...Q08_ARTIFACTS.map(([artifact]) => artifact),
+    ...VISUAL_ARTIFACTS,
+  ]) {
     artifactSha256[relative] = artifactHash(path.join(proofRoot, relative));
   }
   const browserBackends = pf01.backends.map((backend) => backend.backend).sort();
@@ -513,6 +784,11 @@ function validateProofRoot(root) {
       required_webgpu_pixel_parity: true,
       gpu_resource_lifecycle: true,
       shader_module_cache_p95: true,
+      waterbottle_full_frame_reference: true,
+      waterbottle_horizontal_mirror_rejected: true,
+      antialiasing_pixel_effect: true,
+      reference_stability: true,
+      required_physical_cpu_gpu_parity: true,
       native_surface_resize_recovery: true,
     },
     adapters: {
@@ -558,6 +834,10 @@ module.exports = {
   validateFr06Browser,
   validateNativeFr06,
   validateNativeSurface,
+  validateM8WaterBottle,
+  validateQ07Antialiasing,
+  validateQ08Parity,
+  validateQ11ReferenceStability,
   validateP01Benchmark,
   validatePf01,
   validateProofRoot,

@@ -1,14 +1,14 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, AutoExposureConfig, Backend,
-    Capabilities, Color, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX,
-    EnvironmentDesc, EnvironmentHandle, EnvironmentSourceKind, GeometryDesc, GeometryHandle,
-    GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind,
-    NotPreparedReason, OutputStageStatus, PerspectiveCamera, PrepareError, Primitive, RenderError,
-    Renderer, Scene, SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Tonemapper,
-    Transform, Vec3, Vertex, WasmEnvironmentDelivery, estimate_auto_exposure_from_linear_colors,
-    estimate_auto_exposure_from_srgb8,
+    Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, AutoExposureConfig,
+    AutoExposureStatus, Backend, Capabilities, Color, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
+    DEFAULT_STROKE_WIDTH_PX, EnvironmentDesc, EnvironmentHandle, EnvironmentSourceKind,
+    GeometryDesc, GeometryHandle, GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind,
+    ModelHandle, NodeKind, NotPreparedReason, OutputStageStatus, PerspectiveCamera, PrepareError,
+    Primitive, RenderError, Renderer, Scene, SceneAsset, TextureColorSpace, TextureDesc,
+    TextureHandle, Tonemapper, Transform, Vec3, Vertex, WasmEnvironmentDelivery,
+    estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
@@ -896,6 +896,26 @@ fn renderer_managed_auto_exposure_applies_during_render() {
     let result = automatic
         .last_auto_exposure()
         .expect("renderer records last auto-exposure result");
+    assert_eq!(
+        automatic.auto_exposure_status(),
+        AutoExposureStatus::Converged,
+        "deterministic headless rendering converges within the render call",
+    );
+
+    let mut repeat = Renderer::headless(4, 4).expect("repeat auto renderer builds");
+    repeat.set_auto_exposure(AutoExposureConfig::default());
+    repeat
+        .prepare(&mut scene)
+        .expect("repeat auto renderer prepares");
+    repeat
+        .render(&scene, camera)
+        .expect("repeat auto-exposure render succeeds");
+    assert_eq!(
+        repeat.frame_rgba8(),
+        automatic.frame_rgba8(),
+        "headless auto-exposure output sequence remains byte deterministic",
+    );
+    assert_eq!(repeat.last_auto_exposure(), Some(result));
 
     assert!(
         (result.exposure_ev() - 2.0).abs() < 0.05,

@@ -42,7 +42,7 @@ fn appearance_introspection_verifies_first_time_variant_color_without_golden_ima
     }))
     .expect("appearance expectation decodes");
 
-    let report = AppearanceIntrospectionReportV1::from_capture(
+    let report = viewer.renderer().introspect_appearance(
         &capture,
         &inspection,
         &expectation,
@@ -106,7 +106,7 @@ fn appearance_introspection_fails_closed_for_wrong_color_missing_variant_and_fal
     }))
     .expect("appearance expectation decodes");
 
-    let report = AppearanceIntrospectionReportV1::from_capture(
+    let report = viewer.renderer().introspect_appearance(
         &capture,
         &inspection,
         &expectation,

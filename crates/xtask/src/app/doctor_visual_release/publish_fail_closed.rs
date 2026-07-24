@@ -19,6 +19,10 @@ pub(crate) fn check_release_publish_dry_run_helper(root: &Path, findings: &mut V
             "publish-dry-run.log",
             "git worktree add --detach",
             "git worktree remove --force",
+            "AGENTS.md",
+            ".codex/skills",
+            "cmp -s",
+            "diff -qr",
         ],
     );
 }

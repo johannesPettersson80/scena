@@ -36,33 +36,39 @@ fn pf10_release_evidence_requires_exact_source_commit() {
 
 #[test]
 fn pf10_cpu_occlusion_can_be_disabled_without_changing_scene_output() {
-    let (mut scene, camera) = dense_occlusion_scene(64);
+    for size in [96, 512] {
+        let (mut scene, camera) = dense_occlusion_scene(64);
 
-    let mut enabled = Renderer::headless(96, 96).expect("enabled renderer builds");
-    enabled.set_cpu_occlusion_culling(true);
-    enabled
-        .prepare(&mut scene)
-        .expect("enabled prepare succeeds");
-    let enabled_outcome = enabled
-        .render(&scene, camera)
-        .expect("enabled render succeeds");
-    let enabled_frame = enabled.frame_rgba8().to_vec();
+        let mut enabled = Renderer::headless(size, size).expect("enabled renderer builds");
+        enabled.set_cpu_occlusion_culling(true);
+        enabled
+            .prepare(&mut scene)
+            .expect("enabled prepare succeeds");
+        let enabled_outcome = enabled
+            .render(&scene, camera)
+            .expect("enabled render succeeds");
+        let enabled_frame = enabled.frame_rgba8().to_vec();
 
-    let mut disabled = Renderer::headless(96, 96).expect("disabled renderer builds");
-    disabled.set_cpu_occlusion_culling(false);
-    disabled
-        .prepare(&mut scene)
-        .expect("disabled prepare succeeds");
-    let disabled_outcome = disabled
-        .render(&scene, camera)
-        .expect("disabled render succeeds");
+        let mut disabled = Renderer::headless(size, size).expect("disabled renderer builds");
+        disabled.set_cpu_occlusion_culling(false);
+        disabled
+            .prepare(&mut scene)
+            .expect("disabled prepare succeeds");
+        let disabled_outcome = disabled
+            .render(&scene, camera)
+            .expect("disabled render succeeds");
 
-    assert!(enabled.cpu_occlusion_culling());
-    assert!(!disabled.cpu_occlusion_culling());
-    assert!(enabled.stats().culled_objects > 0);
-    assert_eq!(disabled.stats().culled_objects, 0);
-    assert!(enabled_outcome.draw_calls < disabled_outcome.draw_calls);
-    assert_eq!(enabled_frame, disabled.frame_rgba8());
+        assert!(enabled.cpu_occlusion_culling());
+        assert!(!disabled.cpu_occlusion_culling());
+        assert!(enabled.stats().culled_objects > 0);
+        assert_eq!(disabled.stats().culled_objects, 0);
+        assert!(enabled_outcome.draw_calls < disabled_outcome.draw_calls);
+        assert_eq!(
+            enabled_frame,
+            disabled.frame_rgba8(),
+            "occlusion enabled/disabled output must match at {size}x{size}",
+        );
+    }
 }
 
 #[test]

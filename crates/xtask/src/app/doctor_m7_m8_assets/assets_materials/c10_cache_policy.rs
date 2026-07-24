@@ -34,13 +34,13 @@ pub(crate) fn check_c10_cache_policy_contract(root: &Path, findings: &mut Vec<Fi
         &[
             "struct SceneCacheKey",
             "options: AssetLoadOptions",
-            "fn satisfies(&self, requested: AssetLoadOptions)",
+            "fn satisfies(&self, requested: &AssetLoadOptions)",
             "if requested.strict_textures()",
             "AssetLoadWarning::ExternalImageMissing",
             "if requested.strict_external_resources()",
             "AssetLoadWarning::ExternalBufferMissing",
             "self.fetched_bytes <= limit",
-            ".satisfies(requested)",
+            ".satisfies(&requested)",
             "fn replace_cached_scene",
         ],
     );
@@ -50,8 +50,8 @@ pub(crate) fn check_c10_cache_policy_contract(root: &Path, findings: &mut Vec<Fi
         RULE,
         "src/assets/scene_loading.rs",
         &[
-            "storage.cached_scene(&path, options)",
-            "storage.cache_scene(path.clone(), options",
+            "storage.cached_scene(&path, options.clone())",
+            "storage.cache_scene(",
             "storage.replace_cached_scene(",
             "requested_options: options",
             "cache_entry_options",
@@ -65,8 +65,8 @@ pub(crate) fn check_c10_cache_policy_contract(root: &Path, findings: &mut Vec<Fi
         &[
             "pub(super) requested_options: AssetLoadOptions",
             "pub(super) cache_entry_options: AssetLoadOptions",
-            "pub const fn options(&self) -> AssetLoadOptions",
-            "pub const fn cache_entry_options(&self) -> AssetLoadOptions",
+            "pub fn options(&self) -> AssetLoadOptions",
+            "pub fn cache_entry_options(&self) -> AssetLoadOptions",
             "pub requested_options: AssetLoadOptions",
             "pub cache_entry_options: AssetLoadOptions",
         ],

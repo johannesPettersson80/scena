@@ -12,7 +12,7 @@ use scena::{
     GeometryTopology, GeometryVertex, MaterialDesc, PerspectiveCamera, Scene, Transform, Vec3,
 };
 use support::parity::{
-    OwnedRgbaFrame, ParitySweep, PixelRegion, compare_frames_in_region,
+    OwnedRgbaFrame, ParitySweep, PixelRegion, compare_frames_in_region, record_cpu_gpu_parity_pass,
     render_scene_cpu_gpu_pair_with_renderer, require_cpu_gpu_parity_adapter_or_skip,
 };
 
@@ -45,6 +45,7 @@ fn core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep() {
     let artifacts = artifact_dir();
     let mut sweep = ParitySweep::new(SCHEMA);
     let mut cpu_frames = Vec::new();
+    let mut gpu_adapter = None;
 
     for case in pbr_cases() {
         let pair = render_scene_cpu_gpu_pair_with_renderer(
@@ -55,6 +56,9 @@ fn core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep() {
             |renderer| renderer.set_background(Background::DarkStudio),
             move |scene, assets| build_direct_pbr_scene(scene, assets, case),
         );
+        if gpu_adapter.is_none() {
+            gpu_adapter = pair.gpu.gpu_adapter.clone();
+        }
         write_ppm(
             &artifacts.join(format!("{}-cpu.ppm", case.name)),
             WIDTH,
@@ -99,6 +103,11 @@ fn core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep() {
 
     assert_material_response_is_not_inert(&cpu_frames);
     sweep.write_json(&artifacts.join("pbr-brdf-parity.json"), &[]);
+    record_cpu_gpu_parity_pass(
+        "core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep",
+        gpu_adapter.as_ref().expect("PBR GPU adapter is recorded"),
+        12,
+    );
 }
 
 fn pbr_cases() -> [PbrCase; 5] {
@@ -237,8 +246,7 @@ fn named_frame<'a>(
 }
 
 fn artifact_dir() -> PathBuf {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/gate-artifacts/pbr-brdf-parity");
+    let path = PathBuf::from("target/gate-artifacts/pbr-brdf-parity");
     fs::create_dir_all(&path).expect("artifact dir exists");
     path
 }

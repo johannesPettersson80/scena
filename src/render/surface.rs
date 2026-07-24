@@ -12,7 +12,16 @@ impl Renderer {
     pub fn handle_surface_event(&mut self, event: SurfaceEvent) -> Result<(), RenderError> {
         match event {
             SurfaceEvent::Resize { width, height } => {
-                self.resize_target(width, height)?;
+                if width == 0 || height == 0 {
+                    // Native window systems report a zero physical extent
+                    // while minimized. Keep the last valid target so no
+                    // zero-sized texture/surface is configured; the next
+                    // non-zero resize supplies the authoritative extent.
+                    self.target_revision = self.target_revision.saturating_add(1);
+                    self.clear_rendered_frame();
+                } else {
+                    self.resize_target(width, height)?;
+                }
             }
             SurfaceEvent::ViewportChanged(viewport) => {
                 let size = viewport.physical_size();

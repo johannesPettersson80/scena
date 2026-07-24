@@ -18,8 +18,11 @@ pub(crate) fn check_q01_waterbottle_cpu_proof(root: &Path, findings: &mut Vec<Fi
             "const MIN_WITHIN_TOLERANCE_FRACTION: f64 = 0.995;",
             "const MAX_RGB_RMSE: f64 = 2.0;",
             "flattened_chrome_mutation",
-            "wrong_material_mutation",
-            "wrong_camera_mutation",
+            "render_wrong_material_scene",
+            "render_wrong_camera_scene",
+            "\"mutation_kind\": mutation_kind",
+            "scene-mesh-material-before-prepare",
+            "active-camera-transform-before-prepare",
             "\"color_space\": \"srgb-output\"",
             "\"row_orientation\": \"top-to-bottom\"",
             "\"alpha_contract\": \"opaque\"",
@@ -70,6 +73,7 @@ pub(crate) fn check_q01_waterbottle_cpu_proof(root: &Path, findings: &mut Vec<Fi
             "headless-cpu.commands.jsonl",
             "rust_test_output_observed",
             "validate_waterbottle_cpu_result",
+            "validate_waterbottle_mutation_provenance",
         ],
     );
     require_contains(
@@ -116,7 +120,11 @@ pub(crate) fn check_q01_waterbottle_cpu_proof(root: &Path, findings: &mut Vec<Fi
         findings,
         "Q01-WATERBOTTLE",
         "CLAUDE.md",
-        &["RGB Chebyshev distance 16", "reference comparison skipped"],
+        &[
+            "RGB Chebyshev distance 16",
+            "horizontal-mirror mutation must fail",
+            "release_evidence:false",
+        ],
     );
     forbid_contains(
         root,

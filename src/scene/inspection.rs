@@ -34,6 +34,7 @@ pub struct SceneInspectionReport {
     clipping_plane_count: usize,
     structure_revision: u64,
     transform_revision: u64,
+    camera_revision: u64,
     appearance_revision: u64,
     interaction_revision: u64,
 }
@@ -140,6 +141,7 @@ impl Scene {
             clipping_plane_count: self.clipping_planes.len(),
             structure_revision: dirty.structure_revision,
             transform_revision: dirty.transform_revision,
+            camera_revision: dirty.camera_revision,
             appearance_revision: dirty
                 .appearance_revision
                 .saturating_add(dirty.visibility_revision),

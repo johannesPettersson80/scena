@@ -19,6 +19,7 @@ fn c20_doctor_rejects_removed_pointer_capture() {
         "src/bin/scena/recipe/capture_sequence.rs",
         "src/bin/scena/recipe/cad_inspection.rs",
         "src/bin/scena/output.rs",
+        "src/bin/scena/scene_commands.rs",
         "src/bin/scena/help.rs",
         "tests/scena_cli_recipe.rs",
         "tests/fr05_capture_sequence.rs",
@@ -50,7 +51,7 @@ fn c20_doctor_rejects_removed_pointer_capture() {
     let source = fs::read_to_string(&element).expect("C20 element source reads");
     let mutated = source.replacen("this.setPointerCapture(event.pointerId);", "", 1);
     assert_ne!(source, mutated, "C20 mutation must remove pointer capture");
-    fs::write(element, mutated).expect("C20 element mutation writes");
+    fs::write(&element, mutated).expect("C20 element mutation writes");
     findings.clear();
     check_c20_browser_execution_ergonomics(&fixture_root, &mut findings);
     assert!(
@@ -61,5 +62,24 @@ fn c20_doctor_rejects_removed_pointer_capture() {
                     .contains("this.setPointerCapture(event.pointerId)")
         }),
         "removing pointer capture must fail doctor: {findings:?}",
+    );
+
+    fs::write(&element, source).expect("C20 element source restores");
+    let scene_commands = fixture_root.join("src/bin/scena/scene_commands.rs");
+    let source = fs::read_to_string(&scene_commands).expect("scene command source reads");
+    fs::write(
+        &scene_commands,
+        format!("{source}\nfn warn_gpu_fallback() {{ eprintln!(\"fallback\"); }}\n"),
+    )
+    .expect("fallback mutation writes");
+    findings.clear();
+    check_c20_browser_execution_ergonomics(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "C20-BROWSER-EXECUTION-ERGONOMICS"
+                && (finding.message.contains("warn_gpu_fallback")
+                    || finding.message.contains("eprintln!("))
+        }),
+        "unversioned GPU fallback prose must fail doctor: {findings:?}",
     );
 }

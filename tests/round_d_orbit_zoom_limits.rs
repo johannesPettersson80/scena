@@ -36,3 +36,27 @@ fn wheel_and_pinch_zoom_are_clamped_to_named_limits() {
     }
     assert_close(controls.distance(), 12.5);
 }
+
+#[test]
+fn wheel_zoom_is_bounded_and_reciprocal_for_normalized_deltas() {
+    let mut bounded = OrbitControls::new(Vec3::ZERO, 10.0);
+    bounded.handle_pointer(PointerEvent::wheel(0.0, 0.0, 100.0));
+    assert!(
+        bounded.distance() <= 15.0,
+        "one pathological raw event must not zoom 11x: {}",
+        bounded.distance(),
+    );
+
+    let mut reciprocal = OrbitControls::new(Vec3::ZERO, 10.0);
+    reciprocal.handle_pointer(PointerEvent::wheel(0.0, 0.0, 1.0));
+    reciprocal.handle_pointer(PointerEvent::wheel(0.0, 0.0, -1.0));
+    assert_close(reciprocal.distance(), 10.0);
+
+    let mut aggregate = OrbitControls::new(Vec3::ZERO, 10.0);
+    aggregate.handle_pointer(PointerEvent::wheel(0.0, 0.0, 1.0));
+    let mut incremental = OrbitControls::new(Vec3::ZERO, 10.0);
+    for _ in 0..20 {
+        incremental.handle_pointer(PointerEvent::wheel(0.0, 0.0, 0.05));
+    }
+    assert_close(incremental.distance(), aggregate.distance());
+}

@@ -216,13 +216,19 @@ fn draw_projected_primitive_cpu(
     if !primitive.double_sided() && area < 0.0 {
         return;
     }
+    let inverse_area = area.recip();
     for y in min_y..=max_y {
         for x in min_x..=max_x {
             let px = x as f32 + 0.5;
             let py = y as f32 + 0.5;
-            let w0 = cpu_geometry::edge(b, c, px, py) / area;
-            let w1 = cpu_geometry::edge(c, a, px, py) / area;
-            let w2 = cpu_geometry::edge(a, b, px, py) / area;
+            let [w0, w1, w2] = affine_barycentric_weights(
+                [
+                    cpu_geometry::edge(b, c, px, py),
+                    cpu_geometry::edge(c, a, px, py),
+                    cpu_geometry::edge(a, b, px, py),
+                ],
+                inverse_area,
+            );
             if !cpu_geometry::barycentric_sample_is_inside([w0, w1, w2]) {
                 continue;
             }
@@ -331,9 +337,14 @@ fn draw_projected_order_independent_transparency_cpu(
         for x in min_x..=max_x {
             let px = x as f32 + 0.5;
             let py = y as f32 + 0.5;
-            let w0 = cpu_geometry::edge(b, c, px, py) * inverse_area;
-            let w1 = cpu_geometry::edge(c, a, px, py) * inverse_area;
-            let w2 = cpu_geometry::edge(a, b, px, py) * inverse_area;
+            let [w0, w1, w2] = affine_barycentric_weights(
+                [
+                    cpu_geometry::edge(b, c, px, py),
+                    cpu_geometry::edge(c, a, px, py),
+                    cpu_geometry::edge(a, b, px, py),
+                ],
+                inverse_area,
+            );
             if !cpu_geometry::barycentric_sample_is_inside([w0, w1, w2]) {
                 continue;
             }
@@ -423,6 +434,11 @@ fn mix_depth(vertices: [CpuScreenVertex; 3], affine: [f32; 3]) -> f32 {
         + vertices[2].projected.depth * affine[2]
 }
 
+#[inline]
+fn affine_barycentric_weights(edge_values: [f32; 3], inverse_area: f32) -> [f32; 3] {
+    edge_values.map(|edge| edge * inverse_area)
+}
+
 pub(super) fn write_pixel(
     cpu_frame: &mut CpuFrame<'_>,
     x: u32,
@@ -510,5 +526,56 @@ fn clamp_alpha_or(value: f32, fallback: f32) -> f32 {
         value.clamp(0.0, 1.0)
     } else {
         fallback
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn affine_barycentric_weights_use_one_precomputed_inverse_area() {
+        let area = 8.0_f32;
+        let edge_values = [2.0, 3.0, 3.0];
+        let weights = affine_barycentric_weights(edge_values, area.recip());
+
+        assert_eq!(weights, [0.25, 0.375, 0.375]);
+        assert_eq!(weights.iter().sum::<f32>(), 1.0);
+    }
+
+    #[test]
+    fn opaque_and_oit_hot_loops_pin_one_reciprocal_and_zero_per_pixel_divisions() {
+        let source = include_str!("cpu.rs");
+        let opaque = source
+            .split_once("fn draw_projected_primitive_cpu(")
+            .expect("opaque raster function exists")
+            .1
+            .split_once("pub(super) fn draw_order_independent_transparency_cpu(")
+            .expect("opaque raster function boundary exists")
+            .0;
+        let oit = source
+            .split_once("fn draw_projected_order_independent_transparency_cpu(")
+            .expect("OIT raster function exists")
+            .1
+            .split_once("pub(super) fn resolve_order_independent_transparency_cpu(")
+            .expect("OIT raster function boundary exists")
+            .0;
+
+        for (name, hot_loop) in [("opaque", opaque), ("oit", oit)] {
+            assert_eq!(
+                hot_loop.matches("let inverse_area = area.recip();").count(),
+                1,
+                "{name} rasterization must compute one reciprocal per triangle",
+            );
+            assert!(
+                !hot_loop.contains(" / area"),
+                "{name} covered-pixel work must not divide each barycentric edge by area",
+            );
+            assert_eq!(
+                hot_loop.matches("affine_barycentric_weights(").count(),
+                1,
+                "{name} rasterization must share the multiply-only barycentric helper for opaque, overdraw, and clipped samples",
+            );
+        }
     }
 }

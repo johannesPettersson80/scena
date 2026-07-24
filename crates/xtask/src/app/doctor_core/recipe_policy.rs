@@ -362,8 +362,8 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         &root.join("src/scene/recipe/validation/authoring/targets/lights.rs"),
         &[
             "validate_light_preset",
-            "DIRECTIONAL_PRESETS",
-            "POINT_PRESETS",
+            "DIRECTIONAL_LIGHT_PRESETS",
+            "POINT_LIGHT_PRESETS",
         ],
     );
 

@@ -2,5 +2,14 @@
   "schema": "scena.cli_error.v1",
   "ok": false,
   "code": "invalid_command",
-  "message": "unknown command"
+  "exit_class": "usage",
+  "exit_code": 2,
+  "message": "unknown command",
+  "path": null,
+  "context": {
+    "command": "unknown"
+  },
+  "help": "run `scena --help` and select one of the declared command paths",
+  "candidates": [],
+  "fix": null
 }

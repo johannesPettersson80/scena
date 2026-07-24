@@ -2,6 +2,9 @@ use crate::app::prelude::*;
 
 use super::control_flow_allowlist::DIAGNOSTIC_EARLY_RETURNS;
 
+mod env_contract;
+pub(crate) use env_contract::{check_tests_env_flags_documented, find_env_var_names};
+
 pub(crate) fn repo_root() -> Result<PathBuf, String> {
     let mut dir = env::current_dir().map_err(|error| error.to_string())?;
     loop {
@@ -16,6 +19,7 @@ pub(crate) fn repo_root() -> Result<PathBuf, String> {
 
 pub(crate) fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     require_files(root, findings, "DOCS-REQUIRED", REQUIRED_DOCS);
+    check_current_release_document_version(root, findings);
     check_markdown_links(root, findings);
     check_for_stale_doc_terms(root, findings);
     check_shipped_feature_status_drift(root, findings);
@@ -34,10 +38,17 @@ pub(crate) fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_m2_browser_rendered_output(root, findings);
     check_m6_browser_renderer_probe(root, findings);
     check_q01_required_webgpu_pixel_parity(root, findings);
+    check_q04_browser_evidence_classification(root, findings);
     check_q03_m2_local_structure(root, findings);
     check_q04_cpu_webgl2_parity_contracts(root, findings);
     check_q05_effect_footprint_contracts(root, findings);
     check_q06_required_gpu_lane_contracts(root, findings);
+    check_q07_antialiasing_effect_contract(root, findings);
+    check_q08_required_physical_parity(root, findings);
+    check_q09_structured_adapter_expectations(root, findings);
+    check_q10_rendered_waterbottle_mutations(root, findings);
+    check_q11_reference_stability(root, findings);
+    check_q12_semantic_doctor_contracts(root, findings);
     check_full_review_q06_silent_failure_contracts(root, findings);
     check_gltf_asset_matrix_contract(root, findings);
     check_m9_ci_release_lanes(root, findings);
@@ -55,6 +66,53 @@ pub(crate) fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_release_publish_dry_run_helper(root, findings);
     check_m10_claim_audit_contract(root, findings);
     check_state_of_art_checklist_links(root, findings);
+}
+
+pub(crate) fn check_current_release_document_version(root: &Path, findings: &mut Vec<Finding>) {
+    const RULE: &str = "DOCS-CURRENT-RELEASE-VERSION";
+    let manifest_path = root.join("Cargo.toml");
+    let Ok(manifest) = fs::read_to_string(&manifest_path) else {
+        findings.push(Finding::new(RULE, "could not read root Cargo.toml"));
+        return;
+    };
+    let package_version = manifest
+        .lines()
+        .skip_while(|line| line.trim() != "[package]")
+        .skip(1)
+        .take_while(|line| !line.trim().starts_with('['))
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("version = ")
+                .map(|value| value.trim_matches('"'))
+        });
+    if package_version != Some(CURRENT_RELEASE_VERSION) {
+        findings.push(Finding::new(
+            RULE,
+            format!(
+                "current release document version {CURRENT_RELEASE_VERSION} does not match root package version {package_version:?}"
+            ),
+        ));
+    }
+    for relative in [
+        CURRENT_RELEASE_NOTES,
+        CURRENT_REVIEW_REPORT,
+        CURRENT_REMEDIATION_CHECKLIST,
+    ] {
+        if !root.join(relative).is_file() {
+            findings.push(Finding::new(
+                RULE,
+                format!("current versioned document is missing: {relative}"),
+            ));
+        }
+        if !relative.contains(CURRENT_RELEASE_VERSION) {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "current versioned document {relative} does not use {CURRENT_RELEASE_VERSION}"
+                ),
+            ));
+        }
+    }
 }
 
 pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
@@ -269,6 +327,12 @@ pub(crate) fn check_m8_real_asset_dual_lane(root: &Path, findings: &mut Vec<Find
         "write_gpu_release_result",
         "source_checksums",
         "region_checks_passed",
+        "evaluate_waterbottle_reference_diff",
+        "horizontal_mirror",
+        "FULL_FRAME_REFERENCE_DIFF_NOT_RUN",
+        "waterbottle_diff.png",
+        "worst_region_bbox",
+        "scena.gpu_adapter_key.v1",
         "Renderer::headless_gpu",
         "Renderer::headless(",
         "build_waterbottle_scene",
@@ -297,132 +361,6 @@ pub(crate) fn check_m8_real_asset_dual_lane(root: &Path, findings: &mut Vec<Find
              replaced it with gpu_headline + cpu_release_quality lanes"
                 .to_string(),
         ));
-    }
-}
-
-/// `TESTS-ENV-FLAGS-DOCUMENTED`: every non-standard env var that a test under
-/// `tests/` reads must be listed in `CLAUDE.md`'s "Test environment flags"
-/// section so contributors can discover them without grep. Standard cargo /
-/// rust vars (`RUST_LOG`, `RUST_BACKTRACE`, `CARGO_*`, `OUT_DIR`, `TMPDIR`)
-/// are exempt.
-pub(crate) fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<Finding>) {
-    const STANDARD_EXEMPTIONS: &[&str] = &[
-        "RUST_LOG",
-        "RUST_BACKTRACE",
-        "OUT_DIR",
-        "TMPDIR",
-        "HOME",
-        "PATH",
-        "CARGO",
-        "CI",
-        "TARGET",
-        "GITHUB_SHA",
-        "GITHUB_RUN_ID",
-        "GITHUB_REPOSITORY",
-    ];
-    const REGISTERED_ENV_FLAGS: &[&str] = &[
-        "CHROMIUM",
-        "RUST_TOOLCHAIN",
-        "SCENA_ALLOW_PARTIAL_HARDWARE_BACKENDS",
-        "SCENA_BROWSER_ALLOW_UNAVAILABLE",
-        "SCENA_BROWSER_BACKENDS",
-        "SCENA_BROWSER_COMPRESSED_ASSETS",
-        "SCENA_BROWSER_EXECUTABLE",
-        "SCENA_BROWSER_OVERSIZED_TEXTURE",
-        "SCENA_BROWSER_REQUIRE_V3D",
-        "SCENA_BROWSER_FORCE_REBUILD",
-        "SCENA_BROWSER_VIEWER_ELEMENT_ONLY",
-        "SCENA_BROWSER_WORKFLOWS",
-        "SCENA_WEBGL2_BROWSER",
-        "SCENA_WEBGPU_BROWSER",
-        "SCENA_BUILD_HEARTBEAT_MS",
-        "SCENA_HARDWARE_PROOF_COMMAND",
-        "SCENA_HARDWARE_PROOF_ROOT",
-        "SCENA_BENCHMARK_COMMAND",
-        "SCENA_BENCHMARK_CPU",
-        "SCENA_BENCHMARK_PROFILE",
-        "SCENA_MATERIAL_PROOF_URL",
-        "SCENA_M9_TIMING_POLICY",
-        "SCENA_REFERENCE_DIFF",
-        "SCENA_REQUIRE_PARITY",
-        "SCENA_REQUIRE_HARDWARE_GPU",
-        "SCENA_RELEASE_COMMIT",
-        "SCENA_RELEASE_PROFILE",
-        "SCENA_ROUND_E_REFERENCE_SHOWCASE",
-        "SCENA_RUN_DEDICATED_4K_BENCHMARK",
-        "SCENA_RUN_M9_PLATFORM_BENCHMARK",
-        "SCENA_RUN_PF00_BENCHMARK",
-        "SCENA_REAGGREGATE_PF00",
-        "SCENA_RUN_PF03_STORAGE_BENCHMARK",
-        "SCENA_RUN_PF10_OCCLUSION_BENCHMARK",
-        "SCENA_RUN_CONTROLLED_P01_BENCHMARK",
-        "SCENA_RUN_EXPENSIVE_CPU_RELEASE_TESTS",
-        "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS",
-        "SCENA_SHOWCASE_CONNECTOR_ONLY",
-        "SCENA_SHOWCASE_SECTION_BUDGET_MS",
-        "SCENA_SKIP_WASM_BUILD",
-        "SCENA_USE_GPU",
-        "VK_ICD_FILENAMES",
-    ];
-    let claude_md = match fs::read_to_string(root.join("CLAUDE.md")) {
-        Ok(text) => text,
-        Err(_) => {
-            findings.push(Finding::new(
-                "TESTS-ENV-FLAGS-DOCUMENTED",
-                "CLAUDE.md must exist and list test environment flags".to_string(),
-            ));
-            return;
-        }
-    };
-    let mut entries = Vec::new();
-    collect_test_contract_sources(&root.join("tests"), &mut entries);
-    collect_test_contract_sources(&root.join("scripts"), &mut entries);
-    entries.sort();
-    for path in entries {
-        if !is_env_contract_source(&path) {
-            continue;
-        }
-        let Ok(text) = fs::read_to_string(&path) else {
-            continue;
-        };
-        let display = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .display()
-            .to_string();
-        for capture in find_env_var_names(&text) {
-            if STANDARD_EXEMPTIONS.contains(&capture.as_str()) || capture.starts_with("CARGO_") {
-                continue;
-            }
-            if !REGISTERED_ENV_FLAGS.contains(&capture.as_str()) {
-                findings.push(Finding::new(
-                    "TESTS-ENV-FLAGS-DOCUMENTED",
-                    format!(
-                        "{display} reads env var '{capture}' that is absent from the shared test/script env registry"
-                    ),
-                ));
-            }
-            if !claude_md.contains(&capture) {
-                findings.push(Finding::new(
-                    "TESTS-ENV-FLAGS-DOCUMENTED",
-                    format!(
-                        "{display} reads env var '{capture}' that is not listed in \
-                         CLAUDE.md's 'Test environment flags' table; either document it \
-                         or remove the read",
-                    ),
-                ));
-            }
-        }
-    }
-    for name in REGISTERED_ENV_FLAGS {
-        if !claude_md.contains(&format!("`{name}`")) {
-            findings.push(Finding::new(
-                "TESTS-ENV-FLAGS-DOCUMENTED",
-                format!(
-                    "shared env registry entry '{name}' is missing from CLAUDE.md's 'Test environment flags' table"
-                ),
-            ));
-        }
     }
 }
 
@@ -527,41 +465,7 @@ pub(crate) fn check_test_control_flow_policy(root: &Path, findings: &mut Vec<Fin
 /// and return the literal NAME strings. Best-effort: handles the common
 /// `env::var("FOO")` and `std::env::var("FOO")` call shapes; macro-built
 /// names are not detected.
-pub(crate) fn find_env_var_names(source: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    for marker in &["env::var(\"", "env::var_os(\""] {
-        let mut cursor = 0;
-        while let Some(start) = source[cursor..].find(marker) {
-            let head = cursor + start + marker.len();
-            if let Some(end) = source[head..].find('"') {
-                let name = source[head..head + end].to_string();
-                if !name.is_empty() && !names.contains(&name) {
-                    names.push(name);
-                }
-                cursor = head + end + 1;
-            } else {
-                break;
-            }
-        }
-    }
-    for marker in &["process.env.", "process.env[\"", "process.env['"] {
-        let mut cursor = 0;
-        while let Some(start) = source[cursor..].find(marker) {
-            let head = cursor + start + marker.len();
-            let end = source[head..]
-                .find(|ch: char| !(ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_'))
-                .unwrap_or(source.len() - head);
-            let name = source[head..head + end].to_string();
-            if !name.is_empty() && !names.contains(&name) {
-                names.push(name);
-            }
-            cursor = (head + end).max(head + 1);
-        }
-    }
-    names
-}
-
-fn collect_test_contract_sources(dir: &Path, files: &mut Vec<PathBuf>) {
+pub(super) fn collect_test_contract_sources(dir: &Path, files: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -575,7 +479,7 @@ fn collect_test_contract_sources(dir: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn is_env_contract_source(path: &Path) -> bool {
+pub(super) fn is_env_contract_source(path: &Path) -> bool {
     matches!(
         path.extension().and_then(OsStr::to_str),
         Some("rs" | "js" | "mjs" | "cjs" | "ts" | "tsx")
@@ -610,6 +514,9 @@ pub(crate) const REQUIRED_DOCS: &[&str] = &[
     "docs/guides/place-and-connect-objects.md",
     "docs/guides/troubleshooting-misplaced-assets.md",
     "docs/guides/units-axes-handedness.md",
+    CURRENT_RELEASE_NOTES,
+    CURRENT_REVIEW_REPORT,
+    CURRENT_REMEDIATION_CHECKLIST,
     "docs/release-notes/v1.8.0.md",
     "docs/release-notes/v1.7.2.md",
     "docs/release-notes/v1.7.1.md",

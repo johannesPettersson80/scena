@@ -142,15 +142,7 @@ impl Scene {
         scene_asset: &SceneAsset,
         options: ImportOptions,
     ) -> Result<SceneImport, InstantiateError> {
-        let nodes = scene_asset.nodes();
-        let mut child_indices = BTreeSet::new();
-        for node in nodes {
-            child_indices.extend(node.children().iter().copied());
-        }
-
-        let source_roots = (0..nodes.len())
-            .filter(|index| !child_indices.contains(index))
-            .collect::<Vec<_>>();
+        let source_roots = scene_asset.root_indices();
         let unit_root = (!source_roots.is_empty())
             .then(|| options.unit_root_transform())
             .flatten()

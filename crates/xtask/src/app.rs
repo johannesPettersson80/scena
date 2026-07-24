@@ -158,6 +158,14 @@ mod tests_70;
 mod tests_71;
 #[cfg(test)]
 mod tests_72;
+#[cfg(test)]
+mod tests_73;
+#[cfg(test)]
+mod tests_74;
+#[cfg(test)]
+mod tests_75;
+#[cfg(test)]
+mod tests_76;
 mod util;
 mod visual_artifacts;
 mod visual_proof;

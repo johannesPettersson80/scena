@@ -3,23 +3,38 @@ use crate::diagnostics::RenderError;
 use super::super::RasterTarget;
 use super::depth;
 use super::pipeline::{UnlitPipelines, create_unlit_pipeline_set};
+use super::shader_manifest::{ShaderVariantId, create_shader_module};
 #[cfg(target_arch = "wasm32")]
 use crate::render::PostBloomConfig;
 
-mod blit;
-mod bloom;
-mod bloom_fxaa;
+pub(super) mod blit;
+pub(super) mod bloom;
+pub(super) mod bloom_fxaa;
 mod copy;
-mod dof;
-mod fxaa;
+pub(super) mod dof;
+pub(super) mod fxaa;
 mod resources;
-mod ssao;
-mod ssr;
+pub(super) mod ssao;
+pub(super) mod ssr;
 #[cfg(test)]
 mod tests;
 mod types;
 
+pub(super) use blit::{
+    LINEAR_TARGET_SHADER as BLIT_LINEAR_SHADER, SRGB_BYTE_TARGET_SHADER as BLIT_SRGB_BYTE_SHADER,
+};
+pub(super) use bloom::SHADER as BLOOM_SHADER;
+pub(super) use bloom_fxaa::{
+    LINEAR_TARGET_SHADER as BLOOM_FXAA_LINEAR_SHADER,
+    SRGB_BYTE_TARGET_SHADER as BLOOM_FXAA_SRGB_BYTE_SHADER,
+};
+pub(super) use dof::SHADER as DOF_SHADER;
+pub(super) use fxaa::{
+    LINEAR_TARGET_SHADER as FXAA_LINEAR_SHADER, SRGB_BYTE_TARGET_SHADER as FXAA_SRGB_BYTE_SHADER,
+};
 pub(super) use resources::{create_resources, resource_stats};
+pub(super) use ssao::SHADER as SSAO_SHADER;
+pub(super) use ssr::SHADER as SSR_SHADER;
 pub(in crate::render::gpu) use types::PostResources;
 pub(in crate::render) use types::{GpuOutputPlan, GpuPostPassCounts, GpuPostSettings};
 use types::{POST_UNIFORM_BYTE_LEN, PostChainOutput, PostTextureSlot, PostUniformSlot};
@@ -401,23 +416,20 @@ pub(super) fn surface_bloom_fxaa_pipeline(
 pub(super) fn create_post_pipeline(
     device: &wgpu::Device,
     label: &'static str,
-    shader_source: &'static str,
+    shader_variant: ShaderVariantId,
     pipeline_layout: &wgpu::PipelineLayout,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    let shader = create_post_shader(device, label, shader_source);
+    let shader = create_post_shader(device, label, shader_variant);
     create_post_pipeline_with_shader(device, label, &shader, pipeline_layout, format)
 }
 
 pub(super) fn create_post_shader(
     device: &wgpu::Device,
     label: &'static str,
-    shader_source: &'static str,
+    shader_variant: ShaderVariantId,
 ) -> wgpu::ShaderModule {
-    device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(label),
-        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-    })
+    create_shader_module(device, shader_variant, label)
 }
 
 pub(super) fn create_post_pipeline_with_shader(

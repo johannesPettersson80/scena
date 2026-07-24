@@ -97,6 +97,12 @@ pub(super) struct SurfaceConfigurationChange {
     pub(super) size_changed: bool,
 }
 
+impl SurfaceConfigurationChange {
+    pub(super) const fn requires_reprepare(self) -> bool {
+        self.format_changed || self.present_mode_changed
+    }
+}
+
 pub(super) fn refresh_surface_configuration(
     surface: &mut GpuSurfaceState,
     adapter: &wgpu::Adapter,
@@ -136,10 +142,6 @@ pub(super) fn refresh_surface_configuration(
     surface.surface.configure(device, &next);
     surface.config = next;
     change
-}
-
-pub(super) fn reconfigure_existing_surface(surface: &mut GpuSurfaceState, device: &wgpu::Device) {
-    surface.surface.configure(device, &surface.config);
 }
 
 pub(super) fn acquire_surface_frame(
@@ -231,7 +233,10 @@ pub(super) fn acquire_surface_frame(
 
 #[cfg(test)]
 mod tests {
-    use super::{SurfaceAcquireAction, SurfaceAcquireStatus, SurfaceAcquisitionPolicy};
+    use super::{
+        SurfaceAcquireAction, SurfaceAcquireStatus, SurfaceAcquisitionPolicy,
+        SurfaceConfigurationChange,
+    };
 
     #[test]
     fn outdated_surface_reconfigures_and_retries_exactly_once() {
@@ -310,6 +315,28 @@ mod tests {
         assert_eq!(
             policy.action(SurfaceAcquireStatus::Suboptimal),
             SurfaceAcquireAction::PresentThenReconfigure
+        );
+    }
+
+    #[test]
+    fn post_present_refresh_requires_reprepare_when_surface_contract_changes() {
+        assert!(
+            SurfaceConfigurationChange {
+                format_changed: true,
+                ..SurfaceConfigurationChange::default()
+            }
+            .requires_reprepare()
+        );
+        assert!(
+            SurfaceConfigurationChange {
+                present_mode_changed: true,
+                ..SurfaceConfigurationChange::default()
+            }
+            .requires_reprepare()
+        );
+        assert!(
+            !SurfaceConfigurationChange::default().requires_reprepare(),
+            "an unchanged live capability refresh may continue without rebuilding pipelines",
         );
     }
 }

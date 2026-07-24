@@ -54,7 +54,7 @@ metrics rectangles; do not claim per-label recipe masking before that lands.
 
 ## Always-on vs opt-in
 
-- Always-on baseline (any `recipe render --introspect`): blank/empty, gross
+- Always-on baseline (any `recipe render`): blank/empty, gross
   over/under-exposure, **severe** black-crush / blown-out subject, cropped/tiny.
   Egregious-only (high thresholds, profile-aware) so intentionally dark/moody
   renders do not false-fail.

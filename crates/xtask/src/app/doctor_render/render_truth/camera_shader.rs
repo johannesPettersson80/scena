@@ -4,6 +4,7 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
     root: &Path,
     findings: &mut Vec<Finding>,
 ) {
+    check_shader_manifest_ownership(root, findings);
     require_contains(
         root,
         findings,
@@ -84,87 +85,18 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "headless_gpu_depth_buffer_keeps_nearer_triangle_visible_when_available",
         ],
     );
+
+    // Naga validates the production-derived shader manifest. Doctor pins the
+    // semantic mutation tests, not implementation substrings from the WGSL.
     require_contains(
         root,
         findings,
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/output.rs",
         &[
-            "clip_from_world: mat4x4<f32>",
-            "camera_position_exposure: vec4<f32>",
-            "viewport_near_far: vec4<f32>",
-            "color_management: vec4<f32>",
-            "world_from_model: mat4x4<f32>",
-            "normal_from_model: mat4x4<f32>",
-            "view_from_world: mat4x4<f32>",
-            "clip_from_view: mat4x4<f32>",
-            "struct LightingUniform",
-            "directional_light_direction_intensity",
-            "point_light_position_intensity",
-            "spot_light_direction_cones",
-            "pbr_light_contribution",
-            "pbr_environment_lighting",
-            "fresnel_schlick",
-            "distribution_ggx",
-            "brdf_specular_ggx",
-            "environment_diffuse_intensity",
-            "environment_specular_intensity",
-            "directional_shadow_control",
-            "directional_shadow_control[i].x > 0.5",
-            "area_light_position_flux",
-            "area_light_axis_x_shape",
-            "area_light_axis_y_range",
-            "area_light_color",
-            "OUTPUT_UNIFORM_BYTE_LEN: u64 = 3056",
-            "camera.clip_from_world * world_position",
-            "let normal_from_model = draw.normal_from_model * instance_normal_from_model",
-            "draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0)",
-            "@group(2) @binding(0)",
-            "var<uniform> draw: DrawUniform",
-            "light_from_world: mat4x4<f32>",
-            "var shadow_map: texture_depth_2d",
-            "var shadow_sampler: sampler_comparison",
-            "fn directional_shadow_factor",
-            "textureSampleCompareLevel(shadow_map, shadow_sampler",
-            "camera.light_from_world * vec4<f32>(world_position",
-            // Phase 1C step 2: GGX prefilter + analytic split-sum specular.
-            "var environment_cubemap: texture_cube<f32>",
-            "var environment_sampler: sampler",
-            "fn environment_prefilter_mip",
-            "ENVIRONMENT_PREFILTER_MAX_MIP",
-            "let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection",
-            "GPU_TRIANGLE_SHADER.contains(\"split_sum_brdf_approx\")",
-            "var transmission_color_texture: texture_2d<f32>",
-            "fn physical_transmission_color",
-            "@location(2) normal: vec3<f32>",
-            "@location(3) tex_coord0: vec2<f32>",
-            "@location(4) tangent: vec4<f32>",
-            "in.tangent.w",
-            "let normal_texture_sample = textureSample(normal_texture",
-            "normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal",
-            "var base_color_sampler: sampler",
-            "var base_color_texture: texture_2d_array<f32>",
-            "var<uniform> material: MaterialUniform",
-            "var normal_sampler: sampler",
-            "var normal_texture: texture_2d_array<f32>",
-            "var metallic_roughness_sampler: sampler",
-            "var metallic_roughness_texture: texture_2d_array<f32>",
-            "var occlusion_sampler: sampler",
-            "var occlusion_texture: texture_2d_array<f32>",
-            "var emissive_sampler: sampler",
-            "var emissive_texture: texture_2d_array<f32>",
-            "base_color_uv_offset_scale",
-            "base_color_uv_rotation",
-            "base_color_factor",
-            "emissive_strength",
-            "metallic_roughness_alpha",
-            "base.a < material.metallic_roughness_alpha.z",
-            "discard;",
-            "textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer)",
-            "textureSample(normal_texture",
-            "textureSample(metallic_roughness_texture",
-            "textureSample(occlusion_texture",
-            "textureSample(emissive_texture",
+            "GPU_TRIANGLE_SHADER",
+            "GPU_TRIANGLE_SHADER_TEXTURE_2D",
+            "include_str!(\"../pbr_brdf.wgsl\")",
             "triangle_shader_uses_camera_projection_uniform",
             "triangle_shader_declares_material_texture_bindings",
             "triangle_shader_samples_all_material_texture_roles",
@@ -178,11 +110,10 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "src/render/gpu/output.rs",
+        "src/render/gpu/material_uniform.rs",
         &[
-            "include_str!(\"../pbr_brdf.wgsl\")",
-            "GPU_TRIANGLE_SHADER",
-            "GPU_TRIANGLE_SHADER_TEXTURE_2D",
+            "material_uniform_layout_encode_and_bind_size_are_consistent",
+            "material_uniform_contract_rejects_an_omitted_shader_lane",
         ],
     );
     require_contains(
@@ -198,16 +129,52 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "fn split_sum_brdf_approx",
         ],
     );
-    if let Ok(shader_source) = fs::read_to_string(root.join("src/render/gpu/output.rs")) {
-        let shader_const = shader_source
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap_or(&shader_source);
-        if shader_const.contains("let normal_sample = textureSample(normal_texture") {
+}
+
+fn check_shader_manifest_ownership(root: &Path, findings: &mut Vec<Finding>) {
+    const RULE: &str = "ARCH-SHADER-MANIFEST";
+    const OWNER: &str = "src/render/gpu/shader_manifest.rs";
+    require_contains(
+        root,
+        findings,
+        RULE,
+        OWNER,
+        &[
+            "define_shader_variants!",
+            "production_shader_variants",
+            "production_shader_modules_are_created_only_by_manifest_owner",
+            "every_production_shader_variant_parses_validates_and_exports_required_entries",
+            "production_manifest_inventories_feature_axes_and_rejects_an_omitted_variant",
+            "offline_shader_gate_rejects_syntax_binding_location_entry_and_capability_mutations",
+        ],
+    );
+    for workflow in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/hardware-gpu.yml",
+    ] {
+        require_contains(
+            root,
+            findings,
+            RULE,
+            workflow,
+            &["cargo test --lib render::gpu::shader_manifest::tests"],
+        );
+    }
+    for relative in cached_rust_files_below(root, Path::new("src/render/gpu")) {
+        if relative == Path::new(OWNER) {
+            continue;
+        }
+        let Ok(source) = read_source_to_string(root, &relative) else {
+            continue;
+        };
+        if source.contains(".create_shader_module(") {
             findings.push(Finding::new(
-                "ARCH-RENDER-TRUTH",
-                "src/render/gpu/output.rs redeclares normal_sample in WGSL; Chrome WebGPU rejects \
-                 this and the browser canvas can go black while Rust-side render stats still pass",
+                RULE,
+                format!(
+                    "{} creates a WGSL module outside {OWNER}; add the production assembly to the generated manifest and use its typed create_shader_module owner",
+                    relative.display()
+                ),
             ));
         }
     }

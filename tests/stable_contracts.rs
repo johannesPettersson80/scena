@@ -100,6 +100,18 @@ fn capability_report_schema_is_versioned_and_round_trips() {
 fn stable_contract_golden_fixtures_are_versioned_json() {
     let fixtures = [
         (
+            "tests/assets/stable-contracts/contract_validation.v1.json",
+            "scena.contract_validation.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/json_schema_export.v1.json",
+            "scena.json_schema_export.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/agent_guide.v1.json",
+            "scena.agent_guide.v1",
+        ),
+        (
             "tests/assets/stable-contracts/capability_report.v1.json",
             "scena.capability_report.v1",
         ),
@@ -818,6 +830,27 @@ fn scene_host_measurement_overlay_golden_matches_live_schema_serialization() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scene_host_measurement_overlay_v1_defaults_authority_for_old_shape() {
+    let old_shape = json!({
+        "schema": "scena.scene_host_measurement_overlay.v1",
+        "id": "legacy",
+        "kind": "distance",
+        "value": 1.0,
+        "formatted_value": "1.000 m",
+        "line_node": 42
+    });
+    let decoded: scena::SceneHostMeasurementOverlayReportV1 =
+        serde_json::from_value(old_shape).expect("old measurement report shape deserializes");
+    assert!(!decoded.measurement_authority.authoritative);
+    assert!(!decoded.measurement_authority.calibrated);
+    assert_eq!(
+        decoded.measurement_authority.scope,
+        "scene_space_visualization"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scene_host_subtree_v1_accepts_old_shape_without_tree_edges() {
     let old_shape = json!({
         "schema": "scena.subtree.v1",
@@ -1104,6 +1137,7 @@ fn scene_inspection_schema_uses_report_local_handles_and_topology_helpers() {
             "transform": scene.dirty_state().transform_revision,
             "appearance": scene.dirty_state().appearance_revision
                 + scene.dirty_state().visibility_revision,
+            "camera": scene.dirty_state().camera_revision,
             "interaction": scene.dirty_state().interaction_revision,
         })
     );

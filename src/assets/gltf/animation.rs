@@ -27,10 +27,14 @@ pub(super) fn parse_gltf_clips(
 ) -> Result<Vec<SceneAssetClip>, AssetError> {
     document
         .animations()
-        .map(|animation| {
+        .enumerate()
+        .map(|(clip_index, animation)| {
             let channels = animation
                 .channels()
-                .map(|channel| parse_channel(path, &channel, buffers))
+                .enumerate()
+                .map(|(channel_index, channel)| {
+                    parse_channel(path, clip_index, channel_index, &channel, buffers)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             let duration_seconds = channels
                 .iter()
@@ -52,11 +56,14 @@ pub(super) fn parse_gltf_clips(
 
 fn parse_channel(
     path: &AssetPath,
+    clip_index: usize,
+    channel_index: usize,
     channel: &::gltf::animation::Channel<'_>,
     buffers: &ResolvedGltfBuffers,
 ) -> Result<AnimationSourceChannel, AssetError> {
     let target = channel.target();
-    let target_node = target.node().index();
+    let target_node_ref = target.node();
+    let target_node = target_node_ref.index();
     let target_property = match target.property() {
         GltfProperty::Translation => AnimationTarget::Translation,
         GltfProperty::Rotation => AnimationTarget::Rotation,
@@ -116,7 +123,29 @@ fn parse_channel(
         ),
         ReadOutputs::MorphTargetWeights(weights) => {
             let raw: Vec<f32> = weights.into_f32().collect();
-            collect_weight_keyframes(path, raw, input_seconds.len(), interpolation)?
+            let target_counts = target_node_ref
+                .mesh()
+                .map(|mesh| {
+                    mesh.primitives()
+                        .enumerate()
+                        .map(|(primitive_index, primitive)| {
+                            (primitive_index, primitive.morph_targets().count())
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            collect_weight_keyframes(
+                WeightChannelSpec {
+                    path,
+                    clip_index,
+                    channel_index,
+                    node_index: target_node,
+                    target_counts: &target_counts,
+                },
+                raw,
+                input_seconds.len(),
+                interpolation,
+            )?
         }
     };
 
@@ -129,8 +158,16 @@ fn parse_channel(
     ))
 }
 
+struct WeightChannelSpec<'a> {
+    path: &'a AssetPath,
+    clip_index: usize,
+    channel_index: usize,
+    node_index: usize,
+    target_counts: &'a [(usize, usize)],
+}
+
 fn collect_weight_keyframes(
-    path: &AssetPath,
+    context: WeightChannelSpec<'_>,
     raw: Vec<f32>,
     keyframe_count: usize,
     interpolation: AnimationInterpolation,
@@ -145,7 +182,7 @@ fn collect_weight_keyframes(
     let denom = keyframe_count.saturating_mul(stride_factor);
     if denom == 0 || !raw.len().is_multiple_of(denom) {
         return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
+            path: context.path.as_str().to_string(),
             reason: "animation weights output count is not a multiple of the keyframe count"
                 .to_string(),
         });
@@ -153,9 +190,22 @@ fn collect_weight_keyframes(
     let targets_per_keyframe = raw.len() / denom;
     if targets_per_keyframe == 0 {
         return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
+            path: context.path.as_str().to_string(),
             reason: "animation weights output declares zero morph targets per keyframe".to_string(),
         });
+    }
+    for &(primitive_index, expected) in context.target_counts {
+        if targets_per_keyframe != expected {
+            return Err(AssetError::MorphWeightWidthMismatch {
+                path: context.path.as_str().to_string(),
+                clip_index: context.clip_index,
+                channel_index: context.channel_index,
+                node_index: context.node_index,
+                primitive_index,
+                expected,
+                actual: targets_per_keyframe,
+            });
+        }
     }
     let chunk_size = targets_per_keyframe;
     Ok(AnimationOutput::Weights(

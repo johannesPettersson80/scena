@@ -60,7 +60,8 @@ pub(crate) fn release_lane_evidence_class(lane: &str) -> &'static str {
 }
 
 pub(crate) fn browser_gpu_conformance_passes(value: &Value, expected_backend: &str) -> bool {
-    value.get("gate").and_then(Value::as_str) == Some("m6-rust-wasm-renderer-probe")
+    browser_evidence_classification_matches(value, "software-conformance")
+        && value.get("gate").and_then(Value::as_str) == Some("m6-rust-wasm-renderer-probe")
         && value.get("status").and_then(Value::as_str) == Some("passed")
         && required_pixel_parity_evaluation_passes(value.get("required_parity"), expected_backend)
         && value
@@ -109,6 +110,9 @@ pub(crate) fn browser_gpu_conformance_passes(value: &Value, expected_backend: &s
 }
 
 pub(crate) fn required_browser_gpu_parity_passes(value: &Value, expected_backend: &str) -> bool {
+    if !browser_evidence_classification_matches(value, "hardware-release") {
+        return false;
+    }
     let parity = value.get("required_parity");
     if parity
         .and_then(|value| value.get("enabled"))
@@ -163,6 +167,34 @@ pub(crate) fn required_browser_gpu_parity_passes(value: &Value, expected_backend
                     && adapter_is_hardware(adapter)
             })
         })
+}
+
+fn browser_evidence_classification_matches(value: &Value, evidence_class: &str) -> bool {
+    let scope = value.get("parity_scope").and_then(Value::as_array);
+    match evidence_class {
+        "software-conformance" => {
+            value.get("proof_class").and_then(Value::as_str)
+                == Some("renderer-conformance-with-diagnostic-webgpu-pixel-diff")
+                && value.get("release_evidence").and_then(Value::as_bool) == Some(false)
+                && value.get("parity_claim").and_then(Value::as_str) == Some("diagnostic-only")
+                && scope.is_some_and(|scope| {
+                    scope.len() == 1
+                        && scope[0].as_str() == Some("webgpu:m6-identical-unlit-triangle-v1")
+                })
+        }
+        "hardware-release" => {
+            value.get("proof_class").and_then(Value::as_str)
+                == Some("renderer-smoke-with-required-webgpu-full-frame-parity")
+                && value.get("release_evidence").and_then(Value::as_bool) == Some(true)
+                && value.get("parity_claim").and_then(Value::as_str)
+                    == Some("full-frame-reference-diff")
+                && scope.is_some_and(|scope| {
+                    scope.len() == 1
+                        && scope[0].as_str() == Some("webgpu:m6-identical-unlit-triangle-v1")
+                })
+        }
+        _ => false,
+    }
 }
 
 fn required_pixel_parity_evaluation_passes(

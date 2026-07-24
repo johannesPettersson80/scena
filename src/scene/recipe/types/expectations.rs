@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::SceneRecipeTargetV1;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeExpectV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -39,14 +39,14 @@ pub struct SceneRecipeExpectV1 {
     pub expect_no_warnings: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeVisibleExpectationV1 {
     pub id: String,
     pub target: SceneRecipeTargetV1,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeColorExpectationV1 {
     pub id: String,
@@ -63,7 +63,7 @@ pub struct SceneRecipeColorExpectationV1 {
     pub require_base_color_texture: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeBboxFitExpectationV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,21 +72,21 @@ pub struct SceneRecipeBboxFitExpectationV1 {
     pub max: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeTargetBoundsV1 {
     pub min: [f64; 3],
     pub max: [f64; 3],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeTargetRegionV1 {
     pub bounds: SceneRecipeTargetBoundsV1,
     pub centroid: [f64; 3],
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeTargetFitExpectationV1 {
     pub id: String,
@@ -101,7 +101,7 @@ pub struct SceneRecipeTargetFitExpectationV1 {
     pub min_visible_coverage: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeGroundedExpectationV1 {
     pub id: String,
@@ -112,7 +112,7 @@ pub struct SceneRecipeGroundedExpectationV1 {
     pub tolerance: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeHelperOcclusionExpectationV1 {
     pub id: String,
@@ -122,7 +122,7 @@ pub struct SceneRecipeHelperOcclusionExpectationV1 {
     pub tolerance_pixels: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeOcclusionExpectationV1 {
     pub id: String,
@@ -132,7 +132,7 @@ pub struct SceneRecipeOcclusionExpectationV1 {
     pub tolerance_pixels: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeBackendExpectationV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -141,7 +141,7 @@ pub struct SceneRecipeBackendExpectationV1 {
     pub gpu_device: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeClippingExpectationV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -152,7 +152,7 @@ pub struct SceneRecipeClippingExpectationV1 {
     pub section_box_inverted: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeStateExpectationV1 {
     pub id: String,
@@ -161,7 +161,7 @@ pub struct SceneRecipeStateExpectationV1 {
     pub active_material_variant: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeTransformExpectationV1 {
     pub id: String,
@@ -180,7 +180,7 @@ pub struct SceneRecipeTransformExpectationV1 {
     pub rotation_tolerance_degrees: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeSeparationExpectationV1 {
     pub id: String,
@@ -192,7 +192,7 @@ pub struct SceneRecipeSeparationExpectationV1 {
     pub tolerance: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipePickExpectationV1 {
     pub id: String,
@@ -201,7 +201,7 @@ pub struct SceneRecipePickExpectationV1 {
     pub target: SceneRecipeTargetV1,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityExpectationV1 {
     pub profile: String,
@@ -227,7 +227,7 @@ pub struct SceneRecipeQualityExpectationV1 {
     pub depth_of_field: Option<SceneRecipeQualityDepthOfFieldV1>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityExposureV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -238,7 +238,7 @@ pub struct SceneRecipeQualityExposureV1 {
     pub max_clipped_highlight_fraction: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityContrastV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -249,14 +249,14 @@ pub struct SceneRecipeQualityContrastV1 {
     pub min_subject_luminance_range: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityNoiseV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_outlier_fraction: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityTextV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -271,7 +271,7 @@ pub struct SceneRecipeQualityTextV1 {
     pub max_background_mean_delta: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityLineV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -280,14 +280,14 @@ pub struct SceneRecipeQualityLineV1 {
     pub max_straightness_error: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityGeometryV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_intermediate_edge_fraction: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityReflectionV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -306,7 +306,7 @@ pub struct SceneRecipeQualityReflectionV1 {
     pub min_dark_fraction: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityAreaLightV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -321,7 +321,7 @@ pub struct SceneRecipeQualityAreaLightV1 {
     pub min_emitter_extent_meters: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityGroundingV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -330,7 +330,7 @@ pub struct SceneRecipeQualityGroundingV1 {
     pub min_contact_shadow_delta: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityDepthOfFieldV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -347,7 +347,7 @@ pub struct SceneRecipeQualityDepthOfFieldV1 {
     pub max_focal_mean_delta: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeReferenceExpectationV1 {
     pub id: String,

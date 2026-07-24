@@ -21,6 +21,7 @@ pub mod assets;
 pub mod browser_probe;
 pub mod browser_proof;
 pub mod capture;
+pub mod contract_validation;
 pub mod controls;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 pub mod demo_page;
@@ -31,6 +32,7 @@ pub mod material;
 pub mod material_showcase;
 pub mod picking;
 pub mod platform;
+pub mod prelude;
 pub mod reference_image;
 pub mod render;
 pub mod scene;
@@ -74,13 +76,15 @@ pub use assets::{
     EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, EnvironmentPrefilterSidecar,
     EnvironmentPreset, EnvironmentPresetMetadata, EnvironmentSidecarHeader,
     EnvironmentSidecarProfile, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
-    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialPresetAssets,
-    MaterialPresetProvenance, MaterialVariantBinding, ModelHandle, RetainPolicy,
-    SIDECAR_FILE_SUFFIX, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetGeometrySummary,
-    SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter, TextureHandle,
-    TextureSamplerDesc, TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery,
-    parse_sidecar_header, source_backed_material_preset_provenance,
-    validate_scene_recipe_json_with_assets, validate_scene_recipe_json_with_assets_and_policy,
+    GltfExtensionDiagnostic, GltfExtensionStatus, GltfSceneSelection, MaterialHandle,
+    MaterialPresetAssets, MaterialPresetProvenance, MaterialVariantBinding, ModelHandle,
+    RetainPolicy, SIDECAR_FILE_SUFFIX, SceneAsset, SceneAssetAnchor, SceneAssetClip,
+    SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh, SceneAssetNode, SelectedGltfScene,
+    TextureDesc, TextureFilter, TextureHandle, TextureMemoryDesc, TextureMemoryId,
+    TextureMipPolicy, TexturePixelFormat, TextureSamplerDesc, TextureSlot, TextureSourceFormat,
+    TextureWrap, WasmEnvironmentDelivery, parse_sidecar_header,
+    source_backed_material_preset_provenance, validate_scene_recipe_json_with_assets,
+    validate_scene_recipe_json_with_assets_and_policy,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
@@ -91,14 +95,20 @@ pub use capture::{
     CAPTURE_BASELINE_SCHEMA_V1, CAPTURE_SCHEMA_V1, CaptureAutoFrame, CaptureAutoFrameViewport,
     CaptureBaselineDiff, CaptureBaselineError, CaptureBaselineReport, CaptureBaselineTolerance,
     CaptureCamera, CaptureContactSheet, CaptureContactSheetError, CaptureContactSheetTile,
-    CaptureDescriptor, CaptureError, CaptureOptions, CapturePayload, CapturePayloadKind,
-    CapturePixelBounds, CapturePixelSummary, CapturePngError, CapturePoint2, CaptureProjectedPoint,
-    CaptureProjection, CaptureRevisions, CaptureRgba8, CaptureScreenRect, CaptureScreenRegion,
-    CaptureViewport, auto_frame_metadata, capture_contact_sheet_rgba8, capture_rgba8,
-    capture_rgba8_from_pixels, compare_captures_with_tolerance, fnv1a64_hex,
-    project_aabb_from_capture, project_world_point_from_capture, sample_rgba8,
-    screen_region_from_center_size, screen_region_from_points, screen_region_from_rect,
-    summarize_pixel_readback, summarize_rgba8, transform_point_for_projection,
+    CaptureDescriptor, CaptureError, CaptureFrameProvenance, CaptureOptions, CapturePayload,
+    CapturePayloadKind, CapturePixelBounds, CapturePixelSummary, CapturePngError, CapturePoint2,
+    CaptureProjectedPoint, CaptureProjection, CaptureRevisions, CaptureRgba8, CaptureScreenRect,
+    CaptureScreenRegion, CaptureViewport, auto_frame_metadata, capture_contact_sheet_rgba8,
+    capture_rgba8, capture_rgba8_from_pixels, capture_unverified_rgba8_from_pixels,
+    compare_captures_with_tolerance, fnv1a64_hex, project_aabb_from_capture,
+    project_world_point_from_capture, sample_rgba8, screen_region_from_center_size,
+    screen_region_from_points, screen_region_from_rect, summarize_pixel_readback, summarize_rgba8,
+    transform_point_for_projection,
+};
+pub use contract_validation::{
+    CONTRACT_VALIDATION_SCHEMA_V1, ContractValidationDiagnosticV1, ContractValidationReportV1,
+    JSON_SCHEMA_EXPORT_SCHEMA_V1, JsonSchemaExportV1, contract_json_schema_export_v1,
+    validate_contract_json_v1,
 };
 pub use controls::{
     CameraBookmark, CameraFlyTo, CameraOrbitUrlState, CameraOrbitUrlStateError, CameraState,
@@ -113,12 +123,12 @@ pub use diagnostics::{
     CapabilityConstraintStatusV1, CapabilityProbeModeV1, CapabilityProbeStatusV1,
     CapabilityProbeUnavailableV1, CapabilityProbeV1, CapabilityReport, CapabilityReportV1,
     CapabilityStatus, CapabilityTargetProbeV1, ChangeKind, DevicePoll, DevicePollStatus,
-    Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticSeverity, Error, GpuAdapterReport,
-    GpuDeviceReport, HardwareTier, ImportDiagnosticOverlay, ImportDiagnosticOverlayKind,
-    ImportError, InstantiateError, Ktx2ColorSpaceDfd, LookupError, NotPreparedReason,
-    OutputColorSpace, OutputStageStatus, PostProcessingDepthSourceV1, PostProcessingPassV1,
-    PostProcessingReportV1, PrepareError, RenderError, RenderOutcome, RendererStats,
-    nearest_name_candidates,
+    Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticSeverity, Error, ErrorDiagnostic,
+    GpuAdapterReport, GpuDeviceReport, HardwareTier, ImportDiagnosticOverlay,
+    ImportDiagnosticOverlayKind, ImportError, InstantiateError, Ktx2ColorSpaceDfd, LookupError,
+    MissingTextureDetails, NotPreparedReason, OutputColorSpace, OutputStageStatus,
+    PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1, PrepareError,
+    RenderError, RenderOutcome, RendererStats, nearest_name_candidates,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
@@ -158,6 +168,7 @@ pub use render::introspection::{
     RenderIntrospectionFixV1, RenderIntrospectionFramingV1, RenderIntrospectionLuminanceV1,
     RenderIntrospectionNodeDetailV1, RenderIntrospectionNodesSummaryV1, RenderIntrospectionOptions,
     RenderIntrospectionReasonV1, RenderIntrospectionRectV1, RenderIntrospectionReportV1,
+    RenderIntrospectionTimingsV1,
 };
 #[cfg(feature = "inspection")]
 pub use render::quality::{
@@ -189,12 +200,12 @@ pub use render::visual_repair::{
     VisualRepairSkippedActionV1,
 };
 pub use render::{
-    AntiAliasing, AutoExposureConfig, AutoExposureResult, Background, DepthOfFieldConfig,
-    HeadlessBackendSelectionReport, OffscreenTarget, OrderIndependentTransparencyConfig,
-    PixelReadback, PostBloomConfig, PrepareWorkMetrics, Profile, Quality, ReconstructionFilter,
-    RenderMode, RenderReadbackMode, RenderWorkMetrics, Renderer, RendererOptions,
-    ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, Tonemapper,
-    estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
+    AntiAliasing, AutoExposureConfig, AutoExposureResult, AutoExposureStatus, Background,
+    DepthOfFieldConfig, HeadlessBackendSelectionReport, OffscreenTarget,
+    OrderIndependentTransparencyConfig, PixelReadback, PostBloomConfig, PrepareWorkMetrics,
+    Profile, Quality, ReconstructionFilter, RenderMode, RenderReadbackMode, RenderWorkMetrics,
+    Renderer, RendererOptions, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig,
+    Tonemapper, estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::recipe::{
     FIELD_MODEL_SCHEMA_V1, RECIPE_BUILD_RESULT_SCHEMA_V1, RECIPE_POLICY_SCHEMA_V1,
@@ -239,9 +250,10 @@ pub use scene::recipe::{
     SceneRecipeValidationReportV1, SceneRecipeVisibleExpectationV1, SchemaFieldModelV1,
     SchemaFieldV1, diff_scene_recipes, parse_valid_scene_recipe_json,
     parse_valid_scene_recipe_json_with_policy, recipe_too_large_report,
-    scene_recipe_field_model_v1, validate_scene_recipe_json,
-    validate_scene_recipe_json_syntax_with_policy, validate_scene_recipe_json_with_policy,
-    validate_scene_recipe_value, validate_scene_recipe_value_with_policy,
+    scene_recipe_field_model_v1, scene_recipe_json_schema_paths_v1, scene_recipe_json_schema_v1,
+    validate_scene_recipe_json, validate_scene_recipe_json_syntax_with_policy,
+    validate_scene_recipe_json_with_policy, validate_scene_recipe_value,
+    validate_scene_recipe_value_with_policy,
 };
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub use scene::recipe::{
@@ -265,12 +277,13 @@ pub use scene::{
     InstanceSetKey, LabelBillboard, LabelDesc, LabelFontError, LabelFontFace, LabelKey,
     LabelMetrics, Light, LightBuilder, LightKey, MeasurementAxis, MeasurementKind,
     MeasurementOverlay, MeasurementOverlayReport, MeasurementReport, MeshBuilder, MeshNode,
-    ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, Particle, ParticleSet,
-    ParticleSetError, ParticleSetKey, PerspectiveCamera, PointLight, ProjectedPoint, Quat,
-    SCENE_ANNOTATION_PROJECTION_SCHEMA_V1, SCENE_PLACEMENT_RESULT_SCHEMA_V1,
+    ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PLACEMENT_VERBS,
+    Particle, ParticleSet, ParticleSetError, ParticleSetKey, PerspectiveCamera, PointLight,
+    ProjectedPoint, Quat, SCENE_ANNOTATION_PROJECTION_SCHEMA_V1, SCENE_PLACEMENT_RESULT_SCHEMA_V1,
     SCENE_RECIPE_PATCH_SCHEMA_V1, Scene, SceneDirtyState, SceneImport, ScenePlacementDiagnosticV1,
-    ScenePlacementResultV1, SceneRecipePatchResultV1, SceneRecipePatchSuccessInputV1,
-    SceneRecipeSemanticChangeV1, SceneSkinBinding, SceneTintSnapshot, SceneTintSnapshotEntry,
+    ScenePlacementResultV1, ScenePlacementTargetV1, SceneRecipePatchResultV1,
+    SceneRecipePatchSuccessInputV1, SceneRecipeSemanticChangeV1, SceneSkinBinding,
+    SceneTintSnapshot, SceneTintSnapshotEntry, SceneVisibilityRestoreReport,
     SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry, ScreenRect, SectionBox,
     SourceCoordinateSystem, SourceUnits, SpotLight, StudioLightingHandles, Transform, UnitFormat,
     Vec3, placement_align_to_feature_transform, placement_center_transform,
@@ -313,25 +326,26 @@ pub use scene_host::{
     SceneHostExplodedViewOptionsV1, SceneHostGizmoAxisV1, SceneHostGizmoConstraintV1,
     SceneHostGizmoDragV1, SceneHostGizmoModeV1, SceneHostGizmoRayV1, SceneHostGizmoSpaceV1,
     SceneHostGroundingFallbackV1, SceneHostGroundingPathV1, SceneHostGroundingReportV1,
-    SceneHostMeasurementLabelProjectionV1, SceneHostMeasurementOverlayReportV1,
-    SceneHostRecipeBuild, SceneHostSectionBoxReportV1, SceneHostSemanticAovCaptureV1,
-    SceneHostSemanticAovExclusionsV1, SceneHostSemanticAovLegendEntryV1, SceneHostSubtreeNodeV1,
-    SceneHostSubtreeReportV1, SceneHostVisualStateSummaryV1, SceneHostVisualStateV1,
-    SceneHostVisualStatesReportV1, SceneSetupPreset, VISUAL_PATCH_SCHEMA_V1,
-    VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1, VisualPatchAppliedCountsV1,
-    VisualPatchCameraEasedV1, VisualPatchEntryErrorV1, VisualPatchHoverV1,
-    VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
-    VisualPatchResultV1, VisualPatchRevisionDeltaV1, VisualPatchSectionBoxV1,
-    VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTintV1, VisualPatchTransformEasedV1,
-    VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1, host_event_kind_name,
-    physical_px,
+    SceneHostMeasurementAuthorityV1, SceneHostMeasurementLabelProjectionV1,
+    SceneHostMeasurementOverlayReportV1, SceneHostRecipeBuild, SceneHostSectionBoxReportV1,
+    SceneHostSemanticAovCaptureV1, SceneHostSemanticAovExclusionsV1,
+    SceneHostSemanticAovLegendEntryV1, SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1,
+    SceneHostVisualStateSummaryV1, SceneHostVisualStateV1, SceneHostVisualStatesReportV1,
+    SceneSetupPreset, VISUAL_PATCH_SCHEMA_V1, VisualPatchAnimationTimeModeV1,
+    VisualPatchAnimationTimeV1, VisualPatchAppliedCountsV1, VisualPatchCameraEasedV1,
+    VisualPatchEntryErrorV1, VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1,
+    VisualPatchMaterialVariantV1, VisualPatchResultV1, VisualPatchRevisionDeltaV1,
+    VisualPatchSectionBoxV1, VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTintV1,
+    VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
+    host_event_kind_name, physical_px,
 };
 pub use schema_catalog::{
-    AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AGENT_TEMPLATE_CATALOG_SCHEMA_V1, AgentSmokeTemplateCommandV1,
-    AgentSmokeTemplateFileV1, AgentSmokeTemplateV1, AgentTemplateCatalogEntryV1,
-    AgentTemplateCatalogV1, SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1, SchemaCatalogEntryV1,
-    SchemaCatalogV1, SchemaEntryReportV1, nearest_schema_name, schema_catalog_entry,
-    schema_catalog_v1, schema_entry_report_v1,
+    AGENT_GUIDE_SCHEMA_V1, AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AGENT_TEMPLATE_CATALOG_SCHEMA_V1,
+    AgentGuideV1, AgentSmokeTemplateCommandV1, AgentSmokeTemplateFileV1, AgentSmokeTemplateV1,
+    AgentTemplateCatalogEntryV1, AgentTemplateCatalogV1, SCHEMA_CATALOG_SCHEMA_V1,
+    SCHEMA_ENTRY_SCHEMA_V1, SchemaCatalogEntryV1, SchemaCatalogV1, SchemaEntryReportV1,
+    agent_guide_v1, nearest_schema_name, schema_catalog_entry, schema_catalog_v1,
+    schema_entry_report_v1,
 };
 pub use viewer::{
     AssetCatalogPreviewError, AssetCatalogPreviewPng, FirstRender, HeadlessGltfViewer,
@@ -352,7 +366,8 @@ pub use viewer_element::{
     ScenaViewerVariantSelection, layout_scena_viewer_annotations,
 };
 pub use vocabulary::{
-    VOCABULARY_SCHEMA_V1, VocabularyReportV1, VocabularyV1, vocabulary_report_v1, vocabulary_v1,
+    VOCABULARY_SCHEMA_V1, VocabularyReportV1, VocabularyV1, VocabularyValueV1,
+    validate_vocabulary_report_v1, vocabulary_report_v1, vocabulary_v1,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

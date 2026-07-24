@@ -199,10 +199,9 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/pipeline.rs",
         &[
-            "device.create_shader_module",
-            "MaterialTextureBindingMode::Texture2d => GPU_TRIANGLE_SHADER_TEXTURE_2D",
-            "MaterialTextureBindingMode::Texture2dArray => GPU_TRIANGLE_SHADER",
-            "wgpu::ShaderSource::Wgsl(shader_source.into())",
+            "create_shader_module(device, variant",
+            "MaterialTextureBindingMode::Texture2d => ShaderVariantId::TriangleTexture2d",
+            "ShaderVariantId::TriangleTexture2dArray",
             "pass.set_bind_group(0, inputs.output_bind_group, &[])",
             "pass.set_bind_group(1, &material.bind_group, &[0])",
             "pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset])",

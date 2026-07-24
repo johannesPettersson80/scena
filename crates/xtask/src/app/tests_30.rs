@@ -32,6 +32,14 @@ fn q06_required_webgpu_artifact_rejects_unavailable_zero_and_software_results() 
         "hardware identity plus nonblack pixels is not image parity"
     );
 
+    let mut mislabeled_smoke = hardware.clone();
+    mislabeled_smoke["proof_class"] = json!("renderer-smoke");
+    mislabeled_smoke["release_evidence"] = json!(true);
+    assert!(
+        !required_browser_gpu_parity_passes(&mislabeled_smoke, "webgpu"),
+        "smoke-only output must not mint release-grade parity"
+    );
+
     let mut wrong_pixels = hardware.clone();
     wrong_pixels["required_parity"]["evaluations"][0]["pixel_parity"]["status"] = json!("failed");
     assert!(
@@ -113,9 +121,18 @@ pub(crate) fn required_webgpu_fixture(
     draw_calls: u64,
     nonblack: u64,
 ) -> Value {
+    let software = device_type == "Cpu";
     json!({
         "gate": "m6-rust-wasm-renderer-probe",
         "status": "passed",
+        "proof_class": if software {
+            "renderer-conformance-with-diagnostic-webgpu-pixel-diff"
+        } else {
+            "renderer-smoke-with-required-webgpu-full-frame-parity"
+        },
+        "release_evidence": !software,
+        "parity_claim": if software { "diagnostic-only" } else { "full-frame-reference-diff" },
+        "parity_scope": ["webgpu:m6-identical-unlit-triangle-v1"],
         "required_parity": {
             "enabled": true,
             "status": "passed",

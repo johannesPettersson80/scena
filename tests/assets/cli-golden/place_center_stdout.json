@@ -3,6 +3,10 @@
   "import_id": "part",
   "ok": true,
   "schema": "scena.placement_result.v1",
+  "target": {
+    "id": "part",
+    "kind": "import"
+  },
   "transform": {
     "kind": "raw",
     "rotation": [

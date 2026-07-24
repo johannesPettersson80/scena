@@ -40,9 +40,11 @@ fn unavailable_agent_commands_name_one_installable_feature_remedy() {
         .args(["recipe", "build", "missing.recipe.json"])
         .output()
         .expect("default-feature CLI runs");
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(69));
     let report: serde_json::Value =
         serde_json::from_slice(&output.stderr).expect("feature error is JSON");
+    assert_eq!(report["code"], "feature_unavailable");
+    assert_eq!(report["exit_class"], "unsupported");
     let message = report["message"].as_str().expect("feature message is text");
     assert!(message.contains("cargo install scena --features agent"));
     assert!(!message.contains("scene-host,inspection"));

@@ -16,7 +16,9 @@ use self::sampling::{
     sample_weights_into, sample_weights_into_profiled,
 };
 mod validation;
-use self::validation::{validate_clip, validate_imported_clip, validate_imported_source_clip};
+use self::validation::{
+    validate_clip, validate_imported_clip, validate_imported_source_clip, validate_source_clip,
+};
 mod mixer;
 
 new_key_type! {
@@ -149,20 +151,6 @@ impl AnimationClip {
         })
     }
 
-    pub(crate) fn new_unchecked(
-        key: AnimationClipKey,
-        name: Option<String>,
-        channels: Vec<AnimationChannel>,
-        duration_seconds: f32,
-    ) -> Self {
-        Self {
-            key,
-            name,
-            channels,
-            duration_seconds,
-        }
-    }
-
     fn imported(
         key: AnimationClipKey,
         name: Option<String>,
@@ -196,6 +184,10 @@ impl AnimationClip {
 }
 
 impl AnimationSourceClip {
+    #[deprecated(
+        since = "1.9.1",
+        note = "use AnimationSourceClip::try_new so invalid authored keyframes return AnimationError"
+    )]
     pub fn new(
         name: Option<String>,
         channels: Vec<AnimationSourceChannel>,
@@ -206,6 +198,19 @@ impl AnimationSourceClip {
             channels,
             duration_seconds,
         }
+    }
+
+    pub fn try_new(
+        name: Option<String>,
+        channels: Vec<AnimationSourceChannel>,
+        duration_seconds: f32,
+    ) -> Result<Self, AnimationError> {
+        validate_source_clip(&channels, duration_seconds)?;
+        Ok(Self {
+            name,
+            channels,
+            duration_seconds,
+        })
     }
 
     pub(crate) fn imported(
@@ -233,12 +238,26 @@ impl AnimationSourceClip {
         self.duration_seconds
     }
 
-    pub fn rebind<F, G>(
+    #[deprecated(
+        since = "1.9.1",
+        note = "use AnimationSourceClip::try_rebind so invalid rebound values return AnimationError"
+    )]
+    pub fn rebind<F, G>(&self, key: AnimationClipKey, map_node: F, map_vec3: G) -> AnimationClip
+    where
+        F: FnMut(usize) -> Option<NodeKey>,
+        G: FnMut(AnimationTarget, Vec3) -> Vec3,
+    {
+        self.try_rebind(key, map_node, map_vec3).expect(
+            "deprecated AnimationSourceClip::rebind received an invalid clip; use try_rebind",
+        )
+    }
+
+    pub fn try_rebind<F, G>(
         &self,
         key: AnimationClipKey,
         mut map_node: F,
         mut map_vec3: G,
-    ) -> AnimationClip
+    ) -> Result<AnimationClip, AnimationError>
     where
         F: FnMut(usize) -> Option<NodeKey>,
         G: FnMut(AnimationTarget, Vec3) -> Vec3,
@@ -249,7 +268,7 @@ impl AnimationSourceClip {
             .iter()
             .filter_map(|channel| channel.rebind(&mut map_node, &mut map_vec3, &mut keep_rotation))
             .collect();
-        AnimationClip::new_unchecked(key, self.name.clone(), channels, self.duration_seconds)
+        AnimationClip::new(key, self.name.clone(), channels, self.duration_seconds)
     }
 
     pub(crate) fn rebind_imported_many<F, G, H>(
@@ -478,5 +497,183 @@ impl AnimationSourceChannel {
             ),
             AnimationOutput::Weights(values) => AnimationOutput::Weights(values.clone()),
         }
+    }
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    fn source_channel(
+        times: Vec<f32>,
+        output: AnimationOutput,
+        interpolation: AnimationInterpolation,
+    ) -> AnimationSourceChannel {
+        AnimationSourceChannel::new(
+            0,
+            AnimationTarget::Translation,
+            times,
+            output,
+            interpolation,
+        )
+    }
+
+    fn channel_for(
+        target: AnimationTarget,
+        times: Vec<f32>,
+        output: AnimationOutput,
+        interpolation: AnimationInterpolation,
+    ) -> AnimationSourceChannel {
+        AnimationSourceChannel::new(7, target, times, output, interpolation)
+    }
+
+    fn assert_invalid(channel: AnimationSourceChannel, duration: f32, expected: &str) {
+        let error = AnimationSourceClip::try_new(None, vec![channel], duration)
+            .expect_err("invalid source clip must fail closed");
+        let message = error.to_string();
+        assert!(
+            message.contains(expected),
+            "expected '{expected}' in '{message}'"
+        );
+    }
+
+    #[test]
+    fn authored_source_clips_validate_before_rebinding() {
+        let invalid = AnimationSourceClip::try_new(
+            Some("poisoned".to_owned()),
+            vec![source_channel(
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO, Vec3::new(f32::NAN, 0.0, 0.0)]),
+                AnimationInterpolation::Linear,
+            )],
+            1.0,
+        );
+        assert!(
+            invalid.is_err(),
+            "non-finite authored output must fail closed"
+        );
+
+        let source = AnimationSourceClip::try_new(
+            Some("move".to_owned()),
+            vec![source_channel(
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO, Vec3::ONE]),
+                AnimationInterpolation::Linear,
+            )],
+            1.0,
+        )
+        .expect("valid source clip");
+        let rebound = source.try_rebind(AnimationClipKey::fresh(), |_| None, |_, value| value);
+        assert!(
+            rebound.is_err(),
+            "rebinding away every channel must not create an unchecked empty clip"
+        );
+    }
+
+    #[test]
+    fn authored_source_clip_validation_covers_time_value_shape_and_duration_matrix() {
+        let valid_output = || AnimationOutput::Vec3(vec![Vec3::ZERO, Vec3::ONE]);
+        for (times, expected) in [
+            (vec![0.0, f32::NAN], "time[1] must be finite"),
+            (vec![0.0, f32::INFINITY], "time[1] must be finite"),
+            (vec![0.5, 0.25], "strictly increasing"),
+            (vec![0.5, 0.5], "strictly increasing"),
+        ] {
+            assert_invalid(
+                source_channel(times, valid_output(), AnimationInterpolation::Linear),
+                1.0,
+                expected,
+            );
+        }
+        for duration in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert_invalid(
+                source_channel(
+                    vec![0.0, 1.0],
+                    valid_output(),
+                    AnimationInterpolation::Linear,
+                ),
+                duration,
+                "duration_seconds must be finite and positive",
+            );
+        }
+        assert_invalid(
+            source_channel(
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO]),
+                AnimationInterpolation::Linear,
+            ),
+            1.0,
+            "output length must be 2",
+        );
+        assert_invalid(
+            source_channel(
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO; 5]),
+                AnimationInterpolation::CubicSpline,
+            ),
+            1.0,
+            "output length must be 6",
+        );
+        assert_invalid(
+            source_channel(
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO, Vec3::new(f32::INFINITY, 0.0, 0.0)]),
+                AnimationInterpolation::Linear,
+            ),
+            1.0,
+            "output[1] must be finite",
+        );
+        assert_invalid(
+            channel_for(
+                AnimationTarget::Rotation,
+                vec![0.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO]),
+                AnimationInterpolation::Step,
+            ),
+            1.0,
+            "rotation channel output must use VEC4",
+        );
+        assert_invalid(
+            channel_for(
+                AnimationTarget::Weights,
+                vec![0.0, 1.0],
+                AnimationOutput::Weights(vec![vec![0.0, 1.0], vec![1.0]]),
+                AnimationInterpolation::Linear,
+            ),
+            1.0,
+            "inconsistent width",
+        );
+        assert_invalid(
+            channel_for(
+                AnimationTarget::Weights,
+                vec![0.0],
+                AnimationOutput::Weights(vec![vec![f32::NAN]]),
+                AnimationInterpolation::Step,
+            ),
+            1.0,
+            "must be finite",
+        );
+    }
+
+    #[test]
+    fn rebind_revalidates_mapped_values() {
+        let source = AnimationSourceClip::try_new(
+            Some("mapped".to_owned()),
+            vec![source_channel(
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO, Vec3::ONE]),
+                AnimationInterpolation::Linear,
+            )],
+            1.0,
+        )
+        .unwrap();
+        let error = source
+            .try_rebind(
+                AnimationClipKey::fresh(),
+                |_| Some(NodeKey::default()),
+                |_, _| Vec3::new(f32::NAN, 0.0, 0.0),
+            )
+            .expect_err("mapped non-finite values must be revalidated");
+        assert!(error.to_string().contains("must be finite"));
     }
 }

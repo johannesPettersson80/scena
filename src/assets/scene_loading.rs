@@ -10,6 +10,12 @@ use super::{
 use crate::diagnostics::AssetError;
 use std::borrow::Cow;
 
+#[cfg(target_arch = "wasm32")]
+mod browser;
+mod limits;
+use limits::asset_error_path;
+pub(super) use limits::{check_fetch_byte_limit_after_fetch, check_fetch_byte_limit_before_fetch};
+
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn asset_now_ms() -> f64 {
     js_sys::Date::now()
@@ -36,7 +42,12 @@ impl<F: AssetFetcher> Assets<F> {
         let options = AssetLoadOptions::default();
         let scene = {
             let mut storage = self.storage();
-            let mut scene = SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)?;
+            let mut scene = SceneAsset::from_gltf_bytes(
+                path.clone(),
+                bytes,
+                options.gltf_scene(),
+                &mut storage,
+            )?;
             if self.retain_policy == RetainPolicy::Always {
                 scene = scene.with_retained_source_bytes(bytes);
             }
@@ -46,6 +57,7 @@ impl<F: AssetFetcher> Assets<F> {
                 scene.clone(),
                 AssetLoadTelemetry {
                     fetched_bytes: bytes.len(),
+                    warnings: scene.load_warnings().to_vec(),
                     ..AssetLoadTelemetry::default()
                 },
             );
@@ -53,7 +65,7 @@ impl<F: AssetFetcher> Assets<F> {
         };
         #[cfg(target_arch = "wasm32")]
         {
-            self.decode_browser_texture_images().await?;
+            let _ = self.decode_browser_texture_images().await?;
         }
         Ok(scene)
     }
@@ -156,6 +168,15 @@ impl<F: AssetFetcher> Assets<F> {
         let reload_options = AssetLoadOptions::default()
             .with_strict_textures(true)
             .with_strict_external_resources(true);
+        let reload_options = match scene.selected_gltf_scene() {
+            Some(selected) if selected.selection == "explicit_name" => {
+                reload_options.with_gltf_scene_name(selected.name.clone().unwrap_or_default())
+            }
+            Some(selected) if selected.selection == "explicit_index" => {
+                reload_options.with_gltf_scene_index(selected.index)
+            }
+            _ => reload_options,
+        };
         let mut progress_events = vec![AssetLoadProgress::LoadStarted { path: path.clone() }];
         let mut progress = None;
         let (reloaded, telemetry) = match self
@@ -164,7 +185,7 @@ impl<F: AssetFetcher> Assets<F> {
                 None,
                 &mut progress_events,
                 &mut progress,
-                reload_options,
+                reload_options.clone(),
                 TextureCacheUpdatePolicy::ReplaceChangedSource,
             )
             .await
@@ -183,8 +204,13 @@ impl<F: AssetFetcher> Assets<F> {
                 let previous_policy = storage.texture_cache_update_policy;
                 storage.texture_cache_update_policy =
                     TextureCacheUpdatePolicy::ReplaceChangedSource;
-                let result = SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)
-                    .map(|scene| scene.with_retained_source_bytes(bytes));
+                let result = SceneAsset::from_gltf_bytes(
+                    path.clone(),
+                    bytes,
+                    reload_options.gltf_scene(),
+                    &mut storage,
+                )
+                .map(|scene| scene.with_retained_source_bytes(bytes));
                 storage.texture_cache_update_policy = previous_policy;
                 (result?, storage.telemetry_for_path(&path))
             }
@@ -203,7 +229,7 @@ impl<F: AssetFetcher> Assets<F> {
             let mut storage = self.storage();
             storage.replace_cached_scene(
                 path.clone(),
-                reload_options,
+                reload_options.clone(),
                 reloaded.clone(),
                 telemetry.clone(),
             );
@@ -217,7 +243,7 @@ impl<F: AssetFetcher> Assets<F> {
             asset: reloaded,
             path,
             cache_hit: false,
-            requested_options: reload_options,
+            requested_options: reload_options.clone(),
             cache_entry_options: reload_options,
             fetched_bytes: telemetry.fetched_bytes,
             external_buffers: telemetry.external_buffers,
@@ -244,7 +270,7 @@ impl<F: AssetFetcher> Assets<F> {
         check_cancelled(&path, control)?;
         if let Some((scene, telemetry, cache_entry_options)) = {
             let storage = self.storage();
-            storage.cached_scene(&path, options)
+            storage.cached_scene(&path, options.clone())
         } {
             load::emit_progress(
                 &mut progress_events,
@@ -272,7 +298,7 @@ impl<F: AssetFetcher> Assets<F> {
                 control,
                 &mut progress_events,
                 &mut progress,
-                options,
+                options.clone(),
             )
             .await?;
         load::emit_progress(
@@ -287,7 +313,12 @@ impl<F: AssetFetcher> Assets<F> {
         check_cancelled(&path, control)?;
         {
             let mut storage = self.storage();
-            storage.cache_scene(path.clone(), options, scene.clone(), telemetry.clone());
+            storage.cache_scene(
+                path.clone(),
+                options.clone(),
+                scene.clone(),
+                telemetry.clone(),
+            );
         }
         load::emit_progress(
             &mut progress_events,
@@ -298,7 +329,7 @@ impl<F: AssetFetcher> Assets<F> {
             asset: scene,
             path,
             cache_hit: false,
-            requested_options: options,
+            requested_options: options.clone(),
             cache_entry_options: options,
             fetched_bytes: telemetry.fetched_bytes,
             external_buffers: telemetry.external_buffers,
@@ -377,7 +408,7 @@ impl<F: AssetFetcher> Assets<F> {
                 external_paths,
                 external_image_paths,
                 control,
-                options,
+                options: options.clone(),
             },
             progress_events,
             progress,
@@ -394,13 +425,19 @@ impl<F: AssetFetcher> Assets<F> {
             storage.texture_cache_update_policy = texture_cache_update_policy;
             let scene_result =
                 if external_resources.buffers.is_empty() && external_resources.images.is_empty() {
-                    SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)
+                    SceneAsset::from_gltf_bytes(
+                        path.clone(),
+                        &bytes,
+                        options.gltf_scene(),
+                        &mut storage,
+                    )
                 } else {
                     SceneAsset::from_gltf_bytes_with_external_resources(
                         path.clone(),
                         &bytes,
                         &external_resources.buffers,
                         &external_resources.images,
+                        options.gltf_scene(),
                         &mut storage,
                     )
                 };
@@ -416,9 +453,7 @@ impl<F: AssetFetcher> Assets<F> {
             step_start = log_asset_step("SceneAsset::from_gltf_bytes", step_start);
         }
         #[cfg(target_arch = "wasm32")]
-        {
-            self.decode_browser_texture_images().await?;
-        }
+        let browser_texture_warnings = self.decode_browser_texture_images().await?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             log_asset_step("browser image decode", step_start);
@@ -429,87 +464,8 @@ impl<F: AssetFetcher> Assets<F> {
         }
         let mut telemetry = external_resources.telemetry;
         telemetry.warnings.extend_from_slice(scene.load_warnings());
+        #[cfg(target_arch = "wasm32")]
+        telemetry.warnings.extend(browser_texture_warnings);
         Ok((scene, telemetry))
     }
-
-    #[cfg(target_arch = "wasm32")]
-    async fn decode_browser_texture_images(&self) -> Result<(), AssetError> {
-        let requests = {
-            let storage = self.storage();
-            storage
-                .textures
-                .iter()
-                .filter_map(|(handle, texture)| {
-                    texture
-                        .browser_decode_source()
-                        .map(|bytes| (handle, texture.path().clone(), bytes))
-                })
-                .collect::<Vec<_>>()
-        };
-
-        for (handle, path, bytes) in requests {
-            let image = super::texture::decode_browser_image_bitmap(&path, bytes).await?;
-            if let Some(texture) = self.storage().textures.get_mut(handle) {
-                std::sync::Arc::make_mut(texture).set_browser_image(image);
-            }
-        }
-        Ok(())
-    }
-}
-
-fn asset_error_path(error: &AssetError) -> Option<&str> {
-    match error {
-        AssetError::NotFound { path } | AssetError::Io { path, .. } => Some(path),
-        _ => None,
-    }
-}
-
-pub(super) fn check_fetch_byte_limit_before_fetch(
-    path: &AssetPath,
-    limit: Option<usize>,
-) -> Result<(), AssetError> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = (path, limit);
-        Ok(())
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let Some(limit) = limit else {
-            return Ok(());
-        };
-        if let Ok(metadata) = std::fs::metadata(path.as_str())
-            && metadata.is_file()
-        {
-            let source_bytes = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
-            if source_bytes > limit {
-                return Err(AssetError::PolicyViolation {
-                    path: path.as_str().to_string(),
-                    reason: format!(
-                        "source is {source_bytes} bytes, exceeding fetch_byte_limit {limit}"
-                    ),
-                    help: "use a smaller asset or raise the operator-owned fetch_byte_limit policy",
-                });
-            }
-        }
-        Ok(())
-    }
-}
-
-pub(super) fn check_fetch_byte_limit_after_fetch(
-    path: &AssetPath,
-    bytes: usize,
-    limit: Option<usize>,
-) -> Result<(), AssetError> {
-    let Some(limit) = limit else {
-        return Ok(());
-    };
-    if bytes > limit {
-        return Err(AssetError::PolicyViolation {
-            path: path.as_str().to_string(),
-            reason: format!("source is {bytes} bytes, exceeding fetch_byte_limit {limit}"),
-            help: "use a smaller asset or raise the operator-owned fetch_byte_limit policy",
-        });
-    }
-    Ok(())
 }

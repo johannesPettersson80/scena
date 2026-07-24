@@ -185,6 +185,12 @@ deterministic for the same scene state. Browser GPU captures bind pixels to
 revision counters and backend/capability metadata; they do not claim
 cross-machine byte identity.
 
+The async WebGPU path uses renderer-owned GPU-copy bytes and records
+`frame.release_evidence: true` only after that readback completes. Synchronous
+canvas fallback bytes are explicitly caller-supplied and therefore record
+`frame.release_evidence: false`; they are useful for diagnostics but must not
+be accepted as release evidence.
+
 Semantic AOV capture is an explicit, separately retained GPU path. Enable it
 before prepare, then await the capture:
 

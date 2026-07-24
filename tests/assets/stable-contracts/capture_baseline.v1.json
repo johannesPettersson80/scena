@@ -14,6 +14,7 @@
     "revisions": {
       "structure": 3,
       "transform": 2,
+      "camera": 0,
       "appearance": 0,
       "interaction": 0
     },
@@ -117,6 +118,7 @@
     "revisions": {
       "structure": 3,
       "transform": 2,
+      "camera": 0,
       "appearance": 0,
       "interaction": 0
     },

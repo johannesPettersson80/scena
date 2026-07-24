@@ -4,8 +4,16 @@
     {
       "name": "placement_verbs",
       "version": 1,
-      "owner": "scene/recipe/placement",
-      "values": ["center", "ground", "fit_to_size", "look_at", "align_to_anchor", "place_on"]
+      "owner": "scene/placement",
+      "values": ["center", "ground", "fit_to_size", "look_at", "align_to_anchor", "place_on"],
+      "entries": [
+        {"name": "center"},
+        {"name": "ground"},
+        {"name": "fit_to_size"},
+        {"name": "look_at"},
+        {"name": "align_to_anchor"},
+        {"name": "place_on"}
+      ]
     }
   ]
 }

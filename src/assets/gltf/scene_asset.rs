@@ -35,12 +35,21 @@ pub struct SceneAssetGeometrySummary {
     pub source_coordinate_systems: Vec<SourceCoordinateSystem>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectedGltfScene {
+    pub index: usize,
+    pub name: Option<String>,
+    pub selection: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::assets::gltf) struct SceneAssetData {
     pub(in crate::assets::gltf) path: AssetPath,
     pub(in crate::assets::gltf) node_count: usize,
     pub(in crate::assets::gltf) mesh_count: usize,
     pub(in crate::assets::gltf) nodes: Vec<SceneAssetNode>,
+    pub(in crate::assets::gltf) roots: Vec<usize>,
+    pub(in crate::assets::gltf) selected_gltf_scene: Option<SelectedGltfScene>,
     pub(in crate::assets::gltf) skins: Vec<SceneAssetSkin>,
     pub(in crate::assets::gltf) clips: Vec<SceneAssetClip>,
     pub(in crate::assets::gltf) extensions_used: Vec<String>,
@@ -94,6 +103,8 @@ impl SceneAsset {
                 node_count: 0,
                 mesh_count: 0,
                 nodes: Vec::new(),
+                roots: Vec::new(),
+                selected_gltf_scene: None,
                 skins: Vec::new(),
                 clips: Vec::new(),
                 extensions_used: Vec::new(),
@@ -153,6 +164,10 @@ impl SceneAsset {
 
     pub fn nodes(&self) -> &[SceneAssetNode] {
         &self.inner.nodes
+    }
+
+    pub fn selected_gltf_scene(&self) -> Option<&SelectedGltfScene> {
+        self.inner.selected_gltf_scene.as_ref()
     }
 
     pub fn skins(&self) -> &[SceneAssetSkin] {
@@ -247,17 +262,19 @@ impl SceneAsset {
         root.name = Some("SecondRoot".to_owned());
         root.children.clear();
         inner.nodes.push(root);
+        inner.roots.push(inner.nodes.len() - 1);
         inner.node_count = inner.nodes.len();
     }
 
-    fn root_indices(&self) -> Vec<usize> {
-        let mut child_indices = BTreeSet::new();
-        for node in &self.inner.nodes {
-            child_indices.extend(node.children.iter().copied());
-        }
-        (0..self.inner.nodes.len())
-            .filter(|index| !child_indices.contains(index))
-            .collect()
+    #[cfg(test)]
+    pub(crate) fn rename_root_for_transaction_test(&mut self, ordinal: usize, name: &str) {
+        let inner = Arc::make_mut(&mut self.inner);
+        let root = inner.roots[ordinal];
+        inner.nodes[root].name = Some(name.to_owned());
+    }
+
+    pub(crate) fn root_indices(&self) -> Vec<usize> {
+        self.inner.roots.clone()
     }
 
     fn node_bounds_in_asset_space(

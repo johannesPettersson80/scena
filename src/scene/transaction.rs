@@ -36,6 +36,8 @@ impl<'scene> SceneTransaction<'scene> {
             committed_revision(snapshot.structure_revision, self.scene.structure_revision);
         self.scene.transform_revision =
             committed_revision(snapshot.transform_revision, self.scene.transform_revision);
+        self.scene.camera_revision =
+            committed_revision(snapshot.camera_revision, self.scene.camera_revision);
         self.scene.appearance_revision =
             committed_revision(snapshot.appearance_revision, self.scene.appearance_revision);
         self.scene.visibility_revision =
@@ -87,6 +89,7 @@ impl Scene {
             inspection_toolkit: self.inspection_toolkit.clone(),
             structure_revision: self.structure_revision,
             transform_revision: self.transform_revision,
+            camera_revision: self.camera_revision,
             appearance_revision: self.appearance_revision,
             visibility_revision: self.visibility_revision,
             resolved_cache: RefCell::new(super::resolved_cache::ResolvedSceneCache::default()),

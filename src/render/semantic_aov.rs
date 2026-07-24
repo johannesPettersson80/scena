@@ -256,8 +256,13 @@ impl Renderer {
             .ok_or(RenderError::GpuResourcesNotPrepared {
                 backend: self.target.backend,
             })?;
-        gpu.capture_semantic_aov(self.target, &projection, &clipping_planes, section_box)
-            .map_err(RawSemanticAovError::Render)
+        gpu.capture_semantic_aov(
+            self.target,
+            &projection,
+            clipping_planes.as_ref(),
+            section_box,
+        )
+        .map_err(RawSemanticAovError::Render)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -280,9 +285,14 @@ impl Renderer {
             .ok_or(RenderError::GpuResourcesNotPrepared {
                 backend: self.target.backend,
             })?;
-        gpu.capture_semantic_aov(self.target, &projection, &clipping_planes, section_box)
-            .await
-            .map_err(RawSemanticAovError::Render)
+        gpu.capture_semantic_aov(
+            self.target,
+            &projection,
+            clipping_planes.as_ref(),
+            section_box,
+        )
+        .await
+        .map_err(RawSemanticAovError::Render)
     }
 }
 

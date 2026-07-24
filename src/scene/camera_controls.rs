@@ -35,7 +35,7 @@ impl Scene {
         };
 
         if changed {
-            self.structure_revision = self.structure_revision.saturating_add(1);
+            self.camera_revision = self.camera_revision.saturating_add(1);
         }
         Ok(())
     }

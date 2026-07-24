@@ -3,6 +3,9 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use crate::Color;
+use crate::scene::recipe::field_model::{
+    AREA_LIGHT_PRESETS, DIRECTIONAL_LIGHT_PRESETS, POINT_LIGHT_PRESETS, STUDIO_LIGHT_PRESETS,
+};
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{validate_known_fields, validate_required_id};
@@ -28,9 +31,6 @@ const LIGHT_FIELDS: &[&str] = &[
     "outer_cone_degrees",
     "transform",
 ];
-const DIRECTIONAL_PRESETS: &[&str] = &["sun", "key", "fill", "rim"];
-const POINT_PRESETS: &[&str] = &["softbox", "bulb_warm", "bulb_cool"];
-const AREA_PRESETS: &[&str] = &["softbox"];
 
 pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
     value: Option<&Value>,
@@ -177,10 +177,10 @@ fn validate_light_preset(
         return;
     };
     match kind {
-        Some("directional") if DIRECTIONAL_PRESETS.contains(&preset) => {}
-        Some("point") if POINT_PRESETS.contains(&preset) => {}
-        Some("area") if AREA_PRESETS.contains(&preset) => {}
-        Some("studio_rig") if preset == "studio_rig" => {}
+        Some("directional") if DIRECTIONAL_LIGHT_PRESETS.contains(&preset) => {}
+        Some("point") if POINT_LIGHT_PRESETS.contains(&preset) => {}
+        Some("area") if AREA_LIGHT_PRESETS.contains(&preset) => {}
+        Some("studio_rig") if STUDIO_LIGHT_PRESETS.contains(&preset) => {}
         Some("studio_rig") => diagnostics.push(diagnostic(
             "invalid_light_preset",
             "error",

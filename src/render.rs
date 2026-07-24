@@ -70,9 +70,10 @@ use crate::scene::{CameraKey, ClippingPlane, Scene, SectionBox};
 pub use self::backend_selection::HeadlessBackendSelectionReport;
 pub use self::background::Background;
 pub use self::exposure::{
-    AutoExposureConfig, AutoExposureResult, estimate_auto_exposure_from_linear_colors,
-    estimate_auto_exposure_from_srgb8,
+    AutoExposureConfig, AutoExposureResult, AutoExposureStatus,
+    estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
+pub(super) use self::exposure::{AutoExposureFramePolicy, auto_exposure_frame_policy};
 use self::frame::depth_of_field_post_config;
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
@@ -112,6 +113,7 @@ pub struct Renderer {
     cpu_material_reflection_scratch: Vec<screen_space_reflections::MaterialReflectionPixel>,
     cpu_effect_rgba8_scratch: Vec<u8>,
     cpu_row_band_bins: cpu_render::CpuRowBandBins,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     gpu_supersample_frame: Vec<u8>,
     stats: RendererStats,
     diagnostics: Vec<Diagnostic>,
@@ -145,6 +147,7 @@ pub struct Renderer {
     background_color: Color,
     auto_exposure: Option<AutoExposureConfig>,
     last_auto_exposure: Option<AutoExposureResult>,
+    auto_exposure_status: AutoExposureStatus,
     environment_revision: u64,
     target_revision: u64,
     output_resources_revision: u64,

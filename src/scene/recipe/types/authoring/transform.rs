@@ -9,7 +9,7 @@ use super::super::{
     is_zero_vec3,
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeTransformV1 {
     Raw {
@@ -61,7 +61,7 @@ pub enum SceneRecipeTransformV1 {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum SceneRecipeLookAtTargetV1 {
     Node(String),

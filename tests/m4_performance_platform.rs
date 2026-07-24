@@ -3,13 +3,14 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 
 use scena::{
     Assets, Backend, CameraKey, CapabilityStatus, Color, DiagnosticCode, DiagnosticSeverity,
     GeometryDesc, GeometryTopology, GeometryVertex, HardwareTier, MaterialDesc, OrbitControlAction,
     OrbitControls, OutputColorSpace, PlatformSurface, PointerButton, PointerEvent,
-    PointerEventKind, Primitive, Profile, Quality, RenderError, RenderMode, Renderer,
-    RendererOptions, Scene, SurfaceEvent, Transform, Vec3, Vertex,
+    PointerEventKind, Primitive, Profile, Quality, RenderError, RenderMode, RenderReadbackMode,
+    Renderer, RendererOptions, Scene, SurfaceEvent, Transform, Vec3, Vertex,
 };
 
 #[global_allocator]
@@ -426,6 +427,148 @@ fn render_on_change_static_idle_skip_has_zero_allocations() {
 
     assert!(outcome.skipped);
     assert_eq!(ALLOCATION_COUNT.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn retained_dynamic_culling_benchmark_records_work_allocations_and_output_hash() {
+    let mut renderer = match Renderer::headless_gpu(96, 64) {
+        Ok(renderer) => renderer,
+        Err(error) if std::env::var_os("SCENA_USE_GPU").is_none() => {
+            eprintln!("skipping P01 GPU benchmark without an available adapter: {error}");
+            return;
+        }
+        Err(error) => panic!("SCENA_USE_GPU requires the P01 benchmark adapter: {error}"),
+    };
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.3, 0.3, 0.3));
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("P01 camera inserts");
+    let initially_visible = scene
+        .mesh(geometry, material)
+        .add()
+        .expect("P01 visible mesh inserts");
+    let initially_off_frustum = scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(100.0, 0.0, 0.0)))
+        .add()
+        .expect("P01 off-frustum mesh inserts");
+
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.with(|count| count.set(true));
+    let full_start = Instant::now();
+    let full_work = renderer
+        .prepare_with_assets_profiled(&mut scene, &assets)
+        .expect("P01 full prepare succeeds");
+    let full_prepare_ns = full_start.elapsed().as_nanos();
+    COUNT_ALLOCATIONS.with(|count| count.set(false));
+    let full_allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
+    let first = renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
+        .expect("P01 initial frame renders");
+    let first_hash = fnv1a64(renderer.frame_rgba8());
+
+    scene
+        .set_transform(initially_visible, Transform::at(Vec3::new(0.1, 0.0, 0.0)))
+        .expect("P01 visible mesh moves");
+    scene
+        .set_transform(
+            initially_off_frustum,
+            Transform::at(Vec3::new(100.1, 0.0, 0.0)),
+        )
+        .expect("P01 off-frustum mesh moves");
+    let camera_node = scene.camera_node(camera).expect("P01 camera node resolves");
+    scene
+        .set_transform(camera_node, Transform::at(Vec3::new(100.0, 0.0, 2.0)))
+        .expect("P01 camera pans to the former off-frustum mesh");
+
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.with(|count| count.set(true));
+    let dynamic_start = Instant::now();
+    let dynamic_work = renderer
+        .prepare_with_assets_profiled(&mut scene, &assets)
+        .expect("P01 dynamic prepare succeeds");
+    let dynamic_prepare_ns = dynamic_start.elapsed().as_nanos();
+    COUNT_ALLOCATIONS.with(|count| count.set(false));
+    let dynamic_allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
+    let dynamic = renderer
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
+        .expect("P01 dynamic frame renders");
+    let dynamic_hash = fnv1a64(renderer.frame_rgba8());
+
+    assert!(
+        full_work.prepared_triangle_count > 0,
+        "the baseline sample must measure a canonical full prepare"
+    );
+    assert_eq!(
+        dynamic_work.prepared_triangle_count, 0,
+        "camera/transform-only re-entry must not recollect canonical triangles"
+    );
+    assert_eq!(dynamic.draw_calls, first.draw_calls);
+    assert_ne!(
+        dynamic_hash, first_hash,
+        "panning between the two objects must visibly change the frame identity"
+    );
+
+    let mut forced_full = Renderer::headless_gpu(96, 64).expect("P01 forced-full renderer builds");
+    forced_full
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("P01 forced-full prepare succeeds");
+    let forced = forced_full
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
+        .expect("P01 forced-full frame renders");
+    assert_eq!(dynamic.draw_calls, forced.draw_calls);
+    assert_eq!(
+        renderer.frame_rgba8(),
+        forced_full.frame_rgba8(),
+        "dynamic culling output must match a fresh full prepare exactly"
+    );
+
+    let artifact_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/gate-artifacts/p01-retained-dynamic");
+    std::fs::create_dir_all(&artifact_dir).expect("P01 artifact directory creates");
+    let report = serde_json::json!({
+        "schema": "scena.p01.retained_dynamic_benchmark.v1",
+        "status": "passed",
+        "timing_policy": "observational_report_only",
+        "fixture": {
+            "width": 96,
+            "height": 64,
+            "visible_and_off_frustum_objects": true,
+            "camera_pan": true,
+            "object_motion": true
+        },
+        "full": {
+            "prepare_ns": full_prepare_ns,
+            "allocations": full_allocations,
+            "prepared_triangles": full_work.prepared_triangle_count,
+            "draw_calls": first.draw_calls,
+            "output_fnv1a64": format!("{first_hash:016x}")
+        },
+        "dynamic": {
+            "prepare_ns": dynamic_prepare_ns,
+            "allocations": dynamic_allocations,
+            "prepared_triangles": dynamic_work.prepared_triangle_count,
+            "draw_calls": dynamic.draw_calls,
+            "output_fnv1a64": format!("{dynamic_hash:016x}")
+        },
+        "forced_full_reference": {
+            "draw_calls": forced.draw_calls,
+            "output_fnv1a64": format!("{:016x}", fnv1a64(forced_full.frame_rgba8()))
+        }
+    });
+    std::fs::write(
+        artifact_dir.join("benchmark.json"),
+        serde_json::to_vec_pretty(&report).expect("P01 report serializes"),
+    )
+    .expect("P01 report writes");
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 #[test]

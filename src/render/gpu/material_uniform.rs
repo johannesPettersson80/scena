@@ -7,6 +7,11 @@ use crate::material::{AlphaMode, MaterialDesc, MaterialKind, TextureTransform};
 /// fall-back still allocates a 1-layer array and writes layer index 0.
 pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 224;
 
+pub(super) fn material_uniform_min_binding_size() -> std::num::NonZeroU64 {
+    std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN)
+        .expect("material uniform binding size is nonzero")
+}
+
 /// `min_uniform_buffer_offset_alignment` floor across every wgpu adapter we
 /// target. The shared per-batch material uniform buffer pads each entry up to
 /// this stride so dynamic-offset binding can point at any layer's slot.
@@ -260,8 +265,53 @@ impl MaterialUniformUpload {
 
 #[cfg(test)]
 mod tests {
-    use super::{MATERIAL_UNIFORM_BYTE_LEN, MaterialUniformUpload};
+    use super::{
+        MATERIAL_UNIFORM_BYTE_LEN, MaterialUniformUpload, material_uniform_min_binding_size,
+    };
     use crate::material::{AlphaMode, Color, MaterialDesc, TextureTransform};
+
+    fn validate_material_uniform_contract(source: &str) -> Result<(), String> {
+        let module = wgpu::naga::front::wgsl::parse_str(source)
+            .map_err(|error| error.emit_to_string(source))?;
+        let (_, uniform_type) = module
+            .types
+            .iter()
+            .find(|(_, ty)| ty.name.as_deref() == Some("MaterialUniform"))
+            .ok_or_else(|| "production shader omitted MaterialUniform".to_string())?;
+        let wgpu::naga::TypeInner::Struct { members, span } = &uniform_type.inner else {
+            return Err("MaterialUniform is not a WGSL struct".to_string());
+        };
+        let encoded_len = MaterialUniformUpload::from_transform(None).encode().len() as u64;
+        if members.len() != 14
+            || u64::from(*span) != encoded_len
+            || material_uniform_min_binding_size().get() != encoded_len
+            || MATERIAL_UNIFORM_BYTE_LEN != encoded_len
+        {
+            return Err(format!(
+                "material uniform mismatch: members={}, shader_span={span}, encoded_len={encoded_len}, binding_size={}",
+                members.len(),
+                material_uniform_min_binding_size()
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn material_uniform_layout_encode_and_bind_size_are_consistent() {
+        let source = super::super::output::GPU_TRIANGLE_SHADER_TEXTURE_2D;
+        validate_material_uniform_contract(source).unwrap();
+    }
+
+    #[test]
+    fn material_uniform_contract_rejects_an_omitted_shader_lane() {
+        let source = super::super::output::GPU_TRIANGLE_SHADER_TEXTURE_2D;
+        let mutated = source.replacen("attenuation_color: vec4<f32>,", "", 1);
+        assert_ne!(source, mutated, "mutation must remove a uniform lane");
+        assert!(
+            validate_material_uniform_contract(&mutated).is_err(),
+            "an omitted WGSL material lane must fail semantic layout validation"
+        );
+    }
 
     #[test]
     fn material_uniform_upload_encodes_base_color_texture_transform() {

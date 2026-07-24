@@ -14,6 +14,7 @@ mod animation_error;
 mod browser_timing;
 mod capabilities;
 mod capability_status;
+mod conversions;
 mod diagnostic;
 mod display;
 mod display_animation;
@@ -22,6 +23,7 @@ mod help;
 mod import_overlay;
 mod name_candidates;
 mod post_processing;
+mod state_errors;
 mod stats;
 pub use animation_error::AnimationError;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -40,6 +42,7 @@ pub use name_candidates::nearest_name_candidates;
 pub use post_processing::{
     PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1,
 };
+pub use state_errors::{ChangeKind, ErrorDiagnostic, NotPreparedReason};
 pub use stats::RendererStats;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +81,18 @@ pub struct Ktx2ColorSpaceDfd {
     pub actual_transfer: &'static str,
 }
 
+/// Material and source details for an unresolved glTF texture reference.
+///
+/// This payload is boxed by [`AssetError::MissingTexture`] so actionable
+/// diagnostics do not inflate every result that returns [`AssetError`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingTextureDetails {
+    pub material_index: Option<usize>,
+    pub material_name: Option<String>,
+    pub image_source: Option<String>,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetError {
     NotFound {
@@ -96,6 +111,44 @@ pub enum AssetError {
         path: String,
         reason: String,
     },
+    InvalidTextureIdentity {
+        identity: String,
+        reason: String,
+    },
+    InvalidTextureData {
+        identity: String,
+        width: u32,
+        height: u32,
+        expected_elements: usize,
+        actual_elements: usize,
+        reason: String,
+    },
+    TextureSizeLimit {
+        path: String,
+        width: u32,
+        height: u32,
+        maximum_dimension: u32,
+        required_bytes: u64,
+        maximum_bytes: u64,
+    },
+    TextureIdentityCollision {
+        identity: String,
+    },
+    TextureColorSpaceMismatch {
+        identity: String,
+        slot: String,
+        expected: String,
+        actual: String,
+    },
+    MorphWeightWidthMismatch {
+        path: String,
+        clip_index: usize,
+        channel_index: usize,
+        node_index: usize,
+        primitive_index: usize,
+        expected: usize,
+        actual: usize,
+    },
     UnsupportedRequiredExtension {
         path: String,
         extension: String,
@@ -109,6 +162,7 @@ pub enum AssetError {
         path: String,
         material_slot: String,
         texture_index: usize,
+        context: Box<MissingTextureDetails>,
         help: &'static str,
     },
     UnsupportedTextureFormat {
@@ -326,44 +380,8 @@ pub enum InstantiateError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NotPreparedReason {
-    NeverPrepared,
-    DifferentScene,
-    SceneChanged {
-        prepared_revision: u64,
-        current_revision: u64,
-        change: ChangeKind,
-    },
-    EnvironmentChanged {
-        prepared_revision: u64,
-        current_revision: u64,
-        change: ChangeKind,
-    },
-    TargetChanged {
-        prepared_revision: u64,
-        current_revision: u64,
-        change: ChangeKind,
-    },
-    OutputSettingsChanged {
-        prepared_revision: u64,
-        current_revision: u64,
-        change: ChangeKind,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChangeKind {
-    SceneStructure,
-    Transform,
-    Appearance,
-    Visibility,
-    Environment,
-    RenderTarget,
-    OutputSettings,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LookupError {
+    NoActiveCamera,
     NodeNotFound(NodeKey),
     CannotRemoveRootNode(NodeKey),
     ImportFromDifferentScene,
@@ -451,6 +469,9 @@ pub enum LookupError {
     InvalidTransform {
         reason: &'static str,
     },
+    InvalidCameraProjection {
+        reason: &'static str,
+    },
     GeometryNotFound {
         node: NodeKey,
         geometry: GeometryHandle,
@@ -481,52 +502,4 @@ pub enum LookupError {
         field: &'static str,
         reason: &'static str,
     },
-}
-
-impl From<BuildError> for Error {
-    fn from(error: BuildError) -> Self {
-        Self::Build(error)
-    }
-}
-
-impl From<AssetError> for Error {
-    fn from(error: AssetError) -> Self {
-        Self::Asset(error)
-    }
-}
-
-impl From<ImportError> for Error {
-    fn from(error: ImportError) -> Self {
-        Self::Import(error)
-    }
-}
-
-impl From<AnimationError> for Error {
-    fn from(error: AnimationError) -> Self {
-        Self::Animation(error)
-    }
-}
-
-impl From<InstantiateError> for Error {
-    fn from(error: InstantiateError) -> Self {
-        Self::Instantiate(error)
-    }
-}
-
-impl From<PrepareError> for Error {
-    fn from(error: PrepareError) -> Self {
-        Self::Prepare(error)
-    }
-}
-
-impl From<RenderError> for Error {
-    fn from(error: RenderError) -> Self {
-        Self::Render(error)
-    }
-}
-
-impl From<LookupError> for Error {
-    fn from(error: LookupError) -> Self {
-        Self::Lookup(error)
-    }
 }

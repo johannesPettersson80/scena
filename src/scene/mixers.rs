@@ -135,8 +135,7 @@ impl Scene {
             mixer.stop();
             mixer.shared_clip()
         };
-        self.apply_animation_clip(&clip, 0.0);
-        Ok(())
+        self.apply_animation_clip(&clip, 0.0)
     }
 
     /// Seeks the mixer to a specific time in seconds and applies the resulting
@@ -151,8 +150,7 @@ impl Scene {
             mixer.seek(time_seconds);
             (mixer.shared_clip(), mixer.time_seconds())
         };
-        self.apply_animation_clip(&clip, time_seconds);
-        Ok(())
+        self.apply_animation_clip(&clip, time_seconds)
     }
 
     /// Sets the playback speed multiplier. `1.0` is real-time; negative values
@@ -211,7 +209,7 @@ impl Scene {
             (mixer.shared_clip(), mixer.time_seconds(), was_playing)
         };
         if was_playing {
-            self.apply_animation_clip_impl::<PROFILE>(&clip, time_seconds, &mut metrics);
+            self.apply_animation_clip_impl::<PROFILE>(&clip, time_seconds, &mut metrics)?;
         }
         Ok(metrics)
     }
@@ -230,9 +228,13 @@ impl Scene {
         Ok(mixer_state)
     }
 
-    fn apply_animation_clip(&mut self, clip: &crate::animation::AnimationClip, time_seconds: f32) {
+    fn apply_animation_clip(
+        &mut self,
+        clip: &crate::animation::AnimationClip,
+        time_seconds: f32,
+    ) -> Result<(), AnimationError> {
         let mut ignored = AnimationUpdateMetrics::default();
-        self.apply_animation_clip_impl::<false>(clip, time_seconds, &mut ignored);
+        self.apply_animation_clip_impl::<false>(clip, time_seconds, &mut ignored)
     }
 
     fn apply_animation_clip_impl<const PROFILE: bool>(
@@ -240,19 +242,20 @@ impl Scene {
         clip: &crate::animation::AnimationClip,
         time_seconds: f32,
         metrics: &mut AnimationUpdateMetrics,
-    ) {
+    ) -> Result<(), AnimationError> {
         let mut transform_changed = false;
         for channel in clip.channels() {
             if PROFILE {
                 metrics.channels_scanned = metrics.channels_scanned.saturating_add(1);
             }
             transform_changed |= self
-                .apply_animation_channel::<PROFILE>(channel, time_seconds, metrics)
+                .apply_animation_channel::<PROFILE>(channel, time_seconds, metrics)?
                 .transform_changed();
         }
         if transform_changed {
             self.transform_revision = self.transform_revision.saturating_add(1);
         }
+        Ok(())
     }
 
     fn apply_animation_channel<const PROFILE: bool>(
@@ -260,7 +263,7 @@ impl Scene {
         channel: &AnimationChannel,
         time_seconds: f32,
         metrics: &mut AnimationUpdateMetrics,
-    ) -> AppliedAnimationChange {
+    ) -> Result<AppliedAnimationChange, AnimationError> {
         if channel.target() == AnimationTarget::Weights {
             let node = channel.target_node();
             let mut weights = self.morph_weights.remove(&node).unwrap_or_default();
@@ -277,7 +280,7 @@ impl Scene {
                 if !weights.is_empty() {
                     self.morph_weights.insert(node, weights);
                 }
-                return AppliedAnimationChange::None;
+                return Ok(AppliedAnimationChange::None);
             }
             if PROFILE {
                 metrics.weight_values_written = metrics
@@ -288,11 +291,11 @@ impl Scene {
                 );
             }
             self.set_morph_weights_unchecked(node, weights);
-            return AppliedAnimationChange::None;
+            return Ok(AppliedAnimationChange::None);
         }
 
         let Some(node) = self.nodes.get_mut(channel.target_node()) else {
-            return AppliedAnimationChange::None;
+            return Ok(AppliedAnimationChange::None);
         };
         let before = node.transform;
         let mut transform = before;
@@ -305,7 +308,7 @@ impl Scene {
                     channel.sample_vec3(time_seconds)
                 };
                 let Some(value) = value else {
-                    return AppliedAnimationChange::None;
+                    return Ok(AppliedAnimationChange::None);
                 };
                 transform.translation = value;
             }
@@ -317,7 +320,7 @@ impl Scene {
                     channel.sample_vec3(time_seconds)
                 };
                 let Some(value) = value else {
-                    return AppliedAnimationChange::None;
+                    return Ok(AppliedAnimationChange::None);
                 };
                 transform.scale = value;
             }
@@ -329,17 +332,28 @@ impl Scene {
                     channel.sample_quat(time_seconds)
                 };
                 let Some(value) = value else {
-                    return AppliedAnimationChange::None;
+                    return Ok(AppliedAnimationChange::None);
                 };
                 transform.rotation = value;
             }
             AnimationTarget::Weights => unreachable!("weights handled before mutable node borrow"),
         }
+        if !transform.translation.is_finite()
+            || !transform.rotation.is_finite()
+            || !transform.scale.is_finite()
+        {
+            return Err(AnimationError::InvalidClip {
+                reason: format!(
+                    "sampled {:?} channel produced a non-finite transform at {time_seconds} seconds",
+                    channel.target()
+                ),
+            });
+        }
         if before == transform {
-            return AppliedAnimationChange::None;
+            return Ok(AppliedAnimationChange::None);
         }
         node.transform = Transform { ..transform };
-        AppliedAnimationChange::Transform
+        Ok(AppliedAnimationChange::Transform)
     }
 }
 
@@ -437,6 +451,42 @@ mod tests {
             after.structure_revision > before.structure_revision,
             "morph weight animation remains structural because vertex deformation changes"
         );
+    }
+
+    #[test]
+    fn finite_authored_keys_cannot_overflow_into_a_runtime_transform() {
+        let mut scene = Scene::new();
+        let node = scene
+            .add_empty(scene.root(), Transform::IDENTITY)
+            .expect("animated node inserts");
+        let clip = AnimationClip::new(
+            AnimationClipKey::fresh(),
+            Some("OverflowGuard".to_owned()),
+            vec![AnimationChannel::new(
+                node,
+                AnimationTarget::Translation,
+                vec![0.0, 10.0],
+                AnimationOutput::Vec3(vec![
+                    Vec3::ZERO,
+                    Vec3::ZERO,
+                    Vec3::new(f32::MAX, 0.0, 0.0),
+                    Vec3::new(-f32::MAX, 0.0, 0.0),
+                    Vec3::ZERO,
+                    Vec3::ZERO,
+                ]),
+                AnimationInterpolation::CubicSpline,
+            )],
+            10.0,
+        )
+        .expect("all authored key and tangent values are finite");
+        let mixer = scene.insert_animation_mixer_for_test(clip);
+        let before = scene.node(node).unwrap().transform();
+
+        let error = scene
+            .seek_animation(mixer, 5.0)
+            .expect_err("overflowed sample must fail rather than poison the node");
+        assert!(error.to_string().contains("non-finite transform"));
+        assert_eq!(scene.node(node).unwrap().transform(), before);
     }
 
     fn translation_clip(node: crate::scene::NodeKey) -> AnimationClip {

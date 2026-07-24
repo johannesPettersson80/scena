@@ -591,7 +591,7 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
                 .contains("AssetProvenance::new(path).with_source_sha256(source_sha256)")
             && environment_rs.contains("from_equirectangular_hdr_sidecar_bytes")
             && environment_rs.contains("prefilter_sidecar(")
-            && environment_rs.contains("prefilter_sidecar_identity"),
+            && environment_rs.contains("prefilter_sidecar: Some(std::sync::Arc::new(sidecar))"),
         "EnvironmentDesc must carry source SHA and sidecar metadata as asset data, not as a \
          global renderer singleton"
     );
@@ -622,7 +622,9 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
     );
     assert!(
         environment_cache_rs.contains("EnvironmentLightingCache")
-            && environment_cache_rs.contains("prefilter_sidecar_identity")
+            && environment_cache_rs.contains("EnvironmentSidecarIdentity")
+            && environment_cache_rs
+                .contains("source_sha256: sidecar.header().source_sha256_bytes()")
             && !environment_cache_rs.contains("OnceLock")
             && !environment_cache_rs.contains("Mutex::new"),
         "sidecar-backed prepared lighting must populate the existing renderer-owned environment \

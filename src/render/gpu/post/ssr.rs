@@ -1,6 +1,7 @@
 use super::{create_post_pipeline, resources::POST_COLOR_FORMAT};
+use crate::render::gpu::shader_manifest::ShaderVariantId;
 
-const SHADER: &str = include_str!("ssr.wgsl");
+pub(in crate::render::gpu) const SHADER: &str = include_str!("ssr.wgsl");
 
 pub(super) fn create_pipeline(
     device: &wgpu::Device,
@@ -9,7 +10,7 @@ pub(super) fn create_pipeline(
     create_post_pipeline(
         device,
         "scena.gpu_post.ssr_pipeline",
-        SHADER,
+        ShaderVariantId::PostSsr,
         pipeline_layout,
         POST_COLOR_FORMAT,
     )

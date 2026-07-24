@@ -28,6 +28,23 @@ pub enum AssetLoadWarning {
         source_influences: usize,
         retained_influences: usize,
     },
+    InvalidMaterialVariantMapping {
+        path: AssetPath,
+        mesh_index: usize,
+        primitive_index: usize,
+        mapping_index: usize,
+        material_index: Option<usize>,
+        variant_indices: Vec<u32>,
+        material_count: usize,
+    },
+    TextureDownscaled {
+        path: AssetPath,
+        original_width: u32,
+        original_height: u32,
+        decoded_width: u32,
+        decoded_height: u32,
+        maximum_dimension: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +72,23 @@ pub enum AssetLoadWarningV1 {
         affected_vertices: usize,
         source_influences: usize,
         retained_influences: usize,
+    },
+    InvalidMaterialVariantMapping {
+        path: String,
+        mesh_index: usize,
+        primitive_index: usize,
+        mapping_index: usize,
+        material_index: Option<usize>,
+        variant_indices: Vec<u32>,
+        material_count: usize,
+    },
+    TextureDownscaled {
+        path: String,
+        original_width: u32,
+        original_height: u32,
+        decoded_width: u32,
+        decoded_height: u32,
+        maximum_dimension: u32,
     },
 }
 
@@ -99,6 +133,38 @@ impl From<&AssetLoadWarning> for AssetLoadWarningV1 {
                 affected_vertices: *affected_vertices,
                 source_influences: *source_influences,
                 retained_influences: *retained_influences,
+            },
+            AssetLoadWarning::InvalidMaterialVariantMapping {
+                path,
+                mesh_index,
+                primitive_index,
+                mapping_index,
+                material_index,
+                variant_indices,
+                material_count,
+            } => Self::InvalidMaterialVariantMapping {
+                path: path.as_str().to_owned(),
+                mesh_index: *mesh_index,
+                primitive_index: *primitive_index,
+                mapping_index: *mapping_index,
+                material_index: *material_index,
+                variant_indices: variant_indices.clone(),
+                material_count: *material_count,
+            },
+            AssetLoadWarning::TextureDownscaled {
+                path,
+                original_width,
+                original_height,
+                decoded_width,
+                decoded_height,
+                maximum_dimension,
+            } => Self::TextureDownscaled {
+                path: path.as_str().to_owned(),
+                original_width: *original_width,
+                original_height: *original_height,
+                decoded_width: *decoded_width,
+                decoded_height: *decoded_height,
+                maximum_dimension: *maximum_dimension,
             },
         }
     }

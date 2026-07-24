@@ -99,11 +99,27 @@ build_test_executable fr06_semantic_aov scena-fr06-native-hardware-proof.exe \
   --features scene-host
 build_test_executable c09_gpu_resource_lifecycle scena-q04-gpu-resource-lifecycle.exe
 build_test_executable p01_shader_module_cache scena-p01-shader-module-cache.exe
+build_test_executable m8_real_asset_proof scena-m8-waterbottle-full-frame.exe
+build_test_executable q07_antialiasing_effect scena-q07-antialiasing-effect.exe
+build_test_executable q01_waterbottle_cpu_reference scena-q11-reference-stability.exe
+build_test_executable transmission_parity scena-q08-transmission-parity.exe
+build_test_executable c13_depth_clipping_parity scena-q08-clipping-parity.exe
+build_test_executable dynamic_transform_parity scena-q08-dynamic-parity.exe
+build_test_executable pbr_brdf_parity scena-q08-pbr-parity.exe
+build_test_executable pf08_texture_bake_parity scena-q08-texture-bake-parity.exe
 
 cp -R tests/browser/. "$bundle_root/tests/browser/"
 cp -R tests/release/. "$bundle_root/tests/release/"
 cp -R tests/assets/gltf/. "$bundle_root/tests/assets/gltf/"
 cp -R tests/visual/references/. "$bundle_root/tests/visual/references/"
+cp tests/q07_antialiasing_effect.rs "$bundle_root/tests/"
+cp \
+  tests/transmission_parity.rs \
+  tests/c13_depth_clipping_parity.rs \
+  tests/dynamic_transform_parity.rs \
+  tests/pbr_brdf_parity.rs \
+  tests/pf08_texture_bake_parity.rs \
+  "$bundle_root/tests/"
 cp scripts/round_e_material_evaluator.cjs "$bundle_root/scripts/"
 cp src/browser_probe.rs "$bundle_root/src/"
 cp src/browser_probe/parity.rs "$bundle_root/src/browser_probe/"

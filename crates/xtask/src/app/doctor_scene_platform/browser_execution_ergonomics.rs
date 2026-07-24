@@ -107,7 +107,16 @@ pub(crate) fn check_c20_browser_execution_ergonomics(root: &Path, findings: &mut
             "pub(crate) struct CliBackendSelectionV1",
             "source: if gpu_flag { \"cli_flag\" } else { \"default\" }",
             "json_outcome_with_backend_selection",
+            "reason:",
+            "remedy:",
         ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        RULE,
+        "src/bin/scena/scene_commands.rs",
+        &["warn_gpu_fallback", "eprintln!("],
     );
     require_contains(
         root,

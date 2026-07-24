@@ -2,9 +2,8 @@ use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatc
 use super::material_bindings::MaterialTextureBindingMode;
 use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
 use super::materials::MaterialResources;
-use super::output::{
-    DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER, GPU_TRIANGLE_SHADER_TEXTURE_2D,
-};
+use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
+use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 #[cfg_attr(
@@ -44,14 +43,13 @@ impl TriangleShaderModuleCache {
         let hit = slot.is_some();
         let module = slot
             .get_or_insert_with(|| {
-                let shader_source = match texture_binding_mode {
-                    MaterialTextureBindingMode::Texture2d => GPU_TRIANGLE_SHADER_TEXTURE_2D,
-                    MaterialTextureBindingMode::Texture2dArray => GPU_TRIANGLE_SHADER,
+                let variant = match texture_binding_mode {
+                    MaterialTextureBindingMode::Texture2d => ShaderVariantId::TriangleTexture2d,
+                    MaterialTextureBindingMode::Texture2dArray => {
+                        ShaderVariantId::TriangleTexture2dArray
+                    }
                 };
-                device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("scena.m0.unlit_triangle"),
-                    source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-                })
+                create_shader_module(device, variant, "scena.m0.unlit_triangle")
             })
             .clone();
         TriangleShaderModuleLookup { module, hit }

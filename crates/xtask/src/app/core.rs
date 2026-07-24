@@ -1,5 +1,11 @@
 use crate::app::prelude::*;
 
+pub(crate) const CURRENT_RELEASE_VERSION: &str = "1.9.0";
+pub(crate) const CURRENT_RELEASE_NOTES: &str = "docs/release-notes/v1.9.0.md";
+pub(crate) const CURRENT_REVIEW_REPORT: &str = "docs/reviews/full-repo-review-v1.9.0.md";
+pub(crate) const CURRENT_REMEDIATION_CHECKLIST: &str =
+    "docs/checklists/full-repo-review-v1.9.0-remediation.md";
+
 pub(crate) fn run() {
     let outcome = match parse_command(env::args().skip(1).collect()) {
         Ok(Command::Doctor(mode)) => run_doctor(mode),
@@ -96,7 +102,7 @@ impl Finding {
 
 pub(crate) fn finding_reference(rule: &str) -> &'static str {
     if rule.starts_with("RELEASE") || rule.starts_with("CLAIM") || rule.starts_with("M10") {
-        "docs/release-notes/v1.9.0.md"
+        CURRENT_RELEASE_NOTES
     } else if rule.contains("STATE-OF-ART")
         || rule == "ARCH-RENDER-TRUTH"
         || rule == "ARCH-RENDER-STANDARD-MATH"

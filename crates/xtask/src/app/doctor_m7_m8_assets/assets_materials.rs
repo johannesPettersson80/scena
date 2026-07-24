@@ -221,14 +221,15 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         root,
         findings,
         "ASSETS-M8",
+        "src/assets/gltf/meshes/accessors.rs",
+        &["Semantic::Positions", "read_tangent_attribute"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
         "src/assets/gltf/meshes.rs",
-        &[
-            "Semantic::Positions",
-            "read_tex_coords",
-            "read_tangents",
-            "tex_coords0",
-            "with_tangents",
-        ],
+        &["read_tex_coords", "tex_coords0", "with_tangents"],
     );
     require_contains(
         root,
@@ -390,7 +391,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "Vec<MaterialTextureResources>",
             "MaterialTextureUpload",
             "MaterialUniformUpload",
-            "MATERIAL_UNIFORM_BYTE_LEN",
+            "material_uniform_min_binding_size",
             "binding: 2",
         ],
     );
@@ -438,7 +439,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         "src/render/gpu/material_uniform.rs",
         &[
             "MaterialUniformUpload",
-            "MATERIAL_UNIFORM_BYTE_LEN",
+            "material_uniform_layout_encode_and_bind_size_are_consistent",
             "material_uniform_upload_encodes_base_color_texture_transform",
             "material_uniform_upload_encodes_material_factors",
         ],

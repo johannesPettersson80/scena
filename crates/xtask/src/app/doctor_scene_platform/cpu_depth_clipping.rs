@@ -47,8 +47,8 @@ pub(crate) fn check_full_review_cpu_depth_clipping_contracts(
         RULE,
         "tests/c13_depth_clipping_parity.rs",
         &[
-            "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS",
-            "\\\"release_evidence\\\": false",
+            "require_cpu_gpu_parity_adapter_or_skip",
+            "record_cpu_gpu_parity_pass",
         ],
     );
     require_contains(

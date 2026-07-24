@@ -29,12 +29,13 @@ use self::nodes::parse_gltf_nodes;
 use self::scene_asset::SceneAssetData;
 pub use self::scene_asset::{
     ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, SceneAsset, SceneAssetClip, SceneAssetGeometrySummary,
-    SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+    SceneAssetLight, SceneAssetMesh, SceneAssetNode, SelectedGltfScene,
 };
+use self::scene_selection::selected_scene_roots;
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
 use self::textures::parse_textures;
-use super::{AssetLoadWarning, AssetPath, AssetProvenance, AssetStorage};
+use super::{AssetLoadWarning, AssetPath, AssetProvenance, AssetStorage, GltfSceneSelection};
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn gltf_now_ms() -> f64 {
@@ -68,6 +69,7 @@ mod meshes;
 mod meshopt;
 mod nodes;
 mod scene_asset;
+mod scene_selection;
 mod skins;
 mod textures;
 mod transform;
@@ -79,12 +81,14 @@ struct GltfDocumentInput<'a> {
     external_images: &'a BTreeMap<AssetPath, Vec<u8>>,
     provenance: AssetProvenance,
     declarations: validation::ExtensionDeclarations,
+    raw_material_variant_material_indices: &'a material_variants::RawMaterialVariantMaterialIndices,
 }
 
 impl SceneAsset {
     pub(super) fn from_gltf_bytes(
         path: AssetPath,
         bytes: &[u8],
+        scene_selection: &GltfSceneSelection,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         Self::from_gltf_bytes_with_external_resources(
@@ -92,6 +96,7 @@ impl SceneAsset {
             bytes,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            scene_selection,
             storage,
         )
     }
@@ -101,6 +106,7 @@ impl SceneAsset {
         bytes: &[u8],
         external_buffers: &BTreeMap<usize, Vec<u8>>,
         external_images: &BTreeMap<AssetPath, Vec<u8>>,
+        scene_selection: &GltfSceneSelection,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -109,6 +115,8 @@ impl SceneAsset {
         let mut step_start = total_start;
 
         let (gltf, declarations) = open_gltf_with_declarations(&path, bytes)?;
+        let raw_material_variant_material_indices =
+            material_variants::raw_material_variant_material_indices(bytes);
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("open_gltf_with_massage", step_start);
@@ -125,7 +133,9 @@ impl SceneAsset {
                 external_images,
                 provenance,
                 declarations,
+                raw_material_variant_material_indices: &raw_material_variant_material_indices,
             },
+            scene_selection,
             &mut transaction,
         )?;
         *storage = transaction;
@@ -155,6 +165,7 @@ impl SceneAsset {
         path: &AssetPath,
         gltf: &Gltf,
         input: GltfDocumentInput<'_>,
+        scene_selection: &GltfSceneSelection,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         let GltfDocumentInput {
@@ -163,6 +174,7 @@ impl SceneAsset {
             external_images,
             provenance,
             declarations,
+            raw_material_variant_material_indices,
         } = input;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let total_start = gltf_now_ms();
@@ -230,6 +242,7 @@ impl SceneAsset {
             &gltf.document,
             &buffers,
             &materials,
+            raw_material_variant_material_indices,
             storage,
             &mut load_warnings,
         )?;
@@ -244,6 +257,8 @@ impl SceneAsset {
         }
         let lights = parse_punctual_lights(&gltf.document);
         let nodes = parse_gltf_nodes(path, &gltf.document, &buffers, &meshes, &lights)?;
+        let (roots, selected_gltf_scene) =
+            selected_scene_roots(path, &gltf.document, &nodes, scene_selection)?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("parse_lights_nodes", step_start);
@@ -262,6 +277,8 @@ impl SceneAsset {
                 node_count,
                 mesh_count,
                 nodes,
+                roots,
+                selected_gltf_scene,
                 skins,
                 clips,
                 extensions_used,

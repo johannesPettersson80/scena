@@ -498,6 +498,7 @@ async function runPageProof(page) {
       requiredBindings,
       viewport,
     }) => {
+      let currentStage = "module_initialization";
       try {
       const mod = await import("/pkg/scena.js");
       await mod.default("/pkg/scena_bg.wasm");
@@ -561,7 +562,7 @@ async function runPageProof(page) {
         const height = descriptor.height;
         const dpr = window.devicePixelRatio || 1;
         const centerX = Math.round(cssX * dpr);
-        const centerY = height - 1 - Math.round(cssY * dpr);
+        const centerY = Math.round(cssY * dpr);
         const radius = Math.max(2, Math.round(4 * dpr));
         let maxLuma = 0;
         let minLuma = 255;
@@ -623,6 +624,7 @@ async function runPageProof(page) {
         ];
       };
       const timedPrepare = (label) => {
+        currentStage = `${label}:prepare`;
         const started = performance.now();
         host.prepare();
         const ended = performance.now();
@@ -634,6 +636,7 @@ async function runPageProof(page) {
         };
       };
       const timedRender = (label) => {
+        currentStage = `${label}:render`;
         const started = performance.now();
         const outcome = JSON.parse(host.render());
         const ended = performance.now();
@@ -1970,6 +1973,7 @@ async function runPageProof(page) {
       };
       } catch (error) {
         const diagnostic = {
+          stage: currentStage,
           name: error && error.name ? error.name : typeof error,
           message: error && error.message ? error.message : String(error),
           code: error && error.code ? error.code : null,

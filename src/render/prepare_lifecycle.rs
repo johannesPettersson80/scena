@@ -1,6 +1,6 @@
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
-use crate::scene::Scene;
+use crate::scene::{ClippingPlane, Scene};
 
 use super::camera;
 use super::prepare_retained::{
@@ -243,6 +243,17 @@ impl Renderer {
             } else if let Some((dynamic_primitives, dynamic_strokes, dynamic_instances)) =
                 self.reencode_retained_draws(scene)
             {
+                let culled_primitives = culling::cull_prepared_primitives(
+                    dynamic_primitives,
+                    active_camera_projection.as_ref(),
+                    target,
+                    self.cpu_occlusion_culling
+                        && scene.clipping_planes().planes().is_empty()
+                        && scene.section_box().is_none(),
+                    true,
+                );
+                let dynamic_culled_objects = culled_primitives.culled;
+                let dynamic_primitives = culled_primitives.visible;
                 match prepare::collect_dynamic_light_from_world(scene, assets) {
                     Ok(light_from_world) => {
                         let semantic_label_quad_count = self
@@ -266,6 +277,7 @@ impl Renderer {
                                 Ok(()) => {
                                     if let Some(prepared) = self.prepared.as_mut() {
                                         prepared.transform_revision = scene.transform_revision();
+                                        prepared.camera_revision = scene.camera_revision();
                                         prepared.appearance_revision = scene.appearance_revision();
                                         prepared.visibility_revision = scene.visibility_revision();
                                         prepared.primitives = Arc::from(dynamic_primitives);
@@ -277,6 +289,7 @@ impl Renderer {
                                         .as_ref()
                                         .map(prepared_instance_count)
                                         .unwrap_or(0);
+                                    self.stats.culled_objects = dynamic_culled_objects;
                                     self.stats.textures = logical_stats.textures;
                                     self.prepare_telemetry.dynamic_template_prepares = self
                                         .prepare_telemetry
@@ -327,16 +340,7 @@ impl Renderer {
             self.prepare_telemetry.full_prepares.saturating_add(1);
         step_start = log_prepare_step("collect_prepared_primitives", step_start);
         let light_from_world = prepared_scene.light_from_world;
-        let culled_primitives = culling::cull_prepared_primitives(
-            prepared_scene.primitives,
-            active_camera_projection.as_ref(),
-            target,
-            self.cpu_occlusion_culling
-                && scene.clipping_planes().planes().is_empty()
-                && scene.section_box().is_none(),
-            self.gpu.is_some(),
-        );
-        let mut retained_primitives = assign_original_vertex_offsets(culled_primitives.visible);
+        let mut retained_primitives = assign_original_vertex_offsets(prepared_scene.primitives);
         if let Some(work) = work {
             work.record_prepared_geometry_storage(prepare::share_model_space_vertex_buffer(
                 &mut retained_primitives,
@@ -344,8 +348,17 @@ impl Renderer {
         } else {
             prepare::share_model_space_vertex_buffer(&mut retained_primitives);
         }
+        let culled_primitives = culling::cull_prepared_primitives(
+            retained_primitives.clone(),
+            active_camera_projection.as_ref(),
+            target,
+            self.cpu_occlusion_culling
+                && scene.clipping_planes().planes().is_empty()
+                && scene.section_box().is_none(),
+            self.gpu.is_some(),
+        );
         let retained_primitives: Arc<[prepare::PreparedPrimitive]> = Arc::from(retained_primitives);
-        let primitives = Arc::clone(&retained_primitives);
+        let primitives: Arc<[prepare::PreparedPrimitive]> = Arc::from(culled_primitives.visible);
         let retained_strokes: Arc<[prepare::PreparedStrokeSegment]> =
             Arc::from(assign_original_stroke_indices(prepared_scene.strokes));
         let strokes = Arc::clone(&retained_strokes);
@@ -434,6 +447,7 @@ impl Renderer {
             scene: scene.identity(),
             structure_revision: scene.structure_revision(),
             transform_revision: scene.transform_revision(),
+            camera_revision: scene.camera_revision(),
             appearance_revision: scene.appearance_revision(),
             visibility_revision: scene.visibility_revision(),
             environment_revision: self.environment_revision,
@@ -447,7 +461,11 @@ impl Renderer {
             labels,
             retained_instances,
             instances,
-            clipping_planes: scene.active_clipping_plane_values().collect(),
+            clipping_planes: Arc::from(
+                scene
+                    .active_clipping_plane_values()
+                    .collect::<Vec<ClippingPlane>>(),
+            ),
             section_box: scene.section_box(),
         });
         self.stats.instances = self

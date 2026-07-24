@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use super::add_common_commands;
-use super::builder::{TemplateBuilder, write_json_file};
+use super::builder::{TemplateBuilder, path_for_json, write_json_file};
 use super::{TEMPLATE_CAPTURE_MIN_HEIGHT, TEMPLATE_CAPTURE_MIN_WIDTH};
 
 pub(super) fn primitive_scene(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
@@ -257,9 +257,54 @@ fn authored_template(
     mut recipe_value: Value,
 ) -> Result<scena::AgentSmokeTemplateV1, String> {
     apply_presentation_defaults(&mut recipe_value);
+    let placement_node = recipe_value
+        .get("nodes")
+        .and_then(Value::as_array)
+        .and_then(|nodes| {
+            nodes
+                .iter()
+                .find_map(|node| node.get("id").and_then(Value::as_str))
+        })
+        .map(str::to_owned);
     let mut builder = TemplateBuilder::ready(name, &["inspection", "scene-host"]);
     let recipe = write_authored_recipe(out_dir, recipe_value, &mut builder)?;
     add_common_commands(out_dir, &recipe, &mut builder);
+    if let Some(node_id) = placement_node.as_deref() {
+        let recipe_path = path_for_json(&recipe);
+        builder.command(
+            "place_node",
+            vec![
+                "place",
+                &recipe_path,
+                "--node",
+                node_id,
+                "--verb",
+                "center",
+                "--target",
+                "0,0,0",
+            ],
+            scena::SCENE_PLACEMENT_RESULT_SCHEMA_V1,
+            true,
+            Vec::new(),
+        );
+        builder.command(
+            "apply_node_placement",
+            vec![
+                "place",
+                &recipe_path,
+                "--node",
+                node_id,
+                "--verb",
+                "center",
+                "--target",
+                "0,0,0",
+                "--apply",
+            ],
+            scena::SCENE_RECIPE_PATCH_SCHEMA_V1,
+            true,
+            Vec::new(),
+        );
+    }
     Ok(builder.finish())
 }
 

@@ -368,6 +368,24 @@
       "fixture_path": "tests/assets/stable-contracts/host_event.v1.json"
     },
     {
+      "schema": "scena.agent_guide.v1",
+      "owner_module": "schema_catalog/agent_guide",
+      "summary": "Packaged public application-builder workflow, commands, schemas, policies, and templates.",
+      "fixture_path": "tests/assets/stable-contracts/agent_guide.v1.json"
+    },
+    {
+      "schema": "scena.contract_validation.v1",
+      "owner_module": "contract_validation",
+      "summary": "Schema-dispatched validation result for any cataloged public JSON contract.",
+      "fixture_path": "tests/assets/stable-contracts/contract_validation.v1.json"
+    },
+    {
+      "schema": "scena.json_schema_export.v1",
+      "owner_module": "contract_validation",
+      "summary": "Versioned JSON Schema export with explicit runtime and cross-field limitations.",
+      "fixture_path": "tests/assets/stable-contracts/json_schema_export.v1.json"
+    },
+    {
       "schema": "scena.release.findings.v1",
       "owner_module": "xtask/release",
       "summary": "Independent release-review findings register bound to one source commit."
@@ -381,6 +399,27 @@
       "schema": "scena.release_readiness.v1",
       "owner_module": "xtask/release",
       "summary": "Fail-closed staged release-evidence validation result with resolved root and artifact counts."
+    },
+    {
+      "schema": "scena.m8.waterbottle_adapter_expectation.v1",
+      "owner_module": "xtask/release",
+      "summary": "Structured adapter-specific WaterBottle reference expectations independent of display-name text."
+    },
+    {
+      "schema": "scena.q08.required_cpu_gpu_parity.v1",
+      "owner_module": "renderer-quality",
+      "summary": "Fail-closed physical CPU/GPU parity execution and assertion evidence."
+    },
+    {
+      "schema": "scena.q11.reference_stability.v1",
+      "owner_module": "renderer-quality",
+      "summary": "Cross-architecture deterministic-reference stability evidence."
+    },
+    {
+      "schema": "scena.q11.reference_approval.v1",
+      "owner_module": "renderer-quality",
+      "summary": "Independent approval bound to an exact reference candidate and source commit.",
+      "fixture_path": "docs/reference-approval-q11.example.json"
     },
     {
       "schema": "scena.recipe_patch.v1",

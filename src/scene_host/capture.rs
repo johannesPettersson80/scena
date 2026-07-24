@@ -1,8 +1,10 @@
 use super::events::HostEventV1;
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
+#[cfg(target_arch = "wasm32")]
+use crate::capture_rgba8_from_pixels;
 use crate::{
     AssetFetcher, CaptureOptions, CapturePngError, CaptureRgba8, capture_rgba8,
-    capture_rgba8_from_pixels,
+    capture_unverified_rgba8_from_pixels,
 };
 
 impl<F: AssetFetcher> SceneHostCore<F> {
@@ -21,6 +23,25 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn capture_from_rgba8(
+        &self,
+        width: u32,
+        height: u32,
+        rgba8: Vec<u8>,
+    ) -> Result<CaptureRgba8, SceneHostError> {
+        let capture = capture_unverified_rgba8_from_pixels(
+            &self.scene,
+            &self.renderer,
+            CaptureOptions::default().with_surface_viewport(self.viewport),
+            width,
+            height,
+            rgba8,
+        )?;
+        self.emit_event(HostEventV1::capture_ready(&capture));
+        Ok(capture)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn capture_from_renderer_rgba8(
         &self,
         width: u32,
         height: u32,

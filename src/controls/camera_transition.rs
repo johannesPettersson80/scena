@@ -35,6 +35,10 @@ pub enum TransitionEasing {
     EaseInOut,
 }
 
+impl TransitionEasing {
+    pub const NAMES: &'static [&'static str] = &["linear", "ease_in_out"];
+}
+
 /// Host-ticked camera fly-to transition.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraFlyTo {

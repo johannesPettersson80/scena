@@ -40,6 +40,23 @@ pub(in crate::assets::gltf) struct GltfTexture {
     basisu_fallback: Option<GltfTextureBasisuFallback>,
 }
 
+#[derive(Debug)]
+pub(in crate::assets::gltf) struct IndexedGltfTextures {
+    entries: Vec<IndexedGltfTexture>,
+}
+
+#[derive(Debug)]
+enum IndexedGltfTexture {
+    Resolved(GltfTexture),
+    Unresolved(GltfTextureResolutionFailure),
+}
+
+#[derive(Debug)]
+struct GltfTextureResolutionFailure {
+    image_source: Option<String>,
+    reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::assets::gltf) struct GltfTextureBasisuFallback {
     pub source_path: AssetPath,
@@ -52,24 +69,29 @@ pub(in crate::assets::gltf) fn parse_textures(
     buffers: &ResolvedGltfBuffers,
     external_images: &BTreeMap<AssetPath, Vec<u8>>,
     _storage: &mut AssetStorage,
-) -> Vec<GltfTexture> {
-    document
+) -> IndexedGltfTextures {
+    let entries = document
         .textures()
-        .filter_map(|texture| {
-            let basisu_image = texture
+        .map(|texture| {
+            let basisu_source_index = texture
                 .extension_value("KHR_texture_basisu")
                 .and_then(|value| value.get("source"))
                 .and_then(|value| value.as_u64())
-                .and_then(|value| usize::try_from(value).ok())
-                .and_then(|index| document.images().nth(index));
-            let fallback_image = texture_source_image(document, &texture);
+                .and_then(|value| usize::try_from(value).ok());
+            let basisu_image = basisu_source_index.and_then(|index| document.images().nth(index));
+            let fallback_source_index = texture_source_image_index(document, &texture);
+            let fallback_image =
+                fallback_source_index.and_then(|index| document.images().nth(index));
             let (image, uses_basisu, basisu_fallback_source) = if cfg!(feature = "ktx2") {
                 if let Some(image) = basisu_image {
                     (image, true, None)
                 } else if let Some(image) = fallback_image {
                     (image, false, None)
                 } else {
-                    return None;
+                    return unresolved_texture_source(
+                        fallback_source_index.or(basisu_source_index),
+                        document.images().len(),
+                    );
                 }
             } else if let Some(image) = fallback_image {
                 (
@@ -82,12 +104,21 @@ pub(in crate::assets::gltf) fn parse_textures(
             } else if let Some(image) = basisu_image {
                 (image, true, None)
             } else {
-                return None;
+                return unresolved_texture_source(
+                    fallback_source_index.or(basisu_source_index),
+                    document.images().len(),
+                );
             };
             let (image_path, source_bytes) = match image.source() {
                 ImageSource::Uri { uri, .. } => {
                     if uri.starts_with("data:") {
-                        let (path, bytes) = canonical_data_uri_image(uri)?;
+                        let Some((path, bytes)) = canonical_data_uri_image(uri) else {
+                            return IndexedGltfTexture::Unresolved(GltfTextureResolutionFailure {
+                                image_source: Some(describe_image_uri(uri)),
+                                reason: "image data URI is invalid or uses an unsupported encoding"
+                                    .to_owned(),
+                            });
+                        };
                         (path, Some(bytes))
                     } else {
                         let resolved = resolve_relative_path(path, uri);
@@ -96,12 +127,21 @@ pub(in crate::assets::gltf) fn parse_textures(
                     }
                 }
                 ImageSource::View { view, mime_type } => {
-                    let bytes = buffers.view_bytes(&view)?.to_vec();
+                    let Some(bytes) = buffers.view_bytes(&view) else {
+                        return IndexedGltfTexture::Unresolved(GltfTextureResolutionFailure {
+                            image_source: Some(format!("bufferView {}", view.index())),
+                            reason: format!(
+                                "image bufferView {} bytes could not be resolved",
+                                view.index()
+                            ),
+                        });
+                    };
+                    let bytes = bytes.to_vec();
                     let extension = extension_for_mime(Some(mime_type)).unwrap_or("png");
                     (embedded_image_path(&bytes, extension), Some(bytes))
                 }
             };
-            Some(GltfTexture {
+            IndexedGltfTexture::Resolved(GltfTexture {
                 basisu_fallback: basisu_fallback_source.map(|source_path| {
                     GltfTextureBasisuFallback {
                         source_path,
@@ -114,7 +154,69 @@ pub(in crate::assets::gltf) fn parse_textures(
                 source_bytes,
             })
         })
-        .collect()
+        .collect();
+    IndexedGltfTextures { entries }
+}
+
+fn unresolved_texture_source(image_index: Option<usize>, image_count: usize) -> IndexedGltfTexture {
+    match image_index {
+        Some(image_index) => IndexedGltfTexture::Unresolved(GltfTextureResolutionFailure {
+            image_source: Some(format!("images[{image_index}]")),
+            reason: format!(
+                "image index {image_index} is outside the document image table of length {image_count}"
+            ),
+        }),
+        None => IndexedGltfTexture::Unresolved(GltfTextureResolutionFailure {
+            image_source: Some("missing source".to_owned()),
+            reason: "texture has neither a source nor a resolvable KHR_texture_basisu source"
+                .to_owned(),
+        }),
+    }
+}
+
+fn describe_image_uri(uri: &str) -> String {
+    if uri.starts_with("data:") {
+        uri.split_once(',')
+            .map_or("data URI", |(header, _)| header)
+            .chars()
+            .take(96)
+            .collect()
+    } else {
+        uri.chars().take(256).collect()
+    }
+}
+
+impl IndexedGltfTextures {
+    pub(in crate::assets::gltf) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub(super) fn resolved(&self, index: usize) -> Option<&GltfTexture> {
+        match self.entries.get(index) {
+            Some(IndexedGltfTexture::Resolved(texture)) => Some(texture),
+            _ => None,
+        }
+    }
+
+    fn failure(&self, index: usize) -> GltfTextureResolutionFailure {
+        match self.entries.get(index) {
+            Some(IndexedGltfTexture::Unresolved(failure)) => GltfTextureResolutionFailure {
+                image_source: failure.image_source.clone(),
+                reason: failure.reason.clone(),
+            },
+            Some(IndexedGltfTexture::Resolved(_)) => GltfTextureResolutionFailure {
+                image_source: None,
+                reason: "texture unexpectedly failed to resolve after parsing".to_owned(),
+            },
+            None => GltfTextureResolutionFailure {
+                image_source: None,
+                reason: format!(
+                    "texture index {index} is outside the document texture table of length {}",
+                    self.entries.len()
+                ),
+            },
+        }
+    }
 }
 
 impl GltfTexture {
@@ -160,7 +262,7 @@ fn embedded_image_path(bytes: &[u8], extension: &str) -> AssetPath {
     ))
 }
 
-fn texture_source_image<'a>(document: &'a Document, texture: &Texture<'a>) -> Option<Image<'a>> {
+fn texture_source_image_index(document: &Document, texture: &Texture<'_>) -> Option<usize> {
     let source_index = document
         .as_json()
         .textures
@@ -170,26 +272,39 @@ fn texture_source_image<'a>(document: &'a Document, texture: &Texture<'a>) -> Op
     if source_index == u32::MAX as usize {
         None
     } else {
-        document.images().nth(source_index)
+        Some(source_index)
     }
 }
 
+pub(super) struct TextureSlotRequest<'a> {
+    pub(super) path: &'a AssetPath,
+    pub(super) material_index: Option<usize>,
+    pub(super) material_name: Option<&'a str>,
+    pub(super) material_slot: &'static str,
+    pub(super) texture_index: usize,
+    pub(super) color_space: TextureColorSpace,
+}
+
 pub(super) fn texture_slot(
-    path: &AssetPath,
-    material_slot: &'static str,
-    texture_index: usize,
-    textures: &[GltfTexture],
+    request: TextureSlotRequest<'_>,
+    textures: &IndexedGltfTextures,
     storage: &mut AssetStorage,
-    color_space: TextureColorSpace,
 ) -> Result<TextureHandle, AssetError> {
-    let texture = textures
-        .get(texture_index)
-        .ok_or_else(|| AssetError::MissingTexture {
-            path: path.as_str().to_string(),
-            material_slot: material_slot.to_string(),
-            texture_index,
+    let texture = textures.resolved(request.texture_index).ok_or_else(|| {
+        let failure = textures.failure(request.texture_index);
+        AssetError::MissingTexture {
+            path: request.path.as_str().to_string(),
+            material_slot: request.material_slot.to_string(),
+            texture_index: request.texture_index,
+            context: Box::new(crate::diagnostics::MissingTextureDetails {
+                material_index: request.material_index,
+                material_name: request.material_name.map(str::to_owned),
+                image_source: failure.image_source,
+                reason: failure.reason,
+            }),
             help: "export the referenced image or remove the broken material slot",
-        })?;
+        }
+    })?;
     let source_format = if texture.uses_basisu {
         basisu_texture_source_format(&texture.path)?
     } else {
@@ -209,14 +324,14 @@ pub(super) fn texture_slot(
         validate_ktx2_material_color_space(
             &texture.path,
             source_bytes,
-            color_space,
-            material_slot,
+            request.color_space,
+            request.material_slot,
         )?;
     }
     insert_texture(
         storage,
         texture.path.clone(),
-        color_space,
+        request.color_space,
         texture.sampler,
         source_format,
         texture.source_bytes.as_deref(),
@@ -357,6 +472,293 @@ fn extension_for_mime(mime: Option<&str>) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn single_pixel_png(pixel: [u8; 4]) -> Vec<u8> {
+        use image::ImageEncoder;
+
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut bytes)
+            .write_image(&pixel, 1, 1, image::ExtendedColorType::Rgba8)
+            .expect("single-pixel C01 PNG encodes");
+        bytes
+    }
+
+    fn single_pixel_png_data_uri(pixel: [u8; 4]) -> String {
+        use base64::Engine;
+
+        let bytes = single_pixel_png(pixel);
+        format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    }
+
+    #[test]
+    fn c01_texture_parsing_preserves_raw_indices_when_earlier_source_is_missing() {
+        let first_image = single_pixel_png_data_uri([255, 0, 0, 255]);
+        let second_image = single_pixel_png_data_uri([0, 0, 255, 255]);
+        let source = serde_json::json!({
+            "asset": { "version": "2.0" },
+            "images": [
+                { "uri": first_image.clone() },
+                { "uri": second_image.clone() }
+            ],
+            "textures": [
+                {},
+                { "source": 0 },
+                { "source": 1 }
+            ]
+        });
+        let bytes = serde_json::to_vec(&source).expect("C01 fixture serializes");
+        let path = AssetPath::from("memory:c01-texture-index-identity.gltf");
+        let gltf = super::super::open_gltf_with_massage(&path, &bytes)
+            .expect("C01 fixture parses through the production glTF path");
+        let buffers = ResolvedGltfBuffers::new(Vec::new());
+        let assets = crate::assets::Assets::new();
+        let mut storage = assets.storage();
+
+        let textures = parse_textures(
+            &path,
+            &gltf.document,
+            &buffers,
+            &BTreeMap::new(),
+            &mut storage,
+        );
+
+        assert_eq!(
+            textures.len(),
+            3,
+            "the parsed texture table must preserve all raw glTF indices even when an entry cannot resolve"
+        );
+        assert!(
+            textures.resolved(0).is_none(),
+            "the unresolved raw entry stays empty"
+        );
+        let first_path = canonical_data_uri_image(&first_image)
+            .map(|(path, _)| path)
+            .expect("first image URI resolves");
+        let second_path = canonical_data_uri_image(&second_image)
+            .map(|(path, _)| path)
+            .expect("second image URI resolves");
+        assert_eq!(
+            textures.resolved(1).map(GltfTexture::path),
+            Some(&first_path),
+            "raw texture index 1 must still resolve image 0"
+        );
+        assert_eq!(
+            textures.resolved(2).map(GltfTexture::path),
+            Some(&second_path),
+            "raw texture index 2 must still resolve image 1"
+        );
+
+        let handle = texture_slot(
+            TextureSlotRequest {
+                path: &path,
+                material_index: None,
+                material_name: None,
+                material_slot: "baseColorTexture",
+                texture_index: 1,
+                color_space: TextureColorSpace::Srgb,
+            },
+            &textures,
+            &mut storage,
+        )
+        .expect("raw texture index 1 binds");
+        assert_eq!(
+            storage
+                .textures
+                .get(handle)
+                .expect("bound texture exists")
+                .path(),
+            &first_path,
+            "material raw index 1 must bind the first image, not shifted index 2"
+        );
+        for (slot, color_space) in [
+            ("baseColorTexture", TextureColorSpace::Srgb),
+            ("metallicRoughnessTexture", TextureColorSpace::Linear),
+            ("normalTexture", TextureColorSpace::Linear),
+            ("occlusionTexture", TextureColorSpace::Linear),
+            ("emissiveTexture", TextureColorSpace::Srgb),
+            ("clearcoatTexture", TextureColorSpace::Linear),
+            ("clearcoatRoughnessTexture", TextureColorSpace::Linear),
+            ("clearcoatNormalTexture", TextureColorSpace::Linear),
+            ("sheenColorTexture", TextureColorSpace::Srgb),
+            ("sheenRoughnessTexture", TextureColorSpace::Linear),
+            ("anisotropyTexture", TextureColorSpace::Linear),
+            ("iridescenceTexture", TextureColorSpace::Linear),
+            ("iridescenceThicknessTexture", TextureColorSpace::Linear),
+            ("transmissionTexture", TextureColorSpace::Linear),
+            ("thicknessTexture", TextureColorSpace::Linear),
+        ] {
+            let handle = texture_slot(
+                TextureSlotRequest {
+                    path: &path,
+                    material_index: Some(3),
+                    material_name: Some("all-slots"),
+                    material_slot: slot,
+                    texture_index: 1,
+                    color_space,
+                },
+                &textures,
+                &mut storage,
+            )
+            .unwrap_or_else(|error| panic!("{slot} must preserve raw index 1: {error}"));
+            assert_eq!(
+                storage
+                    .textures
+                    .get(handle)
+                    .expect("slot texture exists")
+                    .path(),
+                &first_path,
+                "{slot} rebound to a shifted texture"
+            );
+        }
+        assert!(matches!(
+            texture_slot(
+                TextureSlotRequest {
+                    path: &path,
+                    material_index: Some(4),
+                    material_name: Some("paint"),
+                    material_slot: "normalTexture",
+                    texture_index: 0,
+                    color_space: TextureColorSpace::Linear,
+                },
+                &textures,
+                &mut storage,
+            ),
+            Err(AssetError::MissingTexture {
+                texture_index: 0,
+                context,
+                ..
+            }) if context.material_index == Some(4)
+                && context.material_name.as_deref() == Some("paint")
+                && context.image_source.as_deref() == Some("missing source")
+                && context.reason.contains("source")
+        ));
+    }
+
+    #[test]
+    fn c01_indexed_texture_table_preserves_uri_buffer_view_duplicates_and_samplers() {
+        let data_uri = single_pixel_png_data_uri([255, 0, 0, 255]);
+        let external_png = single_pixel_png([0, 255, 0, 255]);
+        let embedded_png = single_pixel_png([0, 0, 255, 255]);
+        let source = serde_json::json!({
+            "asset": { "version": "2.0" },
+            "buffers": [{ "byteLength": embedded_png.len() }],
+            "bufferViews": [{ "buffer": 0, "byteOffset": 0, "byteLength": embedded_png.len() }],
+            "images": [
+                { "uri": data_uri },
+                { "uri": "external.png" },
+                { "bufferView": 0, "mimeType": "image/png" }
+            ],
+            "samplers": [
+                { "magFilter": 9728, "minFilter": 9728, "wrapS": 33071, "wrapT": 33648 },
+                { "magFilter": 9729, "minFilter": 9987, "wrapS": 10497, "wrapT": 10497 }
+            ],
+            "textures": [
+                {},
+                { "source": 0, "sampler": 0 },
+                { "source": 1, "sampler": 1 },
+                { "source": 2, "sampler": 0 },
+                { "source": 0, "sampler": 1 }
+            ]
+        });
+        let bytes = serde_json::to_vec(&source).expect("C01 source fixture serializes");
+        let path = AssetPath::from("fixtures/c01/model.gltf");
+        let gltf =
+            super::super::open_gltf_with_massage(&path, &bytes).expect("C01 source fixture parses");
+        let buffers = ResolvedGltfBuffers::new(vec![embedded_png.clone()]);
+        let external_path = resolve_relative_path(&path, "external.png");
+        let mut external_images = BTreeMap::new();
+        external_images.insert(external_path.clone(), external_png);
+        let assets = crate::assets::Assets::new();
+        let mut storage = assets.storage();
+
+        let textures = parse_textures(
+            &path,
+            &gltf.document,
+            &buffers,
+            &external_images,
+            &mut storage,
+        );
+
+        assert_eq!(textures.len(), 5);
+        assert!(textures.resolved(0).is_none());
+        assert_eq!(
+            textures.resolved(1).map(GltfTexture::path),
+            Some(
+                &canonical_data_uri_image(&single_pixel_png_data_uri([255, 0, 0, 255]))
+                    .expect("data URI resolves")
+                    .0
+            )
+        );
+        assert_eq!(
+            textures.resolved(2).map(GltfTexture::path),
+            Some(&external_path)
+        );
+        assert_eq!(
+            textures.resolved(3).map(GltfTexture::path),
+            Some(&embedded_image_path(&embedded_png, "png"))
+        );
+        assert_eq!(
+            textures.resolved(4).map(GltfTexture::path),
+            textures.resolved(1).map(GltfTexture::path),
+            "duplicate images retain distinct raw texture entries"
+        );
+        assert_ne!(
+            textures.resolved(1).map(|texture| texture.sampler),
+            textures.resolved(4).map(|texture| texture.sampler),
+            "duplicate images retain per-texture sampler identity"
+        );
+    }
+
+    #[test]
+    fn c01_unresolved_referenced_texture_reports_material_slot_source_and_reason() {
+        let source = serde_json::json!({
+            "asset": { "version": "2.0" },
+            "textures": [{}],
+            "materials": [{
+                "name": "paint",
+                "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } }
+            }]
+        });
+        let bytes = serde_json::to_vec(&source).expect("C01 error fixture serializes");
+        let path = AssetPath::from("memory:c01-unresolved-referenced-texture.gltf");
+        let gltf =
+            super::super::open_gltf_with_massage(&path, &bytes).expect("C01 error fixture parses");
+        let buffers = ResolvedGltfBuffers::new(Vec::new());
+        let assets = crate::assets::Assets::new();
+        let mut storage = assets.storage();
+        let textures = parse_textures(
+            &path,
+            &gltf.document,
+            &buffers,
+            &BTreeMap::new(),
+            &mut storage,
+        );
+        let error = super::super::materials::parse_materials(
+            &path,
+            &gltf.document,
+            &mut storage,
+            &textures,
+            &mut Vec::new(),
+        )
+        .expect_err("referenced unresolved texture must fail closed");
+
+        assert!(matches!(
+            error,
+            AssetError::MissingTexture {
+                material_slot,
+                texture_index: 0,
+                context,
+                ..
+            } if context.material_index == Some(0)
+                && context.material_name.as_deref() == Some("paint")
+                && material_slot == "baseColorTexture"
+                && context.image_source.as_deref() == Some("missing source")
+                && context.reason.contains("neither a source")
+        ));
+    }
 
     #[test]
     fn pf10_data_uri_cache_identity_is_content_addressed_and_bounded() {

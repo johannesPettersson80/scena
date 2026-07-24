@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 
 use scena::{
     AnimationChannel, AnimationClip, AnimationInterpolation, AnimationOutput, AnimationTarget,
-    AntiAliasing, AssetPath, Assets, Color, GeometryDesc, ImportOptions, MaterialDesc, Scene,
-    SourceCoordinateSystem, Transform, Vec3,
+    AntiAliasing, AssetPath, Assets, Color, GeometryDesc, GpuAdapterReport, ImportOptions,
+    MaterialDesc, Scene, SourceCoordinateSystem, Transform, Vec3,
 };
 use support::parity::{
-    ParitySweep, PixelRegion, RenderBackend, RgbaFrame, renderer_for_backend,
-    require_cpu_gpu_parity_adapter_or_skip,
+    ParitySweep, PixelRegion, RenderBackend, RgbaFrame, record_cpu_gpu_parity_pass,
+    renderer_for_backend, require_cpu_gpu_parity_adapter_or_skip,
 };
 
 const WIDTH: u32 = 96;
@@ -25,6 +25,7 @@ struct MotionCapture {
     after: Vec<u8>,
     before_centroid: (f32, f32),
     after_centroid: (f32, f32),
+    gpu_adapter: Option<GpuAdapterReport>,
 }
 
 #[derive(Debug)]
@@ -53,8 +54,7 @@ fn dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_impor
     };
     let mut sweep = ParitySweep::new(SCHEMA);
     let mut movements = Vec::new();
-
-    compare_case(
+    let _ = compare_case(
         "authored-set-transform",
         render_authored_set_transform,
         &artifacts,
@@ -62,7 +62,7 @@ fn dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_impor
         &mut sweep,
         &mut movements,
     );
-    compare_case(
+    let _ = compare_case(
         "authored-animation-seek",
         render_authored_animation_seek,
         &artifacts,
@@ -70,7 +70,7 @@ fn dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_impor
         &mut sweep,
         &mut movements,
     );
-    compare_case(
+    let gpu_adapter = compare_case(
         "imported-gltf-set-transform",
         render_imported_set_transform,
         &artifacts,
@@ -83,6 +83,13 @@ fn dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_impor
     sweep.write_json(
         &artifacts.join("dynamic-transform-parity.json"),
         &[("movement_records", movement_json)],
+    );
+    record_cpu_gpu_parity_pass(
+        "dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports",
+        gpu_adapter
+            .as_ref()
+            .expect("dynamic-transform GPU adapter is recorded"),
+        24,
     );
 }
 
@@ -138,6 +145,13 @@ fn z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion() {
         "CPU/GPU converted motion must agree: cpu={cpu_delta_x:.2}, gpu={gpu_delta_x:.2}"
     );
     sweep.write_json(&artifacts.join("z-up-rotation-animation-parity.json"), &[]);
+    record_cpu_gpu_parity_pass(
+        "z_up_imported_rotation_frame_matches_cpu_and_gpu_after_basis_conversion",
+        gpu.gpu_adapter
+            .as_ref()
+            .expect("Z-up GPU adapter is recorded"),
+        8,
+    );
 }
 
 fn compare_case(
@@ -147,7 +161,7 @@ fn compare_case(
     region: PixelRegion,
     sweep: &mut ParitySweep,
     movements: &mut Vec<MovementRecord>,
-) {
+) -> Option<GpuAdapterReport> {
     let cpu = render(RenderBackend::Cpu, artifacts, case_name);
     let gpu = render(RenderBackend::Gpu, artifacts, case_name);
 
@@ -217,6 +231,7 @@ fn compare_case(
         cpu_delta_y,
         gpu_delta_y,
     });
+    gpu.gpu_adapter
 }
 
 fn render_authored_set_transform(
@@ -381,6 +396,7 @@ fn render_motion(
         after,
         before_centroid,
         after_centroid,
+        gpu_adapter: renderer.gpu_adapter_report(),
     }
 }
 

@@ -1,11 +1,12 @@
 use crate::render::prepare::PreparedStrokeSegment;
 
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
+use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::stats::GpuResourceStats;
 use super::vertices::{DrawUniformInterner, DrawUniformValue};
 
-const FINAL_SHADER: &str = include_str!("strokes.wgsl");
-const ENCODED_SHADER: &str = concat!(
+pub(super) const FINAL_SHADER: &str = include_str!("strokes.wgsl");
+pub(super) const ENCODED_SHADER: &str = concat!(
     include_str!("strokes_encoded.wgsl"),
     "\n",
     include_str!("../color_contract.wgsl")
@@ -298,13 +299,10 @@ fn create_pipeline(
     output_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
-    shader_source: &'static str,
+    shader_variant: ShaderVariantId,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.gpu_strokes.shader"),
-        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-    });
+    let shader = create_shader_module(device, shader_variant, "scena.gpu_strokes.shader");
     let dummy_material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.gpu_strokes.material_dummy"),
         entries: &[],
@@ -364,10 +362,12 @@ fn create_pipeline(
     })
 }
 
-const fn shader_for_format(format: wgpu::TextureFormat) -> &'static str {
+const fn shader_for_format(format: wgpu::TextureFormat) -> ShaderVariantId {
     match format {
-        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => FINAL_SHADER,
-        _ => ENCODED_SHADER,
+        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => {
+            ShaderVariantId::StrokesFinal
+        }
+        _ => ShaderVariantId::StrokesEncoded,
     }
 }
 

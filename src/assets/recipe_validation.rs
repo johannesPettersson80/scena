@@ -81,7 +81,10 @@ async fn add_asset_validation_diagnostics<F: AssetFetcher>(
             RecipeResourceRole::Import(index) => {
                 let import = &recipe.imports[index];
                 match assets
-                    .load_scene_with_options(AssetPath::from(normalized_uri.as_str()), options)
+                    .load_scene_with_options(
+                        AssetPath::from(normalized_uri.as_str()),
+                        options.clone(),
+                    )
                     .await
                 {
                     Ok(asset) => {
@@ -120,7 +123,7 @@ async fn add_asset_validation_diagnostics<F: AssetFetcher>(
             RecipeResourceRole::Environment => assets
                 .validate_environment_source_with_options(
                     AssetPath::from(normalized_uri.as_str()),
-                    options,
+                    options.clone(),
                 )
                 .await
                 .map_err(|error| ("environment_load_failed", error.to_string())),

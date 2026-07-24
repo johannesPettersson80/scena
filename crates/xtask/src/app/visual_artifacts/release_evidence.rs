@@ -384,7 +384,7 @@ pub(crate) fn build_claim_audit(root: &Path) -> Result<serde_json::Value, String
             "cargo fmt --check",
             "cargo clippy --all-targets -- -D warnings",
             "cargo test",
-            "cargo check --examples",
+            "cargo check --examples --all-features",
             "cargo run -p xtask -- doctor --full",
             "RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps --all-features",
             "browser WebGPU/WebGL2 rendered-output proof",

@@ -1,3 +1,12 @@
+export function normalizeScenaViewerWheelDelta(deltaY, deltaMode = 0) {
+  const value = Number(deltaY);
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  const unitsPerStep = deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100;
+  return Math.max(-4, Math.min(4, value / unitsPerStep));
+}
+
 export function defineScenaViewerElement(tagName) {
   if (!globalThis.customElements) {
     throw new Error("Custom Elements are not available in this browser");
@@ -706,11 +715,17 @@ export function defineScenaViewerElement(tagName) {
       if (!this._booleanAttribute("camera-controls")) {
         return;
       }
+      const deltaY = normalizeScenaViewerWheelDelta(event.deltaY, event.deltaMode);
+      if (deltaY === 0) {
+        return;
+      }
       event.preventDefault();
       this._emitGesture("wheel-zoom", {
         pointerType: "wheel",
         pointers: 0,
-        deltaY: Number(event.deltaY || 0)
+        deltaY,
+        rawDeltaY: Number(event.deltaY || 0),
+        deltaMode: Number(event.deltaMode || 0)
       });
     }
 

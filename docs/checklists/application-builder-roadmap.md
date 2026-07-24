@@ -2,7 +2,7 @@
 
 Status: completed historical evidence
 Canonical active backlog:
-`docs/checklists/full-repo-review-v1.8.0-remediation.md`
+`docs/checklists/full-repo-review-v1.9.0-remediation.md`
 Date: 2026-06-14
 
 Scope: make `scena` easier to use as the visual, interaction, asset, browser,
@@ -412,7 +412,7 @@ Proposed contract:
 CLI-shaped API sketch:
 
 ```bash
-scena render scene.recipe.json --introspect --out target/scena-agent/frame.png
+scena render scene.recipe.json --out target/scena-agent/frame.png
 ```
 
 Required fields and behavior:
@@ -545,7 +545,7 @@ already expose the needed data in separate surfaces.
 
 Required commands:
 
-- [x] `scena render <asset-or-recipe> --introspect --out <png>`: load,
+- [x] `scena render <asset-or-recipe> --out <png>`: load,
       prepare, render, capture, introspect, write artifacts, and emit
       `scena.render_introspection.v1`.
 - [x] `scena inspect <asset-or-recipe>`: emit `scena.scene_inspection.v1`
@@ -612,12 +612,12 @@ Acceptance:
       place, repair, appearance verification, animation verification,
       interaction verification, and `examples agent`.
 - [x] Tests verify stderr/stdout separation for schema commands.
-- [x] Tests verify `render --introspect` writes PNG plus capture descriptor
+- [x] Tests verify `render` writes PNG plus capture descriptor
       artifacts and emits `scena.render_introspection.v1`.
 - [x] Tests verify `inspect <asset>` emits `scena.scene_inspection.v1`.
 - [x] Tests verify `diagnose --visibility --handle <stale>` emits
       `scena.visibility_diagnosis.v1` on stdout with a non-zero exit.
-- [x] Tests verify `render --introspect` emits
+- [x] Tests verify `render` emits
       `scena.render_introspection.v1` on stdout with a non-zero exit for an
       empty frame.
 - [x] Tests verify `repair --from` emits `scena.visual_repair_plan.v1` for a
@@ -753,7 +753,7 @@ Acceptance:
       `tests/assets/recipe-invalid/`. Unknown enum/material/profile fixtures
       are explicitly deferred until those recipe sections land.
 - [x] Validation diagnostics include deterministic "did you mean" suggestions.
-- [x] A valid recipe renders through `scena render --introspect` and produces
+- [x] A valid recipe renders through `scena render` and produces
       `ok=true`.
 - [x] No sequence, loop, branch, timer, or hidden render-loop field is accepted.
 
@@ -805,7 +805,7 @@ Acceptance:
       Evidence: `cargo test --features inspection --test scena_cli_recipe
       scena_place_cli_previews_render_as_visible_framed_recipes -- --nocapture`
       passed on `scena-builder`; the proof feeds each placement transform back
-      into `scena render --introspect` and asserts `ok=true`, visible pixels,
+      into `scena render` and asserts `ok=true`, visible pixels,
       content bbox, and PNG output.
 
 ### A.7 Safe visual repair

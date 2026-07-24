@@ -12,7 +12,7 @@ cargo run --example glb_model_viewer
 Compile all public examples:
 
 ```bash
-cargo check --examples
+cargo check --examples --all-features
 ```
 
 ## By task

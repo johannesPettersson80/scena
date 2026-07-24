@@ -429,9 +429,19 @@ impl GpuDeviceState {
             self.queue.submit(Some(encoder.finish()));
             surface_output.present();
             if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
-                surface_frame::reconfigure_existing_surface(surface, &self.device);
+                let change = surface_frame::refresh_surface_configuration(
+                    surface,
+                    &self.adapter,
+                    &self.device,
+                    target,
+                );
                 reconfigurations = reconfigurations.saturating_add(1);
                 self.refresh_browser_canvas_output_color_space(target.backend);
+                if change.requires_reprepare() {
+                    return Err(RenderError::SurfaceConfigurationChanged {
+                        backend: target.backend,
+                    });
+                }
             }
             return Ok(GpuRenderResult {
                 submitted: true,
@@ -450,9 +460,19 @@ impl GpuDeviceState {
         self.queue.submit(Some(encoder.finish()));
         surface_output.present();
         if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
-            surface_frame::reconfigure_existing_surface(surface, &self.device);
+            let change = surface_frame::refresh_surface_configuration(
+                surface,
+                &self.adapter,
+                &self.device,
+                target,
+            );
             reconfigurations = reconfigurations.saturating_add(1);
             self.refresh_browser_canvas_output_color_space(target.backend);
+            if change.requires_reprepare() {
+                return Err(RenderError::SurfaceConfigurationChanged {
+                    backend: target.backend,
+                });
+            }
         }
         Ok(GpuRenderResult {
             submitted: true,

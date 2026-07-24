@@ -55,7 +55,7 @@ pub(crate) fn check_full_review_surface_acquisition_contracts(
             "depth_view: surface_scene_depth_view,",
             "surface_reconfigurations",
             "surface_acquire_retries",
-            "reconfigure_existing_surface",
+            "refresh_surface_configuration",
         ],
     );
     forbid_contains(
@@ -69,7 +69,7 @@ pub(crate) fn check_full_review_surface_acquisition_contracts(
         root,
         findings,
         RULE,
-        "src/render/gpu/draw.rs",
+        "src/render/gpu/draw/plans.rs",
         &["msaa_surface_scene_and_resolved_overlays_use_matching_depth_samples"],
     );
     for path in [

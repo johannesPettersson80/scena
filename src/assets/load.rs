@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::AssetError;
 
-use super::{AssetPath, AssetProvenance, SceneAsset, SceneAssetGeometrySummary};
+use super::{AssetPath, AssetProvenance, SceneAsset, SceneAssetGeometrySummary, SelectedGltfScene};
 
 mod fallback;
 mod options;
 mod warnings;
 pub use fallback::{AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1};
-pub use options::AssetLoadOptions;
+pub use options::{AssetLoadOptions, GltfSceneSelection};
 pub use warnings::{AssetLoadWarning, AssetLoadWarningV1};
 
 pub const ASSET_LOAD_REPORT_SCHEMA_V1: &str = "scena.asset_load_report.v1";
@@ -100,6 +100,8 @@ pub struct AssetLoadReportV1 {
     pub external_images: usize,
     pub provenance: AssetProvenance,
     pub geometry: SceneAssetGeometrySummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_gltf_scene: Option<SelectedGltfScene>,
     pub warnings: Vec<AssetLoadWarningV1>,
     pub progress_events: Vec<AssetLoadProgressV1>,
     #[serde(default)]
@@ -224,8 +226,8 @@ impl<T> AssetLoadReport<T> {
     }
 
     /// Semantic policy requested for this load operation.
-    pub const fn options(&self) -> AssetLoadOptions {
-        self.requested_options
+    pub fn options(&self) -> AssetLoadOptions {
+        self.requested_options.clone()
     }
 
     /// Policy under which a reused cache entry was originally produced.
@@ -233,8 +235,8 @@ impl<T> AssetLoadReport<T> {
     /// This equals [`Self::options`] on cache misses and exact-policy hits. It
     /// may differ on a cache hit when stored evidence proves that a stricter or
     /// otherwise compatible entry satisfies the requested policy.
-    pub const fn cache_entry_options(&self) -> AssetLoadOptions {
-        self.cache_entry_options
+    pub fn cache_entry_options(&self) -> AssetLoadOptions {
+        self.cache_entry_options.clone()
     }
 
     pub const fn fetched_bytes(&self) -> usize {
@@ -304,13 +306,14 @@ impl AssetLoadReport<SceneAsset> {
             schema: ASSET_LOAD_REPORT_SCHEMA_V1.to_owned(),
             path: self.path.as_str().to_owned(),
             cache_hit: self.cache_hit,
-            requested_options: self.requested_options,
-            cache_entry_options: self.cache_entry_options,
+            requested_options: self.requested_options.clone(),
+            cache_entry_options: self.cache_entry_options.clone(),
             fetched_bytes: self.fetched_bytes,
             external_buffers: self.external_buffers,
             external_images: self.external_images,
             provenance: self.asset.provenance().clone(),
             geometry: self.asset.geometry_summary(),
+            selected_gltf_scene: self.asset.selected_gltf_scene().cloned(),
             warnings: self.warnings.iter().map(AssetLoadWarningV1::from).collect(),
             progress_events: self
                 .progress_events

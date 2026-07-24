@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use super::scena_input::{
     RecipeReadError, capture_descriptor_path, ensure_parent_dir, path_for_json, read_recipe_text,
@@ -28,10 +29,10 @@ mod semantic_aov;
 pub(crate) struct RecipeRenderCommandArgs {
     recipe: PathBuf,
     out: PathBuf,
-    introspect: bool,
     verify: bool,
     detail: bool,
     gpu: bool,
+    timings: bool,
     max_imports: Option<usize>,
     allow_roots: Vec<PathBuf>,
 }
@@ -81,10 +82,7 @@ pub(crate) fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, St
 
 pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = RecipeRenderCommandArgs::parse(args)?;
-    if !args.introspect {
-        return Err(recipe_render_usage());
-    }
-
+    let total_started = Instant::now();
     let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
     let policy_report = policy.to_schema_report();
     let recipe_text = match read_recipe_text(&args.recipe, &policy) {
@@ -144,13 +142,19 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         host.frame_all_with_overlays()
             .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
     }
+    let prepare_started = Instant::now();
     host.prepare()
         .map_err(|error| format!("failed to prepare recipe scene: {error}"))?;
+    let prepare_duration = prepare_started.elapsed();
+    let render_started = Instant::now();
     host.render()
         .map_err(|error| format!("failed to render recipe scene: {error}"))?;
+    let render_duration = render_started.elapsed();
+    let capture_started = Instant::now();
     let capture = host
         .capture()
         .map_err(|error| format!("failed to capture recipe scene: {error}"))?;
+    let capture_duration = capture_started.elapsed();
 
     ensure_parent_dir(&args.out)?;
     capture
@@ -175,9 +179,19 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
     let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
         .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
-    let introspection_options = render_introspection_options(args.detail)
+    let mut introspection_options = render_introspection_options(args.detail)
         .with_capture_png_path(path_for_json(&args.out))
         .with_capture_descriptor_path(path_for_json(&descriptor_path));
+    if args.timings {
+        introspection_options = introspection_options.with_timings(
+            scena::RenderIntrospectionTimingsV1::measured_monotonic(
+                duration_ms(prepare_duration),
+                duration_ms(render_duration),
+                duration_ms(capture_duration),
+                duration_ms(total_started.elapsed()),
+            ),
+        );
+    }
     let introspection =
         host.renderer()
             .introspect_capture(&capture, &inspection, introspection_options);
@@ -244,10 +258,10 @@ impl RecipeRenderCommandArgs {
             return Err(recipe_render_usage());
         };
         let mut out = None;
-        let mut introspect = false;
         let mut verify = false;
         let mut detail = false;
         let mut gpu = false;
+        let mut timings = false;
         let mut max_imports = None;
         let mut allow_roots = Vec::new();
         let mut index = 1;
@@ -258,7 +272,6 @@ impl RecipeRenderCommandArgs {
                     index += 2;
                 }
                 "--introspect" => {
-                    introspect = true;
                     index += 1;
                 }
                 "--verify" => {
@@ -271,6 +284,10 @@ impl RecipeRenderCommandArgs {
                 }
                 "--gpu" => {
                     gpu = true;
+                    index += 1;
+                }
+                "--timings" => {
+                    timings = true;
                     index += 1;
                 }
                 "--max-imports" => {
@@ -298,10 +315,10 @@ impl RecipeRenderCommandArgs {
         Ok(Self {
             recipe: PathBuf::from(recipe),
             out: out.ok_or_else(|| format!("missing --out <png>; {}", recipe_render_usage()))?,
-            introspect,
             verify,
             detail,
             gpu,
+            timings,
             max_imports,
             allow_roots,
         })
@@ -363,8 +380,12 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, Strin
 }
 
 fn recipe_render_usage() -> String {
-    "usage: scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--timings] [--max-imports <n>] [--allow-root <directory>]..."
         .to_owned()
+}
+
+fn duration_ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn recipe_build_usage() -> String {

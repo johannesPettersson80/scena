@@ -39,6 +39,11 @@ impl OffscreenTarget {
 }
 
 impl PixelReadback {
+    #[cfg(any(
+        not(target_arch = "wasm32"),
+        feature = "browser-probe",
+        feature = "scene-host"
+    ))]
     pub(in crate::render) fn from_rgba8(width: u32, height: u32, rgba8: Vec<u8>) -> Self {
         Self {
             width,
@@ -94,6 +99,11 @@ impl Renderer {
         let Some(rgba8) = gpu.browser_readback_rgba8(self.target).await? else {
             return Ok(None);
         };
+        self.frame.clear();
+        self.frame.extend_from_slice(&rgba8);
+        self.last_readback_frame = self
+            .last_rendered_frame
+            .map(super::state::RenderedFrameState::with_readback_completed_now);
         Ok(Some(PixelReadback::from_rgba8(
             self.target.width,
             self.target.height,

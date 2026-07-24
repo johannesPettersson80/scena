@@ -368,50 +368,86 @@ fn quantize_screen_space_depth(depth: f32) -> f32 {
 pub(super) fn apply_bloom_rgba8(
     target: RasterTarget,
     frame: &mut [u8],
-    scratch: &mut [u8],
+    threshold_scratch: &mut [u8],
+    horizontal_scratch: &mut [u8],
     config: PostBloomConfig,
 ) -> u64 {
+    apply_bloom_rgba8_profiled(target, frame, threshold_scratch, horizontal_scratch, config).passes
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct BloomWork {
+    passes: u64,
+    blur_sample_reads: u64,
+}
+
+fn apply_bloom_rgba8_profiled(
+    target: RasterTarget,
+    frame: &mut [u8],
+    threshold_scratch: &mut [u8],
+    horizontal_scratch: &mut [u8],
+    config: PostBloomConfig,
+) -> BloomWork {
     let radius = u32::from(config.radius_px());
     let intensity = config.intensity().clamp(0.0, 1.0);
     if target.width < 3 || target.height < 3 || radius == 0 || intensity <= 0.0 {
-        return 0;
+        return BloomWork::default();
     }
     debug_assert_eq!(frame.len(), target.byte_len());
-    debug_assert_eq!(scratch.len(), target.byte_len());
-    scratch.fill(0);
+    debug_assert_eq!(threshold_scratch.len(), target.byte_len());
+    debug_assert_eq!(horizontal_scratch.len(), target.byte_len());
+    threshold_scratch.fill(0);
+    horizontal_scratch.fill(0);
 
     for y in 0..target.height {
         for x in 0..target.width {
             let offset = pixel_offset(target, x, y);
             if luma_from_srgb8(&frame[offset..offset + 4]) >= f32::from(config.threshold_srgb()) {
-                scratch[offset] = frame[offset];
-                scratch[offset + 1] = frame[offset + 1];
-                scratch[offset + 2] = frame[offset + 2];
-                scratch[offset + 3] = frame[offset + 3];
+                threshold_scratch[offset] = frame[offset];
+                threshold_scratch[offset + 1] = frame[offset + 1];
+                threshold_scratch[offset + 2] = frame[offset + 2];
+            }
+        }
+    }
+
+    let mut blur_sample_reads = 0_u64;
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let min_x = x.saturating_sub(radius);
+            let max_x = x.saturating_add(radius).min(target.width - 1);
+            let mut sum = [0_u32; 3];
+            for sample_x in min_x..=max_x {
+                let sample = pixel_offset(target, sample_x, y);
+                for channel in 0..3 {
+                    sum[channel] += u32::from(threshold_scratch[sample + channel]);
+                }
+                blur_sample_reads = blur_sample_reads.saturating_add(1);
+            }
+            let sample_count = max_x - min_x + 1;
+            let output = pixel_offset(target, x, y);
+            for channel in 0..3 {
+                horizontal_scratch[output + channel] =
+                    (sum[channel] as f32 / sample_count as f32).round() as u8;
             }
         }
     }
 
     for y in 0..target.height {
         for x in 0..target.width {
-            let min_x = x.saturating_sub(radius);
-            let max_x = x.saturating_add(radius).min(target.width - 1);
             let min_y = y.saturating_sub(radius);
             let max_y = y.saturating_add(radius).min(target.height - 1);
             let mut sum = [0_u32; 3];
-            let mut sample_count = 0_u32;
             for sample_y in min_y..=max_y {
-                for sample_x in min_x..=max_x {
-                    let sample = pixel_offset(target, sample_x, sample_y);
-                    sum[0] += u32::from(scratch[sample]);
-                    sum[1] += u32::from(scratch[sample + 1]);
-                    sum[2] += u32::from(scratch[sample + 2]);
-                    sample_count += 1;
+                let sample = pixel_offset(target, x, sample_y);
+                for channel in 0..3 {
+                    sum[channel] += u32::from(horizontal_scratch[sample + channel]);
                 }
+                blur_sample_reads = blur_sample_reads.saturating_add(1);
             }
             if sum == [0, 0, 0] {
                 continue;
             }
+            let sample_count = max_y - min_y + 1;
             let output = pixel_offset(target, x, y);
             for channel in 0..3 {
                 let bloom = (sum[channel] as f32 / sample_count as f32) * intensity;
@@ -422,7 +458,10 @@ pub(super) fn apply_bloom_rgba8(
         }
     }
 
-    1
+    BloomWork {
+        passes: 1,
+        blur_sample_reads,
+    }
 }
 
 pub(super) fn apply_fxaa_rgba8(target: RasterTarget, frame: &mut [u8], scratch: &mut [u8]) -> u64 {
@@ -505,6 +544,267 @@ const FXAA_LOCAL_MIN_EPSILON: f32 = 1.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostics::Backend;
+
+    #[test]
+    fn separable_bloom_is_repeatable_at_edges_and_has_linear_radius_work() {
+        let target = RasterTarget {
+            width: 32,
+            height: 24,
+            backend: Backend::Headless,
+        };
+        let mut source = vec![0_u8; target.byte_len()];
+        for pixel in source.chunks_exact_mut(4) {
+            pixel[3] = 255;
+        }
+        for (x, y, rgb) in [(0, 0, [255, 240, 220]), (16, 12, [255, 255, 255])] {
+            let offset = pixel_offset(target, x, y);
+            source[offset..offset + 3].copy_from_slice(&rgb);
+        }
+        let config = PostBloomConfig::new(128, 0.75, 12);
+        let mut first = source.clone();
+        let mut threshold = vec![0; target.byte_len()];
+        let mut horizontal = vec![0; target.byte_len()];
+        let work =
+            apply_bloom_rgba8_profiled(target, &mut first, &mut threshold, &mut horizontal, config);
+        let mut second = source;
+        let repeat_work = apply_bloom_rgba8_profiled(
+            target,
+            &mut second,
+            &mut threshold,
+            &mut horizontal,
+            config,
+        );
+
+        assert_eq!(first, second, "bloom output must be repeatable");
+        assert_eq!(work, repeat_work, "bloom work must be deterministic");
+        assert_eq!(work.passes, 1);
+        assert!(
+            first[pixel_offset(target, 1, 0)] > 0,
+            "an edge highlight must bloom inward without out-of-bounds sampling",
+        );
+        let pixels = target.pixel_len() as u64;
+        let kernel_width = u64::from(config.radius_px()) * 2 + 1;
+        assert!(
+            work.blur_sample_reads <= pixels * kernel_width * 2,
+            "separable bloom work must grow linearly with radius: {work:?}",
+        );
+        assert!(
+            work.blur_sample_reads < pixels * kernel_width * kernel_width,
+            "maximum-radius bloom must do less work than the old 2D kernel: {work:?}",
+        );
+    }
+
+    #[test]
+    fn separable_bloom_matches_legacy_box_contract_across_public_controls() {
+        let target = RasterTarget {
+            width: 40,
+            height: 32,
+            backend: Backend::Headless,
+        };
+        let mut source = vec![0_u8; target.byte_len()];
+        for pixel in source.chunks_exact_mut(4) {
+            pixel[3] = 255;
+        }
+        for y in 12..20 {
+            for x in 15..25 {
+                let offset = pixel_offset(target, x, y);
+                source[offset..offset + 3].copy_from_slice(&[240, 224, 208]);
+            }
+        }
+        for (x, y, rgb) in [
+            (0, 0, [255, 255, 255]),
+            (39, 31, [255, 210, 180]),
+            (20, 16, [255, 255, 255]),
+        ] {
+            let offset = pixel_offset(target, x, y);
+            source[offset..offset + 3].copy_from_slice(&rgb);
+        }
+
+        let mut reports = Vec::new();
+        for (threshold, intensity, radius) in
+            [(0, 0.25, 1), (128, 0.75, 4), (208, 0.28, 3), (250, 1.0, 12)]
+        {
+            let config = PostBloomConfig::new(threshold, intensity, radius);
+            let mut actual = source.clone();
+            let mut threshold_scratch = vec![0; target.byte_len()];
+            let mut horizontal_scratch = vec![0; target.byte_len()];
+            let work = apply_bloom_rgba8_profiled(
+                target,
+                &mut actual,
+                &mut threshold_scratch,
+                &mut horizontal_scratch,
+                config,
+            );
+            let expected = legacy_box_bloom_reference(target, &source, config);
+            let metrics = bloom_diff_metrics(&actual, &expected, target.width);
+
+            assert!(
+                metrics.max_channel_delta <= 1,
+                "separable rounding must stay within one byte of the legacy 2D box contract: {metrics:?} config={config:?}",
+            );
+            assert!(
+                metrics.rmse <= 0.35,
+                "separable bloom must preserve the full-frame legacy contract: {metrics:?} config={config:?}",
+            );
+            assert!(
+                metrics.ssim >= 0.999_99,
+                "separable bloom must preserve legacy structure: {metrics:?} config={config:?}",
+            );
+            assert!(
+                work.blur_sample_reads
+                    <= target.pixel_len() as u64 * (u64::from(radius) * 2 + 1) * 2,
+                "separable work must remain linear in radius: {work:?}",
+            );
+            reports.push(serde_json::json!({
+                "threshold_srgb": threshold,
+                "intensity": intensity,
+                "radius_px": radius,
+                "max_channel_delta": metrics.max_channel_delta,
+                "rmse": metrics.rmse,
+                "ssim": metrics.ssim,
+                "worst_region_bbox": metrics.worst_region_bbox,
+                "blur_sample_reads": work.blur_sample_reads,
+            }));
+        }
+
+        let artifact_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target/gate-artifacts/p05-cpu-bloom");
+        std::fs::create_dir_all(&artifact_dir).expect("P05 artifact directory creates");
+        std::fs::write(
+            artifact_dir.join("comparison.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": "scena.p05.cpu_bloom_comparison.v1",
+                "status": "passed",
+                "reference": "legacy_nonseparable_box_kernel",
+                "kernel_contract": "implementation_detail_with_one_lsb_rounding_tolerance",
+                "profiles": reports,
+            }))
+            .expect("P05 comparison serializes"),
+        )
+        .expect("P05 comparison writes");
+    }
+
+    fn legacy_box_bloom_reference(
+        target: RasterTarget,
+        source: &[u8],
+        config: PostBloomConfig,
+    ) -> Vec<u8> {
+        let radius = u32::from(config.radius_px());
+        let intensity = config.intensity().clamp(0.0, 1.0);
+        let mut output = source.to_vec();
+        if target.width < 3 || target.height < 3 || radius == 0 || intensity <= 0.0 {
+            return output;
+        }
+        let mut threshold = vec![0_u8; target.byte_len()];
+        for y in 0..target.height {
+            for x in 0..target.width {
+                let offset = pixel_offset(target, x, y);
+                if luma_from_srgb8(&source[offset..offset + 4])
+                    >= f32::from(config.threshold_srgb())
+                {
+                    threshold[offset..offset + 3].copy_from_slice(&source[offset..offset + 3]);
+                }
+            }
+        }
+        for y in 0..target.height {
+            for x in 0..target.width {
+                let min_x = x.saturating_sub(radius);
+                let max_x = x.saturating_add(radius).min(target.width - 1);
+                let min_y = y.saturating_sub(radius);
+                let max_y = y.saturating_add(radius).min(target.height - 1);
+                let mut sum = [0_u32; 3];
+                let mut count = 0_u32;
+                for sample_y in min_y..=max_y {
+                    for sample_x in min_x..=max_x {
+                        let sample = pixel_offset(target, sample_x, sample_y);
+                        for channel in 0..3 {
+                            sum[channel] += u32::from(threshold[sample + channel]);
+                        }
+                        count += 1;
+                    }
+                }
+                let offset = pixel_offset(target, x, y);
+                for channel in 0..3 {
+                    let bloom = sum[channel] as f32 / count as f32 * intensity;
+                    output[offset + channel] = (f32::from(output[offset + channel]) + bloom)
+                        .round()
+                        .min(255.0) as u8;
+                }
+            }
+        }
+        output
+    }
+
+    #[derive(Debug)]
+    struct BloomDiffMetrics {
+        max_channel_delta: u8,
+        rmse: f64,
+        ssim: f64,
+        worst_region_bbox: Option<[u32; 4]>,
+    }
+
+    fn bloom_diff_metrics(actual: &[u8], expected: &[u8], width: u32) -> BloomDiffMetrics {
+        let mut max_channel_delta = 0_u8;
+        let mut squared_error = 0.0_f64;
+        let mut sample_count = 0_u64;
+        let mut min_x = u32::MAX;
+        let mut min_y = u32::MAX;
+        let mut max_x = 0_u32;
+        let mut max_y = 0_u32;
+        let mut actual_luma = Vec::with_capacity(actual.len() / 4);
+        let mut expected_luma = Vec::with_capacity(expected.len() / 4);
+        for (pixel_index, (left, right)) in actual
+            .chunks_exact(4)
+            .zip(expected.chunks_exact(4))
+            .enumerate()
+        {
+            actual_luma.push(luma_from_srgb8(left) as f64);
+            expected_luma.push(luma_from_srgb8(right) as f64);
+            let mut differs = false;
+            for channel in 0..3 {
+                let delta = left[channel].abs_diff(right[channel]);
+                max_channel_delta = max_channel_delta.max(delta);
+                squared_error += f64::from(delta).powi(2);
+                sample_count += 1;
+                differs |= delta != 0;
+            }
+            if differs {
+                let x = pixel_index as u32 % width;
+                let y = pixel_index as u32 / width;
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+        let rmse = (squared_error / sample_count.max(1) as f64).sqrt();
+        let mean_actual = actual_luma.iter().sum::<f64>() / actual_luma.len().max(1) as f64;
+        let mean_expected = expected_luma.iter().sum::<f64>() / expected_luma.len().max(1) as f64;
+        let mut variance_actual = 0.0;
+        let mut variance_expected = 0.0;
+        let mut covariance = 0.0;
+        for (left, right) in actual_luma.iter().zip(&expected_luma) {
+            variance_actual += (left - mean_actual).powi(2);
+            variance_expected += (right - mean_expected).powi(2);
+            covariance += (left - mean_actual) * (right - mean_expected);
+        }
+        let denominator = actual_luma.len().saturating_sub(1).max(1) as f64;
+        variance_actual /= denominator;
+        variance_expected /= denominator;
+        covariance /= denominator;
+        let c1 = (0.01 * 255.0_f64).powi(2);
+        let c2 = (0.03 * 255.0_f64).powi(2);
+        let ssim = ((2.0 * mean_actual * mean_expected + c1) * (2.0 * covariance + c2))
+            / ((mean_actual.powi(2) + mean_expected.powi(2) + c1)
+                * (variance_actual + variance_expected + c2));
+        BloomDiffMetrics {
+            max_channel_delta,
+            rmse,
+            ssim,
+            worst_region_bbox: (min_x != u32::MAX).then_some([min_x, min_y, max_x, max_y]),
+        }
+    }
 
     #[test]
     fn pbr_neutral_uses_dedicated_shader_branch_marker() {

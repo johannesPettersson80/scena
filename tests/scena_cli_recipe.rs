@@ -106,6 +106,11 @@ fn scena_render_cli_ignores_scena_use_gpu_and_reports_default_selection() {
         .expect("scena default backend render runs");
 
     assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "GPU selection/fallback diagnostics belong in stdout JSON: {}",
+        stderr(&output)
+    );
     let report = json_report(&output);
     assert_eq!(report["backend_selection"]["source"], "default");
     assert_eq!(report["backend_selection"]["requested"], "headless");
@@ -133,6 +138,11 @@ fn scena_render_cli_gpu_flag_reports_explicit_selection_and_fallback_truth() {
         .expect("scena explicit GPU render runs");
 
     assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "explicit GPU selection/fallback diagnostics belong in stdout JSON: {}",
+        stderr(&output)
+    );
     let report = json_report(&output);
     let selection = &report["backend_selection"];
     assert_eq!(selection["source"], "cli_flag");
@@ -148,6 +158,21 @@ fn scena_render_cli_gpu_flag_reports_explicit_selection_and_fallback_truth() {
         selection["fallback_used"],
         selection["selected"] == "headless"
     );
+    if selection["fallback_used"] == true {
+        assert!(
+            selection["reason"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+        assert!(
+            selection["remedy"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+    } else {
+        assert!(selection["reason"].is_null());
+        assert!(selection["remedy"].is_null());
+    }
 }
 
 #[test]

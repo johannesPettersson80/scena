@@ -48,11 +48,7 @@ fn a07_doctor_rejects_dropping_structured_lookup_candidates() {
 
     let binary = fixture_root.join("src/bin/scena.rs");
     let source = fs::read_to_string(&binary).expect("CLI source reads");
-    let mutated = source.replacen(
-        "\"candidates\": cli_error_candidates(&args)",
-        "\"candidates\": Vec::<String>::new()",
-        1,
-    );
+    let mutated = source.replacen("cli_error_candidates(&args),", "Vec::<String>::new(),", 1);
     assert_ne!(source, mutated, "A07 mutation must remove CLI candidates");
     fs::write(binary, mutated).expect("CLI mutation writes");
     findings.clear();

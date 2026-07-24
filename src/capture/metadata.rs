@@ -99,6 +99,7 @@ pub(super) fn revisions_from_dirty(dirty: SceneDirtyState) -> CaptureRevisions {
     CaptureRevisions {
         structure: dirty.structure_revision,
         transform: dirty.transform_revision,
+        camera: dirty.camera_revision,
         appearance: dirty
             .appearance_revision
             .saturating_add(dirty.visibility_revision),

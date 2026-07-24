@@ -2,7 +2,7 @@
 
 Status: archived historical evidence
 Canonical active backlog:
-`docs/checklists/full-repo-review-v1.8.0-remediation.md`
+`docs/checklists/full-repo-review-v1.9.0-remediation.md`
 Date: 2026-06-01
 Scope: renderer-quality dependencies that must be closed before the WASM
 `SceneHost` and stable JSON work can claim final browser visual proof.

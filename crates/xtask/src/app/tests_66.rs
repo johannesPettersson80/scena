@@ -14,6 +14,7 @@ fn a08_doctor_rejects_restoring_the_untagged_import_transform_type() {
         "src/scene_host/recipe.rs",
         "src/scene_host/recipe/authoring/transform.rs",
         "src/scene/placement.rs",
+        "src/scene/placement/serialization.rs",
         "src/bin/scena/place.rs",
         "tests/a08_transform_grammar.rs",
         "tests/stable_contracts.rs",

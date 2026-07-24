@@ -119,7 +119,9 @@ The `scena` CLI keeps this choice explicit: CPU is the default and `--gpu` is
 the only execution selector. `SCENA_USE_GPU` is test/proof metadata and is
 ignored by CLI argument parsing. Successful render, recipe-render, capture, and
 CAD inspection envelopes include `backend_selection` with `source`,
-`requested`, `selected`, and `fallback_used`.
+`requested`, `selected`, `fallback_used`, `reason`, and `remedy`. The latter two
+are non-null only for a fallback, so machine callers receive the diagnosis and
+recovery action without parsing stderr.
 
 ## CPU camera-depth clipping
 
@@ -150,11 +152,23 @@ mutations and requires the same oracle to reject all three. Release staging
 binds those PNGs to the exact Rust test command and observed test log, CPU
 backend/adapter label, source commit, timestamp, metrics, and SHA-256 checksums.
 
-The separate macOS GPU lane is not a golden-diff claim. It currently checks
-nonblack content, material color-family histograms, and fixed color regions
-with RGB Chebyshev tolerance up to 35 on the measured Apple Paravirtual Metal
-body sample. `SCENA_REFERENCE_DIFF` remains an opt-in diagnostic and is not set
-by required workflows.
+Before consulting that reference, the proof constructs and renders the scene a
+second time and requires byte-identical RGBA8 output. The release lanes retain
+the two hashes and metric distributions independently for Linux x86_64, macOS
+arm64, and Windows x86_64. To propose a new reference, run
+`scripts/stage_q01_waterbottle_reference_candidate.sh` from the clean isolated
+builder checkout. It creates candidate and diff artifacts only. A separate
+named-human approval based on `docs/reference-approval-q11.example.json` is
+required by `scripts/promote_q01_waterbottle_reference.cjs`; neither command
+loosens the comparison thresholds or self-certifies the candidate.
+
+The native GPU release lane requires the full 512x512 scena-gold comparison in
+addition to nonblack content, material color-family histograms, and fixed color
+regions. At least 95% of pixels must be within RGB Chebyshev distance 16, the
+diff heatmap and worst-region bounding box are retained, and the same oracle
+must reject a horizontally mirrored reference. Required CI/release and
+exact-candidate Windows hardware proof set `SCENA_REFERENCE_DIFF=1`; without it
+the test emits diagnostic-only evidence with `release_evidence:false`.
 
 ## Common mistakes
 

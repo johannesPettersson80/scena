@@ -11,6 +11,8 @@
   },
   "backend_selection": {
     "fallback_used": false,
+    "reason": null,
+    "remedy": null,
     "requested": "headless",
     "selected": "headless",
     "source": "default"
@@ -70,5 +72,11 @@
   "ok": true,
   "reasons": [],
   "schema": "scena.render_introspection.v1",
+  "timings": {
+    "clock": "unavailable",
+    "source": "not_measured",
+    "status": "unavailable",
+    "unavailable_reason": "request CLI observational timing with --timings; deterministic reports omit wall-clock measurements"
+  },
   "visible_pixel_fraction": 0.063
 }

@@ -11,6 +11,28 @@ owned by executed focused tests and rendered evidence. A source pin cannot
 replace the focused behavior, mutation, browser, or physical-hardware proof
 named by the corresponding release contract.
 
+## Proof-level vocabulary
+
+These labels are ordered by claim strength and are not interchangeable:
+
+| Level | What it proves | What it cannot claim |
+|---|---|---|
+| smoke | The process/backend initialized, submitted work, and produced nonblank output. | Correct pixels, parity, or release readiness. |
+| conformance | A named API/lifecycle/format contract and its negative cases executed on the stated backend. Software adapters may provide this level. | Physical-hardware behavior or broad image equivalence. |
+| deterministic reference | One renderer path matches a committed source-bound full-frame oracle and rejects named mutations. | Another backend or adapter matches it. |
+| cross-backend parity | Two named renderer paths match over a declared full-frame normalization, thresholds, and mutation set. | Unnamed fixtures, materials, or platforms. |
+| hardware evidence | A conformance/reference/parity proof executed on an identified physical adapter with source and artifact provenance. | Publication authority by itself. |
+| release evidence | Hardware or deterministic evidence required by policy, issued by trusted CI/operator workflow, provenance-verified, complete, and accepted by staging. | Any claim beyond its exact fixture and declared scope. |
+
+Local commands and artifacts state their level. GitHub-hosted CPU/software GPU
+results are local/CI conformance unless a stricter section below explicitly
+promotes them. Physical macOS/Windows artifacts become release evidence only
+after Q03 provenance and staging validation; a `release_evidence:true` field is
+not self-authenticating. The enforcing workflows and schemas are named in each
+required section below: Q01 browser parity, native m8 WaterBottle, Q08 physical
+CPU/GPU parity, Q04 lifecycle, Q07 antialiasing effect, and Q11 reference
+stability.
+
 `Cargo.toml` is the canonical public version source. The D01 doctor sweep
 compares `Cargo.lock`, generated package and WASM-size metadata when present,
 tracked demo/proof titles and cache busters, current docs.rs links, public
@@ -25,7 +47,7 @@ never exempt.
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
-- `cargo check --examples`
+- `cargo check --examples --all-features`
 - `cargo run -p xtask -- doctor --full`
 - `cargo publish --dry-run`
 
@@ -33,6 +55,37 @@ Browser, GPU, rendered-output, and performance lanes add their own typed proof
 artifacts. Required lanes fail closed when their renderer or hardware work is
 unavailable; optional diagnostic lanes must say that they are non-release
 evidence.
+
+## CI-issued release provenance
+
+Downloaded lane artifacts do not become release evidence merely because a
+local process copied them into the canonical bundle. The CI and release
+workflows first generate `ci-provenance.json` from trusted GitHub context. The
+versioned record binds repository, workflow/ref, workflow SHA, source commit,
+run ID and attempt, job, timestamp, and a SHA-256 digest over every downloaded
+artifact file. The unsigned record remains `release_evidence: false` and names
+`CI_ATTESTATION_NOT_YET_VERIFIED`.
+
+The workflows then use the commit-pinned `actions/attest` action to issue a
+SLSA v1 provenance attestation for that exact manifest. Strict staging runs
+with `SCENA_REQUIRE_CI_PROVENANCE=1`, recomputes the complete artifact-tree
+digest, checks the source commit is reachable, requires the current workflow
+context to match every recorded identity field, and invokes
+`gh attestation verify` against the exact repository, signer workflow, source
+digest, and source ref. Wrong repositories, replayed runs, changed refs,
+missing jobs, stale manifests, and post-manifest artifact changes fail closed.
+
+Local staging remains available for development, but its
+`staging-metadata.json` explicitly records `release_evidence: false` with
+`CI_PROVENANCE_UNVERIFIED`; it cannot satisfy release readiness. Only staging
+metadata carrying a verified attestation receipt can pass the release gate.
+Readiness does not trust that receipt as a self-reported field: the staged
+bundle retains the signed `ci-provenance.json`, and readiness independently
+runs the same constrained signature verification before it can return success.
+Retain `ci-provenance.json`, `staging-metadata.json`, and the staged artifact
+bundle with the release. GitHub's attestation is the cryptographic identity
+record; ordinary workflow artifact retention is only transport and must not be
+treated as the trust anchor.
 
 ## Required WebGPU hardware parity
 
@@ -83,6 +136,77 @@ The install step copies every manifest-listed root file, including
 The independent validator evaluates privacy-redacted Q01 WebGPU adapters with
 the same-browser Chromium GPU inventory, rejects software renderers, and
 normalizes path separators before requiring canonical Q01 artifact locations.
+It also runs the native DX12 WaterBottle headline with
+`SCENA_REFERENCE_DIFF=1` and requires the complete 512x512 comparison, pinned
+reference hash, render and diff hashes, worst-region bounding box, structured
+adapter key, fixed thresholds, and rejection of a horizontal-mirror mutation.
+
+The macOS Metal CI and release lanes run that same WaterBottle full-frame
+oracle. Sparse point samples and color-family histograms remain useful
+diagnostics, but they cannot set `release_evidence:true` without the reference
+diff and mirror rejection. Release staging independently rejects an incomplete
+result and requires `m8-real-asset/waterbottle_gpu.png`,
+`waterbottle_diff.png`, and their source-provenance bindings.
+WaterBottle region checks use `scena.m8.waterbottle_adapter_expectation.v1`.
+The portable and GitHub macOS profiles both retain Chebyshev-25 region
+tolerances; the macOS profile instead pins the separately measured samples by
+backend/vendor/device/device-type/driver fields, with owner, review date,
+expiry, workflow run, and image hash in `reference_metadata.toml`. Adapter
+display names are diagnostic only and cannot select an acceptance profile.
+
+## Required physical CPU/GPU parity
+
+Transmission, near-plane clipping, authored and imported dynamic transforms,
+Z-up rotation animation, the core PBR sweep, and PF08 texture baking each run
+as an exact test with `SCENA_REQUIRE_GPU_PARITY=1` on the macOS Metal release
+lane and in the one-shot Windows DX12 proof. The strict variable changes adapter
+absence and software fallback into failures. A passing
+`scena.q08.required_cpu_gpu_parity.v1` result must identify the exact test,
+physical adapter and backend, source commit and checksum, and a nonzero executed
+assertion count. Release staging and the Windows archive validator re-check
+those fields and reject skip artifacts or diagnostic runs.
+
+Without the strict variable, an installed lavapipe adapter may exercise the GPU
+code path as `diagnostic-gpu-conformance`; if no adapter is configured, the
+ordinary all-target test emits a structured `skipped` result and returns. Both
+forms deliberately set `release_evidence:false`. Lavapipe therefore remains
+valuable CPU-hosted conformance coverage but never substitutes for Metal or
+DX12 release evidence.
+
+## Rendered WaterBottle mutations
+
+The always-on Q01 CPU WaterBottle oracle retains one cheap post-hoc flattened
+pixel mutation, but wrong-material and wrong-camera evidence must be fresh scene
+renders. Each starts from a new glTF import, changes the mesh material or active
+camera before `prepare`, renders through the CPU material/camera path,
+PBR-neutral tonemapping, and sRGB8 output, then compares that frame with the same
+committed reference. The result binds each mutation PNG hash, failing metrics,
+mutation stage, render count, and pipeline coverage. Release finalization and
+staging reject material/camera mutations labeled as pixel edits or carrying no
+render execution.
+
+## Q11 reference stability and regeneration
+
+The Q01 CPU oracle compares two independently constructed in-process renders
+byte-for-byte before reading the committed reference. Linux x86_64, macOS
+arm64, and Windows x86_64 lanes run the exact Q11 test and retain separate
+`scena.q11.reference_stability.v1` artifacts with the source commit, asset and
+reference hashes, both render hashes, and both fixed-oracle metric records.
+Release readiness requires all three records. The shared Chebyshev-4,
+99.5%-within-tolerance, RMSE-2.0 policy is not widened to accommodate a host;
+per-architecture references require measured stable differences and a separate
+reviewed policy change.
+
+Reference regeneration is intentionally a two-person/two-step process.
+`scripts/stage_q01_waterbottle_reference_candidate.sh` runs only from a clean
+checkout and writes a non-release candidate, diff heatmap, generator/source
+provenance, and external Blender-anchor binding under `target/`; it never
+overwrites the oracle. Promotion uses
+`scripts/promote_q01_waterbottle_reference.cjs` with a separately authored
+`scena.q11.reference_approval.v1` document naming the reviewer and binding the
+candidate, prior reference, diff, generator commit, and external anchor. The
+approval command refuses a tolerance change. Fresh three-architecture evidence
+is required after promotion.
 
 ## Required GPU resource lifecycle
 
@@ -114,6 +238,22 @@ developer smoke tests have `status:"skipped"` and
 The checksum-verified Windows complete-hardware bundle runs the same strict
 Q04 test executable; its independent validator rejects a missing adapter,
 incomplete assertions, a retained-shape mismatch, or any pending destruction.
+
+## Anti-aliasing pixel effect
+
+The native Metal and exact-candidate Windows hardware lanes render one pinned
+high-contrast asymmetric diagonal with None, FXAA, MSAA4, and MSAA8 when the
+adapter supports it. FXAA/MSAA must add intermediate-luma boundary coverage,
+reduce hard transitions and normalized squared edge energy, preserve global
+contrast, and stay within an edge-local coverage bound. Unsupported MSAA8 must
+be recorded as structured `UNSUPPORTED_SAMPLE_COUNT` degradation; silent skip
+is not accepted. The same evaluator rejects no-op AA and whole-frame blur
+mutations.
+
+Required WebGPU/WebGL2 PF01 browser output now records edge metrics from the
+renderer-owned capture. Its validator requires FXAA to reduce relative hard
+transitions and normalized edge energy while preserving contrast and bounded
+coverage. Hash inequality alone is not anti-aliasing evidence.
 
 ## Performance timing policy
 
@@ -158,6 +298,21 @@ performance distribution or statistical benchmark claim.
 does not require or generate ignored `target/gate-artifacts` files. Artifact
 production is the explicit prerequisite above, and release staging is the
 separate fail-closed consumer.
+
+Generated demo/proof WASM bundles follow the same split. The ordinary source doctor
+treats their joint absence as unavailable, not as evidence. After both
+bundles are built, the browser release lane runs
+`SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS=1 cargo run -p xtask -- doctor --full`;
+that explicit mode fails if either bundle or its size manifest is absent or
+outside budget. It never creates a placeholder artifact.
+
+Shader health is compiled evidence, not a collection of source substrings.
+The production-derived WGSL manifest owns every shader-module creation and all
+texture-binding/output variants. CI runs its Naga parse/validation, required
+entry-point, binding/location, capability, and omitted-variant mutation tests.
+Material-uniform safety likewise compares the WGSL struct span, Rust encoder
+length, and the actual bind-layout/bind-group size helper; doctor pins those
+semantic tests instead of the numeric layout literal.
 
 ## Readiness invocation and result
 

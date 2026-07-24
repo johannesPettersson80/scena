@@ -48,6 +48,10 @@ pub(super) fn cull_cpu_frustum(
 const OCCLUSION_BUFFER_MAX_DIMENSION: u32 = 256;
 const OCCLUSION_OVERLAP_TILE_DIMENSION: u32 = 16;
 const OCCLUSION_DEPTH_EPSILON: f32 = 1.0e-4;
+// A coarse depth buffer is an optimization oracle, not a visibility oracle.
+// Tiny projected details do not provide enough independent samples to prove
+// full occlusion, especially when a larger output has been reduced to 256px.
+const OCCLUSION_MIN_COVERED_SAMPLES: u32 = 4;
 const CPU_OCCLUSION_MIN_PRIMITIVES: usize = 64;
 
 fn should_run_occlusion_prepass(primitive_count: usize, gpu_active: bool) -> bool {
@@ -254,7 +258,7 @@ impl ProjectedPrimitive {
                 }
             }
         }
-        covered_samples > 0
+        covered_samples >= OCCLUSION_MIN_COVERED_SAMPLES
     }
 
     fn write_depth(&self, depth: &mut [f32], target: RasterTarget) {
@@ -350,8 +354,9 @@ mod tests {
     use crate::scene::Vec3;
 
     use super::{
-        CPU_OCCLUSION_MIN_PRIMITIVES, ProjectedPrimitive, ScreenVertex, cull_cpu_frustum,
-        has_projected_tile_overlap, should_run_occlusion_prepass,
+        CPU_OCCLUSION_MIN_PRIMITIVES, OCCLUSION_MIN_COVERED_SAMPLES, ProjectedPrimitive,
+        ScreenVertex, cull_cpu_frustum, has_projected_tile_overlap, occlusion_buffer_target,
+        should_run_occlusion_prepass,
     };
 
     #[test]
@@ -433,6 +438,73 @@ mod tests {
 
         assert!(!has_projected_tile_overlap(&separated, target));
         assert!(has_projected_tile_overlap(&overlapping, target));
+    }
+
+    #[test]
+    fn thin_projected_detail_is_never_declared_occluded_from_too_few_coarse_samples() {
+        let target = RasterTarget {
+            width: 256,
+            height: 256,
+            backend: Backend::Headless,
+        };
+        let thin = ProjectedPrimitive {
+            vertices: [
+                ScreenVertex {
+                    x: 20.0,
+                    y: 20.0,
+                    depth: 0.6,
+                },
+                ScreenVertex {
+                    x: 20.0,
+                    y: 22.0,
+                    depth: 0.6,
+                },
+                ScreenVertex {
+                    x: 22.0,
+                    y: 20.0,
+                    depth: 0.6,
+                },
+            ],
+            min_x: 20,
+            max_x: 22,
+            min_y: 20,
+            max_y: 22,
+            area: 4.0,
+            min_depth: 0.6,
+        };
+        let mut depth = vec![f32::INFINITY; target.pixel_len()];
+        let mut covered = 0;
+        for y in thin.min_y..=thin.max_y {
+            for x in thin.min_x..=thin.max_x {
+                if thin.depth_at_pixel(x, y).is_some() {
+                    covered += 1;
+                    depth[target.pixel_index(x, y)] = 0.5;
+                }
+            }
+        }
+        assert!(covered < OCCLUSION_MIN_COVERED_SAMPLES);
+
+        assert!(
+            !thin.is_occluded(&depth, target),
+            "fewer than {OCCLUSION_MIN_COVERED_SAMPLES} coarse samples cannot conservatively prove high-resolution detail is hidden",
+        );
+    }
+
+    #[test]
+    fn high_resolution_targets_use_the_bounded_conservative_occlusion_grid() {
+        for (width, height, expected) in [
+            (256, 128, (256, 128)),
+            (512, 256, (256, 128)),
+            (2048, 1024, (256, 128)),
+            (1024, 2048, (128, 256)),
+        ] {
+            let reduced = occlusion_buffer_target(RasterTarget {
+                width,
+                height,
+                backend: Backend::Headless,
+            });
+            assert_eq!((reduced.width, reduced.height), expected);
+        }
     }
 
     fn projected_bounds(

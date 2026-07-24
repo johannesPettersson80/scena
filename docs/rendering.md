@@ -293,6 +293,20 @@ Renderer-managed auto exposure is available through named scenarios such as
 exposure adapts output brightness after a frame is rendered; lighting and
 materials still control shape, contrast, and dynamic range.
 
+Attached interactive surfaces meter one frame behind: native rendering copies a
+fixed 16x16 sample grid into one of two asynchronous buffers, never performs an
+automatic full-frame blocking readback, and never renders the same surface
+frame twice. The first frame uses the configured exposure and reports
+`AutoExposureStatus::Pending`; a later render call polls without blocking and
+reports `Converged` after applying a completed sample. Browser surfaces apply
+their completed canvas observation to the next frame. Headless rendering keeps
+same-call convergence so repeated capture/reference jobs remain byte
+deterministic. For an interactive screenshot whose exposure must already be
+settled, wait for `renderer.auto_exposure_status() ==
+AutoExposureStatus::Converged` or use a fixed `exposure_ev`. A native surface
+without the required copy/format capability reports `Unavailable` instead of
+remaining pending forever.
+
 Recipes can use the same exposure scenarios with `render.auto_exposure`:
 
 ```json
@@ -528,8 +542,9 @@ linear-to-display conversion once per finite-depth output pixel where blending
 semantics permit. Transparency and transmission keep their required linear or
 already-encoded intermediate semantics. The u8-to-linear path uses the shared
 bit-identical lookup table. `RenderWorkMetrics` exposes scene passes,
-submissions, output encodes, row-bin work, and primitive-flag scans so these
-contracts can be tested without timing-only assertions.
+submissions, bounded auto-exposure meter submissions/sample counts, output
+encodes, row-bin work, and primitive-flag scans so these contracts can be tested
+without timing-only assertions.
 
 Imported animation and skin preparation share one source-node index. Joint
 position/normal matrices are computed once per joint update rather than per

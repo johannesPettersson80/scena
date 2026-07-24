@@ -195,6 +195,8 @@ pub struct VisualPatchEntryErrorV1 {
 pub struct VisualPatchRevisionDeltaV1 {
     pub structure: u64,
     pub transform: u64,
+    #[serde(default)]
+    pub camera: u64,
     pub appearance: u64,
     pub visibility: u64,
     pub interaction: u64,

@@ -1,5 +1,9 @@
 use super::*;
 
+mod accessors;
+
+mod prepared_state;
+
 mod surface;
 
 impl Renderer {
@@ -22,6 +26,21 @@ impl Renderer {
         self.prepared_state(scene)?;
         if scene.camera(camera).is_none() {
             return Err(RenderError::CameraNotFound(camera));
+        }
+
+        let surface_auto_exposure = self.auto_exposure.is_some()
+            && matches!(
+                auto_exposure_frame_policy(
+                    self.gpu.is_some(),
+                    self.gpu
+                        .as_ref()
+                        .is_some_and(gpu::GpuDeviceState::has_surface),
+                ),
+                AutoExposureFramePolicy::PriorAsyncMeterSample,
+            );
+        #[cfg(not(target_arch = "wasm32"))]
+        if surface_auto_exposure {
+            self.apply_pending_surface_auto_exposure()?;
         }
 
         let dirty_state = scene.dirty_state();
@@ -54,6 +73,10 @@ impl Renderer {
         let mut gpu_draw_submissions = 0;
         loop {
             if self.gpu.is_some() {
+                let format_probes_before = self
+                    .gpu
+                    .as_ref()
+                    .map_or(0, gpu::GpuDeviceState::sample_count_capability_probe_count);
                 let (clipping_planes, section_box) = {
                     let prepared = self.prepared_state(scene)?;
                     (prepared.clipping_planes.clone(), prepared.section_box)
@@ -61,9 +84,10 @@ impl Renderer {
                 let gpu_result = match self.draw_gpu(
                     gpu_target.expect("GPU render target exists when GPU is active"),
                     &camera_projection,
-                    &clipping_planes,
+                    clipping_planes.as_ref(),
                     section_box,
                     readback_mode,
+                    surface_auto_exposure,
                 ) {
                     Ok(result) => result,
                     Err(RenderError::SurfaceLost { recoverable }) => {
@@ -73,6 +97,14 @@ impl Renderer {
                     Err(error) => return Err(error),
                 };
                 self.last_render_work_metrics.add_gpu_result(gpu_result);
+                let format_probes_after = self
+                    .gpu
+                    .as_ref()
+                    .map_or(0, gpu::GpuDeviceState::sample_count_capability_probe_count);
+                self.last_render_work_metrics.gpu_format_feature_probes = self
+                    .last_render_work_metrics
+                    .gpu_format_feature_probes
+                    .saturating_add(format_probes_after.saturating_sub(format_probes_before));
                 if let Some(outcome) =
                     surface::record_surface_result(&mut self.stats, self.target, gpu_result)
                 {
@@ -94,6 +126,13 @@ impl Renderer {
             let auto_exposure_source_available = self.gpu.is_none()
                 || self.last_render_work_metrics.readback_copies > 0
                 || cfg!(target_arch = "wasm32");
+            if surface_auto_exposure {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    self.apply_managed_auto_exposure_after_render();
+                }
+                break;
+            }
             if auto_exposure_attempted
                 || !auto_exposure_source_available
                 || !self.apply_managed_auto_exposure_after_render()
@@ -121,11 +160,36 @@ impl Renderer {
         let rendered_frame = RenderedFrameState {
             dirty_state,
             camera,
+            width: self.target.width,
+            height: self.target.height,
+            capabilities: self.capabilities,
+            render_generation: self.render_generation,
+            target_revision: self.target_revision,
+            output_resources_revision: self.output_resources_revision,
+            output_color_space: self.output_color_space,
+            exposure_ev: self.output.exposure_ev(),
+            tonemapper: match self.output.tonemapper() {
+                Tonemapper::Aces => "aces",
+                Tonemapper::Standard => "standard",
+                Tonemapper::PbrNeutral => "pbr_neutral",
+            },
+            anti_aliasing: match self.anti_aliasing {
+                AntiAliasing::None => "none",
+                AntiAliasing::Fxaa => "fxaa",
+                AntiAliasing::Msaa4 => "msaa4",
+                AntiAliasing::Msaa8 => "msaa8",
+            },
+            supersample_factor: self.supersample_factor,
+            bloom: self.bloom.is_some(),
+            screen_space_ambient_occlusion: self.screen_space_ambient_occlusion.is_some(),
+            screen_space_reflections: self.screen_space_reflections.is_some(),
+            depth_of_field: self.depth_of_field.is_some(),
+            readback_completed_unix_ms: None,
         };
         self.last_rendered_frame = Some(rendered_frame);
         self.last_readback_frame = (self.gpu.is_none()
             || self.last_render_work_metrics.readback_copies > 0)
-            .then_some(rendered_frame);
+            .then(|| rendered_frame.with_readback_completed_now());
 
         Ok(RenderOutcome {
             width: self.target.width,
@@ -216,7 +280,9 @@ impl Renderer {
         if let Some(last) = frames.last() {
             self.frame.clear();
             self.frame.extend_from_slice(last.rgba8());
-            self.last_readback_frame = self.last_rendered_frame;
+            self.last_readback_frame = self
+                .last_rendered_frame
+                .map(RenderedFrameState::with_readback_completed_now);
         }
         let count = cameras.len() as u64;
         let raw_bytes = target.byte_len() as u64;
@@ -234,76 +300,6 @@ impl Renderer {
         Ok(frames)
     }
 
-    pub fn gpu_adapter_report(&self) -> Option<GpuAdapterReport> {
-        self.gpu.as_ref().map(GpuDeviceState::adapter_report)
-    }
-
-    pub const fn last_render_work_metrics(&self) -> RenderWorkMetrics {
-        self.last_render_work_metrics
-    }
-
-    pub fn render_active(&mut self, scene: &Scene) -> Result<RenderOutcome, RenderError> {
-        self.prepared_state(scene)?;
-        let camera = scene.active_camera().ok_or(RenderError::NoActiveCamera)?;
-        self.render(scene, camera)
-    }
-
-    pub fn frame_rgba8(&self) -> &[u8] {
-        &self.frame
-    }
-
-    pub fn poll_device(&mut self) -> DevicePoll {
-        let before = self.stats.pending_destructions;
-        let (destroyed_resources, status) = self
-            .gpu
-            .as_mut()
-            .map(|gpu| gpu.poll_device())
-            .unwrap_or((0, DevicePollStatus::Unsupported));
-        let after = self
-            .gpu
-            .as_ref()
-            .map(|gpu| gpu.pending_destructions())
-            .unwrap_or(0);
-        self.stats.pending_destructions = after;
-        DevicePoll {
-            pending_destructions_before: before,
-            pending_destructions_after: after,
-            destroyed_resources,
-            status,
-            gpu_polled: status == DevicePollStatus::Confirmed,
-        }
-    }
-
-    #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
-    pub(crate) fn browser_device_poll_observation(&self) -> &'static str {
-        self.gpu
-            .as_ref()
-            .map(GpuDeviceState::last_poll_observation)
-            .unwrap_or("no-gpu")
-    }
-
-    pub fn capabilities(&self) -> &Capabilities {
-        &self.capabilities
-    }
-
-    pub(crate) fn rendered_frame_state(&self) -> Option<RenderedFrameState> {
-        self.last_rendered_frame
-    }
-
-    pub(crate) fn readback_frame_state(&self) -> Option<RenderedFrameState> {
-        self.last_readback_frame
-    }
-
-    pub(crate) fn clear_rendered_frame(&mut self) {
-        self.last_rendered_generation = None;
-        self.last_rendered_frame = None;
-        self.last_readback_frame = None;
-    }
-
-    pub fn has_gpu_device(&self) -> bool {
-        self.gpu.is_some()
-    }
-
     fn draw_gpu(
         &mut self,
         target: RasterTarget,
@@ -311,7 +307,10 @@ impl Renderer {
         clipping_planes: &[ClippingPlane],
         section_box: Option<SectionBox>,
         readback_mode: RenderReadbackMode,
+        auto_exposure_meter: bool,
     ) -> Result<gpu::GpuRenderResult, RenderError> {
+        #[cfg(target_arch = "wasm32")]
+        let _ = auto_exposure_meter;
         let post_settings = gpu::GpuPostSettings::new(
             self.anti_aliasing,
             self.bloom,
@@ -323,9 +322,7 @@ impl Renderer {
         {
             let resolved_readback_mode = match readback_mode {
                 RenderReadbackMode::Automatic => {
-                    if self.auto_exposure.is_some()
-                        || self.gpu.as_ref().is_some_and(|gpu| !gpu.has_surface())
-                    {
+                    if self.gpu.as_ref().is_some_and(|gpu| !gpu.has_surface()) {
                         RenderReadbackMode::Synchronous
                     } else {
                         RenderReadbackMode::PresentOnly
@@ -359,6 +356,7 @@ impl Renderer {
                 frame,
                 post_settings,
                 resolved_readback_mode == RenderReadbackMode::Synchronous,
+                auto_exposure_meter,
             )?;
             if scale > 1 && resolved_readback_mode == RenderReadbackMode::Synchronous {
                 cpu_resolve::downsample_rgba8_reconstruction_filter(
@@ -412,97 +410,6 @@ impl Renderer {
             1
         };
         self::target::validate_supersample_target(self.target, scale)
-    }
-
-    pub(in crate::render) fn prepared_state(
-        &self,
-        scene: &Scene,
-    ) -> Result<&PreparedSceneState, RenderError> {
-        let prepared = self.prepared.as_ref().ok_or(RenderError::NotPrepared {
-            reason: NotPreparedReason::NeverPrepared,
-        })?;
-
-        if !prepared.scene.ptr_eq(&scene.identity()) {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::DifferentScene,
-            });
-        }
-
-        let current_revision = scene.structure_revision();
-        if prepared.structure_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.structure_revision,
-                    current_revision,
-                    change: ChangeKind::SceneStructure,
-                },
-            });
-        }
-
-        let current_revision = scene.transform_revision();
-        if prepared.transform_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.transform_revision,
-                    current_revision,
-                    change: ChangeKind::Transform,
-                },
-            });
-        }
-
-        let current_revision = scene.appearance_revision();
-        if prepared.appearance_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.appearance_revision,
-                    current_revision,
-                    change: ChangeKind::Appearance,
-                },
-            });
-        }
-
-        let current_revision = scene.visibility_revision();
-        if prepared.visibility_revision != current_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::SceneChanged {
-                    prepared_revision: prepared.visibility_revision,
-                    current_revision,
-                    change: ChangeKind::Visibility,
-                },
-            });
-        }
-
-        if prepared.environment_revision != self.environment_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::EnvironmentChanged {
-                    prepared_revision: prepared.environment_revision,
-                    current_revision: self.environment_revision,
-                    change: ChangeKind::Environment,
-                },
-            });
-        }
-
-        if prepared.target_revision != self.target_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::TargetChanged {
-                    prepared_revision: prepared.target_revision,
-                    current_revision: self.target_revision,
-                    change: ChangeKind::RenderTarget,
-                },
-            });
-        }
-
-        if prepared.output_resources_revision != self.output_resources_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::OutputSettingsChanged {
-                    prepared_revision: prepared.output_resources_revision,
-                    current_revision: self.output_resources_revision,
-                    change: ChangeKind::OutputSettings,
-                },
-            });
-        }
-
-        Ok(prepared)
     }
 }
 

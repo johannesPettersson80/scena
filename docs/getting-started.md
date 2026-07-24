@@ -20,6 +20,12 @@ cargo install scena
 scena-convert --help
 ```
 
+The default install is the core discovery, validation, capability, and
+conversion CLI. Rendering and the self-verification loop are intentionally
+opt-in through the one `agent` feature below; see
+[`specs/cli-install-contract.md`](specs/cli-install-contract.md) for the measured
+build/API tradeoff and packaged-install contract.
+
 Plan an FBX conversion without installing the external converter yet:
 
 ```bash
@@ -36,10 +42,19 @@ For recipe and agent-template commands, install the agent-facing features:
 cargo install scena --features agent
 scena examples agent list
 scena examples agent get primitive-scene --out scena-agent/primitive-scene
+scena validate scena-agent/primitive-scene/recipe.json
 scena validate-recipe scena-agent/primitive-scene/recipe.json --full
 scena recipe build scena-agent/primitive-scene/recipe.json
-scena recipe render scena-agent/primitive-scene/recipe.json --introspect --out first-scene.png
+scena recipe render scena-agent/primitive-scene/recipe.json --out first-scene.png
 ```
+
+Use `scena validate <file>` for a fast, schema-dispatched check of any public
+recipe, expectation, patch, or capability JSON before its consuming command.
+`scena schema json <scena.*.vN>` exports draft 2020-12 JSON Schema and reports
+the runtime/cross-field checks that JSON Schema cannot express.
+
+The JSON result is render introspection by default. Existing scripts may keep
+`--introspect`; it is an accepted compatibility no-op.
 
 This sequence is portable from any working directory. The generated recipe
 uses package-embedded sample assets and the licensed `studio` environment
@@ -59,7 +74,7 @@ directory, authorize only that directory and reuse the option on every step:
 scena policy recipe --allow-root /srv/models
 scena validate-recipe recipe.json --full --allow-root /srv/models
 scena recipe build recipe.json --allow-root /srv/models
-scena recipe render recipe.json --introspect --out frame.png --allow-root /srv/models
+scena recipe render recipe.json --out frame.png --allow-root /srv/models
 ```
 
 `--allow-root` is repeatable. Roots must be existing directories and are
@@ -85,7 +100,7 @@ cargo run --example headless_ci
 Compile all public examples:
 
 ```bash
-cargo check --examples
+cargo check --examples --all-features
 ```
 
 ## Create a first scene

@@ -82,7 +82,7 @@ cargo run --example headless_ci
 Compile every public example:
 
 ```bash
-cargo check --examples
+cargo check --examples --all-features
 ```
 
 ## Install
@@ -109,6 +109,13 @@ Install the bundled CLI tool:
 cargo install scena
 scena-convert --help
 ```
+
+This default installation is the small core discovery/validation/conversion
+contract; it intentionally does not compile scene-host rendering or inspection.
+Use the single `agent` feature below when the executable must render, inspect,
+diagnose, repair, or generate application-builder templates. The tradeoff and
+packaged-install matrix are specified in
+[`docs/specs/cli-install-contract.md`](docs/specs/cli-install-contract.md).
 
 Conversion commands default to one machine-readable
 `scena.asset_conversion.v1` document. Select the output contract explicitly
@@ -142,9 +149,33 @@ Install the agent-facing recipe workflow with its required features:
 cargo install scena --features agent
 scena examples agent list
 scena examples agent get primitive-scene --out scena-agent/primitive-scene
+scena validate scena-agent/primitive-scene/recipe.json
 scena validate-recipe scena-agent/primitive-scene/recipe.json --full
 scena recipe build scena-agent/primitive-scene/recipe.json
-scena recipe render scena-agent/primitive-scene/recipe.json --introspect --out frame.png
+scena recipe render scena-agent/primitive-scene/recipe.json --out frame.png
+```
+
+Render commands emit the versioned introspection report by default.
+`--introspect` remains accepted as a compatibility no-op for older scripts.
+
+Validate any cataloged JSON contract before consuming it, or export the
+generated/limited JSON Schema for editor integration:
+
+```bash
+scena validate expectation.json
+scena schema json scena.scene_recipe.v1
+```
+
+The validation result explicitly distinguishes typed owner validation from
+envelope-only validation. JSON Schema output declares runtime, filesystem,
+policy, cross-field, and backend limitations instead of implying those checks.
+
+An installed CLI embeds the public application-builder guide; no repository
+checkout or contributor `AGENTS.md` is required:
+
+```bash
+scena guide agent --json
+scena guide agent --markdown
 ```
 
 Template catalog output is `scena.agent_template_catalog.v1`. Canonical names
@@ -157,6 +188,11 @@ Global and command help are successful JSON on stdout, for example
 `scena diff --help --json` and `scena examples agent list --help`. Recipe diff
 reports inequality as data with exit 0 by default; add `--exit-code` when a
 difference should produce exit 1 in CI.
+
+All JSON-producing commands, including help and typed errors, use deterministic
+pretty JSON by default. Pass global `--compact` for one-line machine output or
+`--pretty` to state the default explicitly; the flags are mutually exclusive,
+may appear before or after the command, and never change envelope semantics.
 
 Any command that accepts `<asset-or-recipe>` dispatches by the parsed input
 kind. Raw glTF/GLB stays on the direct asset path; a recipe always uses the
@@ -253,7 +289,8 @@ rotation.
 
 Framing builders use the real output size: pass `FramingOptions::viewport` to
 `frame_all_with_assets_and_options` or `frame_import_with_options` for captures
-and resizable viewers. Visible bounds are fitted, hidden nodes and inspection
+and resizable viewers; use `frame_node_with_assets_and_options` for one
+subtree. Visible bounds are fitted, hidden nodes and inspection
 helpers are excluded by default, and presets such as
 `three_quarter_front_right` avoid a forced dead-front view. Use
 `center_visible_bounds_on` to center geometry whose node origin is offset;
@@ -355,19 +392,29 @@ and semantic ID/depth/normal output.
 - Package final Windows physical checks from one clean exact commit with
   `scripts/build_windows_complete_hardware_bundle.sh`; its manifest-verified
   one-shot runner covers required WebGPU pixels, GPU lifecycle, native
-  PresentOnly/MSAA/resize/loss, semantic AOV, and controlled shader-cache p95.
+  PresentOnly/MSAA/resize/loss, semantic AOV, controlled shader-cache p95, and
+  strict physical CPU/GPU parity for transmission, clipping, dynamic
+  transforms, PBR, and PF08 texture baking.
   Native MSAA proof requires sample-matched surface color/scene depth and
   preserves uncaptured wgpu validation detail in the uploaded log.
   The independent validator combines privacy-redacted WebGPU adapter metadata
   with same-browser Chromium GPU evidence and accepts canonical artifact paths
   emitted with either Windows or POSIX separators.
 
+Measurements are scene-space visualization and inspection aids, not calibrated
+or authoritative metrology. Imported source units are converted by the chosen
+load policy into scene meters; displayed distances use current world transforms
+and `f32` scene coordinates. Measurement overlays do not certify manufacturing
+tolerances, survey accuracy, snapping accuracy, or visibility through
+occlusion. SceneHost measurement JSON includes a `measurement_authority` object
+so applications can disclose this boundary without copying documentation text.
+
 ## Capabilities
 
 | Area | Current surface |
 |---|---|
 | Scene graph | typed nodes, transforms, cameras, lights, clipping planes, imports, labels, instances, picking targets, animation mixers, and dirty-state tracking |
-| Assets | glTF/GLB import, external buffers, policy-aware cache/dedup/reload, source units, coordinate conversion, anchors, connectors, import-local lookup, retain policy, and stale-handle diagnostics |
+| Assets | glTF/GLB import, external buffers, checked in-memory RGBA8/linear-float textures, slot-typed color space, structured resize/limit diagnostics, policy-aware cache/dedup/reload, source units, coordinate conversion, anchors, connectors, import-local lookup, retain policy, and stale-handle diagnostics |
 | Geometry | primitives with seam-safe cylinder/cone UVs, manual buffers, bounds, lines, wire/edge expansion, UV retention, CPU skinning, CPU morph targets, and instance sets |
 | Materials | unlit and metallic-roughness paths, texture descriptors, vertex colors, alpha modes, normal/occlusion/emissive/base-color slots, variants, ACES/sRGB output, and FXAA |
 | Rendering | headless CPU output, typed recipe and conservatively attributed rendered diffs, deterministic semantic ID/depth/world-normal AOVs, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, one directional shadow caster with explicit nine-comparison-tap 3×3 PCF (not point/spot/cascaded shadows), IBL, renderer-managed auto exposure, and release-lane proof artifacts |
@@ -375,6 +422,13 @@ and semantic ID/depth/normal output.
 | Interaction | typed picking, hover/selection styling, cursor positions, platform-neutral controls, orbit focus from `FramingOutcome`, captured pointer lifecycle, and independent hover/select/pointer-leave states |
 | Browser/WASM | wasm32 compile/package, browser WebGPU/WebGL2 proof lanes, attached-canvas probe paths, explicit sample-count capability/fallback reporting, surface/context/device-loss event vocabulary, and size gates |
 | Quality | unit/integration tests, visual artifacts, browser proof, benchmarks, allocation checks, and release evidence |
+
+Generated textures do not need fake filesystem paths: use
+`TextureMemoryDesc` plus a stable `TextureMemoryId`, or
+`Assets::load_texture_for_slot` for path-backed images. The slot selects sRGB
+for color data and linear sampling for data maps; collisions, invalid pixel
+counts, size limits, and browser downscaling are structured diagnostics. See
+the [API overview](docs/api.md#core-types).
 
 ## Examples by task
 
@@ -429,6 +483,19 @@ compile time. Stale or missing handles return structured errors.
 | Browser WebGL2 | compatibility proof lane with browser API, context-loss, and rendered-output probe artifacts |
 | wasm32-unknown-unknown | compile/package/size-gate lane through `wasm-pack` |
 
+Native visual release evidence is full-frame: the macOS Metal lane and the
+pre-push Windows DX12 hardware bundle compare the rendered WaterBottle against
+the pinned 512x512 reference, retain a diff artifact, and require a horizontal
+mirror to fail. Sparse color samples alone are diagnostic, not release proof.
+Those hardware lanes also measure the pixel effect of FXAA/MSAA on an
+asymmetric diagonal; a changed hash or pipeline timing alone is insufficient.
+The exact distinction between smoke, conformance, deterministic reference,
+cross-backend parity, hardware evidence, and provenance-verified release
+evidence is defined in
+[`docs/specs/release-gates.md`](docs/specs/release-gates.md#proof-level-vocabulary),
+which also names the enforcing workflow/schema/artifact for every headline
+proof claim.
+
 Surface resize, DPR changes, visibility changes, surface loss, context loss, context
 restore, and device loss are explicit `SurfaceEvent` inputs. Recovery invalidates prepared
 state until the host calls `prepare()` again. Attached acquisition also refreshes and retries
@@ -477,7 +544,7 @@ Contributor baseline:
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
-cargo check --examples
+cargo check --examples --all-features
 ```
 
 ## Security

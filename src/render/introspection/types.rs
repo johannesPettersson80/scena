@@ -13,6 +13,7 @@ pub struct RenderIntrospectionOptions {
     pub(super) contact_sheet_path: Option<String>,
     pub(super) background_rgba8: [u8; 4],
     pub(super) content_tolerance_rgba8: u8,
+    pub(super) timings: Option<RenderIntrospectionTimingsV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,6 +34,67 @@ pub struct RenderIntrospectionReportV1 {
     pub nodes_detail: Vec<RenderIntrospectionNodeDetailV1>,
     pub artifacts: RenderIntrospectionArtifactsV1,
     pub capabilities: RenderIntrospectionCapabilitiesV1,
+    #[serde(default)]
+    pub timings: RenderIntrospectionTimingsV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RenderIntrospectionTimingsV1 {
+    pub status: String,
+    pub clock: String,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepare_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+}
+
+impl RenderIntrospectionTimingsV1 {
+    pub fn unavailable() -> Self {
+        Self {
+            status: "unavailable".to_owned(),
+            clock: "unavailable".to_owned(),
+            source: "not_measured".to_owned(),
+            prepare_ms: None,
+            render_ms: None,
+            capture_ms: None,
+            total_ms: None,
+            unavailable_reason: Some(
+                "request CLI observational timing with --timings; deterministic reports omit wall-clock measurements"
+                    .to_owned(),
+            ),
+        }
+    }
+
+    pub fn measured_monotonic(
+        prepare_ms: u64,
+        render_ms: u64,
+        capture_ms: u64,
+        total_ms: u64,
+    ) -> Self {
+        Self {
+            status: "measured".to_owned(),
+            clock: "monotonic".to_owned(),
+            source: "scena_cli_stage_timer".to_owned(),
+            prepare_ms: Some(prepare_ms),
+            render_ms: Some(render_ms),
+            capture_ms: Some(capture_ms),
+            total_ms: Some(total_ms),
+            unavailable_reason: None,
+        }
+    }
+}
+
+impl Default for RenderIntrospectionTimingsV1 {
+    fn default() -> Self {
+        Self::unavailable()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -141,6 +203,7 @@ impl RenderIntrospectionOptions {
             contact_sheet_path: None,
             background_rgba8: DEFAULT_BACKGROUND_RGBA8,
             content_tolerance_rgba8: DEFAULT_CONTENT_TOLERANCE_RGBA8,
+            timings: None,
         }
     }
 
@@ -152,6 +215,7 @@ impl RenderIntrospectionOptions {
             contact_sheet_path: None,
             background_rgba8: DEFAULT_BACKGROUND_RGBA8,
             content_tolerance_rgba8: DEFAULT_CONTENT_TOLERANCE_RGBA8,
+            timings: None,
         }
     }
 
@@ -179,6 +243,11 @@ impl RenderIntrospectionOptions {
     /// Uses this per-channel byte tolerance when comparing pixels to background.
     pub const fn with_content_tolerance_rgba8(mut self, tolerance: u8) -> Self {
         self.content_tolerance_rgba8 = tolerance;
+        self
+    }
+
+    pub fn with_timings(mut self, timings: RenderIntrospectionTimingsV1) -> Self {
+        self.timings = Some(timings);
         self
     }
 

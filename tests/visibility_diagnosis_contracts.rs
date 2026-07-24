@@ -4,7 +4,7 @@ use scena::{
     AlphaMode, Assets, ClippingPlane, ClippingPlaneSet, Color, Diagnostic, DiagnosticCode,
     GeometryDesc, MaterialDesc, RenderIntrospectionOptions, Renderer, RendererStats, Scene,
     VISIBILITY_DIAGNOSIS_SCHEMA_V1, Vec3, VisibilityDiagnosisOptions, VisibilityDiagnosisReportV1,
-    capture_rgba8_from_pixels,
+    capture_unverified_rgba8_from_pixels,
 };
 
 #[test]
@@ -392,7 +392,7 @@ fn visibility_diagnosis_agrees_with_render_introspection_for_scene_level_failure
     let empty_inspection = empty_scene
         .inspect_with_assets(&empty_assets)
         .to_schema_report();
-    let empty_capture = capture_rgba8_from_pixels(
+    let empty_capture = capture_unverified_rgba8_from_pixels(
         &empty_scene,
         &empty_renderer,
         Default::default(),
@@ -426,7 +426,7 @@ fn visibility_diagnosis_agrees_with_render_introspection_for_scene_level_failure
         culled_objects: 1,
         ..Default::default()
     };
-    let culled_capture = capture_rgba8_from_pixels(
+    let culled_capture = capture_unverified_rgba8_from_pixels(
         &culled_scene,
         &culled_renderer,
         Default::default(),

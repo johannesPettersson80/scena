@@ -4,6 +4,22 @@
   "kind": "distance",
   "value": 0.333,
   "formatted_value": "0.333 m",
+  "measurement_authority": {
+    "scope": "scene_space_visualization",
+    "authoritative": false,
+    "calibrated": false,
+    "scene_units": "meters",
+    "source_unit_conversion": "import_policy_to_scene_meters",
+    "transform_space": "current_world_transform",
+    "precision": "f32_transformed_scene_coordinates",
+    "snapping_policy": "measurement_does_not_apply_snapping",
+    "occlusion_policy": "presentation_overlay_not_metrology_occlusion_proof",
+    "unsupported_claims": [
+      "manufacturing_tolerance",
+      "survey_accuracy",
+      "calibrated_metrology"
+    ]
+  },
   "line_node": 42,
   "label_text": "gap: 0.333 m",
   "label_projection": {

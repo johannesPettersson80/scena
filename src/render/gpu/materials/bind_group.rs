@@ -1,5 +1,5 @@
 use super::super::material_bindings::MATERIAL_TEXTURE_BINDING_INDICES;
-use super::super::material_uniform::MATERIAL_UNIFORM_BYTE_LEN;
+use super::super::material_uniform::material_uniform_min_binding_size;
 use super::MaterialTextureBindingResources;
 
 pub(in crate::render::gpu) fn create_material_bind_group(
@@ -27,10 +27,10 @@ pub(in crate::render::gpu) fn create_material_bind_group(
         resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
             buffer: uniform,
             offset: 0,
-            // The dynamic-offset path slices a single MATERIAL_UNIFORM_BYTE_LEN
+            // The dynamic-offset path slices a single material-uniform
             // window out of the larger buffer; per-material fall-back uses
             // the same window with offset 0.
-            size: std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN),
+            size: Some(material_uniform_min_binding_size()),
         }),
     });
 

@@ -1,5 +1,9 @@
 mod bundle_schema;
+mod ci_provenance;
 mod lane_artifacts;
+mod q07_antialiasing;
+mod q08_parity;
+pub(crate) use q08_parity::REQUIRED_Q08_PARITY_RESULTS;
 mod readiness;
 mod required_gpu_parity;
 mod review_artifacts;
@@ -10,9 +14,13 @@ mod stage_provenance;
 mod stage_visual_proofs;
 mod waterbottle_results;
 
+#[cfg(test)]
+pub(crate) use bundle_schema::require_verified_staging_provenance;
 pub(crate) use bundle_schema::{
     ReleaseArtifactBundleSummary, check_release_artifact_bundle_with_summary,
 };
+#[cfg(test)]
+pub(crate) use ci_provenance::{canonical_artifact_tree_digest, validate_ci_provenance_manifest};
 pub(crate) use lane_artifacts::{
     check_release_readiness, check_release_readiness_adr, check_release_readiness_checklists,
     copy_optional_json_field, release_artifact_commit_label, release_lane_command_records_pass,
@@ -47,12 +55,11 @@ pub(crate) use review_artifacts::{
     RELEASE_LANE_ARTIFACT_SUFFIXES, REQUIRED_NATIVE_GPU_RENDER_ARTIFACT_SUFFIXES,
     REQUIRED_PASSED_STATUS_ARTIFACT_SUFFIXES, REQUIRED_RELEASE_ARTIFACT_SUFFIXES,
 };
+#[cfg(test)]
+pub(crate) use stage_artifacts::stage_release_artifacts_for_commit;
 pub(crate) use stage_artifacts::validate_browser_backend_result;
-pub(crate) use stage_artifacts::{
-    run_stage_release_artifacts, stage_release_artifacts, stage_release_artifacts_for_commit,
-    utc_rfc3339_from_unix,
-};
+pub(crate) use stage_artifacts::{run_stage_release_artifacts, utc_rfc3339_from_unix};
 pub(crate) use waterbottle_results::{
     finalize_waterbottle_cpu_result, finalize_waterbottle_gpu_result,
-    validate_waterbottle_cpu_result,
+    validate_q11_reference_stability_result, validate_waterbottle_cpu_result,
 };

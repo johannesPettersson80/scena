@@ -309,6 +309,28 @@ fn target_change_rejects_transform_only_gpu_template_reuse() {
 }
 
 #[test]
+fn minimized_zero_resize_preserves_last_valid_target_until_resume() {
+    let mut renderer = Renderer::headless(16, 12).expect("renderer builds");
+    renderer
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: 0,
+            height: 0,
+        })
+        .expect("minimized zero extent is accepted");
+    assert_eq!(renderer.stats().target_width, 16);
+    assert_eq!(renderer.stats().target_height, 12);
+
+    renderer
+        .handle_surface_event(SurfaceEvent::Resize {
+            width: 24,
+            height: 18,
+        })
+        .expect("non-zero resume extent applies");
+    assert_eq!(renderer.stats().target_width, 24);
+    assert_eq!(renderer.stats().target_height, 18);
+}
+
+#[test]
 fn environment_changes_reject_transform_only_gpu_template_reuse() {
     let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
         return;

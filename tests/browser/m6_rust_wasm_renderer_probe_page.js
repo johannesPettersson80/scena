@@ -778,12 +778,19 @@ window.scenaViewerMobileA11yProbe = async function scenaViewerMobileA11yProbe() 
   const orbitDetail = await orbit;
   dispatchPointer(viewer, "pointerup", { pointerId: 3, pointerType: "touch", x: 146, y: 174 });
 
+  const zeroWheelEvent = new WheelEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    deltaY: 0,
+  });
+  viewer.dispatchEvent(zeroWheelEvent);
   const wheel = once(viewer, "scena-viewer-gesture-control");
-  viewer.dispatchEvent(new WheelEvent("wheel", {
+  const wheelEvent = new WheelEvent("wheel", {
     bubbles: true,
     cancelable: true,
     deltaY: -120,
-  }));
+  });
+  viewer.dispatchEvent(wheelEvent);
   const wheelDetail = await wheel;
 
   const keyboard = once(viewer, "scena-viewer-key-control");
@@ -807,6 +814,9 @@ window.scenaViewerMobileA11yProbe = async function scenaViewerMobileA11yProbe() 
     orbit_delta_y: orbitDetail.deltaY,
     wheel_action: wheelDetail.action,
     wheel_delta_y: wheelDetail.deltaY,
+    wheel_raw_delta_y: wheelDetail.rawDeltaY,
+    wheel_default_prevented: wheelEvent.defaultPrevented,
+    zero_wheel_default_prevented: zeroWheelEvent.defaultPrevented,
     keyboard_action: keyboardDetail.action,
   };
 
@@ -825,7 +835,10 @@ window.scenaViewerMobileA11yProbe = async function scenaViewerMobileA11yProbe() 
     checks.orbit_delta_x === 26 &&
     checks.orbit_delta_y === 14 &&
     checks.wheel_action === "wheel-zoom" &&
-    checks.wheel_delta_y === -120 &&
+    checks.wheel_delta_y === -1.2 &&
+    checks.wheel_raw_delta_y === -120 &&
+    checks.wheel_default_prevented === true &&
+    checks.zero_wheel_default_prevented === false &&
     checks.keyboard_action === "reset-view";
 
   return {

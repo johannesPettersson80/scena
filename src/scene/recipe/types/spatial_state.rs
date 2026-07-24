@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{SceneRecipeTransformV1, is_false};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeSpatialTargetV1 {
     Node { id: String },
@@ -10,7 +12,7 @@ pub enum SceneRecipeSpatialTargetV1 {
     ImportNode { import: String, path: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeAnchorV1 {
     pub id: String,
@@ -21,7 +23,7 @@ pub struct SceneRecipeAnchorV1 {
     pub label: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeAnchorSourceV1 {
     Authored {
@@ -35,7 +37,7 @@ pub enum SceneRecipeAnchorSourceV1 {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeConnectorV1 {
     pub id: String,
@@ -58,7 +60,7 @@ pub struct SceneRecipeConnectorV1 {
     pub mate: Option<SceneRecipeConnectorMateV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeConnectorSourceV1 {
     Authored {
@@ -72,14 +74,14 @@ pub enum SceneRecipeConnectorSourceV1 {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneRecipeConnectorRollPolicyV1 {
     Preserve,
     ChooseNearest,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneRecipeConnectorPolarityV1 {
     Plug,
@@ -87,7 +89,7 @@ pub enum SceneRecipeConnectorPolarityV1 {
     Neutral,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeConnectorMateV1 {
     pub target: String,
@@ -101,14 +103,14 @@ pub struct SceneRecipeConnectorMateV1 {
     pub axial_gap: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneRecipeConnectorAlignmentV1 {
     ForwardToForward,
     ForwardToBack,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SceneRecipeConnectionRollV1 {
     MatchTarget,
@@ -117,14 +119,14 @@ pub enum SceneRecipeConnectionRollV1 {
     Explicit { degrees: f64 },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneRecipeConnectionParentingV1 {
     PreserveSourceParent,
     ReparentSourceToTargetParent,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeBoundsV1 {
     pub id: String,
@@ -136,7 +138,7 @@ pub struct SceneRecipeBoundsV1 {
     pub max: Option<[f64; 3]>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneRecipeBoundsSourceV1 {
     Computed,
@@ -144,7 +146,7 @@ pub enum SceneRecipeBoundsSourceV1 {
     Authored,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeNamedStateV1 {
     pub id: String,
@@ -160,21 +162,21 @@ pub struct SceneRecipeNamedStateV1 {
     pub visibility: Vec<SceneRecipeStateVisibilityV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeStateTransformV1 {
     pub target: SceneRecipeSpatialTargetV1,
     pub transform: SceneRecipeTransformV1,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeStateTintV1 {
     pub target: SceneRecipeSpatialTargetV1,
     pub color: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeStateVisibilityV1 {
     pub target: SceneRecipeSpatialTargetV1,
