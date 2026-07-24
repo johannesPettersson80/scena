@@ -2242,9 +2242,11 @@ Windows paths. The same second matrix also exhausted the Linux hosted runner
 to 91 MB free and three unrelated `rust-lld` processes terminated with
 `SIGBUS`; all preceding xtask tests passed 392/392. The batched harness fix
 therefore scopes H01 to Unix, disables unused Cargo dev/test debug symbols on
-hosted CI, and captures the xtask test list before grepping so a successful
-exact-name check cannot emit a broken-pipe error. No renderer source changed,
-so the successful exact-candidate Windows hardware proof remains applicable.
+both hosted CI and release workflows, and captures the xtask test list before
+grepping so a successful exact-name check cannot emit a broken-pipe error.
+Doctor pins both workflow copies so the release-only duplicate cannot drift
+back after a green PR matrix. No renderer source changed, so the successful
+exact-candidate Windows hardware proof remains applicable.
 
 Earlier remediation comprised one batched clippy/all-feature test-fixture
 repair, one batched doctor-fixture repair, and one browser-launcher
