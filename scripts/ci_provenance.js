@@ -8,6 +8,10 @@ const EXPECTED_REPOSITORY = "johannesPettersson80/scena";
 const PROVENANCE_FILENAME = "ci-provenance.json";
 const HEX40 = /^[0-9a-f]{40}$/;
 
+function compareUtf8(left, right) {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
 function required(env, name) {
   const value = env[name];
   if (typeof value !== "string" || value.trim() === "") {
@@ -22,7 +26,7 @@ function canonicalArtifactFiles(root) {
   function visit(directory) {
     for (const entry of fs
       .readdirSync(directory, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name))) {
+      .sort((left, right) => compareUtf8(left.name, right.name))) {
       const absolute = path.join(directory, entry.name);
       const relative = path.relative(canonicalRoot, absolute).split(path.sep).join("/");
       if (entry.isSymbolicLink()) {
@@ -39,7 +43,7 @@ function canonicalArtifactFiles(root) {
     }
   }
   visit(canonicalRoot);
-  return files.sort((left, right) => left.path.localeCompare(right.path));
+  return files.sort((left, right) => compareUtf8(left.path, right.path));
 }
 
 function digestEntries(entries) {

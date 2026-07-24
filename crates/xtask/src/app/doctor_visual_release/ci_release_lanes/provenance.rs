@@ -55,6 +55,8 @@ pub(crate) fn check_ci_attestation_contracts(root: &Path, findings: &mut Vec<Fin
                 "GITHUB_SHA",
                 "CI_ATTESTATION_NOT_YET_VERIFIED",
                 "canonicalArtifactFiles",
+                ".sort((left, right) => compareUtf8(left.name, right.name))",
+                "return files.sort((left, right) => compareUtf8(left.path, right.path));",
             ][..],
         ),
         (
@@ -105,6 +107,13 @@ pub(crate) fn check_ci_attestation_contracts(root: &Path, findings: &mut Vec<Fin
     ] {
         require_contains(root, findings, RULE, path, needles);
     }
+    forbid_contains(
+        root,
+        findings,
+        RULE,
+        "scripts/ci_provenance.js",
+        &["localeCompare"],
+    );
 }
 
 pub(crate) fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {

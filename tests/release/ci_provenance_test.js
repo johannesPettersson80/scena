@@ -5,12 +5,25 @@ const path = require("path");
 
 const {
   buildCiProvenance,
+  canonicalArtifactFiles,
   canonicalArtifactTreeDigest,
 } = require("../../scripts/ci_provenance.js");
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "scena-ci-provenance-"));
 fs.mkdirSync(path.join(root, "lane"), { recursive: true });
 fs.writeFileSync(path.join(root, "lane", "result.json"), '{"status":"passed"}\n');
+fs.mkdirSync(path.join(root, "lane", "examples"), { recursive: true });
+fs.writeFileSync(path.join(root, "lane", "examples", "camera_framing.ppm"), "ppm\n");
+fs.writeFileSync(
+  path.join(root, "lane", "examples", "camera_framing_frame_bounds.json"),
+  "{}\n",
+);
+const canonicalPaths = canonicalArtifactFiles(root).map((entry) => entry.path);
+assert.ok(
+  canonicalPaths.indexOf("lane/examples/camera_framing.ppm") <
+    canonicalPaths.indexOf("lane/examples/camera_framing_frame_bounds.json"),
+  "CI provenance paths must use the Rust verifier's raw UTF-8 lexical order",
+);
 const commit = "0123456789abcdef0123456789abcdef01234567";
 const workflowSha = "89abcdef0123456789abcdef0123456789abcdef";
 const env = {
