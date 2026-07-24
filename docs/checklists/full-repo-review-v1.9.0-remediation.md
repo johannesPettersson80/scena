@@ -2226,14 +2226,23 @@ Only after the user explicitly authorizes commit/push/release actions:
 - [ ] No unresolved critical/high defect, no unknown release-evidence hole, no
   broken canonical command, and no contradictory public capability claim.
 
-Checkpoint counts before the GitHub push: one full-matrix run, zero RC pushes,
-one successful user-operated hardware run for the exact production candidate,
-one batched clippy/all-feature test-fixture remediation, one batched doctor
-fixture remediation, and one browser-launcher investigation. The browser
-investigation preserved the common 404 signature, falsified driver mismatch,
-then identified both the long Unix-socket path and `/tmp` quota constraints;
-all four affected browser targets passed together on the corrected maintained
-runtime.
+Checkpoint counts before the corrective GitHub push: one local full-chain
+checkpoint, one completed GitHub matrix, one RC push, and one successful
+user-operated hardware run for the exact production candidate. The first
+GitHub matrix passed Linux native, Linux WebGL2, Linux WebGPU, macOS Metal,
+wasm32/package, and 4K performance; Windows DX12 alone failed because the H01
+shell helper hardcoded `python3` on a runner that exposes Python as `python`.
+That cross-platform harness defect was fixed with a fail-closed runnable
+interpreter probe. Focused H01 passed 2/2, an explicit `SCENA_PYTHON=python`
+probe passed, shell syntax passed, and full doctor passed. The corrective push
+will be RC push two and GitHub matrix two.
+
+Earlier remediation comprised one batched clippy/all-feature test-fixture
+repair, one batched doctor-fixture repair, and one browser-launcher
+investigation. The browser investigation preserved the common 404 signature,
+falsified driver mismatch, then identified both the long Unix-socket path and
+`/tmp` quota constraints; all four affected browser targets passed together on
+the corrected maintained runtime.
 
 Only then change this checklist status to complete. Closure must name the exact
 frozen source baseline and may say “all independently known defects at the frozen baseline are reconciled,” not imply that future code was audited

@@ -13,7 +13,26 @@ validation_path="${cache_root}/codex-worktrees/scena-${task_slug}"
 cargo_target_dir="${cache_root}/codex-targets/scena-${task_slug}"
 task_tmpdir="${cargo_target_dir}/tmp"
 
-python3 - "$task_slug" "$validation_path" "$cargo_target_dir" "$task_tmpdir" <<'PY'
+python_bin=${SCENA_PYTHON:-}
+if [[ -n "$python_bin" ]]; then
+  if ! "$python_bin" -c 'import json, pathlib' >/dev/null 2>&1; then
+    echo "SCENA_PYTHON does not name a runnable Python interpreter with json and pathlib" >&2
+    exit 69
+  fi
+else
+  for candidate in python3 python; do
+    if "$candidate" -c 'import json, pathlib' >/dev/null 2>&1; then
+      python_bin=$candidate
+      break
+    fi
+  done
+  if [[ -z "$python_bin" ]]; then
+    echo "scena task cache status requires Python 3 (tried python3 and python)" >&2
+    exit 69
+  fi
+fi
+
+"$python_bin" - "$task_slug" "$validation_path" "$cargo_target_dir" "$task_tmpdir" <<'PY'
 import json
 import os
 import pathlib
