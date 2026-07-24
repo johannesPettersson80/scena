@@ -91,6 +91,23 @@ fn q07_doctor_rejects_noop_antialiasing_oracle_regression() {
 
     let native_oracle = fixture.join("tests/q07_antialiasing_effect.rs");
     let native_source = fs::read_to_string(&native_oracle).expect("read native Q07 oracle");
+    let provenance_mutated = native_source.replace("std::env::var(\"GITHUB_SHA\").ok()", "None");
+    assert_ne!(
+        native_source, provenance_mutated,
+        "Q07 mutation must remove the GitHub commit fallback"
+    );
+    fs::write(&native_oracle, provenance_mutated).expect("write Q07 provenance mutation");
+    findings.clear();
+    check_q07_antialiasing_effect_contract(&fixture, &mut findings);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "Q07-ANTIALIASING-EFFECT"),
+        "doctor must reject a Q07 artifact writer that loses CI commit provenance: \
+         {findings:?}"
+    );
+    fs::write(&native_oracle, &native_source).expect("restore native Q07 oracle");
+
     let native_mutated = native_source.replace(
         ".saturating_add(baseline.hard_transition_count.saturating_mul(6))",
         ".max(baseline.hard_transition_count.saturating_mul(6))",

@@ -75,6 +75,25 @@ fn q07_effect_oracle_allows_edge_growth_on_an_intermediate_tone_baseline() {
 }
 
 #[test]
+fn q07_release_commit_prefers_valid_explicit_then_github_provenance() {
+    const EXPLICIT: &str = "0123456789abcdef0123456789abcdef01234567";
+    const GITHUB: &str = "89abcdef0123456789abcdef0123456789abcdef";
+    assert_eq!(
+        select_release_commit(Some(EXPLICIT.to_string()), Some(GITHUB.to_string())),
+        EXPLICIT
+    );
+    assert_eq!(
+        select_release_commit(None, Some(GITHUB.to_string())),
+        GITHUB
+    );
+    assert_eq!(
+        select_release_commit(Some("invalid".to_string()), Some(GITHUB.to_string())),
+        GITHUB
+    );
+    assert_eq!(select_release_commit(None, None), "local-checkout");
+}
+
+#[test]
 fn q07_required_native_antialiasing_modes_have_pixel_effect() {
     if std::env::var("SCENA_REQUIRE_AA_EFFECT_PROOF").as_deref() != Ok("1") {
         return;
@@ -410,9 +429,17 @@ fn write_frame(mode: &RenderedMode) -> String {
 }
 
 fn release_commit() -> String {
-    std::env::var("SCENA_RELEASE_COMMIT")
-        .ok()
-        .filter(|value| value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    select_release_commit(
+        std::env::var("SCENA_RELEASE_COMMIT").ok(),
+        std::env::var("GITHUB_SHA").ok(),
+    )
+}
+
+fn select_release_commit(explicit: Option<String>, github: Option<String>) -> String {
+    explicit
+        .into_iter()
+        .chain(github)
+        .find(|value| value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .unwrap_or_else(|| "local-checkout".to_string())
 }
 

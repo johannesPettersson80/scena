@@ -15,6 +15,8 @@ pub(crate) fn check_q07_antialiasing_effect_contract(root: &Path, findings: &mut
             "UNSUPPORTED_SAMPLE_COUNT",
             "no_op",
             "blur_everything",
+            "select_release_commit",
+            "std::env::var(\"GITHUB_SHA\").ok()",
         ],
     );
     require_contains(
