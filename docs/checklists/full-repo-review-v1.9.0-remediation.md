@@ -109,7 +109,7 @@ Before editing after a branch switch, every remote sync, and every cargo gate:
 - [x] **A — release blockers:** C01-C04 focused red/green and scoped gates.
 - [x] **B — remaining correctness:** C05-C23 focused red/green and scoped gates.
 - [x] **C — proof, CLI, performance, docs:** Q01-Q12, A01-A15, P01-P08,
-  D01-D06, and H01-H02 focused/scoped evidence.
+  D01-D06, and H01-H03 focused/scoped evidence.
 - [ ] **D — final:** section 10 once on one frozen source commit.
 
 Optional features F01-F09 are not prerequisites for checkpoints A-D.
@@ -1989,9 +1989,13 @@ Validation ledger:
   issues: the split WASM scene-loading module used the wrong/private texture
   helper path, detached publish verification did not explicitly bootstrap the
   ignored canonical agent files, and `src/render/frame.rs` exceeded the
-  enforced 500-significant-line KISS limit. Focused WASM compilation, publish
-  bootstrap mutation coverage, and `doctor --full` respectively failed before
-  the fixes and passed afterward.
+  enforced 500-significant-line KISS limit. The maintained local release
+  readiness system later exposed two more concrete issues before push:
+  `wayland-scanner 0.31.10` retained vulnerable `quick-xml 0.39.4`, and a
+  release-lane schema unit test read real generated command evidence instead
+  of an isolated fixture. Focused WASM compilation, publish bootstrap mutation
+  coverage, `doctor --full`, `cargo audit`/`cargo deny check`, and the isolated
+  xtask test respectively failed before the fixes and passed afterward.
 - `remaining boundary`: optional F01-F09 are explicitly separate renderer
   projects, not undisclosed correctness defects. Windows hardware and public
   release rows remain execution gates in section 10, not review omissions.
@@ -2042,6 +2046,52 @@ Validation ledger:
   correctness candidate. Future merges remain conditional on upstream change
   review plus fully green workflow/provenance evidence, satisfying this section
   without expanding the authorized product-change scope.
+
+### H03 — Keep the automated local release system green before push
+
+- [x] Run the maintained `scripts/local_release_readiness.sh` instead of
+  reconstructing its configured gates ad hoc.
+- [x] Treat every emitted failure as blocking until classified; collect the
+  complete summary before changing code.
+- [x] Upgrade `wayland-scanner` to the first compatible patch release using
+  `quick-xml >=0.41.0`, then require both `cargo audit` and
+  `cargo deny check` to pass.
+- [x] Isolate release-lane schema tests from real
+  `target/gate-artifacts/**/*.commands.jsonl` so a prior proof run cannot
+  change unit-test semantics.
+- [x] Compile the complete all-target/all-feature Wayland/winit dependency path
+  after the lockfile update.
+- [x] Keep the complete staged-artifact/provenance gate fail-closed and defer
+  only its inherently CI-issued macOS/Windows/attestation evidence to section
+  10.4; do not synthesize or locally self-sign it.
+
+Validation ledger:
+
+- `focused red`: the maintained readiness script on
+  `0a53889cd5aa243560b6663d5870b0039d23c522` reported five failures. Audit and
+  deny identified `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195`; workspace and
+  explicit xtask runs both reduced to
+  `app::tests_01::release_lane_artifacts_use_release_schema`; release-readiness
+  separately reported the expected incomplete cross-platform/CI provenance
+  set.
+- `classification`: the RustSec pair was a dependency-policy/product defect;
+  the xtask failure was a test-isolation defect; incomplete exact-SHA
+  cross-platform artifacts and CI attestation are provenance/environment
+  failures owned by the deciding workflow.
+- `implementation`: `Cargo.lock` updates only `wayland-scanner 0.31.10 ->
+  0.31.11` and `quick-xml 0.39.4 -> 0.41.0`. The schema test now creates and
+  removes its own source fixture and cannot consume live command records.
+- `focused/scoped green`: the exact schema test passed 1/1; xtask passed
+  393/393; `cargo audit` reported zero vulnerabilities; `cargo deny check`
+  reported advisories/bans/licenses/sources all green; and
+  `cargo check --workspace --all-targets --all-features` compiled
+  `quick-xml 0.41.0`, `wayland-scanner 0.31.11`, Wayland, winit, scena, and
+  xtask. Formatting and `doctor --full` passed.
+- `skipped`: renderer/browser/hardware suites were not repeated because the
+  patch changes only a transitive build-time dependency lock and an isolated
+  xtask unit fixture. The complete local readiness ledger already passed those
+  unchanged gates; section 10.4 must still validate the exact pushed commit's
+  staged artifact/provenance set.
 
 ## 8. Doctor/checklist enforcement map
 
@@ -2117,7 +2167,7 @@ feature work to postpone C/Q/A/D closure.
 ## 10. Single final integration and release checkpoint
 
 Start only when C01-C23, Q01-Q12, A01-A15 as selected for the release, P01-P08
-as selected for the release, D01-D06, H01-H02 as applicable, and section 8 are
+as selected for the release, D01-D06, H01-H03 as applicable, and section 8 are
 green under focused/scoped evidence. Freeze one exact commit and do not mix new
 features or dependency updates after the checkpoint begins.
 
@@ -2173,6 +2223,14 @@ packaged all-feature CLI contract passes; and all four legacy browser targets
 pass under the maintained Playwright Chromium plus matching driver. Per the
 execution contract, only these affected gates were rerun; the full chain was
 not repeated.
+
+Before push, the maintained local readiness script was also run end to end on
+`0a53889cd5aa243560b6663d5870b0039d23c522`. Every locally satisfiable gate
+passed except the RustSec and xtask isolation defects recorded in H03, which
+were reduced and closed under focused/scoped evidence. The script's remaining
+release-readiness failure is the honest pre-push absence of the exact-SHA
+macOS, Windows, browser, native, and CI-issued attestation bundle; section 10.4
+must supply and validate that complete set before release.
 
 Do not invent a replacement command when the repository provides a release
 script. Record the script, exact commit, and artifact hashes.

@@ -141,7 +141,23 @@ pub(crate) fn rejects_unknown_command() {
 
 #[test]
 pub(crate) fn release_lane_artifacts_use_release_schema() {
-    let root = repo_root().expect("test runs inside the scena workspace");
+    let repo = repo_root().expect("test runs inside the scena workspace");
+    let root = repo.join("target/xtask-release-lane-schema-test");
+    let _ = fs::remove_dir_all(&root);
+    let workflow_dir = root.join(".github/workflows");
+    fs::create_dir_all(&workflow_dir).expect("release-lane workflow fixture dir");
+    fs::write(root.join("Cargo.lock"), b"# release-lane schema fixture\n")
+        .expect("release-lane Cargo.lock fixture");
+    fs::write(
+        workflow_dir.join("ci.yml"),
+        b"# release-lane schema fixture\n",
+    )
+    .expect("release-lane CI fixture");
+    fs::write(
+        workflow_dir.join("release.yml"),
+        b"# release-lane schema fixture\n",
+    )
+    .expect("release-lane release workflow fixture");
     let artifact =
         release_lane_artifact(&root, "linux-webgpu-chromium").expect("known lane is accepted");
 
@@ -191,6 +207,7 @@ pub(crate) fn release_lane_artifacts_use_release_schema() {
         "command record must carry checksum references for produced artifacts"
     );
     assert!(release_lane_artifact(&root, "unknown").is_err());
+    fs::remove_dir_all(&root).expect("release-lane schema fixture cleanup");
 }
 
 #[test]

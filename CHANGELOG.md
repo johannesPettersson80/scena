@@ -67,6 +67,10 @@ All notable user-facing changes are recorded here.
 - Add a read-only task-cache status command that reports exact isolated
   checkout/target/temp paths, sizes, ages, reproducibility, retention, and
   explicit cleanup authority without deleting anything.
+- Update the compatible Wayland scanner patch so its XML parser is no longer
+  affected by `RUSTSEC-2026-0194` or `RUSTSEC-2026-0195`. Keep release-lane
+  schema tests isolated from previously generated command evidence so the
+  automated local release sweep is deterministic.
 - Reduce measured hot-path work with source-complete retained culling,
   bounded histogram exposure metering, reciprocal CPU barycentrics, separable
   CPU bloom, cached device format/sample capabilities, retained clipping-plane
