@@ -208,7 +208,6 @@ jobs:
           SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test pbr_brdf_parity core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep -- --exact
           SCENA_REQUIRE_GPU_PARITY=1 bash scripts/release_lane_command.sh macos-metal cargo test --test pf08_texture_bake_parity pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples --all-features
-          cargo run -p xtask -- release-lane-artifact macos-metal
       - name: Required physical GPU resource lifecycle
         env:
           SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE: "1"
@@ -218,6 +217,8 @@ jobs:
           cargo test --test c09_gpu_resource_lifecycle
           required_hardware_gpu_resource_lifecycle_executes_complete_cycle
           -- --exact --nocapture
+      - name: Release lane artifact
+        run: cargo run -p xtask -- release-lane-artifact macos-metal
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
