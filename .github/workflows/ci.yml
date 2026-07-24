@@ -354,14 +354,14 @@ jobs:
         run: |
           cargo run -p xtask -- stage-release-artifacts \
             target/release-artifacts target/gate-artifacts \
-            2>&1 | tee target/release-artifacts/release-evidence-integrity-report.log
+            2>&1 | tee target/release-evidence-integrity-report.log
           SCENA_RELEASE_ARTIFACT_ROOT=target/gate-artifacts \
             cargo run -p xtask -- release-readiness \
-            2>&1 | tee -a target/release-artifacts/release-evidence-integrity-report.log
+            2>&1 | tee -a target/release-evidence-integrity-report.log
       - name: Upload release evidence integrity report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: premerge-release-evidence-integrity-report
-          path: target/release-artifacts/release-evidence-integrity-report.log
+          path: target/release-evidence-integrity-report.log
           if-no-files-found: warn

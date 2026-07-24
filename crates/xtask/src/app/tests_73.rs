@@ -219,6 +219,26 @@ fn q03_doctor_rejects_missing_ci_attestation_wiring() {
     let workflow = fixture.join(".github/workflows/ci.yml");
     let source = fs::read_to_string(&workflow).expect("read CI workflow fixture");
     let mutated = source.replace(
+        "target/release-evidence-integrity-report.log",
+        "target/release-artifacts/release-evidence-integrity-report.log",
+    );
+    assert_ne!(
+        source, mutated,
+        "Q03 mutation must place the report inside the attested artifact tree"
+    );
+    fs::write(&workflow, mutated).expect("write Q03 mutable artifact-tree mutation");
+    findings.clear();
+    check_ci_attestation_contracts(&fixture, &mut findings);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "RELEASE-CI-PROVENANCE"),
+        "doctor must reject files written under the artifact root after its digest is signed: \
+         {findings:?}"
+    );
+
+    fs::write(&workflow, &source).expect("restore Q03 workflow fixture");
+    let mutated = source.replace(
         "actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0",
         "actions/attest@missing-immutable-pin # mutation",
     );

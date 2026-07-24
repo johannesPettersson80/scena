@@ -2248,6 +2248,14 @@ Doctor pins both workflow copies so the release-only duplicate cannot drift
 back after a green PR matrix. No renderer source changed, so the successful
 exact-candidate Windows hardware proof remains applicable.
 
+The next exact-SHA matrix passed all seven primary platform/browser/package
+lanes, then exposed one provenance-ordering defect in the dependent integrity
+job: its `tee` target created
+`release-evidence-integrity-report.log` inside the already-digested artifact
+tree before the Rust validator recomputed that digest. The validator correctly
+failed closed. The report now lives outside the attested tree, and Q03 doctor
+mutation coverage rejects restoring an in-tree post-signing write.
+
 Earlier remediation comprised one batched clippy/all-feature test-fixture
 repair, one batched doctor-fixture repair, and one browser-launcher
 investigation. The browser investigation preserved the common 404 signature,

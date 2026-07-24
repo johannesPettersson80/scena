@@ -23,6 +23,23 @@ pub(crate) fn check_ci_attestation_contracts(root: &Path, findings: &mut Vec<Fin
             ],
         );
     }
+    require_contains(
+        root,
+        findings,
+        RULE,
+        ".github/workflows/ci.yml",
+        &[
+            "tee target/release-evidence-integrity-report.log",
+            "path: target/release-evidence-integrity-report.log",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        RULE,
+        ".github/workflows/ci.yml",
+        &["target/release-artifacts/release-evidence-integrity-report.log"],
+    );
     for (path, needles) in [
         (
             "scripts/ci_provenance.js",
