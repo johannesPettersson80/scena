@@ -11,12 +11,22 @@ use super::ci_release_policy::{
 const ISOLATED_M9_PLATFORM_BENCHMARK_ENV: &str =
     "SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh";
 const ISOLATED_M9_PLATFORM_BENCHMARK_COMMAND: &str = "cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1";
+const RELEASE_LANES: [&str; 7] = [
+    "linux-native-vulkan",
+    "headless-cpu",
+    "linux-webgl2-chromium",
+    "linux-webgpu-chromium",
+    "wasm32-unknown-unknown",
+    "macos-metal",
+    "windows-dx12",
+];
 
 pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
     check_workflow_action_pins(root, findings);
     check_ci_attestation_contracts(root, findings);
     check_hosted_m9_timing_policy(root, findings);
     check_agent_template_cli_isolation(root, findings);
+    check_release_lane_finalization_order(root, findings);
     require_contains(
         root,
         findings,
@@ -497,6 +507,33 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
         &["\"production_claim\": true"],
     );
     check_m9_platform_benchmark_isolation(root, findings);
+}
+
+fn check_release_lane_finalization_order(root: &Path, findings: &mut Vec<Finding>) {
+    for relative in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let Ok(source) = fs::read_to_string(root.join(relative)) else {
+            continue;
+        };
+        for lane in RELEASE_LANES {
+            let command = format!("scripts/release_lane_command.sh {lane}");
+            let finalizer = format!("release-lane-artifact {lane}");
+            let (Some(last_command), Some(first_finalizer)) =
+                (source.rfind(&command), source.find(&finalizer))
+            else {
+                continue;
+            };
+            if first_finalizer < last_command {
+                findings.push(Finding {
+                    rule: "RELEASE-CI-M9",
+                    message: format!(
+                        "{relative} lane {lane} is finalized before its last recorded command; \
+                         move every `{finalizer}` invocation after all `{command}` invocations; \
+                         see docs/release-notes/v1.9.0.md"
+                    ),
+                });
+            }
+        }
+    }
 }
 
 pub(crate) fn require_contains_in_xtask_app_tree(

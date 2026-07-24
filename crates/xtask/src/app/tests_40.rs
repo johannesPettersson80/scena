@@ -24,6 +24,40 @@ fn hosted_workflows_bound_cargo_disk_and_avoid_broken_pipe_probes() {
 }
 
 #[test]
+fn doctor_rejects_release_lane_finalizer_before_last_recorded_command() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/release-lane-finalizer-order");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(fixture_root.join(".github/workflows")).expect("workflow fixture directory");
+    fs::write(
+        fixture_root.join(".github/workflows/release.yml"),
+        r#"jobs:
+  macos-metal:
+    steps:
+      - run: bash scripts/release_lane_command.sh macos-metal cargo test --test first
+      - run: cargo run -p xtask -- release-lane-artifact macos-metal
+      - run: bash scripts/release_lane_command.sh macos-metal cargo test --test required-late
+"#,
+    )
+    .expect("out-of-order release workflow fixture writes");
+    let mut findings = Vec::new();
+
+    check_m9_ci_release_lanes(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-CI-M9"
+                && finding.message.contains("macos-metal")
+                && finding
+                    .message
+                    .contains("finalized before its last recorded command")
+        }),
+        "doctor must reject a lane artifact finalized before all recorded commands: \
+         {findings:?}",
+    );
+}
+
+#[test]
 fn doctor_rejects_parallel_m9_platform_benchmark_gate() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/m9-parallel-benchmark");
