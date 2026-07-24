@@ -13,6 +13,7 @@ pub(crate) fn check_q11_reference_stability(root: &Path, findings: &mut Vec<Find
             "independent-render-before-committed-reference",
             "scena.q11.reference_stability.v1",
             "metric_distribution",
+            "\"source_checksums\": [",
             "SCENA_Q11_REFERENCE_CANDIDATE_DIR",
             "scena.q11.reference_candidate.v1",
             "\"release_evidence\": false",

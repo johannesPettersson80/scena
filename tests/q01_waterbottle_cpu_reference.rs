@@ -121,6 +121,31 @@ fn q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison() {
         "second Q11 render failed: {second_metrics:#?}"
     );
     write_q11_result(&first, &second, &first_metrics, &second_metrics);
+    let result_path = format!(
+        "target/gate-artifacts/q11-reference-stability/{}-{}.json",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    let result: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&result_path).expect("Q11 result reads"))
+            .expect("Q11 result parses");
+    let source_checksums = result["source_checksums"]
+        .as_array()
+        .expect("Q11 result binds source checksums");
+    assert_eq!(
+        source_checksums,
+        &[
+            serde_json::json!({
+                "path": WATERBOTTLE_PATH,
+                "sha256": WATERBOTTLE_GLTF_SHA256,
+            }),
+            serde_json::json!({
+                "path": REFERENCE_PATH,
+                "sha256": REFERENCE_SHA256,
+            }),
+        ],
+        "Q11 provenance must bind the source asset and committed reference"
+    );
 }
 
 struct WaterBottleScene {
@@ -470,6 +495,16 @@ fn write_q11_result(
             "path": WATERBOTTLE_PATH,
             "sha256": WATERBOTTLE_GLTF_SHA256,
         },
+        "source_checksums": [
+            {
+                "path": WATERBOTTLE_PATH,
+                "sha256": WATERBOTTLE_GLTF_SHA256,
+            },
+            {
+                "path": REFERENCE_PATH,
+                "sha256": REFERENCE_SHA256,
+            },
+        ],
         "generator": {
             "crate_version": env!("CARGO_PKG_VERSION"),
             "rustc": "1.93.1",
