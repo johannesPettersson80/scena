@@ -12,6 +12,10 @@ concurrency:
 
 env:
   RUST_TOOLCHAIN: "1.93.1"
+  # GitHub-hosted runners do not retain debug symbols, and the full all-targets
+  # matrix otherwise exhausts the runner disk while linking unrelated targets.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
   WASM_PACK_VERSION: "0.14.0"
   NODE_VERSION: "20.20.0"
   NPM_VERSION: "10.8.2"
@@ -43,7 +47,8 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test -p xtask
-          cargo test -p xtask -- --list | grep -Fqx 'app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact: test'
+          cargo test -p xtask -- --list > target/xtask-test-list.txt
+          grep -Fqx 'app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact: test' target/xtask-test-list.txt
           cargo test -p xtask app::tests_08::release_readiness_rejects_constant_ppm_visual_artifact -- --exact
           cargo test
           cargo test --doc

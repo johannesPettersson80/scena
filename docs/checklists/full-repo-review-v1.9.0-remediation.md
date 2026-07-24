@@ -2016,8 +2016,11 @@ Validation ledger:
   temp paths, sizes, ages, reproducibility, retention, and cleanup authority.
   Troubleshooting docs forbid broad home/workspace cleanup.
 - `focused green`: `tests/h01_cache_status.rs` passes for valid status and
-  malicious/ambiguous target rejection. No cleanup was requested or performed;
-  therefore there is no deletion/recoverability event to record.
+  malicious/ambiguous target rejection on POSIX hosts, which is the documented
+  Bash/SSH remote-builder contract. The integration target is explicitly
+  excluded on Windows instead of pretending that Git Bash path semantics are a
+  supported cache-root API. No cleanup was requested or performed; therefore
+  there is no deletion/recoverability event to record.
 
 ### H02 — Handle Dependabot PRs independently
 
@@ -2226,16 +2229,22 @@ Only after the user explicitly authorizes commit/push/release actions:
 - [ ] No unresolved critical/high defect, no unknown release-evidence hole, no
   broken canonical command, and no contradictory public capability claim.
 
-Checkpoint counts before the corrective GitHub push: one local full-chain
-checkpoint, one completed GitHub matrix, one RC push, and one successful
-user-operated hardware run for the exact production candidate. The first
-GitHub matrix passed Linux native, Linux WebGL2, Linux WebGPU, macOS Metal,
-wasm32/package, and 4K performance; Windows DX12 alone failed because the H01
-shell helper hardcoded `python3` on a runner that exposes Python as `python`.
-That cross-platform harness defect was fixed with a fail-closed runnable
-interpreter probe. Focused H01 passed 2/2, an explicit `SCENA_PYTHON=python`
-probe passed, shell syntax passed, and full doctor passed. The corrective push
-will be RC push two and GitHub matrix two.
+Checkpoint counts before the second corrective GitHub push: one local
+full-chain checkpoint, two completed GitHub matrices, two RC pushes, and one
+successful user-operated hardware run for the exact production candidate. The
+first GitHub matrix passed Linux native, Linux WebGL2, Linux WebGPU, macOS
+Metal, wasm32/package, and 4K performance; Windows DX12 alone failed because
+the H01 shell helper hardcoded `python3` on a runner that exposes Python as
+`python`. A fail-closed runnable-interpreter probe fixed that real portability
+gap, but the second matrix proved the remaining H01 failure was the test
+harness applying a documented POSIX Bash/SSH cache-path contract to native
+Windows paths. The same second matrix also exhausted the Linux hosted runner
+to 91 MB free and three unrelated `rust-lld` processes terminated with
+`SIGBUS`; all preceding xtask tests passed 392/392. The batched harness fix
+therefore scopes H01 to Unix, disables unused Cargo dev/test debug symbols on
+hosted CI, and captures the xtask test list before grepping so a successful
+exact-name check cannot emit a broken-pipe error. No renderer source changed,
+so the successful exact-candidate Windows hardware proof remains applicable.
 
 Earlier remediation comprised one batched clippy/all-feature test-fixture
 repair, one batched doctor-fixture repair, and one browser-launcher

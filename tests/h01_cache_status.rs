@@ -1,4 +1,6 @@
-#![cfg(not(target_arch = "wasm32"))]
+//! POSIX-shell contract tests for the task-scoped remote-builder cache helper.
+
+#![cfg(unix)]
 
 use std::fs;
 use std::process::Command;
