@@ -1,4 +1,4 @@
-use super::scena_cli_error::{CliFailure, CliUsageError};
+use super::scena_cli_error::{CliErrorKind, CliFailure, CliUsageError};
 use std::path::{Path, PathBuf};
 
 use super::scena_output::{CliOutcome, json_success};
@@ -51,7 +51,7 @@ pub(crate) fn push_allow_root(
 pub(crate) fn effective_recipe_policy(
     roots: &[PathBuf],
     max_imports: Option<usize>,
-) -> Result<scena::RecipeBuildPolicy, CliUsageError> {
+) -> Result<scena::RecipeBuildPolicy, CliFailure> {
     let mut policy = scena::RecipeBuildPolicy::testing();
     if let Some(max_imports) = max_imports {
         policy = policy.with_max_imports(max_imports);
@@ -77,24 +77,33 @@ pub(crate) fn ensure_recipe_policy_applies(
     Ok(())
 }
 
-fn canonical_root(root: &Path) -> Result<PathBuf, CliUsageError> {
+fn canonical_root(root: &Path) -> Result<PathBuf, CliFailure> {
     let canonical = root.canonicalize().map_err(|error| {
-        CliUsageError::from(format!(
-            "--allow-root '{}' must name an existing directory that can be canonicalized: {error}",
-            root.display()
-        ))
+        CliFailure::new(
+            CliErrorKind::InputNotFound,
+            format!(
+                "--allow-root '{}' must name an existing directory that can be canonicalized: {error}",
+                root.display()
+            ),
+        )
     })?;
     let metadata = std::fs::metadata(&canonical).map_err(|error| {
-        CliUsageError::from(format!(
-            "--allow-root '{}' must name an existing directory: {error}",
-            root.display()
-        ))
+        CliFailure::new(
+            CliErrorKind::InputNotFound,
+            format!(
+                "--allow-root '{}' must name an existing directory: {error}",
+                root.display()
+            ),
+        )
     })?;
     if !metadata.is_dir() {
-        return Err(CliUsageError::from(format!(
-            "--allow-root '{}' must name an existing directory",
-            root.display()
-        )));
+        return Err(CliFailure::new(
+            CliErrorKind::InputNotFound,
+            format!(
+                "--allow-root '{}' must name an existing directory",
+                root.display()
+            ),
+        ));
     }
     Ok(canonical)
 }
