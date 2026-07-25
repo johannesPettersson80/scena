@@ -450,10 +450,14 @@ async function main() {
       if (message.type() === "error") infrastructureErrors.push(`console: ${message.text()}`);
     });
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+    // Playwright's signature is waitForFunction(pageFunction, arg, options).
+    // Passing the options object second made it the `arg`, so the intended
+    // 120s budget silently fell back to Playwright's 30s default.
     await page.waitForFunction(
       () =>
         /rendered/i.test(document.getElementById("status-detail")?.textContent || "") &&
         Number(document.getElementById("metric-frame")?.textContent || "0") >= 1,
+      undefined,
       { timeout: 120000 },
     );
     const canvasBox = await page.locator("#canvas").boundingBox();

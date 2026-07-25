@@ -46,8 +46,8 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
         }
         #[cfg(not(feature = "scene-host"))]
         {
-            return Err(CliUsageError::from(
-                "verify animation for authored recipes requires the scene-host feature".to_owned(),
+            return Err(CliFailure::feature_unavailable(
+                "verify animation for authored recipes requires the scene-host feature",
             ));
         }
     }

@@ -206,8 +206,8 @@ fn run_verify_recipe_appearance(
     _out: Option<&std::path::Path>,
     _detail: bool,
 ) -> Result<CliOutcome, CliFailure> {
-    Err(CliUsageError::from(
-        "verify appearance for authored recipes requires the scene-host feature".to_owned(),
+    Err(CliFailure::feature_unavailable(
+        "verify appearance for authored recipes requires the scene-host feature",
     ))
 }
 
