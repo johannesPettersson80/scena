@@ -215,10 +215,9 @@ fn run_render_scene_host_recipe(
     _height: u32,
     _args: RenderCommandArgs,
 ) -> Result<CliOutcome, CliFailure> {
-    Err(
-        "recipe overlay directives require building the scena binary with the 'scene-host' feature"
-            .to_string(),
-    )
+    Err(CliFailure::feature_unavailable(
+        "recipe overlay directives require building the scena binary with the 'scene-host' feature",
+    ))
 }
 
 pub(crate) fn run_inspect_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
@@ -286,10 +285,9 @@ fn run_inspect_scene_host_recipe(
     _width: u32,
     _height: u32,
 ) -> Result<CliOutcome, CliFailure> {
-    Err(
-        "recipe overlay directives require building the scena binary with the 'scene-host' feature"
-            .to_string(),
-    )
+    Err(CliFailure::feature_unavailable(
+        "recipe overlay directives require building the scena binary with the 'scene-host' feature",
+    ))
 }
 
 pub(crate) fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
@@ -392,10 +390,9 @@ fn run_diagnose_scene_host_recipe(
     _height: u32,
     _args: DiagnoseCommandArgs,
 ) -> Result<CliOutcome, CliFailure> {
-    Err(
-        "recipe overlay directives require building the scena binary with the 'scene-host' feature"
-            .to_string(),
-    )
+    Err(CliFailure::feature_unavailable(
+        "recipe overlay directives require building the scena binary with the 'scene-host' feature",
+    ))
 }
 
 pub(crate) fn run_repair_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
@@ -507,5 +504,7 @@ fn validate_repair_recipe_input(
 fn validate_repair_recipe_input(
     _input: &super::scena_input::ResolvedSceneInput,
 ) -> Result<Option<CliOutcome>, CliFailure> {
-    Err("repair for scene recipes requires the scene-host feature".to_owned())
+    Err(CliFailure::feature_unavailable(
+        "repair for scene recipes requires the scene-host feature",
+    ))
 }
