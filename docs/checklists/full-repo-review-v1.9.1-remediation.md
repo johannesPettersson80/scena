@@ -2154,16 +2154,40 @@ Two secondary host limits, both real and neither a code problem:
 - CI's default lane also exports `LIBGL_ALWAYS_SOFTWARE=1` and
   `SCENA_REQUIRE_PARITY=1`, neither of which had been set locally.
 
-What is *genuinely* blocked, re-verified under lavapipe:
+What was reported as blocked, and was not:
 
-- **`cargo run -p xtask -- doctor --full`** still fails with exactly 6
-  `HONEST-MATERIAL-PRESETS` findings. A GPU adapter does not help: the artifact
-  `target/gate-artifacts/round-e-cloudflare-material-proof.json` is produced only
-  by `scripts/probe_cloudflare_material_presets.mjs` driving Chromium against
-  `https://scena-demo.pages.dev/proof/?sample=material-presets`, which serves
-  1.7.1 (`D05`). The local copy is from 2026-06-22 with the older schema shape.
-  The same 6 findings block `tests_08::release_readiness_has_no_open_release_deferrals`
-  and `tests_10::easy_scene_setup_contracts_are_source_enforced`.
+**An earlier revision of this section claimed `doctor --full` was blocked on the
+1.7.1 demo deployment. That was also wrong.** The 6 `HONEST-MATERIAL-PRESETS`
+findings came from a single **stale build artifact**:
+`target/gate-artifacts/round-e-cloudflare-material-proof.json`, dated
+**2026-06-22** — five weeks older than this batch — written by a previous
+version of the probe. It has no `schema` field at all and records
+`status: "pass"` where the contract requires `"passed"`.
+
+`target/` is gitignored, so the file is not in the repository and not in any
+commit. The rule
+(`doctor_easy_scene/material_presets_cloudflare.rs:40-60`) returns silently when
+the artifact is **absent** — guarded by
+`round_e_material_parity_claimed_shipped()`, which is `false` here — and
+validates strictly when it is **present**. A fresh CI checkout has no `target/`,
+so this never fires there. It fired only on this machine, because of a leftover
+file.
+
+Removing it took `doctor --full` to **0 findings**, and
+`tests_08::release_readiness_has_no_open_release_deferrals` and
+`tests_10::easy_scene_setup_contracts_are_source_enforced` both pass.
+
+The misdiagnosis persisted because the filename contains "cloudflare", which was
+taken to mean the probe requires the live deployment. It does not:
+`probe_cloudflare_material_presets.mjs:18` reads `process.argv[2]` first, and
+`release.yml:109-113` serves the repository's `demo/` on `127.0.0.1:18104` and
+probes **that**. CI has never probed the public site.
+
+A real defect was found while investigating: the probe called
+`page.waitForFunction(fn, { timeout: 120000 })`, but Playwright's signature is
+`(pageFunction, arg, options)`. The options object was being passed as `arg`, so
+the intended 120s budget silently fell back to Playwright's 30s default on every
+run, CI included. Fixed by passing `undefined` as `arg`.
 
 ### 9.3 Measured integration-suite result on this host
 
@@ -2208,16 +2232,50 @@ The progression, kept so the two real regressions are not lost:
   (`a01_cli_error_taxonomy`, `a04_packaged_cli_contract`,
   `a09_feature_discoverability`, `a13_error_remedies`).
 
-### 9.4 Remaining work before the chain is green
+### 9.4 Local chain result
 
-`cargo test` is green. `doctor --full` is not, and it is the only chain command
-still failing on this host — 6 `HONEST-MATERIAL-PRESETS` findings traceable to
-the 1.7.1 demo deployment (`D05`), re-verified under lavapipe.
+The default CI lane (`ci.yml`, job `linux-native-vulkan`) was reproduced
+locally, command for command — 28 commands from "Cargo gates" plus the Docs
+step — with the environment CI sets (`VK_ICD_FILENAMES` at lavapipe,
+`LIBGL_ALWAYS_SOFTWARE=1`, `SCENA_REQUIRE_PARITY=1`) and `-j 2` to avoid a
+linker OOM on a 15 GiB host.
 
-A wider gap was also found: the `.codex/skills/scena-release-hygiene` chain used
-throughout this batch is a **subset** of what CI's default lane runs. The lane
-(`ci.yml`, job `linux-native-vulkan`, step "Cargo gates") executes 28 commands,
-including six that exercise files this batch edited under
-`--features scene-host,inspection` — a configuration never compiled here — plus
-`cargo test --doc` and `cargo run -p xtask -- claim-audit`. Those must be run and
-recorded before this section can be closed.
+**This matters because the `.codex/skills/scena-release-hygiene` chain cited
+throughout this batch is a five-command *subset* of that lane.** Running the
+real lane found three defects the subset could not:
+
+| Defect | Found by |
+|---|---|
+| `feature_unavailable` code silently changed to `unsupported` by `X01` | `cargo test` (full integration suite) |
+| Five `X01` stubs left untyped, breaking `--features inspection` without `scene-host` | `cargo test --features inspection --test m7_threejs_ergonomics` |
+| Stale `round-e-cloudflare-material-proof.json` failing 6 doctor rules | `cargo test -p xtask` |
+
+First lane run: **26 passed, 3 failed**. All three were fixed and each fix
+verified in isolation (`tests_08`/`tests_10` pass; `m7_threejs_ergonomics` 94
+passed; `measurement_visual_proof` 1 passed), then committed and the lane re-run.
+
+Notable commands passing here that had never been run before this session:
+`cargo test --doc`, `cargo run -p xtask -- claim-audit`,
+`RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`,
+`cargo test --lib --features scene-host,inspection`, and the feature-gated CLI
+suites `scena_cli_agent`, `scena_cli_recipe`, `scena_cli_agent_templates`,
+`scene_recipe_contracts`, and `label_text`.
+
+Feature-combination build sweep: default, `inspection`, `scene-host`,
+`scene-host,inspection`, `agent`, and `ktx2` all build. `--all-features` was
+still linking when a 10-minute budget expired; it is the `basisu_c_sys` native C
+build and is a host-speed limit, not a code result.
+
+### 9.5 What still requires access this host does not have
+
+- **`D05` public redeploy.** `https://scena-demo.pages.dev/` serves
+  `1.7.1-public-a76468dfd9ba`; the repository's `demo/` is
+  `1.9.0-public-0215db283505`. No workflow in this repository deploys it, so it
+  needs Cloudflare credentials. This is **separate from any gate**: doctor,
+  `cargo test`, and the whole lane pass without it.
+- **`D01` release-body correction** and **`D07` Dependabot merges** — both
+  outward-facing, both needing authorization rather than capability.
+- **`T01` runtime cost** — needs a host that can finish
+  `cargo test --workspace --all-features --tests`.
+- **Platform lanes** — macOS Metal, Windows DX12, and the browser lanes cannot
+  run here at all and must come from CI.
