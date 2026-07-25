@@ -2082,18 +2082,23 @@ renderer-only):
 Start only when checkpoints A-E are green and the release-candidate diff is
 frozen.
 
-- [ ] Run the full `.codex/skills/scena-release-hygiene/SKILL.md` chain:
+- [x] Run the full `.codex/skills/scena-release-hygiene/SKILL.md` chain:
       `cargo fmt --all --check`, `cargo clippy --all-targets -D warnings`,
       `cargo test`, `cargo run -p xtask -- doctor --full`,
-      `cargo doc -D warnings`.
-- [ ] Run the new feature-contract lane (`T01`).
+      `cargo doc -D warnings`. **All pass.**
+- [x] Run the **whole CI lane**, not just that chain — the chain is a
+      five-command subset. 28 of 29 commands pass; see section 9.4.
+- [ ] Run the new feature-contract lane (`T01`). Needs a host that can finish
+      the `--all-features` build; see section 9.5.
 - [ ] Run `cargo build --target wasm32-unknown-unknown --tests`.
 - [ ] Check the compressed-MiB number from `cargo publish --dry-run` (< 10 MiB).
 - [ ] Sweep every version pin site for the 1.9.1 bump before pushing the tag.
+      This is what makes `D02`'s `since = "1.9.1"` deprecation metadata true.
 - [ ] Run the platform lanes required by release policy.
 - [ ] Verify CI provenance/attestation fields and artifact digests.
-- [ ] Commit with a standalone product-change subject; no internal round
-      labels.
+- [x] Commit with a standalone product-change subject; no internal round
+      labels. Three commits on `codex/v1.9.1-remediation`: the remediation batch,
+      the inspection-only build fix, and this document's corrections.
 - [ ] Push one frozen release candidate.
 - [ ] Collect all failures from the deciding workflow before any fix/push.
 - [ ] Require every configured required check and release artifact to be green.
