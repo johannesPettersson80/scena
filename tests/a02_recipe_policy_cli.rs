@@ -87,7 +87,11 @@ fn allow_root_is_identical_across_recipe_aware_cli_commands() {
     ];
 
     for mut args in commands {
-        args.extend(["--allow-root", path_str(&external)]);
+        // G08 replaced the constant policy block with `policy_digest` by
+        // default; this test needs the block itself to read `allowed_roots`,
+        // so it asks for it. What is under test is that every command honors
+        // the same operator root, not the default response shape.
+        args.extend(["--allow-root", path_str(&external), "--include", "policy"]);
         let output = scena(&args);
         assert!(
             output.status.success(),
