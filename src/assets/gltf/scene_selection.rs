@@ -28,23 +28,30 @@ pub(super) fn selected_scene_roots(
         };
         return Ok((scene.nodes().map(|node| node.index()).collect(), Some(info)));
     }
-    if !scenes.is_empty() && !matches!(selection, GltfSceneSelection::Default) {
+    // An explicit request is never satisfied by the root-node fallback, so it
+    // fails closed whether the scene table is missing entries or absent
+    // entirely. Only the default selection may fall back.
+    if !matches!(selection, GltfSceneSelection::Default) {
         let requested = match selection {
             GltfSceneSelection::Index { index } => format!("index {index}"),
             GltfSceneSelection::Name { name } => format!("name {name:?}"),
             GltfSceneSelection::Default => unreachable!(),
         };
-        let candidates = scenes
-            .iter()
-            .map(|scene| {
-                format!(
-                    "{}:{:?}",
-                    scene.index(),
-                    scene.name().unwrap_or("<unnamed>")
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+        let candidates = if scenes.is_empty() {
+            "the document declares no scenes".to_owned()
+        } else {
+            scenes
+                .iter()
+                .map(|scene| {
+                    format!(
+                        "{}:{:?}",
+                        scene.index(),
+                        scene.name().unwrap_or("<unnamed>")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         return Err(AssetError::Parse {
             path: path.as_str().to_owned(),
             reason: format!(

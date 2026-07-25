@@ -552,6 +552,101 @@ function validateM8WaterBottle(report, root) {
   return report;
 }
 
+// E02 (`N14`): decode a binary PPM (P6, maxval 255) into RGB bytes.
+//
+// The validator previously checked only that these files existed and began
+// "P6", then recomputed every Q07 predicate from numbers the producer wrote
+// into JSON. A producer that emitted correct-looking metrics alongside wrong
+// pixels passed. The metrics are now recomputed from the image bytes.
+function readPpmRgb(file) {
+  const bytes = fs.readFileSync(file);
+  invariant(bytes.slice(0, 2).toString("ascii") === "P6", `not a binary PPM: ${file}`);
+  let cursor = 2;
+  const fields = [];
+  while (fields.length < 3) {
+    while (cursor < bytes.length && /\s/.test(String.fromCharCode(bytes[cursor]))) {
+      cursor += 1;
+    }
+    if (String.fromCharCode(bytes[cursor]) === "#") {
+      while (cursor < bytes.length && bytes[cursor] !== 0x0a) {
+        cursor += 1;
+      }
+      continue;
+    }
+    let token = "";
+    while (cursor < bytes.length && !/\s/.test(String.fromCharCode(bytes[cursor]))) {
+      token += String.fromCharCode(bytes[cursor]);
+      cursor += 1;
+    }
+    invariant(/^\d+$/.test(token), `malformed PPM header in ${file}`);
+    fields.push(Number(token));
+  }
+  const [width, height, maxValue] = fields;
+  invariant(maxValue === 255, `unsupported PPM max value ${maxValue} in ${file}`);
+  cursor += 1;
+  const expected = width * height * 3;
+  const pixels = bytes.slice(cursor, cursor + expected);
+  invariant(pixels.length === expected, `truncated PPM payload in ${file}`);
+  return { width, height, pixels };
+}
+
+// Port of `measure_edges` in tests/q07_antialiasing_effect.rs. Any divergence
+// makes the recomputed metrics disagree with the recorded ones, which fails.
+function measureEdgesFromPpm(image) {
+  const { width, height, pixels } = image;
+  const luma = new Uint8Array(width * height);
+  for (let i = 0; i < luma.length; i += 1) {
+    const r = pixels[i * 3];
+    const g = pixels[i * 3 + 1];
+    const b = pixels[i * 3 + 2];
+    luma[i] = Math.floor((r * 54 + g * 183 + b * 19) / 256);
+  }
+  let hardTransitionCount = 0;
+  let squaredEdgeEnergy = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      const neighbours = [];
+      if (x + 1 < width) neighbours.push(index + 1);
+      if (y + 1 < height) neighbours.push(index + width);
+      for (const other of neighbours) {
+        const delta = Math.abs(luma[index] - luma[other]);
+        squaredEdgeEnergy += delta * delta;
+        if (delta >= 192) hardTransitionCount += 1;
+      }
+    }
+  }
+  let minLuma = 255;
+  let maxLuma = 0;
+  let intermediate = 0;
+  for (const value of luma) {
+    if (value < minLuma) minLuma = value;
+    if (value > maxLuma) maxLuma = value;
+    if (value > 8 && value < 247) intermediate += 1;
+  }
+  return {
+    intermediate_luma_pixels: intermediate,
+    hard_transition_count: hardTransitionCount,
+    squared_edge_energy: squaredEdgeEnergy,
+    luma_range: Math.max(0, maxLuma - minLuma),
+  };
+}
+
+function assertMetricsMatchFrame(root, framePath, recorded, label) {
+  invariant(framePath, `${label} recorded no frame path`);
+  const file = path.join(root, "target/gate-artifacts", framePath);
+  invariant(fs.existsSync(file), `${label} frame is missing: ${framePath}`);
+  const measured = measureEdgesFromPpm(readPpmRgb(file));
+  for (const key of Object.keys(measured)) {
+    invariant(
+      Number(recorded[key]) === measured[key],
+      `${label} recorded ${key}=${recorded[key]} but ${framePath} measures ${measured[key]}; `
+        + "Q07 metrics must be derived from the image bytes, not asserted alongside them",
+    );
+  }
+  return measured;
+}
+
 function q07EffectPasses(baseline, candidate) {
   const minimumIntermediate = Number(baseline.intermediate_luma_pixels) + 20;
   const maximumIntermediate = Math.max(
@@ -566,7 +661,7 @@ function q07EffectPasses(baseline, candidate) {
     && Number(candidate.luma_range) * 10 >= Number(baseline.luma_range) * 9;
 }
 
-function validateQ07Antialiasing(report) {
+function validateQ07Antialiasing(report, root) {
   invariant(report.schema === "scena.q07.antialiasing_effect.v1", "unexpected Q07 AA schema");
   invariant(report.status === "passed" && report.release_evidence === true, "Q07 AA proof did not pass");
   assertProvenance(report, "Q07 AA proof");
@@ -574,12 +669,18 @@ function validateQ07Antialiasing(report) {
   assertNativeHardware(report.adapter, "Q07 AA proof");
   const baseline = report.baseline && report.baseline.metrics;
   invariant(baseline, "Q07 AA proof has no baseline metrics");
+  // E02: every recorded metric must equal what its own PPM actually measures.
+  assertMetricsMatchFrame(root, report.baseline.frame_path, baseline, "Q07 AA baseline");
   for (const mode of ["fxaa", "msaa4"]) {
     const result = report.modes && report.modes[mode];
     invariant(result && result.status === "passed", `Q07 ${mode} did not pass`);
+    assertMetricsMatchFrame(root, result.frame_path, result.metrics || {}, `Q07 ${mode}`);
     invariant(q07EffectPasses(baseline, result.metrics || {}), `Q07 ${mode} has no measured AA pixel effect`);
   }
   const msaa8 = report.modes && report.modes.msaa8;
+  if (msaa8 && msaa8.status === "passed") {
+    assertMetricsMatchFrame(root, msaa8.frame_path, msaa8.metrics || {}, "Q07 msaa8");
+  }
   invariant(
     msaa8 && (msaa8.status === "passed"
       ? q07EffectPasses(baseline, msaa8.metrics || {})
@@ -748,7 +849,7 @@ function validateProofRoot(root) {
   validateQ04Lifecycle(readJson(proofRoot, JSON_ARTIFACTS.q04Lifecycle));
   validateP01Benchmark(readJson(proofRoot, JSON_ARTIFACTS.p01Benchmark));
   validateM8WaterBottle(readJson(proofRoot, JSON_ARTIFACTS.m8WaterBottle), proofRoot);
-  validateQ07Antialiasing(readJson(proofRoot, JSON_ARTIFACTS.q07Antialiasing));
+  validateQ07Antialiasing(readJson(proofRoot, JSON_ARTIFACTS.q07Antialiasing), proofRoot);
   validateQ11ReferenceStability(
     readJson(proofRoot, JSON_ARTIFACTS.q11ReferenceStability),
     q01Parity.commit_sha,

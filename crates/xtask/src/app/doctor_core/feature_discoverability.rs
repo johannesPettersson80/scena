@@ -228,7 +228,7 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
         ),
         (
             "tests/assets/cli-golden/process_contract_table.sha256",
-            &["5b04b0e341376699a7a48b4684936a45ca34778202f6df90c613c4d45e913cd1"][..],
+            &["af63ca1fee1b06a618a328868e45a4c778665196f26641fb2031d43bcb1f403d"][..],
         ),
         (
             "tests/assets/stable-contracts/contract_validation.v1.json",

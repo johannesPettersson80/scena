@@ -4,6 +4,129 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### 1.9.1 (in progress)
+
+_Remediation of the full-repository review of 1.9.0. See
+`docs/checklists/full-repo-review-v1.9.1-remediation.md`._
+
+- Converge attached-surface auto exposure. The surface feedback loop applied
+  each meter sample as an absolute correction, so the loop derivative was `-1`
+  and a mis-exposed frame oscillated instead of settling. Corrections are now
+  damped, meter submissions carry a sequence number, and a sample older than
+  the last applied one is rejected rather than reordering the result.
+- Fail closed on an explicit glTF scene selection against a file with no
+  scenes. An explicit index or name request was silently ignored; it now
+  reports the requested selection and the empty scene table.
+- Filter sRGB texture mips in linear light. Downsampling ran on encoded bytes,
+  darkening every mip chain of an sRGB texture. Data (non-sRGB) textures are
+  byte-unchanged, and alpha is never transformed.
+- Reject an authored morph-weight vector whose width does not match the
+  target's morph-target count instead of silently zipping to the shorter one.
+  Adds `LookupError::InvalidMorphWeights` and
+  `LookupError::MorphWeightWidthMismatch`.
+- Stop clipping annotation overlays with the scene. A section box or clipping
+  plane sections model geometry; labels, leader lines, and dimension lines
+  stay visible by default. Overlays can opt back in with `LabelDesc::with_scene_clipping(true)`.
+- Report why a visible node contributes no pixels. `diagnose` now emits
+  per-node reason codes (`clipped_by_section_box`,
+  `clipped_by_active_clipping_plane`, `behind_camera`, and related) for nodes
+  that can rasterize.
+- Add `nodes_summary.visible_drawable` to `scena.render_introspection.v1`.
+  `visible` counts every visible node including cameras, lights, and empties,
+  so it was never comparable to `drawn`; `visible_drawable` is the population
+  `drawn` is drawn from. The field is additive and defaults to `0`.
+- Report `fully_validated` on validation results, plus an
+  `envelope_validation_only` diagnostic, so a caller reading only `ok` cannot
+  conclude a payload was fully validated when only its envelope was.
+- Shrink agent responses. The constant recipe policy block is replaced by a
+  `policy_digest` unless `--include policy` is passed, `--fields` projects the
+  top-level keys of a response (always retaining `schema` and `ok`), and
+  `guide agent --contract` returns the machine-readable contract without the
+  embedded prose guide.
+- Document `--detail` on `recipe render`; it was accepted but absent from
+  `scena --help`.
+- Fix `guide agent --markdown`, which exited 70 `internal_error` because JSON
+  response shaping was applied to a Markdown payload. Markdown output is now
+  emitted verbatim, and combining it with a JSON-only flag (`--compact`,
+  `--pretty`, `--round-floats`, `--fields`, `--include`) is a `usage` error at
+  exit 2 that names the fix.
+- Classify CLI errors by type instead of by matching words in the message.
+  Argument parsing now returns a dedicated usage-error type, so no rewording
+  can change an exit code. This corrects `verify interaction`, which reported
+  an unknown action as `unsupported` at exit 69 — it is a caller mistake and is
+  now `invalid_arguments` at exit 2. Commands missing from a build keep their
+  distinct `feature_unavailable` code at exit 69. The `scena.cli_error.v1`
+  shape is unchanged.
+- Fix the correction to the 1.9.0 changelog heading: shipped 1.9.0 work was
+  still filed under `[Unreleased]` and the section carried the wrong date.
+
+#### Internal — no user-visible behavior change
+
+Grouped here rather than omitted, so the batch's coverage and evidence work is
+visible without one changelog line per test:
+
+- Added a CI lane running every feature-gated integration binary
+  (`cargo test --workspace --all-features --tests`). 29 such binaries were
+  reachable by no workflow, including the packaged agent-mode install smokes; a
+  doctor rule now fails if a new one is added without workflow coverage.
+- Bound the committed 256px WaterBottle CPU reference to the independent Blender
+  Cycles render by material hue family, so the reference can no longer drift to
+  the wrong materials with every scena-vs-scena assertion still passing.
+- Restored a retained-culling regression covering re-entry across the primitive
+  and stroke draw lists together; the existing tests covered each list alone.
+- Widened the environment-flag registry to product code, examples, and the
+  release tooling, and registered seven previously undocumented flags — four of
+  which gate release evidence.
+- Narrowed the documented scope of the "fail-closed" evidence claim to the
+  publish workflow, with a status table gating when it may be re-widened.
+
+#### Migration — three fixes change what existing renders look like
+
+None of these is bug-for-bug compatible. Each is a correctness fix, so the new
+output is the right one; this section says what moves and what you can do about
+it.
+
+**Auto exposure converges instead of oscillating (`R01`).** On an attached
+surface, each meter sample was applied as an absolute correction, so the
+feedback loop reflected rather than settled and a mis-exposed scene alternated
+between two exposures. Corrections are now damped and out-of-order meter
+samples are rejected.
+
+- *What moves:* the exposure a surface settles at, and the frame-to-frame path
+  it takes to get there. A capture taken on a favourable frame of the old
+  oscillation will differ.
+- *What to do:* nothing, if you read exposure after it settles — it now
+  actually settles. If you pinned a screenshot from an attached surface, retake
+  it. Headless captures with a fixed `set_exposure_ev` are unaffected.
+- *Opt-out:* none. The previous loop had no stable fixed point.
+
+**sRGB mips filter in linear light (`R03`).** Downsampling averaged encoded
+sRGB bytes, which is not a valid average of the colours they represent. sRGB
+textures are now decoded to linear, filtered, and re-encoded.
+
+- *What moves:* minified sRGB-textured surfaces — distant geometry, small UI
+  textures, anything sampling a low mip. The change is most visible on
+  high-contrast textures, which previously biased dark.
+- *What to do:* nothing. Data textures (normal, roughness, metallic, occlusion,
+  and any non-sRGB format) are **byte-identical** — the fix is scoped to sRGB
+  formats, and alpha is never transformed.
+- *Opt-out:* none. The old result was incorrect at every mip level.
+
+**Annotations no longer clip against a section box (`G01`).** A section box and
+a clipping plane section model geometry. They used to remove labels, leader
+lines, and dimension lines too, so a cutaway silently lost its own annotations.
+
+- *What moves:* renders that use a section box or clipping plane together with
+  annotations. Annotations that previously vanished now remain visible.
+- *What to do:* if a specific annotation *should* be sectioned with the
+  geometry, call `LabelDesc::with_scene_clipping(true)` on that label.
+- *Opt-in, not global:* the opt-in is per-overlay, so one dimension line
+  can clip while its neighbours do not. There is no switch that restores the
+  old behavior everywhere, because the old behavior was wrong for the common
+  case.
+
+## [1.9.0] - 2026-07-24
+
 - Fix glTF correctness at raw-index and value level: texture entries no longer
   compact when an earlier source is unresolved; quantized tangent and morph
   accessors use checked component-aware decoding; default/explicit source-scene
@@ -101,8 +224,6 @@ All notable user-facing changes are recorded here.
   package/install contract to every Q08 physical-parity producer source, and
   write PBR/PF08 artifacts relative to the runtime proof workspace instead of
   the Linux cross-builder's compiled manifest path.
-
-## [1.9.0] - 2026-07-21
 
 - Attest privacy-redacted browser WebGPU adapters with same-process Chromium
   CDP GPU evidence in the required Q01 parity lane, while continuing to reject

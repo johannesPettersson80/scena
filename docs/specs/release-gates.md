@@ -56,6 +56,31 @@ artifacts. Required lanes fail closed when their renderer or hardware work is
 unavailable; optional diagnostic lanes must say that they are non-release
 evidence.
 
+### Scope of the fail-closed claim
+
+**The publish path fails closed. The evidence ecosystem around it does not yet
+do so universally.** State the narrow claim, not the broad one.
+
+What is true today: the configured publish workflow refuses to publish without
+CI-issued, attestation-verified provenance for the exact source commit, and it
+was verified passing at the v1.9.0 tag commit. That is the claim this document
+supports.
+
+What is not yet true, and why the broader claim must not be made until the
+listed work closes:
+
+| Gap | Status |
+|---|---|
+| Feature-gated integration binaries executed by some workflow | Closed in 1.9.1 by the `linux-feature-contract` lane and the `TESTS-FEATURE-GATED-WORKFLOW-BIJECTION` doctor rule, which found 29 orphaned binaries. |
+| Q07 mutation results computed rather than recorded as literals | Open. |
+| Windows Q07 metrics bound to image bytes rather than to recorded JSON | Open. |
+| Failed Q08 lanes unable to leave a passing artifact on disk | Open. |
+| Q08 lane source selection ranked explicitly rather than by path length | Open. |
+
+Re-widen the wording only when every row above reads closed. Until then, a
+document, release note, or PR description that says scena's evidence is
+"fail-closed end to end" is overstating what is enforced.
+
 ## CI-issued release provenance
 
 Downloaded lane artifacts do not become release evidence merely because a

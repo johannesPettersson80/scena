@@ -22,6 +22,7 @@ pub(in crate::render) fn append_geometry_primitives(
             source.material,
             strokes::StrokeBakeInputs {
                 tint: source.tint,
+                clip_with_scene: source.clip_with_scene,
                 params,
                 sinks,
             },

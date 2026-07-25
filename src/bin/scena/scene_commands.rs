@@ -1,3 +1,4 @@
+use super::scena_cli_error::{CliErrorKind, CliFailure};
 use std::fs;
 use std::time::{Duration, Instant};
 
@@ -22,7 +23,7 @@ use super::scena_input::{
 #[cfg(feature = "scene-host")]
 use super::scena_output::add_backend_selection_to_outcome;
 
-pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = RenderCommandArgs::parse(args)?;
     let total_started = Instant::now();
     let policy = effective_recipe_policy(&args.allow_roots, None)?;
@@ -59,9 +60,12 @@ pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> 
     let capture_duration = capture_started.elapsed();
 
     ensure_parent_dir(&args.out)?;
-    capture
-        .write_png(&args.out)
-        .map_err(|error| format!("failed to write PNG '{}': {error}", args.out.display()))?;
+    capture.write_png(&args.out).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Io,
+            format!("failed to write PNG '{}': {error}", args.out.display()),
+        )
+    })?;
 
     let descriptor_path = capture_descriptor_path(&args.out);
     ensure_parent_dir(&descriptor_path)?;
@@ -110,7 +114,7 @@ fn run_render_scene_host_recipe(
     width: u32,
     height: u32,
     args: RenderCommandArgs,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     let total_started = Instant::now();
     let policy = input.policy.to_schema_report();
     let build = pollster::block_on(scene_host_build_from_resolved_recipe(
@@ -143,9 +147,12 @@ fn run_render_scene_host_recipe(
     let capture_duration = capture_started.elapsed();
 
     ensure_parent_dir(&args.out)?;
-    capture
-        .write_png(&args.out)
-        .map_err(|error| format!("failed to write PNG '{}': {error}", args.out.display()))?;
+    capture.write_png(&args.out).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Io,
+            format!("failed to write PNG '{}': {error}", args.out.display()),
+        )
+    })?;
 
     let descriptor_path = capture_descriptor_path(&args.out);
     ensure_parent_dir(&descriptor_path)?;
@@ -165,7 +172,12 @@ fn run_render_scene_host_recipe(
         .inspect_json()
         .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
     let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
-        .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
+        .map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::InvalidInput,
+                format!("failed to decode recipe scene inspection report: {error}"),
+            )
+        })?;
     let mut options = render_introspection_options(args.detail)
         .with_capture_png_path(path_for_json(&args.out))
         .with_capture_descriptor_path(path_for_json(&descriptor_path));
@@ -202,14 +214,14 @@ fn run_render_scene_host_recipe(
     _width: u32,
     _height: u32,
     _args: RenderCommandArgs,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     Err(
         "recipe overlay directives require building the scena binary with the 'scene-host' feature"
             .to_string(),
     )
 }
 
-pub(crate) fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_inspect_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = InspectCommandArgs::parse(args)?;
     let policy = effective_recipe_policy(&args.allow_roots, None)?;
     let input = match resolve_scene_input(&args.input, policy) {
@@ -244,7 +256,7 @@ fn run_inspect_scene_host_recipe(
     input: super::scena_input::ResolvedSceneInput,
     width: u32,
     height: u32,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     let policy = input.policy.to_schema_report();
     let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, false,
@@ -262,6 +274,7 @@ fn run_inspect_scene_host_recipe(
         CliOutcome {
             stdout: text,
             exit_code: 0,
+            payload: super::scena_output::CliPayload::Json,
         },
         &policy,
     )
@@ -272,14 +285,14 @@ fn run_inspect_scene_host_recipe(
     _input: super::scena_input::ResolvedSceneInput,
     _width: u32,
     _height: u32,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     Err(
         "recipe overlay directives require building the scena binary with the 'scene-host' feature"
             .to_string(),
     )
 }
 
-pub(crate) fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = DiagnoseCommandArgs::parse(args)?;
     let policy = effective_recipe_policy(&args.allow_roots, None)?;
     let input = match resolve_scene_input(&args.input, policy) {
@@ -328,7 +341,7 @@ fn run_diagnose_scene_host_recipe(
     width: u32,
     height: u32,
     args: DiagnoseCommandArgs,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     let policy = input.policy.to_schema_report();
     let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, false,
@@ -347,7 +360,12 @@ fn run_diagnose_scene_host_recipe(
         .inspect_json()
         .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
     let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
-        .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
+        .map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::InvalidInput,
+                format!("failed to decode recipe scene inspection report: {error}"),
+            )
+        })?;
     let options = if args.detail {
         scena::VisibilityDiagnosisOptions::detail()
     } else {
@@ -373,14 +391,14 @@ fn run_diagnose_scene_host_recipe(
     _width: u32,
     _height: u32,
     _args: DiagnoseCommandArgs,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     Err(
         "recipe overlay directives require building the scena binary with the 'scene-host' feature"
             .to_string(),
     )
 }
 
-pub(crate) fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_repair_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = RepairCommandArgs::parse(args)?;
     let policy = effective_recipe_policy(&args.allow_roots, None)?;
     let input = match resolve_scene_input(&args.input, policy) {
@@ -429,11 +447,11 @@ pub(crate) fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> 
             scena::VisualRepairPlanV1::from_render_introspection(&report)
         }
         other => {
-            return Err(format!(
+            return Err(CliFailure::invalid_arguments(format!(
                 "repair --from expected '{}' or '{}', got '{other}'",
                 scena::VISIBILITY_DIAGNOSIS_SCHEMA_V1,
                 scena::RENDER_INTROSPECTION_SCHEMA_V1
-            ));
+            )));
         }
     };
     if plan.status == "irreducible" || args.iteration_budget == 0 {
@@ -454,7 +472,7 @@ pub(crate) fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> 
     )
 }
 
-fn validate_repair_asset_input(asset: &str) -> Result<Option<CliOutcome>, String> {
+fn validate_repair_asset_input(asset: &str) -> Result<Option<CliOutcome>, CliFailure> {
     let report = pollster::block_on(scena::Assets::new().doctor_asset_path(asset));
     if report.ok {
         Ok(None)
@@ -471,7 +489,7 @@ fn validate_repair_asset_input(asset: &str) -> Result<Option<CliOutcome>, String
 #[cfg(feature = "scene-host")]
 fn validate_repair_recipe_input(
     input: &super::scena_input::ResolvedSceneInput,
-) -> Result<Option<CliOutcome>, String> {
+) -> Result<Option<CliOutcome>, CliFailure> {
     let report = pollster::block_on(scene_host_manifest_from_resolved_recipe(input))?;
     if report.ok {
         Ok(None)
@@ -488,6 +506,6 @@ fn validate_repair_recipe_input(
 #[cfg(not(feature = "scene-host"))]
 fn validate_repair_recipe_input(
     _input: &super::scena_input::ResolvedSceneInput,
-) -> Result<Option<CliOutcome>, String> {
+) -> Result<Option<CliOutcome>, CliFailure> {
     Err("repair for scene recipes requires the scene-host feature".to_owned())
 }

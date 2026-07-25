@@ -15,6 +15,7 @@ const STANDARD_EXEMPTIONS: &[&str] = &[
     "GITHUB_SHA",
     "GITHUB_RUN_ID",
     "GITHUB_REPOSITORY",
+    "GITHUB_ACTIONS",
 ];
 
 const REGISTERED_ENV_FLAGS: &[&str] = &[
@@ -66,6 +67,13 @@ const REGISTERED_ENV_FLAGS: &[&str] = &[
     "SCENA_SHOWCASE_SECTION_BUDGET_MS",
     "SCENA_SKIP_WASM_BUILD",
     "SCENA_USE_GPU",
+    "SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU",
+    "SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS",
+    "SCENA_EASY_SCENE_SHOWCASE_ONLY",
+    "SCENA_GLTF_VALIDATOR",
+    "SCENA_GPU_EVIDENCE_CLASS",
+    "SCENA_RELEASE_ARTIFACT_ROOT",
+    "SCENA_REQUIRE_CI_PROVENANCE",
     "VK_ICD_FILENAMES",
 ];
 
@@ -85,11 +93,32 @@ pub(crate) fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<F
     let mut entries = Vec::new();
     collect_test_contract_sources(&root.join("tests"), &mut entries);
     collect_test_contract_sources(&root.join("scripts"), &mut entries);
+    // E05 (`N20`): scanning only `tests/` and `scripts/` left every flag read
+    // from product code, examples, and the release tooling invisible to this
+    // rule — including `SCENA_REQUIRE_CI_PROVENANCE` and
+    // `SCENA_GPU_EVIDENCE_CLASS`, which gate release evidence.
+    collect_test_contract_sources(&root.join("src"), &mut entries);
+    collect_test_contract_sources(&root.join("examples"), &mut entries);
+    collect_test_contract_sources(&root.join("crates/xtask/src"), &mut entries);
     entries.sort();
+    entries.dedup();
     for path in entries {
+        // xtask's own `tests_NN.rs` unit tests embed synthetic sources such as
+        // `env::var("MY_OTHER_FLAG")` as fixtures for `find_env_var_names`.
+        // Those are test data, not flags this repository reads.
+        if path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|name| name.starts_with("tests_"))
+        {
+            continue;
+        }
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
+        // Doc comments describe the scanner's own call shapes
+        // (`env::var("FOO")`); they are documentation, not reads.
+        let text = strip_comment_lines(&text);
         let display = path
             .strip_prefix(root)
             .unwrap_or(&path)
@@ -127,6 +156,16 @@ pub(crate) fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<F
             ));
         }
     }
+}
+
+/// Drops whole-line `//` comments so documentation of the scanner's own call
+/// shapes is never mistaken for a real environment read.
+fn strip_comment_lines(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub(crate) fn find_env_var_names(source: &str) -> Vec<String> {

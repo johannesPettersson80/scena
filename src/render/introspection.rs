@@ -154,11 +154,7 @@ impl RenderIntrospectionReportV1 {
                     handle: node.handle,
                     kind: node.kind.clone(),
                     visible: node.visible,
-                    reason_codes: if node.visible {
-                        Vec::new()
-                    } else {
-                        vec!["node_hidden".to_owned()]
-                    },
+                    reason_codes: node_reason_codes(node, inspection, stats, diagnostics),
                 })
                 .collect()
         } else {
@@ -350,6 +346,69 @@ fn pixel_differs_from_background(pixel: &[u8], background: [u8; 4], tolerance: u
     (0..3).any(|channel| pixel[channel].abs_diff(background[channel]) > tolerance)
 }
 
+/// Reason codes explaining why a node did not reach the frame.
+///
+/// G03: these were previously derived from `node.visible` alone, so a node
+/// that was visible in the scene graph yet contributed nothing — clipped,
+/// behind the camera, outside the frustum, missing an upload — reported an
+/// empty list. That is the exact question an agent asks when a render looks
+/// wrong, and it was unanswerable.
+///
+/// The per-node visibility diagnosis already computes this vocabulary, so it
+/// is reused rather than duplicated. It runs once per node and only under
+/// `RenderIntrospectionOptions::detail()`, which is opt-in.
+///
+/// These codes are *candidate causes*, not confirmed per-node pixel
+/// attribution: the renderer does not track which node produced which pixel
+/// outside the semantic-AOV path. Codes are therefore emitted only for node
+/// kinds that can put pixels on the frame — attaching "clipped" to a camera or
+/// a light would be noise, not diagnosis — and a scene-level cause is reported
+/// against a drawable only when that cause is actually active.
+fn node_reason_codes(
+    node: &crate::scene::SceneNodeInspectionV1,
+    inspection: &SceneInspectionReportV1,
+    stats: RendererStats,
+    diagnostics: &[Diagnostic],
+) -> Vec<String> {
+    let diagnosis = crate::render::visibility_diagnosis::VisibilityDiagnosisReportV1::from_inspection_with_diagnostics(
+        inspection,
+        stats,
+        Some(node.handle),
+        crate::render::visibility_diagnosis::VisibilityDiagnosisOptions::default(),
+        true,
+        diagnostics,
+    );
+    let mut codes = if node_kind_can_contribute_pixels(&node.kind) {
+        diagnosis
+            .reasons
+            .into_iter()
+            .filter(|reason| reason.severity != "info")
+            .filter(|reason| {
+                reason.affected_handles.is_empty() || reason.affected_handles.contains(&node.handle)
+            })
+            .map(|reason| reason.code)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if !node.visible && !codes.iter().any(|code| code == "node_hidden") {
+        codes.insert(0, "node_hidden".to_owned());
+    }
+    codes.dedup();
+    codes
+}
+
+/// Whether a node kind can place pixels on the frame.
+///
+/// Cameras, lights, and empties structure the scene but never rasterize, so a
+/// visibility reason attached to one is noise rather than a finding.
+fn node_kind_can_contribute_pixels(kind: &str) -> bool {
+    matches!(
+        kind,
+        "Mesh" | "Label" | "Renderable" | "Model" | "InstanceSet" | "ParticleSet"
+    )
+}
+
 fn nodes_summary(
     inspection: &SceneInspectionReportV1,
     stats: RendererStats,
@@ -359,6 +418,7 @@ fn nodes_summary(
     RenderIntrospectionNodesSummaryV1 {
         visible,
         hidden,
+        visible_drawable: inspection.counts.visible_drawable,
         drawn: inspection.draw_list.len(),
         culled: stats.culled_objects,
         transparent: transparent_draw_count(inspection),

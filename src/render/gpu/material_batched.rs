@@ -352,6 +352,7 @@ where
         template.height,
         &mip_extents,
         0,
+        template.format == wgpu::TextureFormat::Rgba8UnormSrgb,
     );
     for (index, slot) in material_slots.iter().enumerate() {
         let upload = role_for(slot);
@@ -369,6 +370,7 @@ where
                 template.height,
                 &mip_extents,
                 layer_index,
+                template.format == wgpu::TextureFormat::Rgba8UnormSrgb,
             );
         }
     }
@@ -436,6 +438,7 @@ fn write_material_texture_layer_mips_owned(
     height: u32,
     mip_extents: &[(u32, u32)],
     layer_index: u32,
+    srgb: bool,
 ) {
     let _ = sampler;
     let mut previous: Vec<u8> = base_rgba8.to_vec();
@@ -450,6 +453,7 @@ fn write_material_texture_layer_mips_owned(
                 previous_extent.1,
                 mip_width,
                 mip_height,
+                srgb,
             );
             previous.as_slice()
         };

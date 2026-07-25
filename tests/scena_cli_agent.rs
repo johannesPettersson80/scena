@@ -1533,17 +1533,26 @@ fn assert_success_stdout_matches_with_policy(output: &std::process::Output, fixt
         stderr(output)
     );
     let mut actual: Value = serde_json::from_slice(&output.stdout).expect("stdout emits JSON");
-    let policy = actual
+    // G08: the constant policy block is replaced by a stable digest unless the
+    // caller asks for it with `--include policy`. The block's *content* is
+    // asserted against that path in
+    // `agent_responses_support_projection_digests_and_a_prose_free_contract`;
+    // here we require the digest to be present and well-formed.
+    let digest = actual
         .as_object_mut()
-        .and_then(|object| object.remove("policy"))
-        .expect("repair output surfaces the effective recipe policy");
-    assert_eq!(policy["schema"], "scena.recipe_policy.v1");
-    assert_eq!(policy["network"]["allowed"], false);
+        .and_then(|object| object.remove("policy_digest"))
+        .expect("repair output surfaces the effective recipe policy digest");
     assert!(
-        policy["allowed_roots"]
-            .as_array()
-            .is_some_and(|roots| !roots.is_empty()),
-        "repair policy must identify at least one sandbox root: {policy:#}"
+        digest
+            .as_str()
+            .is_some_and(|value| value.starts_with("sha256:") && value.len() > "sha256:".len()),
+        "policy digest must be a named-algorithm hash: {digest:#}"
+    );
+    assert!(
+        actual
+            .as_object()
+            .is_some_and(|object| !object.contains_key("policy")),
+        "the constant policy block must not be repeated by default"
     );
     let expected: Value = serde_json::from_str(
         &fs::read_to_string(cli_golden_path(fixture))
@@ -1578,4 +1587,155 @@ fn cli_golden_path(name: &str) -> PathBuf {
         .join("assets")
         .join("cli-golden")
         .join(name)
+}
+
+/// G06: every flag a command accepts must appear in the declared command
+/// surface an agent is told to read.
+///
+/// `recipe render --detail` is the only way to obtain `nodes_detail`, which is
+/// where `G03`'s per-node reason codes live. It appeared nowhere in
+/// `scena --help`, so an agent debugging a wrong render could not discover the
+/// one flag that explains it.
+#[test]
+fn help_declares_every_accepted_recipe_render_flag() {
+    let help = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .arg("--help")
+        .output()
+        .expect("scena --help runs");
+    assert!(help.status.success(), "scena --help succeeds");
+    let text = String::from_utf8_lossy(&help.stdout);
+
+    for flag in ["--detail", "--out", "--gpu", "--verify"] {
+        assert!(
+            text.contains(flag),
+            "`scena --help` must declare the accepted `recipe render` flag {flag}"
+        );
+    }
+}
+
+/// G08: agent response economics.
+///
+/// Measured on the shipped `cad-plate` template at v1.9.0: the constant
+/// `policy` block was 1,325 of 3,272 compact bytes (40%) and identical on
+/// every call, and `guide agent --json` was 27,864 of 29,891 bytes (93.6%)
+/// embedded markdown. An agent iterating on a recipe re-read both every turn
+/// with no way to ask for less.
+#[test]
+fn agent_responses_support_projection_digests_and_a_prose_free_contract() {
+    let dir = std::env::temp_dir().join("scena-g08-response-shaping");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("g08 dir creates");
+    let generated = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "examples",
+            "agent",
+            "get",
+            "cad-plate",
+            "--out",
+            dir.to_str().expect("dir is UTF-8"),
+        ])
+        .output()
+        .expect("template generates");
+    assert!(generated.status.success(), "cad-plate template generates");
+    let recipe = dir.join("recipe.json");
+    let frame = dir.join("frame.png");
+
+    let render = |extra: &[&str]| -> serde_json::Value {
+        let mut argv = vec![
+            "recipe".to_owned(),
+            "render".to_owned(),
+            recipe.to_str().expect("recipe path").to_owned(),
+            "--out".to_owned(),
+            frame.to_str().expect("frame path").to_owned(),
+        ];
+        argv.extend(extra.iter().map(|value| (*value).to_owned()));
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args(&argv)
+            .output()
+            .expect("recipe render runs");
+        assert!(
+            output.status.success(),
+            "recipe render {extra:?} succeeds: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).expect("render emits JSON")
+    };
+
+    // 1. The constant policy block is replaced by a digest unless requested.
+    let default_render = render(&[]);
+    assert!(
+        default_render.get("policy").is_none(),
+        "the constant policy block must not be repeated on every response"
+    );
+    let digest = default_render
+        .get("policy_digest")
+        .and_then(|value| value.as_str())
+        .expect("a policy digest replaces the omitted block");
+    assert!(
+        digest.starts_with("sha256:"),
+        "the digest must name its algorithm, got {digest:?}"
+    );
+
+    // The full block stays reachable on request, and matches its digest.
+    let included = render(&["--include", "policy"]);
+    let policy = included
+        .get("policy")
+        .expect("`--include policy` must restore the full block");
+    assert_eq!(policy["schema"], "scena.recipe_policy.v1");
+    assert_eq!(policy["network"]["allowed"], false);
+    assert!(
+        policy["allowed_roots"]
+            .as_array()
+            .is_some_and(|roots| !roots.is_empty()),
+        "the restored policy must identify at least one sandbox root: {policy:#}"
+    );
+    assert_eq!(
+        included.get("policy_digest").and_then(|v| v.as_str()),
+        Some(digest),
+        "the digest must be stable whether or not the block is included"
+    );
+
+    // 2. Field projection.
+    let projected = render(&["--fields", "ok,reasons,fixes"]);
+    let keys = projected
+        .as_object()
+        .expect("projected result is an object")
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    for required in ["schema", "ok", "reasons", "fixes"] {
+        assert!(
+            keys.iter().any(|key| key == required),
+            "projection must keep {required}, got {keys:?}"
+        );
+    }
+    assert!(
+        !keys.iter().any(|key| key == "luminance"),
+        "projection must drop unrequested fields, got {keys:?}"
+    );
+
+    // 3. A prose-free agent contract.
+    let contract = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["guide", "agent", "--contract"])
+        .output()
+        .expect("guide agent --contract runs");
+    assert!(contract.status.success(), "guide agent --contract succeeds");
+    let contract_json: serde_json::Value =
+        serde_json::from_slice(&contract.stdout).expect("contract form emits JSON");
+    assert!(
+        contract_json.get("markdown").is_none(),
+        "the contract form must omit the embedded prose guide"
+    );
+    for required in ["commands", "schemas", "templates", "policies"] {
+        assert!(
+            contract_json.get(required).is_some(),
+            "the contract form must keep the machine-readable {required}"
+        );
+    }
+    assert!(
+        contract.stdout.len() * 4 < 29_891,
+        "the contract form must be far smaller than the 29,891-byte json form, \
+         got {} bytes",
+        contract.stdout.len()
+    );
 }

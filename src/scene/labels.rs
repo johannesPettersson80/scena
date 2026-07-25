@@ -20,6 +20,7 @@ pub struct LabelDesc {
     background: Option<Color>,
     halo: Option<Color>,
     size: f32,
+    clip_with_scene: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,6 +103,7 @@ impl LabelDesc {
             background: None,
             halo: None,
             size: 14.0,
+            clip_with_scene: false,
         }
     }
 
@@ -134,7 +136,25 @@ impl LabelDesc {
             background: None,
             halo: None,
             size: 14.0,
+            clip_with_scene: false,
         })
+    }
+
+    /// Whether active clipping planes and the section box remove this label.
+    ///
+    /// Labels are billboarded annotations: they carry the measurements,
+    /// datums, and callouts a section view exists to communicate, so by
+    /// default a section box sections *geometry* and leaves annotations
+    /// legible. Opt in when a view should deliberately cut its annotations
+    /// too.
+    pub const fn clip_with_scene(&self) -> bool {
+        self.clip_with_scene
+    }
+
+    /// Opts this label into scene clipping (planes and section box).
+    pub const fn with_scene_clipping(mut self, clip_with_scene: bool) -> Self {
+        self.clip_with_scene = clip_with_scene;
+        self
     }
 
     pub fn text(&self) -> &str {

@@ -1,3 +1,4 @@
+use crate::scena_cli_error::CliFailure;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -68,7 +69,7 @@ pub(super) fn write_contact_sheet(
     out_dir: &Path,
     captures: &[scena::CaptureRgba8],
     frames: &[Value],
-) -> Result<Value, String> {
+) -> Result<Value, CliFailure> {
     let columns = u32::try_from(captures.len().min(4)).unwrap_or(1).max(1);
     let sheet_frames = captures
         .iter()

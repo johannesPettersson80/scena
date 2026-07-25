@@ -1,13 +1,14 @@
+use super::scena_cli_error::CliFailure;
 use super::scena_output::{CliOutcome, json_success};
 
-pub(crate) fn run_vocab_list_command() -> Result<CliOutcome, String> {
+pub(crate) fn run_vocab_list_command() -> Result<CliOutcome, CliFailure> {
     json_success(
         &scena::vocabulary_report_v1(),
         "failed to serialize vocabulary report",
     )
 }
 
-pub(crate) fn run_vocab_get_command(name: &str) -> Result<CliOutcome, String> {
+pub(crate) fn run_vocab_get_command(name: &str) -> Result<CliOutcome, CliFailure> {
     let vocabulary = scena::vocabulary_v1(name)
         .ok_or_else(|| format!("unknown vocabulary '{name}'; run 'scena vocab list'"))?;
     json_success(

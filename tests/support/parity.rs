@@ -162,23 +162,73 @@ pub fn record_cpu_gpu_parity_pass(
         .to_ascii_lowercase()
         .contains(marker)
     });
-    let release_evidence = strict && hardware;
-    write_parity_gate_result(
-        test_name,
-        Some(adapter),
-        assertions_executed,
-        "passed",
-        release_evidence,
-        if release_evidence {
-            "physical-hardware-required"
-        } else {
-            "diagnostic-gpu-conformance"
-        },
-    );
-    assert!(
-        !strict || hardware,
-        "SCENA_REQUIRE_GPU_PARITY=1 requires a physical hardware adapter, got {adapter:?}"
-    );
+    // E03 (`N12`): decide the outcome *before* writing, so a lane that is about
+    // to fail its hardware assertion cannot leave a `"status": "passed"`
+    // artifact on disk. The job failed either way, but the artifact contradicted
+    // the job.
+    match parity_outcome(strict, hardware) {
+        ParityOutcome::StrictHardwareMissing => {
+            write_parity_gate_result(
+                test_name,
+                Some(adapter),
+                assertions_executed,
+                "failed",
+                false,
+                "strict-hardware-missing",
+            );
+            panic!(
+                "SCENA_REQUIRE_GPU_PARITY=1 requires a physical hardware adapter, got {adapter:?}"
+            );
+        }
+        outcome => write_parity_gate_result(
+            test_name,
+            Some(adapter),
+            assertions_executed,
+            "passed",
+            outcome.is_release_evidence(),
+            outcome.proof_class(),
+        ),
+    }
+}
+
+/// What a parity lane is entitled to record.
+///
+/// E03: separated from the writer so the decision is testable without a GPU and
+/// so no caller can write a status that disagrees with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "each parity test binary includes this module")]
+pub enum ParityOutcome {
+    /// Strict mode on a physical adapter: this is release evidence.
+    ReleaseEvidence,
+    /// Not strict mode: a real result, but not a release claim.
+    DiagnosticConformance,
+    /// Strict mode without physical hardware: the lane must fail.
+    StrictHardwareMissing,
+}
+
+impl ParityOutcome {
+    #[allow(dead_code, reason = "each parity test binary includes this module")]
+    pub const fn is_release_evidence(self) -> bool {
+        matches!(self, Self::ReleaseEvidence)
+    }
+
+    #[allow(dead_code, reason = "each parity test binary includes this module")]
+    pub const fn proof_class(self) -> &'static str {
+        match self {
+            Self::ReleaseEvidence => "physical-hardware-required",
+            Self::DiagnosticConformance => "diagnostic-gpu-conformance",
+            Self::StrictHardwareMissing => "strict-hardware-missing",
+        }
+    }
+}
+
+#[allow(dead_code, reason = "each parity test binary includes this module")]
+pub const fn parity_outcome(strict: bool, hardware: bool) -> ParityOutcome {
+    match (strict, hardware) {
+        (true, true) => ParityOutcome::ReleaseEvidence,
+        (true, false) => ParityOutcome::StrictHardwareMissing,
+        (false, _) => ParityOutcome::DiagnosticConformance,
+    }
 }
 
 fn write_parity_gate_result(
@@ -680,5 +730,44 @@ fn srgb_to_linear(value: u8) -> f32 {
         c / 12.92
     } else {
         ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// E03 (`N12`): the outcome decision, proven without a GPU.
+///
+/// This module is included by every parity test binary, so these run once per
+/// binary. That is deliberate: the invariant they protect is what each of those
+/// binaries writes to disk.
+#[cfg(test)]
+mod parity_outcome_tests {
+    use super::{ParityOutcome, parity_outcome};
+
+    #[test]
+    fn strict_mode_without_hardware_never_yields_a_passing_outcome() {
+        assert_eq!(
+            parity_outcome(true, false),
+            ParityOutcome::StrictHardwareMissing,
+            "SCENA_REQUIRE_GPU_PARITY=1 on a software adapter must fail the lane",
+        );
+        assert!(
+            !parity_outcome(true, false).is_release_evidence(),
+            "a failing lane must never be recorded as release evidence",
+        );
+        assert_eq!(
+            parity_outcome(true, false).proof_class(),
+            "strict-hardware-missing",
+            "the artifact must name why it failed, not reuse a diagnostic class",
+        );
+    }
+
+    #[test]
+    fn only_strict_mode_on_hardware_is_release_evidence() {
+        assert!(parity_outcome(true, true).is_release_evidence());
+        assert!(!parity_outcome(false, true).is_release_evidence());
+        assert!(!parity_outcome(false, false).is_release_evidence());
+        assert_eq!(
+            parity_outcome(false, true),
+            ParityOutcome::DiagnosticConformance
+        );
     }
 }

@@ -1,6 +1,7 @@
 use super::CliOutcome;
 #[cfg(feature = "inspection")]
 use super::scena_args::DoctorCommandArgs;
+use super::scena_cli_error::CliFailure;
 #[cfg(feature = "inspection")]
 use super::scena_input::resolve_scene_input;
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
@@ -11,7 +12,7 @@ use super::scena_output::json_outcome;
 use super::scena_policy::{effective_recipe_policy, ensure_recipe_policy_applies};
 
 #[cfg(feature = "inspection")]
-pub(crate) fn run_doctor_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_doctor_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = DoctorCommandArgs::parse(args)?;
     let policy = effective_recipe_policy(&args.allow_roots, None)?;
     let input = match resolve_scene_input(&args.input, policy) {
@@ -32,7 +33,9 @@ pub(crate) fn run_doctor_command(args: &[String]) -> Result<CliOutcome, String> 
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn run_doctor_recipe(input: super::scena_input::ResolvedSceneInput) -> Result<CliOutcome, String> {
+fn run_doctor_recipe(
+    input: super::scena_input::ResolvedSceneInput,
+) -> Result<CliOutcome, CliFailure> {
     let report = pollster::block_on(scene_host_manifest_from_resolved_recipe(&input))?;
     let exit_code = if report.ok { 0 } else { 1 };
     json_outcome(
@@ -43,11 +46,17 @@ fn run_doctor_recipe(input: super::scena_input::ResolvedSceneInput) -> Result<Cl
 }
 
 #[cfg(all(feature = "inspection", not(feature = "scene-host")))]
-fn run_doctor_recipe(_input: super::scena_input::ResolvedSceneInput) -> Result<CliOutcome, String> {
-    Err("doctor for scene recipes requires the scene-host feature".to_owned())
+fn run_doctor_recipe(
+    _input: super::scena_input::ResolvedSceneInput,
+) -> Result<CliOutcome, CliFailure> {
+    Err(CliFailure::feature_unavailable(
+        "doctor for scene recipes requires the scene-host feature",
+    ))
 }
 
 #[cfg(not(feature = "inspection"))]
-pub(crate) fn run_doctor_command(_args: &[String]) -> Result<CliOutcome, String> {
-    Err("doctor requires building the scena binary with the 'inspection' feature".to_string())
+pub(crate) fn run_doctor_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
+    Err(CliFailure::feature_unavailable(
+        "doctor requires building the scena binary with the 'inspection' feature",
+    ))
 }

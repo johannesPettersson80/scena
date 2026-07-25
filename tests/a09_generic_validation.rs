@@ -159,3 +159,39 @@ fn unique_temp_dir() -> PathBuf {
         .as_nanos();
     std::env::temp_dir().join(format!("scena-a09-validate-{}-{nonce}", std::process::id()))
 }
+
+/// G07: an envelope-only validation must not read as a full validation.
+///
+/// `validate_contract_json_v1` returns `ok: true` for contracts it can only
+/// check the envelope of. `validation_level: "envelope"` disclosed that, but a
+/// caller keying on `ok` alone — the obvious thing to do — concludes the
+/// payload was fully checked when only its wrapper was.
+#[test]
+fn envelope_only_validation_is_machine_distinguishable_from_full_validation() {
+    // A report-shaped contract that carries envelope-only validation.
+    // `scena.render_introspection.v1` is a report contract with no typed
+    // validator, so it takes the envelope-only path.
+    let envelope =
+        scena::validate_contract_json_v1(r#"{"schema":"scena.render_introspection.v1","ok":true}"#);
+    let typed = scena::validate_contract_json_v1(
+        &fs::read_to_string("tests/assets/recipe-invalid/valid_for_commands.recipe.json")
+            .expect("valid recipe fixture reads"),
+    );
+
+    assert_eq!(typed.validation_level, "typed");
+    assert!(
+        typed.fully_validated,
+        "a typed validation is a full validation: {typed:?}"
+    );
+
+    assert_eq!(envelope.validation_level, "envelope");
+    assert!(
+        !envelope.fully_validated,
+        "an envelope-only result must report that it is not a full validation"
+    );
+    assert!(
+        !envelope.diagnostics.is_empty(),
+        "the partial-validation limit must appear as a structured diagnostic, \
+         not only as prose in `limitations`: {envelope:?}"
+    );
+}

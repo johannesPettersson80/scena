@@ -1,3 +1,4 @@
+use crate::scena_cli_error::CliFailure;
 use std::fs;
 use std::io::Cursor;
 use std::path::Path;
@@ -33,7 +34,7 @@ struct PixelBbox {
 pub(super) fn process_cad_png(
     raw_png: &Path,
     processed_png: &Path,
-) -> Result<(RgbaImage, PostprocessMetrics), String> {
+) -> Result<(RgbaImage, PostprocessMetrics), CliFailure> {
     let input = read_png_rgba8(raw_png)?;
     let mut output = input.rgba8.clone();
     let foreground = foreground_mask(&input);
@@ -138,7 +139,7 @@ pub(super) fn postprocess_json(metrics: PostprocessMetrics, width: u32, height: 
     })
 }
 
-pub(super) fn write_contact_sheet(images: &[RgbaImage], path: &Path) -> Result<(), String> {
+pub(super) fn write_contact_sheet(images: &[RgbaImage], path: &Path) -> Result<(), CliFailure> {
     let frames = images
         .iter()
         .map(|image| RgbaFrameRef {

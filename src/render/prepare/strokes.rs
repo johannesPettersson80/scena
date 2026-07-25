@@ -14,6 +14,8 @@ use super::types::{PreparedPrimitive, PreparedStrokeSegment, PrimitiveBakeParams
 
 pub(super) struct StrokeBakeInputs<'a, 'out> {
     pub(super) tint: Option<Color>,
+    /// G01: false for generated annotation overlays.
+    pub(super) clip_with_scene: bool,
     pub(super) params: PrimitiveBakeParams<'a>,
     pub(super) sinks: PrimitiveSinks<'out>,
 }
@@ -21,6 +23,7 @@ pub(super) struct StrokeBakeInputs<'a, 'out> {
 struct StrokeSegmentStyle {
     color: Color,
     tint: Option<Color>,
+    clip_with_scene: bool,
     width_px: f32,
     world_from_model: [f32; 16],
 }
@@ -36,6 +39,7 @@ pub(super) fn append_wireframe_primitives(
     let style = StrokeSegmentStyle {
         color,
         tint: inputs.tint,
+        clip_with_scene: inputs.clip_with_scene,
         width_px,
         world_from_model: world_from_model_matrix(
             inputs.params.transform,
@@ -70,6 +74,7 @@ pub(super) fn append_edge_primitives(
     let style = StrokeSegmentStyle {
         color,
         tint: inputs.tint,
+        clip_with_scene: inputs.clip_with_scene,
         width_px,
         world_from_model: world_from_model_matrix(
             inputs.params.transform,
@@ -134,6 +139,7 @@ pub(super) fn append_line_primitives(
     let style = StrokeSegmentStyle {
         color,
         tint: inputs.tint,
+        clip_with_scene: inputs.clip_with_scene,
         width_px,
         world_from_model: world_from_model_matrix(
             inputs.params.transform,
@@ -215,15 +221,18 @@ fn append_line_segment(
     primitives: &mut Vec<PreparedPrimitive>,
     strokes: &mut Vec<PreparedStrokeSegment>,
 ) {
-    strokes.push(PreparedStrokeSegment::new(
-        Some(node),
-        start,
-        end,
-        style.color,
-        style.width_px,
-        style.world_from_model,
-        draw_uniform_tint(style.tint),
-    ));
+    strokes.push(
+        PreparedStrokeSegment::new(
+            Some(node),
+            start,
+            end,
+            style.color,
+            style.width_px,
+            style.world_from_model,
+            draw_uniform_tint(style.tint),
+        )
+        .with_scene_clipping(style.clip_with_scene),
+    );
 
     let start = ScreenPoint::from_vec3(start, target);
     let end = ScreenPoint::from_vec3(end, target);
@@ -263,7 +272,8 @@ fn append_line_segment(
             draw_uniform_tint(style.tint),
         )
         .without_semantic_attribution()
-        .without_gpu_triangle_path(),
+        .without_gpu_triangle_path()
+        .with_scene_clipping(style.clip_with_scene),
     );
     primitives.push(
         PreparedPrimitive::new(
@@ -286,7 +296,8 @@ fn append_line_segment(
             draw_uniform_tint(style.tint),
         )
         .without_semantic_attribution()
-        .without_gpu_triangle_path(),
+        .without_gpu_triangle_path()
+        .with_scene_clipping(style.clip_with_scene),
     );
 }
 

@@ -238,6 +238,21 @@ impl AnimationSourceClip {
         self.duration_seconds
     }
 
+    /// Rebinds this source clip, panicking if the result is invalid.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `map_vec3` produces a non-finite value, when
+    /// `duration_seconds` is not finite and positive, or whenever
+    /// [`Self::try_rebind`] would otherwise return an
+    /// [`AnimationError`] — that is, on any input a host could supply at
+    /// runtime.
+    ///
+    /// This is a retained pre-1.9.1 compatibility wrapper. It is kept rather
+    /// than removed because deleting it would be a breaking change, and it
+    /// cannot be made non-panicking without changing its return type. Use
+    /// [`Self::try_rebind`], which returns the error instead; this wrapper is
+    /// scheduled for removal in the next major release.
     #[deprecated(
         since = "1.9.1",
         note = "use AnimationSourceClip::try_rebind so invalid rebound values return AnimationError"
@@ -534,6 +549,44 @@ mod validation_tests {
         assert!(
             message.contains(expected),
             "expected '{expected}' in '{message}'"
+        );
+    }
+
+    /// R05: the retained deprecated `rebind` wrapper is a panic surface.
+    /// Its contract is now documented rather than silently relied upon, and
+    /// pinned here so a future refactor cannot quietly change it.
+    #[test]
+    #[should_panic(expected = "use try_rebind")]
+    fn deprecated_rebind_panics_where_try_rebind_returns_an_error() {
+        let clip = AnimationSourceClip::try_new(
+            None,
+            vec![source_channel(
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO, Vec3::ZERO]),
+                AnimationInterpolation::Linear,
+            )],
+            1.0,
+        )
+        .expect("valid source clip builds");
+        let key = AnimationClipKey::fresh();
+
+        // `try_rebind` reports the poisoned value as an error...
+        let error = clip.try_rebind(
+            key,
+            |_| Some(NodeKey::default()),
+            |_, _| Vec3::new(f32::NAN, 0.0, 0.0),
+        );
+        assert!(
+            error.is_err(),
+            "try_rebind must reject a non-finite rebound value"
+        );
+
+        // ...while the deprecated wrapper panics on the same input.
+        #[allow(deprecated)]
+        let _ = clip.rebind(
+            key,
+            |_| Some(NodeKey::default()),
+            |_, _| Vec3::new(f32::NAN, 0.0, 0.0),
         );
     }
 

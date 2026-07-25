@@ -484,6 +484,28 @@ For cutaways or sectioned views, add `expect_clipping` with the expected
 `active_clipping_planes`, `section_box_active`, and `section_box_inverted`
 values. Treat `clipping_plane_count_mismatch`, `section_box_missing`, and
 `section_box_inversion_mismatch` as real composition failures.
+
+A section box and a clipping plane section **model geometry only**. Since
+1.9.1 they do not remove annotations: labels, leader lines, and dimension lines
+stay visible so a cutaway still explains itself. This is the behavior a
+sectioned technical view needs — the whole point of the cutaway is usually to
+annotate what it exposes.
+
+If a specific annotation *should* be sectioned along with the geometry, opt it
+in explicitly with `LabelDesc::with_scene_clipping(true)`. Generated callout and
+measurement overlays are always exempt. There is no global switch
+back to the old behavior; the opt-in is per-overlay so one dimension line can
+clip while its neighbours do not.
+
+Before 1.9.1 every annotation clipped against the section box, so a cutaway
+silently lost its labels. If a stored render relied on that, opt the affected
+labels back in.
+
+Nodes removed by a section box or clipping plane are reported through the
+existing `nodes_detail[].reason_codes` vocabulary — see
+`docs/schema-contracts.md`. There is no `clipped_by_section_box` code;
+plane-clipped nodes report `clipped_by_active_clipping_plane`, which is
+`warning` severity and advisory.
 For configurators or product renders with material variants, add
 `expect_state` entries for the import id and expected
 `active_material_variant`. Omit or set `active_material_variant:null` when the

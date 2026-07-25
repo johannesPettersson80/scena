@@ -1,9 +1,10 @@
 use super::scena_args::ValidateRecipeCommandArgs;
+use super::scena_cli_error::{CliErrorKind, CliFailure};
 use super::scena_input::{RecipeReadError, read_recipe_text};
 use super::scena_output::{CliOutcome, json_outcome};
 use super::scena_policy::effective_recipe_policy;
 
-pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = ValidateRecipeCommandArgs::parse(args)?;
     let recipe_path = args.recipe;
     let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
@@ -14,9 +15,9 @@ pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome,
             return emit_report(report);
         }
         Err(RecipeReadError::Io(error)) => {
-            return Err(format!(
-                "failed to read recipe '{}': {error}",
-                recipe_path.display()
+            return Err(CliFailure::new(
+                CliErrorKind::InputNotFound,
+                format!("failed to read recipe '{}': {error}", recipe_path.display()),
             ));
         }
     };
@@ -37,7 +38,7 @@ pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome,
     emit_report(report)
 }
 
-fn emit_report(report: scena::SceneRecipeValidationReportV1) -> Result<CliOutcome, String> {
+fn emit_report(report: scena::SceneRecipeValidationReportV1) -> Result<CliOutcome, CliFailure> {
     let exit_code = if report.ok { 0 } else { 1 };
     json_outcome(
         &report,

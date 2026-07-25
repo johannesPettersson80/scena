@@ -94,13 +94,17 @@ semantics, networking, gameplay ECS, audio, or application business logic.
 
 - Full-repo correctness, agent-contract, proof, performance, and documentation
   remediation:
-  `docs/checklists/full-repo-review-v1.9.0-remediation.md`.
+  `docs/checklists/full-repo-review-v1.9.1-remediation.md`.
+  Its section 8 carries the forward feature backlog (`F01`-`F09` and the
+  deferred renderer work); its section 7 carries the performance track.
 
 ### Historical evidence tracks
 
 The following completed or archived plans retain acceptance evidence; their
 status tags are historical records, not current prioritization:
 
+- Completed v1.9.0 full-repository remediation:
+  `docs/checklists/full-repo-review-v1.9.0-remediation.md`.
 - Easy-use and renderer-quality evidence log:
   `docs/checklists/next-release-easy-use-and-state-of-the-art.md`.
 - Completed v1.8.0 full-repository remediation:

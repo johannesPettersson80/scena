@@ -148,8 +148,18 @@ pub struct RenderIntrospectionFramingV1 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RenderIntrospectionNodesSummaryV1 {
+    /// Every visible scene node, including cameras, lights, and empties.
+    ///
+    /// G05: this is **not** comparable to `drawn`. Use `visible_drawable`,
+    /// which counts the population `drawn` is drawn from.
     pub visible: usize,
     pub hidden: usize,
+    /// Visible nodes that can rasterize — the population `drawn` comes from.
+    ///
+    /// Added in 1.9.1; defaults to `0` when deserializing an older fixture.
+    #[serde(default)]
+    pub visible_drawable: usize,
+    /// Length of the renderer's draw list. Excludes overlay and label draws.
     pub drawn: usize,
     pub culled: u64,
     pub transparent: u64,

@@ -160,6 +160,36 @@ fn q07_required_native_antialiasing_modes_have_pixel_effect() {
             serde_json::json!({"path":relative, "sha256":sha256_file(&file)})
         })
         .collect::<Vec<_>>();
+    // E01 (`N13`): the recorded mutation results must be *computed* from this
+    // run's live baseline, not written as literals. A literal `rejected: true`
+    // survives an oracle that stopped rejecting anything.
+    let known_bad_mutations = serde_json::Value::Array(
+        evaluate_known_bad_mutations(&baseline)
+            .into_iter()
+            .map(|(name, rejected, reason)| {
+                assert!(
+                    rejected,
+                    "Q07 known-bad mutation '{name}' was accepted by the live oracle; \
+                     the artifact must not be written",
+                );
+                serde_json::json!({"name": name, "rejected": rejected, "reason": reason})
+            })
+            .collect(),
+    );
+    // A mutation set that rejects everything proves nothing. Record a positive
+    // control computed the same way, so an oracle degraded to "always reject"
+    // is visible in the artifact itself.
+    let control_metrics = measure_edges(
+        &supersampled_diagonal_fixture(WIDTH, HEIGHT, 4),
+        WIDTH,
+        HEIGHT,
+    );
+    let control_accepted = evaluate_antialiasing_effect(baseline.metrics, control_metrics).is_ok();
+    let positive_control = serde_json::json!({
+        "name": "supersampled_diagonal",
+        "accepted": control_accepted,
+    });
+
     fs::create_dir_all(ARTIFACT_DIR).expect("Q07 artifact directory creates");
     let artifact = serde_json::json!({
         "schema": "scena.q07.antialiasing_effect.v1",
@@ -182,10 +212,8 @@ fn q07_required_native_antialiasing_modes_have_pixel_effect() {
             "msaa4": {"status":"passed", "metrics":msaa4.metrics, "frame_path":msaa4_path},
             "msaa8": msaa8,
         },
-        "known_bad_mutations": [
-            {"name":"no_op", "rejected":true},
-            {"name":"blur_everything", "rejected":true},
-        ],
+        "known_bad_mutations": known_bad_mutations,
+        "positive_control": positive_control,
         "source_checksums": source_checksums,
     });
     fs::write(
@@ -196,6 +224,35 @@ fn q07_required_native_antialiasing_modes_have_pixel_effect() {
         ),
     )
     .expect("Q07 artifact writes");
+}
+
+/// Runs each known-bad AA mutation against this run's live baseline and returns
+/// the computed verdict.
+///
+/// E01 (`N13`): the Q07 artifact previously recorded `rejected: true` as a JSON
+/// literal, so it stayed `true` even if the oracle stopped rejecting. Every
+/// value the artifact publishes now comes from an actual evaluation.
+fn evaluate_known_bad_mutations(
+    baseline: &RenderedMode,
+) -> Vec<(&'static str, bool, &'static str)> {
+    let no_op = baseline.frame.clone();
+    let blurred = box_blur_rgba8(&baseline.frame, WIDTH, HEIGHT, 7);
+    [
+        ("no_op", no_op, "an AA mode that changes no pixels"),
+        (
+            "blur_everything",
+            blurred,
+            "a whole-frame blur rather than edge-local smoothing",
+        ),
+    ]
+    .into_iter()
+    .map(|(name, frame, reason)| {
+        let rejected =
+            evaluate_antialiasing_effect(baseline.metrics, measure_edges(&frame, WIDTH, HEIGHT))
+                .is_err();
+        (name, rejected, reason)
+    })
+    .collect()
 }
 
 fn render_mode(

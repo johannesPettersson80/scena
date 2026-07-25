@@ -179,6 +179,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_fr08_recipe_spatial_state_contracts(root, findings);
     check_tests_env_flags_documented(root, findings);
     check_feature_gated_contract_tests_documented(root, findings);
+    check_feature_gated_tests_run_in_a_workflow(root, findings);
     check_feature_ownership_contracts(root, findings);
     check_q07_claim_truth_contracts(root, findings);
     check_no_ignored_release_tests(root, findings);

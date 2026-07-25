@@ -305,6 +305,14 @@ clip the outside; inverted boxes clip the interior and keep the outside. The
 optional helper wireframe is a generated SceneHost node and is removed when a
 later section-box update disables the helper or the section box.
 
+A section box sections **model geometry**. It does not remove annotations.
+Labels, callout leader lines, and measurement/dimension lines are presentation
+overlays that carry the very information a section view exists to communicate,
+so they stay legible when the box excludes their anchor. Opt an individual
+label into being cut with the model using
+`LabelDesc::with_scene_clipping(true)`; generated callout and measurement
+overlays are always exempt. Active clipping planes follow the same rule.
+
 `metadata` is caller-owned JSON. It is returned in `VisualPatchResultV1` only
 when `echo_metadata` is `true`, so agents can correlate responses without
 forcing every result to echo arbitrary host data.
@@ -931,9 +939,61 @@ from shader-encoded RGBA8 bytes on a 0-255 scale. `fixes[]` carries stable
 Scena action codes such as `frame_bounds` and `set_visible`; callers decide
 whether to apply a suggested action.
 
+#### `nodes_detail[].reason_codes` vocabulary
+
+Detail mode attaches per-node `reason_codes` explaining why a node that is
+*visible* still places no pixels on the frame. The complete vocabulary, with the
+severity each code carries:
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `node_hidden` | error | The node itself is hidden. |
+| `parent_hidden` | error | An ancestor is hidden. |
+| `layer_masked` | error | The active camera's layer mask excludes the node. |
+| `stale_handle` | error | The handle no longer resolves to a live node. |
+| `nan_transform` | error | The resolved world transform is not finite. |
+| `zero_scale` | error | The resolved scale collapses the node to nothing. |
+| `missing_geometry` | error | The node has no geometry to draw. |
+| `missing_material_upload` | error | The material never reached the backend. |
+| `alpha_zero` | error | The material is fully transparent. |
+| `behind_camera` | error | The node is entirely behind the active camera. |
+| `outside_frustum` | error | The node is outside the active camera frustum. |
+| `not_prepared` | error | Nothing has been prepared yet. |
+| `missing_camera` | error | The scene has no active camera. |
+| `no_visible_drawables` | error | No visible node can rasterize. |
+| `all_culled` | error | Every drawable was culled. |
+| `import_has_no_roots` | error | The import produced no root nodes. |
+| `import_roots_stale` | error | The import's roots no longer resolve. |
+| `clipped_by_active_clipping_plane` | warning | An active clipping plane removes the node. |
+| `transparent_material` | warning | The material is non-opaque; it may be invisible against the background. |
+| `backend_capability_degraded` | warning | The backend lacks a capability the scene relies on. |
+
+Which codes are load-bearing:
+
+- **`error` severity is load-bearing.** `ok` is false whenever any
+  `error`-severity reason is present, and a declared template expectation fails.
+- **`warning` severity is advisory.** It is reported and must not be filtered
+  out, but it does not set `ok` to false on its own.
+
+Codes are only attached to node kinds that can rasterize — `Mesh`, `Label`,
+`Renderable`, `Model`, `InstanceSet`, and `ParticleSet`. Cameras, lights, and
+empties structure the scene but never place pixels, so a visibility reason on
+one of them would be noise rather than a finding.
+
+There is deliberately **no** `clipped_by_section_box` code. A section box
+sections model geometry, and geometry it removes is reported through the
+existing culling and clipping codes; annotations are not clipped by it at all
+(see the section-box semantics above).
+
 Summary mode omits `nodes_detail`; detail mode includes stable node handles
 and draw-derived node state. `nodes_summary.transparent` is computed from
-non-opaque prepared draw materials. Failure reasons include stable
+non-opaque prepared draw materials.
+
+`nodes_summary.visible` counts **every** visible node, including cameras,
+lights, and empties, so it is never comparable to `nodes_summary.drawn`.
+`nodes_summary.visible_drawable` (added in 1.9.1, `#[serde(default)]`) counts
+visible nodes that can rasterize — the population `drawn` is drawn from. Compare
+`drawn` against `visible_drawable`, never against `visible`. Failure reasons include stable
 `affected_handles` whenever the renderer can identify the node, and fixes that
 change scene state carry apply-ready `scena.visual_patch.v1` bodies. The report
 rounds floating-point summaries to stable precision and keeps large artifacts

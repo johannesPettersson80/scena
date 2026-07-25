@@ -404,7 +404,7 @@ fn draw_cpu_geometry_pass_serial(
                         &mut cpu_frame,
                         primitive,
                         projected,
-                        raster_context,
+                        raster_context.for_primitive(primitive),
                         input.oit_scratch,
                         config,
                     );
@@ -413,7 +413,7 @@ fn draw_cpu_geometry_pass_serial(
                         &mut cpu_frame,
                         primitive,
                         projected,
-                        raster_context,
+                        raster_context.for_primitive(primitive),
                         material_reflections.as_deref_mut(),
                         input.screen_space_reflections,
                     );
@@ -436,7 +436,7 @@ fn draw_cpu_geometry_pass_serial(
                     &mut cpu_frame,
                     primitive,
                     projected,
-                    raster_context,
+                    raster_context.for_primitive(primitive),
                     material_reflections.as_deref_mut(),
                     input.screen_space_reflections,
                 );
@@ -467,7 +467,7 @@ fn draw_cpu_geometry_pass_serial(
                         primitive,
                         projected,
                         scene_color_frame,
-                        raster_context,
+                        raster_context.for_primitive(primitive),
                     ),
                 );
             }

@@ -64,6 +64,13 @@ does not turn diagnostic output into release evidence.
 | `SCENA_BROWSER_REQUIRE_V3D` | Requires the scene-host proof to use V3D hardware when set to `1`. | no V3D-specific requirement |
 | `RUST_TOOLCHAIN` | Rust toolchain used by the scene-host browser proof's WASM build. | `1.93.1` |
 | `SCENA_SKIP_WASM_BUILD` | Reuses a prebuilt scene-host WASM package when set to `1`; intended for scoped diagnostics with separately verified build provenance. | build WASM before proof |
+| `SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU` | Product-code escape hatch. `Renderer::headless_gpu` refuses a V3D adapter known to hang on this class of host; setting this variable lets the request proceed. Diagnostic only — a release lane must not set it. | unset → the unstable V3D adapter is refused with `BuildError::RequestDevice` |
+| `SCENA_EASY_SCENE_SHOWCASE_ONLY` | Restricts `examples/easy_scene_showcase` to one subset. `reflective-cards` renders only the lens, auto-exposure, environment, and chrome comparison cards. | unset → render the full showcase |
+| `SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS` | Makes a missing generated WASM artifact blocking in `doctor --full`. Release workflows set it to `1`; a normal local run treats absence as non-blocking so a fresh checkout is not failed for artifacts it never built. | unset → generated-artifact absence is advisory |
+| `SCENA_GLTF_VALIDATOR` | Path to the official Khronos glTF Validator binary used by `xtask asset-doctor`. | unset → scena's native asset guidance only |
+| `SCENA_GPU_EVIDENCE_CLASS` | Declares which evidence class a GPU parity artifact may claim: `software-conformance` or `hardware-release`. The hosted software-adapter browser lane sets `software-conformance` so its artifacts cannot be read as hardware release evidence. | unset → `hardware-release` |
+| `SCENA_RELEASE_ARTIFACT_ROOT` | Directory `xtask release-readiness` reads staged artifacts from when `--artifact-root` is not passed. Empty or unset with no flag is a hard error, never a silent default. | unset → `--artifact-root` is required |
+| `SCENA_REQUIRE_CI_PROVENANCE` | Requires CI-issued provenance on every staged release artifact; self-reported commit metadata is rejected. Required release workflows set it to `1`. | unset → local provenance is accepted for non-release staging |
 
 To exercise the headline WaterBottle GPU render on an approved proof host:
 
@@ -76,11 +83,31 @@ The GPU headline test fails when a working approved adapter is unavailable; it
 does not fall back to the CPU renderer. The CPU proof is a separately named
 test and artifact.
 
-The required macOS Metal lane currently proves a live GPU render with more than
-5,000 nonblack pixels, material color-family histograms, and fixed cap/body/
-label/background region samples. Region checks normally use RGB Chebyshev
-tolerance 25; the measured Apple Paravirtual Metal body sample permits up to 35.
-It does **not** run the opt-in GPU reference comparison above.
+The required macOS Metal lane proves a live GPU render with more than 5,000
+nonblack pixels, material color-family histograms, and seven fixed region
+samples (`cap_dome`, `cap_dome_left`, `upper_body`, `body_olive_mid`,
+`body_olive_low`, `label_metal_l`, `label_metal_r`).
+
+Every region in every profile uses RGB Chebyshev tolerance **25**. There is no
+loosened tolerance for any adapter. What varies between profiles is the
+*expected* sample value, not the tolerance: the Apple Paravirtual Metal profile
+records its own measured values (for example `cap_dome` `[76, 28, 12]` versus
+the portable profile's `[76, 27, 12]`).
+
+Profiles are selected by a **structured adapter key**
+(`backend`/`vendor`/`device`/`device_type`/`driver`/`driver_info`), never by a
+free-form adapter name. Each profile carries an owner, a review date, an expiry,
+and the SHA-256 of the evidence image it was measured from; see
+`[adapter_expectations]` in `tests/assets/gltf/khronos/WaterBottle/reference_metadata.toml`.
+
+The lane **does** run the full-frame GPU reference comparison: it sets both
+`SCENA_REFERENCE_DIFF=1` and `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1`
+for `m8_real_asset_waterbottle_gpu_headline`. In total the lane runs **12**
+`release_lane_command.sh` invocations, covering M9 platform release and its
+benchmark, Q11 reference stability, the WaterBottle GPU headline, Q07
+antialiasing, five `SCENA_REQUIRE_GPU_PARITY` proofs (transmission, near-clip
+depth, dynamic transforms, Z-up rotation, PBR BRDF, PF08 texture bake), and
+`cargo check --examples --all-features`.
 
 The default lane independently runs
 `q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders`.

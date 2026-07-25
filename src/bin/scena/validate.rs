@@ -1,11 +1,14 @@
+use super::scena_cli_error::CliFailure;
 use std::fs;
 use std::path::Path;
 
 use super::scena_output::{CliOutcome, json_outcome};
 
-pub(crate) fn run_validate_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_validate_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let [path] = args else {
-        return Err("usage: scena validate <file>".to_owned());
+        return Err(CliFailure::invalid_arguments(
+            "usage: scena validate <file>",
+        ));
     };
     let path = Path::new(path);
     let text = fs::read_to_string(path)

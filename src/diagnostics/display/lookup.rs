@@ -89,6 +89,20 @@ impl fmt::Display for LookupError {
                 formatter,
                 "node {node:?} cannot be placed in world space because parent {parent:?} has a non-invertible transform"
             ),
+            Self::InvalidMorphWeights { node, reason } => {
+                write!(
+                    formatter,
+                    "morph weights for node {node:?} are invalid: {reason}"
+                )
+            }
+            Self::MorphWeightWidthMismatch {
+                node,
+                expected,
+                supplied,
+            } => write!(
+                formatter,
+                "node {node:?} expects {expected} morph weights but {supplied} were supplied"
+            ),
             Self::InvalidTransform { reason } => {
                 write!(formatter, "transform is invalid: {reason}")
             }

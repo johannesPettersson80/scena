@@ -23,6 +23,26 @@ failures are never mislabeled as `invalid_arguments`.
 | `policy` | 77 | sandbox or operator policy rejected the request |
 | `interrupted` | 130 | process interrupted or cancelled |
 
+### `runtime` and `internal` share exit 70 — branch on the JSON, not `$?`
+
+Two classes map to the same numeric exit code, so **exit status alone cannot
+tell them apart**. A caller that only reads `$?` will see 70 for both.
+
+Read the error document instead. `exit_class` and `code` are always distinct:
+
+| Exit class | `code` | What it means for the caller |
+|---|---|---|
+| `runtime` | `runtime_error` | Your request was valid and dispatched; the operation itself failed. Inspect `message` and `help`, adjust the inputs or environment, and retry. |
+| `internal` | `internal_error` | A scena invariant broke. Nothing you change will fix it — preserve the JSON document and file an issue. |
+
+This is a deliberate, documented limitation rather than a defect: neither class
+is fixable by changing arguments, so a shell-only consumer would take the same
+action for both. Exit codes are part of the published contract and are pinned by
+`tests/a01_cli_error_taxonomy.rs`; separating them would be a breaking change.
+
+Both fields are set from a typed error kind, not inferred from the message text,
+so rewording an error can never move it between these two classes.
+
 `scena --help` is the machine-authoritative command table: each
 `command_contracts[]` row declares its success/error schemas and applicable
 `failure_exit_classes`. A closed stdout pipe is quiet success; another stdout

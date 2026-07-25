@@ -65,6 +65,7 @@ pub(in crate::render) struct PreparedLabelQuad {
     color: Color,
     tint: Color,
     solid_coverage: bool,
+    clip_with_scene: bool,
     original_quad_index: u32,
 }
 
@@ -92,8 +93,22 @@ impl PreparedLabelQuad {
             color,
             tint,
             solid_coverage: false,
+            clip_with_scene: false,
             original_quad_index: 0,
         }
+    }
+
+    /// Opts this quad into scene clipping (planes and section box).
+    ///
+    /// G01: annotations default to *not* clipping, so a section view keeps
+    /// the measurements and callouts it exists to communicate.
+    pub(in crate::render) const fn with_scene_clipping(mut self, clip_with_scene: bool) -> Self {
+        self.clip_with_scene = clip_with_scene;
+        self
+    }
+
+    pub(in crate::render) const fn clips_with_scene(&self) -> bool {
+        self.clip_with_scene
     }
 
     pub(in crate::render) const fn with_solid_coverage(mut self) -> Self {

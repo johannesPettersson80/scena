@@ -76,7 +76,7 @@ fn agent_only_commands_name_the_one_step_install_feature() {
     for command in [
         "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
         "recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...",
-        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
         "examples agent list",
         "render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--allow-root <directory>]...",
         "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>",

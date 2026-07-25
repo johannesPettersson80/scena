@@ -466,6 +466,19 @@ pub enum LookupError {
         node: NodeKey,
         parent: NodeKey,
     },
+    /// A morph weight vector contained a non-finite value.
+    InvalidMorphWeights {
+        node: NodeKey,
+        reason: &'static str,
+    },
+    /// A morph weight vector's width does not match the width already
+    /// established for the node. Returned instead of silently zipping, which
+    /// would apply only the leading targets and report success.
+    MorphWeightWidthMismatch {
+        node: NodeKey,
+        expected: usize,
+        supplied: usize,
+    },
     InvalidTransform {
         reason: &'static str,
     },

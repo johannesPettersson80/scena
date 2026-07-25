@@ -8,7 +8,19 @@ pub const JSON_SCHEMA_EXPORT_SCHEMA_V1: &str = "scena.json_schema_export.v1";
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContractValidationReportV1 {
     pub schema: String,
+    /// Whether the checks that ran all passed.
+    ///
+    /// G07: this is **not** "the payload is fully valid". A contract with
+    /// envelope-only support reports `ok: true` after checking the wrapper
+    /// alone. Key on [`Self::fully_validated`] before treating a value as
+    /// verified.
     pub ok: bool,
+    /// Whether the payload itself was validated, not just its envelope.
+    ///
+    /// Added in 1.9.1; defaults to `false` when deserializing an older
+    /// fixture, which is the fail-closed reading.
+    #[serde(default)]
+    pub fully_validated: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contract: Option<String>,
     pub validation_level: String,
@@ -137,9 +149,21 @@ pub fn validate_contract_json_v1(text: &str) -> ContractValidationReportV1 {
         _ => ContractValidationReportV1 {
             schema: CONTRACT_VALIDATION_SCHEMA_V1.to_owned(),
             ok: true,
+            fully_validated: false,
             contract: Some(contract),
             validation_level: "envelope".to_owned(),
-            diagnostics: Vec::new(),
+            diagnostics: vec![ContractValidationDiagnosticV1 {
+                code: "envelope_validation_only".to_owned(),
+                severity: "warning".to_owned(),
+                path: "$".to_owned(),
+                message:
+                    "only the contract envelope was validated; the payload was not checked"
+                        .to_owned(),
+                help:
+                    "validate the producing workflow for runtime semantics, or key on fully_validated"
+                        .to_owned(),
+                candidates: Vec::new(),
+            }],
             limitations: vec![
                 "this emitted/report contract has envelope validation only; validate its producing workflow for runtime semantics"
                     .to_owned(),
@@ -196,6 +220,7 @@ fn validate_recipe(text: &str) -> ContractValidationReportV1 {
     ContractValidationReportV1 {
         schema: CONTRACT_VALIDATION_SCHEMA_V1.to_owned(),
         ok: report.ok,
+        fully_validated: report.ok,
         contract: Some(crate::SCENE_RECIPE_SCHEMA_V1.to_owned()),
         validation_level: "typed".to_owned(),
         diagnostics: report
@@ -227,6 +252,7 @@ fn validate_typed<T: DeserializeOwned>(
             Ok(()) => ContractValidationReportV1 {
                 schema: CONTRACT_VALIDATION_SCHEMA_V1.to_owned(),
                 ok: true,
+                fully_validated: true,
                 contract: Some(contract.to_owned()),
                 validation_level: "typed".to_owned(),
                 diagnostics: Vec::new(),
@@ -264,6 +290,7 @@ fn failure(
     ContractValidationReportV1 {
         schema: CONTRACT_VALIDATION_SCHEMA_V1.to_owned(),
         ok: false,
+        fully_validated: false,
         contract: contract.map(str::to_owned),
         validation_level: validation_level.to_owned(),
         diagnostics: vec![diagnostic],

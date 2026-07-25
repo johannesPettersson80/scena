@@ -1,3 +1,4 @@
+use super::scena_cli_error::CliUsageError;
 use std::path::PathBuf;
 
 use super::scena_policy::push_allow_root;
@@ -50,9 +51,9 @@ impl PlaceTargetArg {
 }
 
 impl ValidateRecipeCommandArgs {
-    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(recipe) = args.first() else {
-            return Err(validate_recipe_usage());
+            return Err(CliUsageError::from(validate_recipe_usage()));
         };
         let mut max_imports = None;
         let mut syntax_only = false;
@@ -83,10 +84,10 @@ impl ValidateRecipeCommandArgs {
                     index += 2;
                 }
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown validate-recipe argument '{flag}'; {}",
                         validate_recipe_usage()
-                    ));
+                    )));
                 }
             }
         }
@@ -100,9 +101,9 @@ impl ValidateRecipeCommandArgs {
 }
 
 impl PlaceCommandArgs {
-    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(recipe) = args.first() else {
-            return Err(place_usage());
+            return Err(CliUsageError::from(place_usage()));
         };
         let mut import_id = None;
         let mut node_id = None;
@@ -194,10 +195,10 @@ impl PlaceCommandArgs {
                 "--expect-source-sha256" => {
                     let digest = flag_value_any(args, index, "--expect-source-sha256")?;
                     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                        return Err(
+                        return Err(CliUsageError::from(
                             "--expect-source-sha256 requires exactly 64 hexadecimal characters"
                                 .to_owned(),
-                        );
+                        ));
                     }
                     expected_source_sha256 = Some(digest.to_ascii_lowercase());
                     index += 2;
@@ -205,7 +206,12 @@ impl PlaceCommandArgs {
                 "--json" => {
                     index += 1;
                 }
-                flag => return Err(format!("unknown place flag '{flag}'; {}", place_usage())),
+                flag => {
+                    return Err(CliUsageError::from(format!(
+                        "unknown place flag '{flag}'; {}",
+                        place_usage()
+                    )));
+                }
             }
         }
 
@@ -213,23 +219,25 @@ impl PlaceCommandArgs {
             (Some(id), None) => PlaceTargetArg::Import(id),
             (None, Some(id)) => PlaceTargetArg::Node(id),
             (None, None) => {
-                return Err(format!(
+                return Err(CliUsageError::from(format!(
                     "missing --import <id> or --node <id>; {}",
                     place_usage()
-                ));
+                )));
             }
             (Some(_), Some(_)) => {
-                return Err(format!(
+                return Err(CliUsageError::from(format!(
                     "--import and --node are mutually exclusive; {}",
                     place_usage()
-                ));
+                )));
             }
         };
 
         Ok(Self {
             recipe: PathBuf::from(recipe),
             target_subject,
-            verb: verb.ok_or_else(|| format!("missing --verb <verb>; {}", place_usage()))?,
+            verb: verb.ok_or_else(|| {
+                CliUsageError::from(format!("missing --verb <verb>; {}", place_usage()))
+            })?,
             target,
             up,
             ground_y,
@@ -246,32 +254,34 @@ impl PlaceCommandArgs {
     }
 }
 
-fn flag_value_any(args: &[String], index: usize, flag: &str) -> Result<String, String> {
+fn flag_value_any(args: &[String], index: usize, flag: &str) -> Result<String, CliUsageError> {
     args.get(index + 1)
         .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
+        .ok_or_else(|| CliUsageError::from(format!("{flag} requires a value")))
 }
 
-fn parse_f32(flag: &str, value: String) -> Result<f32, String> {
+fn parse_f32(flag: &str, value: String) -> Result<f32, CliUsageError> {
     let parsed = value
         .parse::<f32>()
         .map_err(|_| format!("{flag} requires a finite number, got '{value}'"))?;
     if !parsed.is_finite() {
-        return Err(format!("{flag} requires a finite number, got '{value}'"));
+        return Err(CliUsageError::from(format!(
+            "{flag} requires a finite number, got '{value}'"
+        )));
     }
     Ok(parsed)
 }
 
-fn parse_vec3(flag: &str, value: String) -> Result<scena::Vec3, String> {
+fn parse_vec3(flag: &str, value: String) -> Result<scena::Vec3, CliUsageError> {
     let parts = value
         .split([',', ' '])
         .filter(|part| !part.is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
     if parts.len() != 3 {
-        return Err(format!(
+        return Err(CliUsageError::from(format!(
             "{flag} requires three comma- or space-separated numbers"
-        ));
+        )));
     }
     Ok(scena::Vec3::new(
         parse_f32(flag, parts[0].clone())?,
@@ -280,12 +290,14 @@ fn parse_vec3(flag: &str, value: String) -> Result<scena::Vec3, String> {
     ))
 }
 
-fn parse_positive_usize(flag: &str, value: String) -> Result<usize, String> {
+fn parse_positive_usize(flag: &str, value: String) -> Result<usize, CliUsageError> {
     let parsed = value
         .parse::<usize>()
         .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
     if parsed == 0 {
-        return Err(format!("{flag} requires a positive integer, got 0"));
+        return Err(CliUsageError::from(format!(
+            "{flag} requires a positive integer, got 0"
+        )));
     }
     Ok(parsed)
 }

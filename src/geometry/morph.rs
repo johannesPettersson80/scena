@@ -51,7 +51,7 @@ impl GeometryDesc {
     }
 
     pub fn morphed_vertices(&self, weights: &[f32]) -> Option<Vec<GeometryVertex>> {
-        if self.morph_targets.is_empty() {
+        if self.morph_targets.is_empty() || !self.morph_weight_width_matches(weights) {
             return None;
         }
         let mut vertices = self.vertices.clone();
@@ -79,10 +79,22 @@ impl GeometryDesc {
         Some(vertices)
     }
 
+    /// Whether a weight vector matches this geometry's morph-target count.
+    ///
+    /// glTF requires the two to be equal. Zipping a mismatched pair would
+    /// apply only the leading targets and report success, so a declared
+    /// deformation would silently vanish from the render.
+    pub fn morph_weight_width_matches(&self, weights: &[f32]) -> bool {
+        weights.len() == self.morph_targets.len()
+    }
+
     /// Applies glTF morph-target tangent deltas while retaining the authored
     /// tangent handedness. Render preparation subsequently orthogonalizes and
     /// normalizes the XYZ direction against the morphed normal.
     pub fn morphed_tangents(&self, weights: &[f32]) -> Option<Vec<[f32; 4]>> {
+        if !self.morph_weight_width_matches(weights) {
+            return None;
+        }
         let mut tangents = self.tangents.clone()?;
         for (target, weight) in self.morph_targets.iter().zip(weights.iter().copied()) {
             let Some(tangent_deltas) = target.tangent_deltas() else {
@@ -146,5 +158,65 @@ fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
         fallback
     } else {
         Vec3::new(vector.x / length, vector.y / length, vector.z / length)
+    }
+}
+
+#[cfg(test)]
+mod r04_tests {
+    use super::super::{GeometryDesc, GeometryMorphTarget, GeometryTopology, GeometryVertex};
+    use crate::scene::Vec3;
+
+    fn vertex(x: f32) -> GeometryVertex {
+        GeometryVertex {
+            position: Vec3::new(x, 0.0, 0.0),
+            normal: Vec3::new(0.0, 1.0, 0.0),
+        }
+    }
+
+    fn two_target_geometry() -> GeometryDesc {
+        GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![vertex(0.0), vertex(1.0), vertex(2.0)],
+            vec![0, 1, 2],
+        )
+        .expect("triangle geometry builds")
+        .with_morph_targets(vec![
+            GeometryMorphTarget::new(vec![
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+            ]),
+            GeometryMorphTarget::new(vec![
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ]),
+        ])
+        .expect("two morph targets attach")
+    }
+
+    /// R04: a weight vector whose width does not match the geometry's morph
+    /// target count must not be silently zipped. Truncation applies only the
+    /// leading targets and reports success, so the render silently omits a
+    /// declared deformation.
+    #[test]
+    fn morph_weight_width_mismatch_is_rejected_instead_of_truncated() {
+        let geometry = two_target_geometry();
+
+        assert!(
+            geometry.morphed_vertices(&[1.0]).is_none(),
+            "a short weight vector must be rejected, not zipped against the \
+             first target only"
+        );
+        assert!(
+            geometry.morphed_vertices(&[1.0, 0.0, 0.5]).is_none(),
+            "an over-wide weight vector must be rejected rather than ignoring \
+             the surplus"
+        );
+
+        let exact = geometry
+            .morphed_vertices(&[1.0, 0.0])
+            .expect("an exactly-sized weight vector still applies");
+        assert_eq!(exact[0].position.x, 1.0);
     }
 }

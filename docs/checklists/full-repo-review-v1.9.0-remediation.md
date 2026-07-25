@@ -102,7 +102,7 @@ Before editing after a branch switch, every remote sync, and every cargo gate:
 - [x] Manually copy root `AGENTS.md` and complete `.codex/skills/**` after the
   mirror, then compare canonical/destination hashes.
 - [x] Read the destination instructions and required skills before a gate.
-- [ ] Clean only the task-scoped remote snapshot/cache when the batch ends.
+- [x] Clean only the task-scoped remote snapshot/cache when the batch ends.
 
 ### 0.4 Checkpoints
 
@@ -110,7 +110,9 @@ Before editing after a branch switch, every remote sync, and every cargo gate:
 - [x] **B — remaining correctness:** C05-C23 focused red/green and scoped gates.
 - [x] **C — proof, CLI, performance, docs:** Q01-Q12, A01-A15, P01-P08,
   D01-D06, and H01-H03 focused/scoped evidence.
-- [ ] **D — final:** section 10 once on one frozen source commit.
+- [~] **D — final:** section 10 once on one frozen source commit.
+  Closed with an explicit disposition in section 10.3-10.5 rather than
+  ticked; see `D04` of the v1.9.1 remediation checklist.
 
 Optional features F01-F09 are not prerequisites for checkpoints A-D.
 
@@ -2260,6 +2262,31 @@ commit and executable/WASM hashes. Its summary correctly leaves
 `release_evidence:false` because CI-issued provenance is unavailable in a
 user-operated run. The maintained macOS/CI provenance rows therefore remain
 open for section 10.4.
+
+> **Disposition (2026-07-25, `D04` of the v1.9.1 remediation).** v1.9.0 shipped
+> and is tagged. The boxes left open below are closed here with an explicit
+> status so this document stops reading as an active backlog; the active backlog
+> is `docs/checklists/full-repo-review-v1.9.1-remediation.md`.
+>
+> - **Section 10.3 macOS/Windows/native maintained-runner rows and Q03 CI
+>   provenance** — `deferred, superseded`. The v1.9.0 release was cut with the
+>   user-operated Windows run recorded above, which correctly carries
+>   `release_evidence:false` because CI could not issue its provenance. This is
+>   not retroactively fixable for a tag that already exists. The requirement
+>   carries forward to the v1.9.1 release chain (section 9 of the v1.9.1
+>   checklist), where it is blocking.
+> - **Section 10.4 GitHub and public release proof** — `done for v1.9.0`. The
+>   commit, push, tag, and release object exist; only the release *body* text is
+>   wrong, which the v1.9.1 checklist tracks as `D01` and corrects in place.
+> - **Section 10.5 final clause** — `not satisfied for v1.9.0, and that is the
+>   reason the v1.9.1 batch exists`. The full-repository review found 26 open
+>   findings against the shipped tag. Every one is carried into the v1.9.1
+>   checklist with an owner and a row; none is silently dropped.
+> - **Section 0.3 remote snapshot cleanup** — `done`. Recorded under `D07` of
+>   the v1.9.1 checklist together with the local `target/` reclamation.
+>
+> No box below was ticked to close this document. They stay unticked because
+> they were not completed; the disposition above says what happened instead.
 
 ### 10.4 GitHub and public release proof
 

@@ -414,6 +414,7 @@ pub(super) fn write_material_texture_layer_mips(
                 mip_extents[mip_level - 1].1,
                 width,
                 height,
+                upload.format == wgpu::TextureFormat::Rgba8UnormSrgb,
             );
             previous.as_slice()
         };

@@ -252,30 +252,56 @@ pub(super) fn select_stage_source(files: &[PathBuf], suffix: &str) -> Option<Pat
     matches.into_iter().next()
 }
 
-fn stage_source_rank(path: &Path, suffix: &str) -> (usize, usize, String) {
-    let text = path.to_string_lossy().replace('\\', "/");
-    let preferred = if suffix.contains("headless-cpu")
+/// The lane that produces a staged suffix.
+///
+/// E04 (`N19`): a suffix with no owner used to fall through to a path-length
+/// tiebreak, so a shorter directory name on an unrelated lane could win. Q07,
+/// Q08, and C09 artifacts carry no lane marker in their path but are produced
+/// only by the macOS Metal lane (see `lane_artifacts.rs`); they were exactly the
+/// generic case the finding names.
+fn stage_source_owner_lane(suffix: &str) -> Option<&'static str> {
+    const LANE_MARKERS: &[&str] = &[
+        "macos-metal",
+        "windows-dx12",
+        "linux-native-vulkan",
+        "linux-webgpu-chromium",
+        "linux-webgl2-chromium",
+        "wasm32-unknown-unknown",
+    ];
+    if suffix.contains("headless-cpu")
         || suffix.starts_with("q01-waterbottle-cpu/")
         || suffix == "m9-platform/m9-benchmarks.json"
         || suffix == "m9-platform/m9-benchmarks-feature-matrix.json"
     {
-        stage_source_matches_lane(&text, "linux-native-vulkan") as usize
-    } else if suffix.contains("macos-metal") {
-        stage_source_matches_lane(&text, "macos-metal") as usize
-    } else if suffix.contains("windows-dx12") {
-        stage_source_matches_lane(&text, "windows-dx12") as usize
-    } else if suffix.contains("linux-native-vulkan") {
-        stage_source_matches_lane(&text, "linux-native-vulkan") as usize
-    } else if suffix.contains("linux-webgpu-chromium") {
-        stage_source_matches_lane(&text, "linux-webgpu-chromium") as usize
-    } else if suffix.contains("linux-webgl2-chromium") {
-        stage_source_matches_lane(&text, "linux-webgl2-chromium") as usize
-    } else if suffix.contains("wasm32-unknown-unknown") {
-        stage_source_matches_lane(&text, "wasm32-unknown-unknown") as usize
-    } else {
-        0
-    };
-    (usize::MAX - preferred, text.len(), text)
+        return Some("linux-native-vulkan");
+    }
+    // Suffixes produced only by the macOS Metal lane, named explicitly because
+    // nothing in their path says so.
+    if suffix.starts_with("q07-antialiasing-effect/")
+        || suffix.starts_with("q08-required-parity/")
+        || suffix.starts_with("c09-gpu-resource-lifecycle/")
+    {
+        return Some("macos-metal");
+    }
+    LANE_MARKERS
+        .iter()
+        .find(|lane| suffix.contains(*lane))
+        .copied()
+}
+
+/// Ranks a candidate source for `suffix`. Lower sorts first.
+///
+/// The key is `(owning-lane mismatch, path)`. Path **length** is deliberately
+/// absent: it made selection depend on how long an unrelated lane's directory
+/// name happened to be. The remaining path comparison is a deterministic
+/// lexicographic tiebreak among candidates that already rank equally on lane
+/// ownership.
+fn stage_source_rank(path: &Path, suffix: &str) -> (usize, String) {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let preferred = stage_source_owner_lane(suffix)
+        .map(|lane| stage_source_matches_lane(&text, lane) as usize)
+        .unwrap_or(0);
+    (usize::MAX - preferred, text)
 }
 
 fn stage_source_matches_lane(path: &str, lane: &str) -> bool {
@@ -576,6 +602,57 @@ mod tests {
                 select_stage_source(&files, suffix),
                 Some(expected),
                 "{layout} staging must select the finalized Linux headless-CPU result",
+            );
+        }
+    }
+
+    /// E04 (`N19`): every staged suffix must be selected by an explicit lane
+    /// rank, never by which candidate path happens to be shortest.
+    ///
+    /// Q07, Q08, and C09 artifacts are produced only by the macOS Metal lane
+    /// (`lane_artifacts.rs`), but their suffixes carry no lane marker, so they
+    /// used to fall through to the length tiebreak. A shorter directory name on
+    /// another lane would silently win.
+    #[test]
+    fn generic_suffixes_select_their_owning_lane_not_the_shortest_path() {
+        for suffix in [
+            "q08-required-parity/core-pbr-brdf-matches-cpu-and-gpu-across-metallic-roughness-sweep.json",
+            "q08-required-parity/close-camera-near-clip-matches-cpu-and-gpu-rendered-output.json",
+            "q07-antialiasing-effect/result.json",
+            "c09-gpu-resource-lifecycle/required-result.json",
+        ] {
+            // `win-gate/` is deliberately shorter than `macos-metal-gate-artifacts/`.
+            let expected = PathBuf::from(format!("macos-metal-gate-artifacts/{suffix}"));
+            let files = vec![
+                PathBuf::from(format!("win-gate/{suffix}")),
+                expected.clone(),
+                PathBuf::from(format!("release-linux-native-vulkan/{suffix}")),
+            ];
+            assert_eq!(
+                select_stage_source(&files, suffix),
+                Some(expected),
+                "{suffix} must come from its owning macOS Metal lane even when another \
+                 candidate has a shorter path",
+            );
+        }
+    }
+
+    /// Selection must not change when only the *length* of a non-owning path
+    /// changes. This is the property the length tiebreak violated.
+    #[test]
+    fn stage_source_selection_is_independent_of_competing_path_length() {
+        let suffix = "q08-required-parity/core-pbr-brdf-matches-cpu-and-gpu-across-metallic-roughness-sweep.json";
+        let expected = PathBuf::from(format!("macos-metal-gate-artifacts/{suffix}"));
+        for competitor in ["a/", "an-extremely-long-unrelated-lane-directory-name/"] {
+            let files = vec![
+                PathBuf::from(format!("{competitor}{suffix}")),
+                expected.clone(),
+            ];
+            assert_eq!(
+                select_stage_source(&files, suffix),
+                Some(expected.clone()),
+                "a competitor path of length {} must not change the selection",
+                competitor.len(),
             );
         }
     }

@@ -67,7 +67,8 @@
     "failed_material": 0,
     "hidden": 0,
     "transparent": 0,
-    "visible": 4
+    "visible": 4,
+    "visible_drawable": 1
   },
   "ok": true,
   "reasons": [],

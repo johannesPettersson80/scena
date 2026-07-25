@@ -1,3 +1,4 @@
+use super::scena_cli_error::{CliErrorKind, CliFailure, CliUsageError};
 use std::fs;
 
 use super::scena_input::{
@@ -18,7 +19,7 @@ pub(crate) struct VerifyAppearanceCommandArgs {
     detail: bool,
 }
 
-pub(crate) fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = VerifyAppearanceCommandArgs::parse(args)?;
     let text = fs::read_to_string(&args.expect).map_err(|error| {
         format!(
@@ -78,9 +79,12 @@ pub(crate) fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcom
 
     if let Some(out) = args.out.as_ref() {
         ensure_parent_dir(out)?;
-        capture
-            .write_png(out)
-            .map_err(|error| format!("failed to write PNG '{}': {error}", out.display()))?;
+        capture.write_png(out).map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::Io,
+                format!("failed to write PNG '{}': {error}", out.display()),
+            )
+        })?;
     }
 
     let inspection = viewer
@@ -110,7 +114,7 @@ fn run_verify_recipe_appearance(
     expectation: scena::AppearanceExpectationV1,
     out: Option<&std::path::Path>,
     detail: bool,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     let build = pollster::block_on(scene_host_build_from_resolved_recipe(
         &input, width, height, false,
     ))?;
@@ -159,16 +163,24 @@ fn run_verify_recipe_appearance(
         .map_err(|error| format!("failed to capture recipe appearance scene: {error}"))?;
     if let Some(out) = out {
         ensure_parent_dir(out)?;
-        capture
-            .write_png(out)
-            .map_err(|error| format!("failed to write PNG '{}': {error}", out.display()))?;
+        capture.write_png(out).map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::Io,
+                format!("failed to write PNG '{}': {error}", out.display()),
+            )
+        })?;
     }
     let inspection_json = build
         .host
         .inspect_json()
         .map_err(|error| format!("failed to inspect recipe appearance scene: {error}"))?;
     let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
-        .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
+        .map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::InvalidInput,
+                format!("failed to decode recipe scene inspection report: {error}"),
+            )
+        })?;
     let options = appearance_introspection_options(detail)
         .with_active_material_variant(active_variant)
         .with_available_material_variants(available_variants);
@@ -193,14 +205,16 @@ fn run_verify_recipe_appearance(
     _expectation: scena::AppearanceExpectationV1,
     _out: Option<&std::path::Path>,
     _detail: bool,
-) -> Result<CliOutcome, String> {
-    Err("verify appearance for authored recipes requires the scene-host feature".to_owned())
+) -> Result<CliOutcome, CliFailure> {
+    Err(CliUsageError::from(
+        "verify appearance for authored recipes requires the scene-host feature".to_owned(),
+    ))
 }
 
 impl VerifyAppearanceCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
+    fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(verify_appearance_usage());
+            return Err(CliUsageError::from(verify_appearance_usage()));
         };
         let mut expect = None;
         let mut out = None;
@@ -243,18 +257,22 @@ impl VerifyAppearanceCommandArgs {
                     index += 1;
                 }
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown verify appearance flag '{flag}'; {}",
                         verify_appearance_usage()
-                    ));
+                    )));
                 }
             }
         }
 
         Ok(Self {
             input: input.clone(),
-            expect: expect
-                .ok_or_else(|| format!("missing --expect <json>; {}", verify_appearance_usage()))?,
+            expect: expect.ok_or_else(|| {
+                CliUsageError::from(format!(
+                    "missing --expect <json>; {}",
+                    verify_appearance_usage()
+                ))
+            })?,
             out,
             width,
             height,
@@ -263,18 +281,20 @@ impl VerifyAppearanceCommandArgs {
     }
 }
 
-fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
+fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, CliUsageError> {
     args.get(index + 1)
         .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
+        .ok_or_else(|| CliUsageError::from(format!("{flag} requires a value")))
 }
 
-fn parse_positive_u32(flag: &str, value: String) -> Result<u32, String> {
+fn parse_positive_u32(flag: &str, value: String) -> Result<u32, CliUsageError> {
     let parsed = value
         .parse::<u32>()
         .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
     if parsed == 0 {
-        return Err(format!("{flag} requires a positive integer, got 0"));
+        return Err(CliUsageError::from(format!(
+            "{flag} requires a positive integer, got 0"
+        )));
     }
     Ok(parsed)
 }

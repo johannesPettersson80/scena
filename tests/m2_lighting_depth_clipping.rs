@@ -1733,3 +1733,157 @@ fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
     assert_eq!(released.textures, baseline.textures);
     assert_eq!(released.pending_destructions, baseline.pending_destructions);
 }
+
+/// G01: a section box is a *geometry* section, not an annotation filter.
+///
+/// Annotation labels billboard toward the camera and carry the measurements,
+/// datums, and callouts a section view exists to communicate. Clipping them
+/// against the same box removes exactly the information the view is for, and
+/// the render still reports success. The shipped `cad-plate` agent template
+/// shows this: its label, callout, and dimension text are all absent.
+///
+/// The oracle is differential: the label's rendered footprint must be
+/// identical with and without an active section box that excludes its anchor.
+/// Counting "dark pixels" alone would be satisfied by a dark background.
+#[test]
+fn section_box_does_not_clip_annotation_labels_by_default() {
+    fn label_footprint(with_section_box: bool) -> usize {
+        label_footprint_opt(with_section_box, false)
+    }
+
+    fn label_footprint_opt(with_section_box: bool, opt_into_clipping: bool) -> usize {
+        let mut scene = Scene::new();
+        let root = scene.root();
+        let camera = scene
+            .add_perspective_camera(
+                root,
+                PerspectiveCamera::default(),
+                Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+            )
+            .expect("camera adds");
+        scene
+            .set_active_camera(camera)
+            .expect("camera becomes active");
+        // The label sits well above the section box, exactly like the
+        // template's "CAD plate" text above its plate.
+        scene
+            .add_label(
+                root,
+                scena::LabelDesc::new("VISIBLE")
+                    .with_color(Color::WHITE)
+                    .with_size(48.0)
+                    .with_scene_clipping(opt_into_clipping),
+                Transform::at(Vec3::new(0.0, 0.6, 0.0)),
+            )
+            .expect("label adds");
+        if with_section_box {
+            scene
+                .set_section_box(scena::SectionBox::from_bounds(scena::Aabb::new(
+                    Vec3::new(-0.2, -0.2, -0.2),
+                    Vec3::new(0.2, 0.2, 0.2),
+                )))
+                .expect("section box activates");
+        }
+
+        let mut renderer = Renderer::headless(160, 120).expect("headless renderer builds");
+        renderer.prepare(&mut scene).expect("scene prepares");
+        renderer.render(&scene, camera).expect("scene renders");
+        renderer
+            .frame_rgba8()
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 200 && pixel[1] > 200 && pixel[2] > 200)
+            .count()
+    }
+
+    let unclipped = label_footprint(false);
+    assert!(
+        unclipped > 50,
+        "control render must show the white label glyphs; got {unclipped} pixels"
+    );
+
+    let sectioned = label_footprint(true);
+    assert_eq!(
+        sectioned, unclipped,
+        "an active section box excluding the label anchor must not change the \
+         annotation's rendered footprint"
+    );
+
+    // The opt-in must still cut the annotation, or the default would simply be
+    // an unconditional exemption rather than a policy.
+    let opted_in = label_footprint_opt(true, true);
+    assert!(
+        opted_in < unclipped / 10,
+        "with_scene_clipping(true) must restore section-box clipping: \
+         {opted_in} pixels survived against an unclipped {unclipped}"
+    );
+}
+
+/// G01 (geometry half): leader and dimension *lines* are generated annotation
+/// geometry, not sectioned model geometry.
+///
+/// The label fix alone still leaves a section view with a dimension whose text
+/// is legible but whose line is cut to a stub — which is what the round-3
+/// audit observed on the shipped `cad-plate` template.
+#[test]
+fn section_box_does_not_clip_annotation_leader_geometry_by_default() {
+    fn measurement_line_pixels(with_section_box: bool) -> usize {
+        let assets = Assets::new();
+        let mut scene = Scene::new();
+        let root = scene.root();
+        let camera = scene
+            .add_perspective_camera(
+                root,
+                PerspectiveCamera::default(),
+                Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+            )
+            .expect("camera adds");
+        scene
+            .set_active_camera(camera)
+            .expect("camera becomes active");
+        // A dimension spanning well outside the section box, like the
+        // template's plate-width dimension above its plate.
+        scene
+            .add_measurement_overlay(
+                &assets,
+                scena::MeasurementOverlay::distance(
+                    "span",
+                    Vec3::new(-0.8, 0.6, 0.0),
+                    Vec3::new(0.8, 0.6, 0.0),
+                ),
+            )
+            .expect("measurement overlay adds");
+        if with_section_box {
+            scene
+                .set_section_box(scena::SectionBox::from_bounds(scena::Aabb::new(
+                    Vec3::new(-0.2, -0.2, -0.2),
+                    Vec3::new(0.2, 0.2, 0.2),
+                )))
+                .expect("section box activates");
+        }
+
+        let mut renderer = Renderer::headless(160, 120).expect("headless renderer builds");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("scene prepares");
+        renderer.render(&scene, camera).expect("scene renders");
+        // The default measurement colour is cyan.
+        renderer
+            .frame_rgba8()
+            .chunks_exact(4)
+            .filter(|pixel| pixel[1] > 120 && pixel[2] > 120 && pixel[0] < 120)
+            .count()
+    }
+
+    let unclipped = measurement_line_pixels(false);
+    assert!(
+        unclipped > 20,
+        "control render must show the dimension line; got {unclipped} pixels"
+    );
+
+    let sectioned = measurement_line_pixels(true);
+    assert_eq!(
+        sectioned, unclipped,
+        "an active section box excluding the dimension must not cut the \
+         annotation's leader geometry"
+    );
+}

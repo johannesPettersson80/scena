@@ -138,6 +138,30 @@ jobs:
           path: target/gate-artifacts/**
           if-no-files-found: error
 
+  linux-feature-contract:
+    name: Linux feature-gated contract suites
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
+      - name: Install software Vulkan
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+          LVP_ICD="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)"
+          test -n "$LVP_ICD"
+          echo "VK_ICD_FILENAMES=$LVP_ICD" >> "$GITHUB_ENV"
+          echo "LIBGL_ALWAYS_SOFTWARE=1" >> "$GITHUB_ENV"
+      # `default = []`, so every crate-level feature-gated integration binary
+      # contributes zero tests to a default `cargo test`. A v1.9.0 audit found
+      # 29 such binaries that no workflow executed, including
+      # capture_contracts, gltf_validation_contracts, and the agent-mode
+      # A03-A05 smokes. This lane runs all of them in one command; the
+      # TESTS-FEATURE-GATED-WORKFLOW-BIJECTION doctor rule fails if a new gated
+      # binary is added without coverage.
+      - name: Feature-gated contract suites
+        run: cargo test --workspace --all-features --tests
+
   linux-browser-webgpu:
     name: Linux browser WebGPU software conformance
     runs-on: ubuntu-24.04

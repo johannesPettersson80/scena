@@ -650,3 +650,161 @@ fn assert_data_visualization_template_targets_authored_blue_mark(output_dir: &Pa
     assert_eq!(expectation["targets"][0]["tag"], "data-mark-blue");
     assert_ne!(expectation["targets"][0]["require_source_material"], true);
 }
+
+/// G02: a shipped template's measurement label must be semantic, not a copy of
+/// the value.
+///
+/// `Scene::add_measurement_overlay` renders `"{label}: {formatted_value}"`, so
+/// supplying the value as the label produces `"120.0 mm: 120.0 mm"` — visible
+/// in the `cad-plate` frame. The label names *what* is measured; the renderer
+/// supplies the magnitude and unit.
+#[test]
+fn shipped_template_measurement_labels_are_semantic_not_duplicated_values() {
+    let _cli_guard = template_cli_guard();
+    let root = artifact_dir("agent-template-measurement-labels");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("measurement-label artifact directory creates");
+
+    for name in ["cad-plate", "cad-inspection"] {
+        let out_dir = root.join(name);
+        let generate = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args([
+                "examples",
+                "agent",
+                "get",
+                name,
+                "--out",
+                out_dir.to_str().expect("output dir is UTF-8"),
+            ])
+            .output()
+            .expect("template generation runs");
+        if !generate.status.success() {
+            continue;
+        }
+        let recipe_path = out_dir.join("recipe.json");
+        let Ok(bytes) = fs::read(&recipe_path) else {
+            continue;
+        };
+        let recipe: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("template recipe parses");
+        let Some(measurements) = recipe["measurements"].as_array() else {
+            continue;
+        };
+        for measurement in measurements {
+            let Some(label) = measurement["label"].as_str() else {
+                continue;
+            };
+            let unit = measurement["unit"].as_str().unwrap_or("");
+            assert!(
+                !label.ends_with(unit) || unit.is_empty(),
+                "template {name} measurement {:?} uses the formatted value {label:?} as its \
+                 label, which renders as \"{label}: {label}\"; use a semantic label naming \
+                 what is measured",
+                measurement["id"],
+            );
+        }
+    }
+}
+
+/// Decodes an 8-bit RGBA PNG into raw pixels.
+///
+/// Kept local to this test so the template oracle inspects the bytes the CLI
+/// actually wrote, rather than trusting the renderer's own report.
+fn decode_rgba8_png(path: &Path) -> (u32, u32, Vec<u8>) {
+    let file = std::io::BufReader::new(fs::File::open(path).expect("rendered template PNG opens"));
+    let decoder = png::Decoder::new(file);
+    let mut reader = decoder.read_info().expect("template PNG header parses");
+    let mut buffer = vec![0; reader.output_buffer_size().expect("bounded PNG size")];
+    let info = reader
+        .next_frame(&mut buffer)
+        .expect("template PNG decodes");
+    buffer.truncate(info.buffer_size());
+    (info.width, info.height, buffer)
+}
+
+/// G04: a template test that asserts only `ok == true` is not an oracle.
+///
+/// The `cad-plate` template shipped for a full release declaring a label, a
+/// callout, and a dimension while rendering none of their text, because the
+/// existing test checked process exit status and the `ok` field only. Every
+/// annotation a template declares must be shown to put pixels on the frame.
+#[test]
+fn shipped_template_annotations_contribute_pixels_to_the_rendered_frame() {
+    let _cli_guard = template_cli_guard();
+    let root = artifact_dir("agent-template-annotation-pixels");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("annotation-pixel artifact directory creates");
+
+    let out_dir = root.join("cad-plate");
+    let generate = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "examples",
+            "agent",
+            "get",
+            "cad-plate",
+            "--out",
+            out_dir.to_str().expect("output dir is UTF-8"),
+        ])
+        .output()
+        .expect("template generation runs");
+    assert!(generate.status.success(), "cad-plate template generates");
+
+    let recipe_path = out_dir.join("recipe.json");
+    let frame_path = out_dir.join("frame.png");
+    let render = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            recipe_path.to_str().expect("recipe path is UTF-8"),
+            "--out",
+            frame_path.to_str().expect("frame path is UTF-8"),
+        ])
+        .output()
+        .expect("template render runs");
+    assert!(
+        render.status.success(),
+        "cad-plate renders: {}",
+        String::from_utf8_lossy(&render.stderr)
+    );
+
+    let recipe: serde_json::Value =
+        serde_json::from_slice(&fs::read(&recipe_path).expect("recipe reads"))
+            .expect("recipe parses");
+    let declared_labels = recipe["labels"].as_array().map_or(0, Vec::len);
+    let declared_callouts = recipe["callouts"].as_array().map_or(0, Vec::len);
+    let declared_measurements = recipe["measurements"].as_array().map_or(0, Vec::len);
+    assert!(
+        declared_labels + declared_callouts + declared_measurements > 0,
+        "this oracle only means something for a template that declares annotations"
+    );
+
+    let (width, height, pixels) = decode_rgba8_png(&frame_path);
+    assert_eq!(pixels.len(), (width * height * 4) as usize);
+
+    // The template's label/callout badges use `label_bg`, and its dimension
+    // line and text use a saturated cyan. Both are absent from the plate,
+    // outline, and studio background, so their presence is evidence the
+    // annotations reached the frame.
+    let label_background = [0x1D_u8, 0x27, 0x33];
+    let badge_pixels = pixels
+        .chunks_exact(4)
+        .filter(|pixel| {
+            (0..3).all(|channel| pixel[channel].abs_diff(label_background[channel]) <= 12)
+        })
+        .count();
+    assert!(
+        badge_pixels > 200,
+        "declared label/callout badges must reach the frame; found {badge_pixels} \
+         pixels of {label_background:?} in {width}x{height}"
+    );
+
+    let dimension_pixels = pixels
+        .chunks_exact(4)
+        .filter(|pixel| pixel[2] > 150 && pixel[1] > 110 && pixel[0] < 130)
+        .count();
+    assert!(
+        dimension_pixels > 100,
+        "the declared dimension must reach the frame; found {dimension_pixels} \
+         cyan pixels in {width}x{height}"
+    );
+}

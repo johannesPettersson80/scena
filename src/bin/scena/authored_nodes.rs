@@ -5,7 +5,7 @@ pub(super) fn run_authored_node_placement(
     source_text: &str,
     recipe: scena::SceneRecipeV1,
     verb: String,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     let node_id = args.target_subject.id();
     let target = scena::ScenePlacementTargetV1::node(node_id);
     if matches!(verb.as_str(), "align_to_anchor" | "place_on") {

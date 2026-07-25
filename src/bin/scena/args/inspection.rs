@@ -1,3 +1,4 @@
+use crate::scena_cli_error::CliUsageError;
 use std::path::PathBuf;
 
 use super::super::scena_policy::push_allow_root;
@@ -47,9 +48,9 @@ pub(crate) struct InspectCommandArgs {
 }
 
 impl DoctorCommandArgs {
-    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(doctor_usage());
+            return Err(CliUsageError::from(doctor_usage()));
         };
         let mut allow_roots = Vec::new();
         let mut index = 1;
@@ -60,7 +61,12 @@ impl DoctorCommandArgs {
                     push_allow_root(args, index, &mut allow_roots)?;
                     index += 2;
                 }
-                flag => return Err(format!("unknown doctor flag '{flag}'; {}", doctor_usage())),
+                flag => {
+                    return Err(CliUsageError::from(format!(
+                        "unknown doctor flag '{flag}'; {}",
+                        doctor_usage()
+                    )));
+                }
             }
         }
         Ok(Self {
@@ -71,9 +77,9 @@ impl DoctorCommandArgs {
 }
 
 impl RenderCommandArgs {
-    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(render_usage());
+            return Err(CliUsageError::from(render_usage()));
         };
         let mut out = None;
         let mut width = None;
@@ -123,12 +129,19 @@ impl RenderCommandArgs {
                     index += 2;
                 }
                 "--json" => index += 1,
-                flag => return Err(format!("unknown render flag '{flag}'; {}", render_usage())),
+                flag => {
+                    return Err(CliUsageError::from(format!(
+                        "unknown render flag '{flag}'; {}",
+                        render_usage()
+                    )));
+                }
             }
         }
         Ok(Self {
             input: input.clone(),
-            out: out.ok_or_else(|| format!("missing --out <png>; {}", render_usage()))?,
+            out: out.ok_or_else(|| {
+                CliUsageError::from(format!("missing --out <png>; {}", render_usage()))
+            })?,
             width,
             height,
             detail,
@@ -140,9 +153,9 @@ impl RenderCommandArgs {
 }
 
 impl InspectCommandArgs {
-    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(inspect_usage());
+            return Err(CliUsageError::from(inspect_usage()));
         };
         let mut width = None;
         let mut height = None;
@@ -170,10 +183,10 @@ impl InspectCommandArgs {
                     index += 2;
                 }
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown inspect flag '{flag}'; {}",
                         inspect_usage()
-                    ));
+                    )));
                 }
             }
         }
@@ -187,9 +200,9 @@ impl InspectCommandArgs {
 }
 
 impl DiagnoseCommandArgs {
-    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(diagnose_usage());
+            return Err(CliUsageError::from(diagnose_usage()));
         };
         let mut visibility = false;
         let mut handle = None;
@@ -232,15 +245,18 @@ impl DiagnoseCommandArgs {
                 }
                 "--json" => index += 1,
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown diagnose flag '{flag}'; {}",
                         diagnose_usage()
-                    ));
+                    )));
                 }
             }
         }
         if !visibility {
-            return Err(format!("missing --visibility; {}", diagnose_usage()));
+            return Err(CliUsageError::from(format!(
+                "missing --visibility; {}",
+                diagnose_usage()
+            )));
         }
         Ok(Self {
             input: input.clone(),
@@ -254,9 +270,9 @@ impl DiagnoseCommandArgs {
 }
 
 impl RepairCommandArgs {
-    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(repair_usage());
+            return Err(CliUsageError::from(repair_usage()));
         };
         let mut from = None;
         let mut iteration_budget = 3;
@@ -281,44 +297,54 @@ impl RepairCommandArgs {
                 }
                 "--json" => index += 1,
                 flag => {
-                    return Err(format!("unknown repair flag '{flag}'; {}", repair_usage()));
+                    return Err(CliUsageError::from(format!(
+                        "unknown repair flag '{flag}'; {}",
+                        repair_usage()
+                    )));
                 }
             }
         }
         Ok(Self {
             input: input.clone(),
-            from: from
-                .ok_or_else(|| format!("missing --from <report.json>; {}", repair_usage()))?,
+            from: from.ok_or_else(|| {
+                CliUsageError::from(format!("missing --from <report.json>; {}", repair_usage()))
+            })?,
             iteration_budget,
             allow_roots,
         })
     }
 }
 
-fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
+fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, CliUsageError> {
     args.get(index + 1)
         .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
+        .ok_or_else(|| CliUsageError::from(format!("{flag} requires a value")))
 }
 
-fn parse_positive_u32(flag: &str, value: String) -> Result<u32, String> {
+fn parse_positive_u32(flag: &str, value: String) -> Result<u32, CliUsageError> {
     let parsed = parse_u32(flag, value)?;
     if parsed == 0 {
-        return Err(format!("{flag} requires a positive integer, got 0"));
+        return Err(CliUsageError::from(format!(
+            "{flag} requires a positive integer, got 0"
+        )));
     }
     Ok(parsed)
 }
 
-fn parse_u32(flag: &str, value: String) -> Result<u32, String> {
-    value
-        .parse::<u32>()
-        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))
+fn parse_u32(flag: &str, value: String) -> Result<u32, CliUsageError> {
+    value.parse::<u32>().map_err(|_| {
+        CliUsageError::from(format!(
+            "{flag} requires an unsigned integer, got '{value}'"
+        ))
+    })
 }
 
-fn parse_u64(flag: &str, value: String) -> Result<u64, String> {
-    value
-        .parse::<u64>()
-        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))
+fn parse_u64(flag: &str, value: String) -> Result<u64, CliUsageError> {
+    value.parse::<u64>().map_err(|_| {
+        CliUsageError::from(format!(
+            "{flag} requires an unsigned integer, got '{value}'"
+        ))
+    })
 }
 
 fn render_usage() -> String {

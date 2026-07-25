@@ -34,6 +34,9 @@ pub(super) struct PrimitiveSinks<'out> {
 
 pub(super) struct GeometryPrimitiveSource<'a> {
     pub(super) node: NodeKey,
+    /// G01: false for generated annotation overlays, which a section box must
+    /// not delete.
+    pub(super) clip_with_scene: bool,
     pub(super) instance: Option<InstanceId>,
     pub(super) material_handle: MaterialHandle,
     pub(super) geometry: &'a GeometryDesc,
@@ -60,6 +63,7 @@ pub(in crate::render) struct PreparedPrimitive {
     source_instance: Option<InstanceId>,
     semantic_opaque: bool,
     semantic_overlay: bool,
+    clip_with_scene: bool,
     semantic_alpha_cutoff: Option<f32>,
     original_vertex_offset: u32,
     tint: Color,
@@ -98,6 +102,7 @@ impl PreparedPrimitive {
             source_instance: None,
             semantic_opaque: true,
             semantic_overlay: false,
+            clip_with_scene: true,
             semantic_alpha_cutoff: None,
             original_vertex_offset: 0,
             tint,
@@ -195,6 +200,16 @@ impl PreparedPrimitive {
 
     pub(in crate::render) const fn semantic_opaque(&self) -> bool {
         self.semantic_opaque
+    }
+
+    /// Opts this primitive out of scene clipping (planes and section box).
+    pub(in crate::render) const fn with_scene_clipping(mut self, clip_with_scene: bool) -> Self {
+        self.clip_with_scene = clip_with_scene;
+        self
+    }
+
+    pub(in crate::render) const fn clips_with_scene(&self) -> bool {
+        self.clip_with_scene
     }
 
     pub(in crate::render) const fn semantic_overlay(&self) -> bool {
@@ -434,6 +449,7 @@ impl PreparedInstanceRecord {
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedStrokeSegment {
     source_node: Option<NodeKey>,
+    clip_with_scene: bool,
     start: Vec3,
     end: Vec3,
     color: Color,
@@ -455,6 +471,7 @@ impl PreparedStrokeSegment {
     ) -> Self {
         Self {
             source_node,
+            clip_with_scene: true,
             start,
             end,
             color,
@@ -463,6 +480,16 @@ impl PreparedStrokeSegment {
             tint,
             original_segment_index: 0,
         }
+    }
+
+    /// Opts this stroke out of scene clipping (planes and section box).
+    pub(in crate::render) const fn with_scene_clipping(mut self, clip_with_scene: bool) -> Self {
+        self.clip_with_scene = clip_with_scene;
+        self
+    }
+
+    pub(in crate::render) const fn clips_with_scene(&self) -> bool {
+        self.clip_with_scene
     }
 
     pub(in crate::render) const fn with_original_segment_index(

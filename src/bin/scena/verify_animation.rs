@@ -1,3 +1,4 @@
+use super::scena_cli_error::{CliFailure, CliUsageError};
 use super::scena_input::{resolve_scene_input, viewer_builder};
 use super::scena_output::{CliOutcome, json_outcome};
 use expectations::{apply_expected_node_status, expected_node_status};
@@ -28,7 +29,7 @@ pub(crate) struct VerifyAnimationCommandArgs {
     height: Option<u32>,
 }
 
-pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = VerifyAnimationCommandArgs::parse(args)?;
     let input = match resolve_scene_input(&args.input, scena::RecipeBuildPolicy::testing()) {
         Ok(input) => input,
@@ -45,9 +46,9 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
         }
         #[cfg(not(feature = "scene-host"))]
         {
-            return Err(
+            return Err(CliUsageError::from(
                 "verify animation for authored recipes requires the scene-host feature".to_owned(),
-            );
+            ));
         }
     }
     let mut viewer = pollster::block_on(
@@ -151,9 +152,9 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
 }
 
 impl VerifyAnimationCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
+    fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(verify_animation_usage());
+            return Err(CliUsageError::from(verify_animation_usage()));
         };
         let mut clip = None;
         let mut times = None;
@@ -219,30 +220,38 @@ impl VerifyAnimationCommandArgs {
                     index += 1;
                 }
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown verify animation flag '{flag}'; {}",
                         verify_animation_usage()
-                    ));
+                    )));
                 }
             }
         }
 
-        let times = times
-            .ok_or_else(|| format!("missing --times <seconds>; {}", verify_animation_usage()))?;
+        let times = times.ok_or_else(|| {
+            CliUsageError::from(format!(
+                "missing --times <seconds>; {}",
+                verify_animation_usage()
+            ))
+        })?;
         if let Some(expected) = &expected_translations
             && expected.len() != times.len()
         {
-            return Err(format!(
+            return Err(CliUsageError::from(format!(
                 "--expect-translations requires one x,y,z triple per sample time (got {} expected values for {} times)",
                 expected.len(),
                 times.len()
-            ));
+            )));
         }
 
         Ok(Self {
             input: input.clone(),
-            clip: clip
-                .ok_or_else(|| format!("missing --clip <name>; {}", verify_animation_usage()))?,
+            clip: clip.ok_or_else(|| {
+                CliUsageError::from(format!(
+                    "missing --clip <name>; {}",
+                    verify_animation_usage()
+                ))
+            })?,
             times,
             expect_change,
             expected_node_handle,
@@ -264,13 +273,13 @@ fn available_clip_names(import: &scena::SceneImport) -> Vec<String> {
         .collect()
 }
 
-fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
+fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, CliUsageError> {
     args.get(index + 1)
         .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
+        .ok_or_else(|| CliUsageError::from(format!("{flag} requires a value")))
 }
 
-fn parse_times(value: String) -> Result<Vec<f32>, String> {
+fn parse_times(value: String) -> Result<Vec<f32>, CliUsageError> {
     let times = value
         .split([',', ' '])
         .filter(|part| !part.is_empty())
@@ -279,32 +288,36 @@ fn parse_times(value: String) -> Result<Vec<f32>, String> {
                 .parse::<f32>()
                 .map_err(|_| format!("--times contains non-numeric value '{part}'"))?;
             if !parsed.is_finite() || parsed < 0.0 {
-                return Err(format!(
+                return Err(CliUsageError::from(format!(
                     "--times requires finite non-negative seconds, got '{part}'"
-                ));
+                )));
             }
             Ok(parsed)
         })
         .collect::<Result<Vec<_>, _>>()?;
     if times.is_empty() {
-        return Err("--times requires at least one sample time".to_string());
+        return Err(CliUsageError::from(
+            "--times requires at least one sample time".to_string(),
+        ));
     }
     Ok(times)
 }
 
-fn parse_expected_translations(value: String) -> Result<Vec<scena::Vec3>, String> {
+fn parse_expected_translations(value: String) -> Result<Vec<scena::Vec3>, CliUsageError> {
     let translations = value
         .split(';')
         .filter(|part| !part.trim().is_empty())
         .map(parse_vec3)
         .collect::<Result<Vec<_>, _>>()?;
     if translations.is_empty() {
-        return Err("--expect-translations requires at least one x,y,z triple".to_string());
+        return Err(CliUsageError::from(
+            "--expect-translations requires at least one x,y,z triple".to_string(),
+        ));
     }
     Ok(translations)
 }
 
-fn parse_vec3(value: &str) -> Result<scena::Vec3, String> {
+fn parse_vec3(value: &str) -> Result<scena::Vec3, CliUsageError> {
     let components = value
         .split(',')
         .map(str::trim)
@@ -322,41 +335,45 @@ fn parse_vec3(value: &str) -> Result<scena::Vec3, String> {
         )
     })?;
     if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-        return Err(format!(
+        return Err(CliUsageError::from(format!(
             "--expect-translations requires finite values, got '{value}'"
-        ));
+        )));
     }
     Ok(scena::Vec3::new(x, y, z))
 }
 
-fn parse_positive_u32(flag: &str, value: String) -> Result<u32, String> {
+fn parse_positive_u32(flag: &str, value: String) -> Result<u32, CliUsageError> {
     let parsed = value
         .parse::<u32>()
         .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
     if parsed == 0 {
-        return Err(format!("{flag} requires a positive integer, got 0"));
+        return Err(CliUsageError::from(format!(
+            "{flag} requires a positive integer, got 0"
+        )));
     }
     Ok(parsed)
 }
 
-fn parse_positive_f32(flag: &str, value: String) -> Result<f32, String> {
+fn parse_positive_f32(flag: &str, value: String) -> Result<f32, CliUsageError> {
     let parsed = value
         .parse::<f32>()
         .map_err(|_| format!("{flag} requires a number, got '{value}'"))?;
     if !parsed.is_finite() || parsed <= 0.0 {
-        return Err(format!(
+        return Err(CliUsageError::from(format!(
             "{flag} requires a finite positive number, got {value}"
-        ));
+        )));
     }
     Ok(parsed)
 }
 
-fn parse_u64_handle(flag: &str, value: String) -> Result<u64, String> {
+fn parse_u64_handle(flag: &str, value: String) -> Result<u64, CliUsageError> {
     let parsed = value
         .parse::<u64>()
         .map_err(|_| format!("{flag} requires an unsigned integer handle, got '{value}'"))?;
     if parsed == 0 {
-        return Err(format!("{flag} requires a non-zero handle"));
+        return Err(CliUsageError::from(format!(
+            "{flag} requires a non-zero handle"
+        )));
     }
     Ok(parsed)
 }

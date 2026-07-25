@@ -1,3 +1,4 @@
+use crate::scena_cli_error::{CliErrorKind, CliFailure};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -24,7 +25,7 @@ struct SemanticAovArgs {
     max_imports: Option<usize>,
 }
 
-pub(crate) fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = SemanticAovArgs::parse(args)?;
     std::fs::create_dir_all(&args.out_dir).map_err(|error| {
         format!(
@@ -46,9 +47,9 @@ pub(crate) fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, Stri
             );
         }
         Err(RecipeReadError::Io(error)) => {
-            return Err(format!(
-                "failed to read recipe '{}': {error}",
-                args.recipe.display()
+            return Err(CliFailure::new(
+                CliErrorKind::InputNotFound,
+                format!("failed to read recipe '{}': {error}", args.recipe.display()),
             ));
         }
     };
