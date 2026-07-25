@@ -27,7 +27,7 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
     );
     assert_contract(
         &help,
-        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>]",
         &[
             "scena.render_introspection.v1",
             "scena.recipe_render_result.v1",
@@ -600,28 +600,28 @@ const EVIDENCE: &[Evidence] = &[
         "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
     evidence!(
-        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>]",
         "success",
         "scena.render_introspection.v1",
         "tests/scena_cli_recipe.rs",
         "scena_recipe_render_introspect_succeeds_without_verify"
     ),
     evidence!(
-        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>]",
         "success",
         "scena.recipe_render_result.v1",
         "tests/scena_cli_recipe.rs",
         "scena_recipe_render_verify_passes_color_pick_and_fit_expectations"
     ),
     evidence!(
-        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>]",
         "error",
         "scena.recipe_render_result.v1",
         "tests/fr04_cli_schema_matrix.rs",
         "fr04_polymorphic_failure_fixtures_emit_declared_top_level_schemas"
     ),
     evidence!(
-        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>]",
+        "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>]",
         "error",
         "scena.scene_recipe_validation.v1",
         "tests/fr04_cli_schema_matrix.rs",
