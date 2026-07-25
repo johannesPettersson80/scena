@@ -393,7 +393,7 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, CliUs
 }
 
 fn recipe_render_usage() -> String {
-    "usage: scena recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--timings] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--timings] [--max-imports <n>] [--allow-root <directory>]..."
         .to_owned()
 }
 
