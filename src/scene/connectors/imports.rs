@@ -83,6 +83,8 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::ImportHasNoBounds
         | LookupError::NodeIsNotMesh { .. }
         | LookupError::NonInvertibleParentTransform { .. }
+        | LookupError::InvalidMorphWeights { .. }
+        | LookupError::MorphWeightWidthMismatch { .. }
         | LookupError::InvalidTransform { .. }
         | LookupError::InvalidCameraProjection { .. }
         | LookupError::GeometryNotFound { .. }

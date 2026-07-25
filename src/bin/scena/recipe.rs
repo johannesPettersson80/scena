@@ -1,3 +1,4 @@
+use super::scena_cli_error::{CliErrorKind, CliFailure, CliUsageError};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -44,7 +45,7 @@ struct RecipeBuildCommandArgs {
     allow_roots: Vec<PathBuf>,
 }
 
-pub(crate) fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = RecipeBuildCommandArgs::parse(args)?;
     let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
     let policy_report = policy.to_schema_report();
@@ -61,9 +62,9 @@ pub(crate) fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, St
             );
         }
         Err(RecipeReadError::Io(error)) => {
-            return Err(format!(
-                "failed to read recipe '{}': {error}",
-                args.recipe.display()
+            return Err(CliFailure::new(
+                CliErrorKind::InputNotFound,
+                format!("failed to read recipe '{}': {error}", args.recipe.display()),
             ));
         }
     };
@@ -80,7 +81,7 @@ pub(crate) fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, St
     )
 }
 
-pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = RecipeRenderCommandArgs::parse(args)?;
     let total_started = Instant::now();
     let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
@@ -98,9 +99,9 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
             );
         }
         Err(RecipeReadError::Io(error)) => {
-            return Err(format!(
-                "failed to read recipe '{}': {error}",
-                args.recipe.display()
+            return Err(CliFailure::new(
+                CliErrorKind::InputNotFound,
+                format!("failed to read recipe '{}': {error}", args.recipe.display()),
             ));
         }
     };
@@ -157,9 +158,12 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
     let capture_duration = capture_started.elapsed();
 
     ensure_parent_dir(&args.out)?;
-    capture
-        .write_png(&args.out)
-        .map_err(|error| format!("failed to write PNG '{}': {error}", args.out.display()))?;
+    capture.write_png(&args.out).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Io,
+            format!("failed to write PNG '{}': {error}", args.out.display()),
+        )
+    })?;
     let descriptor_path = capture_descriptor_path(&args.out);
     ensure_parent_dir(&descriptor_path)?;
     std::fs::write(
@@ -178,7 +182,12 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         .inspect_json()
         .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
     let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
-        .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
+        .map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::InvalidInput,
+                format!("failed to decode recipe scene inspection report: {error}"),
+            )
+        })?;
     let mut introspection_options = render_introspection_options(args.detail)
         .with_capture_png_path(path_for_json(&args.out))
         .with_capture_descriptor_path(path_for_json(&descriptor_path));
@@ -240,22 +249,22 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
     )
 }
 
-pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     cad_inspection::run_recipe_inspect_cad_command(args)
 }
 
-pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     capture_sequence::run_recipe_capture_command(args)
 }
 
-pub(crate) fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     semantic_aov::run_recipe_aov_command(args)
 }
 
 impl RecipeRenderCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
+    fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(recipe) = args.first() else {
-            return Err(recipe_render_usage());
+            return Err(CliUsageError::from(recipe_render_usage()));
         };
         let mut out = None;
         let mut verify = false;
@@ -305,16 +314,18 @@ impl RecipeRenderCommandArgs {
                     index += 1;
                 }
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown recipe render flag '{flag}'; {}",
                         recipe_render_usage()
-                    ));
+                    )));
                 }
             }
         }
         Ok(Self {
             recipe: PathBuf::from(recipe),
-            out: out.ok_or_else(|| format!("missing --out <png>; {}", recipe_render_usage()))?,
+            out: out.ok_or_else(|| {
+                CliUsageError::from(format!("missing --out <png>; {}", recipe_render_usage()))
+            })?,
             verify,
             detail,
             gpu,
@@ -326,9 +337,9 @@ impl RecipeRenderCommandArgs {
 }
 
 impl RecipeBuildCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
+    fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(recipe) = args.first() else {
-            return Err(recipe_build_usage());
+            return Err(CliUsageError::from(recipe_build_usage()));
         };
         let mut max_imports = None;
         let mut allow_roots = Vec::new();
@@ -348,10 +359,10 @@ impl RecipeBuildCommandArgs {
                 }
                 "--json" => index += 1,
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown recipe build flag '{flag}'; {}",
                         recipe_build_usage()
-                    ));
+                    )));
                 }
             }
         }
@@ -363,20 +374,22 @@ impl RecipeBuildCommandArgs {
     }
 }
 
-fn parse_positive_usize(flag: &str, value: String) -> Result<usize, String> {
+fn parse_positive_usize(flag: &str, value: String) -> Result<usize, CliUsageError> {
     let parsed = value
         .parse::<usize>()
         .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
     if parsed == 0 {
-        return Err(format!("{flag} requires a positive integer, got 0"));
+        return Err(CliUsageError::from(format!(
+            "{flag} requires a positive integer, got 0"
+        )));
     }
     Ok(parsed)
 }
 
-fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
+fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, CliUsageError> {
     args.get(index + 1)
         .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
+        .ok_or_else(|| CliUsageError::from(format!("{flag} requires a value")))
 }
 
 fn recipe_render_usage() -> String {

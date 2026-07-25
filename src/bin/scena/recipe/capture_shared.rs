@@ -1,3 +1,4 @@
+use crate::scena_cli_error::{CliErrorKind, CliFailure};
 use std::path::Path;
 
 pub(in crate::scena_recipe) struct RgbaFrameRef<'a> {
@@ -91,13 +92,16 @@ pub(in crate::scena_recipe) fn write_png_rgba8(
     width: u32,
     height: u32,
     rgba8: &[u8],
-) -> Result<(), String> {
+) -> Result<(), CliFailure> {
     let expected = rgba8_len(width, height)?;
     if rgba8.len() != expected {
-        return Err(format!(
-            "PNG '{}' has {} RGBA bytes; expected {expected}",
-            path.display(),
-            rgba8.len()
+        return Err(CliFailure::new(
+            CliErrorKind::Internal,
+            format!(
+                "PNG '{}' has {} RGBA bytes; expected {expected}",
+                path.display(),
+                rgba8.len()
+            ),
         ));
     }
     if let Some(parent) = path.parent() {
@@ -109,12 +113,18 @@ pub(in crate::scena_recipe) fn write_png_rgba8(
     let mut encoder = png::Encoder::new(file, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder
-        .write_header()
-        .map_err(|error| format!("failed to write PNG header '{}': {error}", path.display()))?;
-    writer
-        .write_image_data(rgba8)
-        .map_err(|error| format!("failed to write PNG '{}': {error}", path.display()))
+    let mut writer = encoder.write_header().map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Io,
+            format!("failed to write PNG header '{}': {error}", path.display()),
+        )
+    })?;
+    writer.write_image_data(rgba8).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Io,
+            format!("failed to write PNG '{}': {error}", path.display()),
+        )
+    })
 }
 
 pub(in crate::scena_recipe) fn write_png_gray16(
@@ -122,15 +132,18 @@ pub(in crate::scena_recipe) fn write_png_gray16(
     width: u32,
     height: u32,
     samples: &[u16],
-) -> Result<(), String> {
+) -> Result<(), CliFailure> {
     let expected = (width as usize)
         .checked_mul(height as usize)
         .ok_or_else(|| format!("grayscale dimensions {width}x{height} overflow usize"))?;
     if samples.len() != expected {
-        return Err(format!(
-            "PNG '{}' has {} grayscale samples; expected {expected}",
-            path.display(),
-            samples.len()
+        return Err(CliFailure::new(
+            CliErrorKind::Internal,
+            format!(
+                "PNG '{}' has {} grayscale samples; expected {expected}",
+                path.display(),
+                samples.len()
+            ),
         ));
     }
     if let Some(parent) = path.parent() {
@@ -146,12 +159,18 @@ pub(in crate::scena_recipe) fn write_png_gray16(
     let mut encoder = png::Encoder::new(file, width, height);
     encoder.set_color(png::ColorType::Grayscale);
     encoder.set_depth(png::BitDepth::Sixteen);
-    let mut writer = encoder
-        .write_header()
-        .map_err(|error| format!("failed to write PNG header '{}': {error}", path.display()))?;
-    writer
-        .write_image_data(&bytes)
-        .map_err(|error| format!("failed to write PNG '{}': {error}", path.display()))
+    let mut writer = encoder.write_header().map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Io,
+            format!("failed to write PNG header '{}': {error}", path.display()),
+        )
+    })?;
+    writer.write_image_data(&bytes).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Io,
+            format!("failed to write PNG '{}': {error}", path.display()),
+        )
+    })
 }
 
 fn rgba8_len(width: u32, height: u32) -> Result<usize, String> {

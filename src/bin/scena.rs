@@ -57,11 +57,23 @@ mod scena_verify_interaction;
 #[path = "scena/vocab.rs"]
 mod scena_vocab;
 
-use scena_cli_error::CliError;
+use scena_cli_error::{CliError, CliFailure};
 use scena_output::{
-    CliJsonStyle, CliOutcome, apply_output_format, parse_output_format_args, requested_json_style,
-    serialize_json, success,
+    CliJsonStyle, CliOutcome, CliOutputFormatError, apply_output_format, parse_output_format_args,
+    requested_json_style, serialize_json, success,
 };
+
+/// X01/X02: response-shaping failures classify on the error *type*.
+/// `JsonShapingOnNonJsonPayload` is the caller's flag choice (usage, exit 2);
+/// `Internal` is a genuine fault (exit 70).
+fn output_format_error(args: &[String], error: CliOutputFormatError) -> Box<CliError> {
+    Box::new(match error {
+        CliOutputFormatError::JsonShapingOnNonJsonPayload(message) => {
+            CliError::invalid_arguments(args, message)
+        }
+        CliOutputFormatError::Internal(message) => CliError::internal(args, message),
+    })
+}
 
 fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -138,19 +150,19 @@ fn run(args: Vec<String>) -> Result<CliOutcome, Box<CliError>> {
     if args.is_empty() || args == ["--help"] || args == ["-h"] {
         let mut outcome = success(scena_help::help_json());
         apply_output_format(&mut outcome, output_format)
-            .map_err(|message| Box::new(CliError::internal(&args, message)))?;
+            .map_err(|error| output_format_error(&args, error))?;
         return Ok(outcome);
     }
     if let Some(help) = scena_help::command_help_json(&args) {
         let mut outcome = success(help);
         apply_output_format(&mut outcome, output_format)
-            .map_err(|message| Box::new(CliError::internal(&args, message)))?;
+            .map_err(|error| output_format_error(&args, error))?;
         return Ok(outcome);
     }
     if args == ["--version"] || args == ["version"] {
         let mut outcome = success(version_json());
         apply_output_format(&mut outcome, output_format)
-            .map_err(|message| Box::new(CliError::internal(&args, message)))?;
+            .map_err(|error| output_format_error(&args, error))?;
         return Ok(outcome);
     }
 
@@ -251,32 +263,32 @@ fn run(args: Vec<String>) -> Result<CliOutcome, Box<CliError>> {
             )));
         }
     }
-    .map_err(|message| {
-        Box::new(CliError::classify(
+    .map_err(|failure| {
+        Box::new(CliError::from_failure(
             &args,
-            message,
+            failure,
             cli_error_candidates(&args),
         ))
     })?;
     apply_output_format(&mut outcome, output_format)
-        .map_err(|message| Box::new(CliError::internal(&args, message)))?;
+        .map_err(|error| output_format_error(&args, error))?;
     Ok(outcome)
 }
 
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
-fn feature_required(command: &str, feature: &str) -> String {
-    format!(
+fn feature_required(command: &str, feature: &str) -> CliFailure {
+    CliFailure::feature_unavailable(format!(
         "{command} is unavailable in this build; reinstall with `cargo install scena --features {feature}` or run from source with `cargo run --features {feature} -- {command}`"
-    )
+    ))
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_diff_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_diff::run_diff_command(args)
 }
 
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
-fn run_diff_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_diff_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("diff", "agent"))
 }
 
@@ -310,131 +322,131 @@ fn version_json() -> String {
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_recipe::run_recipe_render_command(args)
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_build_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_recipe::run_recipe_build_command(args)
 }
 
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
-fn run_recipe_build_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_build_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("recipe build", "agent"))
 }
 
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
-fn run_recipe_render_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_render_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("recipe render", "agent"))
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_recipe::run_recipe_inspect_cad_command(args)
 }
 
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
-fn run_recipe_inspect_cad_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_inspect_cad_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("recipe inspect-cad", "agent"))
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_recipe::run_recipe_capture_command(args)
 }
 
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
-fn run_recipe_capture_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_capture_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("recipe capture", "agent"))
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_recipe::run_recipe_aov_command(args)
 }
 
 #[cfg(not(all(feature = "inspection", feature = "scene-host")))]
-fn run_recipe_aov_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_recipe_aov_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("recipe aov", "agent"))
 }
 
 #[cfg(feature = "inspection")]
-fn run_examples_agent_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_examples_agent_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_examples_agent::run_examples_agent_command(args)
 }
 
 #[cfg(not(feature = "inspection"))]
-fn run_examples_agent_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_examples_agent_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("examples agent", "agent"))
 }
 
 #[cfg(feature = "inspection")]
-fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_scene_commands::run_render_command(args)
 }
 
 #[cfg(not(feature = "inspection"))]
-fn run_render_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_render_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("render", "agent"))
 }
 
 #[cfg(feature = "inspection")]
-fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_inspect_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_scene_commands::run_inspect_command(args)
 }
 
 #[cfg(not(feature = "inspection"))]
-fn run_inspect_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_inspect_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("inspect", "agent"))
 }
 
 #[cfg(feature = "inspection")]
-fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_scene_commands::run_diagnose_command(args)
 }
 
 #[cfg(not(feature = "inspection"))]
-fn run_diagnose_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_diagnose_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("diagnose --visibility", "agent"))
 }
 
 #[cfg(feature = "inspection")]
-fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_repair_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_scene_commands::run_repair_command(args)
 }
 
 #[cfg(not(feature = "inspection"))]
-fn run_repair_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_repair_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("repair", "agent"))
 }
 
 #[cfg(feature = "inspection")]
-fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_verify::run_verify_appearance_command(args)
 }
 
 #[cfg(not(feature = "inspection"))]
-fn run_verify_appearance_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_verify_appearance_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("verify appearance", "agent"))
 }
 
 #[cfg(feature = "inspection")]
-fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_verify_animation::run_verify_animation_command(args)
 }
 
 #[cfg(not(feature = "inspection"))]
-fn run_verify_animation_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_verify_animation_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("verify animation", "agent"))
 }
 
 #[cfg(feature = "scene-host")]
-fn run_verify_interaction_command(args: &[String]) -> Result<CliOutcome, String> {
+fn run_verify_interaction_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     scena_verify_interaction::run_verify_interaction_command(args)
 }
 
 #[cfg(not(feature = "scene-host"))]
-fn run_verify_interaction_command(_args: &[String]) -> Result<CliOutcome, String> {
+fn run_verify_interaction_command(_args: &[String]) -> Result<CliOutcome, CliFailure> {
     Err(feature_required("verify interaction", "agent"))
 }

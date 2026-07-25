@@ -1,8 +1,7 @@
 use crate::material::Color;
-use crate::scene::{ClippingPlane, SectionBox};
 
 use super::RasterTarget;
-use super::camera::CameraProjection;
+pub(super) use super::cpu_clip::CpuTriangleClipInputs;
 use super::cpu_geometry::{self, CpuProjectedPrimitive, CpuScreenTriangle, CpuScreenVertex};
 pub(super) use super::cpu_overlay::write_label_overlay_pixel;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
@@ -34,13 +33,6 @@ pub(super) struct CpuFrame<'frame> {
     pub(super) linear_frame: &'frame mut [Color],
     pub(super) depth_frame: &'frame mut [f32],
     pub(super) frame: &'frame mut [u8],
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct CpuTriangleClipInputs<'a> {
-    pub(super) clipping_planes: &'a [ClippingPlane],
-    pub(super) section_box: Option<SectionBox>,
-    pub(super) camera: &'a CameraProjection,
 }
 
 impl<'frame> CpuFrame<'frame> {

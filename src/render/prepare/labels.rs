@@ -121,7 +121,8 @@ fn prepare_pixel_label_billboard(
                 background,
                 Color::WHITE,
             )
-            .with_solid_coverage(),
+            .with_solid_coverage()
+            .with_scene_clipping(inputs.label.clip_with_scene()),
         );
     }
 
@@ -129,43 +130,49 @@ fn prepare_pixel_label_billboard(
     if let Some(halo) = inputs.label.halo() {
         for glyph in &glyphs {
             let atlas = builder.insert(glyph.alpha.clone(), glyph.alpha_width, glyph.alpha_height);
-            quads.push(PreparedLabelQuad::new(
+            quads.push(
+                PreparedLabelQuad::new(
+                    Some(frame.node),
+                    frame.anchor,
+                    frame.right,
+                    frame.up,
+                    frame.world_units_per_px,
+                    [
+                        glyph.x_px - half_width - 1.0,
+                        half_height - (glyph.y_px + glyph.height_px) - 1.0,
+                        glyph.x_px + glyph.width_px - half_width + 1.0,
+                        half_height - glyph.y_px + 1.0,
+                    ],
+                    atlas.uv_rect(),
+                    halo,
+                    Color::WHITE,
+                )
+                .with_scene_clipping(inputs.label.clip_with_scene()),
+            );
+        }
+    }
+
+    for glyph in &glyphs {
+        let atlas = builder.insert(glyph.alpha.clone(), glyph.alpha_width, glyph.alpha_height);
+        quads.push(
+            PreparedLabelQuad::new(
                 Some(frame.node),
                 frame.anchor,
                 frame.right,
                 frame.up,
                 frame.world_units_per_px,
                 [
-                    glyph.x_px - half_width - 1.0,
-                    half_height - (glyph.y_px + glyph.height_px) - 1.0,
-                    glyph.x_px + glyph.width_px - half_width + 1.0,
-                    half_height - glyph.y_px + 1.0,
+                    glyph.x_px - half_width,
+                    half_height - (glyph.y_px + glyph.height_px),
+                    glyph.x_px + glyph.width_px - half_width,
+                    half_height - glyph.y_px,
                 ],
                 atlas.uv_rect(),
-                halo,
+                inputs.label.color(),
                 Color::WHITE,
-            ));
-        }
-    }
-
-    for glyph in &glyphs {
-        let atlas = builder.insert(glyph.alpha.clone(), glyph.alpha_width, glyph.alpha_height);
-        quads.push(PreparedLabelQuad::new(
-            Some(frame.node),
-            frame.anchor,
-            frame.right,
-            frame.up,
-            frame.world_units_per_px,
-            [
-                glyph.x_px - half_width,
-                half_height - (glyph.y_px + glyph.height_px),
-                glyph.x_px + glyph.width_px - half_width,
-                half_height - glyph.y_px,
-            ],
-            atlas.uv_rect(),
-            inputs.label.color(),
-            Color::WHITE,
-        ));
+            )
+            .with_scene_clipping(inputs.label.clip_with_scene()),
+        );
     }
 }
 
@@ -194,7 +201,8 @@ fn prepare_fallback_world_label(
             label.color(),
             Color::WHITE,
         )
-        .with_solid_coverage(),
+        .with_solid_coverage()
+        .with_scene_clipping(label.clip_with_scene()),
     );
 }
 

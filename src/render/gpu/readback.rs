@@ -23,6 +23,8 @@ pub(super) struct GpuAutoExposureMeter {
     buffers: [wgpu::Buffer; 2],
     pending: [Option<PendingAutoExposureMeter>; 2],
     next_slot: usize,
+    next_sequence: u64,
+    last_applied_sequence: Option<u64>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,12 +32,14 @@ pub(super) struct GpuAutoExposureMeter {
 struct PendingAutoExposureMeter {
     receiver: mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
     format: wgpu::TextureFormat,
+    sequence: u64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) struct AutoExposureMeterSubmission {
     slot: usize,
     format: wgpu::TextureFormat,
+    sequence: u64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -57,6 +61,8 @@ impl GpuAutoExposureMeter {
             buffers,
             pending: [None, None],
             next_slot: 0,
+            next_sequence: 0,
+            last_applied_sequence: None,
         }
     }
 
@@ -106,7 +112,13 @@ impl GpuAutoExposureMeter {
                 );
             }
         }
-        Some(AutoExposureMeterSubmission { slot, format })
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        Some(AutoExposureMeterSubmission {
+            slot,
+            format,
+            sequence,
+        })
     }
 
     pub(super) fn begin_mapping(&mut self, submission: AutoExposureMeterSubmission) {
@@ -118,6 +130,7 @@ impl GpuAutoExposureMeter {
         self.pending[submission.slot] = Some(PendingAutoExposureMeter {
             receiver,
             format: submission.format,
+            sequence: submission.sequence,
         });
     }
 
@@ -129,40 +142,76 @@ impl GpuAutoExposureMeter {
         device
             .poll(wgpu::PollType::Poll)
             .map_err(|_| RenderError::GpuReadback { backend })?;
-        for slot in 0..self.pending.len() {
+        let mut completed = [None; 2];
+        for (slot, completed_sequence) in completed.iter_mut().enumerate() {
             let Some(pending) = self.pending[slot].as_ref() else {
                 continue;
             };
             match pending.receiver.try_recv() {
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => *completed_sequence = Some(pending.sequence),
                 Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
                     return Err(RenderError::GpuReadback { backend });
                 }
-                Err(mpsc::TryRecvError::Empty) => continue,
+                Err(mpsc::TryRecvError::Empty) => {}
             }
+        }
+        let selected = select_completed_meter_slot(&completed, self.last_applied_sequence);
+        // Retire every completed slot. A superseded or stale sample is
+        // discarded rather than applied, and unmapping it returns the buffer
+        // to the pool instead of blocking later submissions.
+        let mut sample = None;
+        for (slot, sequence) in completed.into_iter().enumerate() {
+            let Some(sequence) = sequence else {
+                continue;
+            };
             let pending = self.pending[slot]
                 .take()
                 .expect("completed auto-exposure meter remains pending");
-            let mapped = self.buffers[slot].slice(..).get_mapped_range();
-            let mut rgba8 = Vec::with_capacity(AUTO_EXPOSURE_SAMPLE_COUNT * 4);
-            for index in 0..AUTO_EXPOSURE_SAMPLE_COUNT {
-                let offset = index * AUTO_EXPOSURE_SAMPLE_STRIDE as usize;
-                let pixel = &mapped[offset..offset + 4];
-                if matches!(
-                    pending.format,
-                    wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
-                ) {
-                    rgba8.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
-                } else {
-                    rgba8.extend_from_slice(pixel);
+            if selected == Some(slot) {
+                let mapped = self.buffers[slot].slice(..).get_mapped_range();
+                let mut rgba8 = Vec::with_capacity(AUTO_EXPOSURE_SAMPLE_COUNT * 4);
+                for index in 0..AUTO_EXPOSURE_SAMPLE_COUNT {
+                    let offset = index * AUTO_EXPOSURE_SAMPLE_STRIDE as usize;
+                    let pixel = &mapped[offset..offset + 4];
+                    if matches!(
+                        pending.format,
+                        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+                    ) {
+                        rgba8.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+                    } else {
+                        rgba8.extend_from_slice(pixel);
+                    }
                 }
+                drop(mapped);
+                self.last_applied_sequence = Some(sequence);
+                sample = Some(rgba8);
             }
-            drop(mapped);
             self.buffers[slot].unmap();
-            return Ok(Some(rgba8));
         }
-        Ok(None)
+        Ok(sample)
     }
+}
+
+/// Chooses which completed meter slot to consume.
+///
+/// Slots complete asynchronously and out of order, so slot index carries no
+/// temporal meaning. Consuming by index can apply an older sample after a
+/// newer one has already been applied, stepping exposure backward.
+///
+/// `completed[slot]` is the submission sequence of a slot whose mapping has
+/// finished, or `None` if that slot is empty or still pending.
+#[cfg(not(target_arch = "wasm32"))]
+fn select_completed_meter_slot(
+    completed: &[Option<u64>],
+    last_applied_sequence: Option<u64>,
+) -> Option<usize> {
+    completed
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, sequence)| sequence.map(|sequence| (slot, sequence)))
+        .filter(|(_, sequence)| last_applied_sequence.is_none_or(|applied| *sequence > applied))
+        .max_by_key(|(_, sequence)| *sequence)
+        .map(|(slot, _)| slot)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -363,5 +412,37 @@ fn copy_mapped_rows(
         let target_start = row * resources.unpadded_bytes_per_row as usize;
         let target_end = target_start + resources.unpadded_bytes_per_row as usize;
         frame[target_start..target_end].copy_from_slice(&mapped[source_start..source_end]);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::select_completed_meter_slot;
+
+    #[test]
+    fn newest_completed_meter_sample_wins_regardless_of_slot_index() {
+        // Slot 1 carries the newer submission. Consuming slot 0 first would
+        // apply a stale frame's exposure after a newer one was already
+        // available, which reads as exposure stepping backward.
+        assert_eq!(
+            select_completed_meter_slot(&[Some(5), Some(7)], None),
+            Some(1),
+        );
+        assert_eq!(
+            select_completed_meter_slot(&[Some(7), Some(5)], None),
+            Some(0),
+        );
+    }
+
+    #[test]
+    fn meter_samples_older_than_the_last_applied_sequence_are_rejected() {
+        // A slot that completes late must never be applied once a newer
+        // sample has already driven exposure.
+        assert_eq!(select_completed_meter_slot(&[Some(3), None], Some(6)), None);
+        assert_eq!(
+            select_completed_meter_slot(&[Some(3), Some(9)], Some(6)),
+            Some(1),
+        );
+        assert_eq!(select_completed_meter_slot(&[None, None], Some(6)), None);
     }
 }

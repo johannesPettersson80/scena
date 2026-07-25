@@ -1,3 +1,5 @@
+#[cfg(feature = "inspection")]
+use super::scena_cli_error::{CliErrorKind, CliFailure};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
@@ -70,7 +72,7 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
     width: u32,
     height: u32,
     use_gpu: bool,
-) -> Result<ResolvedRecipeBuild, String> {
+) -> Result<ResolvedRecipeBuild, CliFailure> {
     let recipe = input
         .recipe
         .as_ref()
@@ -110,7 +112,7 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub(crate) async fn scene_host_manifest_from_resolved_recipe(
     input: &ResolvedSceneInput,
-) -> Result<scena::RecipeBuildResultV1, String> {
+) -> Result<scena::RecipeBuildResultV1, CliFailure> {
     let recipe = input
         .recipe
         .as_ref()
@@ -172,7 +174,7 @@ pub(crate) fn asset_doctor_outcome_or_error(
     asset: &str,
     command: &str,
     error: String,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     let report = pollster::block_on(scena::Assets::new().doctor_asset_path(asset));
     if !report.ok {
         return json_outcome(
@@ -181,7 +183,10 @@ pub(crate) fn asset_doctor_outcome_or_error(
             "failed to serialize asset doctor report for failed command",
         );
     }
-    Err(format!("failed to {command} '{asset}': {error}"))
+    Err(CliFailure::new(
+        CliErrorKind::Runtime,
+        format!("failed to {command} '{asset}': {error}"),
+    ))
 }
 
 #[cfg(feature = "inspection")]

@@ -1,3 +1,4 @@
+use super::scena_cli_error::CliFailure;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -40,7 +41,7 @@ pub(crate) struct ExamplesAgentCommandArgs {
     out: Option<PathBuf>,
 }
 
-pub(crate) fn run_examples_agent_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_examples_agent_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     if matches!(args, [arg] if arg == "list")
         || matches!(args, [first, second] if first == "list" && second == "--json")
     {

@@ -13,12 +13,21 @@ pub(super) fn draw_label_atlas_cpu(
     camera: &CameraProjection,
 ) {
     for quad in labels.quads() {
+        // G01: annotations are billboarded overlays. A section box sections
+        // geometry; by default it must not delete the measurements, datums,
+        // and callouts the section view exists to communicate. A quad opts in
+        // explicitly when a view should cut its annotations too.
+        let (quad_planes, quad_section_box) = if quad.clips_with_scene() {
+            (clipping_planes, section_box)
+        } else {
+            (&[][..], None)
+        };
         draw_label_quad_cpu(
             cpu_frame,
             labels,
             quad,
-            clipping_planes,
-            section_box,
+            quad_planes,
+            quad_section_box,
             camera,
         );
     }

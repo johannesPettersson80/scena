@@ -298,6 +298,55 @@ fn gltf_default_scene_selection_is_pinned_by_semantic_aov_pixels() {
 }
 
 #[test]
+fn explicit_gltf_scene_request_fails_closed_when_the_document_has_no_scenes() {
+    // A document may legally omit `scenes` entirely. An explicit index or name
+    // request against such a document cannot be honored, so it must fail
+    // closed rather than silently falling back to the root-node heuristic and
+    // reporting success for a scene the caller never asked for.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("target/r02-gltf-empty-scene-table");
+    fs::create_dir_all(&dir).expect("empty-scene-table fixture directory creates");
+    let path = dir.join("no-scenes.gltf");
+    fs::write(
+        &path,
+        serde_json::to_vec_pretty(&json!({
+            "asset": {"version": "2.0"},
+            "nodes": [{"name": "Orphan"}]
+        }))
+        .expect("empty-scene-table fixture serializes"),
+    )
+    .expect("empty-scene-table fixture writes");
+    let assets = Assets::new();
+
+    let by_index = pollster::block_on(assets.load_scene_with_options(
+        path.to_string_lossy().into_owned(),
+        scena::AssetLoadOptions::default().with_gltf_scene_index(0),
+    ));
+    let error = by_index.expect_err("explicit scene index must fail closed with no scene table");
+    let message = error.to_string();
+    assert!(
+        message.contains("index 0"),
+        "error must name the rejected request: {message}"
+    );
+
+    let by_name = pollster::block_on(assets.load_scene_with_options(
+        path.to_string_lossy().into_owned(),
+        scena::AssetLoadOptions::default().with_gltf_scene_name("Missing"),
+    ));
+    let error = by_name.expect_err("explicit scene name must fail closed with no scene table");
+    let message = error.to_string();
+    assert!(
+        message.contains("Missing"),
+        "error must name the rejected request: {message}"
+    );
+
+    // The default selection keeps its documented root-node fallback.
+    let default = pollster::block_on(assets.load_scene(path.to_string_lossy().into_owned()))
+        .expect("default selection still falls back to root nodes");
+    assert!(default.selected_gltf_scene().is_none());
+}
+
+#[test]
 fn gltf_scene_selection_supports_explicit_index_and_name_with_provenance() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let dir = root.join("target/c05-gltf-explicit-scene-selection");

@@ -15,7 +15,28 @@ impl Scene {
         if !self.nodes.contains_key(node) {
             return Err(LookupError::NodeNotFound(node));
         }
-        self.set_morph_weights_unchecked(node, weights.into());
+        let weights = weights.into();
+        // R04: geometry lives in `Assets`, so the authored entry point cannot
+        // see the node's morph-target count. It validates what it can reach —
+        // finiteness, and the width already established for this node by
+        // import — while `GeometryDesc::morph_weight_width_matches` fails
+        // closed against the true target count at consumption time.
+        if weights.iter().any(|weight| !weight.is_finite()) {
+            return Err(LookupError::InvalidMorphWeights {
+                node,
+                reason: "morph weights must all be finite",
+            });
+        }
+        if let Some(established) = self.morph_weights.get(&node)
+            && established.len() != weights.len()
+        {
+            return Err(LookupError::MorphWeightWidthMismatch {
+                node,
+                expected: established.len(),
+                supplied: weights.len(),
+            });
+        }
+        self.set_morph_weights_unchecked(node, weights);
         Ok(())
     }
 

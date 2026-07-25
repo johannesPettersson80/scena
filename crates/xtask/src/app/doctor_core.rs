@@ -27,7 +27,9 @@ pub(crate) use contracts::{check_cli_output_contracts, require_files};
 pub(crate) use conversion_contract::check_a05_scena_convert_contract;
 pub(crate) use execution::run_doctor;
 pub(crate) use feature_discoverability::check_a09_feature_discoverability;
-pub(crate) use feature_gated_tests::check_feature_gated_contract_tests_documented;
+pub(crate) use feature_gated_tests::{
+    check_feature_gated_contract_tests_documented, check_feature_gated_tests_run_in_a_workflow,
+};
 pub(crate) use feature_ownership::{
     check_feature_ownership_contracts, check_q07_claim_truth_contracts,
 };

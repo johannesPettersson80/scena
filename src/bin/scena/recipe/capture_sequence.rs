@@ -1,3 +1,4 @@
+use crate::scena_cli_error::{CliErrorKind, CliFailure};
 use std::f32::consts::TAU;
 use std::path::PathBuf;
 
@@ -33,7 +34,7 @@ struct CaptureSequenceArgs {
     max_imports: Option<usize>,
 }
 
-pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = CaptureSequenceArgs::parse(args)?;
     let out_dir = ensure_output_dir(&args.out_dir)?;
     let mut policy = scena::RecipeBuildPolicy::testing();
@@ -50,9 +51,9 @@ pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, 
             );
         }
         Err(RecipeReadError::Io(error)) => {
-            return Err(format!(
-                "failed to read recipe '{}': {error}",
-                args.recipe.display()
+            return Err(CliFailure::new(
+                CliErrorKind::InputNotFound,
+                format!("failed to read recipe '{}': {error}", args.recipe.display()),
             ));
         }
     };

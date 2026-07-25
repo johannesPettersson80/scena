@@ -360,6 +360,10 @@ impl LookupError {
             Self::NonInvertibleParentTransform { .. } => {
                 "use a finite non-zero parent scale before applying world-space placement helpers"
             }
+            Self::InvalidMorphWeights { .. } => "use finite morph weight values",
+            Self::MorphWeightWidthMismatch { .. } => {
+                "supply exactly one weight per morph target declared by the geometry"
+            }
             Self::InvalidTransform { .. } => {
                 "use finite translation, rotation, and scale components"
             }

@@ -1,3 +1,4 @@
+use super::scena_cli_error::{CliErrorKind, CliFailure, CliUsageError};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -34,7 +35,7 @@ struct RenderedRecipe {
     manifest: scena::SceneRecipeBuildV1,
 }
 
-pub(crate) fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_diff_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = DiffCommandArgs::parse(args)?;
     let mut policy = scena::RecipeBuildPolicy::testing();
     if let Some(max_imports) = args.max_imports {
@@ -104,8 +105,9 @@ pub(crate) fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
         Ok(report) => report,
         Err(scena::CaptureBaselineError::DiffExceeded(report)) => *report,
         Err(error) => {
-            return Err(format!(
-                "failed to compare rendered recipe captures: {error}"
+            return Err(CliFailure::new(
+                CliErrorKind::Runtime,
+                format!("failed to compare rendered recipe captures: {error}"),
             ));
         }
     };
@@ -172,12 +174,12 @@ pub(crate) fn run_diff_command(args: &[String]) -> Result<CliOutcome, String> {
 }
 
 impl DiffCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
+    fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(before) = args.first() else {
-            return Err(usage());
+            return Err(CliUsageError::from(usage()));
         };
         let Some(after) = args.get(1) else {
-            return Err(usage());
+            return Err(CliUsageError::from(usage()));
         };
         let mut render = false;
         let mut out_dir = None;
@@ -223,7 +225,9 @@ impl DiffCommandArgs {
                     let value =
                         parse_usize("--max-imports", flag_value(args, index, "--max-imports")?)?;
                     if value == 0 {
-                        return Err("--max-imports requires a positive integer, got 0".to_owned());
+                        return Err(CliUsageError::from(
+                            "--max-imports requires a positive integer, got 0".to_owned(),
+                        ));
                     }
                     max_imports = Some(value);
                     index += 2;
@@ -233,14 +237,24 @@ impl DiffCommandArgs {
                     index += 1;
                 }
                 "--json" => index += 1,
-                flag => return Err(format!("unknown diff argument '{flag}'; {}", usage())),
+                flag => {
+                    return Err(CliUsageError::from(format!(
+                        "unknown diff argument '{flag}'; {}",
+                        usage()
+                    )));
+                }
             }
         }
         if render && out_dir.is_none() {
-            return Err(format!("--render requires --out-dir <dir>; {}", usage()));
+            return Err(CliUsageError::from(format!(
+                "--render requires --out-dir <dir>; {}",
+                usage()
+            )));
         }
         if !render && out_dir.is_some() {
-            return Err("--out-dir is only valid with --render".to_owned());
+            return Err(CliUsageError::from(
+                "--out-dir is only valid with --render".to_owned(),
+            ));
         }
         Ok(Self {
             before: PathBuf::from(before),
@@ -271,7 +285,7 @@ const fn difference_exit_code(exit_code: bool, equal: bool) -> i32 {
 fn load_recipe(
     path: &Path,
     policy: &scena::RecipeBuildPolicy,
-) -> Result<Result<LoadedRecipe, CliOutcome>, String> {
+) -> Result<Result<LoadedRecipe, CliOutcome>, CliFailure> {
     let text = match read_recipe_text(path, policy) {
         Ok(text) => text,
         Err(RecipeReadError::TooLarge(report)) => {
@@ -282,9 +296,9 @@ fn load_recipe(
             )?));
         }
         Err(RecipeReadError::Io(error)) => {
-            return Err(format!(
-                "failed to read recipe '{}': {error}",
-                path.display()
+            return Err(CliFailure::new(
+                CliErrorKind::InputNotFound,
+                format!("failed to read recipe '{}': {error}", path.display()),
             ));
         }
     };
@@ -302,7 +316,7 @@ fn render_recipe(
     path: &Path,
     loaded: &LoadedRecipe,
     policy: scena::RecipeBuildPolicy,
-) -> Result<Result<RenderedRecipe, CliOutcome>, String> {
+) -> Result<Result<RenderedRecipe, CliOutcome>, CliFailure> {
     let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
         path.display().to_string(),
         &loaded.text,
@@ -367,28 +381,30 @@ fn execution_report(renderer_constructions: usize) -> Value {
     })
 }
 
-fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
+fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, CliUsageError> {
     args.get(index + 1)
         .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
+        .ok_or_else(|| CliUsageError::from(format!("{flag} requires a value")))
 }
 
-fn parse_nonnegative_f64(flag: &str, value: String) -> Result<f64, String> {
+fn parse_nonnegative_f64(flag: &str, value: String) -> Result<f64, CliUsageError> {
     let parsed = value
         .parse::<f64>()
         .map_err(|_| format!("{flag} requires a finite non-negative number, got '{value}'"))?;
     if !parsed.is_finite() || parsed < 0.0 {
-        return Err(format!(
+        return Err(CliUsageError::from(format!(
             "{flag} requires a finite non-negative number, got '{value}'"
-        ));
+        )));
     }
     Ok(parsed)
 }
 
-fn parse_usize(flag: &str, value: String) -> Result<usize, String> {
-    value
-        .parse::<usize>()
-        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))
+fn parse_usize(flag: &str, value: String) -> Result<usize, CliUsageError> {
+    value.parse::<usize>().map_err(|_| {
+        CliUsageError::from(format!(
+            "{flag} requires an unsigned integer, got '{value}'"
+        ))
+    })
 }
 
 fn usage() -> String {

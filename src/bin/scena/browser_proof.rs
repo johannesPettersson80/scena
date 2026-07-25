@@ -1,3 +1,4 @@
+use super::scena_cli_error::CliFailure;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -20,7 +21,7 @@ struct BrowserProofArgs {
     dry_run: bool,
 }
 
-pub(crate) fn run_browser_proof_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_browser_proof_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = BrowserProofArgs::parse(args)?;
     let mut report = args.to_report();
     if args.dry_run {
@@ -34,7 +35,9 @@ pub(crate) fn run_browser_proof_command(args: &[String]) -> Result<CliOutcome, S
 
     let command_args = report.command.clone();
     let Some((program, rest)) = command_args.split_first() else {
-        return Err("browser-proof command cannot be empty".to_string());
+        return Err(CliFailure::invalid_arguments(
+            "browser-proof command cannot be empty",
+        ));
     };
     let mut command = Command::new(program);
     command.args(rest);

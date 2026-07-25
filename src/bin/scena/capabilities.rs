@@ -1,3 +1,4 @@
+use super::scena_cli_error::CliFailure;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use scena::{
@@ -8,7 +9,7 @@ use scena::{
 
 use super::scena_output::{CliOutcome, json_outcome, json_success};
 
-pub(crate) fn run_capabilities_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_capabilities_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let live = parse_args(args)?;
     if !live {
         let capabilities = Capabilities::headless();

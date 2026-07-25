@@ -3,6 +3,7 @@ use super::expectations::{apply_expected_node_status, expected_node_status};
 use super::observations::{
     AnimationObservation, samples_from_observations, selected_observed_node,
 };
+use crate::scena_cli_error::CliFailure;
 use crate::scena_input::{
     ResolvedRecipeBuild, ResolvedSceneInput, scene_host_build_from_resolved_recipe,
 };
@@ -13,7 +14,7 @@ pub(super) async fn run_verify_recipe_animation(
     input: ResolvedSceneInput,
     width: u32,
     height: u32,
-) -> Result<CliOutcome, String> {
+) -> Result<CliOutcome, CliFailure> {
     let build = scene_host_build_from_resolved_recipe(&input, width, height, false).await?;
     let build = match build {
         ResolvedRecipeBuild::Built(build) => build,

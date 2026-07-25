@@ -113,6 +113,7 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
         append_geometry_primitives(
             GeometryPrimitiveSource {
                 node: source_node,
+                clip_with_scene: !scene.is_overlay_owned_node(source_node),
                 instance: None,
                 material_handle: group.material,
                 geometry: &geometry,

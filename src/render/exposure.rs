@@ -18,6 +18,22 @@ const DEFAULT_HIGHLIGHT_TARGET_LUMINANCE: f32 = 0.85;
 const LUMINANCE_EPSILON: f32 = 1.0e-4;
 const AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8: u8 = 2;
 const MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES: usize = 64;
+/// Fraction of a metered correction applied per frame on the **continuous**
+/// attached-surface loop.
+///
+/// Values in `(0, 1]` all converge; below 1 they also absorb tonemapper
+/// nonlinearity and per-frame sample noise instead of ringing on the way to the
+/// target. A surface re-meters every frame, so the residual error is removed by
+/// the frames that follow.
+const SURFACE_AUTO_EXPOSURE_SMOOTHING: f32 = 0.5;
+
+/// Fraction applied on the **one-shot** headless path.
+///
+/// A headless render meters once and re-renders once (`frame.rs` breaks after
+/// `auto_exposure_attempted`), so there is no later frame to finish the job.
+/// Damping there would ship a deliberately half-corrected image. Stability is
+/// not at stake because the step never repeats.
+const ONE_SHOT_AUTO_EXPOSURE_SMOOTHING: f32 = 1.0;
 const LUMINANCE_HISTOGRAM_BINS: usize = 1_024;
 const LUMINANCE_HISTOGRAM_MIN_EV: f32 = -16.0;
 const LUMINANCE_HISTOGRAM_MAX_EV: f32 = 16.0;
@@ -266,6 +282,36 @@ impl AutoExposureResult {
     }
 }
 
+/// Chooses the next exposure EV for a metering path whose sample was captured
+/// from an **already-exposed** frame (the attached surface, or the encoded
+/// output frame when no linear scene buffer exists).
+///
+/// Such a sample closes a feedback loop: the meter reports
+/// `log2(target / measured)`, and `measured` already contains the exposure
+/// that produced it. Treating that correction as an absolute EV makes the
+/// next EV a reflection of the current one, which oscillates instead of
+/// converging.
+/// The sample is therefore applied as a damped **delta** from the current
+/// exposure rather than as an absolute EV. With an identity tonemapper the
+/// loop's derivative becomes `1 - smoothing`; under a compressive tonemapper
+/// it is `1 - smoothing * k` for `k` in `(0, 1)`. Both are contractions, so
+/// the loop converges for any scene instead of reflecting.
+fn next_feedback_exposure_ev(
+    current_ev: f32,
+    sample: AutoExposureResult,
+    config: AutoExposureConfig,
+    smoothing: f32,
+) -> f32 {
+    let correction_ev = sample.exposure_ev();
+    if !correction_ev.is_finite() || !current_ev.is_finite() {
+        return current_ev;
+    }
+    let damped = current_ev + correction_ev * smoothing;
+    // The meter clamps the *correction* to the configured range; the absolute
+    // exposure it accumulates into must be clamped as well.
+    damped.clamp(config.min_ev(), config.max_ev())
+}
+
 pub fn estimate_auto_exposure_from_linear_colors(
     colors: &[Color],
     config: AutoExposureConfig,
@@ -385,11 +431,17 @@ impl Renderer {
             self.auto_exposure_status = AutoExposureStatus::Pending;
             return Ok(());
         };
-        let exposure_changed = (self.exposure_ev() - result.exposure_ev()).abs() > 0.01;
+        let next_ev = next_feedback_exposure_ev(
+            self.exposure_ev(),
+            result,
+            config,
+            SURFACE_AUTO_EXPOSURE_SMOOTHING,
+        );
+        let exposure_changed = (self.exposure_ev() - next_ev).abs() > 0.01;
         self.last_auto_exposure = Some(result);
         self.auto_exposure_status = AutoExposureStatus::Converged;
         if exposure_changed {
-            self.set_exposure_ev(result.exposure_ev());
+            self.set_exposure_ev(next_ev);
         }
         Ok(())
     }
@@ -447,30 +499,54 @@ impl Renderer {
             self.auto_exposure_status = AutoExposureStatus::Disabled;
             return false;
         };
-        let Some(result) = self.estimate_auto_exposure_from_current_frame(config) else {
+        let Some((result, sample_is_feedback)) =
+            self.estimate_auto_exposure_from_current_frame(config)
+        else {
             self.last_auto_exposure = None;
             self.auto_exposure_status = AutoExposureStatus::Pending;
             return false;
         };
-        let exposure_changed = (self.exposure_ev() - result.exposure_ev()).abs() > 0.01;
+        let next_ev = if sample_is_feedback {
+            // One-shot: the metered value is a correction *relative to the
+            // current exposure*, so it must be added, not assigned. Assigning it
+            // discarded `current_ev`, which is what made the surface loop
+            // reflect. Applying it in full is correct here because this path
+            // runs exactly once per render and has no later frame to converge.
+            next_feedback_exposure_ev(
+                self.exposure_ev(),
+                result,
+                config,
+                ONE_SHOT_AUTO_EXPOSURE_SMOOTHING,
+            )
+        } else {
+            result.exposure_ev()
+        };
+        let exposure_changed = (self.exposure_ev() - next_ev).abs() > 0.01;
         self.last_auto_exposure = Some(result);
         self.auto_exposure_status = AutoExposureStatus::Converged;
         if exposure_changed {
-            self.set_exposure_ev(result.exposure_ev());
+            self.set_exposure_ev(next_ev);
         }
         exposure_changed
     }
 
+    /// Returns the metered sample and whether it was captured from an
+    /// already-exposed frame.
+    ///
+    /// The linear scene buffer is written before tone mapping and exposure are
+    /// applied, so it yields an absolute EV directly. Every other source is the
+    /// encoded output, which closes a feedback loop and must be damped.
     fn estimate_auto_exposure_from_current_frame(
         &self,
         config: AutoExposureConfig,
-    ) -> Option<AutoExposureResult> {
+    ) -> Option<(AutoExposureResult, bool)> {
         if let Some(linear_frame) = self.linear_frame.as_deref() {
             return estimate_auto_exposure_from_linear_colors_with_background(
                 linear_frame,
                 self.background_color(),
                 config,
-            );
+            )
+            .map(|result| (result, false));
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(result) = self
@@ -478,7 +554,7 @@ impl Renderer {
             .as_ref()
             .and_then(|gpu| gpu.estimate_browser_canvas_auto_exposure(config))
         {
-            return Some(result);
+            return Some((result, true));
         }
         if matches!(self.target.backend, Backend::WebGpu | Backend::WebGl2) {
             return None;
@@ -488,6 +564,7 @@ impl Renderer {
             self.background_color(),
             config,
         )
+        .map(|result| (result, true))
     }
 }
 
@@ -529,6 +606,131 @@ fn color_differs_from_background(pixel: &[u8], background: [u8; 4], tolerance: u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Drives the real production feedback decision over several frames.
+    ///
+    /// Models an attached surface with an identity tonemapper: a frame
+    /// rendered at `ev` measures `scene_luminance * 2^ev`. That is the sample
+    /// the surface meter copies back, so this reproduces the exact loop the
+    /// native path runs, without needing a GPU.
+    fn simulate_feedback_exposure(
+        scene_luminance: f32,
+        config: AutoExposureConfig,
+        frames: usize,
+    ) -> Vec<f32> {
+        let mut ev = 0.0_f32;
+        let mut history = Vec::with_capacity(frames);
+        for _ in 0..frames {
+            let measured = scene_luminance * 2.0_f32.powf(ev);
+            let colors = vec![Color::from_linear_rgba(measured, measured, measured, 1.0); 256];
+            let sample = estimate_auto_exposure_from_linear_colors(&colors, config)
+                .expect("uniform frame meters");
+            ev = next_feedback_exposure_ev(ev, sample, config, SURFACE_AUTO_EXPOSURE_SMOOTHING);
+            history.push(ev);
+        }
+        history
+    }
+
+    #[test]
+    fn surface_auto_exposure_converges_instead_of_oscillating() {
+        let config = AutoExposureConfig::new(0.18);
+        let scene_luminance = 0.02_f32;
+        let desired_ev = (0.18_f32 / scene_luminance).log2();
+
+        let history = simulate_feedback_exposure(scene_luminance, config, 10);
+
+        let settled = history.last().copied().expect("frames were simulated");
+        assert!(
+            (settled - desired_ev).abs() < 0.1,
+            "exposure must settle at the scene's desired EV {desired_ev:.3}, got {settled:.3}; \
+             history: {history:?}",
+        );
+
+        let last_step = (history[history.len() - 1] - history[history.len() - 2]).abs();
+        let first_step = (history[1] - history[0]).abs();
+        assert!(
+            last_step < first_step * 0.25,
+            "per-frame exposure steps must decay toward zero, not alternate: \
+             first step {first_step:.3}, last step {last_step:.3}; history: {history:?}",
+        );
+    }
+
+    #[test]
+    fn feedback_exposure_never_reflects_around_the_current_value() {
+        // A sample metered from an already-exposed frame reports a *relative*
+        // correction. Applying it as an absolute EV yields
+        // `next = desired - current`, whose derivative is -1: a two-cycle.
+        let config = AutoExposureConfig::new(0.18);
+        let scene_luminance = 0.02_f32;
+        let history = simulate_feedback_exposure(scene_luminance, config, 6);
+
+        for window in history.windows(3) {
+            let returned_to_start = (window[2] - window[0]).abs() < 1.0e-3;
+            let moved_between = (window[1] - window[0]).abs() > 0.5;
+            assert!(
+                !(returned_to_start && moved_between),
+                "exposure returned to a previous value after one round trip \
+                 (two-cycle oscillation): {history:?}",
+            );
+        }
+    }
+
+    /// R01: the one-shot headless path and the continuous surface loop need
+    /// different step sizes, and confusing them is a real defect in both
+    /// directions.
+    ///
+    /// A headless render meters once and re-renders once, so a damped step
+    /// ships a knowingly half-corrected image. A surface re-meters every frame,
+    /// so a full step there amplifies tonemapper nonlinearity and sample noise.
+    #[test]
+    fn one_shot_applies_the_whole_correction_and_the_surface_loop_damps_it() {
+        let config = AutoExposureConfig::new(0.18);
+        let current_ev = 0.0_f32;
+        // A sample metered from an already-exposed frame: a relative correction.
+        let measured = 0.09_f32;
+        let colors = vec![Color::from_linear_rgba(measured, measured, measured, 1.0); 256];
+        let sample = estimate_auto_exposure_from_linear_colors(&colors, config)
+            .expect("uniform frame meters");
+        let correction = sample.exposure_ev();
+        assert!(
+            correction.abs() > 0.1,
+            "the fixture must request a correction worth measuring, got {correction}",
+        );
+        // Keep the fixture inside the configured EV range so this test measures
+        // the step size, not the clamp.
+        assert!(
+            current_ev + correction < config.max_ev() && current_ev + correction > config.min_ev(),
+            "fixture must stay inside [{}, {}], got {}",
+            config.min_ev(),
+            config.max_ev(),
+            current_ev + correction,
+        );
+
+        let one_shot =
+            next_feedback_exposure_ev(current_ev, sample, config, ONE_SHOT_AUTO_EXPOSURE_SMOOTHING);
+        assert!(
+            (one_shot - (current_ev + correction)).abs() < 1.0e-4,
+            "the one-shot path must apply the whole correction: expected {}, got {one_shot}",
+            current_ev + correction,
+        );
+
+        let surface =
+            next_feedback_exposure_ev(current_ev, sample, config, SURFACE_AUTO_EXPOSURE_SMOOTHING);
+        assert!(
+            (surface - (current_ev + correction * SURFACE_AUTO_EXPOSURE_SMOOTHING)).abs() < 1.0e-4,
+            "the surface loop must damp the correction, got {surface}",
+        );
+        assert!(
+            (surface - current_ev).abs() < (one_shot - current_ev).abs(),
+            "damping must move less far than a full step: surface={surface}, one_shot={one_shot}",
+        );
+        // Both must still move toward the same target, not past it.
+        assert_eq!(
+            (one_shot - current_ev).signum(),
+            (surface - current_ev).signum(),
+            "damping must not reverse the direction of the correction",
+        );
+    }
 
     #[test]
     fn bounded_histogram_matches_sorted_highlight_reference_within_one_bin() {

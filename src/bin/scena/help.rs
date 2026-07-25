@@ -3,7 +3,7 @@ const VALIDATE_COMMAND: &str = "validate <file>";
 const VALIDATE_RECIPE_COMMAND: &str = "validate-recipe <recipe.json> [--full|--syntax-only] [--max-imports <n>] [--allow-root <directory>]...";
 const RECIPE_BUILD_COMMAND: &str =
     "recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...";
-const RECIPE_RENDER_COMMAND: &str = "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
+const RECIPE_RENDER_COMMAND: &str = "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
 const RENDER_COMMAND: &str =
     "render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--allow-root <directory>]...";
 const INSPECT_COMMAND: &str = "inspect <asset-or-recipe> [--allow-root <directory>]...";
@@ -205,7 +205,7 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
         ),
         ["recipe", "render"] => (
             RECIPE_RENDER_COMMAND,
-            "scena recipe render <recipe.json> [--verify] --out <png> [--introspect] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
+            "scena recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
         ),
         ["recipe", "inspect-cad"] => (
             "recipe inspect-cad <recipe.json> --out-dir <dir> [--width 2560] [--height 1920] [--gpu]",

@@ -34,7 +34,15 @@ pub(super) fn draw_strokes_cpu(
     camera: &CameraProjection,
 ) {
     for stroke in strokes {
-        draw_stroke_cpu(cpu_frame, stroke, clipping_planes, section_box, camera);
+        // G01: leader and dimension lines are generated annotation geometry.
+        // A section box sections the model; it must not delete the annotation
+        // describing the section.
+        let (stroke_planes, stroke_section_box) = if stroke.clips_with_scene() {
+            (clipping_planes, section_box)
+        } else {
+            (&[][..], None)
+        };
+        draw_stroke_cpu(cpu_frame, stroke, stroke_planes, stroke_section_box, camera);
     }
 }
 

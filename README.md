@@ -176,7 +176,17 @@ checkout or contributor `AGENTS.md` is required:
 ```bash
 scena guide agent --json
 scena guide agent --markdown
+scena guide agent --contract
 ```
+
+`--contract` returns the same machine-readable surface as `--json` (commands,
+schemas, policies, templates) without the embedded prose guide. The `--json`
+form is over 90% Markdown by bytes, so an agent that only needs the contract
+should ask for `--contract`.
+
+`--markdown` emits Markdown, not JSON. Combining it with a JSON-shaping flag
+(`--compact`, `--pretty`, `--round-floats`, `--fields`, `--include`) is a usage
+error at exit 2 rather than a silent no-op.
 
 Template catalog output is `scena.agent_template_catalog.v1`. Canonical names
 use kebab-case. Historical underscore spellings remain accepted aliases and
@@ -193,6 +203,25 @@ All JSON-producing commands, including help and typed errors, use deterministic
 pretty JSON by default. Pass global `--compact` for one-line machine output or
 `--pretty` to state the default explicitly; the flags are mutually exclusive,
 may appear before or after the command, and never change envelope semantics.
+
+Two further global flags shape how much of a response you receive. Neither
+changes envelope semantics, and every field stays reachable:
+
+```bash
+scena render model.gltf --out out.png --fields ok,reasons,fixes
+scena recipe build scene.recipe.json --include policy
+scena recipe render scene.recipe.json --out out.png --detail
+```
+
+- `--fields <a,b,c>` keeps only the named top-level keys. `schema` and `ok`
+  always survive, so a projected response stays self-describing and its success
+  is still readable.
+- `--include policy` returns the full recipe policy block. By default it is
+  replaced with `policy_digest`, a stable `sha256:` digest that changes if and
+  only if the policy does — the block itself is byte-identical on every call and
+  measured at roughly 40% of a render response.
+- `--detail` on `render`, `recipe render`, `inspect`, and `diagnose` adds
+  `nodes_detail`, including per-node `reason_codes`.
 
 Any command that accepts `<asset-or-recipe>` dispatches by the parsed input
 kind. Raw glTF/GLB stays on the direct asset path; a recipe always uses the

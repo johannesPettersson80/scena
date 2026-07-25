@@ -84,7 +84,12 @@ pub(crate) fn check_a07_name_candidates_and_remedies(root: &Path, findings: &mut
         (
             "src/bin/scena.rs",
             &[
-                "CliError::classify(",
+                // X01 moved the dispatch site from `CliError::classify` to
+                // `CliError::from_failure`, which classifies on the typed error
+                // kind and falls back to `classify` only for `Unclassified`.
+                // The pin follows the call, it is not dropped: structured
+                // candidates must still reach the emitted error either way.
+                "CliError::from_failure(",
                 "cli_error_candidates(&args)",
                 "fn cli_error_candidates",
                 "fn examples_agent_error_candidates",

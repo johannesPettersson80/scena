@@ -146,6 +146,26 @@ impl Renderer {
         self.stats.culled_objects = culled_objects;
     }
 
+    #[cfg(test)]
+    pub(super) fn retained_draw_source_counts_for_test(
+        &self,
+        scene: &Scene,
+        mesh_node: crate::scene::NodeKey,
+        stroke_node: crate::scene::NodeKey,
+    ) -> Option<(usize, usize)> {
+        let (primitives, strokes, _instances) = self.reencode_retained_draws(scene)?;
+        Some((
+            primitives
+                .iter()
+                .filter(|primitive| primitive.source_node() == Some(mesh_node))
+                .count(),
+            strokes
+                .iter()
+                .filter(|stroke| stroke.source_node() == Some(stroke_node))
+                .count(),
+        ))
+    }
+
     pub(super) fn apply_gpu_resource_stats(
         &mut self,
         stats: gpu::GpuResourceStats,
@@ -163,5 +183,86 @@ impl Renderer {
         self.stats.material_bind_groups = stats.material_bind_groups;
         self.stats.approximate_gpu_memory_bytes =
             (stats.approximate_gpu_memory_bytes > 0).then_some(stats.approximate_gpu_memory_bytes);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::assets::Assets;
+    use crate::geometry::GeometryDesc;
+    use crate::material::{Color, MaterialDesc};
+    use crate::scene::{Scene, Transform, Vec3};
+
+    use super::Renderer;
+
+    /// Multi-list retained re-entry.
+    ///
+    /// A scene holding both a triangle mesh and a line mesh must drop **and
+    /// restore** the primitive draw list and the stroke draw list together.
+    /// `reencode_retained_draws` filters the two through separate functions, so
+    /// a regression can restore one list and leave the other empty; neither the
+    /// mesh-only nor the stroke-only test can observe that.
+    #[test]
+    fn retained_re_entry_restores_mesh_and_stroke_draw_lists_together() {
+        let mut renderer = Renderer::headless(48, 48).expect("CPU renderer builds");
+        let assets = Assets::new();
+        let mesh_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.3, 0.3, 0.3));
+        let mesh_material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+        let line_geometry = assets.create_geometry(GeometryDesc::line(
+            Vec3::new(0.0, -0.5, 0.0),
+            Vec3::new(0.0, 0.5, 0.0),
+        ));
+        let line_material = assets.create_material(MaterialDesc::line(Color::WHITE, 3.0));
+
+        let mut scene = Scene::new();
+        scene.add_default_camera().expect("camera inserts");
+        let mesh_node = scene
+            .mesh(mesh_geometry, mesh_material)
+            .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
+            .add()
+            .expect("triangle mesh inserts");
+        let stroke_node = scene
+            .mesh(line_geometry, line_material)
+            .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+            .add()
+            .expect("line mesh inserts");
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("initial prepare succeeds");
+
+        let visible = renderer
+            .retained_draw_source_counts_for_test(&scene, mesh_node, stroke_node)
+            .expect("the retained template covers both sources");
+        assert!(
+            visible.0 > 0,
+            "the retained template must produce the triangle mesh's primitives",
+        );
+        assert!(
+            visible.1 > 0,
+            "the retained template must produce the line mesh's stroke segments",
+        );
+
+        scene.set_visible(mesh_node, false).expect("mesh hides");
+        scene.set_visible(stroke_node, false).expect("line hides");
+        assert_eq!(
+            renderer
+                .retained_draw_source_counts_for_test(&scene, mesh_node, stroke_node)
+                .expect("hidden sources keep the template valid"),
+            (0, 0),
+            "leaving the active camera must drop the primitive list and the stroke list together",
+        );
+
+        scene.set_visible(mesh_node, true).expect("mesh re-enters");
+        scene
+            .set_visible(stroke_node, true)
+            .expect("line re-enters");
+        assert_eq!(
+            renderer
+                .retained_draw_source_counts_for_test(&scene, mesh_node, stroke_node)
+                .expect("re-entry keeps the template valid"),
+            visible,
+            "re-entry must restore both draw lists from the retained template, not only one",
+        );
     }
 }

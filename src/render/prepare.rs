@@ -226,6 +226,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
         append_geometry_primitives(
             GeometryPrimitiveSource {
                 node,
+                clip_with_scene: !scene.is_overlay_owned_node(node),
                 instance: None,
                 material_handle: mesh.material(),
                 geometry: &geometry,
@@ -292,6 +293,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
             append_geometry_primitives(
                 GeometryPrimitiveSource {
                     node,
+                    clip_with_scene: !scene.is_overlay_owned_node(node),
                     instance: None,
                     material_handle: instance_set.material(),
                     geometry: &geometry,
@@ -345,6 +347,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 append_geometry_primitives(
                     GeometryPrimitiveSource {
                         node,
+                        clip_with_scene: !scene.is_overlay_owned_node(node),
                         instance: Some(instance.id()),
                         material_handle: instance_set.material(),
                         geometry: &geometry,

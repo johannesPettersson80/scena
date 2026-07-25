@@ -1,3 +1,4 @@
+use crate::scena_cli_error::CliFailure;
 use std::fs;
 use std::path::PathBuf;
 
@@ -24,7 +25,7 @@ struct InspectCadArgs {
     max_imports: Option<usize>,
 }
 
-pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = InspectCadArgs::parse(args)?;
     fs::create_dir_all(&args.out_dir).map_err(|error| {
         format!(

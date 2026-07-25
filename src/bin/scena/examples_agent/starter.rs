@@ -86,7 +86,7 @@ pub(super) fn cad_plate(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, S
                 "helper_wireframe": true
             },
             "measurements": [
-                { "id": "plate-width", "kind": "distance", "start": [-0.06, 0.012, -0.038], "end": [0.06, 0.012, -0.038], "label": "120.0 mm", "unit": "mm", "precision": 1 }
+                { "id": "plate-width", "kind": "distance", "start": [-0.06, 0.012, -0.038], "end": [0.06, 0.012, -0.038], "label": "plate width", "unit": "mm", "precision": 1 }
             ],
             "callouts": [
                 { "id": "datum-a", "text": "datum A", "target": { "kind": "node", "id": "plate", "local_offset": [0.0, 0.006, 0.0] }, "label_offset": [0.06, 0.05, 0.0] }

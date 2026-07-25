@@ -385,3 +385,139 @@ fn assert_fix(report: &RenderIntrospectionReportV1, action: &str) {
 
 #[allow(dead_code)]
 fn _keep_aabb_in_public_test_surface(_: Aabb, _: Transform, _: Vec3) {}
+
+/// G03: `nodes_detail` must be able to say why a *visible* node contributed
+/// nothing.
+///
+/// Reason codes were derived from `node.visible` alone, so a visible node
+/// always received an empty list. An agent asking the most detailed question
+/// the tool offers was told everything was fine while three labels rendered
+/// zero pixels. This is the diagnosability half of the `B1` family.
+#[test]
+fn detail_reports_why_a_visible_node_contributes_nothing() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    scene.add_default_camera().expect("default camera inserts");
+    // Placed far behind the camera: visible in the scene graph, but it cannot
+    // project onto the frame.
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(0.0, 0.0, 400.0)))
+        .add()
+        .expect("behind-camera mesh inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    renderer.render_active(&scene).expect("scene renders");
+
+    let inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let capture = capture_unverified_rgba8_from_pixels(
+        &scene,
+        &renderer,
+        Default::default(),
+        64,
+        64,
+        renderer.frame_rgba8().to_vec(),
+    )
+    .expect("frame captures");
+    let report = RenderIntrospectionReportV1::from_capture_with_diagnostics(
+        &capture,
+        &inspection,
+        renderer.stats(),
+        RenderIntrospectionOptions::detail(),
+        renderer.diagnostics(),
+    );
+
+    let mesh_entries = report
+        .nodes_detail
+        .iter()
+        .filter(|entry| entry.kind == "Mesh")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        mesh_entries.len(),
+        1,
+        "the fixture has exactly one mesh: {:?}",
+        report.nodes_detail
+    );
+    let entry = mesh_entries[0];
+    assert!(
+        entry.visible,
+        "the node is visible in the scene graph; that is precisely the case \
+         that used to report no reason at all"
+    );
+    assert!(
+        !entry.reason_codes.is_empty(),
+        "a visible node that cannot reach the frame must carry a reason code, \
+         got {:?}",
+        entry.reason_codes
+    );
+
+    // Cameras, lights, and empties never rasterize, so attaching a visibility
+    // reason to one is noise rather than a finding.
+    for entry in &report.nodes_detail {
+        if matches!(entry.kind.as_str(), "Camera" | "Light" | "Empty") {
+            assert!(
+                entry.reason_codes.is_empty(),
+                "{} node must not carry render-visibility reasons: {:?}",
+                entry.kind,
+                entry.reason_codes
+            );
+        }
+    }
+}
+
+/// G05: `visible` and `drawn` count different populations.
+///
+/// `visible` counts every visible scene node — cameras, lights, and empties
+/// included — while `drawn` is the draw-list length. An agent comparing them
+/// concludes that nodes were dropped when nothing was. The summary must expose
+/// a drawable count that is directly comparable to `drawn`.
+#[test]
+fn nodes_summary_exposes_a_population_comparable_to_drawn() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    scene.add_default_camera().expect("default camera inserts");
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("box mesh inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    renderer.render_active(&scene).expect("scene renders");
+
+    let inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let capture = capture_unverified_rgba8_from_pixels(
+        &scene,
+        &renderer,
+        Default::default(),
+        64,
+        64,
+        renderer.frame_rgba8().to_vec(),
+    )
+    .expect("frame captures");
+    let report = RenderIntrospectionReportV1::from_capture(
+        &capture,
+        &inspection,
+        renderer.stats(),
+        RenderIntrospectionOptions::default(),
+    );
+
+    let summary = &report.nodes_summary;
+    assert!(
+        summary.visible > summary.drawn,
+        "the fixture's camera and root inflate `visible` above `drawn`, which \
+         is exactly why the two are not comparable: {summary:?}"
+    );
+    assert_eq!(
+        summary.visible_drawable, summary.drawn,
+        "`visible_drawable` must be the population `drawn` is drawn from, so an \
+         agent can compare like with like: {summary:?}"
+    );
+}

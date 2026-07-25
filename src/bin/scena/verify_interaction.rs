@@ -1,3 +1,4 @@
+use super::scena_cli_error::{CliFailure, CliUsageError};
 use std::fs;
 use std::path::PathBuf;
 
@@ -12,7 +13,7 @@ pub(crate) struct VerifyInteractionCommandArgs {
     expect: PathBuf,
 }
 
-pub(crate) fn run_verify_interaction_command(args: &[String]) -> Result<CliOutcome, String> {
+pub(crate) fn run_verify_interaction_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = VerifyInteractionCommandArgs::parse(args)?;
     let text = fs::read_to_string(&args.expect).map_err(|error| {
         format!(
@@ -102,7 +103,11 @@ pub(crate) fn run_verify_interaction_command(args: &[String]) -> Result<CliOutco
             "select" => host
                 .select(coordinates.x_css_px, coordinates.y_css_px)
                 .map_err(|error| format!("interaction select failed: {error}"))?,
-            other => return Err(format!("unsupported interaction action '{other}'")),
+            other => {
+                return Err(CliFailure::invalid_arguments(format!(
+                    "unsupported interaction action '{other}'"
+                )));
+            }
         };
         let hover_handle = host.hover_handle();
         let selection_handle = host.primary_selection_handle();
@@ -137,9 +142,9 @@ pub(crate) fn run_verify_interaction_command(args: &[String]) -> Result<CliOutco
 }
 
 impl VerifyInteractionCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
+    fn parse(args: &[String]) -> Result<Self, CliUsageError> {
         let Some(input) = args.first() else {
-            return Err(verify_interaction_usage());
+            return Err(CliUsageError::from(verify_interaction_usage()));
         };
         let mut expect = None;
         let mut index = 1;
@@ -153,26 +158,28 @@ impl VerifyInteractionCommandArgs {
                     index += 1;
                 }
                 flag => {
-                    return Err(format!(
+                    return Err(CliUsageError::from(format!(
                         "unknown verify interaction flag '{flag}'; {}",
                         verify_interaction_usage()
-                    ));
+                    )));
                 }
             }
         }
         Ok(Self {
             input: input.clone(),
             expect: expect.ok_or_else(|| {
-                format!("missing --expect <json>; {}", verify_interaction_usage())
+                CliUsageError::from({
+                    format!("missing --expect <json>; {}", verify_interaction_usage())
+                })
             })?,
         })
     }
 }
 
-fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
+fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, CliUsageError> {
     args.get(index + 1)
         .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
+        .ok_or_else(|| CliUsageError::from(format!("{flag} requires a value")))
 }
 
 fn verify_interaction_usage() -> String {

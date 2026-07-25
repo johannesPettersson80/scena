@@ -1,4 +1,5 @@
 use crate::assets::TextureFilter;
+use crate::render::color_contract::{linear_channel_to_srgb, srgb_channel_to_linear};
 
 pub(super) fn mip_level_extents(
     width: u32,
@@ -25,6 +26,7 @@ pub(super) fn downsample_rgba8_mip(
     previous_height: u32,
     next_width: u32,
     next_height: u32,
+    srgb: bool,
 ) -> Vec<u8> {
     // Stage B2: delegate to the `image` crate's Triangle (bilinear) filter.
     // For the 2:1 → 1 mip-chain case Triangle produces the same average as
@@ -32,8 +34,38 @@ pub(super) fn downsample_rgba8_mip(
     // continue to pass byte-for-byte). For larger source mips (e.g.
     // 256×256 → 128×128 with a sharp edge), Triangle filters more
     // gracefully than box-averaging, improving texture sampling quality.
-    let buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-        image::ImageBuffer::from_raw(previous_width, previous_height, previous.to_vec())
+    //
+    // R03: filtering is only meaningful in linear light. Averaging sRGB-
+    // encoded bytes weights dark samples far too heavily, so mipped albedo
+    // darkens with distance. sRGB sources are decoded to linear, filtered
+    // with the identical Triangle kernel, then re-encoded. Alpha is already
+    // linear in both encodings and is never transformed.
+    if !srgb {
+        let buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
+            image::ImageBuffer::from_raw(previous_width, previous_height, previous.to_vec())
+                .expect("downsample input must be width × height × 4 RGBA bytes");
+        let resized = image::imageops::resize(
+            &buffer,
+            next_width.max(1),
+            next_height.max(1),
+            image::imageops::FilterType::Triangle,
+        );
+        return resized.into_raw();
+    }
+
+    let linear = previous
+        .chunks_exact(4)
+        .flat_map(|pixel| {
+            [
+                srgb_channel_to_linear(f32::from(pixel[0]) / 255.0),
+                srgb_channel_to_linear(f32::from(pixel[1]) / 255.0),
+                srgb_channel_to_linear(f32::from(pixel[2]) / 255.0),
+                f32::from(pixel[3]) / 255.0,
+            ]
+        })
+        .collect::<Vec<f32>>();
+    let buffer: image::ImageBuffer<image::Rgba<f32>, Vec<f32>> =
+        image::ImageBuffer::from_raw(previous_width, previous_height, linear)
             .expect("downsample input must be width × height × 4 RGBA bytes");
     let resized = image::imageops::resize(
         &buffer,
@@ -41,7 +73,26 @@ pub(super) fn downsample_rgba8_mip(
         next_height.max(1),
         image::imageops::FilterType::Triangle,
     );
-    resized.into_raw()
+    resized
+        .into_raw()
+        .chunks_exact(4)
+        .flat_map(|pixel| {
+            [
+                encode_linear_channel(pixel[0]),
+                encode_linear_channel(pixel[1]),
+                encode_linear_channel(pixel[2]),
+                encode_unit_channel(pixel[3]),
+            ]
+        })
+        .collect()
+}
+
+fn encode_linear_channel(value: f32) -> u8 {
+    encode_unit_channel(linear_channel_to_srgb(value))
+}
+
+fn encode_unit_channel(value: f32) -> u8 {
+    (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 pub(super) fn downsample_rgba16f_mip(
@@ -129,7 +180,7 @@ mod tests {
             255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
         ];
 
-        let mip = super::downsample_rgba8_mip(&previous, 2, 2, 1, 1);
+        let mip = super::downsample_rgba8_mip(&previous, 2, 2, 1, 1, false);
 
         // Stage B2: switched from a hand-rolled truncating box filter to
         // the `image` crate's Triangle (bilinear) filter. Triangle uses
@@ -137,6 +188,36 @@ mod tests {
         // = 510/4 = 127.5 rounds to 128 (not 127). Strictly more correct;
         // matches GIMP/Photoshop default mip resampling.
         assert_eq!(mip, vec![128, 128, 128, 255]);
+    }
+
+    /// R03: an sRGB-encoded texture must be filtered through linear light.
+    ///
+    /// Averaging the *encoded* bytes of black and white yields ~128, which is
+    /// ~0.216 in linear light — far darker than the true 0.5 midpoint. The
+    /// correct result re-encodes 0.5 linear, which is ~188 in sRGB. Filtering
+    /// in encoded space is what makes mipped albedo darken with distance.
+    #[test]
+    fn srgb_mip_downsample_filters_in_linear_light() {
+        let previous = [0, 0, 0, 255, 255, 255, 255, 255];
+
+        let encoded_space = super::downsample_rgba8_mip(&previous, 2, 1, 1, 1, false);
+        let linear_light = super::downsample_rgba8_mip(&previous, 2, 1, 1, 1, true);
+
+        // A data texture must be *byte-identical* to the pre-R03 result, not
+        // merely close: `downsample_rgba8_mip` takes the original `Rgba<u8>`
+        // Triangle path unchanged when `srgb` is false. 127.5 rounds to 128.
+        assert_eq!(
+            encoded_space,
+            vec![128, 128, 128, 255],
+            "a data texture must keep encoded-space averaging byte-for-byte",
+        );
+        assert!(
+            (184..=192).contains(&linear_light[0]),
+            "an sRGB texture must average in linear light and re-encode \
+             (expected ~188, got {}): {linear_light:?}",
+            linear_light[0]
+        );
+        assert_eq!(linear_light[3], 255, "alpha is linear and must not shift");
     }
 
     /// Stage B2 pin: 4×4 checker → 2×2 with Triangle filter. Triangle
@@ -156,7 +237,7 @@ mod tests {
                 }
             }
         }
-        let mip = super::downsample_rgba8_mip(&previous, 4, 4, 2, 2);
+        let mip = super::downsample_rgba8_mip(&previous, 4, 4, 2, 2, false);
         for px in 0..4 {
             let i = px * 4;
             assert!(
