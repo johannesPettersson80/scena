@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>scena — beautiful 3D in Rust</title>
+<style>
+  :root{
+    --ink:#0b0d12; --ink-2:#12151d; --line:#242938;
+    --fg:#eef1f6; --fg-dim:#98a1b3; --accent:#3ddc97; --code:#c9d3e6;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--ink);color:var(--fg);font-family:var(--sans);
+       -webkit-font-smoothing:antialiased;line-height:1.55}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+  a{color:inherit}
+
+  /* ---------- hero ---------- */
+  .hero{padding:88px 0 60px}
+  .hero .wrap{display:grid;grid-template-columns:.86fr 1.14fr;gap:56px;align-items:center}
+  @media(max-width:980px){.hero .wrap{grid-template-columns:1fr;gap:40px}}
+  .hero-media{position:relative;border-radius:16px;overflow:hidden;
+              border:1px solid var(--line);background:#090b10;
+              box-shadow:0 30px 80px rgba(0,0,0,.55)}
+  .hero-media img,.hero-media canvas{width:100%;height:auto;display:block}
+  .hero-media canvas{position:absolute;inset:0;height:100%;opacity:0;transition:opacity .9s ease}
+  .hero-media canvas.live{opacity:1}
+  .hero-cap{position:absolute;left:14px;bottom:12px;z-index:2}
+  .eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--accent);margin:0 0 20px}
+  h1{font-size:clamp(2.5rem,5.4vw,4.2rem);line-height:1.05;margin:0 0 22px;
+     letter-spacing:-.025em;font-weight:800;max-width:16ch}
+  .lede{font-size:clamp(1.05rem,1.7vw,1.32rem);color:var(--fg-dim);
+        max-width:46ch;margin:0 0 34px}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .btn{display:inline-block;padding:13px 22px;border-radius:10px;
+       text-decoration:none;font-weight:650;font-size:.97rem}
+  .btn-primary{background:var(--accent);color:#04150e}
+  .btn-ghost{border:1px solid var(--line);color:var(--fg)}
+  .hero-note{padding-top:26px}
+  .hero-note .wrap{display:flex;justify-content:space-between;
+                   align-items:flex-end;gap:20px;flex-wrap:wrap}
+  .badge{font-family:var(--mono);font-size:.74rem;color:var(--fg-dim);
+         border:1px solid var(--line);border-radius:999px;padding:6px 13px;
+         background:rgba(11,13,18,.6)}
+
+  /* ---------- sections ---------- */
+  section.band{padding:104px 0;border-top:1px solid var(--line)}
+  h2{font-size:clamp(1.8rem,3.4vw,2.7rem);letter-spacing:-.02em;margin:0 0 14px;
+     font-weight:750;max-width:20ch;line-height:1.12}
+  .sub{color:var(--fg-dim);max-width:60ch;margin:0 0 42px;font-size:1.05rem}
+
+  .split{display:grid;grid-template-columns:1.05fr .95fr;gap:52px;align-items:center}
+  @media(max-width:900px){.split{grid-template-columns:1fr;gap:32px}}
+
+  pre{margin:0;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;
+      padding:22px 24px;overflow-x:auto}
+  code{font-family:var(--mono);font-size:.875rem;color:var(--code);line-height:1.72}
+  .k{color:#7aa2f7}.s{color:#9ece6a}.f{color:#e0af68}.c{color:#5c6773;font-style:italic}
+
+  .swatches{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:620px){.swatches{grid-template-columns:repeat(2,1fr)}}
+  .sw{border:1px solid var(--line);border-radius:14px;overflow:hidden;
+      background:var(--ink-2)}
+  .sw img{width:100%;height:auto;display:block;background:#0a0c11}
+  .sw .meta{padding:13px 15px 15px}
+  .sw b{display:block;font-size:.94rem;margin-bottom:3px}
+  .sw span{font-family:var(--mono);font-size:.75rem;color:var(--fg-dim)}
+
+  .proof{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  @media(max-width:820px){.proof{grid-template-columns:repeat(2,1fr)}}
+  .stat{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--ink-2)}
+  .stat .n{font-size:1.9rem;font-weight:750;letter-spacing:-.02em}
+  .stat .l{color:var(--fg-dim);font-size:.9rem;margin-top:4px}
+
+  footer{padding:56px 0 76px;border-top:1px solid var(--line);color:var(--fg-dim)}
+  footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .links{display:flex;gap:20px;flex-wrap:wrap}
+  .links a{text-decoration:none;font-size:.94rem}
+  .links a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">scena</p>
+      <h1>Beautiful 3D in Rust.</h1>
+      <p class="lede">
+        Real glTF, real PBR, and materials you call by name.
+        One library, native and in the browser.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://crates.io/crates/scena">cargo add scena</a>
+        <a class="btn btn-ghost" href="https://docs.rs/scena">Read the docs</a>
+        <a class="btn btn-ghost" href="https://github.com/johannesPettersson80/scena">GitHub</a>
+      </div>
+    </div>
+
+    <div class="hero-media">
+      <img id="hero-still" src="assets/hero.png" alt="Six spheres — chrome, glass, clearcoat, brushed steel, gold and matte — reflected in a dark studio floor, rendered by scena">
+      <canvas id="hero-live" aria-hidden="true"></canvas>
+      <span class="badge hero-cap" id="hero-badge">rendered by scena · no imported art</span>
+    </div>
+  </div>
+
+  <div class="hero-note">
+    <div class="wrap">
+      <span class="badge">six named materials · one stock sphere</span>
+      <span class="badge">native · WebGL2 · WebGPU</span>
+    </div>
+  </div>
+</header>
+
+<section class="band">
+  <div class="wrap">
+    <h2>That image is six lines of material.</h2>
+    <p class="sub">
+      No metalness sliders, no roughness guesswork, no IOR tables. Every sphere above is a
+      named preset on a stock sphere — the whole scene is composed, not sourced.
+    </p>
+
+    <div class="split">
+      <pre><code><span class="k">let</span> lineup = [
+    MaterialDesc::<span class="f">chrome</span>(),
+    MaterialDesc::<span class="f">clear_glass</span>(tint),
+    MaterialDesc::<span class="f">clearcoat_plastic</span>(red),
+    MaterialDesc::<span class="f">brushed_steel</span>(),
+    MaterialDesc::<span class="f">metal</span>(gold),
+    MaterialDesc::<span class="f">matte</span>(white),
+];
+
+<span class="c">// studio light, studio environment, done</span>
+scene.<span class="f">add_studio_lighting</span>()?;
+renderer.<span class="f">set_environment</span>(studio);</code></pre>
+
+      <div class="swatches">
+        <figure class="sw" style="margin:0"><img src="assets/mat-chrome.png" alt="Chrome material rendered by scena" loading="lazy" width="360" height="360"><figcaption class="meta"><b>Chrome</b><span>chrome()</span></figcaption></figure>
+        <figure class="sw" style="margin:0"><img src="assets/mat-clear-glass.png" alt="Clear glass material rendered by scena" loading="lazy" width="360" height="360"><figcaption class="meta"><b>Clear glass</b><span>clear_glass()</span></figcaption></figure>
+        <figure class="sw" style="margin:0"><img src="assets/mat-clearcoat.png" alt="Clearcoat material rendered by scena" loading="lazy" width="360" height="360"><figcaption class="meta"><b>Clearcoat</b><span>clearcoat_plastic()</span></figcaption></figure>
+        <figure class="sw" style="margin:0"><img src="assets/mat-brushed-steel.png" alt="Brushed steel material rendered by scena" loading="lazy" width="360" height="360"><figcaption class="meta"><b>Brushed steel</b><span>brushed_steel()</span></figcaption></figure>
+        <figure class="sw" style="margin:0"><img src="assets/mat-metal.png" alt="Metal material rendered by scena" loading="lazy" width="360" height="360"><figcaption class="meta"><b>Metal</b><span>metal()</span></figcaption></figure>
+        <figure class="sw" style="margin:0"><img src="assets/mat-matte.png" alt="Matte material rendered by scena" loading="lazy" width="360" height="360"><figcaption class="meta"><b>Matte</b><span>matte()</span></figcaption></figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>A scene is data, so anything can write one.</h2>
+    <p class="sub">
+      Scenes are a versioned, validated JSON contract. Hand it to a person, a build step,
+      or a language model — then render it from the command line and check the result.
+    </p>
+    <pre><code><span class="c">$</span> scena examples agent get product-configurator --out ./scene
+<span class="c">$</span> scena recipe render ./scene/recipe.json --out shot.png
+
+{ <span class="s">"schema"</span>: <span class="s">"scena.render_introspection.v1"</span>,
+  <span class="s">"ok"</span>: <span class="k">true</span>,
+  <span class="s">"nodes_summary"</span>: { <span class="s">"visible_drawable"</span>: 14, <span class="s">"drawn"</span>: 14 } }</code></pre>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>Proven where it has to run.</h2>
+    <p class="sub">
+      Every release is gated on rendered-output proof across real hardware — not a smoke test
+      that only checks the process exited zero.
+    </p>
+    <div class="proof">
+      <div class="stat"><div class="n">9 / 9</div><div class="l">CI lanes green</div></div>
+      <div class="stat"><div class="n">macOS</div><div class="l">Metal</div></div>
+      <div class="stat"><div class="n">Windows</div><div class="l">DX12</div></div>
+      <div class="stat"><div class="n">Browser</div><div class="l">WebGL2 · WebGPU</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>scena — a renderer, not a game engine.</span>
+    <span class="links">
+      <a href="https://docs.rs/scena">docs.rs</a>
+      <a href="https://crates.io/crates/scena">crates.io</a>
+      <a href="https://github.com/johannesPettersson80/scena">GitHub</a>
+      <a href="/proof/">technical proof</a>
+    </span>
+  </div>
+</footer>
+
+<script type="module">
+  // The still paints instantly and is never removed. If the live renderer
+  // starts, it cross-fades over the top; if it fails, the page is unchanged.
+  const still = document.getElementById("hero-still");
+  const canvas = document.getElementById("hero-live");
+  const badge = document.getElementById("hero-badge");
+
+  async function startLiveHero() {
+    const mod = await import("./pkg/scena.js").catch(() => null);
+    if (!mod) return;
+    await mod.default();
+    if (!mod.SceneHost) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(canvas.clientWidth * dpr);
+    canvas.height = Math.round(canvas.clientHeight * dpr);
+    const host = await mod.SceneHost.new_webgl(canvas);
+    const recipe = await (await fetch("./assets/hero.recipe.json")).text();
+    await host.build_recipe_json(recipe);
+    canvas.classList.add("live");
+    badge.textContent = "rendered live in your browser · six named materials";
+    let t = 0;
+    const tick = () => { t += 0.0016; host.orbit_to(t); host.render(); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
+
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    startLiveHero().catch(() => { /* still stays */ });
+  }
+</script>
+</body>
+</html>
