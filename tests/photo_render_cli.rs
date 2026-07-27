@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 use sha2::{Digest, Sha256};
 
@@ -459,11 +460,26 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
         Some(final_attempts),
         "final candidate render count must match retry attempts: {report_json:#}"
     );
+    // Focus resolution sets depth of field after the retry loop has accepted a
+    // candidate, so one further render delivers the focused frame. It is counted
+    // separately from the retry budget and included in the total: every render
+    // the command performs must appear here, which is precisely what the removed
+    // path tracer failed to do.
+    let focus_delivery_renders = report_json["work_metrics"]["focus_delivery_renders"]
+        .as_u64()
+        .expect("work metrics report focus delivery renders");
+    assert!(
+        focus_delivery_renders <= 1,
+        "focus delivery must render at most one frame: {report_json:#}"
+    );
     assert!(
         work_metrics["total_render_calls"]
             .as_u64()
-            .is_some_and(|calls| calls == shaded_renders + final_attempts && calls <= 12),
-        "candidate loop must expose its bounded preview-adjustment and final retry budget: {report_json:#}"
+            .is_some_and(
+                |calls| calls == shaded_renders + final_attempts + focus_delivery_renders
+                    && calls <= 13
+            ),
+        "candidate loop must expose its bounded preview-adjustment, final retry, and focus delivery budget: {report_json:#}"
     );
     assert_eq!(
         work_metrics["prepare_calls"], work_metrics["total_render_calls"],
@@ -651,13 +667,6 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
         png_metrics.mean_luminance_srgb8,
         &fixture["quality_bands"]["subject_mean_luminance_srgb8"],
     );
-    let transport_luma = report_json["transport"]["exposure_measured_luminance_srgb8"]
-        .as_f64()
-        .expect("transport subject luminance is numeric");
-    assert!(
-        (transport_luma - mean_luma).abs() <= 1.5,
-        "semantic-AOV subject luminance and path-tracer subject-hit luminance must agree, transport={transport_luma}, report={mean_luma}; report={report_json:#}"
-    );
     assert_metric_in_range(
         "subject luminance",
         mean_luma,
@@ -681,9 +690,17 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
         png_metrics.low_clip_fraction,
         &fixture["quality_bands"]["subject_low_clip_fraction"],
     );
+    // `measure_png_foreground_region` separates subject from background by
+    // comparing each pixel to the top-left one, so it only isolates the subject
+    // when the backdrop is a flat fill. Generated surroundings put a lit
+    // cyclorama and floor behind the subject, so the proxy now also counts
+    // backdrop pixels inside the subject rect and can only over-report darkness.
+    // The report measures the exact semantic-AOV mask, so it is the lower bound;
+    // asserting the ordering still catches a report that invents a clean number
+    // for a crushed frame, without depending on a flat background.
     assert!(
-        (png_metrics.low_clip_fraction - low_clip).abs() <= 0.01,
-        "reported low-clip fraction must match the rendered PNG bytes, png={}, report={low_clip}; report={report_json:#}",
+        low_clip <= png_metrics.low_clip_fraction + 0.01,
+        "reported low-clip fraction must not undercut the rendered PNG bytes, png={}, report={low_clip}; report={report_json:#}",
         png_metrics.low_clip_fraction
     );
     assert_metric_at_most(
@@ -1728,4 +1745,107 @@ fn sha256_hex(path: &Path) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// `scena photo render` and `scena recipe render` run the same camera-behavior
+/// loop over the same subject, so one must not cost dramatically more than the
+/// other.
+///
+/// The photo path used to append `render_photographic_final`, a single-threaded
+/// CPU path tracer that re-traced the whole frame at 8 samples/pixel x 4 bounces
+/// through a scene-wide raycast built for interactive picking. It ran regardless
+/// of `--gpu`, cost more than twenty times the recipe path on identical input,
+/// and did not terminate at all at release resolutions. Deleting it is what this
+/// test protects: the render-call bound is deterministic, and the wall-clock
+/// ratio catches a reintroduced whole-frame pass.
+#[test]
+fn photo_render_costs_the_same_order_as_recipe_render_for_one_intent() {
+    let dir = artifact_dir("photo-vs-recipe-cost-parity");
+    let photo_png = dir.join("photo.png");
+    let report_path = dir.join("photo.report.json");
+    let emitted_recipe = dir.join("emitted.recipe.json");
+
+    let photo_started = Instant::now();
+    let photo = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "photo",
+            "render",
+            CAMERA_BEHAVIOR_FIXTURE_ASSET,
+            "--width",
+            "256",
+            "--height",
+            "168",
+            "--out",
+            path_str(&photo_png),
+            "--report",
+            path_str(&report_path),
+            "--emit-recipe",
+            path_str(&emitted_recipe),
+        ])
+        .output()
+        .expect("scena photo render command runs");
+    let photo_elapsed = photo_started.elapsed();
+    assert!(
+        photo.status.success(),
+        "photo render should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&photo.stdout),
+        String::from_utf8_lossy(&photo.stderr)
+    );
+
+    let recipe_png = dir.join("recipe.png");
+    let recipe_started = Instant::now();
+    let recipe = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&emitted_recipe),
+            "--out",
+            path_str(&recipe_png),
+        ])
+        .output()
+        .expect("scena recipe render command runs");
+    let recipe_elapsed = recipe_started.elapsed();
+    assert!(
+        recipe.status.success(),
+        "recipe render should pass on the emitted recipe, stdout={}, stderr={}",
+        String::from_utf8_lossy(&recipe.stdout),
+        String::from_utf8_lossy(&recipe.stderr)
+    );
+
+    let report_json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&report_path).expect("photo report reads"))
+            .expect("photo report parses");
+    let work = &report_json["work_metrics"];
+
+    // Deterministic half: every render the photo path performs is accounted for
+    // by the bounded candidate loop. A whole-frame pass bolted on afterwards
+    // does not go through `render_capture`, so it would not be counted here --
+    // which is exactly how the path tracer stayed invisible to this report.
+    let total_render_calls = work["total_render_calls"]
+        .as_u64()
+        .expect("work metrics report total render calls");
+    let shaded_budget = work["shaded_candidate_budget"]
+        .as_u64()
+        .expect("work metrics report the shaded candidate budget");
+    let final_budget = work["final_candidate_render_budget"]
+        .as_u64()
+        .expect("work metrics report the final candidate render budget");
+    assert!(
+        total_render_calls <= (shaded_budget * 2) + final_budget,
+        "photo render must stay inside its declared candidate budgets, \
+         total={total_render_calls}, shaded_budget={shaded_budget}, final_budget={final_budget}; \
+         report={report_json:#}"
+    );
+
+    // Wall-clock half: coarse on purpose, so an ordinarily loaded machine does
+    // not fail it, while a reintroduced per-pixel CPU pass (>20x) cannot pass.
+    let photo_secs = photo_elapsed.as_secs_f64();
+    let recipe_secs = recipe_elapsed.as_secs_f64();
+    if recipe_secs >= 0.2 {
+        assert!(
+            photo_secs <= recipe_secs * 4.0,
+            "photo render must stay the same order of magnitude as recipe render for one intent, \
+             photo={photo_secs:.2}s, recipe={recipe_secs:.2}s"
+        );
+    }
 }

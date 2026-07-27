@@ -21,10 +21,21 @@
     "budget": 10,
     "selected_candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
     "constraints": {
-      "viewport": [256, 168],
+      "viewport": [
+        256,
+        168
+      ],
       "subject_bounds": {
-        "min": [-2.0, -0.25, -0.5],
-        "max": [2.0, 1.0, 0.5]
+        "min": [
+          -2.0,
+          -0.25,
+          -0.5
+        ],
+        "max": [
+          2.0,
+          1.0,
+          0.5
+        ]
       },
       "preferred_view": "three_quarter_front_right",
       "fill_range": {
@@ -454,30 +465,6 @@
       ]
     }
   },
-  "transport": {
-    "schema": "scena.photographic_transport_report.v1",
-    "path": "cpu_progressive_path_tracer",
-    "samples_per_pixel": 8,
-    "maximum_bounces": 4,
-    "primary_rays": 344064,
-    "secondary_rays": 516096,
-    "shadow_rays": 258048,
-    "intersections": 1118208,
-    "mesh_acceleration_structures": 3,
-    "instance_count": 12,
-    "light_kinds": [
-      "rectangular_area"
-    ],
-    "emissive_geometry_lights": 0,
-    "multiple_importance_sampling": true,
-    "edge_aware_denoising": true,
-    "firefly_suppression": "isolated_outliers_only",
-    "raster_preview_preserved": true,
-    "final_exposure_scale": 1.0,
-    "exposure_target_luminance_srgb8": 90.0,
-    "exposure_measured_luminance_srgb8": 90.0,
-    "exposure_sample_count": 24576
-  },
   "subject_region": {
     "schema": "scena.photo_subject_region.v1",
     "source": "subject_observation.v1",
@@ -489,8 +476,16 @@
       ]
     },
     "world_bounds": {
-      "min": [-2.0, -0.25, -0.5],
-      "max": [2.0, 1.0, 0.5]
+      "min": [
+        -2.0,
+        -0.25,
+        -0.5
+      ],
+      "max": [
+        2.0,
+        1.0,
+        0.5
+      ]
     },
     "projected_bounds": {
       "min_x": 32.0,

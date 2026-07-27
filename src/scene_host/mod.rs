@@ -30,7 +30,6 @@ mod photo;
 mod photographic_lighting;
 mod photographic_surface;
 mod photographic_surroundings;
-mod photographic_transport;
 mod post;
 mod presentation_timeline;
 mod product;
@@ -136,10 +135,6 @@ pub use photographic_surface::{
 };
 pub use photographic_surroundings::{
     PHOTOGRAPHIC_SURROUNDINGS_REPORT_SCHEMA_V1, PhotographicSurroundingsReportV1,
-};
-pub use photographic_transport::{
-    PHOTOGRAPHIC_TRANSPORT_REPORT_SCHEMA_V1, PhotographicTransportQuality,
-    PhotographicTransportReportV1,
 };
 pub use presentation_timeline::{
     PRESENTATION_TIMELINE_SCHEMA_V1, PresentationTimelineActionKindV1,

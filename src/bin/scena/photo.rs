@@ -193,13 +193,13 @@ struct PhotoReportInput<'a> {
     planning: &'a scena::PhotoCandidatePlanV1,
     shaded_selection: &'a ShadedCandidateSelection,
     final_work_metrics: PhotoLoopWorkMetrics,
+    focus_work_metrics: PhotoLoopWorkMetrics,
     candidates: &'a [PhotoCandidate],
     selected: &'a PhotoCandidate,
     subject_bounds: Option<scena::Aabb>,
     focus_report: scena::FocusReportV1,
     exposure_report: scena::ExposureReportV1,
     subject_observation: scena::SubjectObservationV1,
-    transport_report: scena::scene_host::PhotographicTransportReportV1,
     artifacts: PhotoArtifactPaths,
 }
 
@@ -414,14 +414,14 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
         render_camera_behavior_candidates(&mut host, &subject, &selected_composition, args.gpu)?;
     let visible_focus =
         apply_visible_subject_physical_focus(&mut host, &subject, &selected_composition, args.gpu)?;
-    let (capture, transport_report) = host
-        .render_photographic_final(
-            &selected.capture,
-            Some(subject.root_handle),
-            scena::scene_host::PhotographicTransportQuality::Final,
-        )
-        .map_err(runtime_failure)?;
-    selected.capture = capture;
+    // Focus resolution sets depth of field, so the accepted candidate's capture
+    // predates it. Re-render once through the same raster path the loop used, so
+    // the delivered image, the reported metrics, and the focus report all
+    // describe the same frame.
+    let mut focus_work = PhotoLoopWorkMetrics::default();
+    if visible_focus.is_some() {
+        selected.capture = render_capture(&mut host, &mut focus_work)?;
+    }
     let inspection_json = host.inspect_json().map_err(runtime_failure)?;
     let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
         .map_err(|error| {
@@ -495,13 +495,13 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
         planning: &planning,
         shaded_selection: &shaded_selection,
         final_work_metrics: selected.work_metrics,
+        focus_work_metrics: focus_work,
         candidates: &selected.candidates,
         selected: &selected.final_candidate,
         subject_bounds,
         focus_report,
         exposure_report,
         subject_observation,
-        transport_report,
         artifacts: PhotoArtifactPaths {
             capture_png_path: path_for_json(&args.out),
             capture_descriptor_path: path_for_json(&descriptor_path),
@@ -942,13 +942,13 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
         planning,
         shaded_selection,
         final_work_metrics,
+        focus_work_metrics,
         candidates,
         selected,
         subject_bounds,
         focus_report,
         exposure_report,
         subject_observation,
-        transport_report,
         artifacts,
     } = input;
     let failure_codes = selected
@@ -985,6 +985,7 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
             planning,
             shaded_selection,
             final_work_metrics,
+            focus_work_metrics,
         ),
         "acceptance": {
             "subject_fill_width_fraction": {
@@ -1020,8 +1021,6 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
             .expect("exposure report serializes into photo report"),
         "subject_observation": serde_json::to_value(subject_observation)
             .expect("subject observation serializes into photo report"),
-        "transport": serde_json::to_value(transport_report)
-            .expect("photographic transport report serializes into photo report"),
         "subject_region": serde_json::to_value(subject_region)
             .expect("subject region serializes into photo report"),
         "failure_codes": failure_codes,
@@ -1059,6 +1058,7 @@ fn photo_work_metrics(
     planning: &scena::PhotoCandidatePlanV1,
     shaded_selection: &ShadedCandidateSelection,
     final_work: PhotoLoopWorkMetrics,
+    focus_work: PhotoLoopWorkMetrics,
 ) -> Value {
     let shaded_work = shaded_selection.work_metrics;
     let shaded_candidate_pixels = u64::from(shaded_selection.low_resolution[0])
@@ -1066,16 +1066,20 @@ fn photo_work_metrics(
     let final_candidate_pixels = u64::from(args.width).saturating_mul(u64::from(args.height));
     let total_render_calls = shaded_work
         .render_calls
-        .saturating_add(final_work.render_calls);
+        .saturating_add(final_work.render_calls)
+        .saturating_add(focus_work.render_calls);
     let prepare_calls = shaded_work
         .prepare_calls
-        .saturating_add(final_work.prepare_calls);
+        .saturating_add(final_work.prepare_calls)
+        .saturating_add(focus_work.prepare_calls);
     let capture_calls = shaded_work
         .capture_calls
-        .saturating_add(final_work.capture_calls);
+        .saturating_add(final_work.capture_calls)
+        .saturating_add(focus_work.capture_calls);
     let subject_meter_samples = shaded_work
         .subject_meter_samples
-        .saturating_add(final_work.subject_meter_samples);
+        .saturating_add(final_work.subject_meter_samples)
+        .saturating_add(focus_work.subject_meter_samples);
     json!({
         "timing_policy": "report_only",
         "wall_clock_thresholds": "not_used",
@@ -1094,6 +1098,7 @@ fn photo_work_metrics(
         "final_candidate_height": args.height,
         "final_candidate_pixels": final_candidate_pixels
             .saturating_mul(final_work.render_calls),
+        "focus_delivery_renders": focus_work.render_calls,
         "total_render_calls": total_render_calls,
         "prepare_calls": prepare_calls,
         "extra_prepare_operations": prepare_calls.saturating_sub(1),

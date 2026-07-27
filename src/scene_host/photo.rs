@@ -215,7 +215,6 @@ pub struct PhotoReportV1 {
     pub focus_report: Value,
     pub exposure_report: Value,
     pub subject_observation: Value,
-    pub transport: Value,
     pub subject_region: PhotoSubjectRegionV1,
     pub failure_codes: Vec<String>,
     pub artifacts: Value,
@@ -257,11 +256,6 @@ impl PhotoReportV1 {
         }
         if !self.work_metrics.is_object() {
             return Err("photo_report_work_metrics_missing");
-        }
-        if self.transport.get("schema").and_then(Value::as_str)
-            != Some(super::PHOTOGRAPHIC_TRANSPORT_REPORT_SCHEMA_V1)
-        {
-            return Err("photo_report_transport_missing");
         }
         if !number_at_least(&self.work_metrics, "composition_candidate_budget", 1.0)
             || !number_at_least(&self.work_metrics, "composition_candidates", 1.0)

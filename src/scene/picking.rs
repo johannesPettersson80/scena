@@ -7,16 +7,6 @@ use crate::picking::{
 use super::{CameraKey, NodeKey, NodeKind, RenderableNode, Scene, Transform};
 
 impl Scene {
-    #[cfg(feature = "scene-host")]
-    pub(crate) fn raycast_with_assets<F>(
-        &self,
-        origin: super::Vec3,
-        direction: super::Vec3,
-        assets: &Assets<F>,
-    ) -> Result<Option<Hit>, LookupError> {
-        crate::picking::raycast_scene_with_assets(self, assets, origin, direction)
-    }
-
     pub fn pick(
         &self,
         camera: CameraKey,
