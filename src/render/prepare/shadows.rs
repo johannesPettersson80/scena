@@ -11,7 +11,7 @@ use crate::render::PrepareWorkCounter;
 
 mod cache;
 mod math;
-pub(super) use cache::ShadowVisibilityCache;
+pub(in crate::render) use cache::ShadowVisibilityCache;
 use cache::shadow_triangle_signature;
 use math::{add_vec3, bounds_corners, cross_vec3, dot_vec3, scale_vec3, subtract_vec3};
 

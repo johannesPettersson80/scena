@@ -248,6 +248,7 @@ impl Renderer {
         let configuration_diagnostics: Vec<_> = multisample_fallback.into_iter().collect();
         let render_mode = resolve_render_mode(options, profile);
         Ok(Self {
+            shadow_visibility_cache: None,
             target,
             prepared: None,
             frame: vec![0; target.byte_len()],

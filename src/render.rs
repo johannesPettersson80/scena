@@ -188,6 +188,10 @@ pub struct Renderer {
     target_revision: u64,
     output_resources_revision: u64,
     prepare_telemetry: PrepareTelemetry,
+    /// Carried across prepares so ray-traced area-light shadow visibility is not
+    /// recomputed when only the camera or exposure changed. Entries are keyed by
+    /// lighting and occluder signatures, so a stale cache can never be read.
+    shadow_visibility_cache: Option<prepare::shadows::ShadowVisibilityCache>,
     last_render_work_metrics: RenderWorkMetrics,
     #[cfg(test)]
     depth_prepass_enabled_for_test: bool,

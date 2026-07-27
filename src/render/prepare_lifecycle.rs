@@ -332,6 +332,7 @@ impl Renderer {
             &backend_material_handles,
             environment_lighting.clone(),
             work,
+            Some(&mut self.shadow_visibility_cache),
         )?;
         self.prepare_telemetry.prepared_primitive_collections = self
             .prepare_telemetry

@@ -61,7 +61,7 @@ mod particles;
 mod pbr_contract;
 mod primitives;
 mod resources;
-mod shadows;
+pub(in crate::render) mod shadows;
 mod stats;
 mod strokes;
 mod tangents;
@@ -97,6 +97,7 @@ pub(super) fn collect_prepared_primitives<F>(
         backend_material_slots,
         environment_lighting,
         None,
+        None,
     )
 }
 
@@ -111,6 +112,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
     backend_material_slots: &[crate::assets::MaterialHandle],
     environment_lighting: PreparedEnvironmentLighting,
     work: Option<&PrepareWorkCounter>,
+    reusable_shadow_visibility: Option<&mut Option<shadows::ShadowVisibilityCache>>,
 ) -> Result<PreparedScene, PrepareError> {
     if let Some(model_node) = scene.model_nodes().next() {
         return Err(PrepareError::UnsupportedModelNode { node: model_node });
@@ -125,7 +127,19 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
     } else {
         shadows::ShadowOccluderSet::default()
     };
-    let shadow_visibility_cache = shadows::ShadowVisibilityCache::new(&lights, &shadow_occluders);
+    // Area-light shadow visibility is ray traced per vertex against a BVH, which
+    // dominates prepare cost for any scene with area lights. The camera-behavior
+    // loop prepares repeatedly while changing only the camera or the exposure,
+    // neither of which affects it, so the populated cache is carried across
+    // prepares whenever the lighting and occluder state still match.
+    let mut reuse_slot = reusable_shadow_visibility;
+    let shadow_visibility_cache = match reuse_slot.as_deref_mut() {
+        Some(slot) => slot
+            .take()
+            .filter(|cache| cache.matches(&lights, &shadow_occluders))
+            .unwrap_or_else(|| shadows::ShadowVisibilityCache::new(&lights, &shadow_occluders)),
+        None => shadows::ShadowVisibilityCache::new(&lights, &shadow_occluders),
+    };
     let shadow_projection_points = if needs_cpu_shadow_visibility {
         None
     } else {
@@ -408,6 +422,12 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
             }
         })
         .unwrap_or_else(identity_matrix4);
+
+    // Hand the populated cache back so the next prepare can reuse it. An early
+    // `?` return skips this, which only costs a rebuild.
+    if let Some(slot) = reuse_slot {
+        *slot = Some(shadow_visibility_cache);
+    }
 
     Ok(PreparedScene {
         primitives,

@@ -11,7 +11,7 @@ struct ShadowVisibilityKey {
     occluder_state_signature: u64,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(in crate::render) struct ShadowVisibilityCache {
     light_state_signature: u64,
     occluder_state_signature: u64,
@@ -20,7 +20,10 @@ pub(in crate::render) struct ShadowVisibilityCache {
 }
 
 impl ShadowVisibilityCache {
-    pub(in crate::render) fn new(lights: &PreparedLights, occluders: &ShadowOccluderSet) -> Self {
+    pub(in crate::render::prepare) fn new(
+        lights: &PreparedLights,
+        occluders: &ShadowOccluderSet,
+    ) -> Self {
         Self {
             light_state_signature: lights.shadow_state_signature(),
             occluder_state_signature: occluders.state_signature,
@@ -29,7 +32,22 @@ impl ShadowVisibilityCache {
         }
     }
 
-    pub(in crate::render) fn directional(
+    /// True when this cache was built for the same lighting and occluder state,
+    /// so its entries still describe the current scene.
+    ///
+    /// Entries are keyed by both signatures as well, so a mismatched cache can
+    /// never return a stale value; this check exists to avoid retaining a map
+    /// that can no longer produce a hit.
+    pub(in crate::render::prepare) fn matches(
+        &self,
+        lights: &PreparedLights,
+        occluders: &ShadowOccluderSet,
+    ) -> bool {
+        self.light_state_signature == lights.shadow_state_signature()
+            && self.occluder_state_signature == occluders.state_signature
+    }
+
+    pub(in crate::render::prepare) fn directional(
         &self,
         position: Vec3,
         work: Option<&PrepareWorkCounter>,
@@ -38,7 +56,7 @@ impl ShadowVisibilityCache {
         self.cached(&self.directional, position, work, compute)
     }
 
-    pub(in crate::render) fn area(
+    pub(in crate::render::prepare) fn area(
         &self,
         position: Vec3,
         work: Option<&PrepareWorkCounter>,
