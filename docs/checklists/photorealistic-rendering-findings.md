@@ -265,12 +265,37 @@ dispersion) account for 3,181 instructions and 56:285 of the spilling, but each
 already early-returns on a zero factor, so that is static footprint rather than
 executed cost for materials that do not use them.
 
-**Consequence for the refusal.** `is_unstable_v3d_headless_adapter`
-(`src/render/gpu/build.rs:50`) rejects the adapter because it was "known to
-hang". That is no longer true: it completes, produces correct pixels, and
-rasterizes about six times faster than the software fallback. The stated reason
-no longer holds and the guard should be revisited. Note that a distinct
-`AdapterRefused { reason }` variant means adding to the public `BuildError` enum
+**The refusal must stay, for a different reason than the one recorded.**
+Removing it and measuring 40 identical headless renders found roughly 7% return
+a frame containing only the clear colour. lavapipe and the CPU rasterizer were
+clean over the same runs, so it is V3D-specific.
+
+On a failing run scena's own state is indistinguishable from a success:
+
+| probe | success | failure |
+|---|---|---|
+| draw batches | 33 | 33 |
+| draws submitted | 33 | 33 |
+| camera transform | identical | identical |
+| `on_uncaptured_error` | silent | silent |
+| `runtime_fault` | clean | clean |
+| output | correct image | clear colour only |
+
+The failing frames share one payload hash, so the render pass runs, clears, and
+discards the geometry rather than corrupting it. The fault channel is genuinely
+consulted on this path (`src/render/gpu/draw/native.rs:43`, alongside the two
+surface paths), so nothing is being swallowed - the driver reports success and
+returns an empty frame.
+
+Ruled out by measurement: adapter selection instability (five runs, all
+`V3D 7.1.10.2`), nondeterministic framing (camera byte-identical), missing
+readback synchronisation (`map_async` then `poll(wait_indefinitely)` then
+`recv`), scena skipping draws, and an unconsulted fault channel. Isolating the
+remainder needs Mesa debug builds and GPU job dumps.
+
+Silently returning an empty frame is worse than refusing the adapter, so the
+guard stays until that is understood. Note that a distinct `AdapterRefused
+{ reason }` variant means adding to the public `BuildError` enum
 (`src/diagnostics.rs:61`), which is not `#[non_exhaustive]` and therefore a
 breaking change.
 

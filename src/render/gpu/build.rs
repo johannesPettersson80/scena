@@ -46,6 +46,28 @@ pub(in crate::render) async fn request_headless_gpu(
     })
 }
 
+/// Refuses the Raspberry Pi V3D adapter for headless GPU rendering.
+///
+/// The original reason recorded for this was that the adapter hangs. That is no
+/// longer what happens, and it was scena's fault rather than the driver's: two
+/// 256-entry LTC tables indexed at runtime from module-scope `const` arrays made
+/// V3DV's register allocator fail all thirteen of its fallback strategies and
+/// emit a 22,518-instruction fragment shader, which took 19 minutes to compile.
+/// With the tables in a uniform block that is gone: 8,894 instructions, zero
+/// allocation failures, and V3D rasterizes about six times faster than lavapipe.
+///
+/// The refusal stays because a different, quieter defect remains. Measured over
+/// 40 identical headless renders, roughly 7% return a frame containing only the
+/// clear colour. On those runs scena's own state is indistinguishable from a
+/// success: the same 33 draw batches, the same 33 submissions, a byte-identical
+/// camera, no `on_uncaptured_error` callback, and a clean `runtime_fault`
+/// channel (which this path does consult, see `draw/native.rs`). The failing
+/// frames share one payload hash, so the render pass runs, clears, and discards
+/// the geometry. lavapipe and the CPU rasterizer are clean over the same runs.
+///
+/// Silently returning an empty frame is worse than refusing the adapter, so the
+/// refusal is kept until that is understood. `SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU`
+/// still bypasses it for investigation.
 #[cfg(not(target_arch = "wasm32"))]
 fn is_unstable_v3d_headless_adapter(info: &wgpu::AdapterInfo) -> bool {
     info.backend == wgpu::Backend::Vulkan && info.name.to_ascii_lowercase().contains("v3d")
