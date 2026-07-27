@@ -271,8 +271,11 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         "src/render/area_ltc_tables.rs",
         &[
             "90c2ae903e5e460c03f28bc14d0391dba9578e71",
-            "pub(super) const LTC_1",
-            "pub(super) const LTC_2",
+            // Visible to the whole render module so the GPU uniform upload in
+            // `render::gpu::shading_tables` packs the same data the CPU
+            // evaluator reads, instead of a second transcription of the table.
+            "pub(in crate::render) const LTC_1",
+            "pub(in crate::render) const LTC_2",
         ],
     );
     require_contains(

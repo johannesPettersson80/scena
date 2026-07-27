@@ -30,6 +30,7 @@ pub(super) fn create_pipeline_resources(
     transmission_view: &wgpu::TextureView,
     transmission_placeholder_view: &wgpu::TextureView,
     transmission_sampler: &wgpu::Sampler,
+    ltc_tables: &wgpu::Buffer,
     light_assignment: &LightAssignmentResources,
 ) -> PipelineResources {
     let surface_output_resources = surface_format.map(|_| {
@@ -50,6 +51,7 @@ pub(super) fn create_pipeline_resources(
             environment_sampler,
             transmission_view,
             transmission_sampler,
+            ltc_tables,
             Some(light_assignment),
         );
         let opaque_bind_group = output::create_output_bind_group(
@@ -62,6 +64,7 @@ pub(super) fn create_pipeline_resources(
             environment_sampler,
             transmission_placeholder_view,
             transmission_sampler,
+            ltc_tables,
             Some(light_assignment),
         );
         (uniform, bind_group, opaque_bind_group)

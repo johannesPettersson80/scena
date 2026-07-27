@@ -205,6 +205,7 @@ impl GpuDeviceState {
             environment_cubemap,
             environment_sampler,
             brdf_lut_texture,
+            ltc_tables,
             output_bind_group,
             opaque_output_bind_group,
         } = environment::build_output_resources(
@@ -366,6 +367,7 @@ impl GpuDeviceState {
             environment_cubemap,
             environment_sampler,
             brdf_lut_texture,
+            ltc_tables,
             transmission,
             depth_prepass,
             strokes,

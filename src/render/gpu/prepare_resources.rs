@@ -187,6 +187,7 @@ impl GpuDeviceState {
             environment_cubemap,
             environment_sampler,
             brdf_lut_texture,
+            ltc_tables,
             output_bind_group,
             opaque_output_bind_group,
         } = environment::build_output_resources(
@@ -220,6 +221,7 @@ impl GpuDeviceState {
             &transmission.view,
             &transmission.placeholder_view,
             &transmission.sampler,
+            &ltc_tables,
             &light_assignment,
         );
         let surface_output_uniform = pipeline_resources.surface_output_uniform;
@@ -452,6 +454,7 @@ impl GpuDeviceState {
             environment_cubemap,
             environment_sampler,
             brdf_lut_texture,
+            ltc_tables,
             transmission,
             depth_prepass,
             overlay_depth_prepass,

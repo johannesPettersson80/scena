@@ -10,6 +10,10 @@ use crate::scene::Vec3;
 #[path = "area_ltc_tables.rs"]
 mod area_ltc_tables;
 
+// Re-exported so the GPU uniform upload (`render::gpu::shading_tables`) packs
+// the same table data this module evaluates on the CPU. One source, two paths.
+pub(in crate::render) use area_ltc_tables::{LTC_1, LTC_2};
+
 const LUT_LAST: f32 = (area_ltc_tables::LTC_LUT_SIZE - 1) as f32;
 const MIN_DENOMINATOR: f32 = 0.0001;
 

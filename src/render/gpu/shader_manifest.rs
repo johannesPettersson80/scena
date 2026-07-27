@@ -351,4 +351,223 @@ mod tests {
             "enable f16; @compute @workgroup_size(1) fn cs_main() { var value: f16 = 1.0h; }";
         assert!(validate(unsupported, wgpu::naga::valid::Capabilities::empty()).is_err());
     }
+
+    /// Largest constant-space array a shader may index with a runtime value.
+    ///
+    /// Hardware without an indexed constant-register file cannot express such a
+    /// read directly; the driver expands it into a select chain over every
+    /// element. Eight reads into two 256-entry LTC tables made V3D's register
+    /// allocator fail at all thirteen of its fallback strategies and produced a
+    /// 22,518-instruction fragment shader against a 74-instruction median.
+    /// Uniform and storage buffers are exempt: those are memory loads.
+    const MAX_DYNAMICALLY_INDEXED_CONSTANT_ARRAY: u32 = 64;
+
+    /// Emitted-size budgets, ratcheted to the measured values with headroom.
+    /// They are coarse by design: the rule above names the specific hazard,
+    /// while these catch any other change that inflates a shader wholesale.
+    ///
+    /// Measured maxima, both `triangle` fragment entry points: 5,263 SPIR-V
+    /// instructions and 84,931 bytes of GLSL ES 3.00. With the LTC tables baked
+    /// in as `const` arrays the same entry points measured 7,405 instructions
+    /// and roughly 117,000 bytes, so these budgets reject that shape.
+    const MAX_ENTRY_POINT_SPIRV_INSTRUCTIONS: usize = 6_000;
+    const MAX_WEBGL2_ENTRY_POINT_GLSL_BYTES: usize = 100_000;
+
+    /// Resolves an access chain to the global it ultimately reads, so a uniform
+    /// or storage buffer is not mistaken for an in-shader constant table.
+    fn access_root_address_space(
+        function: &wgpu::naga::Function,
+        module: &wgpu::naga::Module,
+        mut expr: wgpu::naga::Handle<wgpu::naga::Expression>,
+    ) -> Option<wgpu::naga::AddressSpace> {
+        use wgpu::naga::Expression;
+        for _ in 0..64 {
+            match &function.expressions[expr] {
+                Expression::Access { base, .. } | Expression::AccessIndex { base, .. } => {
+                    expr = *base;
+                }
+                Expression::GlobalVariable(handle) => {
+                    return Some(module.global_variables[*handle].space);
+                }
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    fn dynamic_constant_array_indexes(
+        module: &wgpu::naga::Module,
+        info: &wgpu::naga::valid::ModuleInfo,
+    ) -> Vec<String> {
+        use wgpu::naga::{AddressSpace, ArraySize, Expression, TypeInner};
+        let mut findings = Vec::new();
+        let mut scan = |function: &wgpu::naga::Function,
+                        function_info: &wgpu::naga::valid::FunctionInfo,
+                        label: &str| {
+            for (_handle, expr) in function.expressions.iter() {
+                let Expression::Access { base, index } = expr else {
+                    continue;
+                };
+                if matches!(function.expressions[*index], Expression::Literal(_)) {
+                    continue;
+                }
+                if matches!(
+                    access_root_address_space(function, module, *base),
+                    Some(AddressSpace::Uniform | AddressSpace::Storage { .. })
+                ) {
+                    continue;
+                }
+                let TypeInner::Array {
+                    size: ArraySize::Constant(len),
+                    ..
+                } = function_info[*base].ty.inner_with(&module.types)
+                else {
+                    continue;
+                };
+                if len.get() > MAX_DYNAMICALLY_INDEXED_CONSTANT_ARRAY {
+                    findings.push(format!(
+                        "{label} indexes a {}-element constant-space array with a runtime value",
+                        len.get()
+                    ));
+                }
+            }
+        };
+        for (handle, function) in module.functions.iter() {
+            scan(function, &info[handle], "function");
+        }
+        for (index, entry) in module.entry_points.iter().enumerate() {
+            scan(&entry.function, info.get_entry_point(index), &entry.name);
+        }
+        findings
+    }
+
+    fn parse_and_validate(
+        variant: &ShaderVariant,
+    ) -> (wgpu::naga::Module, wgpu::naga::valid::ModuleInfo) {
+        let module = wgpu::naga::front::wgsl::parse_str(variant.source).unwrap_or_else(|error| {
+            panic!(
+                "{} parses: {}",
+                variant.id,
+                error.emit_to_string(variant.source)
+            )
+        });
+        let info = wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(),
+            wgpu::naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|error| panic!("{} validates: {error}", variant.id));
+        (module, info)
+    }
+
+    #[test]
+    fn no_production_shader_indexes_a_large_constant_array_dynamically() {
+        let mut offenders = Vec::new();
+        for variant in production_shader_variants() {
+            let (module, info) = parse_and_validate(&variant);
+            for finding in dynamic_constant_array_indexes(&module, &info) {
+                offenders.push(format!("{}: {finding}", variant.id));
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "move the table into a uniform or storage buffer; hardware without an indexed \
+             constant-register file expands each read into a select chain over every element:\n{}",
+            offenders.join("\n")
+        );
+    }
+
+    #[test]
+    fn every_webgl2_shader_variant_lowers_to_glsl_es_300() {
+        use wgpu::naga::back::glsl;
+        let mut measured: Vec<(String, usize)> = Vec::new();
+        for variant in production_shader_variants() {
+            if variant.profile != ShaderProfile::WebGl2Compatible {
+                continue;
+            }
+            let (module, info) = parse_and_validate(&variant);
+            for entry in module.entry_points.iter() {
+                let mut source = String::new();
+                let options = glsl::Options {
+                    version: glsl::Version::new_gles(300),
+                    ..Default::default()
+                };
+                let pipeline = glsl::PipelineOptions {
+                    shader_stage: entry.stage,
+                    entry_point: entry.name.clone(),
+                    multiview: None,
+                };
+                let mut writer = glsl::Writer::new(
+                    &mut source,
+                    &module,
+                    &info,
+                    &options,
+                    &pipeline,
+                    wgpu::naga::proc::BoundsCheckPolicies::default(),
+                )
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "{} {} builds a GLSL ES 3.00 writer: {error}",
+                        variant.id, entry.name
+                    )
+                });
+                writer.write().unwrap_or_else(|error| {
+                    panic!(
+                        "{} {} lowers to GLSL ES 3.00: {error}",
+                        variant.id, entry.name
+                    )
+                });
+                measured.push((format!("{} {}", variant.id, entry.name), source.len()));
+            }
+        }
+        let over: Vec<_> = measured
+            .iter()
+            .filter(|(_, bytes)| *bytes > MAX_WEBGL2_ENTRY_POINT_GLSL_BYTES)
+            .collect();
+        assert!(
+            over.is_empty(),
+            "GLSL ES 3.00 budget is {MAX_WEBGL2_ENTRY_POINT_GLSL_BYTES} bytes; measured {measured:?}"
+        );
+    }
+
+    #[test]
+    fn every_production_entry_point_stays_inside_its_spirv_budget() {
+        let mut measured: Vec<(String, usize)> = Vec::new();
+        for variant in production_shader_variants() {
+            let (module, info) = parse_and_validate(&variant);
+            for entry in module.entry_points.iter() {
+                let words = wgpu::naga::back::spv::write_vec(
+                    &module,
+                    &info,
+                    &wgpu::naga::back::spv::Options::default(),
+                    Some(&wgpu::naga::back::spv::PipelineOptions {
+                        shader_stage: entry.stage,
+                        entry_point: entry.name.clone(),
+                    }),
+                )
+                .unwrap_or_else(|error| {
+                    panic!("{} {} lowers to SPIR-V: {error}", variant.id, entry.name)
+                });
+                let mut offset = 5usize;
+                let mut instructions = 0usize;
+                while offset < words.len() {
+                    let word_count = (words[offset] >> 16) as usize;
+                    if word_count == 0 {
+                        break;
+                    }
+                    instructions += 1;
+                    offset += word_count;
+                }
+                measured.push((format!("{} {}", variant.id, entry.name), instructions));
+            }
+        }
+        let over: Vec<_> = measured
+            .iter()
+            .filter(|(_, count)| *count > MAX_ENTRY_POINT_SPIRV_INSTRUCTIONS)
+            .collect();
+        assert!(
+            over.is_empty(),
+            "SPIR-V budget is {MAX_ENTRY_POINT_SPIRV_INSTRUCTIONS} instructions; measured {measured:?}"
+        );
+    }
 }

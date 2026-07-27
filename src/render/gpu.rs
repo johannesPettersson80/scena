@@ -52,6 +52,7 @@ mod scene_color;
 #[cfg_attr(not(feature = "scene-host"), allow(dead_code))]
 mod semantic_aov;
 mod shader_manifest;
+mod shading_tables;
 mod shadow;
 mod stats;
 mod strokes;
@@ -188,6 +189,9 @@ struct GpuPreparedResources {
     environment_sampler: wgpu::Sampler,
     #[allow(dead_code)]
     brdf_lut_texture: wgpu::Texture,
+    /// Kept alive for the lifetime of the output bind groups that reference it.
+    #[allow(dead_code)]
+    ltc_tables: wgpu::Buffer,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     overlay_depth_prepass: Option<depth::DepthPrepassResources>,
@@ -261,6 +265,9 @@ struct GpuPreparedResources {
     environment_sampler: wgpu::Sampler,
     #[allow(dead_code)]
     brdf_lut_texture: wgpu::Texture,
+    /// Kept alive for the lifetime of the output bind groups that reference it.
+    #[allow(dead_code)]
+    ltc_tables: wgpu::Buffer,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,

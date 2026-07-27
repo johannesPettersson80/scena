@@ -50,18 +50,18 @@ fn ltc_lookup_tables(roughness_input: f32, n_dot_v_input: f32) -> LtcTableSample
     let ty = y - f32(y0);
     return LtcTableSample(
         ltc_bilinear_sample(
-            LTC_TABLE_1[y0 * LTC_LUT_STRIDE_U + x0],
-            LTC_TABLE_1[y0 * LTC_LUT_STRIDE_U + x1],
-            LTC_TABLE_1[y1 * LTC_LUT_STRIDE_U + x0],
-            LTC_TABLE_1[y1 * LTC_LUT_STRIDE_U + x1],
+            ltc_tables.table_1[y0 * LTC_LUT_STRIDE_U + x0],
+            ltc_tables.table_1[y0 * LTC_LUT_STRIDE_U + x1],
+            ltc_tables.table_1[y1 * LTC_LUT_STRIDE_U + x0],
+            ltc_tables.table_1[y1 * LTC_LUT_STRIDE_U + x1],
             tx,
             ty,
         ),
         ltc_bilinear_sample(
-            LTC_TABLE_2[y0 * LTC_LUT_STRIDE_U + x0],
-            LTC_TABLE_2[y0 * LTC_LUT_STRIDE_U + x1],
-            LTC_TABLE_2[y1 * LTC_LUT_STRIDE_U + x0],
-            LTC_TABLE_2[y1 * LTC_LUT_STRIDE_U + x1],
+            ltc_tables.table_2[y0 * LTC_LUT_STRIDE_U + x0],
+            ltc_tables.table_2[y0 * LTC_LUT_STRIDE_U + x1],
+            ltc_tables.table_2[y1 * LTC_LUT_STRIDE_U + x0],
+            ltc_tables.table_2[y1 * LTC_LUT_STRIDE_U + x1],
             tx,
             ty,
         ),

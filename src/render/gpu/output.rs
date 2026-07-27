@@ -150,6 +150,16 @@ pub(super) fn create_output_bind_group_layout(
             count: None,
         });
     }
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 10,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(super::shading_tables::LTC_TABLE_BYTE_LEN),
+        },
+        count: None,
+    });
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.output.bind_group_layout"),
         entries: &entries,
@@ -176,6 +186,7 @@ pub(super) fn create_output_bind_group(
     environment_sampler: &wgpu::Sampler,
     transmission_color_view: &wgpu::TextureView,
     transmission_color_sampler: &wgpu::Sampler,
+    ltc_tables: &wgpu::Buffer,
     light_assignment: Option<&LightAssignmentResources>,
 ) -> wgpu::BindGroup {
     let mut entries = vec![
@@ -206,6 +217,10 @@ pub(super) fn create_output_bind_group(
         wgpu::BindGroupEntry {
             binding: 7,
             resource: wgpu::BindingResource::Sampler(transmission_color_sampler),
+        },
+        wgpu::BindGroupEntry {
+            binding: 10,
+            resource: ltc_tables.as_entire_binding(),
         },
     ];
     if let Some(light_assignment) = light_assignment {

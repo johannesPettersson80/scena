@@ -17,6 +17,8 @@ pub(super) struct OutputResources {
     pub(super) environment_cubemap: wgpu::Texture,
     pub(super) environment_sampler: wgpu::Sampler,
     pub(super) brdf_lut_texture: wgpu::Texture,
+    /// Kept alive for the lifetime of the bind groups that reference it.
+    pub(super) ltc_tables: wgpu::Buffer,
     pub(super) output_bind_group: wgpu::BindGroup,
     pub(super) opaque_output_bind_group: wgpu::BindGroup,
 }
@@ -92,6 +94,7 @@ pub(super) fn build_output_resources(
     });
     let environment_sampler = create_environment_sampler(device);
     let brdf_lut_texture = create_brdf_lut_texture(device, queue, environment_lighting.cubemap());
+    let ltc_tables = super::shading_tables::create_ltc_table_buffer(device, queue);
     let output_bind_group = create_output_bind_group(
         device,
         output_bind_group_layout,
@@ -102,6 +105,7 @@ pub(super) fn build_output_resources(
         &environment_sampler,
         transmission_color_view,
         transmission_color_sampler,
+        &ltc_tables,
         include_tiled_light_storage.then_some(light_assignment),
     );
     let opaque_output_bind_group = create_output_bind_group(
@@ -114,6 +118,7 @@ pub(super) fn build_output_resources(
         &environment_sampler,
         transmission_placeholder_view,
         transmission_color_sampler,
+        &ltc_tables,
         include_tiled_light_storage.then_some(light_assignment),
     );
     OutputResources {
@@ -122,6 +127,7 @@ pub(super) fn build_output_resources(
         environment_cubemap,
         environment_sampler,
         brdf_lut_texture,
+        ltc_tables,
         output_bind_group,
         opaque_output_bind_group,
     }
