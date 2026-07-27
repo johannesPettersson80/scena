@@ -49,6 +49,15 @@ fn srgb_to_linear_channel(channel: f32) -> f32 {
     return pow((value + 0.055) / 1.055, 2.4);
 }
 
+fn apply_srgb8_dither(color: vec3<f32>, noise_lsb: f32) -> vec3<f32> {
+    let encoded = linear_to_srgb(color) + vec3<f32>(noise_lsb / 255.0);
+    return vec3<f32>(
+        srgb_to_linear_channel(encoded.r),
+        srgb_to_linear_channel(encoded.g),
+        srgb_to_linear_channel(encoded.b),
+    );
+}
+
 fn pbr_neutral_tonemap(color_in: vec3<f32>) -> vec3<f32> {
     var color = max(color_in, vec3<f32>(0.0));
     let x = min(color.r, min(color.g, color.b));

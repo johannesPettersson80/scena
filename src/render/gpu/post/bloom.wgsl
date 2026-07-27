@@ -6,6 +6,7 @@ struct VertexOut {
 struct PostUniform {
     viewport: vec4<f32>,
     config: vec4<f32>,
+    white_balance: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -70,7 +71,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         return source;
     }
     let bloom = (sum / sample_count) * intensity;
-    return vec4<f32>(min(source.rgb + bloom, vec3<f32>(1.0)), source.a);
+    return vec4<f32>(source.rgb + bloom, source.a);
 }
 
 fn luma(rgb: vec3<f32>) -> f32 {

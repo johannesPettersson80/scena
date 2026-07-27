@@ -2,7 +2,7 @@ use super::super::material_bindings::MaterialTextureBindingMode;
 use super::super::material_mips::mip_level_extents;
 use super::{
     MaterialTextureBindingResources, MaterialTextureUpload, address_mode, filter_mode,
-    mipmap_filter_mode, write_material_texture_layer_mips,
+    material_anisotropy_clamp, mipmap_filter_mode, write_material_texture_layer_mips,
 };
 
 pub(super) fn create_texture_binding_resource(
@@ -65,6 +65,7 @@ pub(super) fn create_texture_binding_resource(
         mag_filter: filter_mode(upload.sampler.mag_filter()),
         min_filter: filter_mode(upload.sampler.min_filter()),
         mipmap_filter: mipmap_filter_mode(upload.sampler.min_filter()),
+        anisotropy_clamp: material_anisotropy_clamp(mip_extents.len(), upload.sampler),
         ..wgpu::SamplerDescriptor::default()
     });
     MaterialTextureBindingResources::from_parts(texture, view, sampler, upload.byte_len())

@@ -1,7 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 mod browser_color_space;
 #[cfg(target_arch = "wasm32")]
-mod browser_exposure;
+mod browser_meter;
 mod browser_readback;
 mod build;
 #[cfg(target_arch = "wasm32")]
@@ -96,6 +96,8 @@ pub(super) struct GpuDeviceState {
     sample_count_capabilities: msaa::SampleCountCapabilityCache,
     #[cfg(not(target_arch = "wasm32"))]
     auto_exposure_meter: readback::GpuAutoExposureMeter,
+    #[cfg(target_arch = "wasm32")]
+    browser_auto_exposure_meter: browser_meter::BrowserAutoExposureMeter,
     #[cfg(target_arch = "wasm32")]
     #[cfg_attr(not(feature = "browser-probe"), allow(dead_code))]
     last_poll_observation: &'static str,

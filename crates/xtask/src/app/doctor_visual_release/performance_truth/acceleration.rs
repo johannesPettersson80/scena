@@ -253,14 +253,15 @@ pub(crate) fn check_pf10_hot_path_contracts(root: &Path, findings: &mut Vec<Find
             "src/render.rs",
             &[
                 "cpu_material_reflection_scratch",
-                "cpu_effect_rgba8_scratch",
+                "cpu_effect_linear_scratch",
+                "cpu_effect_linear_scratch_2",
                 "gpu_supersample_frame",
             ][..],
             &["let mut supersample_frame = Vec::new()"][..],
         ),
         (
             "src/render/cpu_render.rs",
-            &["resize_reusable_scratch", "rgba8_scratch"][..],
+            &["resize_reusable_scratch", "linear_scratch"][..],
             &["let mut scratch = vec![0;", "cpu_frame.frame.to_vec()"][..],
         ),
     ] {

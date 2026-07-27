@@ -16,6 +16,37 @@ pub use types::{AlphaMode, MaterialKind, TextureColorSpace, TextureTransform};
 pub const DEFAULT_STROKE_WIDTH_PX: f32 = 1.0;
 pub const DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES: f32 = 30.0;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhotographicMicroSurface {
+    strength: f32,
+    scale_m: f32,
+}
+
+impl PhotographicMicroSurface {
+    pub fn new(strength: f32, scale_m: f32) -> Self {
+        Self {
+            strength: if strength.is_finite() {
+                strength.clamp(0.0, 0.12)
+            } else {
+                0.0
+            },
+            scale_m: if scale_m.is_finite() {
+                scale_m.clamp(1.0e-6, 1.0)
+            } else {
+                0.001
+            },
+        }
+    }
+
+    pub const fn strength(self) -> f32 {
+        self.strength
+    }
+
+    pub const fn scale_m(self) -> f32 {
+        self.scale_m
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterialDesc {
     kind: MaterialKind,
@@ -81,6 +112,7 @@ pub struct MaterialDesc {
     clearcoat_normal_scale: f32,
     stroke_width_px: Option<f32>,
     edge_angle_threshold_degrees: Option<f32>,
+    photographic_micro_surface: Option<PhotographicMicroSurface>,
 }
 
 impl MaterialDesc {
@@ -222,6 +254,7 @@ impl MaterialDesc {
             clearcoat_normal_scale: 1.0,
             stroke_width_px,
             edge_angle_threshold_degrees,
+            photographic_micro_surface: None,
         }
     }
 
@@ -324,6 +357,16 @@ impl MaterialDesc {
     /// explicit boundaries remain. Returns `None` for non-edge materials.
     pub const fn edge_angle_threshold_degrees(&self) -> Option<f32> {
         self.edge_angle_threshold_degrees
+    }
+
+    pub const fn photographic_micro_surface(&self) -> Option<PhotographicMicroSurface> {
+        self.photographic_micro_surface
+    }
+
+    pub fn with_photographic_micro_surface(mut self, strength: f32, scale_m: f32) -> Self {
+        let detail = PhotographicMicroSurface::new(strength, scale_m);
+        self.photographic_micro_surface = (detail.strength() > 0.0).then_some(detail);
+        self
     }
 
     /// Updates the screen-constant stroke width for line, wireframe, and edge materials.

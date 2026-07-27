@@ -18,10 +18,19 @@ const QUALITY_FIELDS: &[&str] = &[
     "depth_of_field",
 ];
 const QUALITY_EXPOSURE_FIELDS: &[&str] = &[
+    "min_mean_luminance_srgb8",
+    "max_mean_luminance_srgb8",
     "max_low_clip_fraction",
     "max_high_clip_fraction",
     "max_clipped_highlight_fraction",
 ];
+const QUALITY_EXPOSURE_FRACTION_FIELDS: &[&str] = &[
+    "max_low_clip_fraction",
+    "max_high_clip_fraction",
+    "max_clipped_highlight_fraction",
+];
+const QUALITY_EXPOSURE_SRGB8_FIELDS: &[&str] =
+    &["min_mean_luminance_srgb8", "max_mean_luminance_srgb8"];
 const QUALITY_CONTRAST_FIELDS: &[&str] = &[
     "min_luminance_range",
     "min_sobel_energy",
@@ -109,12 +118,7 @@ pub(super) fn validate_quality(
             false,
         )),
     }
-    validate_threshold_object(
-        object.get("exposure"),
-        "$.expect.expect_quality.exposure",
-        QUALITY_EXPOSURE_FIELDS,
-        diagnostics,
-    );
+    validate_exposure_quality(object.get("exposure"), diagnostics);
     validate_threshold_object(
         object.get("contrast"),
         "$.expect.expect_quality.contrast",
@@ -195,6 +199,87 @@ pub(super) fn validate_reference_expectation(
                 )),
             }
         }
+    }
+}
+
+fn validate_exposure_quality(
+    value: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let path = "$.expect.expect_quality.exposure";
+    let Some(value) = value else {
+        return;
+    };
+    let Some(object) = value.as_object() else {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            path,
+            "quality threshold block must be an object",
+            "emit finite normalized clip thresholds or sRGB8 luminance thresholds",
+            None,
+            false,
+        ));
+        return;
+    };
+    validate_known_fields(
+        path,
+        object.keys().map(String::as_str),
+        QUALITY_EXPOSURE_FIELDS,
+        diagnostics,
+    );
+    for field in QUALITY_EXPOSURE_FRACTION_FIELDS {
+        if let Some(value) = object.get(*field) {
+            match value.as_f64() {
+                Some(number) if number.is_finite() && (0.0..=1.0).contains(&number) => {}
+                _ => diagnostics.push(diagnostic(
+                    "invalid_expect",
+                    "error",
+                    format!("{path}.{field}"),
+                    format!("{field} must be finite and between 0 and 1"),
+                    "use a normalized quality threshold",
+                    None,
+                    false,
+                )),
+            }
+        }
+    }
+    for field in QUALITY_EXPOSURE_SRGB8_FIELDS {
+        if let Some(value) = object.get(*field) {
+            match value.as_f64() {
+                Some(number) if number.is_finite() && (0.0..=255.0).contains(&number) => {}
+                _ => diagnostics.push(diagnostic(
+                    "invalid_expect",
+                    "error",
+                    format!("{path}.{field}"),
+                    format!("{field} must be finite and between 0 and 255"),
+                    "use an sRGB8 luminance threshold",
+                    None,
+                    false,
+                )),
+            }
+        }
+    }
+    if let (Some(min), Some(max)) = (
+        object
+            .get("min_mean_luminance_srgb8")
+            .and_then(Value::as_f64),
+        object
+            .get("max_mean_luminance_srgb8")
+            .and_then(Value::as_f64),
+    ) && min.is_finite()
+        && max.is_finite()
+        && min > max
+    {
+        diagnostics.push(diagnostic(
+            "invalid_expect",
+            "error",
+            format!("{path}.min_mean_luminance_srgb8"),
+            "min_mean_luminance_srgb8 must be <= max_mean_luminance_srgb8",
+            "use a non-empty subject luminance band",
+            None,
+            false,
+        ));
     }
 }
 

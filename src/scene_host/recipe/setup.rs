@@ -80,15 +80,24 @@ pub(super) fn apply_render_setup(
         host.renderer
             .set_screen_space_reflections(Some(reflections));
     }
-    if let Some(depth_of_field) = render.depth_of_field.map(dof_from_recipe) {
-        host.renderer.set_depth_of_field(Some(depth_of_field));
+    if let Some(depth_of_field) = &render.depth_of_field {
+        match dof_from_recipe(depth_of_field) {
+            Ok(Some(config)) => host.renderer.set_depth_of_field(Some(config)),
+            Ok(None) => {}
+            Err(diagnostic) => diagnostics.push(*diagnostic),
+        }
     }
     if let Some(exposure_ev) = render.exposure_ev {
         host.renderer.set_exposure_ev(exposure_ev as f32);
     }
     if let Some(auto_exposure) = &render.auto_exposure {
         match auto_exposure_from_recipe(auto_exposure) {
-            Ok(config) => host.renderer.set_auto_exposure(config),
+            Ok(mut config) => {
+                if let Some(compensation_ev) = render.exposure_compensation_ev {
+                    config = config.with_compensation_ev(compensation_ev as f32);
+                }
+                host.renderer.set_auto_exposure(config);
+            }
             Err(diagnostic) => diagnostics.push(*diagnostic),
         }
     }

@@ -483,6 +483,10 @@ pub(crate) fn source_files_include_renderer_submodules() {
 #[test]
 pub(crate) fn demo_page_wasm_entrypoint_stays_architecture_mapped() {
     assert_eq!(
+        architecture_owner_for_source_path(Path::new("src/scene_host/photo.rs")),
+        "scene_host"
+    );
+    assert_eq!(
         architecture_owner_for_source_path(Path::new("src/demo_page.rs")),
         "viewer"
     );

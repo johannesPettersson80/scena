@@ -5,7 +5,7 @@ use crate::scene::recipe::{
     SceneRecipeColorV1, SceneRecipeDiagnosticV1, SceneRecipeGridReflectionV1, SceneRecipeGridV1,
 };
 use crate::scene_host::SceneHostCore;
-use crate::{Color, GeometryDesc, GridFloorOptions, MaterialDesc, Transform, Vec3};
+use crate::{Aabb, Color, GeometryDesc, GridFloorOptions, MaterialDesc, Transform, Vec3};
 
 use super::super::authoring::{DiagnosticPathExt, authored_color};
 use super::super::scene_host_error_diagnostic;
@@ -149,15 +149,66 @@ fn collect_reflection_sources(
             }
             let material = host.assets.material(mesh.material())?;
             let color = reflection_color(material.base_color(), strength);
-            Some(GridReflectionSource {
+            let group = top_level_ancestor(host, node);
+            Some((group, bounds, color))
+        })
+        .fold(
+            Vec::<(crate::scene::NodeKey, Aabb, Color, u32)>::new(),
+            |mut groups, (group, bounds, color)| {
+                // One decal per top-level object, not per mesh node. An
+                // imported assembly can carry dozens of mesh nodes; emitting a
+                // hard-edged quad for each produced a field of overlapping
+                // rectangles instead of anything resembling a reflection.
+                match groups.iter_mut().find(|(key, ..)| *key == group) {
+                    Some((_, merged, merged_color, count)) => {
+                        *merged = merged.union(bounds);
+                        *merged_color = average_color(*merged_color, color, *count);
+                        *count += 1;
+                    }
+                    None => groups.push((group, bounds, color, 1)),
+                }
+                groups
+            },
+        )
+        .into_iter()
+        .map(|(_, bounds, color, _)| {
+            let extent = bounds.max - bounds.min;
+            GridReflectionSource {
                 center: bounds.center(),
                 width: extent.x.max(0.08),
                 depth: (extent.z + extent.y * 0.70).max(0.10),
                 height: extent.y,
                 color,
-            })
+            }
         })
         .collect()
+}
+
+/// Returns the highest ancestor of `node` below the scene root, so every mesh
+/// belonging to one imported object shares a single reflection group.
+fn top_level_ancestor(
+    host: &SceneHostCore<DefaultAssetFetcher>,
+    node: crate::scene::NodeKey,
+) -> crate::scene::NodeKey {
+    let root = host.scene.root();
+    let mut current = node;
+    while let Some(parent) = host.scene.node(current).and_then(|node| node.parent()) {
+        if parent == root {
+            break;
+        }
+        current = parent;
+    }
+    current
+}
+
+fn average_color(accumulated: Color, next: Color, count: u32) -> Color {
+    let weight = 1.0 / (count as f32 + 1.0);
+    Color::from_linear_rgba(
+        accumulated.r + (next.r - accumulated.r) * weight,
+        accumulated.g + (next.g - accumulated.g) * weight,
+        accumulated.b + (next.b - accumulated.b) * weight,
+        accumulated.a,
+    )
 }
 
 fn add_grid_reflection_decals(

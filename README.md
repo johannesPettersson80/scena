@@ -24,6 +24,30 @@ These are original rendered-output artifacts produced by `scena`.
 
 ## Easy Scene Setup
 
+For a product/model hero screenshot, start with the photo-intent CLI before
+authoring cameras, lights, floors, focus distances, or exposure constants:
+
+```bash
+scena photo render model.glb --out hero.png --report hero.report.json
+```
+
+The equivalent recipe path is `photo.intent`:
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [{ "id": "subject", "uri": "model.glb" }],
+  "photo": {
+    "intent": "camera_behavior",
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}
+```
+
+That path derives composition, subject metering, and focus from the declared
+subject, so the first camera-behavior workflow needs no manual camera, exposure, or focus. Raw Rust framing/lighting remains available for advanced
+applications that deliberately own the shot.
+
 The high-level `headless_gltf_viewer`, `interactive_gltf_viewer`, and
 `first_render_gltf_headless` paths frame imported bounds and provide a neutral
 background plus fallback light when a glTF has no authored light or

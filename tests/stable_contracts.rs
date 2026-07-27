@@ -10,6 +10,12 @@ use scena::{
     CaptureBaselineReport, CaptureDescriptor, Color, GeometryTopology, Quat,
     SceneAssetGeometrySummary, Transform, Vec3,
 };
+#[cfg(feature = "inspection")]
+use scena::{
+    SUBJECT_OBSERVATION_SCHEMA_V1, SubjectObservationBoundsV1, SubjectObservationDepthV1,
+    SubjectObservationFallbackV1, SubjectObservationFrameKeyV1, SubjectObservationTargetV1,
+    SubjectObservationV1,
+};
 
 #[test]
 fn value_types_round_trip_through_stable_serde_shapes() {
@@ -78,6 +84,10 @@ fn capability_report_schema_is_versioned_and_round_trips() {
     assert_eq!(schema_json["schema"], CAPABILITY_REPORT_SCHEMA_V1);
     assert_eq!(schema_json["capabilities"]["backend"], "headless");
     assert_eq!(schema_json["capabilities"]["forward_pbr"], "degraded");
+    assert_eq!(
+        schema_json["capabilities"]["subject_visible_mask"],
+        "supported"
+    );
     assert!(
         schema_json["diagnostics"]
             .as_array()
@@ -93,6 +103,10 @@ fn capability_report_schema_is_versioned_and_round_trips() {
     assert_eq!(decoded.schema, CAPABILITY_REPORT_SCHEMA_V1);
     assert_eq!(decoded.capabilities.backend, Backend::Headless);
     assert_eq!(decoded.capabilities.color_target_format, "Rgba8UnormSrgb");
+    assert_eq!(
+        decoded.capabilities.subject_visible_mask,
+        scena::CapabilityStatus::Supported
+    );
     assert_eq!(decoded.post_processing, None);
 }
 
@@ -162,6 +176,18 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
         (
             "tests/assets/stable-contracts/render_introspection.v1.json",
             "scena.render_introspection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/focus_report.v1.json",
+            "scena.focus_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/exposure_report.v1.json",
+            "scena.exposure_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/subject_observation.v1.json",
+            "scena.subject_observation.v1",
         ),
         (
             "tests/assets/stable-contracts/render_quality.v1.json",
@@ -250,6 +276,26 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
         (
             "tests/assets/stable-contracts/recipe_render_result.v1.json",
             "scena.recipe_render_result.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/photo_render_result.v1.json",
+            "scena.photo_render_result.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/photo_plan.v1.json",
+            "scena.photo_plan.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/photo_candidate_plan.v1.json",
+            "scena.photo_candidate_plan.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/photo_shaded_candidate_selection.v1.json",
+            "scena.photo_shaded_candidate_selection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/photo_report.v1.json",
+            "scena.photo_report.v1",
         ),
         (
             "tests/assets/stable-contracts/cad_inspection_result.v1.json",
@@ -450,6 +496,135 @@ fn capture_baseline_golden_matches_live_schema_serialization() {
 fn render_introspection_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::RenderIntrospectionReportV1>(
         "tests/assets/stable-contracts/render_introspection.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn focus_report_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::FocusReportV1>(
+        "tests/assets/stable-contracts/focus_report.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn exposure_report_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::ExposureReportV1>(
+        "tests/assets/stable-contracts/exposure_report.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn subject_observation_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<SubjectObservationV1>(
+        "tests/assets/stable-contracts/subject_observation.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn photo_plan_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::PhotoPlanV1>(
+        "tests/assets/stable-contracts/photo_plan.v1.json",
+    );
+    let fixture = read_fixture_json("tests/assets/stable-contracts/photo_plan.v1.json");
+    let report = scena::validate_contract_json_v1(&fixture.to_string());
+    assert!(
+        report.ok && report.fully_validated,
+        "photo_plan must be typed/full validation, got {report:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn photo_candidate_plan_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::PhotoCandidatePlanV1>(
+        "tests/assets/stable-contracts/photo_candidate_plan.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn photo_report_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::PhotoReportV1>(
+        "tests/assets/stable-contracts/photo_report.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn photo_report_contract_rejects_missing_required_diagnostics() {
+    let fixture = read_fixture_json("tests/assets/stable-contracts/photo_report.v1.json");
+    let valid = scena::validate_contract_json_v1(&fixture.to_string());
+    assert!(
+        valid.fully_validated,
+        "photo_report must be typed/full validation, got {valid:?}"
+    );
+    assert!(valid.ok, "photo_report fixture should validate: {valid:?}");
+
+    let mut stale_region: scena::PhotoReportV1 = serde_json::from_value(fixture.clone())
+        .expect("photo report fixture deserializes through typed contract");
+    stale_region.subject_region.stale = true;
+    assert_eq!(
+        stale_region.validate_contract(),
+        Err("photo_subject_region_stale"),
+        "photo report must reject stale subject-region bridge data"
+    );
+
+    for (field, expected_code) in [
+        ("candidates", "contract_mismatch"),
+        ("selected", "contract_mismatch"),
+        ("work_metrics", "contract_mismatch"),
+        ("exposure_report", "contract_mismatch"),
+        ("focus_report", "contract_mismatch"),
+        ("subject_region", "contract_mismatch"),
+        ("quality", "contract_mismatch"),
+    ] {
+        let mut invalid = fixture.clone();
+        invalid
+            .as_object_mut()
+            .expect("photo report fixture is an object")
+            .remove(field);
+        let report = scena::validate_contract_json_v1(&invalid.to_string());
+        assert!(
+            !report.ok && !report.fully_validated,
+            "missing {field} must fail closed, got {report:?}"
+        );
+        assert_eq!(
+            report
+                .diagnostics
+                .first()
+                .map(|diagnostic| diagnostic.code.as_str()),
+            Some(expected_code),
+            "missing {field} should produce a structured contract diagnostic: {report:?}"
+        );
+    }
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn subject_observation_contract_rejects_stale_or_incomplete_payloads() {
+    let valid = valid_subject_observation();
+    assert_eq!(valid.validate_contract(), Ok(()));
+
+    let mut stale = valid.clone();
+    stale.frame_key.state_binding = "rendered_frame_state".to_owned();
+    assert_eq!(stale.validate_contract(), Err("stale_subject_observation"));
+
+    let mut missing_visible_bounds = valid.clone();
+    missing_visible_bounds.visible_bounds = None;
+    assert_eq!(
+        missing_visible_bounds.validate_contract(),
+        Err("missing_visible_subject_bounds")
+    );
+
+    let mut incomplete = valid.clone();
+    incomplete.target.handles.clear();
+    assert_eq!(
+        incomplete.validate_contract(),
+        Err("missing_resolved_subject_handles")
     );
 }
 
@@ -724,6 +899,10 @@ fn capability_report_v1_accepts_old_shape_without_post_processing() {
         .as_object_mut()
         .expect("capability report is an object")
         .remove("probe");
+    report["capabilities"]
+        .as_object_mut()
+        .expect("capabilities is an object")
+        .remove("subject_visible_mask");
     let report: CapabilityReportV1 =
         serde_json::from_value(report).expect("old capability_report.v1 shape deserializes");
     assert_eq!(
@@ -733,6 +912,11 @@ fn capability_report_v1_accepts_old_shape_without_post_processing() {
     assert_eq!(
         report.probe, None,
         "additive probe provenance defaults for old capability_report.v1 consumers"
+    );
+    assert_eq!(
+        report.capabilities.subject_visible_mask,
+        scena::CapabilityStatus::FeatureDisabled,
+        "additive subject_visible_mask defaults fail closed for old capability_report.v1 consumers"
     );
 }
 
@@ -1151,6 +1335,80 @@ fn read_fixture_json(rel: &str) -> serde_json::Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
     let text = std::fs::read_to_string(&path).expect("stable contract fixture reads");
     serde_json::from_str(&text).expect("stable contract fixture is JSON")
+}
+
+#[cfg(feature = "inspection")]
+fn valid_subject_observation() -> SubjectObservationV1 {
+    SubjectObservationV1 {
+        schema: SUBJECT_OBSERVATION_SCHEMA_V1.to_owned(),
+        status: "observed".to_owned(),
+        source: "render.metering".to_owned(),
+        target: SubjectObservationTargetV1 {
+            kind: "node".to_owned(),
+            id: "subject_box".to_owned(),
+            handles: vec![42],
+        },
+        frame_key: SubjectObservationFrameKeyV1 {
+            width: 160,
+            height: 120,
+            payload_fnv1a64: "0123456789abcdef".to_owned(),
+            pixel_source: "renderer_owned_readback".to_owned(),
+            state_binding: "exact_readback_completion".to_owned(),
+            render_generation: 7,
+            target_revision: 3,
+            output_resources_revision: 5,
+            revisions: scena::CaptureRevisions {
+                structure: 1,
+                transform: 2,
+                camera: 3,
+                appearance: 4,
+                interaction: 5,
+            },
+        },
+        projected_bounds: Some(SubjectObservationBoundsV1 {
+            min_x: 40.0,
+            min_y: 24.0,
+            max_x: 120.0,
+            max_y: 96.0,
+            width: 80.0,
+            height: 72.0,
+            area_px: 5760,
+        }),
+        visible_bounds: Some(SubjectObservationBoundsV1 {
+            min_x: 50.0,
+            min_y: 32.0,
+            max_x: 118.0,
+            max_y: 92.0,
+            width: 68.0,
+            height: 60.0,
+            area_px: 4080,
+        }),
+        visible_pixel_count: 1200,
+        projected_area_px: 5760,
+        visible_fill_fraction: 0.0625,
+        visible_fraction_of_projected: 0.2083,
+        occlusion_estimate: 0.7917,
+        depth: Some(SubjectObservationDepthV1 {
+            near_m: 2.0,
+            p50_m: 2.5,
+            far_m: 3.0,
+            sample_count: 1200,
+            confidence: 1.0,
+        }),
+        pixel_quality: Some(scena::SubjectObservationPixelQualityV1 {
+            mean_luminance_srgb8: 92.5,
+            luminance_stddev_srgb8: 8.5,
+            luminance_range_srgb8: 42.0,
+            low_clip_fraction: 0.02,
+            high_clip_fraction: 0.01,
+            sample_count: 1200,
+        }),
+        fallback: SubjectObservationFallbackV1 {
+            degraded: false,
+            flags: Vec::new(),
+            reason_codes: Vec::new(),
+        },
+    }
 }
 
 fn assert_fixture_matches_live_serialization<T>(rel: &str)

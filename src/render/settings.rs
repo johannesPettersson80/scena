@@ -3,9 +3,9 @@ use crate::diagnostics::OutputColorSpace;
 use crate::material::Color;
 
 use super::{
-    AntiAliasing, Background, DepthOfFieldConfig, OrderIndependentTransparencyConfig,
-    PostBloomConfig, ReconstructionFilter, Renderer, ScreenSpaceAmbientOcclusionConfig,
-    ScreenSpaceReflectionConfig, Tonemapper,
+    AntiAliasing, AutoExposureSubjectMetering, AutoExposureSubjectRect, Background,
+    DepthOfFieldConfig, OrderIndependentTransparencyConfig, PostBloomConfig, ReconstructionFilter,
+    Renderer, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, Tonemapper,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -130,7 +130,18 @@ impl Renderer {
         self.output.exposure_ev()
     }
 
+    /// Sets a fixed exposure and records that the caller chose it explicitly.
+    ///
+    /// Scene setup presets treat an explicit choice as authoritative and will
+    /// not install their own auto exposure over it. Metering must not use this
+    /// method for its own result -- see `set_metered_exposure_ev`.
     pub fn set_exposure_ev(&mut self, exposure_ev: f32) {
+        self.explicit_exposure_ev = true;
+        self.set_metered_exposure_ev(exposure_ev);
+    }
+
+    /// Writes an exposure without claiming it was an explicit caller choice.
+    pub(super) fn set_metered_exposure_ev(&mut self, exposure_ev: f32) {
         let before = self.output.exposure_ev();
         self.output.set_exposure_ev(exposure_ev);
         if self.output.exposure_ev() != before {
@@ -138,8 +149,51 @@ impl Renderer {
         }
     }
 
+    /// Returns whether a caller set a fixed exposure through
+    /// [`Self::set_exposure_ev`].
+    pub const fn has_explicit_exposure_ev(&self) -> bool {
+        self.explicit_exposure_ev
+    }
+
+    pub fn set_auto_exposure_subject_metering(
+        &mut self,
+        subject_rect: AutoExposureSubjectRect,
+        surround_weight: f32,
+    ) {
+        let metering = AutoExposureSubjectMetering::new(subject_rect, surround_weight);
+        if self.auto_exposure_subject_metering != Some(metering) {
+            self.auto_exposure_subject_metering = Some(metering);
+            self.last_auto_exposure = None;
+            self.auto_exposure_status = super::AutoExposureStatus::Pending;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_auto_exposure_subject_metering(&mut self) {
+        if self.auto_exposure_subject_metering.take().is_some() {
+            self.last_auto_exposure = None;
+            self.auto_exposure_status = super::AutoExposureStatus::Pending;
+            self.mark_output_changed();
+        }
+    }
+
+    pub const fn auto_exposure_subject_metering(&self) -> Option<AutoExposureSubjectMetering> {
+        self.auto_exposure_subject_metering
+    }
+
     pub fn tonemapper(&self) -> Tonemapper {
         self.output.tonemapper()
+    }
+
+    pub const fn white_balance(&self) -> super::WhiteBalance {
+        self.output.white_balance()
+    }
+
+    pub fn set_white_balance(&mut self, white_balance: super::WhiteBalance) {
+        if self.output.white_balance() != white_balance {
+            self.output.set_white_balance(white_balance);
+            self.mark_output_changed();
+        }
     }
 
     pub fn anti_aliasing(&self) -> AntiAliasing {
@@ -294,6 +348,40 @@ impl Renderer {
         self.environment
     }
 
+    pub const fn environment_intensity(&self) -> f32 {
+        self.environment_intensity
+    }
+
+    pub fn set_environment_intensity(&mut self, intensity: f32) {
+        let intensity = if intensity.is_finite() {
+            intensity.clamp(0.0, 16.0)
+        } else {
+            1.0
+        };
+        if self.environment_intensity != intensity {
+            self.environment_intensity = intensity;
+            self.environment_revision = self.environment_revision.saturating_add(1);
+            self.clear_rendered_frame();
+        }
+    }
+
+    pub fn environment_rotation_y_degrees(&self) -> f32 {
+        self.environment_rotation_y_radians.to_degrees()
+    }
+
+    pub fn set_environment_rotation_y_degrees(&mut self, degrees: f32) {
+        let radians = if degrees.is_finite() {
+            degrees.to_radians().rem_euclid(std::f32::consts::TAU)
+        } else {
+            0.0
+        };
+        if self.environment_rotation_y_radians != radians {
+            self.environment_rotation_y_radians = radians;
+            self.environment_revision = self.environment_revision.saturating_add(1);
+            self.clear_rendered_frame();
+        }
+    }
+
     pub fn set_environment(&mut self, environment: EnvironmentHandle) {
         if self.environment != Some(environment) {
             self.environment = Some(environment);
@@ -353,7 +441,7 @@ impl Renderer {
         self.clear_rendered_frame();
     }
 
-    fn mark_output_resources_changed(&mut self) {
+    pub(super) fn mark_output_resources_changed(&mut self) {
         if self.gpu.is_some() {
             self.output_resources_revision = self.output_resources_revision.saturating_add(1);
         }

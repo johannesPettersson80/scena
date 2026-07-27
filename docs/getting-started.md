@@ -67,6 +67,31 @@ path, but always build a parsed recipe in full through the same sandbox as
 `recipe build`. A rejected later import is a nonzero structured failure, never
 a successful partial scene.
 
+For a product/model hero screenshot, use the photo-intent path before writing a
+camera rig or exposure constants:
+
+```bash
+scena photo render model.glb --out hero.png --report hero.report.json
+```
+
+The recipe-native equivalent is `photo.intent` with an explicit subject:
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [{ "id": "subject", "uri": "model.glb" }],
+  "photo": {
+    "intent": "camera_behavior",
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}
+```
+
+The intent path handles composition, staging, subject metering, and focus from
+the declared subject. It is the first path when you need a good product image
+with no manual camera, exposure, or focus. Drop down to Rust framing and
+lighting APIs only when the application intentionally owns those choices.
+
 If a recipe intentionally references a model library outside the working
 directory, authorize only that directory and reuse the option on every step:
 

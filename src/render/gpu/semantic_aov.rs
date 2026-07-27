@@ -475,6 +475,7 @@ fn write_camera_uniform(
             viewport: [target.width as f32, target.height as f32],
             near_far: projection.near_far(),
             color_management: [0.0; 4],
+            white_balance: [1.0, 1.0, 1.0, 0.0],
             lighting: resources.light_uniform,
             clipping_planes,
             clipping_control,

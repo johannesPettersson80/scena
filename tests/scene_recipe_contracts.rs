@@ -1,10 +1,106 @@
 #[cfg(feature = "scene-host")]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::json;
+
+#[test]
+fn scene_recipe_photo_and_focus_targets_use_shared_target_grammar() {
+    let direct_photo_subject: scena::SceneRecipePhotoSubjectV1 =
+        serde_json::from_value(json!({ "kind": "import", "id": "subject" }))
+            .expect("photo.subject accepts the canonical direct target grammar");
+    assert_eq!(
+        direct_photo_subject.target(),
+        &scena::SceneRecipeTargetV1::Import {
+            id: "subject".to_owned()
+        },
+        "photo.subject direct form must resolve through the canonical SceneRecipeTargetV1 grammar"
+    );
+    let spec_photo_subject: scena::SceneRecipePhotoSubjectV1 = serde_json::from_value(json!({
+        "target": { "kind": "import", "id": "subject" },
+        "fallback": "average_metering_with_warning"
+    }))
+    .expect("photo.subject accepts the subject spec wrapper");
+    assert_eq!(
+        spec_photo_subject.target(),
+        &scena::SceneRecipeTargetV1::Import {
+            id: "subject".to_owned()
+        },
+        "photo.subject spec form must resolve through the canonical SceneRecipeTargetV1 grammar"
+    );
+    assert_eq!(
+        spec_photo_subject.fallback(),
+        scena::SceneRecipeSubjectFallbackPolicyV1::AverageMeteringWithWarning,
+        "photo.subject spec form must carry an explicit fallback policy"
+    );
+    assert_eq!(
+        std::any::TypeId::of::<scena::scene::recipe::SceneRecipeDepthOfFieldTargetV1>(),
+        std::any::TypeId::of::<scena::SceneRecipeTargetV1>(),
+        "depth_of_field.focus.target must use the canonical SceneRecipeTargetV1 grammar"
+    );
+    assert_eq!(
+        std::any::TypeId::of::<scena::scene::recipe::SceneRecipeMeteringTargetV1>(),
+        std::any::TypeId::of::<scena::SceneRecipeTargetV1>(),
+        "render.metering.target must use the canonical SceneRecipeTargetV1 grammar"
+    );
+}
+
+#[test]
+fn scene_recipe_verification_fails_when_nested_quality_report_fails() {
+    let quality = scena::RenderQualityReportV1 {
+        schema: scena::RENDER_QUALITY_SCHEMA_V1.to_owned(),
+        ok: false,
+        profile: "product".to_owned(),
+        summary: scena::RenderQualitySummaryV1 {
+            checks: 1,
+            errors: 1,
+            warnings: 0,
+        },
+        checks: vec![scena::RenderQualityCheckV1 {
+            id: "baseline.black_crush".to_owned(),
+            code: "severe_black_crush".to_owned(),
+            status: scena::RenderQualityStatusV1::Failed,
+            severity: "error".to_owned(),
+            region: scena::RenderQualityRegionV1 {
+                kind: "subject".to_owned(),
+                handle: None,
+                rect_css_px: None,
+            },
+            observed: std::collections::BTreeMap::from([("low_clip_fraction".to_owned(), 0.9)]),
+            threshold: std::collections::BTreeMap::from([(
+                "max_low_clip_fraction".to_owned(),
+                0.45,
+            )]),
+            fix_hint: "raise exposure".to_owned(),
+        }],
+        capabilities: scena::RenderIntrospectionCapabilitiesV1 {
+            backend: scena::Backend::Headless,
+            gpu_device: false,
+            surface_attached: false,
+            hardware_tier: scena::HardwareTier::Low,
+            forward_pbr: scena::CapabilityStatus::ErrorIfRequired,
+            readback_headless_screenshots: scena::CapabilityStatus::Supported,
+        },
+    };
+
+    let report =
+        scena::SceneRecipeVerificationReportV1::new(0, Vec::new(), None, None, None, Some(quality));
+
+    assert!(
+        !report.ok,
+        "top-level recipe verification must not pass while nested quality fails: {report:#?}"
+    );
+    assert_eq!(report.summary.errors, 1, "{report:#?}");
+    assert!(
+        report
+            .reasons
+            .iter()
+            .any(|reason| reason.source == "quality" && reason.code == "severe_black_crush"),
+        "nested quality failure must surface as an actionable recipe verification reason: {report:#?}"
+    );
+}
 
 #[test]
 fn scene_recipe_golden_fixture_validates_and_round_trips() {
@@ -50,6 +146,805 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
     }));
     assert!(!workflow.ok);
     assert_reason(&workflow, "unsupported_workflow", None);
+}
+
+#[test]
+fn scene_recipe_validation_accepts_camera_behavior_photo_intent_and_rejects_bad_subjects() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" }
+        }
+    }));
+    assert!(
+        valid.ok,
+        "camera behavior photo recipe should validate: {valid:#?}"
+    );
+
+    let legacy_intent = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "product_hero",
+            "subject": { "kind": "import", "id": "subject" }
+        }
+    }));
+    assert!(
+        legacy_intent.ok,
+        "legacy product_hero intent remains a compatibility alias: {legacy_intent:#?}"
+    );
+
+    let valid_authored_node_subject = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "hero_geo", "primitive": { "kind": "box", "size": [0.12, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "hero_mat", "kind": "unlit", "base_color": "#6F7F8F" }
+        ],
+        "nodes": [
+            { "id": "hero", "geometry": "hero_geo", "material": "hero_mat" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "node", "id": "hero" }
+        }
+    }));
+    assert!(
+        valid_authored_node_subject.ok,
+        "camera behavior photo recipe should accept authored node subjects: {valid_authored_node_subject:#?}"
+    );
+
+    let unknown_intent = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "catalog_turntable",
+            "subject": { "kind": "import", "id": "subject" }
+        }
+    }));
+    assert!(!unknown_intent.ok);
+    assert_reason(&unknown_intent, "invalid_photo_intent", None);
+
+    let missing_subject_import = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "missing" }
+        }
+    }));
+    assert!(!missing_subject_import.ok);
+    assert_reason(&missing_subject_import, "unknown_photo_subject", None);
+}
+
+#[test]
+fn scene_recipe_validation_rejects_manual_exposure_focus_and_accepts_authored_camera() {
+    let fixed_exposure = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" }
+        },
+        "render": {
+            "exposure_ev": 2.0
+        }
+    }));
+    assert!(!fixed_exposure.ok);
+    assert_reason_at(
+        &fixed_exposure,
+        "conflicting_photo_intent_setting",
+        "$.render.exposure_ev",
+    );
+
+    let manual_focus = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" }
+        },
+        "render": {
+            "depth_of_field": {
+                "focus_distance": 3.0,
+                "aperture_f_stop": 2.8,
+                "radius_px": 4
+            }
+        }
+    }));
+    assert!(!manual_focus.ok);
+    assert_reason_at(
+        &manual_focus,
+        "conflicting_photo_intent_setting",
+        "$.render.depth_of_field.focus_distance",
+    );
+
+    let authored_camera = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" }
+        },
+        "cameras": [{
+            "id": "manual",
+            "kind": "perspective",
+            "active": true,
+            "transform": {
+                "kind": "trs",
+                "translation": [0.0, 0.0, 4.0]
+            }
+        }]
+    }));
+    assert!(
+        authored_camera.ok,
+        "camera behavior may preserve an authored camera while it still owns metering and focus: \
+         {authored_camera:#?}"
+    );
+}
+
+#[test]
+fn scene_recipe_validation_accepts_camera_behavior_policy_subobjects_and_rejects_manual_staging() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" },
+            "composition": {
+                "view": "three_quarter_front_right",
+                "fill_fraction": { "min": 0.65, "max": 0.85 },
+                "max_center_offset_fraction": 0.16
+            },
+            "exposure": {
+                "metering": "subject",
+                "mean_luminance_srgb8": { "min": 80.0, "max": 100.0 },
+                "max_low_clip_fraction": 0.20,
+                "max_high_clip_fraction": 0.05
+            },
+            "focus": {
+                "mode": "subject",
+                "coverage": "all",
+                "strength": "subtle"
+            },
+            "staging": {
+                "environment": "studio",
+                "background": "dark_studio",
+                "ground": "matte_shadow_catcher",
+                "grid": false
+            }
+        }
+    }));
+    assert!(
+        valid.ok,
+        "camera behavior policy subobjects should validate: {valid:#?}"
+    );
+
+    let manual_grid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" },
+            "staging": {
+                "grid": false
+            }
+        },
+        "scene": {
+            "grid": { "enabled": true }
+        }
+    }));
+    assert!(!manual_grid.ok);
+    assert_reason_at(
+        &manual_grid,
+        "conflicting_photo_intent_setting",
+        "$.scene.grid.enabled",
+    );
+
+    let manual_background_color = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" },
+            "staging": {
+                "background": "dark_studio"
+            }
+        },
+        "scene": {
+            "background": { "kind": "color", "color": "#FFFFFF" }
+        }
+    }));
+    assert!(!manual_background_color.ok);
+    assert_reason_at(
+        &manual_background_color,
+        "conflicting_photo_intent_setting",
+        "$.scene.background",
+    );
+}
+
+#[test]
+fn scene_recipe_validation_accepts_auto_exposure_compensation_only_with_auto_exposure() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "auto_exposure": "product_studio",
+            "exposure_compensation_ev": 0.35
+        }
+    }));
+    assert!(
+        valid.ok,
+        "exposure compensation should compose with auto exposure: {valid:#?}"
+    );
+
+    let without_auto = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "exposure_compensation_ev": 0.35
+        }
+    }));
+    assert!(!without_auto.ok);
+    assert_reason_at(
+        &without_auto,
+        "conflicting_exposure_settings",
+        "$.render.exposure_compensation_ev",
+    );
+
+    let with_fixed_exposure = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "exposure_ev": 1.0,
+            "exposure_compensation_ev": 0.35
+        }
+    }));
+    assert!(!with_fixed_exposure.ok);
+    assert_reason_at(
+        &with_fixed_exposure,
+        "conflicting_exposure_settings",
+        "$.render.exposure_compensation_ev",
+    );
+}
+
+#[test]
+fn scene_recipe_validation_accepts_metering_modes_and_rejects_invalid_forms() {
+    for metering in [
+        json!({ "mode": "average" }),
+        json!({ "mode": "center_weighted" }),
+        json!({ "mode": "highlight_weighted" }),
+        json!({
+            "mode": "subject",
+            "target": { "kind": "import", "id": "subject" }
+        }),
+        json!({
+            "mode": "spot",
+            "rect": { "x": 0.35, "y": 0.25, "width": 0.3, "height": 0.4 }
+        }),
+    ] {
+        let report = scena::validate_scene_recipe_value(json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+            ],
+            "render": {
+                "auto_exposure": "product_studio",
+                "metering": metering
+            }
+        }));
+        assert!(
+            report.ok,
+            "metering form should validate cleanly: {report:#?}"
+        );
+    }
+
+    let without_auto_exposure = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "metering": { "mode": "average" }
+        }
+    }));
+    assert!(!without_auto_exposure.ok);
+    assert_reason_at(
+        &without_auto_exposure,
+        "invalid_metering",
+        "$.render.metering",
+    );
+
+    let missing_subject_target = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": { "mode": "subject" }
+        }
+    }));
+    assert!(!missing_subject_target.ok);
+    assert_reason_at(
+        &missing_subject_target,
+        "invalid_metering",
+        "$.render.metering.target",
+    );
+
+    let unknown_subject_import = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": {
+                "mode": "subject",
+                "target": { "kind": "import", "id": "missing" }
+            }
+        }
+    }));
+    assert!(!unknown_subject_import.ok);
+    assert_reason_at(
+        &unknown_subject_import,
+        "unknown_metering_target",
+        "$.render.metering.target.id",
+    );
+
+    let spot_without_rect = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": { "mode": "spot" }
+        }
+    }));
+    assert!(!spot_without_rect.ok);
+    assert_reason_at(
+        &spot_without_rect,
+        "invalid_metering",
+        "$.render.metering.rect",
+    );
+
+    let spot_outside_viewport = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": {
+                "mode": "spot",
+                "rect": { "x": 0.9, "y": 0.1, "width": 0.2, "height": 0.2 }
+            }
+        }
+    }));
+    assert!(!spot_outside_viewport.ok);
+    assert_reason_at(
+        &spot_outside_viewport,
+        "invalid_metering",
+        "$.render.metering.rect",
+    );
+
+    let unknown_mode = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": { "mode": "magic" }
+        }
+    }));
+    assert!(!unknown_mode.ok);
+    assert_reason_at(&unknown_mode, "invalid_metering", "$.render.metering.mode");
+}
+
+#[test]
+fn scene_recipe_validation_accepts_subject_spec_fallbacks_and_rejects_invalid_policies() {
+    let subject_import = json!({
+        "id": "subject",
+        "uri": "tests/assets/gltf/cad_terminal_block.gltf"
+    });
+
+    let photo_subject_spec = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [subject_import.clone()],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": {
+                "target": { "kind": "import", "id": "subject" },
+                "fallback": "error"
+            }
+        }
+    }));
+    assert!(
+        photo_subject_spec.ok,
+        "photo subject spec should validate cleanly: {photo_subject_spec:#?}"
+    );
+
+    let photo_direct_subject_stays_compatible = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [subject_import.clone()],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" }
+        }
+    }));
+    assert!(
+        photo_direct_subject_stays_compatible.ok,
+        "existing direct photo subject targets must remain valid: {photo_direct_subject_stays_compatible:#?}"
+    );
+
+    let subject_metering_default_fallback = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [subject_import.clone()],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": {
+                "mode": "subject",
+                "target": { "kind": "import", "id": "subject" }
+            }
+        }
+    }));
+    assert!(
+        subject_metering_default_fallback.ok,
+        "subject metering without fallback must default to error policy: {subject_metering_default_fallback:#?}"
+    );
+
+    let subject_metering_warning_fallback = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [subject_import.clone()],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": {
+                "mode": "subject",
+                "target": { "kind": "import", "id": "subject" },
+                "fallback": "average_metering_with_warning"
+            }
+        }
+    }));
+    assert!(
+        subject_metering_warning_fallback.ok,
+        "subject metering should accept the explicit degraded fallback policy: {subject_metering_warning_fallback:#?}"
+    );
+
+    let invalid_photo_fallback = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [subject_import.clone()],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": {
+                "target": { "kind": "import", "id": "subject" },
+                "fallback": "guess"
+            }
+        }
+    }));
+    assert!(!invalid_photo_fallback.ok);
+    assert_reason_at(
+        &invalid_photo_fallback,
+        "invalid_subject_fallback",
+        "$.photo.subject.fallback",
+    );
+
+    let missing_photo_target = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [subject_import.clone()],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "fallback": "error" }
+        }
+    }));
+    assert!(!missing_photo_target.ok);
+    assert_reason_at(
+        &missing_photo_target,
+        "invalid_photo_subject",
+        "$.photo.subject.target",
+    );
+
+    let invalid_metering_fallback = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [subject_import],
+        "render": {
+            "auto_exposure": "product_studio",
+            "metering": {
+                "mode": "subject",
+                "target": { "kind": "import", "id": "subject" },
+                "fallback": "guess"
+            }
+        }
+    }));
+    assert!(!invalid_metering_fallback.ok);
+    assert_reason_at(
+        &invalid_metering_fallback,
+        "invalid_subject_fallback",
+        "$.render.metering.fallback",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_shared_target_resolver_handles_import_nodes_and_candidates() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ]
+    }))
+    .expect("recipe serializes");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "memory://shared-target-resolution.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("recipe builds");
+    let manifest = &build.manifest;
+    let import = manifest
+        .imports
+        .iter()
+        .find(|import| import.id == "subject")
+        .expect("subject import is in manifest");
+
+    let mut expected_import_handles = BTreeSet::new();
+    expected_import_handles.insert(import.import_handle);
+    expected_import_handles.extend(import.root_handles.iter().copied());
+    expected_import_handles.extend(import.primary_root);
+    expected_import_handles.extend(import.nodes_by_path.values().copied());
+    let expected_import_handles = expected_import_handles.into_iter().collect::<Vec<_>>();
+
+    let import_handles = scena::resolve_scene_recipe_target_handles(
+        manifest,
+        &scena::SceneRecipeTargetV1::Import {
+            id: "subject".to_owned(),
+        },
+        scena::SceneRecipeTargetResolutionMode::Subject,
+    )
+    .expect("whole import target resolves");
+    assert_eq!(
+        import_handles, expected_import_handles,
+        "whole-import subject resolution must include every addressable subject handle"
+    );
+
+    let (node_path, node_handle) = import
+        .nodes_by_path
+        .iter()
+        .next()
+        .expect("fixture exposes imported node paths");
+    let node_handles = scena::resolve_scene_recipe_target_handles(
+        manifest,
+        &scena::SceneRecipeTargetV1::Node {
+            id: node_path.clone(),
+        },
+        scena::SceneRecipeTargetResolutionMode::Subject,
+    )
+    .expect("imported node path resolves through the shared resolver");
+    assert_eq!(node_handles, vec![*node_handle]);
+
+    let err = scena::resolve_scene_recipe_target_handles(
+        manifest,
+        &scena::SceneRecipeTargetV1::Import {
+            id: "subjekt".to_owned(),
+        },
+        scena::SceneRecipeTargetResolutionMode::Subject,
+    )
+    .expect_err("misspelled import must fail with candidates");
+    assert_eq!(
+        err.kind,
+        scena::SceneRecipeTargetResolutionErrorKind::Unresolved
+    );
+    assert!(
+        err.candidates
+            .iter()
+            .any(|candidate| candidate == "subject"),
+        "resolver must return nearest import candidates: {err:#?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_shared_target_resolver_reports_hidden_targets_distinctly() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "box_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "box_mat", "kind": "unlit", "base_color": "#777777" }
+        ],
+        "nodes": [{
+            "id": "hidden_box",
+            "geometry": "box_geo",
+            "material": "box_mat",
+            "visible": false
+        }]
+    }))
+    .expect("recipe serializes");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "memory://hidden-target-resolution.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("recipe builds");
+
+    let err = scena::resolve_scene_recipe_target_handles(
+        &build.manifest,
+        &scena::SceneRecipeTargetV1::Node {
+            id: "hidden_box".to_owned(),
+        },
+        scena::SceneRecipeTargetResolutionMode::Subject,
+    )
+    .expect_err(
+        "hidden authored targets should report hidden, not resolve or masquerade as unresolved",
+    );
+    assert_eq!(
+        err.kind,
+        scena::SceneRecipeTargetResolutionErrorKind::Hidden
+    );
+    assert!(
+        err.message.contains("hidden"),
+        "hidden target diagnostic should name hidden visibility: {err:#?}"
+    );
+    assert!(
+        err.candidates.is_empty(),
+        "hidden target is an exact target-state failure, not a name lookup miss: {err:#?}"
+    );
+}
+
+#[test]
+fn scene_recipe_validation_accepts_subject_focus_and_rejects_ambiguous_dof_focus() {
+    let subject_focus = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "depth_of_field": {
+                "focus": {
+                    "mode": "subject",
+                    "target": { "kind": "import", "id": "subject" }
+                },
+                "coverage": "all",
+                "strength": "subtle"
+            }
+        }
+    }));
+    assert!(
+        subject_focus.ok,
+        "subject focus depth-of-field should validate: {subject_focus:#?}"
+    );
+
+    let ambiguous = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "depth_of_field": {
+                "focus_distance": 3.0,
+                "focus": {
+                    "mode": "subject",
+                    "target": { "kind": "import", "id": "subject" }
+                },
+                "aperture_f_stop": 2.8,
+                "radius_px": 4
+            }
+        }
+    }));
+    assert!(!ambiguous.ok);
+    assert_reason_at(
+        &ambiguous,
+        "ambiguous_depth_of_field_focus",
+        "$.render.depth_of_field.focus",
+    );
+
+    let bad_mode = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "depth_of_field": {
+                "focus": {
+                    "mode": "nearest",
+                    "target": { "kind": "import", "id": "subject" }
+                },
+                "coverage": "all",
+                "strength": "subtle"
+            }
+        }
+    }));
+    assert!(!bad_mode.ok);
+    assert_reason_at(
+        &bad_mode,
+        "invalid_depth_of_field_focus",
+        "$.render.depth_of_field.focus.mode",
+    );
+
+    let bad_coverage = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "depth_of_field": {
+                "focus": {
+                    "mode": "subject",
+                    "target": { "kind": "import", "id": "subject" }
+                },
+                "coverage": "feature",
+                "strength": "subtle"
+            }
+        }
+    }));
+    assert!(!bad_coverage.ok);
+    assert_reason_at(
+        &bad_coverage,
+        "invalid_depth_of_field_focus",
+        "$.render.depth_of_field.coverage",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_applies_auto_exposure_compensation_to_renderer() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "render": {
+            "auto_exposure": "product_studio",
+            "exposure_compensation_ev": 0.35
+        }
+    }))
+    .expect("recipe serializes");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "memory://auto-exposure-compensation.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("recipe builds");
+    let config = build
+        .host
+        .renderer()
+        .auto_exposure()
+        .expect("auto exposure is configured");
+    assert!(
+        (config.compensation_ev() - 0.35).abs() <= 1.0e-5,
+        "recipe compensation should be installed on renderer config: {config:?}",
+    );
 }
 
 #[cfg(feature = "scene-host")]
@@ -3509,6 +4404,88 @@ fn scene_recipe_depth_of_field_quality_threshold_domains_match_metrics() {
         &invalid,
         "invalid_expect",
         "$.expect.expect_quality.depth_of_field.min_background_sobel_drop_fraction",
+    );
+}
+
+#[test]
+fn scene_recipe_exposure_quality_threshold_domains_match_subject_metrics() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "body_color": "#FFFFFF"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "kind": "unlit", "base_color": "body_color" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "expect": {
+            "expect_quality": {
+                "profile": "product",
+                "exposure": {
+                    "min_mean_luminance_srgb8": 80.0,
+                    "max_mean_luminance_srgb8": 100.0,
+                    "max_low_clip_fraction": 0.2,
+                    "max_high_clip_fraction": 0.05
+                }
+            }
+        }
+    }));
+    assert!(
+        valid.ok,
+        "subject luminance bands are sRGB8 thresholds, while clip thresholds stay normalized: {valid:#?}"
+    );
+
+    let invalid_luminance = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "expect": {
+            "expect_quality": {
+                "profile": "product",
+                "exposure": { "min_mean_luminance_srgb8": 300.0 }
+            }
+        }
+    }));
+    assert_reason_at(
+        &invalid_luminance,
+        "invalid_expect",
+        "$.expect.expect_quality.exposure.min_mean_luminance_srgb8",
+    );
+
+    let inverted_band = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "expect": {
+            "expect_quality": {
+                "profile": "product",
+                "exposure": {
+                    "min_mean_luminance_srgb8": 120.0,
+                    "max_mean_luminance_srgb8": 80.0
+                }
+            }
+        }
+    }));
+    assert_reason_at(
+        &inverted_band,
+        "invalid_expect",
+        "$.expect.expect_quality.exposure.min_mean_luminance_srgb8",
+    );
+
+    let invalid_fraction = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "expect": {
+            "expect_quality": {
+                "profile": "product",
+                "exposure": { "max_low_clip_fraction": 2.0 }
+            }
+        }
+    }));
+    assert_reason_at(
+        &invalid_fraction,
+        "invalid_expect",
+        "$.expect.expect_quality.exposure.max_low_clip_fraction",
     );
 }
 

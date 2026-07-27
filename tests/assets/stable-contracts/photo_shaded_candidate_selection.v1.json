@@ -1,0 +1,98 @@
+{
+  "schema": "scena.photo_shaded_candidate_selection.v1",
+  "status": "passed",
+  "selected_candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+  "low_resolution": {
+    "width": 160,
+    "height": 105
+  },
+  "candidate_budget": 3,
+  "evaluated_count": 3,
+  "work_metrics": {
+    "rendered_candidates": 3,
+    "candidate_width": 160,
+    "candidate_height": 105,
+    "candidate_pixel_count": 16800,
+    "total_candidate_pixels": 50400
+  },
+  "scoring": {
+    "degraded": true,
+    "reason_codes": [
+      "semantic_aov_unavailable"
+    ]
+  },
+  "candidates": [
+    {
+      "id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+      "order": 0,
+      "score": 88.0,
+      "reason_codes": [
+        "semantic_aov_unavailable"
+      ],
+      "subject": {
+        "rect_css_px": {
+          "min_x": 20.0,
+          "min_y": 13.0,
+          "max_x": 140.0,
+          "max_y": 93.0,
+          "width": 120.0,
+          "height": 80.0
+        },
+        "fill_fraction": 0.7619,
+        "fill_width_fraction": 0.75,
+        "fill_height_fraction": 0.7619,
+        "mean_luminance_srgb8": 90.0,
+        "luminance_stddev_srgb8": 18.0,
+        "luminance_range_srgb8": 88.0,
+        "low_clip_fraction": 0.0,
+        "high_clip_fraction": 0.0,
+        "center_offset_fraction": 0.0,
+        "sample_count": 9600
+      },
+      "render_quality": {
+        "schema": "scena.render_quality.v1",
+        "ok": true,
+        "profile": "product",
+        "summary": {
+          "checks": 1,
+          "errors": 0,
+          "warnings": 0
+        },
+        "checks": [
+          {
+            "id": "baseline.black_crush",
+            "code": "severe_black_crush",
+            "status": "checked",
+            "severity": "info",
+            "region": {
+              "kind": "subject",
+              "rect_css_px": {
+                "min_x": 20.0,
+                "min_y": 13.0,
+                "max_x": 140.0,
+                "max_y": 93.0,
+                "width": 120.0,
+                "height": 80.0
+              }
+            },
+            "observed": {
+              "low_clip_fraction": 0.0
+            },
+            "threshold": {
+              "max_low_clip_fraction": 0.2
+            },
+            "fix_hint": "no action needed"
+          }
+        ],
+        "capabilities": {
+          "backend": "cpu",
+          "gpu_device": false,
+          "surface_attached": false,
+          "hardware_tier": "low",
+          "forward_pbr": "degraded",
+          "readback_headless_screenshots": "supported"
+        }
+      }
+    }
+  ]
+}

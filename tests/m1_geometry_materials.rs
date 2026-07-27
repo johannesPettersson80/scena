@@ -1787,7 +1787,7 @@ fn headless_gpu_output_stage_applies_pbr_neutral_srgb_for_pinned_white_fixture()
 
         assert_eq!(
             center_pixel(renderer.frame_rgba8(), 4, 4),
-            [240, 240, 240, 255]
+            [239, 239, 239, 255]
         );
 
         renderer.set_exposure_ev(2.0);

@@ -187,13 +187,24 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .ok_or(LookupError::ImportHasNoBounds)?;
         let width = self.viewport.logical_width().round().max(1.0) as u32;
         let height = self.viewport.logical_height().round().max(1.0) as u32;
-        let (options, fill) = match preset {
-            "cell_overview" => (FramingOptions::new().top(), 0.72),
+        let min_viewport = width.min(height) as f32;
+        let (options, fill, margin_px) = match preset {
+            "cell_overview" => (FramingOptions::new().top(), 0.72, 48.0),
             "operator_review_default" => (
                 FramingOptions::new().orbit(35.0_f32.to_radians(), 14.0_f32.to_radians()),
                 0.78,
+                48.0,
             ),
-            "product_viewer_default" => (FramingOptions::new().three_quarter_front_right(), 0.72),
+            "camera_behavior" | "product_hero" => (
+                FramingOptions::new().three_quarter_front_right(),
+                0.78,
+                (min_viewport * 0.06).clamp(10.0, 48.0),
+            ),
+            "product_viewer_default" => (
+                FramingOptions::new().three_quarter_front_right(),
+                0.72,
+                48.0,
+            ),
             _ => {
                 return Err(SceneHostError::new(
                     SceneHostErrorCode::InvalidInput,
@@ -204,7 +215,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         let framing = self.scene.frame_bounds(
             self.active_camera,
             bounds,
-            options.fill(fill).margin_px(48.0).viewport(width, height),
+            options
+                .fill(fill)
+                .margin_px(margin_px)
+                .viewport(width, height),
         )?;
         self.cancel_camera_transition();
         self.camera_controls = OrbitControls::from_framing(framing);

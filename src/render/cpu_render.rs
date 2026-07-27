@@ -19,12 +19,9 @@ mod test_support;
 use parallel_pass::draw_cpu_geometry_pass_parallel;
 #[cfg(not(target_arch = "wasm32"))]
 use parallel_policy::cpu_geometry_worker_count;
-use parallel_policy::should_parallelize_cpu_geometry_pass;
+use parallel_policy::{CpuPrimitiveFlags, should_parallelize_cpu_geometry_pass};
 pub(super) use row_bands::CpuRowBandBins;
 use row_bands::{CpuRowBandMetrics, resize_reusable_scratch, selected_primitives};
-
-const CPU_PARALLEL_MIN_PIXELS: usize = 512 * 512;
-const CPU_PARALLEL_MIN_PRIMITIVES: usize = 64;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct CpuGeometryPassResult {
@@ -32,21 +29,6 @@ struct CpuGeometryPassResult {
     output_pixels_encoded: u64,
     primitive_flag_scan_items: u64,
     row_bands: CpuRowBandMetrics,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct CpuPrimitiveFlags {
-    has_physical_transmission: bool,
-}
-
-impl CpuPrimitiveFlags {
-    fn scan(primitives: &[PreparedPrimitive]) -> Self {
-        Self {
-            has_physical_transmission: primitives
-                .iter()
-                .any(cpu::primitive_needs_physical_transmission),
-        }
-    }
 }
 
 impl Renderer {
@@ -86,8 +68,6 @@ impl Renderer {
             .anti_aliasing
             .cpu_supersample_scale()
             .max(self.supersample_factor);
-        let full_frame_supersample = self.supersample_factor > 1;
-        let mut overlays_drawn_before_resolve = false;
         if scale > 1 {
             let supersample_target =
                 super::target::validate_supersample_target(self.target, scale)?;
@@ -120,29 +100,11 @@ impl Renderer {
                 oit_scratch: &mut self.cpu_supersample_oit_scratch,
                 screen_space_reflections: self.screen_space_reflections,
                 material_reflection_scratch: Some(&mut self.cpu_material_reflection_scratch),
-                rgba8_scratch: Some(&mut self.cpu_effect_rgba8_scratch),
+                linear_scratch: Some(&mut self.cpu_effect_linear_scratch),
                 row_band_bins: Some(&mut self.cpu_row_band_bins),
                 primitive_indices: None,
             });
             self.record_cpu_geometry_result(geometry_result);
-            if full_frame_supersample {
-                let mut cpu_frame = cpu::CpuFrame::new(
-                    supersample_target,
-                    self.output,
-                    &mut self.cpu_supersample_linear_frame,
-                    &mut self.cpu_supersample_depth_frame,
-                    &mut self.cpu_supersample_frame,
-                );
-                cpu_strokes::draw_overlay_layers_cpu(
-                    &mut cpu_frame,
-                    strokes,
-                    labels,
-                    clipping_planes,
-                    section_box,
-                    &supersample_projection,
-                );
-                overlays_drawn_before_resolve = true;
-            }
             let linear_frame = self
                 .linear_frame
                 .as_mut()
@@ -189,19 +151,35 @@ impl Renderer {
                 oit_scratch: &mut self.oit_scratch,
                 screen_space_reflections: self.screen_space_reflections,
                 material_reflection_scratch: Some(&mut self.cpu_material_reflection_scratch),
-                rgba8_scratch: Some(&mut self.cpu_effect_rgba8_scratch),
+                linear_scratch: Some(&mut self.cpu_effect_linear_scratch),
                 row_band_bins: Some(&mut self.cpu_row_band_bins),
                 primitive_indices: None,
             });
             self.record_cpu_geometry_result(geometry_result);
         }
 
+        let linear_frame = self
+            .linear_frame
+            .as_mut()
+            .expect("CPU renderer owns a linear accumulator");
+        self.cpu_meter_linear_frame.clear();
+        self.cpu_meter_linear_frame.extend_from_slice(linear_frame);
+        resize_reusable_scratch(
+            &mut self.cpu_effect_linear_scratch,
+            self.target.pixel_len(),
+            Color::BLACK,
+        );
+        resize_reusable_scratch(
+            &mut self.cpu_effect_linear_scratch_2,
+            self.target.pixel_len(),
+            Color::BLACK,
+        );
         self.stats.screen_space_reflection_passes =
             self.screen_space_reflections.map_or(0, |config| {
-                screen_space_reflections::apply_rgba8(
+                screen_space_reflections::apply_linear(
                     self.target,
-                    &mut self.frame,
-                    &mut self.bloom_scratch,
+                    linear_frame,
+                    &mut self.cpu_effect_linear_scratch,
                     config,
                 )
             });
@@ -210,10 +188,10 @@ impl Renderer {
             self.depth_frame.as_ref(),
         ) {
             (Some(config), Some(depth_frame)) => {
-                output::apply_screen_space_ambient_occlusion_rgba8(
+                output::apply_screen_space_ambient_occlusion_linear(
                     self.target,
-                    &mut self.frame,
-                    &mut self.bloom_scratch,
+                    linear_frame,
+                    &mut self.cpu_effect_linear_scratch,
                     depth_frame,
                     config,
                 )
@@ -224,36 +202,30 @@ impl Renderer {
             super::depth_of_field_post_config(self.depth_of_field, camera_projection),
             self.depth_frame.as_ref(),
         ) {
-            (Some(config), Some(depth_frame)) => output::apply_depth_of_field_rgba8(
+            (Some(config), Some(depth_frame)) => output::apply_depth_of_field_linear(
                 self.target,
-                &mut self.frame,
-                &mut self.bloom_scratch,
+                linear_frame,
+                &mut self.cpu_effect_linear_scratch,
                 depth_frame,
                 config,
             ),
             _ => 0,
         };
         self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
-            output::apply_bloom_rgba8(
+            output::apply_bloom_linear(
                 self.target,
-                &mut self.frame,
-                &mut self.bloom_scratch,
-                &mut self.fxaa_scratch,
+                linear_frame,
+                &mut self.cpu_effect_linear_scratch,
+                &mut self.cpu_effect_linear_scratch_2,
                 bloom,
             )
         });
-        self.stats.fxaa_passes = match self.anti_aliasing {
-            AntiAliasing::None | AntiAliasing::Msaa4 | AntiAliasing::Msaa8 => 0,
-            AntiAliasing::Fxaa => {
-                output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch)
-            }
-        };
-
-        if !overlays_drawn_before_resolve {
-            let linear_frame = self
-                .linear_frame
-                .as_mut()
-                .expect("CPU renderer owns a linear accumulator");
+        let post_enabled = self.bloom.is_some()
+            || self.screen_space_ambient_occlusion.is_some()
+            || self.screen_space_reflections.is_some()
+            || self.depth_of_field.is_some()
+            || self.anti_aliasing.uses_post_fxaa();
+        {
             let depth_frame = self
                 .depth_frame
                 .as_mut()
@@ -265,15 +237,34 @@ impl Renderer {
                 depth_frame,
                 &mut self.frame,
             );
-            cpu_strokes::draw_overlay_layers_cpu(
-                &mut cpu_frame,
-                strokes,
-                labels,
-                clipping_planes,
-                section_box,
-                camera_projection,
-            );
+            self.last_render_work_metrics.cpu_output_pixels_encoded =
+                cpu::encode_cpu_frame(&mut cpu_frame, post_enabled);
         }
+        self.stats.fxaa_passes = match self.anti_aliasing {
+            AntiAliasing::None | AntiAliasing::Msaa4 | AntiAliasing::Msaa8 => 0,
+            AntiAliasing::Fxaa => {
+                output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch)
+            }
+        };
+        let depth_frame = self
+            .depth_frame
+            .as_mut()
+            .expect("CPU renderer owns a depth buffer");
+        let mut cpu_frame = cpu::CpuFrame::new(
+            self.target,
+            self.output,
+            linear_frame,
+            depth_frame,
+            &mut self.frame,
+        );
+        cpu_strokes::draw_overlay_layers_cpu(
+            &mut cpu_frame,
+            strokes,
+            labels,
+            clipping_planes,
+            section_box,
+            camera_projection,
+        );
         Ok(())
     }
 
@@ -310,7 +301,7 @@ struct CpuGeometryPass<'a> {
     screen_space_reflections: Option<super::ScreenSpaceReflectionConfig>,
     material_reflection_scratch:
         Option<&'a mut Vec<screen_space_reflections::MaterialReflectionPixel>>,
-    rgba8_scratch: Option<&'a mut Vec<u8>>,
+    linear_scratch: Option<&'a mut Vec<Color>>,
     row_band_bins: Option<&'a mut CpuRowBandBins>,
     primitive_indices: Option<&'a [usize]>,
 }
@@ -444,13 +435,16 @@ fn draw_cpu_geometry_pass_serial(
             0
         };
         if primitive_flags.has_physical_transmission {
-            let mut output_pixels_encoded = cpu::encode_cpu_frame(&mut cpu_frame);
             let scene_color_frame = input
-                .rgba8_scratch
+                .linear_scratch
                 .as_mut()
-                .expect("serial transmission pass receives prepared RGBA scratch");
-            resize_reusable_scratch(scene_color_frame, cpu_frame.frame.len(), 0);
-            scene_color_frame.copy_from_slice(cpu_frame.frame);
+                .expect("serial transmission pass receives prepared linear scratch");
+            resize_reusable_scratch(
+                scene_color_frame,
+                cpu_frame.linear_frame.len(),
+                Color::BLACK,
+            );
+            scene_color_frame.copy_from_slice(cpu_frame.linear_frame);
             for (primitive, projected) in selected_primitives(
                 input.primitives,
                 projected_primitives,
@@ -461,19 +455,17 @@ fn draw_cpu_geometry_pass_serial(
                 {
                     continue;
                 }
-                output_pixels_encoded = output_pixels_encoded.saturating_add(
-                    cpu_transmission::draw_physical_transmission_cpu(
-                        &mut cpu_frame,
-                        primitive,
-                        projected,
-                        scene_color_frame,
-                        raster_context.for_primitive(primitive),
-                    ),
+                cpu_transmission::draw_physical_transmission_cpu(
+                    &mut cpu_frame,
+                    primitive,
+                    projected,
+                    scene_color_frame,
+                    raster_context.for_primitive(primitive),
                 );
             }
-            (oit_passes, output_pixels_encoded)
+            (oit_passes, 0)
         } else {
-            (oit_passes, cpu::encode_cpu_frame(&mut cpu_frame))
+            (oit_passes, 0)
         }
     };
 
@@ -482,13 +474,13 @@ fn draw_cpu_geometry_pass_serial(
         material_reflections.as_deref(),
     ) {
         let scratch = input
-            .rgba8_scratch
+            .linear_scratch
             .as_mut()
-            .expect("serial SSR pass receives prepared RGBA scratch");
-        resize_reusable_scratch(scratch, input.target.byte_len(), 0);
-        screen_space_reflections::apply_material_rgba8(
+            .expect("serial SSR pass receives prepared linear scratch");
+        resize_reusable_scratch(scratch, input.target.pixel_len(), Color::BLACK);
+        screen_space_reflections::apply_material_linear(
             input.target,
-            input.frame,
+            input.linear_frame,
             scratch,
             material_reflections,
             config,

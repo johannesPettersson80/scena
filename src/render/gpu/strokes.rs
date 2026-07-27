@@ -13,7 +13,7 @@ pub(super) const ENCODED_SHADER: &str = concat!(
 );
 const QUAD_VERTEX_BYTE_LEN: usize = 2 * std::mem::size_of::<f32>();
 const INSTANCE_BYTE_LEN: usize = 11 * std::mem::size_of::<f32>();
-const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const QUAD_VERTICES: [[f32; 2]; 4] = [[-1.0, 0.0], [1.0, 0.0], [-1.0, 1.0], [1.0, 1.0]];
 const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
     format: wgpu::VertexFormat::Float32x2,

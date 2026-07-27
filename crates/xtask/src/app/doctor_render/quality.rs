@@ -170,7 +170,9 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
         &[
             "sample_scene_depth",
             "dof_radius",
-            "abs(depth - focus_depth)",
+            "let focus_distance = max(post.config.x, 0.001)",
+            "let image_focus = focal_m * focus_distance",
+            "let coc_m = aperture_diameter * abs(image_depth - image_focus)",
             "textureLoad(source_texture",
         ],
     );
@@ -440,7 +442,7 @@ fn check_label_atlas_replaced_cell_primitives(root: &Path, findings: &mut Vec<Fi
         "src/render/cpu_overlay.rs",
         &[
             "write_label_overlay_pixel",
-            "label_overlay_aces_tonemap",
+            "label_overlay_display_linear",
             "blend_display_source_over",
         ],
     );

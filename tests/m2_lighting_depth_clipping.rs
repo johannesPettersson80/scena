@@ -1114,7 +1114,7 @@ fn fxaa_pass_runs_after_pbr_neutral_without_second_tonemap() {
     let right_edge = pixel_at(renderer.frame_rgba8(), 8, 4, 4);
     assert_eq!(
         left_edge,
-        [160, 160, 160, 255],
+        [159, 159, 159, 255],
         "FXAA keeps bright edge pixels in PBR Neutral output space instead of tonemapping twice"
     );
     assert!(

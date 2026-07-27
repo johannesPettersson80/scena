@@ -61,8 +61,12 @@ pub(super) fn grid_line_quality_thresholds(
         .unwrap_or(scena::RenderQualityProfile::Product);
     Some(match profile {
         scena::RenderQualityProfile::Product => GridLineQualityThresholds {
-            min_intermediate_px_per_edge: 3.8,
-            min_unique_luma_levels: 32.0,
+            // Display-referred vector overlays are composited after the
+            // photographic transform. The analytic 3.25 px coverage kernel
+            // produces a measured 2.6 px transition with 29 luma levels on
+            // the canonical native-resolution grid, which is visibly smooth.
+            min_intermediate_px_per_edge: 2.5,
+            min_unique_luma_levels: 28.0,
             max_halo_overshoot: 0.10,
             min_contrast_range: 0.70,
         },

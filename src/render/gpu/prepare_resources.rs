@@ -280,6 +280,7 @@ impl GpuDeviceState {
                 &draw_bind_group_layout,
                 depth_compare,
                 self.surface.as_ref().map(|surface| surface.config.format),
+                None,
                 depth_prepass
                     .as_ref()
                     .and_then(depth::DepthPrepassResources::color_view),

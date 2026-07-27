@@ -1,6 +1,6 @@
 const PI: f32 = 3.141592653589793;
 const MAX_GPU_LIGHTS_PER_TYPE: u32 = 16u;
-const MAX_GPU_AREA_LIGHTS: u32 = 2u;
+const MAX_GPU_AREA_LIGHTS: u32 = 4u;
 const AREA_LIGHT_SAMPLE_COUNT: u32 = 16u;
 const MAX_TILED_GPU_LIGHTS_PER_TILE: u32 = 32u;
 const ENVIRONMENT_PREFILTER_MAX_MIP: f32 = 4.0;
@@ -46,13 +46,14 @@ struct LightingUniform {
     spot_light_direction_cones: array<vec4<f32>, 16>,
     spot_light_cone_range: array<vec4<f32>, 16>,
     spot_light_color_range: array<vec4<f32>, 16>,
-    area_light_position_flux: array<vec4<f32>, 2>,
-    area_light_axis_x_shape: array<vec4<f32>, 2>,
-    area_light_axis_y_range: array<vec4<f32>, 2>,
-    area_light_color: array<vec4<f32>, 2>,
+    area_light_position_flux: array<vec4<f32>, 4>,
+    area_light_axis_x_shape: array<vec4<f32>, 4>,
+    area_light_axis_y_range: array<vec4<f32>, 4>,
+    area_light_color: array<vec4<f32>, 4>,
     light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
+    environment_transform: vec4<f32>,
 };
 
 struct CameraUniform {
@@ -63,6 +64,7 @@ struct CameraUniform {
     camera_position_exposure: vec4<f32>,
     viewport_near_far: vec4<f32>,
     color_management: vec4<f32>,
+    white_balance: vec4<f32>,
     lighting: LightingUniform,
     clipping_planes: array<vec4<f32>, 16>,
     clipping_control: vec4<f32>,
@@ -390,7 +392,18 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let world_normal = normalize(in.normal);
     let world_tangent = normalize(in.tangent.xyz);
     let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w);
-    let normal = normalize(normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal);
+    var normal = normalize(normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal);
+    let micro_strength = material.texture_strengths.z;
+    let micro_phase = in.world_position * material.texture_strengths.w;
+    let micro_x = sin(dot(micro_phase, vec3<f32>(12.9898, 78.233, 37.719)));
+    let micro_y = sin(dot(micro_phase, vec3<f32>(39.346, 11.135, 83.155)));
+    if micro_strength > 0.0 {
+        normal = normalize(
+            normal
+                + world_tangent * (micro_x * micro_strength)
+                + bitangent * (micro_y * micro_strength)
+        );
+    }
     let clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);
     let clearcoat_roughness = clamp(material.clearcoat_factors.y * clearcoat_roughness_sample.g, 0.04, 1.0);
     let clearcoat_normal_scale = material.clearcoat_factors.z;
@@ -411,7 +424,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let dispersion_factor = max(material.dispersion_factors.x, 0.0);
     let dispersion_ior = max(material.dispersion_factors.y, 1.0);
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
-    let roughness = clamp(material.metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
+    let roughness = clamp(
+        material.metallic_roughness_alpha.y * metallic_roughness_sample.g
+            + (micro_x * 0.5 + 0.5) * micro_strength * 0.35,
+        0.04,
+        1.0,
+    );
     // Phase 5.1: occlusionTexture.strength lerps between 1.0 and the
     // sampled occlusion. strength=0 disables AO; strength=1 applies it
     // at full intensity. glTF spec default = 1.0.
@@ -461,7 +479,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
     let color_management_mode = camera.color_management.x;
-    var output_rgb = apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w, color_management_mode);
+    var output_rgb = shaded.rgb;
+    if camera.color_management.y >= -0.5 {
+        output_rgb = apply_tonemapper(
+            shaded.rgb * camera.white_balance.rgb * camera.camera_position_exposure.w,
+            color_management_mode,
+        );
+    }
     output_rgb = screen_space_material_reflection(
         in.position.xy,
         normal,
@@ -880,6 +904,16 @@ fn environment_prefilter_mip(roughness: f32) -> f32 {
     return sqrt(clamp(roughness, 0.0, 1.0)) * ENVIRONMENT_PREFILTER_MAX_MIP;
 }
 
+fn rotate_environment_direction(direction: vec3<f32>) -> vec3<f32> {
+    let cosine = camera.lighting.environment_transform.x;
+    let sine = camera.lighting.environment_transform.y;
+    return vec3<f32>(
+        cosine * direction.x + sine * direction.z,
+        direction.y,
+        -sine * direction.x + cosine * direction.z,
+    );
+}
+
 fn pbr_environment_lighting(
     base: vec3<f32>,
     metallic: f32,
@@ -903,7 +937,7 @@ fn pbr_environment_lighting(
     //     WebGL2's 16 sampled-texture floor.
     let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb;
     let diffuse = diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w;
-    let reflection = reflect(-view, normal);
+    let reflection = rotate_environment_direction(reflect(-view, normal));
     let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
     let lut_sample = split_sum_brdf_approx(n_dot_v, roughness);
@@ -921,7 +955,7 @@ fn clearcoat_environment_lighting(
         return vec3<f32>(0.0);
     }
     let n_dot_v = max(dot(normal, view), 0.001);
-    let reflection = reflect(-view, normal);
+    let reflection = rotate_environment_direction(reflect(-view, normal));
     let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
     let lut_sample = split_sum_brdf_approx(n_dot_v, roughness);
@@ -971,7 +1005,7 @@ fn anisotropy_environment_lighting(
     let anisotropic_t = normalize(safe_tangent * anisotropy_direction.x + bitangent * anisotropy_direction.y);
     let anisotropic_normal = normalize(mix(normal, anisotropic_t, clamp(strength * 0.55, 0.0, 0.55)));
     let n_dot_v = max(dot(normal, view), 0.001);
-    let reflection = reflect(-view, anisotropic_normal);
+    let reflection = rotate_environment_direction(reflect(-view, anisotropic_normal));
     let directional_roughness = clamp(roughness * (1.0 - strength * 0.60), 0.04, 1.0);
     let prefilter_mip = environment_prefilter_mip(directional_roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;

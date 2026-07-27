@@ -193,6 +193,25 @@ pub(crate) fn pick_scene_with_assets<F>(
     pick_scene_with_assets_impl::<false, F>(scene, assets, camera, cursor, viewport, &mut metrics)
 }
 
+#[cfg(feature = "scene-host")]
+pub(crate) fn raycast_scene_with_assets<F>(
+    scene: &Scene,
+    assets: &Assets<F>,
+    origin: Vec3,
+    direction: Vec3,
+) -> Result<Option<Hit>, LookupError> {
+    let Some(direction) = normalize_optional(direction) else {
+        return Ok(None);
+    };
+    let mut metrics = PickingMetrics::default();
+    raycast_scene_with_assets_impl::<false, F>(
+        scene,
+        assets,
+        Ray { origin, direction },
+        &mut metrics,
+    )
+}
+
 pub(crate) fn pick_scene_with_assets_profiled<F>(
     scene: &Scene,
     assets: &Assets<F>,
@@ -221,6 +240,15 @@ fn pick_scene_with_assets_impl<const PROFILE: bool, F>(
     metrics: &mut PickingMetrics,
 ) -> Result<Option<Hit>, LookupError> {
     let ray = camera_ray(scene, camera, cursor, viewport)?;
+    raycast_scene_with_assets_impl::<PROFILE, F>(scene, assets, ray, metrics)
+}
+
+fn raycast_scene_with_assets_impl<const PROFILE: bool, F>(
+    scene: &Scene,
+    assets: &Assets<F>,
+    ray: Ray,
+    metrics: &mut PickingMetrics,
+) -> Result<Option<Hit>, LookupError> {
     let mut best = pick_renderables::<PROFILE>(scene, ray, metrics);
 
     for (node, mesh, _local_transform) in scene.mesh_nodes() {

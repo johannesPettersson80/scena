@@ -1,4 +1,6 @@
-use crate::assets::{AssetPath, TextureDesc, TextureSamplerDesc, TextureSourceFormat};
+use crate::assets::{
+    AssetPath, TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
+};
 use crate::material::TextureColorSpace;
 
 #[test]
@@ -102,4 +104,24 @@ fn wgpu_material_upload_uses_texture_sampler_metadata() {
         "wgpu material upload must honor glTF sampler wrap/filter metadata instead of \
          hardcoding linear clamp-to-edge"
     );
+}
+
+#[test]
+fn photographic_texture_sampling_uses_anisotropy_only_for_linear_mip_chains() {
+    let trilinear = TextureSamplerDesc::new(
+        Some(TextureFilter::Linear),
+        Some(TextureFilter::LinearMipmapLinear),
+        TextureWrap::Repeat,
+        TextureWrap::Repeat,
+    );
+    let nearest = TextureSamplerDesc::new(
+        Some(TextureFilter::Nearest),
+        Some(TextureFilter::NearestMipmapNearest),
+        TextureWrap::Repeat,
+        TextureWrap::Repeat,
+    );
+
+    assert_eq!(super::material_anisotropy_clamp(8, trilinear), 8);
+    assert_eq!(super::material_anisotropy_clamp(1, trilinear), 1);
+    assert_eq!(super::material_anisotropy_clamp(8, nearest), 1);
 }

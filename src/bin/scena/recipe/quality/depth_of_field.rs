@@ -45,7 +45,7 @@ pub(crate) fn append_depth_of_field_checks(
     if recipe
         .render
         .as_ref()
-        .and_then(|render| render.depth_of_field)
+        .and_then(|render| render.depth_of_field.as_ref())
         .is_none()
     {
         quality.checks.push(depth_of_field_single_check(DepthOfFieldSingleCheck {

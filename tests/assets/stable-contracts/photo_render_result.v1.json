@@ -1,0 +1,55 @@
+{
+  "schema": "scena.photo_render_result.v1",
+  "ok": true,
+  "intent": "camera_behavior",
+  "status": "passed",
+  "artifacts": {
+    "capture_png_path": "target/scena-photo/hero.png",
+    "capture_descriptor_path": "target/scena-photo/hero.png.capture.json",
+    "report_path": "target/scena-photo/hero.report.json",
+    "emitted_recipe_path": "target/scena-photo/hero.resolved.recipe.json"
+  },
+  "quality": {
+    "subject": {
+      "rect_css_px": {
+        "min_x": 32.0,
+        "min_y": 20.0,
+        "max_x": 224.0,
+        "max_y": 148.0,
+        "width": 192.0,
+        "height": 128.0
+      },
+      "fill_fraction": 0.75,
+      "fill_width_fraction": 0.75,
+      "fill_height_fraction": 0.7619,
+      "mean_luminance_srgb8": 90.0,
+      "low_clip_fraction": 0.0,
+      "high_clip_fraction": 0.0,
+      "sample_count": 24576
+    }
+  },
+  "selected": {
+    "id": "candidate_1",
+    "status": "passed",
+    "exposure_ev": 1.25,
+    "failure_codes": [],
+    "subject": {
+      "rect_css_px": {
+        "min_x": 32.0,
+        "min_y": 20.0,
+        "max_x": 224.0,
+        "max_y": 148.0,
+        "width": 192.0,
+        "height": 128.0
+      },
+      "fill_fraction": 0.75,
+      "fill_width_fraction": 0.75,
+      "fill_height_fraction": 0.7619,
+      "mean_luminance_srgb8": 90.0,
+      "low_clip_fraction": 0.0,
+      "high_clip_fraction": 0.0,
+      "sample_count": 24576
+    }
+  },
+  "failure_codes": []
+}

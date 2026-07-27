@@ -314,6 +314,7 @@ would call:
 "scene": { "preset": "product_studio" },
 "render": {
   "auto_exposure": "product_studio",
+  "exposure_compensation_ev": 0.0,
   "quality": "high",
   "anti_aliasing": "msaa4",
   "supersample": 1,
@@ -322,10 +323,116 @@ would call:
 "capture": { "width": 960, "height": 720 }
 ```
 
-Use `product_studio` for product/model screenshots, `cad_studio` for technical
-CAD/documentation scenes, and `industrial_studio` for dashboard or live-state
-views. Add explicit `scene.background`, `scene.environment`, or `scene.grid`
-only when you need to override the preset.
+For a product/model hero still, use the dedicated easy path before hand-authoring
+camera distance, exposure, focus, floor, or background:
+
+```bash
+scena photo plan model.glb --out hero.plan.json
+scena photo render model.glb --out hero.png --report hero.report.json --emit-recipe hero.resolved.recipe.json
+```
+
+`scena photo plan` writes `scena.photo_plan.v1`: a render-free candidate,
+subject, staging, and selected-composition plan. Use
+`--subject import:<id>` or `--subject node:<id>` when a recipe has more than
+one possible subject. `scena photo render` writes a versioned
+`scena.photo_render_result.v1` envelope to stdout, a `scena.photo_report.v1`
+quality report to `--report`, and, when requested, a public recipe artifact to
+`--emit-recipe`. Treat
+`ok:true` plus the report `status:"passed"` as the easy-path acceptance signal.
+The report includes the deterministic composition plan and a bounded
+low-resolution shaded-candidate selection pass, including candidate render
+count, candidate resolution, selected composition id, subject metrics, and
+per-candidate `scena.render_quality.v1` results.
+Those subject metrics come from geometry-owned semantic ID/depth/normal
+buffers and include composition, highlight structure, contact-shadow
+grounding, silhouette separation, color cast, saturation, and reflection
+washout. Read `shaded_selection.asset_health` before accepting the image:
+`safe_repair` entries have already been applied,
+`appearance_change_required` entries require an explicit caller decision, and
+`unrecoverable` entries make the photo command fail with the missing input
+named. Treat `folded_geometry`, `self_intersecting_geometry`,
+`hidden_subject_component`, `duplicate_subject_component`,
+`microscopic_subject_component`, `detached_subject_component`, and
+`outlier_subject_component` as asset-authoring findings, not exposure or
+lighting problems.
+For agent loops, read `photo_report.exposure_report.subject.mean_luminance_srgb8`,
+`photo_report.exposure_report.subject.low_clip_fraction`,
+`photo_report.exposure_report.subject.high_clip_fraction`, and
+`photo_report.exposure_report.suggested_compensation_ev` before changing
+anything. A nonzero `suggested_compensation_ev` means the renderer measured the
+subject and can name the EV nudge; keep it as auto-exposure compensation on the
+next recipe attempt instead of replacing metering with fixed exposure.
+It also includes `retry.policy` and `retry.attempts`; photo rendering is bounded
+to a small internal camera/exposure loop rather than an unbounded agent loop.
+If it fails, change the subject asset or explicit constraints; do not replace it
+with a guessed fixed `exposure_ev` unless you are intentionally switching to
+manual photography.
+The public demo hero is a contract example, not a place for per-shot constants:
+it must use `scena photo render` or recipe `photo.intent` with no hand-tuned camera, exposure, focus, floor, grid, or background overrides. If a demo hero
+needs one of those overrides to pass, fix the camera-behavior intent policy or its
+acceptance gate instead of hiding the defect in the demo recipe.
+
+Recipes can request the same camera-behavior easy path without manual camera,
+light, exposure, floor, or background fields:
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [{ "id": "subject", "uri": "model.glb" }],
+  "photo": {
+    "intent": "camera_behavior",
+    "subject": { "kind": "import", "id": "subject" }
+  },
+  "capture": { "width": 1280, "height": 840 }
+}
+```
+
+Render it with verification:
+
+```bash
+scena recipe render hero.recipe.json --verify --out hero.png
+```
+
+The `--verify` result includes product-profile import framing and exposure
+checks such as `subject_fit_sane` and `subject_exposure_sane`. If the recipe
+omits `photo.subject`, the first built import is used.
+When you need an explicit subject fallback policy, use the subject spec form:
+
+```json
+"subject": {
+  "target": { "kind": "import", "id": "subject" },
+  "fallback": "error"
+}
+```
+
+`fallback:"error"` is the default and fails closed when the subject cannot be
+resolved. `fallback:"average_metering_with_warning"` is reserved for deliberate
+degraded metering paths and must be visible in the result report. Authored
+recipes may use `{ "kind": "node", "id": "hero" }` in the same direct or
+wrapped subject form.
+
+When you need a small exposure nudge, keep automatic metering and add
+`render.exposure_compensation_ev` with `render.auto_exposure`; do not replace
+the meter with fixed `render.exposure_ev` unless the shot is deliberately
+manual. `photo.intent` owns exposure itself and rejects fixed EV/manual camera
+settings that it would otherwise override.
+
+Lower-level recipes may declare the intended metering policy under
+`render.metering` when `render.auto_exposure` is active. Valid forms are
+`{ "mode": "average" }`, `{ "mode": "center_weighted" }`,
+`{ "mode": "highlight_weighted" }`,
+`{ "mode": "subject", "target": { "kind": "import", "id": "subject" }, "fallback": "error" }`,
+and normalized spot metering
+`{ "mode": "spot", "rect": { "x": 0.35, "y": 0.25, "width": 0.3, "height": 0.4 } }`.
+Subject and spot metering are validated as stable recipe contracts; the
+headless CPU recipe path routes subject metering through visible semantic
+subject pixels. Backend strict/degraded reports for GPU paths are tracked in
+`docs/checklists/subject-driven-photo-rendering.md`.
+
+For lower-level recipes, use `product_studio` for product/model screenshots,
+`cad_studio` for technical CAD/documentation scenes, and `industrial_studio` for
+dashboard or live-state views. Add explicit `scene.background`,
+`scene.environment`, or `scene.grid` only when you need to override the preset.
 
 Prefer `material.preset` (`chrome`, `metal`, `rough_metal`,
 `brushed_steel`, `plastic`, `clearcoat_plastic`, `satin`, `leather`,
@@ -428,15 +535,16 @@ load-bearing, add `expect_quality.area_light` targeting the receiver;
 finite emitters and fails point-like emitters with
 `area_light_soft_shadow_insufficient`.
 For hero product/documentation frames where the subject should stay crisp while
-the background softens, add
-`render.depth_of_field:{focus_distance,aperture_f_stop,radius_px}`. Use a
-small `aperture_f_stop`, keep `radius_px` moderate, and choose a textured or
-structured `background_target` so blur is measurable. Add
-`expect_quality.depth_of_field` with a focal `target`; `recipe render
---verify` renders a same-backend no-DoF baseline and emits
-`depth_of_field_checked` or fails with actionable codes such as
-`depth_of_field_blur_insufficient`, `depth_of_field_background_detail_missing`,
-or `depth_of_field_focal_softened`.
+the background softens, prefer subject focus:
+`render.depth_of_field:{focus:{mode:"subject",target:{kind:"import",id:"subject"}},coverage:"all",strength:"subtle"}`.
+`recipe render` resolves that form with a semantic-AOV prepass over visible
+target pixels, then uses the median visible subject depth as the focal plane.
+Manual `focus_distance` remains available for advanced fixed-camera shots.
+Choose a textured or structured `background_target` so blur is measurable. Add
+`expect_quality.depth_of_field` with a focal `target`; `recipe render --verify`
+renders a same-backend no-DoF baseline and emits `depth_of_field_checked` or
+fails with actionable codes such as `depth_of_field_blur_insufficient`,
+`depth_of_field_background_detail_missing`, or `depth_of_field_focal_softened`.
 
 ## Comparison Cards And Contact Sheets
 

@@ -6,6 +6,7 @@ struct VertexOut {
 struct PostUniform {
     viewport: vec4<f32>,
     config: vec4<f32>,
+    white_balance: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -35,7 +36,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let center = textureLoad(source_texture, coord, 0);
     let bloom = bloom_energy(coord, dims);
     if coord.x <= 0 || coord.y <= 0 || coord.x >= dims.x - 1 || coord.y >= dims.y - 1 {
-        return finalize_post_output(vec4<f32>(min(center.rgb + bloom, vec3<f32>(1.0)), center.a));
+        return finalize_post_output(vec4<f32>(center.rgb + bloom, center.a));
     }
 
     let offsets = array<vec2<i32>, 5>(
@@ -73,7 +74,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             base = sum / 5.0;
         }
     }
-    return finalize_post_output(vec4<f32>(min(base.rgb + bloom, vec3<f32>(1.0)), base.a));
+    return finalize_post_output(vec4<f32>(base.rgb + bloom, base.a));
 }
 
 fn bloom_energy(coord: vec2<i32>, dims: vec2<i32>) -> vec3<f32> {

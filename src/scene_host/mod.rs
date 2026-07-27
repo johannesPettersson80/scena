@@ -26,6 +26,11 @@ mod introspection;
 mod label_quality;
 mod material_variants;
 mod measurements;
+mod photo;
+mod photographic_lighting;
+mod photographic_surface;
+mod photographic_surroundings;
+mod photographic_transport;
 mod post;
 mod presentation_timeline;
 mod product;
@@ -109,6 +114,32 @@ pub use interaction_verification::{
 pub use measurements::{
     SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementAuthorityV1,
     SceneHostMeasurementLabelProjectionV1, SceneHostMeasurementOverlayReportV1,
+};
+pub use photo::{
+    PHOTO_CANDIDATE_PLAN_SCHEMA_V1, PHOTO_PLAN_SCHEMA_V1, PHOTO_REPORT_SCHEMA_V1,
+    PHOTO_SHADED_CANDIDATE_SELECTION_SCHEMA_V1, PHOTO_SUBJECT_REGION_SCHEMA_V1,
+    PhotoCandidateConstraintsV1, PhotoCandidateFillRangeV1, PhotoCandidateObservation,
+    PhotoCandidatePlanV1, PhotoCandidateRequest, PhotoCandidateScore, PhotoCandidateScoringReport,
+    PhotoCandidateStagingV1, PhotoCompositionCandidateV1, PhotoPhysicalCameraV1,
+    PhotoPlanArtifactsV1, PhotoPlanSourceV1, PhotoPlanSubjectV1, PhotoPlanTargetV1, PhotoPlanV1,
+    PhotoReportV1, PhotoSubjectRegionV1, camera_behavior_candidate_plan,
+    product_hero_candidate_plan, score_camera_behavior_candidates, score_product_hero_candidates,
+};
+pub use photographic_lighting::{
+    PHOTOGRAPHIC_LIGHTING_REPORT_SCHEMA_V1, PhotographicEnvironmentProfileV1,
+    PhotographicGeometryProfileV1, PhotographicLightV1, PhotographicLightingAdjustmentV1,
+    PhotographicLightingReportV1, PhotographicMaterialProfileV1, PhotographicWhiteBalanceV1,
+};
+pub use photographic_surface::{
+    PHOTOGRAPHIC_SURFACE_REPORT_SCHEMA_V1, PhotographicAssetIssueClassV1, PhotographicAssetIssueV1,
+    PhotographicSurfaceRejectedMeshV1, PhotographicSurfaceReportV1,
+};
+pub use photographic_surroundings::{
+    PHOTOGRAPHIC_SURROUNDINGS_REPORT_SCHEMA_V1, PhotographicSurroundingsReportV1,
+};
+pub use photographic_transport::{
+    PHOTOGRAPHIC_TRANSPORT_REPORT_SCHEMA_V1, PhotographicTransportQuality,
+    PhotographicTransportReportV1,
 };
 pub use presentation_timeline::{
     PRESENTATION_TIMELINE_SCHEMA_V1, PresentationTimelineActionKindV1,

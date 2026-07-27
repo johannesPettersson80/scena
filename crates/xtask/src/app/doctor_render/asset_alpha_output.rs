@@ -464,13 +464,13 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "cpu::draw_order_independent_transparency_cpu(",
             "cpu::resolve_order_independent_transparency_cpu(",
-            "screen_space_reflections::apply_rgba8(",
-            "output::apply_screen_space_ambient_occlusion_rgba8(",
-            "output::apply_bloom_rgba8(",
+            "screen_space_reflections::apply_linear(",
+            "output::apply_screen_space_ambient_occlusion_linear(",
+            "output::apply_bloom_linear(",
             "AntiAliasing::None | AntiAliasing::Msaa4 | AntiAliasing::Msaa8 => 0",
             "AntiAliasing::Fxaa =>",
             "output::apply_fxaa_rgba8(",
-            "self.supersample_factor > 1",
+            ".max(self.supersample_factor)",
             "cpu_resolve::downsample_cpu_supersample(",
             "self.stats.screen_space_reflection_passes",
             "self.stats.ambient_occlusion_passes",
@@ -493,12 +493,21 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "pub struct OrderIndependentTransparencyConfig",
             "pub struct PostBloomConfig",
             "pub struct ScreenSpaceAmbientOcclusionConfig",
-            "pub(super) fn apply_screen_space_ambient_occlusion_rgba8",
-            "pub(super) fn apply_bloom_rgba8",
-            "pub(super) fn apply_fxaa_rgba8",
+            "pub(super) fn apply_screen_space_ambient_occlusion_linear",
+            "pub(super) fn apply_bloom_linear",
+            "pub(super) use legacy_ldr::apply_fxaa_rgba8",
+            "pbr_neutral_tonemap",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render/output/legacy_ldr.rs",
+        &[
+            "pub(in crate::render) fn apply_fxaa_rgba8",
             "luma_from_srgb8",
             "FXAA_LUMA_THRESHOLD",
-            "pbr_neutral_tonemap",
         ],
     );
     require_contains(
@@ -508,7 +517,7 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "src/render/screen_space_reflections.rs",
         &[
             "pub struct ScreenSpaceReflectionConfig",
-            "pub(super) fn apply_rgba8",
+            "pub(super) fn apply_linear",
             "blurred_reflection_sample",
         ],
     );
@@ -544,7 +553,7 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "stats().bloom_passes",
             "fxaa_pass_runs_after_pbr_neutral_without_second_tonemap",
             "stats.fxaa_passes",
-            "[160, 160, 160, 255]",
+            "[159, 159, 159, 255]",
         ],
     );
     require_contains(

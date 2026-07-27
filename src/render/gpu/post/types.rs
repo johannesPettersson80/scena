@@ -5,7 +5,7 @@ use crate::render::{
     AntiAliasing, PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig,
 };
 
-pub(super) const POST_UNIFORM_BYTE_LEN: u64 = std::mem::size_of::<[f32; 8]>() as u64;
+pub(super) const POST_UNIFORM_BYTE_LEN: u64 = std::mem::size_of::<[f32; 12]>() as u64;
 pub(super) const POST_UNIFORM_SLOT_COUNT: u64 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +22,7 @@ impl GpuOutputPlan {
         ambient_occlusion: bool,
         reflections: bool,
         depth_of_field: bool,
+        automatic_exposure: bool,
     ) -> Self {
         Self {
             sample_count: anti_aliasing.gpu_sample_count(),
@@ -29,7 +30,8 @@ impl GpuOutputPlan {
                 || bloom
                 || ambient_occlusion
                 || reflections
-                || depth_of_field,
+                || depth_of_field
+                || automatic_exposure,
             depth_color_enabled: ambient_occlusion || depth_of_field,
         }
     }
@@ -63,6 +65,7 @@ pub(in crate::render) struct GpuPostSettings {
     pub(super) ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
     pub(super) reflections: Option<ScreenSpaceReflectionConfig>,
     pub(super) depth_of_field: Option<DepthOfFieldPostConfig>,
+    pub(super) automatic_exposure: bool,
 }
 
 impl GpuPostSettings {
@@ -72,6 +75,7 @@ impl GpuPostSettings {
         ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
         reflections: Option<ScreenSpaceReflectionConfig>,
         depth_of_field: Option<DepthOfFieldPostConfig>,
+        automatic_exposure: bool,
     ) -> Self {
         Self {
             anti_aliasing,
@@ -79,6 +83,7 @@ impl GpuPostSettings {
             ambient_occlusion,
             reflections,
             depth_of_field,
+            automatic_exposure,
         }
     }
 
@@ -88,6 +93,7 @@ impl GpuPostSettings {
             || self.ambient_occlusion.is_some()
             || self.reflections.is_some()
             || self.depth_of_field.is_some()
+            || self.automatic_exposure
     }
 
     pub(in crate::render::gpu) const fn needs_depth_color(self) -> bool {
@@ -125,6 +131,7 @@ impl GpuPostSettings {
             ambient_occlusion: self.ambient_occlusion,
             reflections: self.reflections,
             depth_of_field: self.depth_of_field,
+            automatic_exposure: self.automatic_exposure,
         }
     }
 
@@ -136,6 +143,7 @@ impl GpuPostSettings {
             ambient_occlusion: self.ambient_occlusion,
             reflections: self.reflections,
             depth_of_field: self.depth_of_field,
+            automatic_exposure: self.automatic_exposure,
         }
     }
 }
@@ -161,6 +169,8 @@ pub(in crate::render::gpu) struct PostResources {
     pub(in crate::render::gpu) scene_msaa8_pipelines: Option<MeshPipelineSet>,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(in crate::render::gpu) output_blit_pipeline: wgpu::RenderPipeline,
+    #[allow(dead_code)]
+    pub(in crate::render::gpu) readback_blit_pipeline: Option<wgpu::RenderPipeline>,
     pub(in crate::render::gpu) surface_blit_pipeline: Option<wgpu::RenderPipeline>,
     #[allow(dead_code)]
     pub(in crate::render::gpu) surface_fxaa_pipeline: Option<wgpu::RenderPipeline>,

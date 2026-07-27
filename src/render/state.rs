@@ -49,6 +49,51 @@ pub(crate) struct RenderedFrameState {
     pub(super) readback_completed_unix_ms: Option<u64>,
 }
 
+/// Compact identity for frame-bound composition/subject observations.
+///
+/// The key is derived from the exact rendered/readback frame state and can be
+/// compared before consuming an observation that was computed for that frame.
+/// It intentionally reuses `RenderedFrameState` and `SceneDirtyState` instead
+/// of creating a parallel revision system.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CompositionFrameKey {
+    dirty_state: SceneDirtyState,
+    camera: CameraKey,
+    viewport_width: u32,
+    viewport_height: u32,
+    target_width: u32,
+    target_height: u32,
+    backend: Backend,
+    render_generation: u64,
+    target_revision: u64,
+    output_resources_revision: u64,
+    output_color_space: OutputColorSpace,
+    exposure_ev_bits: u32,
+    tonemapper: &'static str,
+    anti_aliasing: &'static str,
+    supersample_factor: u32,
+    bloom: bool,
+    screen_space_ambient_occlusion: bool,
+    screen_space_reflections: bool,
+    depth_of_field: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompositionFrameStaleReason {
+    Camera,
+    Viewport,
+    Transform,
+    Visibility,
+    Appearance,
+    Structure,
+    Interaction,
+    Backend,
+    RenderGeneration,
+    RenderSettings,
+    Target,
+    OutputResources,
+}
+
 impl RenderedFrameState {
     pub(crate) const fn dirty_state(self) -> SceneDirtyState {
         self.dirty_state
@@ -148,6 +193,90 @@ impl RenderedFrameState {
     }
 }
 
+impl CompositionFrameKey {
+    pub(crate) fn from_rendered_frame(frame: RenderedFrameState) -> Self {
+        Self {
+            dirty_state: frame.dirty_state,
+            camera: frame.camera,
+            viewport_width: frame.width,
+            viewport_height: frame.height,
+            target_width: frame.width,
+            target_height: frame.height,
+            backend: frame.backend(),
+            render_generation: frame.render_generation,
+            target_revision: frame.target_revision,
+            output_resources_revision: frame.output_resources_revision,
+            output_color_space: frame.output_color_space,
+            exposure_ev_bits: frame.exposure_ev.to_bits(),
+            tonemapper: frame.tonemapper,
+            anti_aliasing: frame.anti_aliasing,
+            supersample_factor: frame.supersample_factor,
+            bloom: frame.bloom,
+            screen_space_ambient_occlusion: frame.screen_space_ambient_occlusion,
+            screen_space_reflections: frame.screen_space_reflections,
+            depth_of_field: frame.depth_of_field,
+        }
+    }
+
+    pub(crate) fn staleness_against_rendered_frame(
+        self,
+        frame: RenderedFrameState,
+    ) -> Option<CompositionFrameStaleReason> {
+        if self.camera != frame.camera
+            || self.dirty_state.camera_revision != frame.dirty_state.camera_revision
+        {
+            return Some(CompositionFrameStaleReason::Camera);
+        }
+        if self.viewport_width != frame.width
+            || self.viewport_height != frame.height
+            || self.target_width != frame.width
+            || self.target_height != frame.height
+        {
+            return Some(CompositionFrameStaleReason::Viewport);
+        }
+        if self.dirty_state.transform_revision != frame.dirty_state.transform_revision {
+            return Some(CompositionFrameStaleReason::Transform);
+        }
+        if self.dirty_state.visibility_revision != frame.dirty_state.visibility_revision {
+            return Some(CompositionFrameStaleReason::Visibility);
+        }
+        if self.dirty_state.appearance_revision != frame.dirty_state.appearance_revision {
+            return Some(CompositionFrameStaleReason::Appearance);
+        }
+        if self.dirty_state.structure_revision != frame.dirty_state.structure_revision {
+            return Some(CompositionFrameStaleReason::Structure);
+        }
+        if self.dirty_state.interaction_revision != frame.dirty_state.interaction_revision {
+            return Some(CompositionFrameStaleReason::Interaction);
+        }
+        if self.backend != frame.backend() {
+            return Some(CompositionFrameStaleReason::Backend);
+        }
+        if self.render_generation != frame.render_generation {
+            return Some(CompositionFrameStaleReason::RenderGeneration);
+        }
+        if self.output_color_space != frame.output_color_space
+            || self.exposure_ev_bits != frame.exposure_ev.to_bits()
+            || self.tonemapper != frame.tonemapper
+            || self.anti_aliasing != frame.anti_aliasing
+            || self.supersample_factor != frame.supersample_factor
+            || self.bloom != frame.bloom
+            || self.screen_space_ambient_occlusion != frame.screen_space_ambient_occlusion
+            || self.screen_space_reflections != frame.screen_space_reflections
+            || self.depth_of_field != frame.depth_of_field
+        {
+            return Some(CompositionFrameStaleReason::RenderSettings);
+        }
+        if self.target_revision != frame.target_revision {
+            return Some(CompositionFrameStaleReason::Target);
+        }
+        if self.output_resources_revision != frame.output_resources_revision {
+            return Some(CompositionFrameStaleReason::OutputResources);
+        }
+        None
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 fn readback_completed_unix_ms() -> u64 {
     let now = js_sys::Date::now();
@@ -165,4 +294,97 @@ fn readback_completed_unix_ms() -> u64 {
         .map_or(0, |duration| {
             u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diagnostics::{Capabilities, OutputColorSpace};
+    use crate::scene::Scene;
+
+    fn dirty_state() -> SceneDirtyState {
+        SceneDirtyState {
+            structure_revision: 1,
+            transform_revision: 2,
+            camera_revision: 3,
+            appearance_revision: 4,
+            visibility_revision: 5,
+            interaction_revision: 6,
+        }
+    }
+
+    fn rendered_frame(camera: CameraKey) -> RenderedFrameState {
+        RenderedFrameState {
+            dirty_state: dirty_state(),
+            camera,
+            width: 320,
+            height: 240,
+            capabilities: Capabilities::headless(),
+            render_generation: 7,
+            target_revision: 8,
+            output_resources_revision: 9,
+            output_color_space: OutputColorSpace::Srgb,
+            exposure_ev: 1.25,
+            tonemapper: "pbr_neutral",
+            anti_aliasing: "fxaa",
+            supersample_factor: 2,
+            bloom: true,
+            screen_space_ambient_occlusion: true,
+            screen_space_reflections: false,
+            depth_of_field: true,
+            readback_completed_unix_ms: Some(10),
+        }
+    }
+
+    #[test]
+    fn composition_frame_key_reports_specific_stale_reasons() {
+        let mut scene = Scene::new();
+        let camera = scene.add_default_camera().expect("camera inserts");
+        let other_camera = scene.add_default_camera().expect("second camera inserts");
+        let frame = rendered_frame(camera);
+        let key = CompositionFrameKey::from_rendered_frame(frame);
+        assert_eq!(key.staleness_against_rendered_frame(frame), None);
+
+        let mut changed = frame;
+        changed.camera = other_camera;
+        assert_eq!(
+            key.staleness_against_rendered_frame(changed),
+            Some(CompositionFrameStaleReason::Camera)
+        );
+
+        let mut changed = frame;
+        changed.width = 400;
+        assert_eq!(
+            key.staleness_against_rendered_frame(changed),
+            Some(CompositionFrameStaleReason::Viewport)
+        );
+
+        let mut changed = frame;
+        changed.dirty_state.transform_revision += 1;
+        assert_eq!(
+            key.staleness_against_rendered_frame(changed),
+            Some(CompositionFrameStaleReason::Transform)
+        );
+
+        let mut changed = frame;
+        changed.dirty_state.visibility_revision += 1;
+        assert_eq!(
+            key.staleness_against_rendered_frame(changed),
+            Some(CompositionFrameStaleReason::Visibility)
+        );
+
+        let mut changed = frame;
+        changed.dirty_state.appearance_revision += 1;
+        assert_eq!(
+            key.staleness_against_rendered_frame(changed),
+            Some(CompositionFrameStaleReason::Appearance)
+        );
+
+        let mut changed = frame;
+        changed.render_generation += 1;
+        assert_eq!(
+            key.staleness_against_rendered_frame(changed),
+            Some(CompositionFrameStaleReason::RenderGeneration)
+        );
+    }
 }

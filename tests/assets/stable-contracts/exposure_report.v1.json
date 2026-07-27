@@ -1,0 +1,31 @@
+{
+  "schema": "scena.exposure_report.v1",
+  "status": "measured",
+  "mode": "camera_behavior_retry",
+  "metering_domain": "final_srgb8_subject_pixels",
+  "selected_exposure_ev": 1.25,
+  "subject": {
+    "mean_luminance_srgb8": 90.0,
+    "low_clip_fraction": 0.0,
+    "high_clip_fraction": 0.0,
+    "sample_count": 24576
+  },
+  "suggested_compensation_ev": 0.0,
+  "frame_key": {
+    "width": 256,
+    "height": 168,
+    "payload_fnv1a64": "0123456789abcdef",
+    "pixel_source": "renderer_owned_readback",
+    "state_binding": "exact_readback_completion",
+    "render_generation": 1,
+    "target_revision": 1,
+    "output_resources_revision": 1,
+    "revisions": {
+      "structure": 1,
+      "transform": 2,
+      "camera": 3,
+      "appearance": 4,
+      "interaction": 5
+    }
+  }
+}

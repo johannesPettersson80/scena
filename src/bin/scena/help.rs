@@ -4,6 +4,8 @@ const VALIDATE_RECIPE_COMMAND: &str = "validate-recipe <recipe.json> [--full|--s
 const RECIPE_BUILD_COMMAND: &str =
     "recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...";
 const RECIPE_RENDER_COMMAND: &str = "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
+const PHOTO_PLAN_COMMAND: &str = "photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...";
+const PHOTO_RENDER_COMMAND: &str = "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
 const RENDER_COMMAND: &str =
     "render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--allow-root <directory>]...";
 const INSPECT_COMMAND: &str = "inspect <asset-or-recipe> [--allow-root <directory>]...";
@@ -31,6 +33,8 @@ pub(crate) fn help_json() -> String {
             VALIDATE_RECIPE_COMMAND,
             "place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]",
             "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
+            PHOTO_PLAN_COMMAND,
+            PHOTO_RENDER_COMMAND,
             RECIPE_BUILD_COMMAND,
             RECIPE_RENDER_COMMAND,
             "recipe inspect-cad <recipe.json> --out-dir <dir> [--width 2560] [--height 1920] [--gpu]",
@@ -62,6 +66,8 @@ pub(crate) fn help_json() -> String {
             emits(VALIDATE_RECIPE_COMMAND, &["scena.scene_recipe_validation.v1"], &["scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
             emits("place <recipe.json> (--import <id>|--node <id>) --verb <verb> [--apply] [--expect-source-sha256 <hex>]", &["scena.placement_result.v1", "scena.recipe_patch.v1"], &["scena.placement_result.v1", "scena.recipe_patch.v1", "scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
             emits("diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]", &["scena.scene_recipe_diff_result.v1"], &["scena.scene_recipe_validation.v1", "scena.scene_recipe_build.v1", "scena.cli_error.v1"]),
+            emits(PHOTO_PLAN_COMMAND, &["scena.photo_plan.v1"], &["scena.cli_error.v1"]),
+            emits(PHOTO_RENDER_COMMAND, &["scena.photo_render_result.v1", "scena.photo_report.v1"], &["scena.photo_render_result.v1", "scena.cli_error.v1"]),
             emits(RECIPE_BUILD_COMMAND, &["scena.recipe_build_result.v1"], &["scena.recipe_build_result.v1", "scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
             emits(RECIPE_RENDER_COMMAND, &["scena.render_introspection.v1", "scena.recipe_render_result.v1"], &["scena.recipe_render_result.v1", "scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
             emits("recipe inspect-cad <recipe.json> --out-dir <dir> [--width 2560] [--height 1920] [--gpu]", &["scena.cad_inspection_result.v1"], &["scena.recipe_render_result.v1", "scena.cli_error.v1"]),
@@ -195,6 +201,18 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
             "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
             "scena diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
         ),
+        ["photo"] => (
+            "photo",
+            "scena photo <plan|render> <asset-or-recipe> [--intent camera-behavior] ...",
+        ),
+        ["photo", "plan"] => (
+            PHOTO_PLAN_COMMAND,
+            "scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...",
+        ),
+        ["photo", "render"] => (
+            PHOTO_RENDER_COMMAND,
+            "scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
+        ),
         ["recipe"] => (
             "recipe",
             "scena recipe <build|render|inspect-cad|capture|aov>",
@@ -322,6 +340,7 @@ fn failure_exit_rows(classes: &[&str]) -> Vec<serde_json::Value> {
 fn feature_requirements_for_command(command: &str) -> &'static [&'static str] {
     if command.starts_with("diff ")
         || command.starts_with("recipe ")
+        || command.starts_with("photo ")
         || command.starts_with("examples agent ")
         || command.starts_with("render ")
         || command.starts_with("inspect ")
@@ -346,6 +365,7 @@ fn error_classes_for_command(command: &str) -> Vec<&'static str> {
         "capabilities [--live] [--json]"
             | "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]"
     ) || command.starts_with("recipe ")
+        || command.starts_with("photo ")
         || command.starts_with("render ")
         || command.starts_with("inspect ")
         || command.starts_with("diagnose ")
@@ -360,6 +380,7 @@ fn error_classes_for_command(command: &str) -> Vec<&'static str> {
         || command == VALIDATE_RECIPE_COMMAND
         || command.starts_with("place ")
         || command.starts_with("recipe ")
+        || command.starts_with("photo ")
         || command.starts_with("render ")
         || command.starts_with("inspect ")
         || command.starts_with("diagnose ")

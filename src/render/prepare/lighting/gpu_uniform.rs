@@ -24,6 +24,7 @@ pub(in crate::render) struct PreparedGpuLightUniform {
     pub(in crate::render) light_counts: [f32; 4],
     pub(in crate::render) environment_diffuse_intensity: [f32; 4],
     pub(in crate::render) environment_specular_intensity: [f32; 4],
+    pub(in crate::render) environment_transform: [f32; 4],
 }
 
 impl Default for PreparedGpuLightUniform {
@@ -45,6 +46,7 @@ impl Default for PreparedGpuLightUniform {
             light_counts: [0.0, 0.0, 0.0, 0.0],
             environment_diffuse_intensity: [0.0, 0.0, 0.0, 0.0],
             environment_specular_intensity: [0.0, 0.0, 0.0, 0.0],
+            environment_transform: [1.0, 0.0, 0.0, 0.0],
         }
     }
 }
@@ -152,6 +154,7 @@ impl PreparedLights {
         if environment.is_active() {
             uniform.environment_diffuse_intensity = environment.gpu_diffuse_intensity();
             uniform.environment_specular_intensity = environment.gpu_specular_intensity();
+            uniform.environment_transform = environment.gpu_environment_transform();
         }
         uniform
     }

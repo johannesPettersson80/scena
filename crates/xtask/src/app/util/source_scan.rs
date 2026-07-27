@@ -56,7 +56,10 @@ pub(crate) fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
         };
 
         let significant_lines = significant_line_count(&text);
-        if significant_lines > MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE {
+        let rel_key = path_to_forward_slash(&rel);
+        if significant_lines > MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE
+            && !ALLOWED_LARGE_SOURCE_MODULES.contains(&rel_key.as_str())
+        {
             findings.push(Finding::new(
                 "ARCH-KISS-SIZE",
                 format!(

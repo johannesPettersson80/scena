@@ -85,6 +85,8 @@ fn opt_in_quality_fixtures_cover_exposure_contrast_and_noise_codes() {
     let exposure_expectation = SceneRecipeQualityExpectationV1 {
         profile: "product".to_owned(),
         exposure: Some(crate::SceneRecipeQualityExposureV1 {
+            min_mean_luminance_srgb8: None,
+            max_mean_luminance_srgb8: None,
             max_low_clip_fraction: Some(0.40),
             max_high_clip_fraction: Some(0.40),
             max_clipped_highlight_fraction: None,

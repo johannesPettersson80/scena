@@ -29,11 +29,13 @@ impl GpuDeviceState {
         target: RasterTarget,
         exposure_ev: f32,
         color_management: [f32; 4],
+        white_balance: [f32; 4],
         background_color: Color,
         camera_projection: &CameraProjection,
         clipping_planes: &[ClippingPlane],
         section_box: Option<SectionBox>,
         post_settings: GpuPostSettings,
+        auto_exposure_meter: bool,
     ) -> Result<GpuRenderResult, RenderError> {
         if let Some(error) = self.runtime_fault.render_error(target.backend) {
             return Err(error);
@@ -53,6 +55,7 @@ impl GpuDeviceState {
             });
         };
         let post_enabled = post_settings.enabled();
+        let tonemapper_mode = color_management[0];
         let scene_format = if post_enabled {
             post::scene_color_format()
         } else {
@@ -94,6 +97,7 @@ impl GpuDeviceState {
                 viewport: [target.width as f32, target.height as f32],
                 near_far: camera_projection.near_far(),
                 color_management,
+                white_balance,
                 lighting: resources.light_uniform,
                 clipping_planes,
                 clipping_control,
@@ -118,6 +122,9 @@ impl GpuDeviceState {
             target,
             background_color,
             post_settings,
+            exposure_ev,
+            tonemapper_mode,
+            white_balance,
         )? {
             return Ok(result);
         }
@@ -279,26 +286,11 @@ impl GpuDeviceState {
                 .is_none()
                 .then_some(resources.readback.as_ref())
                 .flatten();
-            let bloom_fxaa_to_surface = (renderer_readback.is_none() && post_settings.uses_fxaa())
-                .then(|| post_settings.bloom())
-                .flatten();
-            let render_fxaa_to_surface = renderer_readback.is_none()
-                && post_settings.uses_fxaa()
-                && bloom_fxaa_to_surface.is_none();
-            let chain_settings = if renderer_readback.is_some() {
-                post_settings
-            } else if bloom_fxaa_to_surface.is_some() {
-                post_settings.without_bloom_and_fxaa()
-            } else if render_fxaa_to_surface {
-                post_settings.without_fxaa()
-            } else {
-                post_settings
-            };
-            let (output, mut counts) = post::encode_chain(
+            let (output, counts) = post::encode_chain(
                 &mut encoder,
                 &self.queue,
                 post_resources,
-                chain_settings,
+                post_settings,
                 resources.depth_prepass.as_ref(),
                 &mut draw_submissions,
             )?;
@@ -318,69 +310,42 @@ impl GpuDeviceState {
                         draw_submissions: &mut draw_submissions,
                     },
                 );
-                post::copy_output_to_buffer(
-                    &mut encoder,
-                    post_resources,
-                    output,
-                    &readback.buffer,
-                    readback.padded_bytes_per_row,
-                );
-            }
-            if let Some(bloom_config) = bloom_fxaa_to_surface {
-                let Some(surface_bloom_fxaa_pipeline) =
-                    post::surface_bloom_fxaa_pipeline(post_resources)
-                else {
-                    return Err(RenderError::GpuResourcesNotPrepared {
+                let readback_pipeline = post::readback_blit_pipeline(post_resources).ok_or(
+                    RenderError::GpuResourcesNotPrepared {
                         backend: target.backend,
-                    });
-                };
-                post::encode_bloom_fxaa_to_view(
-                    &mut encoder,
-                    &self.queue,
-                    post_resources,
-                    post::BloomFxaaToViewInputs {
-                        output,
-                        target_view: &surface_view,
-                        pipeline: surface_bloom_fxaa_pipeline,
-                        config: bloom_config,
-                        draw_submissions: &mut draw_submissions,
                     },
-                );
-                counts.bloom = 1;
-                counts.fxaa = 1;
-            } else if render_fxaa_to_surface {
-                let Some(surface_fxaa_pipeline) = post::surface_fxaa_pipeline(post_resources)
-                else {
-                    return Err(RenderError::GpuResourcesNotPrepared {
-                        backend: target.backend,
-                    });
-                };
-                post::encode_fxaa_to_view(
-                    &mut encoder,
-                    &self.queue,
-                    post_resources,
-                    output,
-                    &surface_view,
-                    surface_fxaa_pipeline,
-                    &mut draw_submissions,
-                );
-                counts.fxaa = 1;
-            } else {
-                let Some(surface_blit_pipeline) = post::surface_blit_pipeline(post_resources)
-                else {
-                    return Err(RenderError::GpuResourcesNotPrepared {
-                        backend: target.backend,
-                    });
-                };
+                )?;
                 post::encode_blit_to_view(
                     &mut encoder,
+                    &self.queue,
                     post_resources,
                     output,
-                    &surface_view,
-                    surface_blit_pipeline,
+                    &readback.view,
+                    readback_pipeline,
+                    2.0_f32.powf(exposure_ev),
+                    tonemapper_mode,
+                    white_balance,
                     &mut draw_submissions,
                 );
+                encode_texture_readback_copy(&mut encoder, &readback.texture, readback, target);
             }
+            let Some(surface_blit_pipeline) = post::surface_blit_pipeline(post_resources) else {
+                return Err(RenderError::GpuResourcesNotPrepared {
+                    backend: target.backend,
+                });
+            };
+            post::encode_blit_to_view(
+                &mut encoder,
+                &self.queue,
+                post_resources,
+                output,
+                &surface_view,
+                surface_blit_pipeline,
+                2.0_f32.powf(exposure_ev),
+                tonemapper_mode,
+                white_balance,
+                &mut draw_submissions,
+            );
             if renderer_readback.is_none() {
                 let stroke_pipeline = match resources.strokes.as_ref() {
                     Some(stroke_resources) => {
@@ -426,7 +391,20 @@ impl GpuDeviceState {
                     target,
                 );
             }
+            let meter_submission = if auto_exposure_meter {
+                self.browser_auto_exposure_meter.encode_copy(
+                    &mut encoder,
+                    &post_resources.scene_texture,
+                    target,
+                )
+            } else {
+                None
+            };
+            let meter_submitted = meter_submission.is_some();
             self.queue.submit(Some(encoder.finish()));
+            if let Some(submission) = meter_submission {
+                self.browser_auto_exposure_meter.begin_mapping(submission);
+            }
             surface_output.present();
             if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
                 let change = surface_frame::refresh_surface_configuration(
@@ -447,6 +425,8 @@ impl GpuDeviceState {
                 submitted: true,
                 post_counts: counts,
                 draw_submissions,
+                auto_exposure_meter_submissions: u64::from(meter_submitted),
+                auto_exposure_meter_samples: u64::from(meter_submitted) * 256,
                 surface_reconfigurations: reconfigurations,
                 surface_acquire_retries,
                 ..GpuRenderResult::default()

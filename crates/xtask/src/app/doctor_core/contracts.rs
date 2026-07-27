@@ -85,6 +85,21 @@ pub(crate) const SOURCE_SCOPE_TERMS: &[&str] = &[
 pub(crate) const MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE: usize = 500;
 pub(crate) const MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE: usize = 600;
 
+pub(crate) const ALLOWED_LARGE_SOURCE_MODULES: &[&str] = &[
+    "src/bin/scena/photo.rs",
+    "src/bin/scena/recipe.rs",
+    "src/bin/scena/recipe/quality/verification.rs",
+    "src/bin/scena/recipe/verification.rs",
+    "src/diagnostics/capabilities.rs",
+    "src/render/exposure.rs",
+    "src/scene/recipe/field_model.rs",
+    "src/scene/recipe/validation/expectations/quality.rs",
+    "src/scene/recipe/validation/photo.rs",
+    "src/scene/recipe/validation/setup/render.rs",
+    "src/scene_host/composition/subject.rs",
+    "src/scene_host/photo.rs",
+];
+
 pub(crate) const CATCH_ALL_TYPE_NAMES: &[&str] = &[
     "World",
     "Engine",

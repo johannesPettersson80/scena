@@ -371,6 +371,17 @@ fn environment_changes_reject_transform_only_gpu_template_reuse() {
 }
 
 #[test]
+fn environment_illumination_has_continuous_intensity_and_rotation_controls() {
+    let mut renderer = Renderer::headless(16, 16).expect("renderer builds");
+
+    renderer.set_environment_intensity(0.42);
+    renderer.set_environment_rotation_y_degrees(73.0);
+
+    assert!((renderer.environment_intensity() - 0.42).abs() <= f32::EPSILON);
+    assert!((renderer.environment_rotation_y_degrees() - 73.0).abs() <= 1.0e-5);
+}
+
+#[test]
 fn shadow_state_change_rejects_transform_only_gpu_template_reuse() {
     let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
         return;

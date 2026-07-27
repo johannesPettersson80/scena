@@ -1,10 +1,9 @@
 {
-  "schema": "scena.schema_entry.v1",
   "entry": {
-    "schema": "scena.scene_recipe.v1",
+    "fixture_path": "tests/assets/stable-contracts/scene_recipe.v1.json",
     "owner_module": "scene",
-    "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
-    "fixture_path": "tests/assets/stable-contracts/scene_recipe.v1.json"
+    "schema": "scena.scene_recipe.v1",
+    "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows."
   },
   "example": {
     "animations": [
@@ -375,9 +374,9 @@
         "id": "part",
         "material": {
           "base_color": "#565A60",
+          "double_sided": true,
           "metallic": 0.0,
-          "roughness": 0.86,
-          "double_sided": true
+          "roughness": 0.86
         },
         "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
       }
@@ -725,5 +724,6 @@
       }
     ],
     "schema": "scena.scene_recipe.v1"
-  }
+  },
+  "schema": "scena.schema_entry.v1"
 }

@@ -171,6 +171,9 @@ impl RenderIntrospectionReportV1 {
             visible_pixel_fraction: round3(visible_pixel_fraction),
             luminance,
             framing,
+            focus_report: options.focus_report,
+            exposure_report: options.exposure_report,
+            subject_observations: options.subject_observations,
             nodes_summary,
             nodes_detail,
             artifacts: RenderIntrospectionArtifactsV1 {

@@ -408,6 +408,60 @@ pub(crate) fn doctor_rejects_renderer_asset_fetch_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_renderer_photo_planning_boundary_regression() {
+    // ARCH-RENDER-PHOTO-BOUNDARY: photo intent planning is host/CLI work.
+    // Renderer render modules must not select candidates, retry exposure, or
+    // own photo-report schemas.
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/renderer-photo-planning");
+    let render_path = fixture_root.join("src/render/frame.rs");
+    fs::create_dir_all(render_path.parent().expect("render parent")).expect("fixture dir");
+    fs::write(
+        &render_path,
+        "use crate::PhotoCandidatePlanV1;\nfn render() { let _ = product_hero_candidate_plan; }\n",
+    )
+    .expect("render fixture");
+    let mut findings = Vec::new();
+
+    check_module_boundaries(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-RENDER-PHOTO-BOUNDARY"
+                && finding.message.contains("PhotoCandidatePlanV1")
+        }),
+        "doctor must reject renderer modules that name photo-planning contracts: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn doctor_rejects_photo_target_resolution_drift_regression() {
+    // ARCH-SHARED-TARGET-RESOLVER: all photo/subject consumers must route
+    // target handles through scene::recipe::target_resolution instead of
+    // reimplementing import/node matching locally.
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/photo-target-resolution-drift");
+    let photo_path = fixture_root.join("src/bin/scena/photo.rs");
+    fs::create_dir_all(photo_path.parent().expect("photo parent")).expect("fixture dir");
+    fs::write(
+        &photo_path,
+        "fn select(target: SceneRecipeTargetV1) { match target { SceneRecipeTargetV1::Import { id } => { let _ = id; }, SceneRecipeTargetV1::Node { id } => { let _ = id; }, _ => {} } }\n",
+    )
+    .expect("photo target drift fixture");
+    let mut findings = Vec::new();
+
+    check_module_boundaries(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-SHARED-TARGET-RESOLVER"
+                && finding.message.contains("src/bin/scena/photo.rs")
+        }),
+        "doctor must reject photo target-resolution drift outside the shared resolver: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_render_phase_pipeline_creation_regression() {
     // ARCH-RENDER-LIFECYCLE: render-phase modules must not allocate shaders or pipelines.
     let root = repo_root().expect("test runs inside the scena workspace");

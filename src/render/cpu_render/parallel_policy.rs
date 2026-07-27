@@ -1,5 +1,23 @@
 use super::*;
 
+const CPU_PARALLEL_MIN_PIXELS: usize = 512 * 512;
+const CPU_PARALLEL_MIN_PRIMITIVES: usize = 64;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct CpuPrimitiveFlags {
+    pub(super) has_physical_transmission: bool,
+}
+
+impl CpuPrimitiveFlags {
+    pub(super) fn scan(primitives: &[PreparedPrimitive]) -> Self {
+        Self {
+            has_physical_transmission: primitives
+                .iter()
+                .any(cpu::primitive_needs_physical_transmission),
+        }
+    }
+}
+
 pub(super) fn should_parallelize_cpu_geometry_pass(
     input: &CpuGeometryPass<'_>,
     primitive_flags: CpuPrimitiveFlags,

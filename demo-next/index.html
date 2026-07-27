@@ -102,15 +102,15 @@
     </div>
 
     <div class="hero-media">
-      <img id="hero-still" src="assets/hero.png" alt="Six spheres — chrome, glass, clearcoat, brushed steel, gold and matte — reflected in a dark studio floor, rendered by scena">
+      <img id="hero-still" src="assets/hero-915e9e36c3.png" alt="A connector-snap machine assembly — bellows, drive housing and bolted flange on a mounting rail, lit as a studio product shot and rendered by scena">
       <canvas id="hero-live" aria-hidden="true"></canvas>
-      <span class="badge hero-cap" id="hero-badge">rendered by scena · no imported art</span>
+      <span class="badge hero-cap" id="hero-badge">rendered by scena · camera-behavior recipe</span>
     </div>
   </div>
 
   <div class="hero-note">
     <div class="wrap">
-      <span class="badge">six named materials · one stock sphere</span>
+      <span class="badge">camera-behavior recipe · no hand-tuned camera/exposure/focus</span>
       <span class="badge">native · WebGL2 · WebGPU</span>
     </div>
   </div>
@@ -213,7 +213,7 @@ renderer.<span class="f">set_environment</span>(studio);</code></pre>
     const recipe = await (await fetch("./assets/hero.recipe.json")).text();
     await host.build_recipe_json(recipe);
     canvas.classList.add("live");
-    badge.textContent = "rendered live in your browser · six named materials";
+    badge.textContent = "rendered live in your browser · camera-behavior recipe";
     let t = 0;
     const tick = () => { t += 0.0016; host.orbit_to(t); host.render(); requestAnimationFrame(tick); };
     requestAnimationFrame(tick);

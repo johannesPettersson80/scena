@@ -15,6 +15,7 @@ does not turn diagnostic output into release evidence.
 
 | Flag | What it controls | Default when unset |
 |---|---|---|
+| `NO_LIGHTS` | Diagnostic-only `examples/probe_hero.rs` switch that skips studio lighting while probing hero asset loading/framing. | unset → add studio lighting |
 | `SCENA_A03_BIN` | Exact prebuilt release-profile `scena` binary used by the clean-directory canonical-guide smoke. | test builds its own binary only in the final packaged smoke |
 | `SCENA_A04_BIN` | Exact installed/packaged CLI binary used by the install-contract smoke. | test builds its own binary only in the final packaged smoke |
 | `SCENA_A04_EXPECT_AGENT` | Declares whether the A04 packaged binary was built with the `agent` feature so the smoke can enforce the matching command surface. | unset → core/default install contract |

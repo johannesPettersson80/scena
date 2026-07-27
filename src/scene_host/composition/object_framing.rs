@@ -115,6 +115,10 @@ impl ObjectFramingThresholds {
                 min_fit_fraction: 0.050,
                 max_fit_fraction: 0.95,
             },
+            "photo_product" => Self {
+                min_fit_fraction: 0.080,
+                max_fit_fraction: 0.96,
+            },
             _ => Self {
                 min_fit_fraction: 0.080,
                 max_fit_fraction: 0.94,

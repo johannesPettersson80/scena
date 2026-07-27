@@ -38,6 +38,7 @@ fn a09_doctor_rejects_a_redundant_or_default_agent_feature() {
         "docs/errors.md",
         "docs/examples.md",
         "docs/guides/llm-app-builder.md",
+        "docs/guides/easy-scene-setup.md",
         "docs/specs/cli-install-contract.md",
         "docs/schema-contracts.md",
         ".codex/skills/scena-app-builder/SKILL.md",
@@ -210,5 +211,216 @@ fn a09_doctor_rejects_a_redundant_or_default_agent_feature() {
                 && finding.message.contains("\"failure_exits\": failure_exits")
         }),
         "removing the complete process exit table must fail doctor: {findings:?}",
+    );
+}
+
+#[test]
+fn x01_doctor_rejects_subject_photo_contract_drift() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/x01-subject-photo-contracts");
+    let _ = fs::remove_dir_all(&fixture_root);
+    for relative in [
+        ".github/workflows/ci.yml",
+        "README.md",
+        "docs/getting-started.md",
+        "docs/errors.md",
+        "docs/troubleshooting.md",
+        "docs/guides/easy-scene-setup.md",
+        "docs/guides/llm-app-builder.md",
+        "docs/schema-contracts.md",
+        "docs/checklists/subject-driven-photo-rendering.md",
+        "src/bin/scena/help.rs",
+        "src/bin/scena/photo.rs",
+        "src/bin/scena/recipe.rs",
+        "src/geometry/photographic.rs",
+        "src/schema_catalog.rs",
+        "src/schema_catalog/fixtures.rs",
+        "src/scene_host/photographic_surface.rs",
+        "tests/photo_render_cli.rs",
+        "tests/scena_cli_recipe.rs",
+        "tests/scena_cli_schema.rs",
+        "tests/assets/photo/camera_behavior_cad_terminal_block.fixture.json",
+        "tests/assets/stable-contracts/exposure_report.v1.json",
+        "tests/assets/stable-contracts/focus_report.v1.json",
+        "tests/assets/stable-contracts/photo_candidate_plan.v1.json",
+        "tests/assets/stable-contracts/photo_plan.v1.json",
+        "tests/assets/stable-contracts/photo_render_result.v1.json",
+        "tests/assets/stable-contracts/photo_report.v1.json",
+        "tests/assets/stable-contracts/photo_shaded_candidate_selection.v1.json",
+        "tests/assets/stable-contracts/subject_observation.v1.json",
+        "evidence/demo-hero/hero.recipe.json",
+        "demo-next/index.html",
+        "demo-next/assets/hero.recipe.json",
+    ] {
+        let destination = fixture_root.join(relative);
+        fs::create_dir_all(destination.parent().expect("fixture file has parent"))
+            .expect("X01 fixture directory creates");
+        fs::copy(root.join(relative), &destination).expect("X01 contract fixture copies");
+    }
+
+    let mut findings = Vec::new();
+    check_x01_subject_photo_contracts(&fixture_root, &mut findings);
+    assert_eq!(findings, Vec::new());
+
+    let schema_docs = fixture_root.join("docs/schema-contracts.md");
+    let source = fs::read_to_string(&schema_docs).expect("schema docs fixture reads");
+    let mutated = source.replace("scena.photo_report.v1", "scena.photo_report_removed.v1");
+    assert_ne!(
+        source, mutated,
+        "X01 docs mutation must remove photo_report"
+    );
+    fs::write(&schema_docs, mutated).expect("schema docs mutation writes");
+    findings.clear();
+    check_x01_subject_photo_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "X01-SUBJECT-PHOTO-CONTRACTS"
+                && finding.message.contains("docs/schema-contracts.md")
+                && finding.message.contains("scena.photo_report.v1")
+        }),
+        "missing photo_report docs must fail doctor: {findings:?}",
+    );
+
+    fs::write(&schema_docs, source).expect("schema docs restores");
+    let mutation_manifest =
+        fixture_root.join("tests/assets/photo/camera_behavior_cad_terminal_block.fixture.json");
+    let source = fs::read_to_string(&mutation_manifest).expect("camera behavior manifest reads");
+    let mutated = source.replacen("average_metered_silhouette", "removed_silhouette", 1);
+    assert_ne!(
+        source, mutated,
+        "X01 fixture mutation must remove known-bad mutation"
+    );
+    fs::write(&mutation_manifest, mutated).expect("camera behavior manifest mutation writes");
+    findings.clear();
+    check_x01_subject_photo_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "X01-SUBJECT-PHOTO-CONTRACTS"
+                && finding.message.contains("average_metered_silhouette")
+        }),
+        "missing camera-behavior known-bad mutation must fail doctor: {findings:?}",
+    );
+
+    fs::write(&mutation_manifest, source).expect("camera behavior manifest restores");
+    let demo_recipe = fixture_root.join("evidence/demo-hero/hero.recipe.json");
+    let source = fs::read_to_string(&demo_recipe).expect("demo recipe reads");
+    let mut recipe: Value = serde_json::from_str(&source).expect("demo recipe parses");
+    recipe["render"]["exposure_ev"] = json!(2.0);
+    fs::write(
+        &demo_recipe,
+        serde_json::to_string_pretty(&recipe).expect("recipe serializes"),
+    )
+    .expect("demo recipe mutation writes");
+    findings.clear();
+    check_x01_subject_photo_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "X01-SUBJECT-PHOTO-CONTRACTS"
+                && finding.message.contains("manual")
+                && finding.message.contains("exposure_ev")
+        }),
+        "manual exposure override in photo.intent demo recipe must fail doctor: {findings:?}",
+    );
+
+    fs::write(&demo_recipe, source).expect("demo recipe restores");
+    let workflow = fixture_root.join(".github/workflows/ci.yml");
+    let source = fs::read_to_string(&workflow).expect("CI workflow reads");
+    let mutated = source.replacen(
+        "cargo test --workspace --all-features --tests",
+        "cargo test",
+        1,
+    );
+    assert_ne!(source, mutated, "X01 CI mutation must remove feature lane");
+    fs::write(&workflow, mutated).expect("CI workflow mutation writes");
+    findings.clear();
+    check_x01_subject_photo_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "X01-SUBJECT-PHOTO-CONTRACTS"
+                && finding.message.contains("all-features")
+        }),
+        "missing feature-gated camera-photo CI lane must fail doctor: {findings:?}",
+    );
+
+    fs::write(&workflow, source).expect("CI workflow restores");
+    let troubleshooting = fixture_root.join("docs/troubleshooting.md");
+    let source = fs::read_to_string(&troubleshooting).expect("troubleshooting reads");
+    let mutated = source.replace("stale_subject_observation", "removed_stale_subject");
+    assert_ne!(
+        source, mutated,
+        "X01 troubleshooting mutation must remove stale-observation docs"
+    );
+    fs::write(&troubleshooting, mutated).expect("troubleshooting mutation writes");
+    findings.clear();
+    check_x01_subject_photo_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "X01-SUBJECT-PHOTO-CONTRACTS"
+                && finding.message.contains("stale_subject_observation")
+        }),
+        "missing degraded/fallback docs must fail doctor: {findings:?}",
+    );
+}
+
+#[test]
+fn x02_doctor_rejects_orphaned_camera_behavior_feature_gated_tests() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/x02-ci-bijection");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(fixture_root.join(".github/workflows"))
+        .expect("workflow fixture directory creates");
+    fs::create_dir_all(fixture_root.join("tests")).expect("tests fixture directory creates");
+    fs::write(
+        fixture_root.join(".github/workflows/ci.yml"),
+        "name: CI\njobs:\n  default:\n    steps:\n      - run: cargo test\n",
+    )
+    .expect("workflow fixture writes");
+    fs::write(
+        fixture_root.join("tests/photo_render_cli.rs"),
+        r#"#![cfg(all(feature = "inspection", feature = "scene-host"))]
+
+#[test]
+fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {}
+"#,
+    )
+    .expect("camera behavior fixture test writes");
+    fs::write(
+        fixture_root.join("tests/scena_cli_recipe.rs"),
+        r#"#![cfg(feature = "inspection")]
+
+#[test]
+fn recipe_render_product_quality_uses_exact_subject_observation_pixels() {}
+"#,
+    )
+    .expect("subject observation fixture test writes");
+
+    let mut findings = Vec::new();
+    check_feature_gated_tests_run_in_a_workflow(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "TESTS-FEATURE-GATED-WORKFLOW-BIJECTION"
+                && finding.message.contains("tests/photo_render_cli.rs")
+        }),
+        "orphaned camera-behavior proof test must fail CI bijection doctor: {findings:?}",
+    );
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "TESTS-FEATURE-GATED-WORKFLOW-BIJECTION"
+                && finding.message.contains("tests/scena_cli_recipe.rs")
+        }),
+        "orphaned subject-observation proof test must fail CI bijection doctor: {findings:?}",
+    );
+
+    fs::write(
+        fixture_root.join(".github/workflows/ci.yml"),
+        "name: CI\njobs:\n  feature_gated:\n    steps:\n      - run: cargo test --workspace --all-features --tests\n",
+    )
+    .expect("workflow blanket lane writes");
+    findings.clear();
+    check_feature_gated_tests_run_in_a_workflow(&fixture_root, &mut findings);
+    assert_eq!(
+        findings,
+        Vec::new(),
+        "blanket all-features test lane must cover camera-behavior and subject-observation gated tests",
     );
 }

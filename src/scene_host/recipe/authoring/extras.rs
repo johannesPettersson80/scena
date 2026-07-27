@@ -226,6 +226,7 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                     .unwrap_or(root_handle),
             ),
             name: None,
+            visible: Some(true),
             active: None,
         });
     }
@@ -320,6 +321,7 @@ pub(in crate::scene_host::recipe) fn build_authored_labels(
                     .unwrap_or(root_handle),
             ),
             name: Some(recipe.text.clone()),
+            visible: Some(true),
             active: None,
         });
     }

@@ -222,6 +222,8 @@ async fn request_gpu_for_surface(
     install_gpu_error_callback(&device, runtime_fault.clone());
     #[cfg(not(target_arch = "wasm32"))]
     let auto_exposure_meter = super::readback::GpuAutoExposureMeter::new(&device);
+    #[cfg(target_arch = "wasm32")]
+    let browser_auto_exposure_meter = super::browser_meter::BrowserAutoExposureMeter::new(&device);
     let effective_size =
         clamp_surface_size_to_adapter_limits(size, device.limits().max_texture_dimension_2d);
     let mut config = surface
@@ -249,6 +251,8 @@ async fn request_gpu_for_surface(
         sample_count_capabilities: Default::default(),
         #[cfg(not(target_arch = "wasm32"))]
         auto_exposure_meter,
+        #[cfg(target_arch = "wasm32")]
+        browser_auto_exposure_meter,
         #[cfg(target_arch = "wasm32")]
         last_poll_observation: "not-polled",
         resources: None,

@@ -7,10 +7,12 @@ mod authoring;
 mod build_manifest;
 mod expectations;
 mod overlays;
+mod photo;
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 mod render_result;
 mod setup;
 mod spatial_state;
+mod subject;
 pub use authoring::{
     SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
     SceneRecipeCameraFramingV1, SceneRecipeCameraV1, SceneRecipeClippingPlaneV1,
@@ -50,6 +52,11 @@ pub use overlays::{
     SceneRecipeExplodedViewModeV1, SceneRecipeExplodedViewV1, SceneRecipeMeasurementV1,
     SceneRecipeSectionBoxV1, SceneRecipeTargetV1,
 };
+pub use photo::{
+    SceneRecipePhotoCompositionV1, SceneRecipePhotoExposureV1, SceneRecipePhotoFocusV1,
+    SceneRecipePhotoRangeV1, SceneRecipePhotoStagingV1, SceneRecipePhotoSubjectV1,
+    SceneRecipePhotoV1,
+};
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub use render_result::{
     SCENE_COMPOSITION_SCHEMA_V1, SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneCompositionCheckV1,
@@ -59,9 +66,11 @@ pub use render_result::{
 };
 pub use setup::{
     SceneRecipeAutoExposureV1, SceneRecipeBackgroundV1, SceneRecipeBloomV1,
-    SceneRecipeDepthOfFieldV1, SceneRecipeEnvironmentV1, SceneRecipeGridReflectionV1,
-    SceneRecipeGridV1, SceneRecipeRenderV1, SceneRecipeSceneV1,
-    SceneRecipeScreenSpaceReflectionsV1, SceneRecipeSsaoV1,
+    SceneRecipeDepthOfFieldFocusV1, SceneRecipeDepthOfFieldTargetV1, SceneRecipeDepthOfFieldV1,
+    SceneRecipeEnvironmentV1, SceneRecipeGridReflectionV1, SceneRecipeGridV1,
+    SceneRecipeMeteringRectV1, SceneRecipeMeteringTargetV1, SceneRecipeMeteringV1,
+    SceneRecipeRenderV1, SceneRecipeSceneV1, SceneRecipeScreenSpaceReflectionsV1,
+    SceneRecipeSsaoV1,
 };
 pub use spatial_state::{
     SceneRecipeAnchorSourceV1, SceneRecipeAnchorV1, SceneRecipeBoundsSourceV1, SceneRecipeBoundsV1,
@@ -70,6 +79,9 @@ pub use spatial_state::{
     SceneRecipeConnectorSourceV1, SceneRecipeConnectorV1, SceneRecipeNamedStateV1,
     SceneRecipeSpatialTargetV1, SceneRecipeStateTintV1, SceneRecipeStateTransformV1,
     SceneRecipeStateVisibilityV1,
+};
+pub use subject::{
+    SceneRecipeSubjectFallbackPolicyV1, SceneRecipeSubjectSpecV1, SceneRecipeSubjectV1,
 };
 
 pub const SCENE_RECIPE_SCHEMA_V1: &str = "scena.scene_recipe.v1";
@@ -121,6 +133,8 @@ pub struct SceneRecipeV1 {
     pub scene: Option<SceneRecipeSceneV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub render: Option<SceneRecipeRenderV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo: Option<SceneRecipePhotoV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect: Option<SceneRecipeExpectV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

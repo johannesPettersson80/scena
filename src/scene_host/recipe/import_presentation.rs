@@ -70,6 +70,7 @@ pub(super) fn apply_import_presentation(
                 kind: "generated_overlay".to_owned(),
                 parent: Some(*root_handle),
                 name: None,
+                visible: Some(true),
                 active: None,
             });
         }

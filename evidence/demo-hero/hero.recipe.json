@@ -1,0 +1,24 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "metadata": {
+    "purpose": "scena public demo hero — connector-snap assembly as a product still",
+    "authoring_contract": "photo.intent camera_behavior; no hand-tuned camera, exposure, focus, floor, grid, or background overrides"
+  },
+  "imports": [
+    {
+      "id": "machine",
+      "uri": "demo/samples/connector-snap/connector_snap_assembly.glb"
+    }
+  ],
+  "photo": {
+    "intent": "camera_behavior",
+    "subject": {
+      "kind": "import",
+      "id": "machine"
+    }
+  },
+  "capture": {
+    "width": 1800,
+    "height": 1150
+  }
+}

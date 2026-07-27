@@ -1,0 +1,72 @@
+{
+  "schema": "scena.subject_observation.v1",
+  "status": "observed",
+  "source": "render.metering",
+  "target": {
+    "kind": "node",
+    "id": "subject_box",
+    "handles": [
+      42
+    ]
+  },
+  "frame_key": {
+    "width": 160,
+    "height": 120,
+    "payload_fnv1a64": "0123456789abcdef",
+    "pixel_source": "renderer_owned_readback",
+    "state_binding": "exact_readback_completion",
+    "render_generation": 7,
+    "target_revision": 3,
+    "output_resources_revision": 5,
+    "revisions": {
+      "structure": 1,
+      "transform": 2,
+      "camera": 3,
+      "appearance": 4,
+      "interaction": 5
+    }
+  },
+  "projected_bounds": {
+    "min_x": 40.0,
+    "min_y": 24.0,
+    "max_x": 120.0,
+    "max_y": 96.0,
+    "width": 80.0,
+    "height": 72.0,
+    "area_px": 5760
+  },
+  "visible_bounds": {
+    "min_x": 50.0,
+    "min_y": 32.0,
+    "max_x": 118.0,
+    "max_y": 92.0,
+    "width": 68.0,
+    "height": 60.0,
+    "area_px": 4080
+  },
+  "visible_pixel_count": 1200,
+  "projected_area_px": 5760,
+  "visible_fill_fraction": 0.0625,
+  "visible_fraction_of_projected": 0.20829999446868896,
+  "occlusion_estimate": 0.791700005531311,
+  "depth": {
+    "near_m": 2.0,
+    "p50_m": 2.5,
+    "far_m": 3.0,
+    "sample_count": 1200,
+    "confidence": 1.0
+  },
+  "pixel_quality": {
+    "mean_luminance_srgb8": 92.5,
+    "luminance_stddev_srgb8": 8.5,
+    "luminance_range_srgb8": 42.0,
+    "low_clip_fraction": 0.02,
+    "high_clip_fraction": 0.01,
+    "sample_count": 1200
+  },
+  "fallback": {
+    "degraded": false,
+    "flags": [],
+    "reason_codes": []
+  }
+}

@@ -75,6 +75,8 @@ fn agent_only_commands_name_the_one_step_install_feature() {
         .collect::<BTreeSet<_>>();
     for command in [
         "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]",
+        "photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...",
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
         "recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...",
         "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
         "examples agent list",

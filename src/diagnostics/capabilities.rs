@@ -115,6 +115,12 @@ pub struct Capabilities {
     pub max_clipping_planes: u8,
     pub gpu_frustum_culling: CapabilityStatus,
     pub per_instance_culling: CapabilityStatus,
+    pub subject_visible_mask: CapabilityStatus,
+    pub auto_exposure_metering_average: CapabilityStatus,
+    pub auto_exposure_metering_center_weighted: CapabilityStatus,
+    pub auto_exposure_metering_highlight_weighted: CapabilityStatus,
+    pub auto_exposure_metering_subject: CapabilityStatus,
+    pub auto_exposure_metering_spot: CapabilityStatus,
     pub compute_shaders: CapabilityStatus,
     pub storage_buffers: CapabilityStatus,
     pub readback_headless_screenshots: CapabilityStatus,
@@ -161,6 +167,18 @@ struct CapabilitiesDeserialize {
     max_clipping_planes: u8,
     gpu_frustum_culling: CapabilityStatus,
     per_instance_culling: CapabilityStatus,
+    #[serde(default = "subject_visible_mask_default")]
+    subject_visible_mask: CapabilityStatus,
+    #[serde(default = "metering_supported_default")]
+    auto_exposure_metering_average: CapabilityStatus,
+    #[serde(default = "metering_feature_disabled_default")]
+    auto_exposure_metering_center_weighted: CapabilityStatus,
+    #[serde(default = "metering_feature_disabled_default")]
+    auto_exposure_metering_highlight_weighted: CapabilityStatus,
+    #[serde(default = "metering_feature_disabled_default")]
+    auto_exposure_metering_subject: CapabilityStatus,
+    #[serde(default = "metering_feature_disabled_default")]
+    auto_exposure_metering_spot: CapabilityStatus,
     compute_shaders: CapabilityStatus,
     storage_buffers: CapabilityStatus,
     readback_headless_screenshots: CapabilityStatus,
@@ -209,12 +227,31 @@ impl<'de> Deserialize<'de> for Capabilities {
             max_clipping_planes: value.max_clipping_planes,
             gpu_frustum_culling: value.gpu_frustum_culling,
             per_instance_culling: value.per_instance_culling,
+            subject_visible_mask: value.subject_visible_mask,
+            auto_exposure_metering_average: value.auto_exposure_metering_average,
+            auto_exposure_metering_center_weighted: value.auto_exposure_metering_center_weighted,
+            auto_exposure_metering_highlight_weighted: value
+                .auto_exposure_metering_highlight_weighted,
+            auto_exposure_metering_subject: value.auto_exposure_metering_subject,
+            auto_exposure_metering_spot: value.auto_exposure_metering_spot,
             compute_shaders: value.compute_shaders,
             storage_buffers: value.storage_buffers,
             readback_headless_screenshots: value.readback_headless_screenshots,
             reversed_z_depth: value.reversed_z_depth,
         })
     }
+}
+
+fn subject_visible_mask_default() -> CapabilityStatus {
+    CapabilityStatus::FeatureDisabled
+}
+
+fn metering_supported_default() -> CapabilityStatus {
+    CapabilityStatus::Supported
+}
+
+fn metering_feature_disabled_default() -> CapabilityStatus {
+    CapabilityStatus::FeatureDisabled
 }
 
 impl Capabilities {
@@ -259,6 +296,16 @@ impl Capabilities {
             max_clipping_planes: max_clipping_planes(backend),
             gpu_frustum_culling: gpu_frustum_culling_status(backend),
             per_instance_culling: per_instance_culling_status(backend),
+            subject_visible_mask: subject_visible_mask_status(backend),
+            auto_exposure_metering_average: auto_exposure_metering_average_status(backend),
+            auto_exposure_metering_center_weighted: auto_exposure_metering_unimplemented_status(
+                backend,
+            ),
+            auto_exposure_metering_highlight_weighted: auto_exposure_metering_unimplemented_status(
+                backend,
+            ),
+            auto_exposure_metering_subject: auto_exposure_metering_subject_status(backend),
+            auto_exposure_metering_spot: auto_exposure_metering_unimplemented_status(backend),
             compute_shaders: compute_shader_status(backend),
             storage_buffers: storage_buffer_status(backend),
             readback_headless_screenshots: readback_status(backend),
@@ -303,6 +350,16 @@ impl Capabilities {
             max_clipping_planes: max_clipping_planes(backend),
             gpu_frustum_culling: gpu_frustum_culling_status(backend),
             per_instance_culling: per_instance_culling_status(backend),
+            subject_visible_mask: subject_visible_mask_status(backend),
+            auto_exposure_metering_average: auto_exposure_metering_average_status(backend),
+            auto_exposure_metering_center_weighted: auto_exposure_metering_unimplemented_status(
+                backend,
+            ),
+            auto_exposure_metering_highlight_weighted: auto_exposure_metering_unimplemented_status(
+                backend,
+            ),
+            auto_exposure_metering_subject: auto_exposure_metering_subject_status(backend),
+            auto_exposure_metering_spot: auto_exposure_metering_unimplemented_status(backend),
             compute_shaders: compute_shader_status(backend),
             storage_buffers: storage_buffer_status(backend),
             readback_headless_screenshots: readback_status(backend),
@@ -347,6 +404,16 @@ impl Capabilities {
             max_clipping_planes: max_clipping_planes(backend),
             gpu_frustum_culling: gpu_frustum_culling_status(backend),
             per_instance_culling: per_instance_culling_status(backend),
+            subject_visible_mask: subject_visible_mask_status(backend),
+            auto_exposure_metering_average: auto_exposure_metering_average_status(backend),
+            auto_exposure_metering_center_weighted: auto_exposure_metering_unimplemented_status(
+                backend,
+            ),
+            auto_exposure_metering_highlight_weighted: auto_exposure_metering_unimplemented_status(
+                backend,
+            ),
+            auto_exposure_metering_subject: auto_exposure_metering_subject_status(backend),
+            auto_exposure_metering_spot: auto_exposure_metering_unimplemented_status(backend),
             compute_shaders: compute_shader_status(backend),
             storage_buffers: storage_buffer_status(backend),
             readback_headless_screenshots: readback_status(backend),

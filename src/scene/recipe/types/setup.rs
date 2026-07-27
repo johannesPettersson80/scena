@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use super::overlays::SceneRecipeTargetV1;
+use super::subject::SceneRecipeSubjectFallbackPolicyV1;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeSceneV1 {
@@ -95,7 +98,11 @@ pub struct SceneRecipeRenderV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exposure_ev: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exposure_compensation_ev: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_exposure: Option<SceneRecipeAutoExposureV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metering: Option<SceneRecipeMeteringV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tonemapper: Option<String>,
 }
@@ -115,6 +122,31 @@ pub enum SceneRecipeAutoExposureV1 {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         highlight_target_luminance: Option<f64>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeMeteringV1 {
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<SceneRecipeMeteringTargetV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<SceneRecipeSubjectFallbackPolicyV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rect: Option<SceneRecipeMeteringRectV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surround_weight: Option<f64>,
+}
+
+pub type SceneRecipeMeteringTargetV1 = SceneRecipeTargetV1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeMeteringRectV1 {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -142,13 +174,31 @@ pub struct SceneRecipeScreenSpaceReflectionsV1 {
     pub fade: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeDepthOfFieldV1 {
-    pub focus_distance: f64,
-    pub aperture_f_stop: f64,
-    pub radius_px: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_distance: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<SceneRecipeDepthOfFieldFocusV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strength: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aperture_f_stop: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius_px: Option<u8>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeDepthOfFieldFocusV1 {
+    pub mode: String,
+    pub target: SceneRecipeDepthOfFieldTargetV1,
+}
+
+pub type SceneRecipeDepthOfFieldTargetV1 = SceneRecipeTargetV1;
 
 fn default_grid_enabled() -> bool {
     true

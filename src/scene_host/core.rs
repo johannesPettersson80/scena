@@ -161,6 +161,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         &self.renderer
     }
 
+    pub fn renderer_mut(&mut self) -> &mut Renderer {
+        &mut self.renderer
+    }
+
     pub(super) fn recipe_max_clipping_planes(&self) -> usize {
         match &self.renderer {
             RendererSlot::Active(renderer) => {

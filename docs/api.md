@@ -72,6 +72,28 @@ compatibility `gpu_polled` boolean is true only for `Confirmed`.
 
 Additive public API changes in Unreleased:
 
+- `scena photo plan <asset-or-recipe>` and
+  `scena photo render <asset-or-recipe>` CLI workflows for bounded
+  camera-behavior stills, plus the stable `scena.photo_plan.v1`,
+  `scena.photo_candidate_plan.v1`,
+  `scena.photo_shaded_candidate_selection.v1`,
+  `scena.photo_render_result.v1`, and `scena.photo_report.v1` contracts
+  (gated behind the agent/scene-host CLI surface).
+- Additive scene-recipe fields for photographic rendering:
+  top-level `photo.intent:"camera_behavior"`, `photo.subject`,
+  `render.metering`, subject-focus `render.depth_of_field.focus`, and
+  `render.exposure_compensation_ev`. Recipes that omit `photo.intent` retain
+  the existing explicit render contract: fixed `render.exposure_ev` remains
+  full manual exposure, manual `render.depth_of_field.focus_distance` remains
+  valid, and explicit `render.metering:{mode:"average"}` stays average
+  metering rather than becoming subject metering.
+- `FocusReportV1`, `ExposureReportV1`, `SubjectObservationV1`, and their
+  nested frame-key/measurement structs. These reports are capture-bound
+  evidence and are additive in render introspection and photo reports.
+- Migration guidance: for auto-exposed product/studio renders, prefer
+  `render.exposure_compensation_ev` to nudge the metered exposure. Keep
+  `render.exposure_ev` for intentionally fixed/manual shots; it remains
+  mutually exclusive with auto exposure.
 - `RecipeValidationModeV1`, `SceneRecipeResourceResolutionV1`,
   `SceneRecipeResourceStatusV1`, and `SceneRecipeDiagnosticResourceV1` for the
   shared validation/build resource-resolution contract
@@ -688,6 +710,7 @@ Additive public API changes in 1.3.0:
 - `Scene::add_studio_lighting`
 - `Renderer::set_auto_exposure`
 - `AutoExposureConfig`
+- `AutoExposureMeteringDomain`
 - `AutoExposureResult`
 - `AutoExposureStatus`
 

@@ -83,6 +83,18 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/render_introspection.v1.json"),
         ),
         (
+            "scena.focus_report.v1",
+            include_str!("../../tests/assets/stable-contracts/focus_report.v1.json"),
+        ),
+        (
+            "scena.exposure_report.v1",
+            include_str!("../../tests/assets/stable-contracts/exposure_report.v1.json"),
+        ),
+        (
+            "scena.subject_observation.v1",
+            include_str!("../../tests/assets/stable-contracts/subject_observation.v1.json"),
+        ),
+        (
             "scena.render_quality.v1",
             include_str!("../../tests/assets/stable-contracts/render_quality.v1.json"),
         ),
@@ -185,6 +197,28 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.recipe_render_result.v1",
             include_str!("../../tests/assets/stable-contracts/recipe_render_result.v1.json"),
+        ),
+        (
+            "scena.photo_render_result.v1",
+            include_str!("../../tests/assets/stable-contracts/photo_render_result.v1.json"),
+        ),
+        (
+            "scena.photo_plan.v1",
+            include_str!("../../tests/assets/stable-contracts/photo_plan.v1.json"),
+        ),
+        (
+            "scena.photo_candidate_plan.v1",
+            include_str!("../../tests/assets/stable-contracts/photo_candidate_plan.v1.json"),
+        ),
+        (
+            "scena.photo_shaded_candidate_selection.v1",
+            include_str!(
+                "../../tests/assets/stable-contracts/photo_shaded_candidate_selection.v1.json"
+            ),
+        ),
+        (
+            "scena.photo_report.v1",
+            include_str!("../../tests/assets/stable-contracts/photo_report.v1.json"),
         ),
         (
             "scena.cad_inspection_result.v1",

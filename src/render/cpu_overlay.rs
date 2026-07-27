@@ -1,4 +1,4 @@
-use crate::material::Color;
+use crate::material::{Color, srgb_u8_to_linear};
 
 use super::cpu::CpuFrame;
 
@@ -25,8 +25,9 @@ pub(super) fn write_label_overlay_pixel(
     }
 
     let byte_index = pixel_index * 4;
-    // label_overlay_aces_tonemap: overlay coverage is composited after the
-    // scene has already been ACES-tonemapped and sRGB-encoded.
+    // label_overlay_display_linear: overlays are display-referred UI and are
+    // composited after the scene's exposure, tonemap, encoding, and FXAA,
+    // matching the GPU overlay pass order.
     blend_display_source_over(
         [color.r, color.g, color.b],
         source_alpha,
@@ -39,19 +40,10 @@ fn blend_display_source_over(source_rgb: [f32; 3], source_alpha: f32, destinatio
     let inverse = 1.0 - alpha;
     for channel in 0..3 {
         let blended = source_rgb[channel].clamp(0.0, 1.0) * alpha
-            + srgb8_to_linear(destination[channel]) * inverse;
+            + srgb_u8_to_linear(destination[channel]) * inverse;
         destination[channel] = linear_channel_to_srgb8(blended);
     }
     destination[3] = 255;
-}
-
-fn srgb8_to_linear(value: u8) -> f32 {
-    let value = f32::from(value) / 255.0;
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
-    }
 }
 
 fn linear_channel_to_srgb8(value: f32) -> u8 {

@@ -72,6 +72,7 @@ struct CameraUniform {
     camera_position_exposure: vec4<f32>,
     viewport_near_far: vec4<f32>,
     color_management: vec4<f32>,
+    white_balance: vec4<f32>,
     light_block_padding_0: vec4<f32>,
     light_block_padding_1: vec4<f32>,
     light_block_padding_2: vec4<f32>,

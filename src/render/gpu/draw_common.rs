@@ -31,7 +31,9 @@ pub(super) fn target_color_management_uniform(
     mut color_management: [f32; 4],
     target_format: wgpu::TextureFormat,
 ) -> [f32; 4] {
-    color_management[1] = if shader_encodes_srgb_for_target(target_format) {
+    color_management[1] = if target_format == wgpu::TextureFormat::Rgba16Float {
+        -1.0
+    } else if shader_encodes_srgb_for_target(target_format) {
         1.0
     } else {
         0.0
@@ -90,6 +92,11 @@ mod tests {
                 wgpu_clear_color_for_target(Color::from_linear_rgb(0.18, 0.18, 0.18), format);
             assert!((clear.r - 0.18).abs() < 1.0e-6);
         }
+        assert_eq!(
+            target_color_management_uniform([1.0; 4], wgpu::TextureFormat::Rgba16Float)[1],
+            -1.0,
+            "floating-point post targets must defer tonemapping and display encoding"
+        );
     }
 
     fn shader_contract_byte(linear: f32, output_transfer_mode: f32) -> u8 {

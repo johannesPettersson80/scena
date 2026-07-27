@@ -28,6 +28,22 @@ fn validate_dispatches_public_input_contracts_by_embedded_schema() {
             "tests/assets/stable-contracts/capability_report.v1.json",
             "scena.capability_report.v1",
         ),
+        (
+            "tests/assets/stable-contracts/focus_report.v1.json",
+            "scena.focus_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/exposure_report.v1.json",
+            "scena.exposure_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/subject_observation.v1.json",
+            "scena.subject_observation.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/photo_report.v1.json",
+            "scena.photo_report.v1",
+        ),
     ] {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
         let output = run(&["validate", path.to_str().expect("fixture path is UTF-8")]);
@@ -43,6 +59,102 @@ fn validate_dispatches_public_input_contracts_by_embedded_schema() {
         assert_eq!(report["ok"], true);
         assert_eq!(report["validation_level"], "typed");
     }
+}
+
+#[test]
+fn validate_exposure_report_rejects_missing_measurement() {
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/stable-contracts/exposure_report.v1.json"
+    ))
+    .expect("exposure report fixture parses");
+    report
+        .as_object_mut()
+        .expect("report object")
+        .remove("subject");
+    report
+        .as_object_mut()
+        .expect("report object")
+        .remove("auto_exposure");
+    let root = unique_temp_dir();
+    fs::create_dir(&root).expect("validation temp directory creates");
+    let path = root.join("missing-exposure-measurement.json");
+    fs::write(
+        &path,
+        serde_json::to_vec(&report).expect("exposure report mutation serializes"),
+    )
+    .expect("exposure report mutation writes");
+
+    let output = run(&["validate", path.to_str().expect("fixture path is UTF-8")]);
+    assert_eq!(output.status.code(), Some(65));
+    let report = stdout_json(&output);
+    assert_eq!(report["schema"], "scena.contract_validation.v1");
+    assert_eq!(report["diagnostics"][0]["code"], "contract_mismatch");
+    assert!(
+        report["diagnostics"][0]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("missing_exposure_measurement")),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).expect("validation temp directory removes");
+}
+
+#[test]
+fn validate_focus_report_rejects_stale_frame_keys() {
+    let mut report: serde_json::Value =
+        serde_json::from_str(include_str!("assets/stable-contracts/focus_report.v1.json"))
+            .expect("focus report fixture parses");
+    report["frame_key"]["state_binding"] = serde_json::json!("unverified");
+    let root = unique_temp_dir();
+    fs::create_dir(&root).expect("validation temp directory creates");
+    let path = root.join("stale-focus-report.json");
+    fs::write(
+        &path,
+        serde_json::to_vec(&report).expect("focus report mutation serializes"),
+    )
+    .expect("focus report mutation writes");
+
+    let output = run(&["validate", path.to_str().expect("fixture path is UTF-8")]);
+    assert_eq!(output.status.code(), Some(65));
+    let report = stdout_json(&output);
+    assert_eq!(report["schema"], "scena.contract_validation.v1");
+    assert_eq!(report["diagnostics"][0]["code"], "contract_mismatch");
+    assert!(
+        report["diagnostics"][0]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("stale_frame_key")),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).expect("validation temp directory removes");
+}
+
+#[test]
+fn validate_subject_observation_rejects_stale_frame_keys() {
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/stable-contracts/subject_observation.v1.json"
+    ))
+    .expect("subject observation fixture parses");
+    report["frame_key"]["state_binding"] = serde_json::json!("rendered_frame_state");
+    let root = unique_temp_dir();
+    fs::create_dir(&root).expect("validation temp directory creates");
+    let path = root.join("stale-subject-observation.json");
+    fs::write(
+        &path,
+        serde_json::to_vec(&report).expect("subject observation mutation serializes"),
+    )
+    .expect("subject observation mutation writes");
+
+    let output = run(&["validate", path.to_str().expect("fixture path is UTF-8")]);
+    assert_eq!(output.status.code(), Some(65));
+    let report = stdout_json(&output);
+    assert_eq!(report["schema"], "scena.contract_validation.v1");
+    assert_eq!(report["diagnostics"][0]["code"], "contract_mismatch");
+    assert!(
+        report["diagnostics"][0]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("stale_subject_observation")),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).expect("validation temp directory removes");
 }
 
 #[test]

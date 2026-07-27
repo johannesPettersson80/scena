@@ -19,6 +19,9 @@ pub(super) fn render_browser_probe(
     target: RasterTarget,
     background_color: Color,
     post_settings: GpuPostSettings,
+    exposure_ev: f32,
+    tonemapper_mode: f32,
+    white_balance: [f32; 4],
 ) -> Result<Option<GpuRenderResult>, RenderError> {
     let Some(readback) = resources.readback.as_ref() else {
         return Ok(None);
@@ -108,12 +111,28 @@ pub(super) fn render_browser_probe(
                 draw_submissions: &mut draw_submissions,
             },
         );
-        post::copy_output_to_buffer(
+        let readback_pipeline = post::readback_blit_pipeline(post_resources).ok_or(
+            RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            },
+        )?;
+        post::encode_blit_to_view(
             &mut encoder,
+            queue,
             post_resources,
             output,
-            &readback.buffer,
-            readback.padded_bytes_per_row,
+            &readback.view,
+            readback_pipeline,
+            2.0_f32.powf(exposure_ev),
+            tonemapper_mode,
+            white_balance,
+            &mut draw_submissions,
+        );
+        super::browser_readback::encode_texture_readback_copy(
+            &mut encoder,
+            &readback.texture,
+            readback,
+            target,
         );
         counts
     } else {

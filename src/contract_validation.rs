@@ -134,6 +134,18 @@ pub fn validate_contract_json_v1(text: &str) -> ContractValidationReportV1 {
                 |expectation| expectation.validate_schema(),
             )
         }
+        #[cfg(feature = "scene-host")]
+        crate::PHOTO_PLAN_SCHEMA_V1 => validate_typed::<crate::PhotoPlanV1>(
+            value,
+            &contract,
+            |plan| plan.validate_contract().map_err(str::to_owned),
+        ),
+        #[cfg(feature = "scene-host")]
+        crate::PHOTO_REPORT_SCHEMA_V1 => validate_typed::<crate::PhotoReportV1>(
+            value,
+            &contract,
+            |report| report.validate_contract().map_err(str::to_owned),
+        ),
         crate::SCENE_RECIPE_PATCH_SCHEMA_V1 => {
             validate_typed::<crate::SceneRecipePatchResultV1>(value, &contract, |patch| {
                 patch.validate_schema()
@@ -144,6 +156,24 @@ pub fn validate_contract_json_v1(text: &str) -> ContractValidationReportV1 {
                 (report.schema == crate::CAPABILITY_REPORT_SCHEMA_V1)
                     .then_some(())
                     .ok_or_else(|| "capability report schema does not match its type".to_owned())
+            })
+        }
+        #[cfg(feature = "inspection")]
+        crate::FOCUS_REPORT_SCHEMA_V1 => {
+            validate_typed::<crate::FocusReportV1>(value, &contract, |report| {
+                report.validate_contract().map_err(str::to_owned)
+            })
+        }
+        #[cfg(feature = "inspection")]
+        crate::EXPOSURE_REPORT_SCHEMA_V1 => {
+            validate_typed::<crate::ExposureReportV1>(value, &contract, |report| {
+                report.validate_contract().map_err(str::to_owned)
+            })
+        }
+        #[cfg(feature = "inspection")]
+        crate::SUBJECT_OBSERVATION_SCHEMA_V1 => {
+            validate_typed::<crate::SubjectObservationV1>(value, &contract, |report| {
+                report.validate_contract().map_err(str::to_owned)
             })
         }
         _ => ContractValidationReportV1 {

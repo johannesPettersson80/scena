@@ -49,11 +49,17 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         (
             "src/render/gpu/post/mod.rs",
             &[
-                "copy::copy_output_to_buffer",
+                "readback_blit_pipeline",
                 "PostUniformSlot::Bloom",
                 "PostUniformSlot::Fxaa",
+            ],
+        ),
+        (
+            "src/render/gpu/post/pipeline_helpers.rs",
+            &[
                 "encoder.copy_buffer_to_buffer(",
                 "&resources.uniform_staging",
+                "POST_UNIFORM_BYTE_LEN",
             ],
         ),
         (
@@ -109,9 +115,9 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 "if !post_enabled",
                 "surface_readback.is_none()",
                 "let Some(readback) = resources.readback.as_ref()",
-                "let chain_settings = if renderer_readback.is_some()",
+                ".then_some(resources.readback.as_ref())",
                 "scena.browser.capture_overlay_final_pass",
-                "post::copy_output_to_buffer(",
+                "post::readback_blit_pipeline(",
                 "surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)",
                 "encode_texture_readback_copy(",
             ],
@@ -121,7 +127,8 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             &[
                 "render_browser_probe",
                 "scena.browser.proof_encoder",
-                "post::copy_output_to_buffer(",
+                "post::readback_blit_pipeline(",
+                "encode_texture_readback_copy(",
             ],
         ),
         (
@@ -449,32 +456,22 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         ));
     }
 
-    if let Ok(source) = fs::read_to_string(root.join("src/render/gpu/post/mod.rs")) {
-        const EXPORT: &str = "pub(super) use copy::copy_output_to_buffer;";
-        if let Some(export_offset) = source.find(EXPORT) {
-            let attribute_block_start = source[..export_offset]
-                .rfind("\n\n")
-                .map_or(0, |offset| offset + 2);
-            if source[attribute_block_start..export_offset].contains("#[cfg") {
-                findings.push(Finding::new(
-                    RULE,
-                    "src/render/gpu/post/mod.rs must export copy_output_to_buffer \
-                     unconditionally because the plain wasm32 surface path calls it without \
-                     browser-probe or scene-host features",
-                ));
-            }
+    for relative in [
+        "src/render/gpu/post/mod.rs",
+        "src/render/gpu/post/pipeline_helpers.rs",
+    ] {
+        if fs::read_to_string(root.join(relative))
+            .is_ok_and(|source| source.contains("queue.write_buffer(&resources.uniform,"))
+        {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "{relative} writes pass parameters directly into the shared post uniform; \
+                     command-ordered staging copies are required so later queue writes cannot \
+                     overwrite earlier passes"
+                ),
+            ));
         }
-    }
-
-    if fs::read_to_string(root.join("src/render/gpu/post/mod.rs"))
-        .is_ok_and(|source| source.contains("queue.write_buffer(&resources.uniform,"))
-    {
-        findings.push(Finding::new(
-            RULE,
-            "src/render/gpu/post/mod.rs writes pass parameters directly into the shared post \
-             uniform; command-ordered staging copies are required so later queue writes cannot \
-             overwrite earlier passes",
-        ));
     }
 
     const COMBINED_ORACLE_NEEDLES: &[&str] = &[

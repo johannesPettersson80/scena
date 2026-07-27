@@ -1,4 +1,3 @@
-#[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::RenderError;
 use crate::{diagnostics::Backend, material::Color};
 
@@ -6,15 +5,22 @@ use super::Renderer;
 use super::color_contract::linear_rgba_to_srgb8;
 
 mod meter;
-#[cfg(test)]
-use meter::LuminanceHistogram;
-use meter::LuminanceMeter;
+use meter::{LuminanceHistogram, LuminanceMeter};
 
 const DEFAULT_TARGET_LUMINANCE: f32 = 0.18;
 const DEFAULT_MIN_EV: f32 = -4.0;
 const DEFAULT_MAX_EV: f32 = 4.0;
 const DEFAULT_HIGHLIGHT_PERCENTILE: f32 = 0.95;
 const DEFAULT_HIGHLIGHT_TARGET_LUMINANCE: f32 = 0.85;
+/// Maximum amount by which highlight protection may underexpose the
+/// geometric-mean solution.
+///
+/// A bimodal product frame can contain a small softbox reflection several
+/// stops above a mostly dark subject. Letting that reflection own exposure
+/// made the highlight guard turn the complete subject black. Three stops
+/// still protects specular headroom while leaving a recoverable subject for
+/// the display tonemapper.
+const MAX_HIGHLIGHT_GUARD_REDUCTION_EV: f32 = 3.0;
 const LUMINANCE_EPSILON: f32 = 1.0e-4;
 const AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8: u8 = 2;
 const MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES: usize = 64;
@@ -25,6 +31,7 @@ const MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES: usize = 64;
 /// nonlinearity and per-frame sample noise instead of ringing on the way to the
 /// target. A surface re-meters every frame, so the residual error is removed by
 /// the frames that follow.
+#[cfg(test)]
 const SURFACE_AUTO_EXPOSURE_SMOOTHING: f32 = 0.5;
 
 /// Fraction applied on the **one-shot** headless path.
@@ -47,15 +54,69 @@ pub struct AutoExposureConfig {
     max_ev: f32,
     highlight_percentile: f32,
     highlight_target_luminance: f32,
+    compensation_ev: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AutoExposureResult {
     measured_luminance: f32,
     target_luminance: f32,
+    base_exposure_ev: f32,
+    compensation_ev: f32,
     exposure_ev: f32,
+    metering_domain: AutoExposureMeteringDomain,
     sample_count: u32,
+    subject_sample_count: u32,
+    rejected_sample_count: u32,
     clamped: bool,
+}
+
+/// Pixel-space subject rectangle used by subject-weighted exposure metering.
+///
+/// Coordinates are in the same top-left origin as renderer readback buffers.
+/// The rectangle is clipped to the metered frame before use; an empty clipped
+/// rectangle means no subject-domain exposure can be estimated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AutoExposureSubjectRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Subject-weighted auto-exposure input resolved by a higher-level scene
+/// surface.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AutoExposureSubjectMetering {
+    pub subject_rect: AutoExposureSubjectRect,
+    pub surround_weight: f32,
+}
+
+/// Exposure metering policy selected by higher-level recipe/photo surfaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MeteringMode {
+    Average,
+    CenterWeighted,
+    HighlightWeighted,
+    Subject,
+    Spot,
+}
+
+/// Identifies the pixel domain used by an auto-exposure meter sample.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AutoExposureMeteringDomain {
+    /// Scene-linear pixels captured before exposure, tonemapping, and display
+    /// transfer. This is the strict domain for camera-behavior metering
+    /// evidence.
+    SceneLinearPreTonemap,
+    /// Encoded output pixels captured after exposure, tonemapping, and display
+    /// transfer. This can drive feedback loops, but is degraded for strict
+    /// camera-behavior evidence because the sample already includes the
+    /// current exposure.
+    EncodedOutputFeedback,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -107,6 +168,7 @@ impl AutoExposureConfig {
             max_ev: DEFAULT_MAX_EV,
             highlight_percentile: DEFAULT_HIGHLIGHT_PERCENTILE,
             highlight_target_luminance: DEFAULT_HIGHLIGHT_TARGET_LUMINANCE,
+            compensation_ev: 0.0,
         }
     }
 
@@ -130,9 +192,16 @@ impl AutoExposureConfig {
         Self {
             target_luminance: 0.22,
             min_ev: -1.5,
-            max_ev: 0.65,
+            // The foreground meter correctly isolates the subject and computes
+            // the lift it needs, but a product still is typically a small,
+            // dimly-lit subject in a large studio field and that lift is
+            // several stops. At 0.65 the clamp discarded it and the subject
+            // rendered as a black silhouette. This ceiling is a safety limit,
+            // not a target: frames that do not need lift are unaffected.
+            max_ev: 4.5,
             highlight_percentile: 0.88,
             highlight_target_luminance: 0.70,
+            compensation_ev: 0.0,
         }
     }
 
@@ -155,6 +224,7 @@ impl AutoExposureConfig {
             max_ev: 2.5,
             highlight_percentile: 0.95,
             highlight_target_luminance: 0.82,
+            compensation_ev: 0.0,
         }
     }
 
@@ -177,6 +247,7 @@ impl AutoExposureConfig {
             max_ev: 0.75,
             highlight_percentile: 0.98,
             highlight_target_luminance: 0.90,
+            compensation_ev: 0.0,
         }
     }
 
@@ -199,6 +270,7 @@ impl AutoExposureConfig {
             max_ev: DEFAULT_MAX_EV,
             highlight_percentile: DEFAULT_HIGHLIGHT_PERCENTILE,
             highlight_target_luminance: DEFAULT_HIGHLIGHT_TARGET_LUMINANCE,
+            compensation_ev: 0.0,
         }
     }
 
@@ -230,6 +302,11 @@ impl AutoExposureConfig {
         self
     }
 
+    pub fn with_compensation_ev(mut self, compensation_ev: f32) -> Self {
+        self.compensation_ev = finite_or(compensation_ev, 0.0);
+        self
+    }
+
     pub fn highlight_percentile(self) -> f32 {
         if self.highlight_percentile.is_finite() {
             self.highlight_percentile.clamp(0.0, 1.0)
@@ -252,6 +329,10 @@ impl AutoExposureConfig {
     pub fn max_ev(self) -> f32 {
         finite_or(self.max_ev, DEFAULT_MAX_EV)
     }
+
+    pub fn compensation_ev(self) -> f32 {
+        finite_or(self.compensation_ev, 0.0)
+    }
 }
 
 impl Default for AutoExposureConfig {
@@ -269,16 +350,114 @@ impl AutoExposureResult {
         self.target_luminance
     }
 
+    pub const fn base_exposure_ev(self) -> f32 {
+        self.base_exposure_ev
+    }
+
+    pub const fn compensation_ev(self) -> f32 {
+        self.compensation_ev
+    }
+
     pub const fn exposure_ev(self) -> f32 {
         self.exposure_ev
+    }
+
+    pub const fn metering_domain(self) -> AutoExposureMeteringDomain {
+        self.metering_domain
     }
 
     pub const fn sample_count(self) -> u32 {
         self.sample_count
     }
 
+    pub const fn subject_sample_count(self) -> u32 {
+        self.subject_sample_count
+    }
+
+    pub const fn rejected_sample_count(self) -> u32 {
+        self.rejected_sample_count
+    }
+
     pub const fn clamped(self) -> bool {
         self.clamped
+    }
+}
+
+impl AutoExposureSubjectRect {
+    pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+
+    fn clipped_to(self, width: u32, height: u32) -> Option<Self> {
+        if self.is_empty() || width == 0 || height == 0 {
+            return None;
+        }
+        let min_x = self.x.min(width);
+        let min_y = self.y.min(height);
+        let max_x = self.x.saturating_add(self.width).min(width);
+        let max_y = self.y.saturating_add(self.height).min(height);
+        if min_x >= max_x || min_y >= max_y {
+            return None;
+        }
+        Some(Self {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        })
+    }
+
+    fn contains(self, x: u32, y: u32) -> bool {
+        x >= self.x
+            && y >= self.y
+            && x < self.x.saturating_add(self.width)
+            && y < self.y.saturating_add(self.height)
+    }
+}
+
+impl AutoExposureSubjectMetering {
+    pub fn new(subject_rect: AutoExposureSubjectRect, surround_weight: f32) -> Self {
+        Self {
+            subject_rect,
+            surround_weight: if surround_weight.is_finite() {
+                surround_weight.clamp(0.0, 1.0)
+            } else {
+                0.1
+            },
+        }
+    }
+}
+
+impl AutoExposureMeteringDomain {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SceneLinearPreTonemap => "scene_linear_pre_tonemap",
+            Self::EncodedOutputFeedback => "encoded_output_feedback",
+        }
+    }
+
+    pub const fn strict_camera_behavior_rejection_code(self) -> Option<&'static str> {
+        match self {
+            Self::SceneLinearPreTonemap => None,
+            Self::EncodedOutputFeedback => Some("metering_domain_encoded_output_feedback"),
+        }
+    }
+
+    #[deprecated(
+        since = "1.9.1",
+        note = "use strict_camera_behavior_rejection_code; product_hero is a legacy intent alias"
+    )]
+    pub const fn strict_product_hero_rejection_code(self) -> Option<&'static str> {
+        self.strict_camera_behavior_rejection_code()
     }
 }
 
@@ -320,7 +499,62 @@ pub fn estimate_auto_exposure_from_linear_colors(
     for color in colors {
         meter.record(*color);
     }
-    meter.finish(config)
+    meter.finish(config, AutoExposureMeteringDomain::SceneLinearPreTonemap)
+}
+
+/// Estimates exposure from a known subject rectangle instead of inferring the
+/// subject from pixel colour.
+///
+/// Pixels inside `subject_rect` receive full weight. Pixels outside it receive
+/// `surround_weight`, clamped to `[0, 1]`. This gives product/hero renders the
+/// same practical behavior as camera matrix metering: the subject dominates the
+/// EV decision, while the surround still contributes enough information to
+/// avoid completely ignoring bright backgrounds.
+pub fn estimate_auto_exposure_from_linear_colors_with_subject_rect(
+    colors: &[Color],
+    width: u32,
+    height: u32,
+    subject_rect: AutoExposureSubjectRect,
+    surround_weight: f32,
+    config: AutoExposureConfig,
+) -> Option<AutoExposureResult> {
+    if width == 0 || height == 0 || colors.len() != width as usize * height as usize {
+        return None;
+    }
+    let subject_rect = subject_rect.clipped_to(width, height)?;
+    let surround_weight = if surround_weight.is_finite() {
+        surround_weight.clamp(0.0, 1.0)
+    } else {
+        0.1
+    };
+    let mut meter = LuminanceMeter::default();
+    let mut highlight_histogram = LuminanceHistogram::default();
+    let mut subject_sample_count = 0_u32;
+    let mut rejected_sample_count = 0_u32;
+    for y in 0..height {
+        for x in 0..width {
+            let color = colors[(y * width + x) as usize];
+            let luminance = linear_luminance(color);
+            if color.a <= 0.0 || !luminance.is_finite() {
+                rejected_sample_count = rejected_sample_count.saturating_add(1);
+                continue;
+            }
+            let inside_subject = subject_rect.contains(x, y);
+            let weight = if inside_subject { 1.0 } else { surround_weight };
+            if inside_subject {
+                subject_sample_count = subject_sample_count.saturating_add(1);
+            }
+            highlight_histogram.record_weighted(luminance.max(LUMINANCE_EPSILON), 1.0);
+            meter.record_weighted(color, weight);
+        }
+    }
+    meter.finish_with_counts_and_highlight(
+        config,
+        subject_sample_count,
+        rejected_sample_count,
+        &highlight_histogram,
+        AutoExposureMeteringDomain::SceneLinearPreTonemap,
+    )
 }
 
 pub fn estimate_auto_exposure_from_srgb8(
@@ -337,7 +571,7 @@ pub fn estimate_auto_exposure_from_srgb8(
             f32::from(pixel[3]) / 255.0,
         ));
     }
-    meter.finish(config)
+    meter.finish(config, AutoExposureMeteringDomain::EncodedOutputFeedback)
 }
 
 fn estimate_auto_exposure_from_linear_colors_with_background(
@@ -361,9 +595,9 @@ fn estimate_auto_exposure_from_linear_colors_with_background(
         }
     }
     if foreground.sample_count() as usize >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
-        foreground.finish(config)
+        foreground.finish(config, AutoExposureMeteringDomain::SceneLinearPreTonemap)
     } else {
-        all.finish(config)
+        all.finish(config, AutoExposureMeteringDomain::SceneLinearPreTonemap)
     }
 }
 
@@ -390,14 +624,13 @@ fn estimate_auto_exposure_from_srgb8_with_background(
         }
     }
     if foreground.sample_count() as usize >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
-        foreground.finish(config)
+        foreground.finish(config, AutoExposureMeteringDomain::EncodedOutputFeedback)
     } else {
-        all.finish(config)
+        all.finish(config, AutoExposureMeteringDomain::EncodedOutputFeedback)
     }
 }
 
 impl Renderer {
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn apply_pending_surface_auto_exposure(&mut self) -> Result<(), RenderError> {
         let Some(config) = self.auto_exposure else {
             self.auto_exposure_status = AutoExposureStatus::Disabled;
@@ -412,7 +645,7 @@ impl Renderer {
             self.auto_exposure_status = AutoExposureStatus::Unavailable;
             return Ok(());
         }
-        let Some(sample_rgba8) = self
+        let Some(sample) = self
             .gpu
             .as_mut()
             .expect("surface auto exposure requires a GPU device")
@@ -423,25 +656,44 @@ impl Renderer {
             }
             return Ok(());
         };
-        let Some(result) = estimate_auto_exposure_from_srgb8_with_background(
-            &sample_rgba8,
-            self.background_color(),
-            config,
-        ) else {
+        let result = self
+            .auto_exposure_subject_metering
+            .and_then(|metering| {
+                scaled_metering_rect(
+                    metering.subject_rect,
+                    sample.source_target.width,
+                    sample.source_target.height,
+                    sample.width,
+                    sample.height,
+                )
+                .and_then(|subject_rect| {
+                    estimate_auto_exposure_from_linear_colors_with_subject_rect(
+                        &sample.colors,
+                        sample.width,
+                        sample.height,
+                        subject_rect,
+                        metering.surround_weight,
+                        config,
+                    )
+                })
+            })
+            .or_else(|| {
+                estimate_auto_exposure_from_linear_colors_with_background(
+                    &sample.colors,
+                    self.background_color(),
+                    config,
+                )
+            });
+        let Some(result) = result else {
             self.auto_exposure_status = AutoExposureStatus::Pending;
             return Ok(());
         };
-        let next_ev = next_feedback_exposure_ev(
-            self.exposure_ev(),
-            result,
-            config,
-            SURFACE_AUTO_EXPOSURE_SMOOTHING,
-        );
+        let next_ev = result.exposure_ev();
         let exposure_changed = (self.exposure_ev() - next_ev).abs() > 0.01;
         self.last_auto_exposure = Some(result);
         self.auto_exposure_status = AutoExposureStatus::Converged;
         if exposure_changed {
-            self.set_exposure_ev(next_ev);
+            self.set_metered_exposure_ev(next_ev);
         }
         Ok(())
     }
@@ -450,14 +702,14 @@ impl Renderer {
         self.auto_exposure = Some(config);
         self.last_auto_exposure = None;
         self.auto_exposure_status = AutoExposureStatus::Pending;
-        self.mark_output_changed();
+        self.mark_output_resources_changed();
     }
 
     pub fn clear_auto_exposure(&mut self) {
         if self.auto_exposure.take().is_some() {
             self.last_auto_exposure = None;
             self.auto_exposure_status = AutoExposureStatus::Disabled;
-            self.mark_output_changed();
+            self.mark_output_resources_changed();
         }
     }
 
@@ -540,21 +792,27 @@ impl Renderer {
         &self,
         config: AutoExposureConfig,
     ) -> Option<(AutoExposureResult, bool)> {
-        if let Some(linear_frame) = self.linear_frame.as_deref() {
+        let linear_meter_frame = (!self.cpu_meter_linear_frame.is_empty())
+            .then_some(self.cpu_meter_linear_frame.as_slice());
+        if let Some(linear_frame) = linear_meter_frame.or(self.linear_frame.as_deref()) {
+            if let Some(metering) = self.auto_exposure_subject_metering
+                && let Some(result) = estimate_auto_exposure_from_linear_colors_with_subject_rect(
+                    linear_frame,
+                    self.target.width,
+                    self.target.height,
+                    metering.subject_rect,
+                    metering.surround_weight,
+                    config,
+                )
+            {
+                return Some((result, false));
+            }
             return estimate_auto_exposure_from_linear_colors_with_background(
                 linear_frame,
                 self.background_color(),
                 config,
             )
             .map(|result| (result, false));
-        }
-        #[cfg(target_arch = "wasm32")]
-        if let Some(result) = self
-            .gpu
-            .as_ref()
-            .and_then(|gpu| gpu.estimate_browser_canvas_auto_exposure(config))
-        {
-            return Some((result, true));
         }
         if matches!(self.target.backend, Backend::WebGpu | Backend::WebGl2) {
             return None;
@@ -566,6 +824,30 @@ impl Renderer {
         )
         .map(|result| (result, true))
     }
+}
+
+fn scaled_metering_rect(
+    rect: AutoExposureSubjectRect,
+    source_width: u32,
+    source_height: u32,
+    sample_width: u32,
+    sample_height: u32,
+) -> Option<AutoExposureSubjectRect> {
+    let rect = rect.clipped_to(source_width, source_height)?;
+    let min_x = u64::from(rect.x) * u64::from(sample_width) / u64::from(source_width);
+    let min_y = u64::from(rect.y) * u64::from(sample_height) / u64::from(source_height);
+    let max_x = u64::from(rect.x.saturating_add(rect.width))
+        .saturating_mul(u64::from(sample_width))
+        .div_ceil(u64::from(source_width));
+    let max_y = u64::from(rect.y.saturating_add(rect.height))
+        .saturating_mul(u64::from(sample_height))
+        .div_ceil(u64::from(source_height));
+    Some(AutoExposureSubjectRect::new(
+        min_x as u32,
+        min_y as u32,
+        max_x.saturating_sub(min_x).max(1) as u32,
+        max_y.saturating_sub(min_y).max(1) as u32,
+    ))
 }
 
 fn linear_luminance(color: Color) -> f32 {
@@ -791,6 +1073,27 @@ mod tests {
     }
 
     #[test]
+    fn highlight_guard_does_not_sacrifice_a_dark_subject_to_bright_reflections() {
+        let config = AutoExposureConfig::product_studio().with_ev_range(-16.0, 16.0);
+        let mut colors = vec![Color::from_linear_rgb(0.007, 0.007, 0.007); 850];
+        colors.extend(vec![Color::from_linear_rgb(1.0, 1.0, 1.0); 150]);
+
+        let result = estimate_auto_exposure_from_linear_colors(&colors, config)
+            .expect("bimodal product frame meters");
+        let raw_ev =
+            (config.target_luminance() / result.measured_luminance().max(LUMINANCE_EPSILON)).log2();
+
+        assert!(
+            result.exposure_ev() >= raw_ev - MAX_HIGHLIGHT_GUARD_REDUCTION_EV - 1.0e-4,
+            "highlight protection must not black out the complete subject: result={result:#?}, raw_ev={raw_ev}",
+        );
+        assert!(
+            result.exposure_ev() < raw_ev,
+            "bright reflections must still reduce the geometric-mean exposure: result={result:#?}, raw_ev={raw_ev}",
+        );
+    }
+
+    #[test]
     fn luminance_meter_storage_is_resolution_independent() {
         assert!(
             std::mem::size_of::<LuminanceMeter>() <= 8 * 1_024,
@@ -851,6 +1154,143 @@ mod tests {
             "product exposure must meter the foreground subject rather than the bright studio background"
         );
         assert_eq!(foreground.sample_count(), 100);
+    }
+
+    #[test]
+    fn subject_weighted_meter_exposes_dark_subject_on_bright_field() {
+        let width = 16_u32;
+        let height = 16_u32;
+        let mut colors =
+            vec![Color::from_linear_rgba(0.08, 0.08, 0.08, 1.0); (width * height) as usize];
+        for y in 6..10 {
+            for x in 6..10 {
+                colors[(y * width + x) as usize] = Color::from_linear_rgba(0.01, 0.01, 0.01, 1.0);
+            }
+        }
+        let whole_frame = estimate_auto_exposure_from_linear_colors(
+            &colors,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("fixture meters");
+        let metered = estimate_auto_exposure_from_linear_colors_with_subject_rect(
+            &colors,
+            width,
+            height,
+            AutoExposureSubjectRect::new(6, 6, 4, 4),
+            0.1,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("subject fixture meters");
+        assert!(
+            metered.exposure_ev() > 2.0,
+            "subject metering should expose the small dark subject, got {metered:?}",
+        );
+        assert!(
+            metered.exposure_ev() > whole_frame.exposure_ev() + 1.0,
+            "subject metering should materially lift the subject versus whole-frame metering; \
+             subject={metered:?}, whole_frame={whole_frame:?}",
+        );
+        assert_eq!(metered.sample_count(), width * height);
+        assert_eq!(metered.subject_sample_count(), 16);
+        assert_eq!(metered.rejected_sample_count(), 0);
+    }
+
+    #[test]
+    fn subject_weighted_meter_rejects_shifted_subject_mask_and_keeps_highlight_guard_global() {
+        let width = 16_u32;
+        let height = 16_u32;
+        let mut colors =
+            vec![Color::from_linear_rgba(0.08, 0.08, 0.08, 1.0); (width * height) as usize];
+        for y in 6..10 {
+            for x in 6..10 {
+                colors[(y * width + x) as usize] = Color::from_linear_rgba(0.01, 0.01, 0.01, 1.0);
+            }
+        }
+        let correct = estimate_auto_exposure_from_linear_colors_with_subject_rect(
+            &colors,
+            width,
+            height,
+            AutoExposureSubjectRect::new(6, 6, 4, 4),
+            0.1,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("correct subject fixture meters");
+        let shifted = estimate_auto_exposure_from_linear_colors_with_subject_rect(
+            &colors,
+            width,
+            height,
+            AutoExposureSubjectRect::new(0, 0, 4, 4),
+            0.1,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("shifted subject fixture meters");
+        assert!(
+            shifted.exposure_ev() < correct.exposure_ev() - 0.75,
+            "a shifted subject rect must not produce the same EV band as the real subject; \
+             correct={correct:?}, shifted={shifted:?}"
+        );
+
+        let mut highlight_fixture =
+            vec![Color::from_linear_rgba(0.35, 0.35, 0.35, 1.0); (width * height) as usize];
+        for y in 6..10 {
+            for x in 6..10 {
+                highlight_fixture[(y * width + x) as usize] =
+                    Color::from_linear_rgba(0.01, 0.01, 0.01, 1.0);
+            }
+        }
+        let guarded = estimate_auto_exposure_from_linear_colors_with_subject_rect(
+            &highlight_fixture,
+            width,
+            height,
+            AutoExposureSubjectRect::new(6, 6, 4, 4),
+            0.1,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("highlight fixture meters");
+        assert!(
+            guarded.exposure_ev() <= 1.25,
+            "global highlight guard must remain separate from subject-weighted midtone metering; got {guarded:?}"
+        );
+    }
+
+    #[test]
+    fn subject_weighted_meter_rejects_stale_or_empty_rects() {
+        let colors = vec![Color::from_linear_rgba(0.2, 0.2, 0.2, 1.0); 16];
+        let config = AutoExposureConfig::product_studio();
+
+        assert!(
+            estimate_auto_exposure_from_linear_colors_with_subject_rect(
+                &colors,
+                4,
+                4,
+                AutoExposureSubjectRect::new(4, 0, 1, 1),
+                0.1,
+                config,
+            )
+            .is_none()
+        );
+        assert!(
+            estimate_auto_exposure_from_linear_colors_with_subject_rect(
+                &colors,
+                4,
+                4,
+                AutoExposureSubjectRect::new(0, 0, 0, 1),
+                0.1,
+                config,
+            )
+            .is_none()
+        );
+        assert!(
+            estimate_auto_exposure_from_linear_colors_with_subject_rect(
+                &colors[..15],
+                4,
+                4,
+                AutoExposureSubjectRect::new(0, 0, 1, 1),
+                0.1,
+                config,
+            )
+            .is_none()
+        );
     }
 
     #[test]

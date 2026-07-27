@@ -6,6 +6,7 @@ struct VertexOut {
 struct PostUniform {
     viewport: vec4<f32>,
     config: vec4<f32>,
+    white_balance: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -39,11 +40,20 @@ fn sample_scene_depth(coord: vec2<i32>) -> f32 {
 }
 
 fn dof_radius(depth: f32) -> i32 {
-    let focus_depth = clamp(post.viewport.z, 0.0, 1.0);
     let max_radius = clamp(post.viewport.w, 0.0, 16.0);
-    let aperture_f_stop = clamp(post.config.x, 0.7, 32.0);
-    let aperture_scale = clamp(8.0 / aperture_f_stop, 0.0, 8.0);
-    let radius = abs(depth - focus_depth) * aperture_scale * max_radius * 32.0;
+    let focus_distance = max(post.config.x, 0.001);
+    let focal_m = clamp(post.config.y, 8.0, 600.0) * 0.001;
+    let sensor_height_m = clamp(post.config.z, 4.0, 100.0) * 0.001;
+    let aperture_f_stop = clamp(post.config.w, 0.7, 32.0);
+    let near = max(post.white_balance.x, 0.000001);
+    let far = max(post.white_balance.y, near + 0.000001);
+    let normalized_depth = select(depth, 1.0 - depth, post.white_balance.z > 0.5);
+    let camera_depth = near * far / max(far - normalized_depth * (far - near), 0.000001);
+    let image_focus = focal_m * focus_distance / max(focus_distance - focal_m, 0.0001);
+    let image_depth = focal_m * camera_depth / max(camera_depth - focal_m, 0.0001);
+    let aperture_diameter = focal_m / aperture_f_stop;
+    let coc_m = aperture_diameter * abs(image_depth - image_focus) / max(image_depth, 0.00001);
+    let radius = coc_m / sensor_height_m * max_radius * 12.0;
     return i32(round(clamp(radius, 0.0, max_radius)));
 }
 
@@ -52,7 +62,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let dims = vec2<i32>(textureDimensions(source_texture));
     let coord = clamp(vec2<i32>(in.uv * vec2<f32>(dims)), vec2<i32>(0), dims - vec2<i32>(1));
     let source = textureLoad(source_texture, coord, 0);
-    let clear_depth = post.config.z;
+    let clear_depth = post.white_balance.w;
     let center_depth = sample_scene_depth(coord);
     if abs(center_depth - clear_depth) <= 0.000001 {
         return source;

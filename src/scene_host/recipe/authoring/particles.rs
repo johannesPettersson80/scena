@@ -112,6 +112,7 @@ pub(in crate::scene_host::recipe) fn build_authored_particle_sets(
                     .unwrap_or(root_handle),
             ),
             name: None,
+            visible: recipe.visible.or(Some(true)),
             active: None,
         });
     }

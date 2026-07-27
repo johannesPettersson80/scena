@@ -1,0 +1,84 @@
+{
+  "artifacts": {
+    "capture": {
+      "height": 1150,
+      "payload_fnv1a64": "4101153c30cdb77a",
+      "schema": "scena.capture.v1",
+      "width": 1800
+    },
+    "capture_descriptor_path": "evidence/demo-hero/hero-recipe-photo.capture.json",
+    "capture_png_path": "evidence/demo-hero/hero-recipe-photo.png"
+  },
+  "backend_selection": {
+    "fallback_used": false,
+    "reason": null,
+    "remedy": null,
+    "requested": "headless_gpu",
+    "selected": "headless_gpu",
+    "source": "cli_flag"
+  },
+  "capabilities": {
+    "backend": "headless_gpu",
+    "forward_pbr": "supported",
+    "gpu_device": true,
+    "hardware_tier": "medium",
+    "readback_headless_screenshots": "supported",
+    "surface_attached": false
+  },
+  "content_bbox_css_px": {
+    "height": 741.0,
+    "max_x": 1484.0,
+    "max_y": 1076.0,
+    "min_x": 184.0,
+    "min_y": 336.0,
+    "width": 1301.0
+  },
+  "content_bbox_fraction": {
+    "height": 0.6439999938011169,
+    "max_x": 0.8240000009536743,
+    "max_y": 0.9359999895095824,
+    "min_x": 0.10199999809265135,
+    "min_y": 0.2919999957084656,
+    "width": 0.7229999899864197
+  },
+  "fixes": [],
+  "framing": {
+    "active_camera": 562950221856852,
+    "center_offset_fraction": [
+      -0.035999998450279236,
+      0.11400000005960464
+    ],
+    "cropped": false,
+    "fit_fraction": 0.7229999899864197,
+    "tiny_in_frame": false
+  },
+  "luminance": {
+    "max": 255.0,
+    "mean": 90.05899810791016,
+    "min": 11.722999572753906,
+    "p05": 80.3740005493164,
+    "p50": 80.3740005493164,
+    "p95": 150.46099853515625
+  },
+  "nodes_detail": [],
+  "nodes_summary": {
+    "culled": 0,
+    "drawn": 79,
+    "failed_material": 0,
+    "hidden": 0,
+    "transparent": 0,
+    "visible": 87,
+    "visible_drawable": 79
+  },
+  "ok": true,
+  "policy_digest": "sha256:fea4f64203b2e76a32d8c38e01b77baa44995b3303e8522abce86fc7a45624eb",
+  "reasons": [],
+  "schema": "scena.render_introspection.v1",
+  "timings": {
+    "clock": "unavailable",
+    "source": "not_measured",
+    "status": "unavailable",
+    "unavailable_reason": "request CLI observational timing with --timings; deterministic reports omit wall-clock measurements"
+  },
+  "visible_pixel_fraction": 0.2080000042915344
+}

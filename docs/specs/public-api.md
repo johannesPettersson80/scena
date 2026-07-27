@@ -76,8 +76,14 @@ a stale key.
 `DiagnosticCode::WebGl2DepthCompatibility`. `pub struct Diagnostic` includes
 `InvalidCameraProjection`, `ObjectsBehindCamera`,
 `SceneOutsideCameraFrustum`, `LargeScenePrecisionRisk`, and
-`DepthPrecisionRisk`; a far/near ratio greater than the supported precision
-envelope participates in the depth warning.
+`DepthPrecisionRisk`; `Capabilities::subject_visible_mask` reports whether the
+active composition path can produce exact subject-pixel masks from semantic AOV
+attribution; `Capabilities::auto_exposure_metering_*` reports each public
+metering mode separately so recipe authors can distinguish active metering
+support from accepted-but-not-yet-routed contracts;
+`AutoExposureMeteringDomain` distinguishes strict scene-linear pre-tonemap
+metering from degraded encoded-output feedback metering; a far/near ratio greater than
+the supported precision envelope participates in the depth warning.
 
 `pub struct RendererStats` exposes `shadow_maps`, `depth_prepass_passes`,
 `depth_prepass_draws`, `ambient_occlusion_passes`, `fxaa_passes`,

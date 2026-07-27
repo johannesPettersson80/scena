@@ -232,6 +232,38 @@ pub(super) fn apply_cross_field_metadata(fields: &mut BTreeMap<String, SchemaFie
             "$.render.auto_exposure",
             "manual exposure_ev and automatic exposure are mutually planned by validation",
         ),
+        (
+            "$.render.exposure_compensation_ev",
+            "valid only with auto_exposure; use exposure_ev for full manual exposure",
+        ),
+        (
+            "$.render.metering.mode",
+            "valid only with auto_exposure; subject mode requires target and spot mode requires rect",
+        ),
+        (
+            "$.render.metering.fallback",
+            "subject metering defaults to error; average_metering_with_warning allows an explicit degraded fallback",
+        ),
+        (
+            "$.photo.subject.fallback",
+            "photo subject fallback defaults to error; average_metering_with_warning allows an explicit degraded fallback",
+        ),
+        (
+            "$.photo.composition",
+            "camera_behavior composition fields are policy constraints, not hidden final camera constants",
+        ),
+        (
+            "$.photo.exposure",
+            "camera_behavior exposure fields are acceptance bands; fixed exposure_ev remains rejected in strict easy mode",
+        ),
+        (
+            "$.photo.focus",
+            "camera_behavior focus fields request subject focus policy; manual focus_distance remains rejected in strict easy mode",
+        ),
+        (
+            "$.photo.staging",
+            "camera_behavior staging owns background/grid/ground defaults; manual grid and literal background colors are rejected in strict easy mode",
+        ),
     ] {
         if let Some(field) = fields.get_mut(path) {
             field.constraints.push(constraint.to_owned());

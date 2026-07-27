@@ -6,7 +6,8 @@ use serde_json::Value;
 use super::SceneRecipeBuildV1;
 use crate::{
     AppearanceIntrospectionReportV1, CaptureDescriptor, InteractionVerificationReportV1,
-    RenderIntrospectionRectV1, RenderIntrospectionReportV1, RenderQualityReportV1,
+    RenderIntrospectionRectV1, RenderIntrospectionReportV1, RenderQualityCheckV1,
+    RenderQualityReportV1, RenderQualityStatusV1, SubjectObservationV1,
 };
 
 pub const SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1: &str = "scena.recipe_render_result.v1";
@@ -35,6 +36,8 @@ pub struct SceneRecipeVerificationReportV1 {
     pub composition: Option<SceneCompositionReportV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<RenderQualityReportV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subject_observations: Vec<SubjectObservationV1>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,12 +173,13 @@ impl SceneRecipeRenderResultV1 {
 impl SceneRecipeVerificationReportV1 {
     pub fn new(
         render_checks: usize,
-        reasons: Vec<SceneRecipeVerificationReasonV1>,
+        mut reasons: Vec<SceneRecipeVerificationReasonV1>,
         appearance: Option<AppearanceIntrospectionReportV1>,
         interaction: Option<InteractionVerificationReportV1>,
         composition: Option<SceneCompositionReportV1>,
         quality: Option<RenderQualityReportV1>,
     ) -> Self {
+        append_nested_quality_reasons(&mut reasons, quality.as_ref());
         let appearance_targets = appearance
             .as_ref()
             .map(|report| report.summary.targets)
@@ -200,8 +204,12 @@ impl SceneRecipeVerificationReportV1 {
             .iter()
             .filter(|reason| reason.severity == "warning")
             .count();
+        let nested_ok = appearance.as_ref().is_none_or(|report| report.ok)
+            && interaction.as_ref().is_none_or(|report| report.ok)
+            && composition.as_ref().is_none_or(|report| report.ok)
+            && quality.as_ref().is_none_or(|report| report.ok);
         Self {
-            ok: errors == 0,
+            ok: errors == 0 && nested_ok,
             summary: SceneRecipeVerificationSummaryV1 {
                 render_checks,
                 appearance_targets,
@@ -216,8 +224,61 @@ impl SceneRecipeVerificationReportV1 {
             interaction,
             composition,
             quality,
+            subject_observations: Vec::new(),
         }
     }
+}
+
+fn append_nested_quality_reasons(
+    reasons: &mut Vec<SceneRecipeVerificationReasonV1>,
+    quality: Option<&RenderQualityReportV1>,
+) {
+    let Some(quality) = quality else {
+        return;
+    };
+    for check in quality.checks.iter().filter(|check| {
+        check.status != RenderQualityStatusV1::Checked
+            && matches!(check.severity.as_str(), "error" | "warning")
+    }) {
+        if reasons.iter().any(|reason| {
+            reason.source == "quality"
+                && reason.code == check.code
+                && reason.expectation_id.as_deref() == Some(check.id.as_str())
+        }) {
+            continue;
+        }
+        reasons.push(SceneRecipeVerificationReasonV1 {
+            code: check.code.clone(),
+            severity: check.severity.clone(),
+            source: "quality".to_owned(),
+            expectation_id: Some(check.id.clone()),
+            affected_handles: check.region.handle.into_iter().collect(),
+            message: render_quality_failure_message(check),
+        });
+    }
+}
+
+fn render_quality_failure_message(check: &RenderQualityCheckV1) -> String {
+    let Some((observed_key, observed)) = check.observed.iter().next() else {
+        return format!("{}; fix: {}", check.code, check.fix_hint);
+    };
+    let Some((threshold_key, threshold)) = check.threshold.iter().next() else {
+        return format!(
+            "{}: {}={:.3}; fix: {}",
+            check.code, observed_key, observed, check.fix_hint
+        );
+    };
+    let comparison = if threshold_key.starts_with("min_") || check.code.ends_with("_too_low") {
+        "<"
+    } else if threshold_key.starts_with("max_") || check.code.ends_with("_too_high") {
+        ">"
+    } else {
+        "vs"
+    };
+    format!(
+        "{}: {}={:.3} {} {}={:.3}; fix: {}",
+        check.code, observed_key, observed, comparison, threshold_key, threshold, check.fix_hint
+    )
 }
 
 impl SceneCompositionReportV1 {

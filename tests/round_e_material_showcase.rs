@@ -506,7 +506,8 @@ fn browser_gpu_live_render_routes_postprocess_to_gpu_settings() {
     assert!(
         frame_rs.contains("GpuPostSettings::new")
             && frame_rs.contains("self.stats.fxaa_passes = gpu_result.post_counts.fxaa")
-            && draw_surface_rs.contains("post_settings.without_fxaa()")
+            && draw_surface_rs.contains("post::encode_chain(")
+            && draw_surface_rs.contains("post::encode_blit_to_view(")
             && draw_surface_rs.contains("scena.browser.overlay_final_surface_pass")
             && !frame_rs.contains("fn cpu_frame_postprocess_applies"),
         "browser live WebGL2/WebGPU rendering must route post-processing through the GPU post \

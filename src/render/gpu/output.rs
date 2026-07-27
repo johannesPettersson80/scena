@@ -34,10 +34,10 @@ pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str = concat!(
 );
 
 pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 16;
-const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 696;
+const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 736;
 const OUTPUT_UNIFORM_FLOAT_COUNT: usize =
     OUTPUT_UNIFORM_BASE_FLOAT_COUNT + MAX_OUTPUT_CLIPPING_PLANES * 4 + 4;
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 3056;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 3216;
 
 pub(super) use super::draw_uniform::{
     DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
@@ -239,6 +239,7 @@ pub(super) struct OutputUniformUpload {
     pub(super) viewport: [f32; 2],
     pub(super) near_far: [f32; 2],
     pub(super) color_management: [f32; 4],
+    pub(super) white_balance: [f32; 4],
     pub(super) lighting: PreparedGpuLightUniform,
     pub(super) clipping_planes: [[f32; 4]; MAX_OUTPUT_CLIPPING_PLANES],
     pub(super) clipping_control: [f32; 4],
@@ -306,7 +307,8 @@ pub(super) fn encode_output_uniform(
     values[70] = upload.near_far[0];
     values[71] = upload.near_far[1];
     values[72..76].copy_from_slice(&upload.color_management);
-    let mut offset = 76;
+    values[76..80].copy_from_slice(&upload.white_balance);
+    let mut offset = 80;
     offset = encode_vec4_array(
         &mut values,
         offset,
@@ -366,6 +368,8 @@ pub(super) fn encode_output_uniform(
     offset += 4;
     values[offset..offset + 4].copy_from_slice(&upload.lighting.environment_specular_intensity);
     offset += 4;
+    values[offset..offset + 4].copy_from_slice(&upload.lighting.environment_transform);
+    offset += 4;
     for (index, plane) in upload.clipping_planes.into_iter().enumerate() {
         let plane_offset = offset + index * 4;
         values[plane_offset..plane_offset + 4].copy_from_slice(&plane);
@@ -409,7 +413,7 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 3056,
+            OUTPUT_UNIFORM_BYTE_LEN, 3216,
             "CameraUniform stores view, projection, and view-projection matrices plus \
              camera/exposure, viewport/depth, color-management, widened punctual-light arrays, \
              area-light arrays, \
@@ -428,6 +432,7 @@ mod tests {
                 viewport: [128.0, 64.0],
                 near_far: [0.1, 1000.0],
                 color_management: [1.0, 0.0, 0.0, 0.0],
+                white_balance: [1.0, 1.0, 1.0, 0.0],
                 lighting: PreparedGpuLightUniform::default(),
                 clipping_planes,
                 clipping_control,

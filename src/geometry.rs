@@ -9,6 +9,8 @@ mod bounds;
 mod deformation;
 mod helpers;
 mod morph;
+#[cfg(feature = "scene-host")]
+mod photographic;
 mod primitive;
 mod primitive_meshes;
 mod skinning;

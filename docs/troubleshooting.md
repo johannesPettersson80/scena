@@ -65,6 +65,39 @@ Useful examples:
 - `examples/camera_framing.rs`
 - `examples/headless_ci.rs`
 
+## Camera behavior or subject-aware render failed
+
+For product/model hero stills, start from the intent path:
+
+```bash
+scena photo render model.glb --out hero.png --report hero.report.json
+```
+
+or from a recipe with `photo.intent:"camera_behavior"` and an explicit
+`photo.subject`. Treat `ok:false` from `scena.photo_render_result.v1` or
+`scena.recipe_render_result.v1` as a domain failure on stdout. Do not reclassify
+it by parsing the message; CLI dispatch errors still use `scena.cli_error.v1`
+with `exit_class` and `code`.
+
+Use the reason codes in the report:
+
+| Symptom | Codes to inspect | First remedy |
+|---|---|---|
+| underexposed subject | `subject_luminance_below_min`, `subject_low_clip_above_max` | Keep `auto_exposure` enabled. Apply the report's `exposure_report.suggested_compensation_ev` as `render.exposure_compensation_ev`, or let `scena photo render` use its bounded retry. Do not replace subject metering with fixed `exposure_ev` unless the shot is deliberately manual. |
+| subject too small | `subject_fill_below_min`, `subject_too_small_in_frame`, `subject_tiny_in_frame` | Use `photo.intent` or raise the composition fill constraint; do not pull the camera distance by hand for the public hero path. |
+| subject too large or clipped | `subject_fill_above_max`, `subject_clipped_by_section_box`, `subject_clipped_by_clipping_plane`, `subject_outside_viewport` | Loosen the fill constraint, widen or clear clipping/section boxes, then re-render so the subject observation frame key is fresh. |
+| stale_subject_observation | `stale_subject_observation` | Re-render after the camera, viewport, transform, visibility, material, or render-generation change. A stale subject observation is invalid evidence. |
+| unresolved subject | `unresolved_target`, `invalid_photo_subject`, `subject_visible_pixels_missing` with a zero handle count | Run `scena validate-recipe --full`, check target candidates, and fix `photo.subject`, `render.metering.target`, or `render.depth_of_field.focus.target`. |
+| unsupported subject mask | `subject_visible_mask_backend_unsupported`, `subject_transparent_unsupported`, `subject_visible_mask_missing` | Use a backend whose capability report supports exact subject masks, switch to opaque subject geometry for strict evidence, or accept a reported degraded path only when the operator policy allows it. |
+| focus fallback | `focus_report.status:"unresolved"` or `focus_report.reason` | Check that the focus target is visible and has finite depth. Subject focus uses visible depth; it should not be replaced by guessed `focus_distance` in the easy path. |
+| failed camera-behavior acceptance | `failure_codes[]` in `photo_report` or render verification | Fix the subject, declared target, staging constraints, or material readability until the camera-behavior report `status:"passed"`; a written PNG alone is not acceptance. |
+
+For subject-aware lower-level recipes, inspect
+`subject_observations[]`, `exposure_report`, and `focus_report` in the
+introspection/verification result. Those reports are bound to the completed
+readback frame; stale frame keys mean the diagnostics no longer certify the
+pixels.
+
 ## A name was not found
 
 Read the structured `candidates` array on the lookup error, recipe diagnostic,

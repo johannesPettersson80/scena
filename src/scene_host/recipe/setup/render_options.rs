@@ -70,12 +70,41 @@ pub(super) fn ssr_from_recipe(
     )
 }
 
-pub(super) fn dof_from_recipe(value: SceneRecipeDepthOfFieldV1) -> DepthOfFieldConfig {
-    DepthOfFieldConfig::new(
-        value.focus_distance as f32,
-        value.aperture_f_stop as f32,
-        value.radius_px,
-    )
+pub(super) fn dof_from_recipe(
+    value: &SceneRecipeDepthOfFieldV1,
+) -> Result<Option<DepthOfFieldConfig>, Box<SceneRecipeDiagnosticV1>> {
+    if value.focus.is_some() {
+        return Ok(None);
+    }
+    let Some(focus_distance) = value.focus_distance else {
+        return Err(Box::new(error_diagnostic(
+            "$.render.depth_of_field.focus_distance",
+            "invalid_render_setting",
+            "manual depth of field requires focus_distance",
+            "emit focus_distance with aperture_f_stop and radius_px, or use subject focus once the visible-depth solver is enabled",
+        )));
+    };
+    let Some(aperture_f_stop) = value.aperture_f_stop else {
+        return Err(Box::new(error_diagnostic(
+            "$.render.depth_of_field.aperture_f_stop",
+            "invalid_render_setting",
+            "manual depth of field requires aperture_f_stop",
+            "emit a realistic positive f-stop such as 1.4, 2.8, or 8.0",
+        )));
+    };
+    let Some(radius_px) = value.radius_px else {
+        return Err(Box::new(error_diagnostic(
+            "$.render.depth_of_field.radius_px",
+            "invalid_render_setting",
+            "manual depth of field requires radius_px",
+            "emit a positive blur radius from 1 to 16",
+        )));
+    };
+    Ok(Some(DepthOfFieldConfig::new(
+        focus_distance as f32,
+        aperture_f_stop as f32,
+        radius_px,
+    )))
 }
 
 pub(super) fn auto_exposure_from_recipe(

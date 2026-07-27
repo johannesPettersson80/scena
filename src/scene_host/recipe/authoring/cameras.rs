@@ -82,6 +82,7 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
                     kind: "camera".to_owned(),
                     parent: Some(root_handle),
                     name: None,
+                    visible: None,
                     active: Some(true),
                 });
             } else {
@@ -191,6 +192,7 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
             kind: "camera".to_owned(),
             parent: Some(root_handle),
             name: None,
+            visible: None,
             active: Some(recipe.active),
         });
     }

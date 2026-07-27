@@ -2,6 +2,8 @@
 use std::sync::mpsc;
 
 use crate::diagnostics::RenderError;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::material::Color;
 
 use super::super::RasterTarget;
 use super::{GpuDeviceState, GpuPreparedResources};
@@ -33,6 +35,7 @@ struct PendingAutoExposureMeter {
     receiver: mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
     format: wgpu::TextureFormat,
     sequence: u64,
+    target: RasterTarget,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -40,6 +43,15 @@ pub(super) struct AutoExposureMeterSubmission {
     slot: usize,
     format: wgpu::TextureFormat,
     sequence: u64,
+    target: RasterTarget,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(in crate::render) struct AutoExposureMeterSample {
+    pub(in crate::render) colors: Vec<Color>,
+    pub(in crate::render) width: u32,
+    pub(in crate::render) height: u32,
+    pub(in crate::render) source_target: RasterTarget,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -118,6 +130,7 @@ impl GpuAutoExposureMeter {
             slot,
             format,
             sequence,
+            target,
         })
     }
 
@@ -131,6 +144,7 @@ impl GpuAutoExposureMeter {
             receiver,
             format: submission.format,
             sequence: submission.sequence,
+            target: submission.target,
         });
     }
 
@@ -138,7 +152,7 @@ impl GpuAutoExposureMeter {
         &mut self,
         device: &wgpu::Device,
         backend: crate::diagnostics::Backend,
-    ) -> Result<Option<Vec<u8>>, RenderError> {
+    ) -> Result<Option<AutoExposureMeterSample>, RenderError> {
         device
             .poll(wgpu::PollType::Poll)
             .map_err(|_| RenderError::GpuReadback { backend })?;
@@ -169,22 +183,59 @@ impl GpuAutoExposureMeter {
                 .expect("completed auto-exposure meter remains pending");
             if selected == Some(slot) {
                 let mapped = self.buffers[slot].slice(..).get_mapped_range();
-                let mut rgba8 = Vec::with_capacity(AUTO_EXPOSURE_SAMPLE_COUNT * 4);
+                let mut colors = Vec::with_capacity(AUTO_EXPOSURE_SAMPLE_COUNT);
                 for index in 0..AUTO_EXPOSURE_SAMPLE_COUNT {
                     let offset = index * AUTO_EXPOSURE_SAMPLE_STRIDE as usize;
-                    let pixel = &mapped[offset..offset + 4];
-                    if matches!(
-                        pending.format,
-                        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
-                    ) {
-                        rgba8.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+                    if pending.format == wgpu::TextureFormat::Rgba16Float {
+                        let component = |byte_offset: usize| {
+                            half::f16::from_bits(u16::from_le_bytes([
+                                mapped[offset + byte_offset],
+                                mapped[offset + byte_offset + 1],
+                            ]))
+                            .to_f32()
+                        };
+                        colors.push(Color::from_linear_rgba(
+                            component(0),
+                            component(2),
+                            component(4),
+                            component(6),
+                        ));
                     } else {
-                        rgba8.extend_from_slice(pixel);
+                        let pixel = &mapped[offset..offset + 4];
+                        let rgba = if matches!(
+                            pending.format,
+                            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+                        ) {
+                            [pixel[2], pixel[1], pixel[0], pixel[3]]
+                        } else {
+                            [pixel[0], pixel[1], pixel[2], pixel[3]]
+                        };
+                        let color = if pending.format.is_srgb() {
+                            Color::from_srgb_u8(rgba[0], rgba[1], rgba[2])
+                        } else {
+                            Color::from_linear_rgba(
+                                f32::from(rgba[0]) / 255.0,
+                                f32::from(rgba[1]) / 255.0,
+                                f32::from(rgba[2]) / 255.0,
+                                f32::from(rgba[3]) / 255.0,
+                            )
+                        };
+                        colors.push(Color::from_linear_rgba(
+                            color.r,
+                            color.g,
+                            color.b,
+                            f32::from(rgba[3]) / 255.0,
+                        ));
                     }
                 }
                 drop(mapped);
                 self.last_applied_sequence = Some(sequence);
-                sample = Some(rgba8);
+                sample = Some(AutoExposureMeterSample {
+                    colors,
+                    width: AUTO_EXPOSURE_GRID,
+                    height: AUTO_EXPOSURE_GRID,
+                    source_target: pending.target,
+                });
             }
             self.buffers[slot].unmap();
         }
@@ -222,6 +273,7 @@ pub(super) fn meter_format_supported(format: wgpu::TextureFormat) -> bool {
             | wgpu::TextureFormat::Rgba8UnormSrgb
             | wgpu::TextureFormat::Bgra8Unorm
             | wgpu::TextureFormat::Bgra8UnormSrgb
+            | wgpu::TextureFormat::Rgba16Float
     )
 }
 
@@ -317,16 +369,16 @@ pub(super) fn map_readback_to_frame(
 #[cfg(not(target_arch = "wasm32"))]
 impl GpuDeviceState {
     pub(in crate::render) fn auto_exposure_meter_supported(&self) -> bool {
-        self.surface.as_ref().is_some_and(|surface| {
-            surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)
-                && meter_format_supported(surface.config.format)
-        })
+        self.resources
+            .as_ref()
+            .and_then(|resources| resources.post.as_ref())
+            .is_some_and(|_| meter_format_supported(super::post::scene_color_format()))
     }
 
     pub(in crate::render) fn poll_auto_exposure_meter(
         &mut self,
         backend: crate::diagnostics::Backend,
-    ) -> Result<Option<Vec<u8>>, RenderError> {
+    ) -> Result<Option<AutoExposureMeterSample>, RenderError> {
         self.auto_exposure_meter.try_finish(&self.device, backend)
     }
 

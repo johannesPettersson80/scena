@@ -1,3 +1,5 @@
+use crate::material::Color;
+
 use super::RasterTarget;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -93,6 +95,7 @@ fn clamp_unit_or(value: f32, fallback: f32) -> f32 {
     }
 }
 
+#[allow(dead_code)]
 pub(super) fn apply_rgba8(
     target: RasterTarget,
     frame: &mut [u8],
@@ -138,6 +141,49 @@ pub(super) fn apply_rgba8(
     1
 }
 
+pub(super) fn apply_linear(
+    target: RasterTarget,
+    frame: &mut [Color],
+    scratch: &mut [Color],
+    config: ScreenSpaceReflectionConfig,
+) -> u64 {
+    if target.width < 3 || target.height < 3 || config.strength() <= 0.0 {
+        return 0;
+    }
+    scratch.copy_from_slice(frame);
+    let horizon_y = ((target.height as f32) * config.horizon_fraction())
+        .round()
+        .clamp(1.0, target.height.saturating_sub(2) as f32) as u32;
+    let floor_height = target.height.saturating_sub(horizon_y).max(1);
+    let radius = config.roughness_radius_px();
+    for y in horizon_y..target.height {
+        let distance = y.saturating_sub(horizon_y) as f32 / floor_height as f32;
+        let fade = (1.0 - distance * config.fade()).clamp(0.0, 1.0);
+        let mirrored_y = horizon_y
+            .saturating_sub(y.saturating_sub(horizon_y))
+            .min(target.height - 1);
+        for x in 0..target.width {
+            let index = target.pixel_index(x, y);
+            let base = scratch[index];
+            let luma = base.r * 0.2126 + base.g * 0.7152 + base.b * 0.0722;
+            let alpha = (config.strength() * fade * (1.0 - luma).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+            if alpha <= 0.0 {
+                continue;
+            }
+            let reflected = blurred_reflection_sample_linear(
+                target,
+                scratch,
+                x as f32,
+                mirrored_y as f32,
+                radius,
+            );
+            frame[index] = mix_linear(base, reflected, alpha);
+        }
+    }
+    1
+}
+
+#[allow(dead_code)]
 pub(super) fn apply_material_rgba8(
     target: RasterTarget,
     frame: &mut [u8],
@@ -187,6 +233,117 @@ pub(super) fn apply_material_rgba8(
     u64::from(touched)
 }
 
+pub(super) fn apply_material_linear(
+    target: RasterTarget,
+    frame: &mut [Color],
+    scratch: &mut [Color],
+    material_reflections: &[MaterialReflectionPixel],
+    config: ScreenSpaceReflectionConfig,
+) -> u64 {
+    if target.width < 3 || target.height < 3 || config.strength() <= 0.0 {
+        return 0;
+    }
+    scratch.copy_from_slice(frame);
+    let mut touched = false;
+    for (index, reflection) in material_reflections.iter().copied().enumerate() {
+        if !reflection.is_active() {
+            continue;
+        }
+        touched = true;
+        let radius = ((reflection.roughness * reflection.roughness * 14.0
+            + config.roughness() * 5.0)
+            .round()
+            .clamp(0.0, 8.0)) as u32;
+        let reflected = blurred_reflection_sample_linear(
+            target,
+            scratch,
+            reflection.sample_x,
+            reflection.sample_y,
+            radius,
+        );
+        frame[index] = mix_linear(scratch[index], reflected, reflection.weight);
+    }
+    u64::from(touched)
+}
+
+fn mix_linear(base: Color, reflected: Color, weight: f32) -> Color {
+    Color::from_linear_rgba(
+        base.r * (1.0 - weight) + reflected.r * weight,
+        base.g * (1.0 - weight) + reflected.g * weight,
+        base.b * (1.0 - weight) + reflected.b * weight,
+        base.a,
+    )
+}
+
+fn blurred_reflection_sample_linear(
+    target: RasterTarget,
+    frame: &[Color],
+    x: f32,
+    y: f32,
+    radius: u32,
+) -> Color {
+    let cx = x.clamp(0.0, target.width.saturating_sub(1) as f32);
+    let cy = y.clamp(0.0, target.height.saturating_sub(1) as f32);
+    if radius == 0 {
+        return bilinear_sample_linear(target, frame, cx, cy);
+    }
+    let mut sum = [0.0_f32; 4];
+    let mut weight_sum = 0.0;
+    for sy in (cy.floor() as u32).saturating_sub(radius)
+        ..=(cy.ceil() as u32)
+            .saturating_add(radius)
+            .min(target.height - 1)
+    {
+        for sx in (cx.floor() as u32).saturating_sub(radius)
+            ..=(cx.ceil() as u32)
+                .saturating_add(radius)
+                .min(target.width - 1)
+        {
+            let dx = sx as f32 - cx;
+            let dy = sy as f32 - cy;
+            let weight = (1.0 - (dx * dx + dy * dy).sqrt() / (radius as f32 + 1.0)).max(0.0);
+            let sample = frame[target.pixel_index(sx, sy)];
+            sum[0] += sample.r * weight;
+            sum[1] += sample.g * weight;
+            sum[2] += sample.b * weight;
+            sum[3] += sample.a * weight;
+            weight_sum += weight;
+        }
+    }
+    if weight_sum <= 0.0 {
+        return bilinear_sample_linear(target, frame, cx, cy);
+    }
+    Color::from_linear_rgba(
+        sum[0] / weight_sum,
+        sum[1] / weight_sum,
+        sum[2] / weight_sum,
+        sum[3] / weight_sum,
+    )
+}
+
+fn bilinear_sample_linear(target: RasterTarget, frame: &[Color], x: f32, y: f32) -> Color {
+    let x0 = x.floor() as u32;
+    let y0 = y.floor() as u32;
+    let x1 = x0.saturating_add(1).min(target.width - 1);
+    let y1 = y0.saturating_add(1).min(target.height - 1);
+    let tx = x - x0 as f32;
+    let ty = y - y0 as f32;
+    let c00 = frame[target.pixel_index(x0, y0)];
+    let c10 = frame[target.pixel_index(x1, y0)];
+    let c01 = frame[target.pixel_index(x0, y1)];
+    let c11 = frame[target.pixel_index(x1, y1)];
+    let channel = |a: f32, b: f32, c: f32, d: f32| {
+        (a * (1.0 - tx) + b * tx) * (1.0 - ty) + (c * (1.0 - tx) + d * tx) * ty
+    };
+    Color::from_linear_rgba(
+        channel(c00.r, c10.r, c01.r, c11.r),
+        channel(c00.g, c10.g, c01.g, c11.g),
+        channel(c00.b, c10.b, c01.b, c11.b),
+        channel(c00.a, c10.a, c01.a, c11.a),
+    )
+}
+
+#[allow(dead_code)]
 fn blurred_reflection_sample(
     target: RasterTarget,
     frame: &[u8],
@@ -234,6 +391,7 @@ fn blurred_reflection_sample(
     ]
 }
 
+#[allow(dead_code)]
 fn blurred_reflection_sample_f32(
     target: RasterTarget,
     frame: &[u8],
@@ -282,6 +440,7 @@ fn blurred_reflection_sample_f32(
     ]
 }
 
+#[allow(dead_code)]
 fn bilinear_sample_srgb8(target: RasterTarget, frame: &[u8], x: f32, y: f32) -> [f32; 3] {
     let x = x.clamp(0.0, target.width.saturating_sub(1) as f32);
     let y = y.clamp(0.0, target.height.saturating_sub(1) as f32);
@@ -302,6 +461,7 @@ fn bilinear_sample_srgb8(target: RasterTarget, frame: &[u8], x: f32, y: f32) -> 
     ]
 }
 
+#[allow(dead_code)]
 fn sample_pixel_rgb(target: RasterTarget, frame: &[u8], x: u32, y: u32) -> [f32; 3] {
     let offset = pixel_offset(target, x, y);
     [
@@ -311,16 +471,19 @@ fn sample_pixel_rgb(target: RasterTarget, frame: &[u8], x: u32, y: u32) -> [f32;
     ]
 }
 
+#[allow(dead_code)]
 fn bilinear_channel(c00: f32, c10: f32, c01: f32, c11: f32, tx: f32, ty: f32) -> f32 {
     let top = c00 * (1.0 - tx) + c10 * tx;
     let bottom = c01 * (1.0 - tx) + c11 * tx;
     top * (1.0 - ty) + bottom * ty
 }
 
+#[allow(dead_code)]
 fn pixel_offset(target: RasterTarget, x: u32, y: u32) -> usize {
     target.pixel_index(x, y) * 4
 }
 
+#[allow(dead_code)]
 fn luma_from_srgb8(pixel: &[u8]) -> f32 {
     f32::from(pixel[0]) * 0.299 + f32::from(pixel[1]) * 0.587 + f32::from(pixel[2]) * 0.114
 }

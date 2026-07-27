@@ -79,7 +79,7 @@ pub(crate) fn check_material_reflection_quality_contracts(
         &[
             "draw_physical_transmission_cpu",
             "sample_post_scene_color",
-            "encode_post_rgba8",
+            "Color::from_linear_rgba",
         ],
     );
     require_contains(

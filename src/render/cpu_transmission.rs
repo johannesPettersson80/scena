@@ -13,7 +13,7 @@ pub(super) fn draw_physical_transmission_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,
     projected: &CpuProjectedPrimitive,
-    scene_color_frame: &[u8],
+    scene_color_frame: &[Color],
     context: CpuTriangleClipInputs<'_>,
 ) -> u64 {
     let Some(transmission) = primitive.material_transmission() else {
@@ -39,7 +39,7 @@ fn draw_projected_physical_transmission_cpu(
     primitive: &PreparedPrimitive,
     triangle: CpuScreenTriangle,
     transmission: PreparedPhysicalTransmission,
-    scene_color_frame: &[u8],
+    scene_color_frame: &[Color],
     context: CpuTriangleClipInputs<'_>,
 ) -> u64 {
     let CpuTriangleClipInputs {
@@ -108,7 +108,6 @@ fn draw_projected_physical_transmission_cpu(
             }
 
             let surface_color = multiply_color(mix_color(vertices, weights), primitive.tint());
-            let surface_post = cpu_frame.output.post_color(surface_color);
             let normal = cpu_geometry::weighted_vec3(
                 [
                     a.attributes.normal,
@@ -127,7 +126,7 @@ fn draw_projected_physical_transmission_cpu(
                     normal,
                     view,
                     tint: Vec3::new(surface_color.r, surface_color.g, surface_color.b),
-                    surface_rgb: Vec3::new(surface_post.r, surface_post.g, surface_post.b),
+                    surface_rgb: Vec3::new(surface_color.r, surface_color.g, surface_color.b),
                 },
                 |uv| sample_post_scene_color(scene_color_frame, target, uv),
             );
@@ -135,9 +134,6 @@ fn draw_projected_physical_transmission_cpu(
                 Color::from_linear_rgba(transmitted.x, transmitted.y, transmitted.z, 1.0);
             cpu_frame.linear_frame[pixel_index] = final_color;
             cpu_frame.depth_frame[pixel_index] = depth;
-            let byte_index = pixel_index * 4;
-            cpu_frame.frame[byte_index..byte_index + 4]
-                .copy_from_slice(&cpu_frame.output.encode_post_rgba8(final_color));
             pixels_encoded = pixels_encoded.saturating_add(1);
         }
     }
@@ -173,7 +169,7 @@ fn multiply_color(color: Color, tint: Color) -> Color {
     )
 }
 
-fn sample_post_scene_color(frame: &[u8], target: RasterTarget, uv: [f32; 2]) -> Vec3 {
+fn sample_post_scene_color(frame: &[Color], target: RasterTarget, uv: [f32; 2]) -> Vec3 {
     let x = uv[0].clamp(0.0, 1.0) * target.width.saturating_sub(1) as f32;
     let y = uv[1].clamp(0.0, 1.0) * target.height.saturating_sub(1) as f32;
     let x0 = x.floor() as u32;
@@ -191,25 +187,11 @@ fn sample_post_scene_color(frame: &[u8], target: RasterTarget, uv: [f32; 2]) -> 
     top * (1.0 - ty) + bottom * ty
 }
 
-fn sample_post_scene_texel(frame: &[u8], target: RasterTarget, x: u32, y: u32) -> Vec3 {
-    let byte_index = target.pixel_index(x, y).saturating_mul(4);
-    let Some(rgba) = frame.get(byte_index..byte_index + 4) else {
+fn sample_post_scene_texel(frame: &[Color], target: RasterTarget, x: u32, y: u32) -> Vec3 {
+    let Some(color) = frame.get(target.pixel_index(x, y)) else {
         return Vec3::ZERO;
     };
-    Vec3::new(
-        srgb_u8_to_linear(rgba[0]),
-        srgb_u8_to_linear(rgba[1]),
-        srgb_u8_to_linear(rgba[2]),
-    )
-}
-
-fn srgb_u8_to_linear(value: u8) -> f32 {
-    let value = f32::from(value) / 255.0;
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
-    }
+    Vec3::new(color.r, color.g, color.b)
 }
 
 fn mix_depth(vertices: [CpuScreenVertex; 3], affine: [f32; 3]) -> f32 {

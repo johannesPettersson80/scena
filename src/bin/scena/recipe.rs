@@ -10,6 +10,7 @@ use super::scena_output::{
     CliBackendSelectionV1, CliOutcome, add_recipe_policy_to_outcome, json_outcome,
     json_outcome_with_backend_selection,
 };
+use super::scena_photo;
 use super::scena_policy::{effective_recipe_policy, push_allow_root};
 
 #[path = "recipe/verification.rs"]
@@ -25,6 +26,10 @@ mod capture_sequence;
 mod capture_shared;
 #[path = "recipe/semantic_aov.rs"]
 mod semantic_aov;
+#[path = "recipe/subject_focus.rs"]
+pub(crate) mod subject_focus;
+#[path = "recipe/subject_metering.rs"]
+mod subject_metering;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecipeRenderCommandArgs {
@@ -138,24 +143,102 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
         .map_err(|error| format!("validated recipe failed to decode: {error}"))?;
 
     let mut host = build.host;
+    // GPU hosts must own semantic AOV resources before the next prepare, because
+    // the camera-behavior loop and subject metering read them back.
+    if args.gpu {
+        host.set_semantic_aov_capture_enabled(true);
+    }
     let backend_selection = CliBackendSelectionV1::new(args.gpu, Some(host.backend()));
-    if !recipe.cameras.iter().any(|camera| camera.active) {
+    let photo_subject = recipe_photo_subject(&recipe, &build.manifest)?;
+    if photo_subject.is_none()
+        && recipe.photo.is_none()
+        && !recipe.cameras.iter().any(|camera| camera.active)
+    {
         host.frame_all_with_overlays()
             .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
     }
-    let prepare_started = Instant::now();
-    host.prepare()
-        .map_err(|error| format!("failed to prepare recipe scene: {error}"))?;
-    let prepare_duration = prepare_started.elapsed();
-    let render_started = Instant::now();
-    host.render()
-        .map_err(|error| format!("failed to render recipe scene: {error}"))?;
-    let render_duration = render_started.elapsed();
-    let capture_started = Instant::now();
-    let capture = host
-        .capture()
-        .map_err(|error| format!("failed to capture recipe scene: {error}"))?;
-    let capture_duration = capture_started.elapsed();
+    let (
+        capture,
+        prepare_duration,
+        render_duration,
+        capture_duration,
+        photo_reasons,
+        focus_report,
+        exposure_report,
+    ) = if let Some(subject) = &photo_subject {
+        let photo_started = Instant::now();
+        let planning = scena_photo::camera_behavior_composition_plan(
+            &host,
+            subject.root_handle,
+            !recipe.cameras.is_empty(),
+        )?;
+        let shaded_selection = scena_photo::apply_camera_behavior_setup_with_plan(
+            &mut host,
+            subject,
+            !build.manifest.lights.is_empty(),
+            &planning,
+            args.gpu,
+        )?;
+        let selected_composition =
+            scena_photo::selected_shaded_composition_candidate(&planning, &shaded_selection)?
+                .clone();
+        let selected = scena_photo::render_camera_behavior_candidates(
+            &mut host,
+            subject,
+            &selected_composition,
+            args.gpu,
+        )?;
+        let duration = photo_started.elapsed();
+        let reasons = photo_acceptance_reasons(&selected);
+        (
+            selected.capture,
+            Duration::ZERO,
+            duration,
+            Duration::ZERO,
+            reasons,
+            None,
+            None,
+        )
+    } else {
+        let prepare_started = Instant::now();
+        let subject_focus = subject_focus::resolve_and_apply_subject_focus(
+            &mut host,
+            &build.manifest,
+            &recipe,
+            args.gpu,
+        )?;
+        subject_metering::resolve_and_apply_subject_metering(
+            &mut host,
+            &build.manifest,
+            &recipe,
+            args.gpu,
+        )?;
+        host.prepare()
+            .map_err(|error| format!("failed to prepare recipe scene: {error}"))?;
+        let prepare_duration = prepare_started.elapsed();
+        let render_started = Instant::now();
+        host.render()
+            .map_err(|error| format!("failed to render recipe scene: {error}"))?;
+        let render_duration = render_started.elapsed();
+        let capture_started = Instant::now();
+        let capture = host
+            .capture()
+            .map_err(|error| format!("failed to capture recipe scene: {error}"))?;
+        let capture_duration = capture_started.elapsed();
+        let focus_report = subject_focus
+            .as_ref()
+            .map(|resolution| resolution.to_focus_report(&capture));
+        let exposure_report = exposure_report_from_renderer(&host, &capture);
+        (
+            capture,
+            prepare_duration,
+            render_duration,
+            capture_duration,
+            Vec::new(),
+            focus_report,
+            exposure_report,
+        )
+    };
 
     ensure_parent_dir(&args.out)?;
     capture.write_png(&args.out).map_err(|error| {
@@ -201,7 +284,13 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
             ),
         );
     }
-    let introspection =
+    if let Some(focus_report) = focus_report {
+        introspection_options = introspection_options.with_focus_report(focus_report);
+    }
+    if let Some(exposure_report) = exposure_report {
+        introspection_options = introspection_options.with_exposure_report(exposure_report);
+    }
+    let mut introspection =
         host.renderer()
             .introspect_capture(&capture, &inspection, introspection_options);
     if !args.verify {
@@ -216,7 +305,7 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
             &policy_report,
         );
     }
-    let verification = verify_recipe_expectations(RecipeVerificationInput {
+    let mut verification = verify_recipe_expectations(RecipeVerificationInput {
         host: &mut host,
         manifest: &build.manifest,
         recipe: &recipe,
@@ -231,6 +320,8 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
             .parent()
             .unwrap_or_else(|| std::path::Path::new(".")),
     })?;
+    append_photo_reasons(&mut verification, photo_reasons);
+    introspection.subject_observations = verification.subject_observations.clone();
     let result = scena::SceneRecipeRenderResultV1::new(
         build.manifest,
         capture.descriptor,
@@ -255,6 +346,83 @@ pub(crate) fn run_recipe_inspect_cad_command(args: &[String]) -> Result<CliOutco
 
 pub(crate) fn run_recipe_capture_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     capture_sequence::run_recipe_capture_command(args)
+}
+
+fn recipe_photo_subject(
+    recipe: &scena::SceneRecipeV1,
+    manifest: &scena::SceneRecipeBuildV1,
+) -> Result<Option<scena_photo::SubjectSelection>, CliFailure> {
+    let Some(photo) = &recipe.photo else {
+        return Ok(None);
+    };
+    let intent = match photo.intent.as_str() {
+        "camera_behavior" | "camera-behavior" | "product_hero" | "product-hero" => {
+            "camera_behavior"
+        }
+        other => {
+            return Err(CliFailure::new(
+                CliErrorKind::InvalidInput,
+                format!("unsupported photo intent '{other}'; use camera_behavior"),
+            ));
+        }
+    };
+    if intent != "camera_behavior" {
+        return Ok(None);
+    }
+    let subject = photo.subject.as_ref().map(|subject| subject.target());
+    if let Some(scena::SceneRecipeTargetV1::Node { id }) = subject.as_ref()
+        && manifest
+            .nodes
+            .iter()
+            .any(|node| node.id == *id && node.visible == Some(false))
+    {
+        // A recipe render must reach composition verification so the caller
+        // receives `subject_hidden` in the typed render result. The strict
+        // `scena photo render` command still rejects an unusable subject.
+        return Ok(None);
+    }
+    scena_photo::select_camera_behavior_subject(manifest, subject).map(Some)
+}
+
+fn photo_acceptance_reasons(
+    selected: &scena_photo::SelectedCapture,
+) -> Vec<scena::SceneRecipeVerificationReasonV1> {
+    if selected.final_candidate.status == "passed" {
+        return Vec::new();
+    }
+    selected
+        .final_candidate
+        .failure_codes
+        .iter()
+        .map(|code| scena::SceneRecipeVerificationReasonV1 {
+            code: (*code).to_owned(),
+            severity: "error".to_owned(),
+            source: "photo".to_owned(),
+            expectation_id: Some("photo.intent.camera_behavior".to_owned()),
+            affected_handles: Vec::new(),
+            message: format!("camera_behavior photo acceptance failed: {code}"),
+        })
+        .collect()
+}
+
+fn append_photo_reasons(
+    verification: &mut scena::SceneRecipeVerificationReportV1,
+    mut reasons: Vec<scena::SceneRecipeVerificationReasonV1>,
+) {
+    if reasons.is_empty() {
+        return;
+    }
+    verification.summary.render_checks += 1;
+    verification.summary.errors += reasons
+        .iter()
+        .filter(|reason| reason.severity == "error")
+        .count();
+    verification.summary.warnings += reasons
+        .iter()
+        .filter(|reason| reason.severity == "warning")
+        .count();
+    verification.reasons.append(&mut reasons);
+    verification.ok = verification.summary.errors == 0;
 }
 
 pub(crate) fn run_recipe_aov_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
@@ -399,6 +567,21 @@ fn recipe_render_usage() -> String {
 
 fn duration_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn exposure_report_from_renderer(
+    host: &scena::SceneHostCore<scena::DefaultAssetFetcher>,
+    capture: &scena::CaptureRgba8,
+) -> Option<scena::ExposureReportV1> {
+    let renderer = host.renderer();
+    let config = renderer.auto_exposure()?;
+    Some(scena::ExposureReportV1::from_auto_exposure(
+        renderer.auto_exposure_status(),
+        config,
+        renderer.last_auto_exposure(),
+        renderer.exposure_ev(),
+        &capture.descriptor,
+    ))
 }
 
 fn recipe_build_usage() -> String {

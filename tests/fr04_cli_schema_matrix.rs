@@ -74,6 +74,18 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
             "scena.cli_error.v1",
         ],
     );
+    assert_contract(
+        &help,
+        "photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>]",
+        &["scena.photo_plan.v1"],
+        &["scena.cli_error.v1"],
+    );
+    assert_contract(
+        &help,
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        &["scena.photo_render_result.v1", "scena.photo_report.v1"],
+        &["scena.photo_render_result.v1", "scena.cli_error.v1"],
+    );
     for (command, success) in [
         (
             "render <asset-or-recipe> --out <png> [--introspect] [--gpu]",
@@ -334,6 +346,7 @@ fn fr04_each_command_has_a_real_structured_argument_error_fixture() {
         vec!["validate"],
         vec!["validate-recipe"],
         vec!["place"],
+        vec!["photo", "render"],
         vec!["recipe", "build"],
         vec!["recipe", "render"],
         vec!["recipe", "inspect-cad"],
@@ -682,6 +695,34 @@ const EVIDENCE: &[Evidence] = &[
         "scena.scene_recipe_build.v1",
         "tests/fr07_recipe_diff.rs",
         "fr07_diff_cli_emits_declared_validation_and_build_failure_schemas"
+    ),
+    evidence!(
+        "photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>]",
+        "success",
+        "scena.photo_plan.v1",
+        "tests/photo_render_cli.rs",
+        "photo_plan_camera_behavior_emits_render_free_public_plan_for_imported_asset"
+    ),
+    evidence!(
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        "success",
+        "scena.photo_render_result.v1",
+        "tests/photo_render_cli.rs",
+        "photo_render_camera_behavior_is_easy_path_for_imported_asset"
+    ),
+    evidence!(
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        "success",
+        "scena.photo_report.v1",
+        "tests/photo_render_cli.rs",
+        "photo_render_camera_behavior_is_easy_path_for_imported_asset"
+    ),
+    evidence!(
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        "error",
+        "scena.photo_render_result.v1",
+        "tests/photo_render_cli.rs",
+        "photo_render_reports_recipe_build_failure_in_photo_envelope"
     ),
     evidence!(
         "recipe aov <recipe.json> --out-dir <dir> [--passes id,depth,normal] [--max-imports <n>]",

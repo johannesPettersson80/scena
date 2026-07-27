@@ -58,6 +58,7 @@ pub(in crate::scene_host::recipe) fn build_authored_lights(
                     kind: "light".to_owned(),
                     parent: Some(root_handle),
                     name: Some(format!("{} {suffix}", recipe.id)),
+                    visible: None,
                     active: None,
                 });
             }
@@ -169,6 +170,7 @@ pub(in crate::scene_host::recipe) fn build_authored_lights(
             kind: "light".to_owned(),
             parent: Some(root_handle),
             name: None,
+            visible: None,
             active: None,
         });
     }

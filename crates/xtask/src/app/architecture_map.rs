@@ -50,6 +50,7 @@ pub(crate) fn write_pretty_json_artifact(
 
 pub(crate) const ARCHITECTURE_OWNER_MODULES: &[&str] = &[
     "scene",
+    "scene_host",
     "assets",
     "geometry",
     "material",
@@ -155,6 +156,8 @@ pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
         "crate-root"
     } else if path == "src/contract_validation.rs" {
         "diagnostics"
+    } else if path.starts_with("src/scene_host") {
+        "scene_host"
     } else if path.starts_with("src/assets") {
         "assets"
     } else if path.starts_with("src/scene") {

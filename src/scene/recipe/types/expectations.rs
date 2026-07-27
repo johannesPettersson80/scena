@@ -231,6 +231,10 @@ pub struct SceneRecipeQualityExpectationV1 {
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeQualityExposureV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_mean_luminance_srgb8: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_mean_luminance_srgb8: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_low_clip_fraction: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_high_clip_fraction: Option<f64>,

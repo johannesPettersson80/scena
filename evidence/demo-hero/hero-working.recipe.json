@@ -1,0 +1,66 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "metadata": {
+    "purpose": "scena public demo hero \u2014 connector-snap assembly as a product still"
+  },
+  "imports": [
+    {
+      "id": "machine",
+      "uri": "demo/samples/connector-snap/connector_snap_assembly.glb",
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.0,
+          0.208,
+          0.0
+        ]
+      }
+    }
+  ],
+  "lights": [
+    {
+      "id": "studio",
+      "kind": "studio_rig",
+      "preset": "studio_rig"
+    }
+  ],
+  "cameras": [
+    {
+      "id": "hero",
+      "kind": "perspective",
+      "lens": "telephoto",
+      "active": true,
+      "framing": {
+        "preset": "three_quarter_front_right",
+        "fill": 0.82
+      }
+    }
+  ],
+  "scene": {
+    "grid": {
+      "line_width_px": 4.0
+    },
+    "background": {
+      "kind": "dark_studio"
+    },
+    "environment": {
+      "preset": "studio"
+    }
+  },
+  "render": {
+    "quality": "high",
+    "supersample": 2,
+    "reconstruction": "tent",
+    "exposure_ev": 4.0
+  },
+  "expect": {
+    "expect_backend": {
+      "backend": "headless_gpu",
+      "gpu_device": true
+    }
+  },
+  "capture": {
+    "width": 1800,
+    "height": 1150
+  }
+}

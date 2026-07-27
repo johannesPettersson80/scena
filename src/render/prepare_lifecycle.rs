@@ -204,6 +204,7 @@ impl Renderer {
             self.screen_space_ambient_occlusion.is_some(),
             self.screen_space_reflections.is_some(),
             self.depth_of_field.is_some(),
+            self.auto_exposure.is_some(),
         );
         let active_camera_projection = scene
             .active_camera()

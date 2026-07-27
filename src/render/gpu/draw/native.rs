@@ -30,6 +30,7 @@ impl GpuDeviceState {
         target: RasterTarget,
         exposure_ev: f32,
         color_management: [f32; 4],
+        white_balance: [f32; 4],
         background_color: Color,
         camera_projection: &CameraProjection,
         clipping_planes: &[ClippingPlane],
@@ -111,6 +112,7 @@ impl GpuDeviceState {
                 viewport: [target.width as f32, target.height as f32],
                 near_far: camera_projection.near_far(),
                 color_management,
+                white_balance,
                 lighting: resources.light_uniform,
                 clipping_planes,
                 clipping_control,
@@ -328,10 +330,14 @@ impl GpuDeviceState {
             )?;
             post::encode_blit_to_view(
                 &mut encoder,
+                &self.queue,
                 post_resources,
                 output,
                 &resources.view,
                 post::output_blit_pipeline(post_resources),
+                2.0_f32.powf(exposure_ev),
+                color_management[0],
+                white_balance,
                 &mut draw_submissions,
             );
             encode_offscreen_overlay_pass(
@@ -351,10 +357,14 @@ impl GpuDeviceState {
                 };
                 post::encode_blit_to_view(
                     &mut encoder,
+                    &self.queue,
                     post_resources,
                     output,
                     surface_view,
                     surface_blit_pipeline,
+                    2.0_f32.powf(exposure_ev),
+                    color_management[0],
+                    white_balance,
                     &mut draw_submissions,
                 );
                 encode_surface_overlay_pass(
@@ -441,17 +451,13 @@ impl GpuDeviceState {
         if readback && !post_enabled {
             super::super::readback::encode_copy_target_to_readback(&mut encoder, resources, target);
         }
-        let meter_supported = self.surface.as_ref().is_some_and(|surface| {
-            surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)
-                && super::super::readback::meter_format_supported(surface.config.format)
-        });
-        let meter_submission = if auto_exposure_meter && meter_supported {
-            surface_output.as_ref().and_then(|output| {
+        let meter_submission = if auto_exposure_meter {
+            resources.post.as_ref().and_then(|post_resources| {
                 self.auto_exposure_meter.encode_copy(
                     &mut encoder,
-                    &output.texture,
+                    &post_resources.scene_texture,
                     target,
-                    surface_format.expect("surface output has a configured format"),
+                    post::scene_color_format(),
                 )
             })
         } else {

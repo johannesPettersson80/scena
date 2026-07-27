@@ -98,7 +98,7 @@ pub fn evaluate_render_quality_rgba8(
     )
 }
 
-fn evaluate_render_quality_rgba8_region(
+pub fn evaluate_render_quality_rgba8_region(
     input: RenderQualityRgba8Input<'_>,
     region: RenderQualityRegion,
     expectation: Option<&SceneRecipeQualityExpectationV1>,

@@ -288,7 +288,32 @@ pub(crate) fn check_required_doc_contracts(root: &Path, findings: &mut Vec<Findi
         findings,
         "DOCS-ERRORS",
         "docs/errors.md",
-        &["AssetError", "RenderError", "PrepareError"],
+        &[
+            "AssetError",
+            "RenderError",
+            "PrepareError",
+            "Camera-behavior and subject-observation failures",
+            "subject_luminance_below_min",
+            "subject_low_clip_above_max",
+            "stale_subject_observation",
+            "`exit_class` and `code`",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "DOCS-TROUBLESHOOTING",
+        "docs/troubleshooting.md",
+        &[
+            "Camera behavior or subject-aware render failed",
+            "underexposed subject",
+            "subject too small",
+            "stale_subject_observation",
+            "unresolved subject",
+            "unsupported subject mask",
+            "focus fallback",
+            "failed camera-behavior acceptance",
+        ],
     );
     require_contains(
         root,

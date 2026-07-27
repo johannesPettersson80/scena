@@ -342,7 +342,7 @@ impl CameraProjection {
         world_to_view_point(world_position, self.world_from_camera)
     }
 
-    fn uses_reversed_z(&self) -> bool {
+    pub(super) fn uses_reversed_z(&self) -> bool {
         Capabilities::for_backend(self.target.backend).reversed_z_depth
             == CapabilityStatus::Supported
     }

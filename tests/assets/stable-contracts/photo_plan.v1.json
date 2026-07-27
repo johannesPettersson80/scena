@@ -1,0 +1,153 @@
+{
+  "schema": "scena.photo_plan.v1",
+  "intent": "camera_behavior",
+  "source": {
+    "kind": "asset",
+    "path": "machine.glb"
+  },
+  "subject": {
+    "target": {
+      "kind": "import",
+      "id": "subject"
+    },
+    "root_handle": 281474976710657,
+    "draw_handle_count": 12
+  },
+  "planning": {
+    "schema": "scena.photo_candidate_plan.v1",
+    "intent": "camera_behavior",
+    "budget": 2,
+    "selected_candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+    "constraints": {
+      "viewport": [256, 168],
+      "subject_bounds": {
+        "min": [-2.0, -0.25, -0.5],
+        "max": [2.0, 1.0, 0.5]
+      },
+      "preferred_view": "three_quarter_front_right",
+      "fill_range": {
+        "min": 0.65,
+        "max": 0.85
+      },
+      "front_hint": null,
+      "up_hint": null,
+      "keep_visible_anchors": ["terminal-a"],
+      "staging_style": "dark_studio"
+    },
+    "candidates": [
+      {
+        "id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+        "order": 0,
+        "physical_camera": {
+          "sensor_width_mm": 36.0,
+          "sensor_height_mm": 24.0,
+          "focal_length_mm": 50.0,
+          "aperture_f_stop": 8.0,
+          "focus_distance_m": 1.0,
+          "shutter_seconds": 0.008,
+          "sensitivity_iso": 100.0,
+          "exposure_compensation_ev": 0.0,
+          "circle_of_confusion_mm": 0.03,
+          "aperture_blades": 9
+        },
+        "preserve_authored_camera": false,
+        "view": "three_quarter_front_right",
+        "lens": "portrait",
+        "focal_length_mm": 70.0,
+        "fill_fraction": 0.78,
+        "azimuth_deg": 45.0,
+        "elevation_deg": 30.0,
+        "subject_yaw_deg": 0.0,
+        "front_hint": null,
+        "up_hint": null,
+        "staging": {
+          "id": "dark_studio",
+          "environment": "studio",
+          "background": "dark_studio",
+          "ground": "matte_shadow_catcher",
+          "grid": false
+        },
+        "keep_visible_anchors": ["terminal-a"]
+      },
+      {
+        "id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio_low_floor",
+        "order": 1,
+        "physical_camera": {
+          "sensor_width_mm": 36.0,
+          "sensor_height_mm": 24.0,
+          "focal_length_mm": 50.0,
+          "aperture_f_stop": 8.0,
+          "focus_distance_m": 1.0,
+          "shutter_seconds": 0.008,
+          "sensitivity_iso": 100.0,
+          "exposure_compensation_ev": 0.0,
+          "circle_of_confusion_mm": 0.03,
+          "aperture_blades": 9
+        },
+        "preserve_authored_camera": false,
+        "view": "three_quarter_front_right",
+        "lens": "portrait",
+        "focal_length_mm": 70.0,
+        "fill_fraction": 0.78,
+        "azimuth_deg": 45.0,
+        "elevation_deg": 30.0,
+        "subject_yaw_deg": 0.0,
+        "front_hint": null,
+        "up_hint": null,
+        "staging": {
+          "id": "dark_studio_low_floor",
+          "environment": "studio",
+          "background": "dark_studio",
+          "ground": "matte_shadow_catcher",
+          "grid": false
+        },
+        "keep_visible_anchors": ["terminal-a"]
+      }
+    ]
+  },
+  "scoring": {
+    "selected_candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+    "degraded": true,
+    "reason_codes": ["semantic_aov_unavailable"],
+    "scores": [
+      {
+        "candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+        "order": 0,
+        "score": 88.0,
+        "reason_codes": ["semantic_aov_unavailable"]
+      },
+      {
+        "candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio_low_floor",
+        "order": 1,
+        "score": 82.5,
+        "reason_codes": ["semantic_aov_unavailable", "floor_dominates_frame"]
+      }
+    ]
+  },
+  "selected_candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+  "candidates_evaluated": 2,
+  "rejected_candidate_reasons": {
+    "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio_low_floor": [
+      "floor_dominates_frame"
+    ]
+  },
+  "staging_choices": [
+    {
+      "id": "dark_studio",
+      "environment": "studio",
+      "background": "dark_studio",
+      "ground": "matte_shadow_catcher",
+      "grid": false
+    },
+    {
+      "id": "dark_studio_low_floor",
+      "environment": "studio",
+      "background": "dark_studio",
+      "ground": "matte_shadow_catcher",
+      "grid": false
+    }
+  ],
+  "artifacts": {
+    "emitted_recipe_path": "hero.resolved.recipe.json"
+  }
+}

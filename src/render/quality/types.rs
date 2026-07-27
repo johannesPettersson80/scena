@@ -197,8 +197,13 @@ impl RenderQualityProfile {
 
     pub(super) const fn severe_black_crush_max(self) -> f32 {
         match self {
+            // A product still is the profile least tolerant of a crushed
+            // subject, not the most: it exists to gate beauty renders. At the
+            // previous 0.80 it certified a subject that was 57% clipped to
+            // black as sane.
+            Self::Product => 0.45,
             Self::Documentation | Self::Dashboard | Self::Cad => 0.55,
-            Self::Product | Self::Twin => 0.80,
+            Self::Twin => 0.80,
         }
     }
 
@@ -219,7 +224,10 @@ impl RenderQualityProfile {
 
     pub const fn default_min_geometry_intermediate_edge_fraction(self) -> f32 {
         match self {
-            Self::Product => 0.25,
+            // A real 2x2 sample pattern on a shallow product silhouette
+            // measures about 0.20. Requiring 0.25 rejected visibly smooth
+            // MSAA4 output and accidentally rewarded ordered-dither noise.
+            Self::Product => 0.20,
             Self::Documentation | Self::Cad | Self::Twin => 0.02,
             Self::Dashboard => 0.01,
         }

@@ -4,8 +4,9 @@ use crate::geometry::{Aabb, GeometryTopology};
 use crate::scene::view_math::transform_aabb;
 use crate::{
     CaptureRgba8, CaptureScreenRect, CaptureScreenRegion, Color, SceneDrawInspectionV1,
-    SceneInspectionReportV1, SceneRecipeBuildV1, SceneRecipeExpectV1, SceneRecipeTargetV1,
-    project_aabb_from_capture,
+    SceneInspectionReportV1, SceneRecipeBuildV1, SceneRecipeExpectV1,
+    SceneRecipeTargetResolutionMode, SceneRecipeTargetV1, project_aabb_from_capture,
+    resolve_scene_recipe_target_handles,
 };
 
 use super::checks::round3;
@@ -240,27 +241,8 @@ pub(super) fn resolve_target_handles(
     target: &SceneRecipeTargetV1,
     manifest: &SceneRecipeBuildV1,
 ) -> Vec<u64> {
-    match target {
-        SceneRecipeTargetV1::Node { id } => manifest
-            .nodes
-            .iter()
-            .find(|node| node.id == *id)
-            .map(|node| vec![node.handle])
-            .unwrap_or_default(),
-        SceneRecipeTargetV1::Import { id } => manifest
-            .imports
-            .iter()
-            .find(|import| import.id == *id)
-            .map(|import| {
-                let mut handles = import.root_handles.clone();
-                handles.extend(import.nodes_by_path.values().copied());
-                handles.sort_unstable();
-                handles.dedup();
-                handles
-            })
-            .unwrap_or_default(),
-        SceneRecipeTargetV1::World { .. } => Vec::new(),
-    }
+    resolve_scene_recipe_target_handles(manifest, target, SceneRecipeTargetResolutionMode::Subject)
+        .unwrap_or_default()
 }
 
 pub(super) fn unexpected_draw_handles(

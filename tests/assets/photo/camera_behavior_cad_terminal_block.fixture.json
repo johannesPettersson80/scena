@@ -1,0 +1,125 @@
+{
+  "schema": "scena.camera_behavior_fixture.v1",
+  "id": "camera_behavior_cad_terminal_block",
+  "description": "Small dark/metal product-style CAD terminal block used to prove the easy camera-behavior path does not require manual camera, exposure, focus, floor, grid, or background tuning.",
+  "evidence_class": "cpu_headless_cli",
+  "source_asset": {
+    "path": "tests/assets/gltf/cad_terminal_block.gltf",
+    "sha256": "76e91df7ac3f8158ad6f82fc5af9d05b5eca2c423dfcb7f419a1f825886d4bd0",
+    "generator": "cardine scene export",
+    "provenance": "repository-authored test fixture",
+    "license": "MIT OR Apache-2.0"
+  },
+  "subject": {
+    "target": {
+      "kind": "import",
+      "id": "subject"
+    },
+    "material_family": "dark_metal_or_cad_product",
+    "view_constraints": {
+      "manual_camera": false,
+      "manual_fixed_exposure_ev": false,
+      "manual_focus_distance": false,
+      "manual_floor_geometry": false,
+      "manual_background_color": false,
+      "grid": false
+    }
+  },
+  "quality_bands": {
+    "subject_fill_fraction": {
+      "min": 0.65,
+      "max": 0.85
+    },
+    "subject_mean_luminance_srgb8": {
+      "min": 80.0,
+      "max": 100.0
+    },
+    "subject_low_clip_fraction": {
+      "max": 0.2
+    },
+    "subject_high_clip_fraction": {
+      "max": 0.05
+    },
+    "subject_center_offset_fraction": {
+      "max": 0.16
+    },
+    "subject_luminance_stddev_srgb8": {
+      "min": 6.0
+    },
+    "subject_luminance_range_srgb8": {
+      "min": 32.0
+    },
+    "subject_background_separation_srgb8": {
+      "min": 8.0
+    }
+  },
+  "known_bad_mutations": [
+    {
+      "id": "average_metered_silhouette",
+      "rejected_by": [
+        "subject_luminance_below_min",
+        "subject_low_clip_above_max"
+      ]
+    },
+    {
+      "id": "stale_subject_mask",
+      "rejected_by": [
+        "subject_visible_pixels_missing"
+      ]
+    },
+    {
+      "id": "wrong_subject_target",
+      "rejected_by": [
+        "subject_visible_pixels_missing"
+      ]
+    },
+    {
+      "id": "old_ev_cap_underexposed",
+      "rejected_by": [
+        "subject_luminance_below_min"
+      ]
+    },
+    {
+      "id": "post_tonemap_metering_strict_lane",
+      "rejected_by": [
+        "metering_domain_encoded_output_feedback"
+      ]
+    },
+    {
+      "id": "pulled_back_empty_slab",
+      "rejected_by": [
+        "subject_fill_below_min"
+      ]
+    },
+    {
+      "id": "off_center_subject",
+      "rejected_by": [
+        "subject_center_offset_above_max"
+      ]
+    },
+    {
+      "id": "flat_gray_metal",
+      "rejected_by": [
+        "subject_luminance_structure_below_min"
+      ]
+    },
+    {
+      "id": "wrong_focus",
+      "rejected_by": [
+        "subject_focus_unresolved"
+      ]
+    },
+    {
+      "id": "missing_steel_reflection_structure",
+      "rejected_by": [
+        "subject_luminance_structure_below_min"
+      ]
+    },
+    {
+      "id": "blown_highlights",
+      "rejected_by": [
+        "subject_high_clip_above_max"
+      ]
+    }
+  ]
+}

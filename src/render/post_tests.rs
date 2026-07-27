@@ -225,18 +225,24 @@ fn depth_color_target_is_allocated_only_for_depth_post_effects() {
 
 #[test]
 fn depth_of_field_blurs_background_and_preserves_focal_plane() {
+    let near = 0.01;
+    let far = 1000.0;
+    let encode_depth = |distance: f32| (far - near * far / distance) / (far - near);
+    let focus_distance = 1.0;
+    let focus_depth = encode_depth(focus_distance);
+    let background_depth = encode_depth(4.0);
     let target = crate::render::RasterTarget {
         width: 12,
         height: 8,
         backend: crate::diagnostics::Backend::Headless,
     };
     let mut frame = vec![0_u8; target.byte_len()];
-    let mut depth = vec![0.75_f32; target.pixel_len()];
+    let mut depth = vec![background_depth; target.pixel_len()];
     for y in 0..target.height {
         for x in 0..target.width {
             let offset = ((y * target.width + x) as usize) * 4;
             let value = if x < 4 {
-                depth[(y * target.width + x) as usize] = 0.25;
+                depth[(y * target.width + x) as usize] = focus_depth;
                 96
             } else if (x + y) % 2 == 0 {
                 32
@@ -255,7 +261,12 @@ fn depth_of_field_blurs_background_and_preserves_focal_plane() {
         &mut frame,
         &mut scratch,
         &depth,
-        DepthOfFieldPostConfig::new(0.25, 1.4, 3),
+        DepthOfFieldPostConfig::new(
+            focus_depth,
+            DepthOfFieldConfig::physical(focus_distance, 50.0, 24.0, 1.4, 9, 3),
+            [near, far],
+            false,
+        ),
     );
 
     assert_eq!(passes, 1);

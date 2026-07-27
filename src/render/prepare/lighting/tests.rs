@@ -4,6 +4,27 @@ use crate::scene::{
 };
 
 #[test]
+fn photographic_micro_surface_is_deterministic_bounded_and_spatially_variant() {
+    let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.7, 0.3)
+        .with_photographic_micro_surface(0.04, 0.002);
+    let normal = Vec3::new(0.0, 0.0, 1.0);
+    let tangent = Vec3::new(1.0, 0.0, 0.0);
+
+    let first =
+        photographic_micro_surface(&material, Vec3::new(0.001, 0.002, 0.003), normal, tangent);
+    let repeat =
+        photographic_micro_surface(&material, Vec3::new(0.001, 0.002, 0.003), normal, tangent);
+    let nearby =
+        photographic_micro_surface(&material, Vec3::new(0.0017, 0.002, 0.003), normal, tangent);
+
+    assert_eq!(first, repeat);
+    assert_ne!(first, nearby);
+    assert!((first.0.length() - 1.0).abs() < 1.0e-5);
+    assert!(first.0.dot(normal) > 0.99);
+    assert!((0.0..=0.014).contains(&first.1));
+}
+
+#[test]
 fn gpu_light_uniform_consumes_prepared_environment_lighting() {
     let scene = Scene::new();
     let environment = PreparedEnvironmentLighting::default();
@@ -12,6 +33,14 @@ fn gpu_light_uniform_consumes_prepared_environment_lighting() {
 
     assert_eq!(uniform.environment_diffuse_intensity, [0.0; 4]);
     assert_eq!(uniform.environment_specular_intensity, [0.0; 4]);
+}
+
+#[test]
+fn gpu_light_uniform_keeps_complete_photographic_area_rig() {
+    assert_eq!(
+        MAX_GPU_AREA_LIGHTS, 4,
+        "key, fill, rim, and overhead area emitters must all reach the GPU"
+    );
 }
 
 #[test]

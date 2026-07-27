@@ -33,6 +33,7 @@ pub(super) const ROOT_FIELDS: &[&str] = &[
     "lights",
     "scene",
     "render",
+    "photo",
     "expect",
     "section_box",
     "measurements",
@@ -72,6 +73,14 @@ pub(crate) const RENDER_QUALITIES: &[&str] = &["low", "medium", "high"];
 pub(super) const ANTI_ALIASING_MODES: &[&str] = &["none", "fxaa", "msaa4", "msaa8"];
 pub(super) const RECONSTRUCTION_FILTERS: &[&str] = &["box", "tent", "gaussian"];
 pub(crate) const TONEMAPPERS: &[&str] = &["standard", "aces", "pbr_neutral"];
+pub(crate) const METERING_MODES: &[&str] = &[
+    "average",
+    "center_weighted",
+    "highlight_weighted",
+    "subject",
+    "spot",
+];
+pub(crate) const SUBJECT_FALLBACK_POLICIES: &[&str] = &["error", "average_metering_with_warning"];
 pub(crate) const SCENE_PRESETS: &[&str] = &["product_studio", "cad_studio", "industrial_studio"];
 pub(crate) const DIRECTIONAL_LIGHT_PRESETS: &[&str] = &["sun", "key", "fill", "rim"];
 pub(crate) const POINT_LIGHT_PRESETS: &[&str] = &["softbox", "bulb_warm", "bulb_cool"];
@@ -179,6 +188,7 @@ fn curated_field_model_v1() -> SchemaFieldModelV1 {
         ("lights", "array", json!([])),
         ("scene", "object", Value::Null),
         ("render", "object", Value::Null),
+        ("photo", "object", Value::Null),
         ("expect", "object", Value::Null),
         ("section_box", "object", Value::Null),
         ("measurements", "array", json!([])),
@@ -393,6 +403,189 @@ fn curated_field_model_v1() -> SchemaFieldModelV1 {
             .with_enum_strings(RECONSTRUCTION_FILTERS),
         field("$.render.tonemapper", "string", false, json!("pbr_neutral"))
             .with_enum_strings(TONEMAPPERS),
+        field(
+            "$.render.exposure_compensation_ev",
+            "number",
+            false,
+            json!(0.3),
+        ),
+        field("$.render.metering.mode", "string", true, json!("subject"))
+            .with_enum_strings(METERING_MODES),
+        field(
+            "$.render.metering.target.kind",
+            "string",
+            false,
+            json!("import"),
+        )
+        .with_enum_strings(&["import", "node"]),
+        field(
+            "$.render.metering.target.id",
+            "string",
+            false,
+            json!("subject"),
+        ),
+        field(
+            "$.render.metering.fallback",
+            "string",
+            false,
+            json!("error"),
+        )
+        .with_enum_strings(SUBJECT_FALLBACK_POLICIES),
+        field("$.render.metering.rect.x", "number", false, json!(0.35)).with_range(0.0, 1.0),
+        field("$.render.metering.rect.y", "number", false, json!(0.25)).with_range(0.0, 1.0),
+        field("$.render.metering.rect.width", "number", false, json!(0.3)).with_range(0.0, 1.0),
+        field("$.render.metering.rect.height", "number", false, json!(0.4)).with_range(0.0, 1.0),
+        field(
+            "$.render.metering.surround_weight",
+            "number",
+            false,
+            json!(0.1),
+        )
+        .with_range(0.0, 1.0),
+        field(
+            "$.render.depth_of_field.focus.mode",
+            "string",
+            true,
+            json!("subject"),
+        )
+        .with_enum_strings(&["subject"]),
+        field(
+            "$.render.depth_of_field.focus.target.kind",
+            "string",
+            true,
+            json!("import"),
+        )
+        .with_enum_strings(&["import", "node"]),
+        field(
+            "$.render.depth_of_field.focus.target.id",
+            "string",
+            true,
+            json!("subject"),
+        ),
+        field(
+            "$.render.depth_of_field.coverage",
+            "string",
+            false,
+            json!("all"),
+        )
+        .with_enum_strings(&["all"]),
+        field(
+            "$.render.depth_of_field.strength",
+            "string",
+            false,
+            json!("subtle"),
+        )
+        .with_enum_strings(&["subtle"]),
+        field("$.photo.intent", "string", true, json!("camera_behavior"))
+            .with_enum_strings(&["camera_behavior"]),
+        field("$.photo.subject.kind", "string", true, json!("import"))
+            .with_enum_strings(&["import", "node"]),
+        field("$.photo.subject.id", "string", true, json!("subject")),
+        field(
+            "$.photo.subject.target.kind",
+            "string",
+            true,
+            json!("import"),
+        )
+        .with_enum_strings(&["import", "node"]),
+        field(
+            "$.photo.subject.target.id",
+            "string",
+            true,
+            json!("subject"),
+        ),
+        field("$.photo.subject.fallback", "string", false, json!("error"))
+            .with_enum_strings(SUBJECT_FALLBACK_POLICIES),
+        field(
+            "$.photo.composition.view",
+            "string",
+            false,
+            json!("three_quarter_front_right"),
+        )
+        .with_enum_strings(&["three_quarter_front_right"]),
+        field(
+            "$.photo.composition.fill_fraction.min",
+            "number",
+            false,
+            json!(0.65),
+        )
+        .with_range(0.0, 1.0),
+        field(
+            "$.photo.composition.fill_fraction.max",
+            "number",
+            false,
+            json!(0.85),
+        )
+        .with_range(0.0, 1.0),
+        field(
+            "$.photo.composition.max_center_offset_fraction",
+            "number",
+            false,
+            json!(0.16),
+        )
+        .with_range(0.0, 1.0),
+        field(
+            "$.photo.exposure.metering",
+            "string",
+            false,
+            json!("subject"),
+        )
+        .with_enum_strings(&["subject"]),
+        field(
+            "$.photo.exposure.mean_luminance_srgb8.min",
+            "number",
+            false,
+            json!(80.0),
+        )
+        .with_range(0.0, 255.0),
+        field(
+            "$.photo.exposure.mean_luminance_srgb8.max",
+            "number",
+            false,
+            json!(100.0),
+        )
+        .with_range(0.0, 255.0),
+        field(
+            "$.photo.exposure.max_low_clip_fraction",
+            "number",
+            false,
+            json!(0.2),
+        )
+        .with_range(0.0, 1.0),
+        field(
+            "$.photo.exposure.max_high_clip_fraction",
+            "number",
+            false,
+            json!(0.05),
+        )
+        .with_range(0.0, 1.0),
+        field("$.photo.focus.mode", "string", false, json!("subject"))
+            .with_enum_strings(&["subject"]),
+        field("$.photo.focus.coverage", "string", false, json!("all")).with_enum_strings(&["all"]),
+        field("$.photo.focus.strength", "string", false, json!("subtle"))
+            .with_enum_strings(&["subtle"]),
+        field(
+            "$.photo.staging.environment",
+            "string",
+            false,
+            json!("studio"),
+        )
+        .with_enum_strings(&["studio"]),
+        field(
+            "$.photo.staging.background",
+            "string",
+            false,
+            json!("dark_studio"),
+        )
+        .with_enum_strings(&["dark_studio"]),
+        field(
+            "$.photo.staging.ground",
+            "string",
+            false,
+            json!("matte_shadow_catcher"),
+        )
+        .with_enum_strings(&["matte_shadow_catcher"]),
+        field("$.photo.staging.grid", "boolean", false, json!(false)),
         field("$.capture.width", "integer", true, json!(800)).with_range(1.0, f64::from(u32::MAX)),
         field("$.capture.height", "integer", true, json!(600)).with_range(1.0, f64::from(u32::MAX)),
     ]);

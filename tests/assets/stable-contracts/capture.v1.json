@@ -18,9 +18,22 @@
   "camera": {
     "active": true,
     "world_transform": {
-      "translation": [0.0, 0.0, 2.0],
-      "rotation": [0.0, 0.0, 0.0, 1.0],
-      "scale": [1.0, 1.0, 1.0]
+      "translation": [
+        0.0,
+        0.0,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "projection": {
       "kind": "perspective",
@@ -80,12 +93,18 @@
     "screen_space_ambient_occlusion": "supported",
     "spot_shadows": "feature_disabled",
     "storage_buffers": "feature_disabled",
+    "subject_visible_mask": "supported",
     "surface_attached": false,
     "texture_arrays": "feature_disabled",
     "texture_compression_basisu": "feature_disabled",
     "uniform_buffer_max_bytes": 0,
     "uniform_buffers": "feature_disabled",
-    "wide_gamut_output": "feature_disabled"
+    "wide_gamut_output": "feature_disabled",
+    "auto_exposure_metering_average": "supported",
+    "auto_exposure_metering_center_weighted": "feature_disabled",
+    "auto_exposure_metering_highlight_weighted": "feature_disabled",
+    "auto_exposure_metering_subject": "degraded",
+    "auto_exposure_metering_spot": "feature_disabled"
   },
   "frame": {
     "pixel_source": "renderer_owned_readback",
@@ -116,7 +135,12 @@
       "width": 32,
       "height": 32
     },
-    "center": [255, 255, 255, 255],
+    "center": [
+      255,
+      255,
+      255,
+      255
+    ],
     "fnv1a64": "0123456789abcdef"
   }
 }

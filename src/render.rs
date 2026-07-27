@@ -29,6 +29,10 @@ mod culling;
 mod depth_prepass_tests;
 mod environment_cache;
 mod exposure;
+#[cfg(feature = "inspection")]
+pub mod exposure_report;
+#[cfg(feature = "inspection")]
+pub mod focus_report;
 mod frame;
 mod gpu;
 #[cfg(feature = "inspection")]
@@ -50,6 +54,8 @@ mod screen_space_reflections;
 #[cfg_attr(not(feature = "scene-host"), allow(dead_code))]
 pub(crate) mod semantic_aov;
 mod settings;
+#[cfg(feature = "inspection")]
+pub mod subject_observation;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
 mod state;
 mod surface;
@@ -71,14 +77,27 @@ use crate::scene::{CameraKey, ClippingPlane, Scene, SectionBox};
 pub use self::backend_selection::HeadlessBackendSelectionReport;
 pub use self::background::Background;
 pub use self::exposure::{
-    AutoExposureConfig, AutoExposureResult, AutoExposureStatus,
-    estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
+    AutoExposureConfig, AutoExposureMeteringDomain, AutoExposureResult, AutoExposureStatus,
+    AutoExposureSubjectMetering, AutoExposureSubjectRect, MeteringMode,
+    estimate_auto_exposure_from_linear_colors,
+    estimate_auto_exposure_from_linear_colors_with_subject_rect, estimate_auto_exposure_from_srgb8,
 };
 pub(super) use self::exposure::{AutoExposureFramePolicy, auto_exposure_frame_policy};
+#[cfg(feature = "inspection")]
+pub use self::exposure_report::{
+    EXPOSURE_REPORT_SCHEMA_V1, ExposureReportAutoV1, ExposureReportFrameKeyV1,
+    ExposureReportSubjectV1, ExposureReportV1,
+};
+#[cfg(feature = "inspection")]
+pub use self::focus_report::{
+    FOCUS_REPORT_SCHEMA_V1, FocusReportFrameKeyV1, FocusReportResolvedV1, FocusReportTargetV1,
+    FocusReportV1,
+};
 use self::frame::depth_of_field_post_config;
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
+pub use self::output::WhiteBalance;
 pub use self::output::{
     AntiAliasing, DepthOfFieldConfig, OrderIndependentTransparencyConfig, PostBloomConfig,
     ReconstructionFilter, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
@@ -90,6 +109,12 @@ pub use self::prepare::{
 pub use self::screen_space_reflections::ScreenSpaceReflectionConfig;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 use self::state::{PreparedSceneState, RenderedFrameState};
+#[cfg(feature = "inspection")]
+pub use self::subject_observation::{
+    SUBJECT_OBSERVATION_SCHEMA_V1, SubjectObservationBoundsV1, SubjectObservationDepthV1,
+    SubjectObservationFallbackV1, SubjectObservationFrameKeyV1, SubjectObservationMetricsV1,
+    SubjectObservationPixelQualityV1, SubjectObservationTargetV1, SubjectObservationV1,
+};
 use self::target::{RasterTarget, backend_for_attached_surface, validate_target_size};
 use self::work_metrics::PrepareTelemetry;
 pub use self::work_metrics::{PrepareWorkMetrics, RenderReadbackMode, RenderWorkMetrics};
@@ -112,7 +137,9 @@ pub struct Renderer {
     cpu_supersample_linear_frame: Vec<Color>,
     cpu_supersample_depth_frame: Vec<f32>,
     cpu_material_reflection_scratch: Vec<screen_space_reflections::MaterialReflectionPixel>,
-    cpu_effect_rgba8_scratch: Vec<u8>,
+    cpu_effect_linear_scratch: Vec<Color>,
+    cpu_effect_linear_scratch_2: Vec<Color>,
+    cpu_meter_linear_frame: Vec<Color>,
     cpu_row_band_bins: cpu_render::CpuRowBandBins,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     gpu_supersample_frame: Vec<u8>,
@@ -144,9 +171,17 @@ pub struct Renderer {
     context_lost: Option<bool>,
     device_lost: Option<bool>,
     environment: Option<EnvironmentHandle>,
+    environment_intensity: f32,
+    environment_rotation_y_radians: f32,
     environment_lighting_cache: environment_cache::EnvironmentLightingCache,
     background_color: Color,
     auto_exposure: Option<AutoExposureConfig>,
+    auto_exposure_subject_metering: Option<AutoExposureSubjectMetering>,
+    // True once a caller has chosen a fixed exposure through the public
+    // `set_exposure_ev`. Metering writes its own result through the private
+    // setter and deliberately does not set this, so a scene preset can tell an
+    // explicit authored choice apart from a value metering happened to leave.
+    explicit_exposure_ev: bool,
     last_auto_exposure: Option<AutoExposureResult>,
     auto_exposure_status: AutoExposureStatus,
     environment_revision: u64,

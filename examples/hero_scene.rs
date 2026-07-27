@@ -38,15 +38,12 @@ fn render_hero(path: &Path) -> Result<(), Box<dyn Error>> {
     let floor = assets.create_geometry(GeometryDesc::plane(200.0, 200.0));
     let backdrop = assets.create_geometry(GeometryDesc::plane(400.0, 160.0));
 
-    // Glossy dielectric floor: dark, but smooth enough that every sphere
-    // above it gets a reflection and a contact point.
     let floor_mat = assets.create_material(MaterialDesc::pbr_metallic_roughness(
         Color::from_srgb_u8(26, 27, 32),
         0.0,
         0.10,
     ));
     let backdrop_mat = assets.create_material(MaterialDesc::matte(Color::from_srgb_u8(30, 32, 40)));
-
     let environment =
         pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?;
 
@@ -60,58 +57,79 @@ fn render_hero(path: &Path) -> Result<(), Box<dyn Error>> {
         .transform(Transform::at(Vec3::new(0.0, 30.0, -97.0)).rotate_x_deg(90.0))
         .add()?;
 
-    // Every sphere is a named preset. The row *is* the pitch: no numbers.
-    let lineup: [(MaterialDesc, f32, f32); 6] = [
-        (
-            MaterialDesc::chrome().with_roughness_factor(0.02),
-            -3.30,
-            1.00,
-        ),
-        (
-            MaterialDesc::clear_glass(Color::from_srgb_u8(214, 238, 248)),
-            -1.35,
-            0.86,
-        ),
-        (
-            MaterialDesc::clearcoat_plastic(Color::from_srgb_u8(178, 30, 34)),
-            0.52,
-            0.94,
-        ),
-        (MaterialDesc::brushed_steel(), 2.28, 0.80),
-        (
-            MaterialDesc::metal(Color::from_srgb_u8(212, 168, 92)),
-            3.86,
-            0.72,
-        ),
-        (
-            MaterialDesc::matte(Color::from_srgb_u8(226, 226, 230)),
-            5.22,
-            0.62,
-        ),
-    ];
+    // A sculpture, not a test chart: interlocking rings with real silhouette,
+    // a glass core, and a machined base. Still only stock primitives.
+    let big_ring = assets.create_geometry(GeometryDesc::torus(1.62, 0.115, 288, 72));
+    let mid_ring = assets.create_geometry(GeometryDesc::torus(1.18, 0.085, 256, 64));
+    let core = assets.create_geometry(GeometryDesc::sphere(0.72, 224, 144));
+    let base = assets.create_geometry(GeometryDesc::cylinder_with_bevel(1.05, 0.16, 160, 0.035));
+    let pin = assets.create_geometry(GeometryDesc::cylinder_with_bevel(0.055, 3.1, 96, 0.02));
 
-    for (index, (material, x, radius)) in lineup.into_iter().enumerate() {
-        let geometry = assets.create_geometry(GeometryDesc::sphere(radius, 192, 128));
-        let handle = assets.create_material(material);
-        // Gentle arc: the row curves away so it reads as depth, not a chart.
-        // Smooth arc: centre spheres forward, ends receding.
-        let t = (index as f32 - 2.5) / 2.5;
-        let z = -1.35 * t * t;
-        scene
-            .mesh(geometry, handle)
-            .transform(Transform::at(Vec3::new(x, radius - 1.0, z)))
-            .add()?;
-    }
+    let chrome = assets.create_material(MaterialDesc::chrome().with_roughness_factor(0.015));
+    let gold = assets.create_material(MaterialDesc::metal(Color::from_srgb_u8(214, 168, 88)));
+    let glass = assets.create_material(MaterialDesc::clear_glass(Color::from_srgb_u8(
+        206, 236, 250,
+    )));
+    let steel = assets.create_material(MaterialDesc::brushed_steel());
+    let accent = assets.create_material(MaterialDesc::clearcoat_plastic(Color::from_srgb_u8(
+        186, 32, 36,
+    )));
+
+    // Outer ring: near-vertical, tipped toward camera.
+    scene
+        .mesh(big_ring, chrome)
+        .transform(
+            Transform::at(Vec3::new(0.0, 0.62, 0.0))
+                .rotate_x_deg(74.0)
+                .rotate_z_deg(-14.0),
+        )
+        .add()?;
+
+    // Inner ring: crossing the outer one at roughly a right angle.
+    scene
+        .mesh(mid_ring, gold)
+        .transform(
+            Transform::at(Vec3::new(0.0, 0.62, 0.0))
+                .rotate_x_deg(74.0)
+                .rotate_y_deg(88.0)
+                .rotate_z_deg(10.0),
+        )
+        .add()?;
+
+    // Glass core suspended at the crossing point.
+    scene
+        .mesh(core, glass)
+        .transform(Transform::at(Vec3::new(0.0, 0.62, 0.0)))
+        .add()?;
+
+    // Axle through the whole assembly.
+    scene
+        .mesh(pin, steel)
+        .transform(Transform::at(Vec3::new(0.0, 0.62, 0.0)).rotate_z_deg(90.0))
+        .add()?;
+
+    // Machined base plate.
+    scene
+        .mesh(base, steel)
+        .transform(Transform::at(Vec3::new(0.0, -0.92, 0.0)))
+        .add()?;
+
+    // Small red accent, off to the side, catching the key light.
+    let bead = assets.create_geometry(GeometryDesc::sphere(0.2, 128, 96));
+    scene
+        .mesh(bead, accent)
+        .transform(Transform::at(Vec3::new(1.95, -0.80, 1.1)))
+        .add()?;
 
     scene.add_studio_lighting()?;
 
     let camera = scene.add_perspective_camera(
         scene.root(),
-        PerspectiveCamera::standard().with_fov_degrees(32.0),
-        Transform::at(Vec3::new(0.95, 1.15, 12.6)),
+        PerspectiveCamera::standard().with_fov_degrees(31.0),
+        Transform::at(Vec3::new(3.05, 0.95, 6.35)),
     )?;
     scene.set_active_camera(camera)?;
-    scene.look_at_point(camera, Vec3::new(0.95, -0.16, -0.4))?;
+    scene.look_at_point(camera, Vec3::new(0.0, 0.34, 0.0))?;
 
     let mut renderer = Renderer::headless(WIDTH, HEIGHT)?;
     renderer.set_supersample_factor(SUPERSAMPLE)?;
@@ -119,7 +137,6 @@ fn render_hero(path: &Path) -> Result<(), Box<dyn Error>> {
     renderer.set_environment(environment);
     renderer.set_background(Background::DarkStudio);
     renderer.set_tonemapper(Tonemapper::PbrNeutral);
-    // The floor is the second subject: let the lineup reflect into it.
     renderer.set_screen_space_reflections(Some(ScreenSpaceReflectionConfig::studio_floor()));
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render(&scene, camera)?;

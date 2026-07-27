@@ -2284,3 +2284,255 @@ build and is a host-speed limit, not a code result.
   `cargo test --workspace --all-features --tests`.
 - **Platform lanes** — macOS Metal, Windows DX12, and the browser lanes cannot
   run here at all and must come from CI.
+
+---
+
+## 10. Defects found after sign-off — demo hero work (2026-07-26)
+
+Found while rebuilding the public demo hero, **after** the 43 remediation rows
+were signed off. None of these are regressions from `R01`-`D14`; all predate
+this checklist. They are recorded here because the hero work is the first thing
+in the repository that exercised these paths end to end from a caller's
+position rather than from a test's.
+
+Prefix `H` (hero). Not yet scheduled — see the plan discussion before
+committing to an order.
+
+### H01 — `ScreenSpaceReflectionConfig` is a frame mirror, not a reflection
+
+- [ ] **Defect.** `screen_space_reflections::apply_rgba8`
+      (`src/render/screen_space_reflections.rs:96`) computes
+      `horizon_y = target.height * config.horizon_fraction()` and, for every row
+      below it, blends a vertically mirrored sample across the **full frame
+      width**. It never consults the floor plane, the floor's extent, scene
+      depth, or surface normals. The public name, the `studio_floor()` preset,
+      and the docs all present it as a floor reflection.
+- [ ] **Consequences.** Reflections appear beyond the floor's edges and over
+      background; the mirror line sits at an image-height fraction rather than
+      the geometric horizon, so it does not move with the camera. Combined with
+      `set_supersample_factor(2)` **and** the rest of the post chain it resolves
+      into a hard, obviously displaced second copy of the subject — reported
+      from outside as "two images of the same hero, a little shifted".
+- [ ] **Reproduction.** Held at
+      `scratchpad/repro/diag_hero_toggles.rs`: six variants over
+      {supersample, SSR, AO+bloom+DoF}. Only the all-three variant produces the
+      duplicate; SSR alone and supersample alone are clean.
+- [ ] **Decision needed.** Either implement a real reflection (mirrored
+      geometry under the floor plane, or depth/normal-buffer SSR), or rename
+      the type and preset to describe what it does and document the limitation.
+      Shipping it under the current name is the actual defect.
+- [ ] **Current mitigation.** `examples/hero_machine.rs` does not enable SSR and
+      records why inline.
+
+### H02 — `Scene::mate` rejects the repository's own canonical connector assets
+
+- [ ] **Defect.** `cargo run --release --example mate_two_parts` fails at
+      runtime with `SnapToleranceExceeded { distance: 0.615, tolerance: 0.01 }`.
+      `validate_snap_tolerance_for_apply`
+      (`src/scene/connectors/solving.rs:32`) compares `preview.snap_distance` —
+      the distance the source part must **travel** to reach the mated pose —
+      against `snapTolerance`, which
+      `scripts/generate_connector_demo_assets.js:192` authors as `0.01`, a
+      **seating/fit** tolerance. Those are different quantities.
+- [ ] **Consequences.** Default `mate()` can only succeed on parts that are
+      already assembled, which is the opposite of its doc comment ("Mate two
+      imported parts by named connector"). Every shipped example that mates —
+      `mate_two_parts`, `easy_scene_showcase`, `connector_auto_framing`,
+      `connector_snap_hero` — fails at runtime.
+- [ ] **Decision needed.** Either compare the **residual misalignment after**
+      the mate (~0) rather than travel distance, or scope the tolerance check to
+      interactive drag-snapping and exempt an explicit `mate()` call.
+
+### H03 — CI compiles examples but never runs them
+
+- [ ] **Defect.** Every lane uses `cargo check --examples --all-features`
+      (`ci.yml:72`, `ci.yml:263`, `release.yml:66`, `release.yml:210`,
+      `release.yml:243`). The single exception is
+      `native_surface_hardware_proof` on the manual hardware workflow.
+- [ ] **Consequences.** This is what let `H02` ship: four examples that fail on
+      their first line of real work are green in CI indefinitely. Examples are
+      the documented entry point for new users, so a runtime break there is
+      more damaging than a comparable break in library internals.
+- [ ] **Fix.** Run the examples that need no GPU/network in a lane, or add a
+      smoke test that executes each and asserts exit status.
+
+### H04 — `AutoExposureConfig::product_studio()` underexposes a dark-studio product shot
+
+- [ ] **Observation, not yet isolated.** The hero frame — a small bright
+      subject against `Background::DarkStudio` — meters roughly **4 EV** under.
+      `examples/hero_machine.rs` compensates with a fixed
+      `set_exposure_ev(4.0)` and says why inline.
+- [ ] **Confirmed not caused by `R01`.** On first application `current_ev` is
+      `0`, so the old and new arithmetic agree, and `auto_exposure_attempted`
+      guards a single application.
+- [ ] **Not the cap.** `AutoExposureConfig::product_studio()` is capped at
+      `max_ev: 0.65` (`src/render/exposure.rs:133`), and raising it was tried
+      and reverted. Against the preset's own `Background::Studio`, the frame
+      metered at `mean_luminance 0.098` while the meter was *not* asking for
+      lift: the whole-frame average already sat near target because the field
+      is bright and the subject is small. The cap only binds once the
+      background is overridden to dark. Raising it also inverts a deliberate
+      ordering pinned by
+      `tests/round_c_auto_exposure_presets.rs` (`indoor.max_ev() >
+      product.max_ev()`), which encodes that a product studio is controlled
+      lighting needing less lift.
+- [ ] **Actual defect.** Metering is whole-frame average, so a small subject in
+      a large field is exposed for the field rather than for the subject. This
+      is the one row here that needs design work, not a constant change:
+      subject-weighted or region-weighted metering. Until then the correct lever
+      is an explicit `render.exposure_ev`, which `H10` makes usable.
+- [ ] **Fix.** Region-weight `product_studio` metering toward the framed
+      subject. Do not raise the cap on its own.
+
+### H05 — A glossy `add_grid_floor` blows out at grazing camera angles
+
+- [ ] **Observation.** `GridFloorOptions::roughness(0.28)` under a 12-degree
+      camera elevation produces a large white specular sheet across the floor
+      whose position is unrelated to the subject. Evidence:
+      `d-glossyfloor` variant of the `H01` repro.
+- [ ] **Likely not a code defect** — a smooth dielectric at grazing incidence
+      is expected to behave this way — but the helper is presented as the easy
+      path and its default is matte (`0.96`), so lowering roughness is an
+      inviting mistake with an ugly result. Warrants a documented caution in
+      `docs/guides/easy-scene-setup.md`.
+
+### H06 — Grounding expectations cannot address imported nodes
+
+- [ ] **Defect.** `expect_grounded[].target.kind` and
+      `expect_quality.grounding.target.kind` accept only `import`, `node`, and
+      `world`. `kind:"import"` is rejected at build with
+      `unsupported_feature` ("this expectation target does not support
+      whole-import matching"), and per
+      `docs/specs/recipe-spatial-state-v1.md:19` `kind:"node"` addresses **an
+      authored recipe node** only. Imported nodes are addressed by
+      `kind:"import_node"`, which the expectation target enum does not accept.
+- [ ] **Consequence.** A recipe whose subject is an imported glTF/GLB — the
+      normal case for a product still — cannot assert that its subject rests on
+      the floor. Passing `imports[].nodes_by_path` keys such as
+      `machine:/drive_unit/drive baseplate` as a `node` id fails verification
+      with `ground_target_unresolved`.
+- [ ] **Why it matters.** "Is the subject floating?" is the defect the demo
+      hero actually shipped with, and a human caught it by eye after several
+      rounds of machine-green renders. `expect_grounded` is the check built for
+      exactly that failure and it is unreachable for the case that needs it.
+- [ ] **Fix.** Accept `kind:"import_node"` (with `import` + `path`) in
+      expectation targets, or resolve `imports[].nodes_by_path` keys as valid
+      `node` ids. Either closes the gap without new vocabulary.
+- [ ] **Evidence.** `demo-next/hero.recipe.json` at
+      `scena validate-recipe --full` and `recipe render --gpu --verify`;
+      the grounding expectations had to be removed to obtain a passing render.
+
+### H07 — The `product` quality profile cannot fail an unusable exposure
+
+- [ ] **Defect.** `expect_quality.profile:"product"` gates subject exposure on
+      `max_low_clip_fraction: 0.8`. A frame whose subject region is 57% clipped
+      to black at `mean_luminance = 0.098` reports `subject_exposure_sane` and
+      `severe_black_crush` as `status:"checked", severity:"info"`.
+- [ ] **Measured evidence.** `demo-next/hero.recipe.json` rendered through
+      `recipe render --gpu --verify` with `scene.preset:"product_studio"`:
+      `subject_exposure_sane` observed
+      `{low_clip_fraction: 0.371, mean_luminance: 0.098}` against threshold
+      `{max_low_clip_fraction: 0.8}`; `severe_black_crush` observed `0.569`
+      against `0.8`. The rendered image is visibly unusable — the subject reads
+      as a black silhouette.
+- [ ] **Why it matters.** The guide sells this profile as the check that
+      catches `subject_black_crushed`. At a 0.8 ceiling it only fires on a
+      near-total blackout, so it certifies images no one would ship. This is
+      the same failure mode the SSR work hit from the other direction: a green
+      machine result on a bad frame.
+- [ ] **Interaction with `H04`.** The underlying cause of the dark frame is
+      that `scene.preset:"product_studio"` pairs `Background::Studio` (bright)
+      with `AutoExposureConfig::product_studio()`. A small bright subject in a
+      large bright field meters low. The preset's own two halves fight each
+      other, and its own quality gate does not notice.
+- [ ] **Thresholds (located).** `src/render/quality/types.rs:198` for the
+      product profile, and the same loose default at
+      `src/scene_host/composition/object_pixels.rs:199` for object-level
+      composition.
+- [ ] **Fix.** Tighten `max_low_clip_fraction` to a value that fails a
+      silhouette (a subject at `mean_luminance < 0.15` should not pass), and
+      add a mean-luminance floor to the product profile.
+
+### H08 — Recipe framing cannot express a custom camera angle
+
+- [ ] **Gap.** `framing_presets` is a closed list of eleven fixed views
+      (`front`, `isometric`, `three_quarter_front_right`, ...). The Rust API
+      offers `FramingOptions::azimuth_elevation(-34.0, 12.0)` and the guide
+      documents it, but the recipe surface exposes no equivalent. The only
+      recipe escape is `cameras[].transform` with `kind:"look_at"` and literal
+      eye coordinates — exactly the hand-typed camera distance the framing
+      helpers exist to avoid.
+- [ ] **Consequence.** An agent authoring a hero still cannot pick the low
+      three-quarter angle product photography actually uses; it must accept a
+      fixed preset elevation or drop to raw coordinates.
+- [ ] **Fix.** Accept `framing: {azimuth_degrees, elevation_degrees}` in the
+      recipe camera block, routing to the existing `FramingOptions` method.
+
+### H09 — `scene.grid.reflection` renders as flat grey quads, not a reflection
+
+- [ ] **Defect.** With `scene.grid.reflection:{enabled:true, strength:0.55}`
+      the floor shows hard-edged, flat light-grey rectangles offset from the
+      subject rather than a reflected image. The rectangles have straight
+      axis-aligned borders unrelated to the subject silhouette.
+- [ ] **Interaction with the gate.** At `strength:0.32` the same floor fails
+      `reflection_structure_missing` with `sobel_energy 0.019` against a `0.020`
+      threshold; at `0.55` it passes the gate while looking visibly wrong. So
+      the reflection check can be satisfied by an artifact — passing it is not
+      evidence the floor reads as reflective.
+- [ ] **Why it matters.** `docs/guides/llm-app-builder.md` names this the
+      product-floor reflection path and contrasts it with material SSR
+      ("without requiring material SSR"). It is the documented answer for the
+      most common hero requirement, and it is the third distinct reflection
+      mechanism in the codebase to produce a wrong image — after
+      `ScreenSpaceReflectionConfig` (`H01`) and the glossy grid floor (`H05`).
+- [ ] **Confirmed by isolation.** With exposure fixed (see `H10`) the
+      artifacts are unmistakable white rectangles:
+      `evidence/demo-hero/fixed-exposure-with-reflection-artifacts.png`.
+      Removing `scene.grid.reflection` and changing nothing else eliminates
+      them: `evidence/demo-hero/fixed-exposure-no-reflection.png`. The two
+      recipes differ only in that key.
+
+### H10 — `scene.preset` silently overrides fixed `render.exposure_ev`
+
+- [ ] **Mechanism (corrected after review).** `exposure_ev` is *not* dropped;
+      it is applied and then overwritten. `src/scene_host/recipe/setup.rs:86`
+      calls `set_exposure_ev`. Afterwards `scene.preset` runs
+      `apply_scene_setup_preset_renderer`, which installs the preset's auto
+      exposure whenever `renderer.auto_exposure().is_none()`
+      (`src/scene_host/product.rs:137`). `Renderer::set_exposure_ev` sets only
+      the fixed EV and never clears auto exposure
+      (`src/render/settings.rs:133`), so that guard is still `none` and the
+      preset re-enables metering on top of the fixed value.
+- [ ] **Compounding cap.** `AutoExposureConfig::product_studio()` is capped at
+      `max_ev: 0.65` (`src/render/exposure.rs:133`). The shot needs roughly
+      +4 EV, so even uncapped metering could not rescue it — the preset cannot
+      expose this class of frame at all.
+- [ ] **Observed effect.** Rendering `evidence/demo-hero/hero.recipe.json` with
+      `render.exposure_ev: 12.0` produces a frame indistinguishable from the
+      same recipe without it. Measured full-frame mean luminance:
+      **26.9 (baseline) vs 27.1 (EV+12)** on 0-255. Twelve stops is a 4096x
+      linear increase; the frame should be fully blown out. The render report
+      emits no warning that the field was dropped.
+- [ ] **Contrast with the Rust API.** `Renderer::set_exposure_ev(4.0)` in
+      `examples/hero_machine.rs` visibly and correctly brightens the identical
+      model, lighting rig, and environment. The recipe field does not route to
+      the same behavior.
+- [ ] **Blast radius.** Exposure is the only lever an agent has once a scene
+      preset has been chosen, because `auto_exposure` and `exposure_ev` are
+      mutually exclusive in v1. With `exposure_ev` inert and
+      `AutoExposureConfig::product_studio()` metering a bright field low
+      (`H04`), a recipe-authored product still has **no working exposure
+      control at all**. Every attempt in this session — `auto_exposure`
+      variants, fixed `exposure_ev`, a `dark_studio` background override, an
+      explicit `scene.environment:{preset:"studio"}` — left the subject pinned
+      between `mean_luminance` 0.083 and 0.096, rendering the steel assembly
+      as a black silhouette.
+- [ ] **Consequence for the agent surface.** This is the headline finding of
+      the demo-hero work. `docs/guides/llm-app-builder.md` presents the recipe
+      surface as the way an LLM produces a good-looking scene, and following it
+      exactly yields an unusable frame that the accompanying quality gate
+      (`H07`) certifies as sane. The equivalent Rust composition renders
+      correctly, so the gap is in the recipe layer, not the renderer.
+- [ ] **Fix.** Route `render.exposure_ev` to `Renderer::set_exposure_ev`; if a
+      scene preset's auto exposure takes precedence, reject the combination at
+      validation instead of dropping the field silently.

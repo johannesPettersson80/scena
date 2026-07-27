@@ -61,6 +61,9 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
                 "The default feature set remains empty",
                 "docs/specs/cli-install-contract.md",
                 "`scene-host` | native/browser SceneHost facade; enables `inspection`",
+                "scena photo render model.glb --out hero.png --report hero.report.json",
+                "photo.intent",
+                "no manual camera, exposure, or focus",
             ][..],
         ),
         (
@@ -68,6 +71,18 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
             &[
                 "cargo install scena --features agent",
                 "one-step self-verification surface",
+                "scena photo render model.glb --out hero.png --report hero.report.json",
+                "photo.intent",
+                "no manual camera, exposure, or focus",
+            ][..],
+        ),
+        (
+            "docs/guides/easy-scene-setup.md",
+            &[
+                "scena photo render model.glb --out hero.png --report hero.report.json",
+                "photo.intent",
+                "no manual camera, exposure, or focus",
+                "Raw Rust camera, lighting, and exposure setup remains the advanced path",
             ][..],
         ),
         (
@@ -228,7 +243,7 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
         ),
         (
             "tests/assets/cli-golden/process_contract_table.sha256",
-            &["af63ca1fee1b06a618a328868e45a4c778665196f26641fb2031d43bcb1f403d"][..],
+            &["5886e2d90331dcf61bbf74a96cf66b6f2782b08a40d4f9211a2bbc1e45634cbb"][..],
         ),
         (
             "tests/assets/stable-contracts/contract_validation.v1.json",

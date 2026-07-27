@@ -1,464 +1,520 @@
 {
-  "schema": "scena.schema_catalog.v1",
   "entries": [
     {
+      "fixture_path": "tests/assets/stable-contracts/schema_catalog.v1.json",
+      "owner_module": "schema_catalog",
       "schema": "scena.schema_catalog.v1",
-      "owner_module": "schema_catalog",
-      "summary": "Catalog of public stable scena JSON contracts.",
-      "fixture_path": "tests/assets/stable-contracts/schema_catalog.v1.json"
+      "summary": "Catalog of public stable scena JSON contracts."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/schema_entry.v1.json",
+      "owner_module": "schema_catalog",
       "schema": "scena.schema_entry.v1",
-      "owner_module": "schema_catalog",
-      "summary": "Single schema catalog entry with a representative example.",
-      "fixture_path": "tests/assets/stable-contracts/schema_entry.v1.json"
+      "summary": "Single schema catalog entry with a representative example."
     },
     {
-      "schema": "scena.field_model.v1",
+      "fixture_path": "tests/assets/stable-contracts/field_model.v1.json",
       "owner_module": "scene/recipe/field_model",
-      "summary": "Authoritative field types, requiredness, enums, ranges, defaults, deprecations, and examples.",
-      "fixture_path": "tests/assets/stable-contracts/field_model.v1.json"
+      "schema": "scena.field_model.v1",
+      "summary": "Authoritative field types, requiredness, enums, ranges, defaults, deprecations, and examples."
     },
     {
-      "schema": "scena.capability_report.v1",
+      "fixture_path": "tests/assets/stable-contracts/capability_report.v1.json",
       "owner_module": "diagnostics",
-      "summary": "Renderer capability status and diagnostics.",
-      "fixture_path": "tests/assets/stable-contracts/capability_report.v1.json"
+      "schema": "scena.capability_report.v1",
+      "summary": "Renderer capability status and diagnostics."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/scene_inspection.v1.json",
+      "owner_module": "scene",
       "schema": "scena.scene_inspection.v1",
-      "owner_module": "scene",
-      "summary": "Scene graph, draw-list, bounds, material, and revision inspection.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/scene_inspection.v1.json"
+      "summary": "Scene graph, draw-list, bounds, material, and revision inspection."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/capture.v1.json",
+      "owner_module": "capture",
       "schema": "scena.capture.v1",
-      "owner_module": "capture",
-      "summary": "Descriptor-bound RGBA8 capture metadata and payload hash.",
-      "fixture_path": "tests/assets/stable-contracts/capture.v1.json"
+      "summary": "Descriptor-bound RGBA8 capture metadata and payload hash."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/capture_baseline.v1.json",
+      "owner_module": "capture",
       "schema": "scena.capture_baseline.v1",
-      "owner_module": "capture",
-      "summary": "Tolerance-bound capture comparison report.",
-      "fixture_path": "tests/assets/stable-contracts/capture_baseline.v1.json"
+      "summary": "Tolerance-bound capture comparison report."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/render_introspection.v1.json",
+      "owner_module": "render",
       "schema": "scena.render_introspection.v1",
-      "owner_module": "render",
-      "summary": "Capture-bound frame visibility, luminance, framing, reason, and fix summary.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/render_introspection.v1.json"
+      "summary": "Capture-bound frame visibility, luminance, framing, reason, and fix summary."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/focus_report.v1.json",
+      "owner_module": "render",
+      "schema": "scena.focus_report.v1",
+      "summary": "Capture-bound depth-of-field focus resolution report with target, visible-depth percentiles, confidence, and frame key."
+    },
+    {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/exposure_report.v1.json",
+      "owner_module": "render",
+      "schema": "scena.exposure_report.v1",
+      "summary": "Capture-bound exposure report with selected EV, metered subject luminance, clip fractions, auto-exposure state, and frame key."
+    },
+    {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/subject_observation.v1.json",
+      "owner_module": "render",
+      "schema": "scena.subject_observation.v1",
+      "summary": "Capture-bound subject projection, visible-mask, depth, and degradation report."
+    },
+    {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/render_quality.v1.json",
+      "owner_module": "render",
       "schema": "scena.render_quality.v1",
-      "owner_module": "render",
-      "summary": "Profile-scoped native-capture render quality checks with actionable fix hints.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/render_quality.v1.json"
+      "summary": "Profile-scoped native-capture render quality checks with actionable fix hints."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_composition.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_composition.v1",
-      "owner_module": "scene_host",
-      "summary": "Composition-conformance checks over declared recipe elements and generated overlays.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_composition.v1.json"
+      "summary": "Composition-conformance checks over declared recipe elements and generated overlays."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
+      "owner_module": "render",
       "schema": "scena.visibility_diagnosis.v1",
-      "owner_module": "render",
-      "summary": "Inspection-backed visibility diagnosis with stable reasons and suggested fixes.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/visibility_diagnosis.v1.json"
+      "summary": "Inspection-backed visibility diagnosis with stable reasons and suggested fixes."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/visual_repair_plan.v1.json",
+      "owner_module": "render",
       "schema": "scena.visual_repair_plan.v1",
-      "owner_module": "render",
-      "summary": "Conservative repair plan over introspection and visibility diagnosis reports.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/visual_repair_plan.v1.json"
+      "summary": "Conservative repair plan over introspection and visibility diagnosis reports."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/agent_loop_result.v1.json",
+      "owner_module": "render",
       "schema": "scena.agent_loop_result.v1",
-      "owner_module": "render",
-      "summary": "Fail-closed agent repair-loop result for irreducible or non-converging cases.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/agent_loop_result.v1.json"
+      "summary": "Fail-closed agent repair-loop result for irreducible or non-converging cases."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/agent_smoke_template.v1.json",
+      "owner_module": "bin/scena",
       "schema": "scena.agent_smoke_template.v1",
-      "owner_module": "bin/scena",
-      "summary": "Agent smoke-template manifest with generated files, commands, and artifacts.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/agent_smoke_template.v1.json"
+      "summary": "Agent smoke-template manifest with generated files, commands, and artifacts."
     },
     {
-      "schema": "scena.agent_template_catalog.v1",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/agent_template_catalog.v1.json",
       "owner_module": "schema_catalog/agent_smoke",
-      "summary": "Canonical agent template names, aliases, status, and required features.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/agent_template_catalog.v1.json"
+      "schema": "scena.agent_template_catalog.v1",
+      "summary": "Canonical agent template names, aliases, status, and required features."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/browser_proof_run.v1.json",
+      "owner_module": "bin/scena",
       "schema": "scena.browser_proof_run.v1",
-      "owner_module": "bin/scena",
-      "summary": "One-command browser proof wrapper result with lane, command, and artifact paths.",
-      "fixture_path": "tests/assets/stable-contracts/browser_proof_run.v1.json"
+      "summary": "One-command browser proof wrapper result with lane, command, and artifact paths."
     },
     {
-      "schema": "scena.q01.required_webgpu_pixel_parity.v1",
-      "owner_module": "browser_probe",
-      "summary": "Source-bound CPU/WebGPU pixel comparison with mutations, adapter, and artifact provenance.",
       "feature_flag": "browser-probe",
-      "fixture_path": "tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json"
+      "fixture_path": "tests/assets/stable-contracts/required_webgpu_pixel_parity.v1.json",
+      "owner_module": "browser_probe",
+      "schema": "scena.q01.required_webgpu_pixel_parity.v1",
+      "summary": "Source-bound CPU/WebGPU pixel comparison with mutations, adapter, and artifact provenance."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json",
+      "owner_module": "render",
       "schema": "scena.q04.required_gpu_resource_lifecycle.v1",
-      "owner_module": "render",
-      "summary": "Physical-GPU prepare, render, release, and confirmed resource-retirement evidence.",
-      "fixture_path": "tests/assets/stable-contracts/required_gpu_resource_lifecycle.v1.json"
+      "summary": "Physical-GPU prepare, render, release, and confirmed resource-retirement evidence."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/appearance_expectation.v1.json",
+      "owner_module": "render",
       "schema": "scena.appearance_expectation.v1",
-      "owner_module": "render",
-      "summary": "Transient expected appearance targets for first-time material verification.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/appearance_expectation.v1.json"
+      "summary": "Transient expected appearance targets for first-time material verification."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/appearance_introspection.v1.json",
+      "owner_module": "render",
       "schema": "scena.appearance_introspection.v1",
-      "owner_module": "render",
-      "summary": "Capture-bound material, variant, fallback, alpha, and swatch verification report.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/appearance_introspection.v1.json"
+      "summary": "Capture-bound material, variant, fallback, alpha, and swatch verification report."
     },
     {
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/animation_introspection.v1.json",
+      "owner_module": "render",
       "schema": "scena.animation_introspection.v1",
-      "owner_module": "render",
-      "summary": "Host-ticked animation sampling, channel changes, and rendered-change verification report.",
-      "feature_flag": "inspection",
-      "fixture_path": "tests/assets/stable-contracts/animation_introspection.v1.json"
+      "summary": "Host-ticked animation sampling, channel changes, and rendered-change verification report."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/interaction_expectation.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.interaction_expectation.v1",
-      "owner_module": "scene_host",
-      "summary": "Transient synthetic interaction steps for host-driven verification.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/interaction_expectation.v1.json"
+      "summary": "Transient synthetic interaction steps for host-driven verification."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/interaction_verification.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.interaction_verification.v1",
-      "owner_module": "scene_host",
-      "summary": "Synthetic pick, hover, selection, and host-event verification report.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/interaction_verification.v1.json"
+      "summary": "Synthetic pick, hover, selection, and host-event verification report."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_gizmo_drag.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_host_gizmo_drag.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost transform gizmo drag request that applies through VisualPatch.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_gizmo_drag.v1.json"
+      "summary": "SceneHost transform gizmo drag request that applies through VisualPatch."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/connector_browser.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.connector_browser.v1",
-      "owner_module": "scene_host",
-      "summary": "Connector listing, metadata compatibility, and snap-preview report.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/connector_browser.v1.json"
+      "summary": "Connector listing, metadata compatibility, and snap-preview report."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/product_options.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.product_options.v1",
-      "owner_module": "scene_host",
-      "summary": "Host-owned visual product option groups that apply VisualPatch entries.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/product_options.v1.json"
+      "summary": "Host-owned visual product option groups that apply VisualPatch entries."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/presentation_timeline.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.presentation_timeline.v1",
-      "owner_module": "scene_host",
-      "summary": "Host-ticked presentation timeline that emits VisualPatch for seek and advance.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/presentation_timeline.v1.json"
+      "summary": "Host-ticked presentation timeline that emits VisualPatch for seek and advance."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_grounding.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_host_grounding.v1",
-      "owner_module": "scene_host",
-      "summary": "Product-viewer grounding preset report with floor, SSAO, and explicit shadow fallbacks.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_grounding.v1.json"
+      "summary": "Product-viewer grounding preset report with floor, SSAO, and explicit shadow fallbacks."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe.v1.json",
+      "owner_module": "scene",
       "schema": "scena.scene_recipe.v1",
-      "owner_module": "scene",
-      "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
-      "fixture_path": "tests/assets/stable-contracts/scene_recipe.v1.json"
+      "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe_validation.v1.json",
+      "owner_module": "scene",
       "schema": "scena.scene_recipe_validation.v1",
-      "owner_module": "scene",
-      "summary": "Fail-closed scene recipe validation diagnostics with deterministic suggestions.",
-      "fixture_path": "tests/assets/stable-contracts/scene_recipe_validation.v1.json"
+      "summary": "Fail-closed scene recipe validation diagnostics with deterministic suggestions."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe_build.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_recipe_build.v1",
-      "owner_module": "scene_host",
-      "summary": "Typed recipe build manifest mapping caller ids to stable SceneHost handles.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_recipe_build.v1.json"
+      "summary": "Typed recipe build manifest mapping caller ids to stable SceneHost handles."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/recipe_build_result.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.recipe_build_result.v1",
-      "owner_module": "scene_host",
-      "summary": "Renderer-free recipe build manifest with effective policy and execution counters.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/recipe_build_result.v1.json"
+      "summary": "Renderer-free recipe build manifest with effective policy and execution counters."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/recipe_render_result.v1.json",
+      "owner_module": "bin/scena",
       "schema": "scena.recipe_render_result.v1",
-      "owner_module": "bin/scena",
-      "summary": "One-command recipe build, render, introspection, and verification result.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/recipe_render_result.v1.json"
+      "summary": "One-command recipe build, render, introspection, and verification result."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/photo_render_result.v1.json",
+      "owner_module": "bin/scena/photo",
+      "schema": "scena.photo_render_result.v1",
+      "summary": "Camera-behavior photo render command result with selected candidate, quality verdict, and artifact paths."
+    },
+    {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/photo_plan.v1.json",
+      "owner_module": "scene_host::photo",
+      "schema": "scena.photo_plan.v1",
+      "summary": "Camera-behavior photo planning envelope with resolved subject, candidates, staging choices, scoring, and selected candidate."
+    },
+    {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/photo_candidate_plan.v1.json",
+      "owner_module": "scene_host::photo",
+      "schema": "scena.photo_candidate_plan.v1",
+      "summary": "Deterministic camera-behavior camera, lens, fill, orientation, and staging candidate plan."
+    },
+    {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/photo_shaded_candidate_selection.v1.json",
+      "owner_module": "bin/scena/photo",
+      "schema": "scena.photo_shaded_candidate_selection.v1",
+      "summary": "Bounded low-resolution shaded-candidate scoring report for camera-behavior photo intent."
+    },
+    {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/photo_report.v1.json",
+      "owner_module": "bin/scena/photo",
+      "schema": "scena.photo_report.v1",
+      "summary": "Camera-behavior photo quality report with planning, exposure attempts, subject metrics, acceptance bands, and emitted artifacts."
+    },
+    {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/cad_inspection_result.v1.json",
+      "owner_module": "bin/scena",
       "schema": "scena.cad_inspection_result.v1",
-      "owner_module": "bin/scena",
-      "summary": "CAD inspection preset report binding principal-face renders, post-process presentation metrics, and a contact sheet.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/cad_inspection_result.v1.json"
+      "summary": "CAD inspection preset report binding principal-face renders, post-process presentation metrics, and a contact sheet."
     },
     {
-      "schema": "scena.capture_sequence_result.v1",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/capture_sequence_result.v1.json",
       "owner_module": "bin/scena/recipe/capture_sequence",
-      "summary": "Canonical-view, turntable, and animation-clip PNG capture sequence with per-frame camera and timing metadata.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/capture_sequence_result.v1.json"
+      "schema": "scena.capture_sequence_result.v1",
+      "summary": "Canonical-view, turntable, and animation-clip PNG capture sequence with per-frame camera and timing metadata."
     },
     {
-      "schema": "scena.semantic_aov_result.v1",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/semantic_aov_result.v1.json",
       "owner_module": "bin/scena/recipe/semantic_aov",
-      "summary": "Deterministic semantic ID, linear-depth, and world-normal images with runtime-scoped and persistent identity legend.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/semantic_aov_result.v1.json"
+      "schema": "scena.semantic_aov_result.v1",
+      "summary": "Deterministic semantic ID, linear-depth, and world-normal images with runtime-scoped and persistent identity legend."
     },
     {
-      "schema": "scena.scene_recipe_diff.v1",
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe_diff.v1.json",
       "owner_module": "scene/recipe/diff",
-      "summary": "Renderer-free structural recipe diff with persistent semantic identity and numeric tolerance.",
-      "fixture_path": "tests/assets/stable-contracts/scene_recipe_diff.v1.json"
+      "schema": "scena.scene_recipe_diff.v1",
+      "summary": "Renderer-free structural recipe diff with persistent semantic identity and numeric tolerance."
     },
     {
-      "schema": "scena.scene_recipe_diff_result.v1",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe_diff_result.v1.json",
       "owner_module": "bin/scena/diff",
-      "summary": "Typed recipe semantic changes plus optional aggregate rendered diff and conservative persistent-identity attribution.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_recipe_diff_result.v1.json"
+      "schema": "scena.scene_recipe_diff_result.v1",
+      "summary": "Typed recipe semantic changes plus optional aggregate rendered diff and conservative persistent-identity attribution."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/placement_result.v1.json",
+      "owner_module": "scene",
       "schema": "scena.placement_result.v1",
-      "owner_module": "scene",
-      "summary": "Semantic placement transform preview for declarative recipe imports.",
-      "fixture_path": "tests/assets/stable-contracts/placement_result.v1.json"
+      "summary": "Semantic placement transform preview for declarative recipe imports."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/annotation_projection.v1.json",
+      "owner_module": "scene",
       "schema": "scena.annotation_projection.v1",
-      "owner_module": "scene",
-      "summary": "Projected annotation anchors and CSS-pixel screen positions.",
-      "fixture_path": "tests/assets/stable-contracts/annotation_projection.v1.json"
+      "summary": "Projected annotation anchors and CSS-pixel screen positions."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/asset_geometry_summary.v1.json",
+      "owner_module": "assets",
       "schema": "scena.asset_geometry_summary.v1",
-      "owner_module": "assets",
-      "summary": "Imported geometry counts, bounds, and topology summary.",
-      "fixture_path": "tests/assets/stable-contracts/asset_geometry_summary.v1.json"
+      "summary": "Imported geometry counts, bounds, and topology summary."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/asset_load_report.v1.json",
+      "owner_module": "assets",
       "schema": "scena.asset_load_report.v1",
-      "owner_module": "assets",
-      "summary": "Asset load warnings, external resources, and material fallback provenance.",
-      "fixture_path": "tests/assets/stable-contracts/asset_load_report.v1.json"
+      "summary": "Asset load warnings, external resources, and material fallback provenance."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/asset_doctor.v1.json",
+      "owner_module": "assets",
       "schema": "scena.asset_doctor.v1",
-      "owner_module": "assets",
-      "summary": "Runtime asset doctor findings with severity, code, help, and suggested fixes.",
-      "fixture_path": "tests/assets/stable-contracts/asset_doctor.v1.json"
+      "summary": "Runtime asset doctor findings with severity, code, help, and suggested fixes."
     },
     {
-      "schema": "scena.asset_conversion.v1",
+      "fixture_path": "tests/assets/stable-contracts/asset_conversion.v1.json",
       "owner_module": "assets/conversion",
-      "summary": "FBX-to-glTF conversion plan, captured tool diagnostics, and outcome.",
-      "fixture_path": "tests/assets/stable-contracts/asset_conversion.v1.json"
+      "schema": "scena.asset_conversion.v1",
+      "summary": "FBX-to-glTF conversion plan, captured tool diagnostics, and outcome."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/asset_catalog.v1.json",
+      "owner_module": "assets",
       "schema": "scena.asset_catalog.v1",
-      "owner_module": "assets",
-      "summary": "Host-owned asset catalog manifest consumed by Scena readiness validation.",
-      "fixture_path": "tests/assets/stable-contracts/asset_catalog.v1.json"
+      "summary": "Host-owned asset catalog manifest consumed by Scena readiness validation."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/asset_readiness_report.v1.json",
+      "owner_module": "assets",
       "schema": "scena.asset_readiness_report.v1",
-      "owner_module": "assets",
-      "summary": "Asset catalog readiness findings derived from real asset loads and authored features.",
-      "fixture_path": "tests/assets/stable-contracts/asset_readiness_report.v1.json"
+      "summary": "Asset catalog readiness findings derived from real asset loads and authored features."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_host_asset_import.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost import result with stable host handles and diagnostics.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_asset_import.v1.json"
+      "summary": "SceneHost import result with stable host handles and diagnostics."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_subtree.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.subtree.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost subtree report with stable node handles and tree edges.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_subtree.v1.json"
+      "summary": "SceneHost subtree report with stable node handles and tree edges."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_measurement_overlay.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_host_measurement_overlay.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost measurement overlay result with stable generated node handles.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_measurement_overlay.v1.json"
+      "summary": "SceneHost measurement overlay result with stable generated node handles."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_section_box.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_host_section_box.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost section box report with generated clipping planes and helper node.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_section_box.v1.json"
+      "summary": "SceneHost section box report with generated clipping planes and helper node."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_visual_state.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_host_visual_state.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost named visual state storing a visual patch plus metadata.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_visual_state.v1.json"
+      "summary": "SceneHost named visual state storing a visual patch plus metadata."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_visual_states.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.scene_host_visual_states.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost deterministic list of stored named visual states.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_visual_states.v1.json"
+      "summary": "SceneHost deterministic list of stored named visual states."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.animation_inventory.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost animation clip inventory.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json"
+      "summary": "SceneHost animation clip inventory."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/visual_patch.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.visual_patch.v1",
-      "owner_module": "scene_host",
-      "summary": "Batched host-to-scena visual state patch and result contract.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/visual_patch.v1.json"
+      "summary": "Batched host-to-scena visual state patch and result contract."
     },
     {
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/host_event.v1.json",
+      "owner_module": "scene_host",
       "schema": "scena.host_event.v1",
-      "owner_module": "scene_host",
-      "summary": "SceneHost event batch for pick, hover, load, diagnostic, capture, and surface events.",
-      "feature_flag": "scene-host",
-      "fixture_path": "tests/assets/stable-contracts/host_event.v1.json"
+      "summary": "SceneHost event batch for pick, hover, load, diagnostic, capture, and surface events."
     },
     {
-      "schema": "scena.agent_guide.v1",
+      "fixture_path": "tests/assets/stable-contracts/agent_guide.v1.json",
       "owner_module": "schema_catalog/agent_guide",
-      "summary": "Packaged public application-builder workflow, commands, schemas, policies, and templates.",
-      "fixture_path": "tests/assets/stable-contracts/agent_guide.v1.json"
+      "schema": "scena.agent_guide.v1",
+      "summary": "Packaged public application-builder workflow, commands, schemas, policies, and templates."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/contract_validation.v1.json",
+      "owner_module": "contract_validation",
       "schema": "scena.contract_validation.v1",
-      "owner_module": "contract_validation",
-      "summary": "Schema-dispatched validation result for any cataloged public JSON contract.",
-      "fixture_path": "tests/assets/stable-contracts/contract_validation.v1.json"
+      "summary": "Schema-dispatched validation result for any cataloged public JSON contract."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/json_schema_export.v1.json",
+      "owner_module": "contract_validation",
       "schema": "scena.json_schema_export.v1",
-      "owner_module": "contract_validation",
-      "summary": "Versioned JSON Schema export with explicit runtime and cross-field limitations.",
-      "fixture_path": "tests/assets/stable-contracts/json_schema_export.v1.json"
+      "summary": "Versioned JSON Schema export with explicit runtime and cross-field limitations."
     },
     {
-      "schema": "scena.release.findings.v1",
       "owner_module": "xtask/release",
+      "schema": "scena.release.findings.v1",
       "summary": "Independent release-review findings register bound to one source commit."
     },
     {
-      "schema": "scena.release.staging.v1",
       "owner_module": "xtask/release",
+      "schema": "scena.release.staging.v1",
       "summary": "Release artifact staging metadata kept separate from source evidence provenance."
     },
     {
-      "schema": "scena.release_readiness.v1",
       "owner_module": "xtask/release",
+      "schema": "scena.release_readiness.v1",
       "summary": "Fail-closed staged release-evidence validation result with resolved root and artifact counts."
     },
     {
-      "schema": "scena.m8.waterbottle_adapter_expectation.v1",
       "owner_module": "xtask/release",
+      "schema": "scena.m8.waterbottle_adapter_expectation.v1",
       "summary": "Structured adapter-specific WaterBottle reference expectations independent of display-name text."
     },
     {
-      "schema": "scena.q08.required_cpu_gpu_parity.v1",
       "owner_module": "renderer-quality",
+      "schema": "scena.q08.required_cpu_gpu_parity.v1",
       "summary": "Fail-closed physical CPU/GPU parity execution and assertion evidence."
     },
     {
-      "schema": "scena.q11.reference_stability.v1",
       "owner_module": "renderer-quality",
+      "schema": "scena.q11.reference_stability.v1",
       "summary": "Cross-architecture deterministic-reference stability evidence."
     },
     {
-      "schema": "scena.q11.reference_approval.v1",
+      "fixture_path": "docs/reference-approval-q11.example.json",
       "owner_module": "renderer-quality",
-      "summary": "Independent approval bound to an exact reference candidate and source commit.",
-      "fixture_path": "docs/reference-approval-q11.example.json"
+      "schema": "scena.q11.reference_approval.v1",
+      "summary": "Independent approval bound to an exact reference candidate and source commit."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/recipe_patch.v1.json",
+      "owner_module": "scene/recipe",
       "schema": "scena.recipe_patch.v1",
-      "owner_module": "scene/recipe",
-      "summary": "Source-digest-bound placement update with complete canonical recipe and semantic change summary.",
-      "fixture_path": "tests/assets/stable-contracts/recipe_patch.v1.json"
+      "summary": "Source-digest-bound placement update with complete canonical recipe and semantic change summary."
     },
     {
-      "schema": "scena.vocab.v1",
+      "fixture_path": "tests/assets/stable-contracts/vocab.v1.json",
       "owner_module": "vocabulary",
-      "summary": "Closed renderer and recipe vocabularies with stable owners and versions.",
-      "fixture_path": "tests/assets/stable-contracts/vocab.v1.json"
+      "schema": "scena.vocab.v1",
+      "summary": "Closed renderer and recipe vocabularies with stable owners and versions."
     },
     {
-      "schema": "scena.recipe_policy.v1",
+      "fixture_path": "tests/assets/stable-contracts/recipe_policy.v1.json",
       "owner_module": "scene/recipe",
-      "summary": "Effective recipe sandbox roots, URI/network policy, limits, and value sources.",
-      "fixture_path": "tests/assets/stable-contracts/recipe_policy.v1.json"
+      "schema": "scena.recipe_policy.v1",
+      "summary": "Effective recipe sandbox roots, URI/network policy, limits, and value sources."
     },
     {
+      "fixture_path": "tests/assets/stable-contracts/cli_error.v1.json",
+      "owner_module": "bin/scena",
       "schema": "scena.cli_error.v1",
-      "owner_module": "bin/scena",
-      "summary": "Structured CLI dispatch and argument error emitted on stderr.",
-      "fixture_path": "tests/assets/stable-contracts/cli_error.v1.json"
+      "summary": "Structured CLI dispatch and argument error emitted on stderr."
     },
     {
-      "schema": "scena.cli_io_error.v1",
       "owner_module": "bin/scena",
+      "schema": "scena.cli_io_error.v1",
       "summary": "Structured fatal CLI stdout write failure report emitted on stderr."
     },
     {
-      "schema": "scena.cli_help.v1",
       "owner_module": "bin/scena",
+      "schema": "scena.cli_help.v1",
       "summary": "Machine-readable scena CLI command, option, and guide discovery."
     },
     {
-      "schema": "scena.cli_version.v1",
       "owner_module": "bin/scena",
+      "schema": "scena.cli_version.v1",
       "summary": "Machine-readable package version, commit, and compiled feature report."
     }
-  ]
+  ],
+  "schema": "scena.schema_catalog.v1"
 }

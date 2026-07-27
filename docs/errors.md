@@ -43,6 +43,32 @@ action for both. Exit codes are part of the published contract and are pinned by
 Both fields are set from a typed error kind, not inferred from the message text,
 so rewording an error can never move it between these two classes.
 
+## Camera-behavior and subject-observation failures
+
+Camera-behavior acceptance failures are domain-result JSON, not CLI dispatch
+errors. `scena photo render` writes `scena.photo_render_result.v1` on stdout
+with `ok:false`, `failure_codes[]`, and a `scena.photo_report.v1` report path
+when the command is valid but the image fails the camera-behavior gate. Recipe
+verification uses the same stdout domain-failure pattern through
+`scena.recipe_render_result.v1`. Use `exit_class` and `code` only for
+`scena.cli_error.v1` dispatch/input/policy/runtime errors on stderr; do not
+infer error taxonomy from prose.
+
+Common subject and photo reason codes:
+
+| Code | Meaning | Recovery |
+|---|---|---|
+| `subject_luminance_below_min` | the measured subject is too dark for the active product-quality band | keep auto exposure and apply `exposure_report.suggested_compensation_ev`, or let the bounded camera-behavior retry do it |
+| `subject_low_clip_above_max` | too much of the subject is crushed near black | keep subject metering; improve lighting/materials or exposure compensation instead of hard-coding `exposure_ev` |
+| `subject_fill_below_min` / `subject_too_small_in_frame` | the subject occupies too little of the intended frame | use `photo.intent` composition or adjust fill constraints |
+| `subject_fill_above_max` | the subject is too large for the camera-behavior band | loosen fill or use a wider candidate constraint |
+| `subject_center_offset_above_max` | the selected subject is off-center for the intent | check subject target and composition constraints |
+| `subject_luminance_structure_below_min` | material/steel readability is too flat or reflection structure is missing | use a reflection-capable staging/environment or material preset |
+| `subject_visible_pixels_missing` / `subject_visible_mask_empty` | the declared subject resolved but contributed no visible pixels | inspect visibility, target, clipping, occlusion, and semantic attribution |
+| `subject_visible_mask_backend_unsupported` | the backend cannot provide exact subject-mask evidence | choose a supported backend or accept an explicit degraded result |
+| `subject_transparent_unsupported` | exact subject identity cannot be proven for the transparent subject | use opaque/masked fallback geometry for strict evidence |
+| `stale_subject_observation` | the subject-observation frame key no longer matches the rendered pixels | render again after the camera, viewport, scene, or render-output change |
+
 `scena --help` is the machine-authoritative command table: each
 `command_contracts[]` row declares its success/error schemas and applicable
 `failure_exit_classes`. A closed stdout pipe is quiet success; another stdout

@@ -30,13 +30,14 @@ struct LightingUniform {
     spot_light_direction_cones: array<vec4<f32>, 16>,
     spot_light_cone_range: array<vec4<f32>, 16>,
     spot_light_color_range: array<vec4<f32>, 16>,
-    area_light_position_flux: array<vec4<f32>, 2>,
-    area_light_axis_x_shape: array<vec4<f32>, 2>,
-    area_light_axis_y_range: array<vec4<f32>, 2>,
-    area_light_color: array<vec4<f32>, 2>,
+    area_light_position_flux: array<vec4<f32>, 4>,
+    area_light_axis_x_shape: array<vec4<f32>, 4>,
+    area_light_axis_y_range: array<vec4<f32>, 4>,
+    area_light_color: array<vec4<f32>, 4>,
     light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
+    environment_transform: vec4<f32>,
 };
 
 struct CameraUniform {
@@ -47,6 +48,7 @@ struct CameraUniform {
     camera_position_exposure: vec4<f32>,
     viewport_near_far: vec4<f32>,
     color_management: vec4<f32>,
+    white_balance: vec4<f32>,
     lighting: LightingUniform,
 };
 

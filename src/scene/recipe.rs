@@ -1,6 +1,7 @@
 mod build;
 mod diff;
 mod field_model;
+mod target_resolution;
 mod types;
 mod validation;
 
@@ -25,6 +26,10 @@ pub use field_model::{
     FIELD_MODEL_SCHEMA_V1, SchemaFieldModelV1, SchemaFieldV1, scene_recipe_field_model_v1,
     scene_recipe_json_schema_paths_v1, scene_recipe_json_schema_v1,
 };
+pub use target_resolution::{
+    SceneRecipeTargetResolutionError, SceneRecipeTargetResolutionErrorKind,
+    SceneRecipeTargetResolutionMode, resolve_scene_recipe_target_handles,
+};
 pub use types::{
     RECIPE_BUILD_RESULT_SCHEMA_V1, RecipeBuildExecutionV1, RecipeBuildResultV1,
     RecipeValidationModeV1, SCENE_RECIPE_BUILD_SCHEMA_V1, SCENE_RECIPE_SCHEMA_V1,
@@ -42,26 +47,32 @@ pub use types::{
     SceneRecipeColorV1, SceneRecipeConnectionParentingV1, SceneRecipeConnectionRollV1,
     SceneRecipeConnectorAlignmentV1, SceneRecipeConnectorMateV1, SceneRecipeConnectorPolarityV1,
     SceneRecipeConnectorRollPolicyV1, SceneRecipeConnectorSourceV1, SceneRecipeConnectorV1,
-    SceneRecipeDepthOfFieldV1, SceneRecipeDiagnosticResourceV1, SceneRecipeDiagnosticV1,
-    SceneRecipeEnvironmentV1, SceneRecipeExpectV1, SceneRecipeExpectedExtentV1,
-    SceneRecipeExplodedViewModeV1, SceneRecipeExplodedViewV1, SceneRecipeFontV1,
-    SceneRecipeGeometryV1, SceneRecipeGridReflectionV1, SceneRecipeGridV1,
-    SceneRecipeGroundedExpectationV1, SceneRecipeHelperOcclusionExpectationV1,
-    SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportMaterialV1, SceneRecipeImportV1,
-    SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
-    SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeasurementV1, SceneRecipeMeshV1,
-    SceneRecipeMorphTargetV1, SceneRecipeMorphV1, SceneRecipeNamedStateV1, SceneRecipeNodeLodV1,
+    SceneRecipeDepthOfFieldFocusV1, SceneRecipeDepthOfFieldTargetV1, SceneRecipeDepthOfFieldV1,
+    SceneRecipeDiagnosticResourceV1, SceneRecipeDiagnosticV1, SceneRecipeEnvironmentV1,
+    SceneRecipeExpectV1, SceneRecipeExpectedExtentV1, SceneRecipeExplodedViewModeV1,
+    SceneRecipeExplodedViewV1, SceneRecipeFontV1, SceneRecipeGeometryV1,
+    SceneRecipeGridReflectionV1, SceneRecipeGridV1, SceneRecipeGroundedExpectationV1,
+    SceneRecipeHelperOcclusionExpectationV1, SceneRecipeImportEdgeEmphasisV1,
+    SceneRecipeImportMaterialV1, SceneRecipeImportV1, SceneRecipeInstanceSetV1,
+    SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1, SceneRecipeLookAtTargetV1,
+    SceneRecipeMaterialV1, SceneRecipeMeasurementV1, SceneRecipeMeshV1, SceneRecipeMeteringRectV1,
+    SceneRecipeMeteringTargetV1, SceneRecipeMeteringV1, SceneRecipeMorphTargetV1,
+    SceneRecipeMorphV1, SceneRecipeNamedStateV1, SceneRecipeNodeLodV1,
     SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipeParticleSetV1,
-    SceneRecipeParticleV1, SceneRecipePickExpectationV1, SceneRecipePrimitiveV1,
-    SceneRecipeQualityAreaLightV1, SceneRecipeQualityContrastV1, SceneRecipeQualityDepthOfFieldV1,
-    SceneRecipeQualityExpectationV1, SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1,
-    SceneRecipeQualityGroundingV1, SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1,
-    SceneRecipeQualityReflectionV1, SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1,
-    SceneRecipeRenderV1, SceneRecipeResourceResolutionV1, SceneRecipeResourceStatusV1,
-    SceneRecipeSceneV1, SceneRecipeScreenSpaceReflectionsV1, SceneRecipeSectionBoxV1,
+    SceneRecipeParticleV1, SceneRecipePhotoCompositionV1, SceneRecipePhotoExposureV1,
+    SceneRecipePhotoFocusV1, SceneRecipePhotoRangeV1, SceneRecipePhotoStagingV1,
+    SceneRecipePhotoSubjectV1, SceneRecipePhotoV1, SceneRecipePickExpectationV1,
+    SceneRecipePrimitiveV1, SceneRecipeQualityAreaLightV1, SceneRecipeQualityContrastV1,
+    SceneRecipeQualityDepthOfFieldV1, SceneRecipeQualityExpectationV1,
+    SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1, SceneRecipeQualityGroundingV1,
+    SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1, SceneRecipeQualityReflectionV1,
+    SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1, SceneRecipeRenderV1,
+    SceneRecipeResourceResolutionV1, SceneRecipeResourceStatusV1, SceneRecipeSceneV1,
+    SceneRecipeScreenSpaceReflectionsV1, SceneRecipeSectionBoxV1,
     SceneRecipeSeparationExpectationV1, SceneRecipeSkinV1, SceneRecipeSpatialTargetV1,
     SceneRecipeSsaoV1, SceneRecipeStateExpectationV1, SceneRecipeStateTintV1,
-    SceneRecipeStateTransformV1, SceneRecipeStateVisibilityV1, SceneRecipeTargetBoundsV1,
+    SceneRecipeStateTransformV1, SceneRecipeStateVisibilityV1, SceneRecipeSubjectFallbackPolicyV1,
+    SceneRecipeSubjectSpecV1, SceneRecipeSubjectV1, SceneRecipeTargetBoundsV1,
     SceneRecipeTargetFitExpectationV1, SceneRecipeTargetRegionV1, SceneRecipeTargetV1,
     SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformConversionError,
     SceneRecipeTransformExpectationV1, SceneRecipeTransformV1, SceneRecipeV1,

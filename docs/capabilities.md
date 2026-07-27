@@ -93,12 +93,32 @@ This lets applications present clear UI instead of failing silently.
 - Material feature support such as clearcoat, sheen, anisotropy, iridescence,
   and dispersion factor handling or texture sampling in CPU/reference and GPU
   shader paths versus backend-gated release proof.
+- Auto-exposure metering modes. `auto_exposure_metering_average` is supported
+  on render/capture backends. `auto_exposure_metering_subject` is supported on
+  CPU Headless recipe render because exact semantic subject observations are
+  routed into the scene-linear exposure meter. GPU/browser subject metering
+  remains degraded until backend-specific subject observations are wired into
+  those metering paths. `center_weighted`, `highlight_weighted`, and `spot` are
+  feature-disabled until those public recipe contracts have active metering
+  implementations.
 - Physical glass transmission. Attached GPU-device native/WebGPU/WebGL2 rows
   can report `supported` after scene-color transmission, IOR/thickness
   refraction, roughness-blur, and transparency-ordering proof; CPU/reference
   and unattached factory rows report `degraded`.
 - Postprocessing support such as subtle bloom, headless CPU SSAO, and
   headless CPU weighted blended OIT.
+- Exact subject visible-mask availability. CPU headless composition reports
+  `subject_visible_mask:"supported"` because recipe verification can derive
+  subject pixels from semantic AOV attribution. GPU/browser lanes currently
+  report `degraded` unless their backend-specific semantic AOV capture is used
+  as separate proof.
+- Strict camera-behavior evidence requires both
+  `subject_visible_mask:"supported"` and
+  `auto_exposure_metering_subject:"supported"` on a
+  `metering_domain:"scene_linear_pre_tonemap"` path. Current strict support is
+  CPU Headless recipe/photo evidence; GPU/browser lanes remain degraded unless
+  a lane-specific proof upgrades the active subject observation and metering
+  domain.
 - Wide-gamut output, which is only claimed when a browser canvas color-space
   probe proves Display P3 support for the active backend.
 - Surface and context-loss behavior.
@@ -150,7 +170,8 @@ features and limits of the device scena actually requested.
     "render_sample_counts": [1, 0, 0],
     "depth_sample_counts": [1, 0, 0],
     "explicit_msaa": "feature_disabled",
-    "forward_pbr": "degraded"
+    "forward_pbr": "degraded",
+    "subject_visible_mask": "supported"
   },
   "adapter": null,
   "diagnostics": [

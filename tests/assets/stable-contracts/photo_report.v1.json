@@ -1,0 +1,563 @@
+{
+  "schema": "scena.photo_report.v1",
+  "status": "passed",
+  "ok": true,
+  "intent": "camera_behavior",
+  "source": {
+    "kind": "asset",
+    "path": "machine.glb"
+  },
+  "subject": {
+    "target": {
+      "kind": "import",
+      "id": "subject"
+    },
+    "root_handle": 281474976710657,
+    "draw_handle_count": 12
+  },
+  "planning": {
+    "schema": "scena.photo_candidate_plan.v1",
+    "intent": "camera_behavior",
+    "budget": 10,
+    "selected_candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+    "constraints": {
+      "viewport": [256, 168],
+      "subject_bounds": {
+        "min": [-2.0, -0.25, -0.5],
+        "max": [2.0, 1.0, 0.5]
+      },
+      "preferred_view": "three_quarter_front_right",
+      "fill_range": {
+        "min": 0.65,
+        "max": 0.85
+      },
+      "front_hint": null,
+      "up_hint": null,
+      "keep_visible_anchors": [],
+      "staging_style": "dark_studio"
+    },
+    "candidates": [
+      {
+        "id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+        "order": 0,
+        "physical_camera": {
+          "sensor_width_mm": 36.0,
+          "sensor_height_mm": 24.0,
+          "focal_length_mm": 50.0,
+          "aperture_f_stop": 8.0,
+          "focus_distance_m": 1.0,
+          "shutter_seconds": 0.008,
+          "sensitivity_iso": 100.0,
+          "exposure_compensation_ev": 0.0,
+          "circle_of_confusion_mm": 0.03,
+          "aperture_blades": 9
+        },
+        "preserve_authored_camera": false,
+        "view": "three_quarter_front_right",
+        "lens": "portrait",
+        "focal_length_mm": 70.0,
+        "fill_fraction": 0.78,
+        "azimuth_deg": 45.0,
+        "elevation_deg": 30.0,
+        "subject_yaw_deg": 0.0,
+        "front_hint": null,
+        "up_hint": null,
+        "staging": {
+          "id": "dark_studio",
+          "environment": "studio",
+          "background": "dark_studio",
+          "ground": "matte_shadow_catcher",
+          "grid": false
+        },
+        "keep_visible_anchors": []
+      }
+    ]
+  },
+  "shaded_selection": {
+    "schema": "scena.photo_shaded_candidate_selection.v1",
+    "status": "passed",
+    "selected_candidate_id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+    "low_resolution": {
+      "width": 160,
+      "height": 105
+    },
+    "candidate_budget": 3,
+    "evaluated_count": 3,
+    "work_metrics": {
+      "rendered_candidates": 3,
+      "candidate_width": 160,
+      "candidate_height": 105,
+      "candidate_pixel_count": 16800,
+      "total_candidate_pixels": 50400
+    },
+    "scoring": {
+      "degraded": true,
+      "reason_codes": [
+        "semantic_aov_unavailable"
+      ]
+    },
+    "candidates": [
+      {
+        "id": "camera_behavior_view_three_quarter_front_right_lens_portrait_fill_0_78_elev_30_yaw_0_stage_dark_studio",
+        "order": 0,
+        "score": 88.0,
+        "reason_codes": [
+          "semantic_aov_unavailable"
+        ],
+        "subject": {
+          "rect_css_px": {
+            "min_x": 20.0,
+            "min_y": 13.0,
+            "max_x": 140.0,
+            "max_y": 93.0,
+            "width": 120.0,
+            "height": 80.0
+          },
+          "fill_fraction": 0.7619,
+          "fill_width_fraction": 0.75,
+          "fill_height_fraction": 0.7619,
+          "mean_luminance_srgb8": 90.0,
+          "luminance_stddev_srgb8": 18.0,
+          "luminance_range_srgb8": 88.0,
+          "low_clip_fraction": 0.0,
+          "high_clip_fraction": 0.0,
+          "center_offset_fraction": 0.0,
+          "sample_count": 9600
+        },
+        "render_quality": {
+          "schema": "scena.render_quality.v1",
+          "ok": true,
+          "profile": "product",
+          "summary": {
+            "checks": 1,
+            "errors": 0,
+            "warnings": 0
+          },
+          "checks": [
+            {
+              "id": "baseline.black_crush",
+              "code": "severe_black_crush",
+              "status": "checked",
+              "severity": "info",
+              "region": {
+                "kind": "subject",
+                "rect_css_px": {
+                  "min_x": 20.0,
+                  "min_y": 13.0,
+                  "max_x": 140.0,
+                  "max_y": 93.0,
+                  "width": 120.0,
+                  "height": 80.0
+                }
+              },
+              "observed": {
+                "low_clip_fraction": 0.0
+              },
+              "threshold": {
+                "max_low_clip_fraction": 0.2
+              },
+              "fix_hint": "no action needed"
+            }
+          ],
+          "capabilities": {
+            "backend": "cpu",
+            "gpu_device": false,
+            "surface_attached": false,
+            "hardware_tier": "low",
+            "forward_pbr": "degraded",
+            "readback_headless_screenshots": "supported"
+          }
+        }
+      }
+    ]
+  },
+  "selected": {
+    "id": "candidate_1",
+    "status": "passed",
+    "exposure_ev": 1.25,
+    "failure_codes": [],
+    "subject": {
+      "rect_css_px": {
+        "min_x": 32.0,
+        "min_y": 20.0,
+        "max_x": 224.0,
+        "max_y": 148.0,
+        "width": 192.0,
+        "height": 128.0
+      },
+      "fill_fraction": 0.75,
+      "fill_width_fraction": 0.75,
+      "fill_height_fraction": 0.7619,
+      "mean_luminance_srgb8": 90.0,
+      "luminance_stddev_srgb8": 18.0,
+      "luminance_range_srgb8": 88.0,
+      "low_clip_fraction": 0.0,
+      "high_clip_fraction": 0.0,
+      "center_offset_fraction": 0.02,
+      "sample_count": 24576
+    }
+  },
+  "candidates": [
+    {
+      "id": "candidate_1",
+      "status": "passed",
+      "exposure_ev": 1.25,
+      "failure_codes": [],
+      "subject": {
+        "rect_css_px": {
+          "min_x": 32.0,
+          "min_y": 20.0,
+          "max_x": 224.0,
+          "max_y": 148.0,
+          "width": 192.0,
+          "height": 128.0
+        },
+        "fill_fraction": 0.75,
+        "fill_width_fraction": 0.75,
+        "fill_height_fraction": 0.7619,
+        "mean_luminance_srgb8": 90.0,
+        "luminance_stddev_srgb8": 18.0,
+        "luminance_range_srgb8": 88.0,
+        "low_clip_fraction": 0.0,
+        "high_clip_fraction": 0.0,
+        "center_offset_fraction": 0.02,
+        "sample_count": 24576
+      }
+    }
+  ],
+  "retry": {
+    "policy": {
+      "max_attempts": 2,
+      "max_retries": 1,
+      "allowed_adjustments": [
+        "exposure_compensation_ev"
+      ],
+      "loop": "bounded"
+    },
+    "attempts": 1,
+    "retry_used": false,
+    "final_attempt_id": "candidate_1",
+    "suggestion": null,
+    "retry_input": null
+  },
+  "work_metrics": {
+    "timing_policy": "report_only",
+    "wall_clock_thresholds": "not_used",
+    "allocation_policy": "bounded_by_candidate_count_and_frame_pixels",
+    "composition_candidate_budget": 10,
+    "composition_candidates": 1,
+    "shaded_candidate_budget": 3,
+    "shaded_candidate_renders": 3,
+    "shaded_candidate_width": 160,
+    "shaded_candidate_height": 105,
+    "shaded_candidate_pixels": 50400,
+    "final_candidate_render_budget": 2,
+    "final_candidate_renders": 1,
+    "final_candidate_width": 256,
+    "final_candidate_height": 168,
+    "final_candidate_pixels": 43008,
+    "total_render_calls": 4,
+    "prepare_calls": 4,
+    "extra_prepare_operations": 3,
+    "capture_calls": 4,
+    "gpu_readback_copies": 0,
+    "blocking_polls": 0,
+    "blocking_waits": 0,
+    "subject_meter_samples": 53376,
+    "shaded_subject_meter_samples": 28800,
+    "final_subject_meter_samples": 24576
+  },
+  "acceptance": {
+    "subject_fill_width_fraction": {
+      "min": 0.65,
+      "max": 0.85
+    },
+    "subject_mean_luminance_srgb8": {
+      "min": 80.0,
+      "max": 100.0
+    },
+    "subject_low_clip_fraction": {
+      "max": 0.2
+    },
+    "subject_high_clip_fraction": {
+      "max": 0.05
+    },
+    "subject_center_offset_fraction": {
+      "max": 0.16
+    },
+    "subject_luminance_stddev_srgb8": {
+      "min": 6.0
+    },
+    "subject_luminance_range_srgb8": {
+      "min": 32.0
+    }
+  },
+  "quality": {
+    "subject": {
+      "rect_css_px": {
+        "min_x": 32.0,
+        "min_y": 20.0,
+        "max_x": 224.0,
+        "max_y": 148.0,
+        "width": 192.0,
+        "height": 128.0
+      },
+      "fill_fraction": 0.75,
+      "fill_width_fraction": 0.75,
+      "fill_height_fraction": 0.7619,
+      "mean_luminance_srgb8": 90.0,
+      "luminance_stddev_srgb8": 18.0,
+      "luminance_range_srgb8": 88.0,
+      "low_clip_fraction": 0.0,
+      "high_clip_fraction": 0.0,
+      "center_offset_fraction": 0.02,
+      "sample_count": 24576
+    }
+  },
+  "focus_report": {
+    "schema": "scena.focus_report.v1",
+    "status": "resolved",
+    "mode": "subject",
+    "target": {
+      "kind": "import",
+      "id": "subject",
+      "handles": [
+        281474976710657
+      ]
+    },
+    "frame_key": {
+      "width": 256,
+      "height": 168,
+      "payload_fnv1a64": "0123456789abcdef",
+      "pixel_source": "renderer_owned_readback",
+      "state_binding": "exact_readback_completion",
+      "render_generation": 1,
+      "target_revision": 1,
+      "output_resources_revision": 1,
+      "revisions": {
+        "structure": 1,
+        "transform": 2,
+        "camera": 3,
+        "appearance": 4,
+        "interaction": 5
+      }
+    },
+    "coverage": "all",
+    "strength": "subtle",
+    "resolved": {
+      "focus_distance_m": 2.0,
+      "near_depth_m": 1.5,
+      "far_depth_m": 2.5,
+      "visible_pixel_count": 24576,
+      "confidence": 1.0
+    }
+  },
+  "exposure_report": {
+    "schema": "scena.exposure_report.v1",
+    "status": "measured",
+    "mode": "camera_behavior_retry",
+    "metering_domain": "final_srgb8_subject_pixels",
+    "selected_exposure_ev": 1.25,
+    "subject": {
+      "mean_luminance_srgb8": 90.0,
+      "low_clip_fraction": 0.0,
+      "high_clip_fraction": 0.0,
+      "sample_count": 24576
+    },
+    "suggested_compensation_ev": 0.0,
+    "frame_key": {
+      "width": 256,
+      "height": 168,
+      "payload_fnv1a64": "0123456789abcdef",
+      "pixel_source": "renderer_owned_readback",
+      "state_binding": "exact_readback_completion",
+      "render_generation": 1,
+      "target_revision": 1,
+      "output_resources_revision": 1,
+      "revisions": {
+        "structure": 1,
+        "transform": 2,
+        "camera": 3,
+        "appearance": 4,
+        "interaction": 5
+      }
+    }
+  },
+  "subject_observation": {
+    "schema": "scena.subject_observation.v1",
+    "status": "observed",
+    "source": "photo.subject",
+    "target": {
+      "kind": "import",
+      "id": "subject",
+      "handles": [
+        281474976710657
+      ]
+    },
+    "frame_key": {
+      "width": 256,
+      "height": 168,
+      "payload_fnv1a64": "0123456789abcdef",
+      "pixel_source": "renderer_owned_readback",
+      "state_binding": "exact_readback_completion",
+      "render_generation": 1,
+      "target_revision": 1,
+      "output_resources_revision": 1,
+      "revisions": {
+        "structure": 1,
+        "transform": 2,
+        "camera": 3,
+        "appearance": 4,
+        "interaction": 5
+      }
+    },
+    "projected_bounds": {
+      "min_x": 32.0,
+      "min_y": 20.0,
+      "max_x": 224.0,
+      "max_y": 148.0,
+      "width": 192.0,
+      "height": 128.0,
+      "area_px": 24576
+    },
+    "visible_bounds": {
+      "min_x": 32.0,
+      "min_y": 20.0,
+      "max_x": 224.0,
+      "max_y": 148.0,
+      "width": 192.0,
+      "height": 128.0,
+      "area_px": 24576
+    },
+    "visible_pixel_count": 24576,
+    "projected_area_px": 24576,
+    "visible_fill_fraction": 0.75,
+    "visible_fraction_of_projected": 1.0,
+    "occlusion_estimate": 0.0,
+    "pixel_quality": {
+      "mean_luminance_srgb8": 90.0,
+      "luminance_stddev_srgb8": 18.0,
+      "luminance_range_srgb8": 88.0,
+      "low_clip_fraction": 0.0,
+      "high_clip_fraction": 0.0,
+      "sample_count": 24576
+    },
+    "fallback": {
+      "degraded": true,
+      "flags": [
+        "semantic_mask_unavailable",
+        "projected_luminance_subject_metrics"
+      ],
+      "reason_codes": [
+        "semantic_subject_mask_not_used",
+        "subject_depth_unavailable"
+      ]
+    }
+  },
+  "transport": {
+    "schema": "scena.photographic_transport_report.v1",
+    "path": "cpu_progressive_path_tracer",
+    "samples_per_pixel": 8,
+    "maximum_bounces": 4,
+    "primary_rays": 344064,
+    "secondary_rays": 516096,
+    "shadow_rays": 258048,
+    "intersections": 1118208,
+    "mesh_acceleration_structures": 3,
+    "instance_count": 12,
+    "light_kinds": [
+      "rectangular_area"
+    ],
+    "emissive_geometry_lights": 0,
+    "multiple_importance_sampling": true,
+    "edge_aware_denoising": true,
+    "firefly_suppression": "isolated_outliers_only",
+    "raster_preview_preserved": true,
+    "final_exposure_scale": 1.0,
+    "exposure_target_luminance_srgb8": 90.0,
+    "exposure_measured_luminance_srgb8": 90.0,
+    "exposure_sample_count": 24576
+  },
+  "subject_region": {
+    "schema": "scena.photo_subject_region.v1",
+    "source": "subject_observation.v1",
+    "target": {
+      "kind": "import",
+      "id": "subject",
+      "handles": [
+        281474976710657
+      ]
+    },
+    "world_bounds": {
+      "min": [-2.0, -0.25, -0.5],
+      "max": [2.0, 1.0, 0.5]
+    },
+    "projected_bounds": {
+      "min_x": 32.0,
+      "min_y": 20.0,
+      "max_x": 224.0,
+      "max_y": 148.0,
+      "width": 192.0,
+      "height": 128.0,
+      "area_px": 24576
+    },
+    "visible_bounds": {
+      "min_x": 32.0,
+      "min_y": 20.0,
+      "max_x": 224.0,
+      "max_y": 148.0,
+      "width": 192.0,
+      "height": 128.0,
+      "area_px": 24576
+    },
+    "pixel_quality": {
+      "mean_luminance_srgb8": 90.0,
+      "luminance_stddev_srgb8": 18.0,
+      "luminance_range_srgb8": 88.0,
+      "low_clip_fraction": 0.0,
+      "high_clip_fraction": 0.0,
+      "sample_count": 24576
+    },
+    "focus_distance_m": 2.0,
+    "frame_key": {
+      "width": 256,
+      "height": 168,
+      "payload_fnv1a64": "0123456789abcdef",
+      "pixel_source": "renderer_owned_readback",
+      "state_binding": "exact_readback_completion",
+      "render_generation": 1,
+      "target_revision": 1,
+      "output_resources_revision": 1,
+      "revisions": {
+        "structure": 1,
+        "transform": 2,
+        "camera": 3,
+        "appearance": 4,
+        "interaction": 5
+      }
+    },
+    "stale": false,
+    "fallback": {
+      "degraded": true,
+      "flags": [
+        "semantic_mask_unavailable",
+        "projected_luminance_subject_metrics"
+      ],
+      "reason_codes": [
+        "semantic_subject_mask_not_used",
+        "subject_depth_unavailable"
+      ]
+    }
+  },
+  "failure_codes": [],
+  "artifacts": {
+    "capture_png_path": "target/scena-photo/hero.png",
+    "capture_descriptor_path": "target/scena-photo/hero.png.capture.json",
+    "emitted_recipe_path": "target/scena-photo/hero.resolved.recipe.json"
+  },
+  "build": {
+    "ok": true,
+    "import_count": 1,
+    "node_count": 12
+  }
+}

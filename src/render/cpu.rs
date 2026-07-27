@@ -109,16 +109,28 @@ pub(super) fn clear_cpu(cpu_frame: &mut CpuFrame<'_>, color: Color) {
     debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.local_pixel_len());
 }
 
-pub(super) fn encode_cpu_frame(cpu_frame: &mut CpuFrame<'_>) -> u64 {
+pub(super) fn encode_cpu_frame(cpu_frame: &mut CpuFrame<'_>, dither: bool) -> u64 {
     let mut encoded = 0_u64;
-    for ((linear, depth), pixel) in cpu_frame
+    let width = cpu_frame.target.width as usize;
+    for (index, ((linear, depth), pixel)) in cpu_frame
         .linear_frame
         .iter()
         .zip(cpu_frame.depth_frame.iter())
         .zip(cpu_frame.frame.chunks_exact_mut(4))
+        .enumerate()
     {
+        let x = (index % width) as u32;
+        let y = cpu_frame.row_start + (index / width) as u32;
+        let clear_encoded = cpu_frame.output.encode_clear_rgba8(*linear);
+        if depth.is_finite() || pixel != clear_encoded {
+            let encoded_pixel = if dither {
+                cpu_frame.output.encode_rgba8_dithered(*linear, x, y)
+            } else {
+                cpu_frame.output.encode_rgba8(*linear)
+            };
+            pixel.copy_from_slice(&encoded_pixel);
+        }
         if depth.is_finite() {
-            pixel.copy_from_slice(&cpu_frame.output.encode_rgba8(*linear));
             encoded = encoded.saturating_add(1);
         }
     }

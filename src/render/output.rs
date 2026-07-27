@@ -2,22 +2,30 @@ use crate::material::Color;
 
 use super::RasterTarget;
 use super::color_contract::{
-    aces_tonemap, apply_exposure, linear_rgba_to_srgb8, pbr_neutral_tonemap,
+    aces_tonemap, apply_exposure, linear_channel_to_srgb, linear_rgba_to_srgb8, pbr_neutral_tonemap,
 };
 
 mod depth_of_field;
+mod legacy_ldr;
 
 pub use depth_of_field::DepthOfFieldConfig;
-pub(in crate::render) use depth_of_field::{DepthOfFieldPostConfig, apply_depth_of_field_rgba8};
+#[cfg(test)]
+pub(in crate::render) use depth_of_field::apply_depth_of_field_rgba8;
+pub(in crate::render) use depth_of_field::{DepthOfFieldPostConfig, apply_depth_of_field_linear};
+pub(super) use legacy_ldr::apply_fxaa_rgba8;
+#[cfg(test)]
+use legacy_ldr::{apply_bloom_rgba8_profiled, luma_from_srgb8, pixel_offset};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct OutputTransform {
     exposure_ev: f32,
     tonemapper: Tonemapper,
+    white_balance: WhiteBalance,
 }
 
 impl OutputTransform {
     pub(super) fn post_color(self, color: Color) -> Color {
+        let color = self.white_balance.apply(color);
         match self.tonemapper {
             Tonemapper::Aces => aces_tonemap(color, self.exposure_ev),
             Tonemapper::PbrNeutral => pbr_neutral_tonemap(color, self.exposure_ev),
@@ -29,8 +37,21 @@ impl OutputTransform {
         linear_rgba_to_srgb8(self.post_color(color))
     }
 
-    pub(super) fn encode_post_rgba8(self, color: Color) -> [u8; 4] {
-        linear_rgba_to_srgb8(color)
+    pub(super) fn encode_rgba8_dithered(self, color: Color, x: u32, y: u32) -> [u8; 4] {
+        let color = self.post_color(color);
+        let bayer = [
+            0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0,
+        ];
+        let offset = (bayer[((y % 4) * 4 + x % 4) as usize] / 16.0 - 0.5) / 255.0;
+        let encode = |channel: f32| {
+            ((linear_channel_to_srgb(channel) + offset).clamp(0.0, 1.0) * 255.0).round() as u8
+        };
+        [
+            encode(color.r),
+            encode(color.g),
+            encode(color.b),
+            (color.a.clamp(0.0, 1.0) * 255.0).round() as u8,
+        ]
     }
 
     pub(super) fn encode_clear_rgba8(self, color: Color) -> [u8; 4] {
@@ -64,6 +85,19 @@ impl OutputTransform {
             Tonemapper::PbrNeutral => [2.0, 0.0, 0.0, 0.0],
         }
     }
+
+    pub(super) const fn white_balance_uniform(self) -> [f32; 4] {
+        let [red, green, blue] = self.white_balance.linear_multipliers();
+        [red, green, blue, 0.0]
+    }
+
+    pub(super) const fn white_balance(self) -> WhiteBalance {
+        self.white_balance
+    }
+
+    pub(super) const fn set_white_balance(&mut self, white_balance: WhiteBalance) {
+        self.white_balance = white_balance;
+    }
 }
 
 impl Default for OutputTransform {
@@ -71,7 +105,94 @@ impl Default for OutputTransform {
         Self {
             exposure_ev: 0.0,
             tonemapper: Tonemapper::PbrNeutral,
+            white_balance: WhiteBalance::neutral(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WhiteBalance {
+    illuminant_kelvin: f32,
+    tint: f32,
+    linear_multipliers: [f32; 3],
+}
+
+impl WhiteBalance {
+    pub const fn neutral() -> Self {
+        Self {
+            illuminant_kelvin: 6_500.0,
+            tint: 0.0,
+            linear_multipliers: [1.0, 1.0, 1.0],
+        }
+    }
+
+    pub fn from_illuminant_kelvin(illuminant_kelvin: f32) -> Self {
+        Self::from_illuminant_kelvin_with_tint(illuminant_kelvin, 0.0)
+    }
+
+    pub fn from_illuminant_kelvin_with_tint(illuminant_kelvin: f32, tint: f32) -> Self {
+        let illuminant_kelvin = if illuminant_kelvin.is_finite() {
+            illuminant_kelvin.clamp(1_000.0, 20_000.0)
+        } else {
+            6_500.0
+        };
+        let tint = if tint.is_finite() {
+            tint.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        let reference = Color::from_kelvin(6_500.0);
+        let illuminant = Color::from_kelvin(illuminant_kelvin);
+        let tint_green = 2.0_f32.powf(-tint * 0.25);
+        let mut multipliers = [
+            safe_channel_ratio(reference.r, illuminant.r),
+            safe_channel_ratio(reference.g, illuminant.g) * tint_green,
+            safe_channel_ratio(reference.b, illuminant.b),
+        ];
+        let normalization = multipliers[1].max(1.0e-4);
+        for channel in &mut multipliers {
+            *channel = (*channel / normalization).clamp(0.25, 4.0);
+        }
+        Self {
+            illuminant_kelvin,
+            tint,
+            linear_multipliers: multipliers,
+        }
+    }
+
+    pub const fn illuminant_kelvin(self) -> f32 {
+        self.illuminant_kelvin
+    }
+
+    pub const fn tint(self) -> f32 {
+        self.tint
+    }
+
+    pub const fn linear_multipliers(self) -> [f32; 3] {
+        self.linear_multipliers
+    }
+
+    fn apply(self, color: Color) -> Color {
+        Color::from_linear_rgba(
+            color.r * self.linear_multipliers[0],
+            color.g * self.linear_multipliers[1],
+            color.b * self.linear_multipliers[2],
+            color.a,
+        )
+    }
+}
+
+impl Default for WhiteBalance {
+    fn default() -> Self {
+        Self::neutral()
+    }
+}
+
+fn safe_channel_ratio(reference: f32, illuminant: f32) -> f32 {
+    if reference.is_finite() && illuminant.is_finite() && illuminant > 1.0e-4 {
+        reference / illuminant
+    } else {
+        1.0
     }
 }
 
@@ -253,10 +374,99 @@ impl Default for ScreenSpaceAmbientOcclusionConfig {
     }
 }
 
-pub(super) fn apply_screen_space_ambient_occlusion_rgba8(
+fn quantize_screen_space_depth(depth: f32) -> f32 {
+    if !depth.is_finite() {
+        return depth;
+    }
+    (depth.clamp(0.0, 1.0) * 65_535.0).round() / 65_535.0
+}
+
+/// Applies bloom to scene-linear HDR radiance.
+///
+/// `threshold_srgb` remains the public UI control, but is converted once to a
+/// linear luminance threshold. The working buffers and additive composite
+/// never clamp to display white, so genuine highlights retain their energy
+/// until the final output transform.
+pub(super) fn apply_bloom_linear(
     target: RasterTarget,
-    frame: &mut [u8],
-    scratch: &mut [u8],
+    frame: &mut [Color],
+    threshold_scratch: &mut [Color],
+    horizontal_scratch: &mut [Color],
+    config: PostBloomConfig,
+) -> u64 {
+    let radius = u32::from(config.radius_px());
+    let intensity = config.intensity().clamp(0.0, 1.0);
+    if target.width < 3 || target.height < 3 || radius == 0 || intensity <= 0.0 {
+        return 0;
+    }
+    debug_assert_eq!(frame.len(), target.pixel_len());
+    debug_assert_eq!(threshold_scratch.len(), target.pixel_len());
+    debug_assert_eq!(horizontal_scratch.len(), target.pixel_len());
+    threshold_scratch.fill(Color::BLACK);
+    horizontal_scratch.fill(Color::BLACK);
+    let encoded = f32::from(config.threshold_srgb()) / 255.0;
+    let threshold = if encoded <= 0.04045 {
+        encoded / 12.92
+    } else {
+        ((encoded + 0.055) / 1.055).powf(2.4)
+    };
+
+    for (output, source) in threshold_scratch.iter_mut().zip(frame.iter().copied()) {
+        let luminance = source.r * 0.2126 + source.g * 0.7152 + source.b * 0.0722;
+        if luminance >= threshold {
+            *output = source;
+        }
+    }
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let min_x = x.saturating_sub(radius);
+            let max_x = x.saturating_add(radius).min(target.width - 1);
+            let mut sum = [0.0_f32; 4];
+            let count = (max_x - min_x + 1) as f32;
+            for sample_x in min_x..=max_x {
+                let sample = threshold_scratch[target.pixel_index(sample_x, y)];
+                sum[0] += sample.r;
+                sum[1] += sample.g;
+                sum[2] += sample.b;
+                sum[3] += sample.a;
+            }
+            horizontal_scratch[target.pixel_index(x, y)] = Color::from_linear_rgba(
+                sum[0] / count,
+                sum[1] / count,
+                sum[2] / count,
+                sum[3] / count,
+            );
+        }
+    }
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let min_y = y.saturating_sub(radius);
+            let max_y = y.saturating_add(radius).min(target.height - 1);
+            let mut sum = [0.0_f32; 3];
+            let count = (max_y - min_y + 1) as f32;
+            for sample_y in min_y..=max_y {
+                let sample = horizontal_scratch[target.pixel_index(x, sample_y)];
+                sum[0] += sample.r;
+                sum[1] += sample.g;
+                sum[2] += sample.b;
+            }
+            let index = target.pixel_index(x, y);
+            let base = frame[index];
+            frame[index] = Color::from_linear_rgba(
+                base.r + sum[0] / count * intensity,
+                base.g + sum[1] / count * intensity,
+                base.b + sum[2] / count * intensity,
+                base.a,
+            );
+        }
+    }
+    1
+}
+
+pub(super) fn apply_screen_space_ambient_occlusion_linear(
+    target: RasterTarget,
+    frame: &mut [Color],
+    scratch: &mut [Color],
     depth_frame: &[f32],
     config: ScreenSpaceAmbientOcclusionConfig,
 ) -> u64 {
@@ -265,281 +475,74 @@ pub(super) fn apply_screen_space_ambient_occlusion_rgba8(
     if target.width < 3 || target.height < 3 || radius == 0 || intensity <= 0.0 {
         return 0;
     }
-    debug_assert_eq!(frame.len(), target.byte_len());
-    debug_assert_eq!(scratch.len(), target.byte_len());
-    debug_assert_eq!(depth_frame.len(), target.pixel_len());
-
+    scratch.fill(Color::BLACK);
     let threshold = config.depth_threshold().max(0.0);
-    scratch.fill(0);
     for y in 0..target.height {
         for x in 0..target.width {
-            let pixel_index = target.pixel_index(x, y);
-            let center_depth = quantize_screen_space_depth(depth_frame[pixel_index]);
-            if !center_depth.is_finite() {
+            let index = target.pixel_index(x, y);
+            let center = quantize_screen_space_depth(depth_frame[index]);
+            if !center.is_finite() {
                 continue;
             }
-            let near_radius = (radius / 2).max(1);
+            let near = (radius / 2).max(1);
             let offsets = [
-                (-(near_radius as i32), 0_i32),
-                (near_radius as i32, 0_i32),
-                (0_i32, -(near_radius as i32)),
-                (0_i32, near_radius as i32),
-                (-(radius as i32), 0_i32),
-                (radius as i32, 0_i32),
-                (0_i32, -(radius as i32)),
-                (0_i32, radius as i32),
+                (-(near as i32), 0),
+                (near as i32, 0),
+                (0, -(near as i32)),
+                (0, near as i32),
+                (-(radius as i32), 0),
+                (radius as i32, 0),
+                (0, -(radius as i32)),
+                (0, radius as i32),
             ];
-            let mut finite_samples = 0_u32;
+            let mut finite = 0_u32;
             let mut occluders = 0_u32;
-            for (offset_x, offset_y) in offsets {
-                let sample_x = x as i32 + offset_x;
-                let sample_y = y as i32 + offset_y;
-                if sample_x < 0
-                    || sample_y < 0
-                    || sample_x >= target.width as i32
-                    || sample_y >= target.height as i32
-                {
+            for (dx, dy) in offsets {
+                let sx = x as i32 + dx;
+                let sy = y as i32 + dy;
+                if sx < 0 || sy < 0 || sx >= target.width as i32 || sy >= target.height as i32 {
                     continue;
                 }
-                let sample_depth = quantize_screen_space_depth(
-                    depth_frame[target.pixel_index(sample_x as u32, sample_y as u32)],
+                let sample = quantize_screen_space_depth(
+                    depth_frame[target.pixel_index(sx as u32, sy as u32)],
                 );
-                if !sample_depth.is_finite() {
-                    continue;
-                }
-                finite_samples += 1;
-                if sample_depth + threshold < center_depth {
-                    occluders += 1;
+                if sample.is_finite() {
+                    finite += 1;
+                    occluders += u32::from(sample + threshold < center);
                 }
             }
-            if occluders == 0 || finite_samples == 0 {
-                continue;
+            if finite > 0 {
+                let darkening = (occluders as f32 / finite as f32 * intensity).clamp(0.0, 0.65);
+                scratch[index] = Color::from_linear_rgb(darkening, darkening, darkening);
             }
-            let coverage = occluders as f32 / finite_samples as f32;
-            let darkening = (coverage * intensity).clamp(0.0, 0.65);
-            scratch[pixel_index] = (darkening * 255.0).round().clamp(0.0, 255.0) as u8;
         }
     }
-
+    let source = frame.to_vec();
     for y in 0..target.height {
         for x in 0..target.width {
-            let pixel_index = target.pixel_index(x, y);
-            if !depth_frame[pixel_index].is_finite() {
+            let index = target.pixel_index(x, y);
+            if !depth_frame[index].is_finite() {
                 continue;
             }
-            let min_x = x.saturating_sub(1);
-            let max_x = x.saturating_add(1).min(target.width - 1);
-            let min_y = y.saturating_sub(1);
-            let max_y = y.saturating_add(1).min(target.height - 1);
-            let mut darkening_sum = 0_u32;
-            let mut sample_count = 0_u32;
-            for sample_y in min_y..=max_y {
-                for sample_x in min_x..=max_x {
-                    let sample_index = target.pixel_index(sample_x, sample_y);
-                    if !depth_frame[sample_index].is_finite() {
-                        continue;
+            let mut sum = 0.0;
+            let mut count = 0.0;
+            for sy in y.saturating_sub(1)..=y.saturating_add(1).min(target.height - 1) {
+                for sx in x.saturating_sub(1)..=x.saturating_add(1).min(target.width - 1) {
+                    let sample = target.pixel_index(sx, sy);
+                    if depth_frame[sample].is_finite() {
+                        sum += scratch[sample].r;
+                        count += 1.0;
                     }
-                    darkening_sum = darkening_sum.saturating_add(u32::from(scratch[sample_index]));
-                    sample_count = sample_count.saturating_add(1);
                 }
             }
-            if sample_count == 0 || darkening_sum == 0 {
-                continue;
-            }
-            let darkening = (darkening_sum as f32 / sample_count as f32) / 255.0;
-            let offset = pixel_offset(target, x, y);
-            for channel in 0..3 {
-                frame[offset + channel] =
-                    (f32::from(frame[offset + channel]) * (1.0 - darkening)).round() as u8;
-            }
+            let factor = 1.0 - if count > 0.0 { sum / count } else { 0.0 };
+            let base = source[index];
+            frame[index] =
+                Color::from_linear_rgba(base.r * factor, base.g * factor, base.b * factor, base.a);
         }
     }
-
     1
 }
-
-fn quantize_screen_space_depth(depth: f32) -> f32 {
-    if !depth.is_finite() {
-        return depth;
-    }
-    (depth.clamp(0.0, 1.0) * 65_535.0).round() / 65_535.0
-}
-
-pub(super) fn apply_bloom_rgba8(
-    target: RasterTarget,
-    frame: &mut [u8],
-    threshold_scratch: &mut [u8],
-    horizontal_scratch: &mut [u8],
-    config: PostBloomConfig,
-) -> u64 {
-    apply_bloom_rgba8_profiled(target, frame, threshold_scratch, horizontal_scratch, config).passes
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct BloomWork {
-    passes: u64,
-    blur_sample_reads: u64,
-}
-
-fn apply_bloom_rgba8_profiled(
-    target: RasterTarget,
-    frame: &mut [u8],
-    threshold_scratch: &mut [u8],
-    horizontal_scratch: &mut [u8],
-    config: PostBloomConfig,
-) -> BloomWork {
-    let radius = u32::from(config.radius_px());
-    let intensity = config.intensity().clamp(0.0, 1.0);
-    if target.width < 3 || target.height < 3 || radius == 0 || intensity <= 0.0 {
-        return BloomWork::default();
-    }
-    debug_assert_eq!(frame.len(), target.byte_len());
-    debug_assert_eq!(threshold_scratch.len(), target.byte_len());
-    debug_assert_eq!(horizontal_scratch.len(), target.byte_len());
-    threshold_scratch.fill(0);
-    horizontal_scratch.fill(0);
-
-    for y in 0..target.height {
-        for x in 0..target.width {
-            let offset = pixel_offset(target, x, y);
-            if luma_from_srgb8(&frame[offset..offset + 4]) >= f32::from(config.threshold_srgb()) {
-                threshold_scratch[offset] = frame[offset];
-                threshold_scratch[offset + 1] = frame[offset + 1];
-                threshold_scratch[offset + 2] = frame[offset + 2];
-            }
-        }
-    }
-
-    let mut blur_sample_reads = 0_u64;
-    for y in 0..target.height {
-        for x in 0..target.width {
-            let min_x = x.saturating_sub(radius);
-            let max_x = x.saturating_add(radius).min(target.width - 1);
-            let mut sum = [0_u32; 3];
-            for sample_x in min_x..=max_x {
-                let sample = pixel_offset(target, sample_x, y);
-                for channel in 0..3 {
-                    sum[channel] += u32::from(threshold_scratch[sample + channel]);
-                }
-                blur_sample_reads = blur_sample_reads.saturating_add(1);
-            }
-            let sample_count = max_x - min_x + 1;
-            let output = pixel_offset(target, x, y);
-            for channel in 0..3 {
-                horizontal_scratch[output + channel] =
-                    (sum[channel] as f32 / sample_count as f32).round() as u8;
-            }
-        }
-    }
-
-    for y in 0..target.height {
-        for x in 0..target.width {
-            let min_y = y.saturating_sub(radius);
-            let max_y = y.saturating_add(radius).min(target.height - 1);
-            let mut sum = [0_u32; 3];
-            for sample_y in min_y..=max_y {
-                let sample = pixel_offset(target, x, sample_y);
-                for channel in 0..3 {
-                    sum[channel] += u32::from(horizontal_scratch[sample + channel]);
-                }
-                blur_sample_reads = blur_sample_reads.saturating_add(1);
-            }
-            if sum == [0, 0, 0] {
-                continue;
-            }
-            let sample_count = max_y - min_y + 1;
-            let output = pixel_offset(target, x, y);
-            for channel in 0..3 {
-                let bloom = (sum[channel] as f32 / sample_count as f32) * intensity;
-                frame[output + channel] = (f32::from(frame[output + channel]) + bloom)
-                    .round()
-                    .min(255.0) as u8;
-            }
-        }
-    }
-
-    BloomWork {
-        passes: 1,
-        blur_sample_reads,
-    }
-}
-
-pub(super) fn apply_fxaa_rgba8(target: RasterTarget, frame: &mut [u8], scratch: &mut [u8]) -> u64 {
-    if target.width < 3 || target.height < 3 {
-        return 0;
-    }
-    debug_assert_eq!(frame.len(), target.byte_len());
-    debug_assert_eq!(scratch.len(), target.byte_len());
-    scratch.copy_from_slice(frame);
-
-    for y in 1..target.height - 1 {
-        for x in 1..target.width - 1 {
-            let center = pixel_offset(target, x, y);
-            let samples = [
-                pixel_offset(target, x - 1, y - 1),
-                pixel_offset(target, x, y - 1),
-                pixel_offset(target, x + 1, y - 1),
-                pixel_offset(target, x - 1, y),
-                center,
-                pixel_offset(target, x + 1, y),
-                pixel_offset(target, x - 1, y + 1),
-                pixel_offset(target, x, y + 1),
-                pixel_offset(target, x + 1, y + 1),
-            ];
-            let center_luma = luma_from_srgb8(&scratch[center..center + 4]);
-            let lumas = samples.map(|offset| luma_from_srgb8(&scratch[offset..offset + 4]));
-            let min_luma = lumas.into_iter().fold(f32::INFINITY, f32::min);
-            let max_luma = lumas.into_iter().fold(f32::NEG_INFINITY, f32::max);
-            if max_luma - min_luma < FXAA_LUMA_THRESHOLD {
-                continue;
-            }
-            let bright_neighbors = lumas
-                .iter()
-                .filter(|luma| **luma - center_luma >= FXAA_LUMA_THRESHOLD)
-                .count();
-            let dark_neighbors = lumas
-                .iter()
-                .filter(|luma| center_luma - **luma >= FXAA_LUMA_THRESHOLD)
-                .count();
-            let dark_edge =
-                center_luma - min_luma <= FXAA_LOCAL_MIN_EPSILON && bright_neighbors >= 2;
-            let light_edge =
-                max_luma - center_luma <= FXAA_LOCAL_MIN_EPSILON && dark_neighbors >= 2;
-            if !dark_edge && !light_edge {
-                continue;
-            }
-            average_kernel_rgba8(scratch, frame, center, samples);
-        }
-    }
-
-    1
-}
-
-fn pixel_offset(target: RasterTarget, x: u32, y: u32) -> usize {
-    target.pixel_index(x, y) * 4
-}
-
-fn luma_from_srgb8(pixel: &[u8]) -> f32 {
-    f32::from(pixel[0]) * 0.299 + f32::from(pixel[1]) * 0.587 + f32::from(pixel[2]) * 0.114
-}
-
-fn average_kernel_rgba8(
-    source: &[u8],
-    target: &mut [u8],
-    output_offset: usize,
-    sample_offsets: [usize; 9],
-) {
-    for channel in 0..4 {
-        let sum: u16 = sample_offsets
-            .into_iter()
-            .map(|offset| u16::from(source[offset + channel]))
-            .sum();
-        target[output_offset + channel] = (sum / 9) as u8;
-    }
-}
-
-const FXAA_LUMA_THRESHOLD: f32 = 16.0;
-const FXAA_LOCAL_MIN_EPSILON: f32 = 1.0;
 
 #[cfg(test)]
 mod tests {
@@ -812,5 +815,58 @@ mod tests {
         output.set_tonemapper(Tonemapper::PbrNeutral);
 
         assert_eq!(output.color_management_uniform(), [2.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn photographic_white_balance_neutralizes_the_estimated_illuminant_before_tonemapping() {
+        let daylight = WhiteBalance::from_illuminant_kelvin(6_500.0);
+        assert_eq!(daylight.linear_multipliers(), [1.0, 1.0, 1.0]);
+
+        let tungsten = WhiteBalance::from_illuminant_kelvin(3_200.0);
+        let correction = tungsten.linear_multipliers();
+        assert!(
+            correction[2] > correction[0],
+            "a warm illuminant must receive more blue than red compensation: {correction:?}"
+        );
+
+        let mut output = OutputTransform::default();
+        output.set_tonemapper(Tonemapper::Standard);
+        output.set_white_balance(tungsten);
+        let corrected = output.post_color(Color::from_linear_rgb(0.5, 0.5, 0.5));
+        assert!(
+            corrected.b > corrected.r,
+            "white balance must be applied in scene-linear space before the display transform"
+        );
+    }
+
+    #[test]
+    fn cpu_bloom_uses_scene_linear_hdr_energy_before_final_encoding() {
+        let target = RasterTarget {
+            width: 5,
+            height: 5,
+            backend: Backend::Headless,
+        };
+        let mut frame = vec![Color::BLACK; target.pixel_len()];
+        frame[target.pixel_index(2, 2)] = Color::from_linear_rgb(8.0, 4.0, 2.0);
+        let mut threshold = vec![Color::BLACK; target.pixel_len()];
+        let mut horizontal = vec![Color::BLACK; target.pixel_len()];
+
+        let passes = apply_bloom_linear(
+            target,
+            &mut frame,
+            &mut threshold,
+            &mut horizontal,
+            PostBloomConfig::new(200, 0.5, 1),
+        );
+
+        assert_eq!(passes, 1);
+        assert!(
+            frame[target.pixel_index(2, 2)].r > 8.0,
+            "bloom must preserve and spread radiance above display white"
+        );
+        assert!(
+            frame[target.pixel_index(2, 1)].r > 0.0,
+            "HDR energy must reach neighboring pixels before tonemapping"
+        );
     }
 }

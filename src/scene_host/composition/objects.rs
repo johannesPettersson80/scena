@@ -427,6 +427,14 @@ pub(super) fn required_object_profile<'a>(
     {
         return Some(profile);
     }
+    if recipe.photo.as_ref().is_some_and(|photo| {
+        matches!(
+            photo.intent.as_str(),
+            "camera_behavior" | "camera-behavior" | "product_hero" | "product-hero"
+        )
+    }) {
+        return Some("photo_product");
+    }
     let auto_exposure_preset = recipe
         .render
         .as_ref()

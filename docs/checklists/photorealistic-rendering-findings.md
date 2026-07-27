@@ -1,0 +1,245 @@
+# Photorealistic Rendering — Post-Implementation Findings
+
+Date: 2026-07-27
+
+Findings from an end-to-end test of the camera-behavior workflow after
+`docs/checklists/photorealistic-rendering.md` was completed (139/139). Three
+self-authored glTF subjects plus the public demo hero were rendered through
+`scena photo render --intent camera-behavior` and `scena recipe render --gpu
+--verify`, and every claim below is backed by a measurement recorded here.
+
+Test subjects (single-root GLB, five PBR materials each, no authored camera,
+lights, floor, or staging):
+
+- `dark_metal_speaker` — anodized-black aluminium, 30,192 tris
+- `colored_travel_mug` — saturated teal/orange plastic, 9,380 tris
+- `valve_manifold` — chrome/brass/steel assembly, 33 parts, 32,256 tris
+
+Host: Raspberry Pi 5, Mesa 25.0.7-2+rpt4. GPU results are **lavapipe software
+rasterization**; the V3D adapter is refused (see section 6). No result here is
+hardware release evidence.
+
+## 1. Outcome
+
+| Asset | `photo render --gpu` | `recipe render --gpu --verify` | Gate |
+|---|---|---|---|
+| dark_metal_speaker | timed out at 2400 s | exit 0, 121 s | passed |
+| colored_travel_mug | timed out (skipped) | exit 0, 165 s | passed |
+| valve_manifold | (skipped) | exit 1, 201 s | failed: `subject_fill_below_min`, `subject_clipped_by_frame` |
+| demo hero | — | exit 1, 344 s | failed: `subject_fill_below_min` (`fit 0.644` vs min 0.65) |
+
+Measured image statistics (subject + surroundings, full frame):
+
+| Image | mean L | p99 L | saturation | % > 250 |
+|---|---|---|---|---|
+| speaker before → after | 41.5 → 140.9 | 165 → 204 | 0.301 → 0.134 | 0.000 → 0.040 |
+| valve before → after | 43.4 → 51.8 | 139 → 157 | 0.293 → 0.230 | 0.001 → 0.003 |
+| hero camera-behavior old → new | 52.1 → 126.0 | 162.6 → 162.6 | 0.296 → 0.154 | 0.002 → 0.000 |
+| hero legacy hand-tuned | 90.3 | 205.6 | 0.161 | 0.012 |
+
+The staging work landed: subjects are grounded on a floor with contact shadows
+against a cyclorama instead of floating in a dark void, and materials read as
+their authored substance. The legacy hand-tuned hero still wins on specular
+headroom (p99 205.6 vs 162.6; 0.012 % vs 0.000 % near-white), so the automatic
+path has closed the gap on staging and grounding but not on highlight range.
+
+## 2. P0 — blocking
+
+- [ ] **Move the LTC lookup tables from shader constants into textures.**
+      `src/render/area_ltc_tables.wgsl` declares two `const array<vec4<f32>, 256>`
+      tables, and `src/render/area_ltc.wgsl:53-64` indexes them eight times with
+      runtime indices. Hardware without indexed constant-register access must
+      expand each read into a select chain over all 256 entries. Measured with
+      `V3D_DEBUG=shaderdb`, one fragment shader out of 39 compiles to
+      `22,518 inst, 2 threads, 7 loops, 15,088 uniforms, 64 max-temps,
+      200:599 spills:fills, 639 nops`; the median of the other 38 is 74
+      instructions. The fix is two 16x16 RGBA float textures with a linear
+      sampler, replacing the software `ltc_bilinear_sample` with
+      `textureSampleLevel`. This is how the upstream reference
+      (`selfshadow/ltc_code`) ships the tables. The shader runs on every
+      backend, so the 2-thread occupancy drop and heavy spilling are not
+      V3D-specific.
+- [ ] **Explain and fix the `photo render --gpu` vs `recipe render --gpu` gap.**
+      Identical intent, asset, and backend: 2400 s timeout versus 121 s. The
+      photo path additionally runs `render_photographic_final` at
+      `PhotographicTransportQuality::Final` plus an extra AOV capture and focus
+      pass (`src/bin/scena/photo.rs:407-423`). Measure before designing a fix;
+      this may share a root cause with the SSR item below.
+- [ ] **Stop SSR from disabling CPU parallel rasterization.**
+      `src/scene_host/photographic_surroundings.rs:195` enables SSR when
+      `reflection_strength > 0.035`, i.e. `reflective_fraction > 0.194` —
+      roughly one reflective material in five.
+      `src/render/cpu_render/parallel_policy.rs:24` returns `false` whenever
+      `screen_space_reflections.is_some()`, so the rasterizer drops to one
+      core. Observed: 92 % of a single core for >25 min without completing on a
+      4-core host. The subjects that most need reflections get the slowest path.
+
+## 3. P1 — verification integrity
+
+- [ ] **Subject measurement appears to count the generated surroundings as
+      subject.** `visible_pixel_coverage_available` reports
+      `foreground_pixels == region_pixels` (`foreground_fraction: 1.0`) on the
+      valve manifold, which then fails `subject_clipped_by_frame` even though
+      the rendered subject sits fully inside the frame with margins on all
+      sides. Before this work the background was empty, so foreground detection
+      was trivial; the new floor and cyclorama fill the frame with lit geometry.
+      At least one of the two gate failures in section 1 is therefore likely
+      spurious.
+- [ ] **Relax the GPU gate on the exact subject-mask composition check.**
+      `src/scene_host/composition/subject.rs:216` skips with
+      `SkippedNoBackendSupport` whenever `backend != Backend::Headless`, so
+      every GPU verification runs with its most precise check disabled. GPU
+      semantic AOV capture now works (section 7), so this gate can be revisited.
+- [ ] **Stop reporting synthetic focus values as `resolved`.**
+      `src/bin/scena/photo.rs:1161-1162` hardcodes `visible_pixel_count: 1` and
+      `confidence: 0.65` on the fallback path and still calls
+      `FocusReportV1::resolved`. When the AOV-measured path is unavailable the
+      report should be `unresolved`, not a resolution that was never measured.
+- [ ] **Add a test that renders a metal subject and asserts it is not flat.**
+      `camera_behavior_shaded_candidate_scoring_rejects_black_silhouette_and_flat_gray_metal`
+      feeds hand-written synthetic observations into the scorer and renders
+      nothing. It proves the ranking function discriminates, not that the
+      renderer can produce non-flat metal.
+- [ ] **Make the photorealism doctor rules behavioural.**
+      `crates/xtask/src/app/doctor_render/material_reflection.rs` is
+      `require_contains` source-substring pinning. A green doctor run attests
+      that contract text is present, not that output is photographic.
+- [ ] **Commit `src/bin/scena/photo.rs`.** It is untracked (`??`), so the whole
+      camera-behavior feature is invisible to `git diff` — which is why the
+      GPU regression in section 7 could not be seen in review.
+
+## 4. P2 — staging and quality
+
+- [ ] **Size the generated cyclorama to cover the frame.** Its edge is visible
+      as a hard curved seam in the top-left of both `colored_travel_mug` and the
+      demo hero. `src/scene_host/photographic_surroundings.rs:64-69` derives
+      `extent_m` from `max(radius * 5, camera_distance * 1.35, ...)`, which is
+      not wide enough for tall narrow subjects.
+- [ ] **Stop crushing the backdrop to near-black.** Subject metering reaches its
+      target while the surroundings stay underexposed, so composites read dim
+      (`mean_luminance 0.263` on the valve, `0.411` on the hero). Consider
+      metering or grading the surround relative to the subject.
+- [ ] **Use a real environment for image-based lighting.**
+      `apply_photographic_lighting` installs `assets.default_environment()`,
+      which resolves to `EnvironmentDesc::neutral_studio()` with
+      `source_kind: BundledPreviewFixture`. Its generated cubemap is 25 lines
+      with one constant radiance per cube face, and the fixture source states
+      `kind = cpu-preview-environment` / `not HDR input and not IBL proof`. A
+      real 1K studio HDRI is already bundled at
+      `tests/assets/environment/polyhaven/studio_small_03_1k.hdr` and referenced
+      by `src/assets/environment_preset.rs:35`, but the camera-behavior path
+      never selects it. Rotating a six-flat-colour cubemap changes which flat
+      colour a highlight sees, not whether there is structure to reflect.
+- [ ] **Fix the environment ordering hazard.**
+      `photographic_surroundings.rs:80` computes
+      `preserved_authored_environment = self.renderer.environment().is_some()`,
+      conflating "the user authored an environment" with "one exists". Because
+      `apply_photographic_lighting` installs the default environment, any
+      ordering where surroundings runs after lighting silently suppresses both
+      the cyclorama and the derived background. Not triggered by recipes that
+      declare no `scene.environment`, but fragile.
+- [ ] **Fix the demo hero.** It fails its own gate at `fit_fraction 0.644`
+      against a `0.65` minimum, with `center_offset_fraction [0.158, 0.014]`
+      against a `0.16` maximum. Separately, `evidence/demo-hero/README.md` pins
+      SHA-256 `915e9e36…` but a re-render produces `7352e341…` (14.03 % of
+      pixels differ, max Chebyshev 111), so the committed proof does not
+      reproduce.
+- [ ] **Document or tighten the `fill_width_fraction` waiver.** Measured values
+      of 0.278–0.528 pass against a published minimum of 0.65 because
+      `width_fill_target_is_actionable` (`photo.rs:643`) waives the width check
+      for subjects too tall to fill 65 % of width without exceeding max fit.
+      Principled, but currently undocumented.
+
+## 5. Fixed during this investigation (uncommitted)
+
+- [x] **Wire GPU semantic AOV capture through the camera-behavior path.**
+      All five capture sites in `src/bin/scena/photo.rs` called the CPU-only
+      `capture_semantic_aovs()`, which hard-rejects any backend other than
+      `Headless`, with no `gpu` branch and no
+      `set_semantic_aov_capture_enabled(true)` before prepare. Because
+      `src/bin/scena/recipe.rs` shares those functions, this broke
+      `recipe render --gpu` on any `photo.intent` recipe — a path that
+      previously returned `ok:true`. Added
+      `capture_camera_behavior_semantic_aovs(host, gpu)`, threaded `gpu`
+      through `apply_camera_behavior_setup_with_plan`,
+      `select_camera_behavior_shaded_candidate`,
+      `render_camera_behavior_shaded_candidates`,
+      `render_camera_behavior_candidates`, and
+      `apply_visible_subject_physical_focus`, and enabled AOV resources before
+      prepare in both callers. Verified: `recipe render --gpu --verify` went
+      from exit 70 to exit 0 in 121 s.
+
+## 6. V3D adapter — investigated, closed
+
+`Renderer::headless_gpu` refuses the Pi's V3D adapter unless
+`SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU` is set (`src/render/gpu/build.rs:20-23`).
+The refusal is correct but its framing is wrong.
+
+Measured with the escape hatch enabled: adapter enumeration, device creation,
+and readback all succeed (`gpu_device: true`, `readback.status: supported`,
+1 s). A 320x240 render then spends 1159 s in `vkCreateGraphicsPipelines` and
+**does complete**, writing a valid PNG. It is pathological, not a hang, and no
+kernel GPU reset occurs because no command buffer is ever submitted.
+
+Symbolized stack (via `mesa-vulkan-drivers-dbgsym`, build-id `cd58235c…`):
+
+```
+v3dv_CreateGraphicsPipelines   v3dv_pipeline.c:3009
+  pipeline_init                v3dv_pipeline.c:1939
+    pipeline_compile_shader_variant v3dv_pipeline.c:1653
+      v3d_compile              vir.c:2070
+        v3d_attempt_compile    vir.c:1879
+          v3d_nir_to_vir       nir_to_vir.c:5019
+            v3d_register_allocate vir_register_allocate.c:1554
+              ra_allocate / add_node_to_stack  register_allocate.c
+```
+
+`V3D_DEBUG=ra` shows 25 register-allocation failures across 9 programs, walking
+Mesa's documented 13-entry fallback ladder (`vir.c:1923`).
+
+**This is not a Mesa bug and no upstream report is warranted.** The ladder is
+deliberate, documented, and bounded; V3DV's own internal shaders and scena's
+vertex shader compile instantly with zero spills. The cost is entirely driven by
+the LTC shader in section 2 — fix that and V3D becomes viable. Upgrading Mesa
+does not help: no newer package exists for this host
+(`Candidate: 25.0.7-2+rpt4`) and Mesa 26.1.0's v3dv entries are all features
+(`robustness2`, `present_id`, `hdr_metadata`) with nothing on compile time.
+
+Guard improvements worth making anyway:
+
+- [ ] Return a distinct `AdapterRefused { reason }` instead of
+      `BuildError::RequestDevice`. No device is ever requested, and the current
+      error reads as a driver failure — it cost two rounds of misdiagnosis
+      during this investigation.
+- [ ] Gate on driver version rather than the permanent name substring test
+      `info.name.to_ascii_lowercase().contains("v3d")`
+      (`src/render/gpu/build.rs:50-52`), so a fixed future V3DV is not banned
+      forever.
+- [ ] Narrow the scope: V3D handles device creation, limits negotiation, and
+      readback correctly. Only pipeline compilation is affected.
+
+## 7. Reproduction
+
+```bash
+cargo build --release --features agent --bin scena
+
+# assets are generated from a Blender script; any single-root GLB works
+scena photo render <asset.glb> --intent camera-behavior \
+  --out target/photo-test/<name>.png \
+  --report target/photo-test/<name>.report.json \
+  --emit-recipe target/photo-test/<name>.recipe.json
+
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+scena recipe render target/photo-test/<name>.recipe.json --gpu --verify \
+  --out target/photo-test/<name>.recipe.png \
+  > target/photo-test/<name>.recipe.render.json
+```
+
+V3D shader-compile evidence:
+
+```bash
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/broadcom_icd.json \
+SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU=1 \
+V3D_DEBUG=shaderdb,ra \
+scena recipe render <recipe.json> --gpu --out /tmp/v3d.png
+```

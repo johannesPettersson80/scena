@@ -519,6 +519,18 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
         current_row_expected_gpu_status,
         "M9 capability rows must expose physical glass status separately from forward_pbr and promote it only on measured GPU lanes"
     );
+    assert_eq!(
+        current_row["capabilities"]["auto_exposure_metering"]["average"]["state"], "Supported",
+        "M9 capability rows must expose supported average metering explicitly"
+    );
+    assert_eq!(
+        current_row["capabilities"]["auto_exposure_metering"]["subject"]["state"], "Degraded",
+        "M9 capability rows must not claim subject metering support before the E02 meter-routing proof lands"
+    );
+    assert_eq!(
+        current_row["capabilities"]["auto_exposure_metering"]["spot"]["state"], "FeatureDisabled",
+        "M9 capability rows must expose unsupported spot metering explicitly"
+    );
     for (lane, backend) in [
         ("linux-webgl2-chromium", "WebGl2"),
         ("linux-webgpu-chromium", "WebGpu"),
@@ -5673,6 +5685,14 @@ fn capability_fields(capabilities: Capabilities) -> serde_json::Value {
         },
         "gpu_frustum_culling": { "state": format!("{:?}", capabilities.gpu_frustum_culling) },
         "per_instance_culling": { "state": format!("{:?}", capabilities.per_instance_culling) },
+        "subject_visible_mask": { "state": format!("{:?}", capabilities.subject_visible_mask) },
+        "auto_exposure_metering": {
+            "average": { "state": format!("{:?}", capabilities.auto_exposure_metering_average) },
+            "center_weighted": { "state": format!("{:?}", capabilities.auto_exposure_metering_center_weighted) },
+            "highlight_weighted": { "state": format!("{:?}", capabilities.auto_exposure_metering_highlight_weighted) },
+            "subject": { "state": format!("{:?}", capabilities.auto_exposure_metering_subject) },
+            "spot": { "state": format!("{:?}", capabilities.auto_exposure_metering_spot) },
+        },
         "compute_shaders": { "state": format!("{:?}", capabilities.compute_shaders) },
         "storage_buffers": { "state": format!("{:?}", capabilities.storage_buffers) },
         "reversed_z_depth": { "state": format!("{:?}", capabilities.reversed_z_depth) },

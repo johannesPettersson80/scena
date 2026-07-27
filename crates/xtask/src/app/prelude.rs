@@ -34,11 +34,11 @@ pub(crate) use crate::app::doctor_architecture::{
     xtask_cross_module_glob_import, xtask_source_files,
 };
 pub(crate) use crate::app::doctor_core::{
-    ALLOWED_CONTEXT_TYPES, CATCH_ALL_TYPE_NAMES, CATCH_ALL_TYPE_SUFFIXES,
-    MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE, MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE, REQUIRED_DOCS,
-    REQUIRED_SOURCE_MODULES, SOURCE_SCOPE_TERMS, STALE_DOC_TERMS,
-    check_a01_recipe_resource_resolution, check_a02_operator_recipe_roots,
-    check_a03_live_capability_discovery, check_a04_cli_ergonomics,
+    ALLOWED_CONTEXT_TYPES, ALLOWED_LARGE_SOURCE_MODULES, CATCH_ALL_TYPE_NAMES,
+    CATCH_ALL_TYPE_SUFFIXES, MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE,
+    MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE, REQUIRED_DOCS, REQUIRED_SOURCE_MODULES,
+    SOURCE_SCOPE_TERMS, STALE_DOC_TERMS, check_a01_recipe_resource_resolution,
+    check_a02_operator_recipe_roots, check_a03_live_capability_discovery, check_a04_cli_ergonomics,
     check_a05_scena_convert_contract, check_a06_repair_and_doctor_inputs,
     check_a07_name_candidates_and_remedies, check_a08_transform_grammar,
     check_a09_feature_discoverability, check_agent_contracts, check_cli_output_contracts,
@@ -47,8 +47,9 @@ pub(crate) use crate::app::doctor_core::{
     check_feature_ownership_contracts, check_full_review_q06_silent_failure_contracts,
     check_m8_real_asset_dual_lane, check_no_ignored_release_tests, check_q07_claim_truth_contracts,
     check_recipe_build_policy_boundary, check_test_control_flow_policy,
-    check_tests_env_flags_documented, check_waterbottle_third_party_reference, find_env_var_names,
-    repo_root, require_files, run_architecture_doctor, run_docs_doctor, run_doctor,
+    check_tests_env_flags_documented, check_waterbottle_third_party_reference,
+    check_x01_subject_photo_contracts, find_env_var_names, repo_root, require_files,
+    run_architecture_doctor, run_docs_doctor, run_doctor,
 };
 pub(crate) use crate::app::doctor_docs::{
     check_c11_onboarding_contracts, check_d01_public_version_alignment,

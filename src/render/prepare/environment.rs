@@ -112,6 +112,7 @@ pub(in crate::render) struct PreparedEnvironmentLighting {
     diffuse_rgb: Vec3,
     specular_rgb: Vec3,
     intensity: f32,
+    rotation_y_radians: f32,
     /// Phase 1C step 1: real cubemap radiance, decoded at prepare time from
     /// the active environment asset's six face-radiance values. The `Arc`
     /// keeps `PreparedEnvironmentLighting::clone` allocation-free in the hot
@@ -151,6 +152,7 @@ impl Default for PreparedEnvironmentLighting {
             diffuse_rgb: Vec3::ZERO,
             specular_rgb: Vec3::ZERO,
             intensity: 0.0,
+            rotation_y_radians: 0.0,
             cubemap: None,
         }
     }
@@ -251,6 +253,7 @@ impl PreparedEnvironmentLighting {
                         diffuse_rgb: Vec3::ZERO,
                         specular_rgb: Vec3::ZERO,
                         intensity: 0.0,
+                        rotation_y_radians: 0.0,
                         cubemap,
                     };
                 }
@@ -274,6 +277,7 @@ impl PreparedEnvironmentLighting {
                 diffuse_rgb: Vec3::ZERO,
                 specular_rgb: Vec3::ZERO,
                 intensity: 0.0,
+                rotation_y_radians: 0.0,
                 cubemap,
             };
         }
@@ -295,8 +299,19 @@ impl PreparedEnvironmentLighting {
             diffuse_rgb,
             specular_rgb,
             intensity,
+            rotation_y_radians: 0.0,
             cubemap,
         }
+    }
+
+    pub(in crate::render) fn with_controls(
+        mut self,
+        intensity_scale: f32,
+        rotation_y_radians: f32,
+    ) -> Self {
+        self.intensity *= intensity_scale.clamp(0.0, 16.0);
+        self.rotation_y_radians = rotation_y_radians;
+        self
     }
 
     pub(in crate::render) fn cubemap(&self) -> Option<&PreparedEnvironmentCubemap> {
@@ -331,6 +346,15 @@ impl PreparedEnvironmentLighting {
         ]
     }
 
+    pub(in crate::render::prepare) fn gpu_environment_transform(&self) -> [f32; 4] {
+        [
+            self.rotation_y_radians.cos(),
+            self.rotation_y_radians.sin(),
+            0.0,
+            0.0,
+        ]
+    }
+
     pub(in crate::render::prepare) fn pbr_contribution(
         &self,
         material: PbrMaterial,
@@ -341,7 +365,10 @@ impl PreparedEnvironmentLighting {
             return Vec3::ZERO;
         }
         let diffuse = self.diffuse_rgb;
-        let reflection = reflect_vec3(Vec3::new(-view.x, -view.y, -view.z), normal);
+        let reflection = rotate_environment_y(
+            reflect_vec3(Vec3::new(-view.x, -view.y, -view.z), normal),
+            self.rotation_y_radians,
+        );
         let prefiltered = self
             .cubemap
             .as_deref()
@@ -357,6 +384,15 @@ impl PreparedEnvironmentLighting {
             self.intensity,
         )
     }
+}
+
+fn rotate_environment_y(direction: Vec3, radians: f32) -> Vec3 {
+    let (sin, cos) = radians.sin_cos();
+    Vec3::new(
+        cos * direction.x + sin * direction.z,
+        direction.y,
+        -sin * direction.x + cos * direction.z,
+    )
 }
 
 #[doc(hidden)]
@@ -504,6 +540,7 @@ mod tests {
             diffuse_rgb: Vec3::new(0.5, 0.5, 0.5),
             specular_rgb: Vec3::ZERO,
             intensity: 1.0,
+            rotation_y_radians: 0.0,
             cubemap: Some(Arc::new(PreparedEnvironmentCubemap {
                 resolution: 1,
                 mips: vec![black_mip],

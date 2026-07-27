@@ -28,7 +28,7 @@ pub(crate) fn check_c07_target_transfer_contract(root: &Path, findings: &mut Vec
         rule,
         "src/render/gpu/post/resources.rs",
         &[
-            "POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb",
+            "POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float",
             "scene_linear_sampling",
         ],
     );

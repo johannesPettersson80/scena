@@ -1,0 +1,39 @@
+{
+  "schema": "scena.focus_report.v1",
+  "status": "resolved",
+  "mode": "subject",
+  "target": {
+    "kind": "import",
+    "id": "subject",
+    "handles": [
+      10,
+      11
+    ]
+  },
+  "coverage": "all",
+  "strength": "subtle",
+  "resolved": {
+    "focus_distance_m": 2.5,
+    "near_depth_m": 2.0,
+    "far_depth_m": 3.0,
+    "visible_pixel_count": 512,
+    "confidence": 1.0
+  },
+  "frame_key": {
+    "width": 320,
+    "height": 240,
+    "payload_fnv1a64": "0123456789abcdef",
+    "pixel_source": "renderer_owned_readback",
+    "state_binding": "exact_readback_completion",
+    "render_generation": 3,
+    "target_revision": 1,
+    "output_resources_revision": 2,
+    "revisions": {
+      "structure": 1,
+      "transform": 2,
+      "camera": 3,
+      "appearance": 4,
+      "interaction": 5
+    }
+  }
+}

@@ -28,7 +28,8 @@ pub(super) struct MaterialUniformUpload {
     /// Phase 5.1: glTF spec scalar texture strengths.
     /// .x = normalTexture.scale (default 1.0)
     /// .y = occlusionTexture.strength (default 1.0)
-    /// .z, .w = reserved
+    /// .z = automatic photographic micro-surface strength
+    /// .w = inverse automatic photographic micro-surface scale in metres
     pub(super) texture_strengths: [f32; 4],
     /// KHR_materials_clearcoat scalar lanes.
     /// .x = clearcoatFactor
@@ -113,8 +114,12 @@ impl MaterialUniformUpload {
             texture_strengths: [
                 material.normal_scale(),
                 material.occlusion_strength(),
-                0.0,
-                0.0,
+                material
+                    .photographic_micro_surface()
+                    .map_or(0.0, |surface| surface.strength()),
+                material
+                    .photographic_micro_surface()
+                    .map_or(0.0, |surface| surface.scale_m().recip()),
             ],
             clearcoat_factors: [
                 material.clearcoat_factor(),
@@ -404,6 +409,16 @@ mod tests {
         let occlusion_strength = f32::from_ne_bytes(bytes[100..104].try_into().unwrap());
         assert!((normal_scale - 3.5).abs() < 1e-6);
         assert!((occlusion_strength - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn material_uniform_upload_encodes_photographic_micro_surface() {
+        let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.5, 0.35)
+            .with_photographic_micro_surface(0.04, 0.002);
+        let upload = MaterialUniformUpload::from_material(Some(&material), None);
+
+        assert_eq!(upload.texture_strengths[2], 0.04);
+        assert!((upload.texture_strengths[3] - 500.0).abs() < 0.001);
     }
 
     #[test]

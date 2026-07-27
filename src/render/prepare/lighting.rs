@@ -27,7 +27,7 @@ pub(in crate::render) use tiled::{
 };
 
 pub(in crate::render) const MAX_GPU_LIGHTS_PER_TYPE: usize = 16;
-pub(in crate::render) const MAX_GPU_AREA_LIGHTS: usize = 2;
+pub(in crate::render) const MAX_GPU_AREA_LIGHTS: usize = 4;
 
 #[derive(Clone)]
 pub(super) struct MaterialShadingInput {
@@ -242,7 +242,8 @@ fn shade_pbr_base_color(
     lights: &PreparedLights,
     input: &MaterialShadingInput,
 ) -> Color {
-    let normal = normalize_or(input.normal, Vec3::new(0.0, 0.0, 1.0));
+    let (normal, micro_roughness) =
+        photographic_micro_surface(material, input.position, input.normal, input.tangent);
     let view = input
         .camera_position
         .map(|camera| {
@@ -254,8 +255,9 @@ fn shade_pbr_base_color(
         .unwrap_or(Vec3::new(0.0, 0.0, 1.0));
     let base_rgb = Vec3::new(base.r, base.g, base.b);
     let metallic = clamp_unit(material.metallic_factor() * input.metallic_roughness_texture.0);
-    let roughness =
-        roughness_or_min(material.roughness_factor() * input.metallic_roughness_texture.1);
+    let roughness = roughness_or_min(
+        material.roughness_factor() * input.metallic_roughness_texture.1 + micro_roughness,
+    );
     let pbr_material = PbrMaterial::new(base_rgb, metallic, roughness);
     let clearcoat_factor = clamp_unit(material.clearcoat_factor() * input.clearcoat_texture);
     let clearcoat_roughness =
@@ -423,6 +425,30 @@ fn shade_pbr_base_color(
     }
 
     Color::from_linear_rgba(shaded.x, shaded.y, shaded.z, base.a)
+}
+
+fn photographic_micro_surface(
+    material: &MaterialDesc,
+    position: Vec3,
+    authored_normal: Vec3,
+    authored_tangent: Vec3,
+) -> (Vec3, f32) {
+    let normal = normalize_or(authored_normal, Vec3::new(0.0, 0.0, 1.0));
+    let Some(surface) = material.photographic_micro_surface() else {
+        return (normal, 0.0);
+    };
+    let scale = surface.scale_m().max(1.0e-6);
+    let phase = position / scale;
+    let noise_x = (phase.dot(Vec3::new(12.9898, 78.233, 37.719))).sin();
+    let noise_y = (phase.dot(Vec3::new(39.346, 11.135, 83.155))).sin();
+    let tangent = normalize_or(authored_tangent, Vec3::new(1.0, 0.0, 0.0));
+    let bitangent = normalize_or(normal.cross(tangent), Vec3::new(0.0, 1.0, 0.0));
+    let strength = surface.strength();
+    let perturbed = normalize_or(
+        normal + tangent * (noise_x * strength) + bitangent * (noise_y * strength),
+        normal,
+    );
+    (perturbed, (noise_x * 0.5 + 0.5) * strength * 0.35)
 }
 
 #[cfg(test)]

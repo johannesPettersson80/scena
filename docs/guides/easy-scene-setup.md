@@ -13,6 +13,32 @@ Every image embedded below comes from
 headless GPU enabled to regenerate them. On lavapipe:
 `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json cargo run --example easy_scene_showcase --release`.
 
+## Camera behavior stills
+
+For a product/model hero still, use the photo-intent path before hand-authoring
+camera distance, exposure, focus, floor, grid, or background:
+
+```bash
+scena photo render model.glb --out hero.png --report hero.report.json
+```
+
+The recipe-native form is `photo.intent` with an explicit subject:
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [{ "id": "subject", "uri": "model.glb" }],
+  "photo": {
+    "intent": "camera_behavior",
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}
+```
+
+The camera loop derives composition, subject metering, and focus from the
+declared subject, so a public camera-behavior shot starts with no manual camera, exposure, or focus. Raw Rust camera, lighting, and exposure setup remains the advanced path for applications
+that deliberately own the presentation rig.
+
 ## Minimal model viewer
 
 The shortest PBR-safe path is:

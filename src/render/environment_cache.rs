@@ -61,7 +61,10 @@ impl Renderer {
             && cache.revision == self.environment_revision
             && cache.key.matches(environment_desc, profile)
         {
-            return cache.lighting.clone();
+            return cache.lighting.clone().with_controls(
+                self.environment_intensity,
+                self.environment_rotation_y_radians,
+            );
         }
         let key = EnvironmentLightingCacheKey::new(environment_desc, profile);
         if let Some(lighting) = self.environment_lighting_cache.entries.get(&key).cloned() {
@@ -71,7 +74,10 @@ impl Renderer {
                 key,
                 lighting: lighting.clone(),
             });
-            return lighting;
+            return lighting.with_controls(
+                self.environment_intensity,
+                self.environment_rotation_y_radians,
+            );
         }
         let lighting = prepare::collect_environment_lighting(environment_desc, self.target.backend);
         self.environment_lighting_cache
@@ -83,7 +89,10 @@ impl Renderer {
             key,
             lighting: lighting.clone(),
         });
-        lighting
+        lighting.with_controls(
+            self.environment_intensity,
+            self.environment_rotation_y_radians,
+        )
     }
 }
 

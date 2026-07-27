@@ -4,7 +4,7 @@ use super::super::stats::GpuResourceStats;
 use super::types::{POST_UNIFORM_BYTE_LEN, POST_UNIFORM_SLOT_COUNT, PostResources};
 use super::{blit, bloom, bloom_fxaa, dof, fxaa, ssao, ssr};
 
-pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::render::gpu) fn create_resources(
@@ -16,6 +16,7 @@ pub(in crate::render::gpu) fn create_resources(
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
     surface_format: Option<wgpu::TextureFormat>,
+    readback_format: Option<wgpu::TextureFormat>,
     depth_color_view: Option<&wgpu::TextureView>,
 ) -> PostResources {
     let scene = create_post_texture(device, target, "scena.gpu_post.scene_linear_sampling");
@@ -178,6 +179,8 @@ pub(in crate::render::gpu) fn create_resources(
     );
     let output_blit_pipeline =
         blit::create_target_pipeline(device, &texture_pipeline_layout, GPU_COLOR_FORMAT);
+    let readback_blit_pipeline = readback_format
+        .map(|format| blit::create_target_pipeline(device, &texture_pipeline_layout, format));
     let surface_blit_pipeline = surface_format
         .map(|format| blit::create_surface_pipeline(device, &texture_pipeline_layout, format));
     let surface_bloom_fxaa_pipeline = surface_format.map(|format| {
@@ -206,6 +209,7 @@ pub(in crate::render::gpu) fn create_resources(
         scene_msaa4_pipelines,
         scene_msaa8_pipelines: None,
         output_blit_pipeline,
+        readback_blit_pipeline,
         surface_blit_pipeline,
         surface_fxaa_pipeline,
         surface_bloom_fxaa_pipeline,
@@ -220,6 +224,7 @@ pub(in crate::render::gpu) fn create_resources(
 pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuResourceStats {
     let mesh_pipelines = 4 + u64::from(resources.scene_msaa8_pipelines.is_some()) * 2;
     let optional_surface_pipelines = u64::from(resources.surface_blit_pipeline.is_some())
+        + u64::from(resources.readback_blit_pipeline.is_some())
         + u64::from(resources.surface_fxaa_pipeline.is_some())
         + u64::from(resources.surface_bloom_fxaa_pipeline.is_some());
     let pipelines = mesh_pipelines + optional_surface_pipelines + 6;
@@ -239,7 +244,7 @@ pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuRe
                 .map_or(0, |groups| groups.len() as u64),
         shader_modules,
         shader_module_creations: shader_modules,
-        approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(resources.target, 4, 1)
+        approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(resources.target, 8, 1)
             .saturating_mul(3)
             .saturating_add(POST_UNIFORM_BYTE_LEN)
             .saturating_add(POST_UNIFORM_BYTE_LEN.saturating_mul(POST_UNIFORM_SLOT_COUNT)),

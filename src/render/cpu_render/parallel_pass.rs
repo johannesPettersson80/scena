@@ -55,7 +55,7 @@ pub(super) fn draw_cpu_geometry_pass_parallel(
                         oit_scratch,
                         screen_space_reflections: None,
                         material_reflection_scratch: None,
-                        rgba8_scratch: None,
+                        linear_scratch: None,
                         row_band_bins: None,
                         primitive_indices: Some(&row_bands.bands[chunk_index]),
                     },

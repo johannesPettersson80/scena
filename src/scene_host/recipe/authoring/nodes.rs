@@ -199,6 +199,7 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
                     .unwrap_or(root_handle),
             ),
             name: recipe.name.clone(),
+            visible: recipe.visible.or(Some(true)),
             active: None,
         });
     }

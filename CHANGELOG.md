@@ -57,6 +57,17 @@ _Remediation of the full-repository review of 1.9.0. See
   now `invalid_arguments` at exit 2. Commands missing from a build keep their
   distinct `feature_unavailable` code at exit 69. The `scena.cli_error.v1`
   shape is unchanged.
+- Add subject-driven product-hero rendering through the public recipe/CLI
+  surface. `scena photo plan`, `scena photo render`, and recipe
+  `photo.intent:"product_hero"` select composition/staging, subject metering,
+  bounded exposure retry, and subject focus without hand-authored camera,
+  fixed exposure, focus-distance, floor, grid, or background constants. New
+  `scena.photo_*`, `scena.exposure_report.v1`, `scena.focus_report.v1`, and
+  `scena.subject_observation.v1` contracts carry the evidence.
+- Migrate the public demo hero to the recipe `photo.intent` path. The checked
+  proof image is generated from `evidence/demo-hero/hero.recipe.json` and the
+  demo now points at the matching cache-busted still asset instead of a
+  hand-tuned Rust/recipe hero.
 - Fix the correction to the 1.9.0 changelog heading: shipped 1.9.0 work was
   still filed under `[Unreleased]` and the section carried the wrong date.
 
@@ -124,6 +135,19 @@ lines, and dimension lines too, so a cutaway silently lost its own annotations.
   can clip while its neighbours do not. There is no switch that restores the
   old behavior everywhere, because the old behavior was wrong for the common
   case.
+
+#### Migration — product-hero exposure nudges
+
+The product-hero easy path is additive. Existing recipes that omit
+`photo.intent` keep their explicit render behavior: fixed `render.exposure_ev`
+is still full manual exposure, manual
+`render.depth_of_field.focus_distance` is still valid, and explicit
+`render.metering:{mode:"average"}` remains average metering.
+
+For auto-exposed product/studio renders that only need a small brightness
+correction, keep `render.auto_exposure` enabled and add
+`render.exposure_compensation_ev`. Do not replace the meter with a fixed
+`render.exposure_ev` unless the shot is deliberately manual.
 
 ## [1.9.0] - 2026-07-24
 

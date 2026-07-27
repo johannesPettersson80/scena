@@ -1,9 +1,12 @@
+use std::collections::BTreeSet;
+
 use serde_json::Value;
 
 mod authoring;
 mod expectations;
 mod imports;
 mod overlays;
+mod photo;
 mod setup;
 mod spatial_state;
 mod suggestions;
@@ -145,15 +148,35 @@ fn validate_scene_recipe_value_inner(
     validate_authoring_sections(object, policy, diagnostics);
     spatial_state::validate_spatial_state_sections(object, diagnostics);
     let import_ids = imports::import_ids(object.get("imports"));
+    let node_ids = authored_node_ids(object.get("nodes"));
     validate_section_box(object.get("section_box"), &import_ids, diagnostics);
     validate_measurements(object.get("measurements"), diagnostics);
     validate_callouts(object.get("callouts"), &import_ids, diagnostics);
     validate_exploded_view(object.get("exploded_view"), &import_ids, diagnostics);
     setup::validate_scene_setup(object.get("scene"), diagnostics);
-    setup::validate_render_setup(object.get("render"), diagnostics);
+    setup::validate_render_setup(object.get("render"), &import_ids, &node_ids, diagnostics);
+    photo::validate_photo(
+        object.get("photo"),
+        object.get("scene"),
+        object.get("render"),
+        object.get("cameras"),
+        &import_ids,
+        &node_ids,
+        diagnostics,
+    );
     expectations::validate_expectations(object.get("expect"), diagnostics);
     validate_capture(object.get("capture"), diagnostics);
     validate_metadata(object.get("metadata"), diagnostics);
+}
+
+fn authored_node_ids(nodes: Option<&Value>) -> BTreeSet<String> {
+    nodes
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|node| node.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
 }
 
 pub fn recipe_too_large_report(

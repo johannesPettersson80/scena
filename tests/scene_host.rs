@@ -8,8 +8,9 @@ use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, Aabb, AnnotationProjectionReportV1, AntiAliasing, AssetPath,
     Assets, AutoExposureConfig, Color, GeometryDesc, HOST_EVENT_SCHEMA_V1, HitTarget,
     HostEventBatchV1, HostEventHoverPhaseV1, HostEventV1, ImportOptions, MaterialDesc,
-    OrbitControlAction, PointerButton, PostBloomConfig, RENDER_INTROSPECTION_SCHEMA_V1,
-    RenderIntrospectionReportV1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_GROUNDING_SCHEMA_V1,
+    OrbitControlAction, PhotoCandidateObservation, PhotoCandidateRequest, PointerButton,
+    PostBloomConfig, RENDER_INTROSPECTION_SCHEMA_V1, RenderIntrospectionReportV1,
+    SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_GROUNDING_SCHEMA_V1,
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
     SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
     SceneHostErrorCode, SceneHostGroundingPathV1, SceneHostSectionBoxReportV1,
@@ -20,6 +21,8 @@ use scena::{
     VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
     VisualPatchResultV1, VisualPatchSectionBoxV1, VisualPatchSelectionV1, VisualPatchTintEasedV1,
     VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
+    camera_behavior_candidate_plan, product_hero_candidate_plan, score_camera_behavior_candidates,
+    score_product_hero_candidates,
 };
 use serde_json::json;
 
@@ -134,6 +137,345 @@ fn scene_host_product_studio_visuals_apply_renderable_defaults() {
         report.light_count(),
         3,
         "SceneHost product studio preset must insert the standard Scena three-point rig"
+    );
+}
+
+#[test]
+fn camera_behavior_candidate_plan_is_physical_geometry_derived_and_deterministic() {
+    let subject_bounds = Aabb::new(Vec3::new(-2.0, -0.25, -0.5), Vec3::new(2.0, 1.0, 0.5));
+    let request = PhotoCandidateRequest::camera_behavior(subject_bounds, (1280, 840))
+        .fill_range(0.65, 0.85)
+        .max_candidates(10)
+        .front_hint(Vec3::new(0.0, 0.0, 1.0))
+        .up_hint(Vec3::new(0.0, 1.0, 0.0))
+        .keep_visible_anchor("terminal-a");
+
+    let first = camera_behavior_candidate_plan(request.clone()).expect("candidate plan builds");
+    let second = camera_behavior_candidate_plan(request).expect("candidate plan is repeatable");
+
+    assert_eq!(first, second, "candidate generation must be deterministic");
+    assert_eq!(first.schema, "scena.photo_candidate_plan.v1");
+    assert_eq!(first.intent, "camera_behavior");
+    assert_eq!(first.budget, 10);
+    assert_eq!(first.candidates.len(), 10);
+    assert_eq!(
+        first.selected_candidate_id,
+        first.candidates.first().expect("candidate exists").id
+    );
+
+    let selected = first.candidates.first().expect("candidate exists");
+    assert_eq!(selected.order, 0);
+    assert_eq!(selected.view, "geometry_derived");
+    assert_eq!(selected.lens, "physical");
+    assert!(
+        (35.0..=105.0).contains(&selected.focal_length_mm),
+        "automatic photography must use a natural physical lens: {selected:#?}"
+    );
+    assert_eq!(selected.fill_fraction, 0.78);
+    assert_eq!(selected.subject_yaw_deg, 0.0);
+    assert_eq!(selected.front_hint, Some(Vec3::new(0.0, 0.0, 1.0)));
+    assert_eq!(selected.up_hint, Some(Vec3::new(0.0, 1.0, 0.0)));
+    assert_eq!(selected.staging.background, "automatic");
+    assert_eq!(selected.staging.environment, "automatic");
+    assert_eq!(selected.staging.ground, "automatic");
+    assert!(!selected.staging.grid);
+    assert_eq!(selected.keep_visible_anchors, vec!["terminal-a"]);
+
+    assert!(
+        first.candidates.iter().all(|candidate| {
+            (0.65..=0.85).contains(&candidate.fill_fraction)
+                && candidate.view == "geometry_derived"
+                && candidate.lens == "physical"
+                && candidate.subject_yaw_deg == 0.0
+                && candidate.staging.background == "automatic"
+                && candidate.staging.environment == "automatic"
+                && candidate.staging.ground == "automatic"
+                && !candidate.staging.grid
+        }),
+        "all candidates must come from the geometry-driven camera and automatic surroundings: {first:#?}"
+    );
+
+    let deep_bounds = Aabb::new(Vec3::new(-0.5, -0.25, -2.0), Vec3::new(0.5, 1.0, 2.0));
+    let deep = camera_behavior_candidate_plan(
+        PhotoCandidateRequest::camera_behavior(deep_bounds, (1280, 840)).max_candidates(10),
+    )
+    .expect("deep-subject candidate plan builds");
+    let deep_selected = deep.candidates.first().expect("deep candidate exists");
+    assert_ne!(
+        (
+            selected.focal_length_mm,
+            selected.azimuth_deg,
+            selected.elevation_deg
+        ),
+        (
+            deep_selected.focal_length_mm,
+            deep_selected.azimuth_deg,
+            deep_selected.elevation_deg
+        ),
+        "subject proportions must change the physical camera solution"
+    );
+
+    let authored = camera_behavior_candidate_plan(
+        PhotoCandidateRequest::camera_behavior(subject_bounds, (1280, 840))
+            .preserve_authored_camera(true)
+            .max_candidates(4),
+    )
+    .expect("authored-camera candidate plan builds");
+    assert!(authored.candidates[0].preserve_authored_camera);
+    assert_eq!(authored.candidates[0].view, "authored_camera");
+    assert!(
+        authored.candidates[1..]
+            .iter()
+            .all(|candidate| !candidate.preserve_authored_camera),
+        "an authored camera must be evaluated first while automatic fallbacks remain available"
+    );
+}
+
+#[test]
+fn product_hero_photo_planning_names_are_compatibility_aliases_only() {
+    let subject_bounds = Aabb::new(Vec3::new(-2.0, -0.25, -0.5), Vec3::new(2.0, 1.0, 0.5));
+    let mut legacy_request =
+        PhotoCandidateRequest::camera_behavior(subject_bounds, (1280, 840)).max_candidates(2);
+    legacy_request.intent = "product_hero".to_owned();
+
+    let canonical =
+        camera_behavior_candidate_plan(legacy_request.clone()).expect("legacy intent is accepted");
+    let legacy = product_hero_candidate_plan(legacy_request)
+        .expect("legacy function delegates to camera-behavior planning");
+    assert_eq!(legacy, canonical);
+    assert_eq!(legacy.intent, "camera_behavior");
+    assert!(
+        legacy
+            .candidates
+            .iter()
+            .all(|candidate| candidate.id.starts_with("camera_behavior_view_")),
+        "legacy product_hero aliases must not leak old candidate ids: {legacy:#?}"
+    );
+
+    let observations = legacy
+        .candidates
+        .iter()
+        .map(|candidate| {
+            PhotoCandidateObservation::new(candidate.id.clone())
+                .visible_fill_fraction(0.74)
+                .center_offset_fraction(0.02)
+                .luminance_stddev_srgb8(24.0)
+                .luminance_range_srgb8(96.0)
+                .silhouette_area_fraction(0.42)
+                .depth_variation(0.35)
+                .normal_variation(0.28)
+                .background_separation(0.48)
+                .semantic_aov(true)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        score_product_hero_candidates(&legacy, &observations)
+            .expect("legacy scorer delegates")
+            .selected_candidate_id,
+        score_camera_behavior_candidates(&canonical, &observations)
+            .expect("canonical scorer works")
+            .selected_candidate_id
+    );
+}
+
+#[test]
+fn camera_behavior_candidate_scoring_ranks_good_view_over_known_bad_geometry_views() {
+    let subject_bounds = Aabb::new(Vec3::new(-2.0, -0.25, -0.5), Vec3::new(2.0, 1.0, 0.5));
+    let plan = camera_behavior_candidate_plan(
+        PhotoCandidateRequest::camera_behavior(subject_bounds, (1280, 840)).max_candidates(6),
+    )
+    .expect("candidate plan builds");
+    let ids = plan
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.as_str())
+        .collect::<Vec<_>>();
+
+    let report = score_camera_behavior_candidates(
+        &plan,
+        &[
+            PhotoCandidateObservation::new(ids[0])
+                .visible_fill_fraction(0.76)
+                .center_offset_fraction(0.03)
+                .clipped_fraction(0.0)
+                .occlusion_estimate(0.04)
+                .floor_fraction(0.16)
+                .silhouette_area_fraction(0.42)
+                .aspect_fit_error(0.03)
+                .depth_variation(0.38)
+                .normal_variation(0.31)
+                .anchor_visibility_fraction(1.0)
+                .background_separation(0.46)
+                .semantic_aov(true),
+            PhotoCandidateObservation::new(ids[1])
+                .visible_fill_fraction(0.28)
+                .center_offset_fraction(0.04)
+                .floor_fraction(0.18)
+                .silhouette_area_fraction(0.14)
+                .background_separation(0.42)
+                .semantic_aov(true),
+            PhotoCandidateObservation::new(ids[2])
+                .visible_fill_fraction(0.76)
+                .center_offset_fraction(0.04)
+                .clipped_fraction(0.22)
+                .floor_fraction(0.14)
+                .silhouette_area_fraction(0.36)
+                .background_separation(0.44)
+                .semantic_aov(true),
+            PhotoCandidateObservation::new(ids[3])
+                .visible_fill_fraction(0.74)
+                .center_offset_fraction(0.31)
+                .floor_fraction(0.12)
+                .silhouette_area_fraction(0.34)
+                .background_separation(0.41)
+                .semantic_aov(true),
+            PhotoCandidateObservation::new(ids[4])
+                .visible_fill_fraction(0.76)
+                .center_offset_fraction(0.03)
+                .floor_fraction(0.16)
+                .silhouette_area_fraction(0.38)
+                .depth_variation(0.02)
+                .normal_variation(0.02)
+                .background_separation(0.08)
+                .semantic_aov(true),
+            PhotoCandidateObservation::new(ids[5])
+                .visible_fill_fraction(0.72)
+                .center_offset_fraction(0.05)
+                .floor_fraction(0.62)
+                .silhouette_area_fraction(0.30)
+                .background_separation(0.38)
+                .semantic_aov(false),
+        ],
+    )
+    .expect("candidate scoring succeeds");
+
+    assert_eq!(report.selected_candidate_id, ids[0]);
+    assert!(
+        report.degraded,
+        "scoring should report degraded when any candidate lacks semantic/AOV evidence"
+    );
+    assert!(
+        report
+            .reason_codes
+            .iter()
+            .any(|code| code == "semantic_aov_unavailable"),
+        "degraded scoring must name missing semantic/AOV evidence: {report:#?}"
+    );
+    let scores_by_id = report
+        .scores
+        .iter()
+        .map(|score| (score.candidate_id.as_str(), score))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let good_score = scores_by_id[ids[0]].score;
+    for bad_id in &ids[1..] {
+        assert!(
+            good_score > scores_by_id[*bad_id].score,
+            "good candidate must outrank {bad_id}; report={report:#?}"
+        );
+    }
+    assert!(
+        scores_by_id[ids[1]]
+            .reason_codes
+            .contains(&"subject_fill_below_min".to_owned())
+    );
+    assert!(
+        scores_by_id[ids[2]]
+            .reason_codes
+            .contains(&"subject_clipped".to_owned())
+    );
+    assert!(
+        scores_by_id[ids[3]]
+            .reason_codes
+            .contains(&"subject_off_center".to_owned())
+    );
+    assert!(
+        scores_by_id[ids[4]]
+            .reason_codes
+            .contains(&"subject_readability_low".to_owned())
+    );
+    assert!(
+        scores_by_id[ids[5]]
+            .reason_codes
+            .contains(&"floor_dominates_frame".to_owned())
+    );
+}
+
+#[test]
+fn camera_behavior_shaded_candidate_scoring_rejects_black_silhouette_and_flat_gray_metal() {
+    let subject_bounds = Aabb::new(Vec3::new(-2.0, -0.25, -0.5), Vec3::new(2.0, 1.0, 0.5));
+    let plan = camera_behavior_candidate_plan(
+        PhotoCandidateRequest::camera_behavior(subject_bounds, (160, 105)).max_candidates(3),
+    )
+    .expect("candidate plan builds");
+    let ids = plan
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.as_str())
+        .collect::<Vec<_>>();
+
+    let report = score_camera_behavior_candidates(
+        &plan,
+        &[
+            PhotoCandidateObservation::new(ids[0])
+                .visible_fill_fraction(0.76)
+                .center_offset_fraction(0.02)
+                .low_clip_fraction(0.02)
+                .high_clip_fraction(0.01)
+                .luminance_stddev_srgb8(24.0)
+                .luminance_range_srgb8(96.0)
+                .floor_fraction(0.12)
+                .silhouette_area_fraction(0.42)
+                .depth_variation(0.35)
+                .normal_variation(0.28)
+                .background_separation(0.48)
+                .semantic_aov(true),
+            PhotoCandidateObservation::new(ids[1])
+                .visible_fill_fraction(0.77)
+                .center_offset_fraction(0.02)
+                .low_clip_fraction(0.72)
+                .high_clip_fraction(0.0)
+                .luminance_stddev_srgb8(2.0)
+                .luminance_range_srgb8(8.0)
+                .floor_fraction(0.12)
+                .silhouette_area_fraction(0.42)
+                .depth_variation(0.04)
+                .normal_variation(0.03)
+                .background_separation(0.06)
+                .semantic_aov(true),
+            PhotoCandidateObservation::new(ids[2])
+                .visible_fill_fraction(0.77)
+                .center_offset_fraction(0.02)
+                .low_clip_fraction(0.0)
+                .high_clip_fraction(0.0)
+                .luminance_stddev_srgb8(0.5)
+                .luminance_range_srgb8(2.0)
+                .floor_fraction(0.12)
+                .silhouette_area_fraction(0.42)
+                .depth_variation(0.02)
+                .normal_variation(0.02)
+                .background_separation(0.02)
+                .semantic_aov(true),
+        ],
+    )
+    .expect("candidate scoring succeeds");
+
+    assert_eq!(report.selected_candidate_id, ids[0], "{report:#?}");
+    let scores_by_id = report
+        .scores
+        .iter()
+        .map(|score| (score.candidate_id.as_str(), score))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert!(
+        scores_by_id[ids[1]]
+            .reason_codes
+            .contains(&"subject_black_crush".to_owned()),
+        "black-silhouette candidate must carry a black-crush reason: {report:#?}"
+    );
+    assert!(
+        scores_by_id[ids[2]]
+            .reason_codes
+            .contains(&"subject_readability_low".to_owned()),
+        "flat gray metal candidate must carry a readability reason: {report:#?}"
     );
 }
 
@@ -3200,5 +3542,44 @@ fn assert_camera_state_near(actual: SceneHostCameraState, expected: SceneHostCam
             && close(actual.yaw_radians, expected.yaw_radians)
             && close(actual.pitch_radians, expected.pitch_radians),
         "expected {expected:?}, got {actual:?}"
+    );
+}
+
+#[test]
+fn scene_setup_preset_must_not_override_an_explicit_fixed_exposure() {
+    // A scene preset supplies defaults. An exposure the caller set explicitly
+    // is not a default, so the preset must leave it alone. Before this was
+    // enforced, `apply_scene_setup_preset_renderer` installed the preset's
+    // auto exposure whenever `auto_exposure()` was `None` -- which is exactly
+    // the state a fixed EV leaves behind -- so metering silently overwrote the
+    // fixed value and a recipe's `render.exposure_ev` had no effect.
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    host.renderer_mut().set_exposure_ev(4.0);
+
+    host.apply_scene_setup_preset_renderer(SceneSetupPreset::ProductStudio);
+
+    assert_eq!(
+        host.renderer().exposure_ev(),
+        4.0,
+        "an explicitly set fixed exposure must survive a scene preset"
+    );
+    assert_eq!(
+        host.renderer().auto_exposure(),
+        None,
+        "a scene preset must not enable auto exposure over an explicit fixed exposure"
+    );
+}
+
+#[test]
+fn scene_setup_preset_still_supplies_auto_exposure_when_none_was_chosen() {
+    // The guard above must not disable the preset's normal behavior.
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+
+    host.apply_scene_setup_preset_renderer(SceneSetupPreset::ProductStudio);
+
+    assert_eq!(
+        host.renderer().auto_exposure(),
+        Some(AutoExposureConfig::product_studio()),
+        "with no explicit exposure the preset still supplies its metering"
     );
 }

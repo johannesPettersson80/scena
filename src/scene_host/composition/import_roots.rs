@@ -6,6 +6,7 @@ use super::checks::{
     CompositionCheckExt, checked_check, error_check, observed_pairs, round3, skip_check,
 };
 use super::helpers::{draws_for_handles, projected_node_rect, visible_coverage_for_rect};
+use super::object_framing::object_framing_check;
 use super::object_pixels::object_pixel_quality_check;
 use super::object_textures::object_texture_result_check;
 use super::objects::ObjectCompositionInput;
@@ -128,6 +129,18 @@ pub(super) fn composition_import_checks(
                         Some(rect),
                     ),
                 );
+                if let Some(profile) = required_profile
+                    && !target_region_context_crop_allowed
+                {
+                    checks.push(object_framing_check(
+                        &target_path,
+                        &import.id,
+                        representative_handle,
+                        input.capture,
+                        rect,
+                        profile,
+                    ));
+                }
             }
         } else if target_region_context_crop_allowed {
             checks.push(target_region_context_crop_check(

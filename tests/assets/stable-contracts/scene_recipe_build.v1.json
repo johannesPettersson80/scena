@@ -21,45 +21,52 @@
       "id": "part.edge_emphasis.0.0",
       "handle": 562950221856772,
       "kind": "generated_overlay",
-      "parent": 562950221856771
+      "parent": 562950221856771,
+      "visible": true
     },
     {
       "id": "plate",
       "handle": 562950221856773,
       "kind": "node",
       "parent": 562950221856769,
-      "name": "CAD plate"
+      "name": "CAD plate",
+      "visible": true
     },
     {
       "id": "tri_joint",
       "handle": 562950221856774,
       "kind": "node",
-      "parent": 562950221856769
+      "parent": 562950221856769,
+      "visible": false
     },
     {
       "id": "tri_deformed",
       "handle": 562950221856775,
       "kind": "node",
-      "parent": 562950221856769
+      "parent": 562950221856769,
+      "visible": true
     },
     {
       "id": "plate_instances",
       "handle": 562950221856776,
       "kind": "instance_set",
-      "parent": 562950221856769
+      "parent": 562950221856769,
+      "visible": true
     },
     {
       "id": "status_particles",
       "handle": 562950221856777,
       "kind": "particle_set",
-      "parent": 562950221856769
+      "parent": 562950221856769,
+      "visible": true
     },
     {
       "id": "status_label",
       "handle": 562950221856778,
       "kind": "label",
       "parent": 562950221856769,
-      "name": "OK"
+      "name": "OK",
+      "visible": true
     }
   ],
   "instances": [

@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::{Backend, CapabilityStatus, HardwareTier};
+use crate::render::{ExposureReportV1, FocusReportV1, SubjectObservationV1};
 
 const DEFAULT_BACKGROUND_RGBA8: [u8; 4] = [0, 0, 0, 255];
 const DEFAULT_CONTENT_TOLERANCE_RGBA8: u8 = 2;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RenderIntrospectionOptions {
     pub(super) detail: bool,
     pub(super) capture_png_path: Option<String>,
@@ -14,6 +15,9 @@ pub struct RenderIntrospectionOptions {
     pub(super) background_rgba8: [u8; 4],
     pub(super) content_tolerance_rgba8: u8,
     pub(super) timings: Option<RenderIntrospectionTimingsV1>,
+    pub(super) focus_report: Option<FocusReportV1>,
+    pub(super) exposure_report: Option<ExposureReportV1>,
+    pub(super) subject_observations: Vec<SubjectObservationV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,6 +33,12 @@ pub struct RenderIntrospectionReportV1 {
     pub visible_pixel_fraction: f32,
     pub luminance: RenderIntrospectionLuminanceV1,
     pub framing: RenderIntrospectionFramingV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_report: Option<FocusReportV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exposure_report: Option<ExposureReportV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subject_observations: Vec<SubjectObservationV1>,
     pub nodes_summary: RenderIntrospectionNodesSummaryV1,
     #[serde(default)]
     pub nodes_detail: Vec<RenderIntrospectionNodeDetailV1>,
@@ -214,6 +224,9 @@ impl RenderIntrospectionOptions {
             background_rgba8: DEFAULT_BACKGROUND_RGBA8,
             content_tolerance_rgba8: DEFAULT_CONTENT_TOLERANCE_RGBA8,
             timings: None,
+            focus_report: None,
+            exposure_report: None,
+            subject_observations: Vec::new(),
         }
     }
 
@@ -226,6 +239,9 @@ impl RenderIntrospectionOptions {
             background_rgba8: DEFAULT_BACKGROUND_RGBA8,
             content_tolerance_rgba8: DEFAULT_CONTENT_TOLERANCE_RGBA8,
             timings: None,
+            focus_report: None,
+            exposure_report: None,
+            subject_observations: Vec::new(),
         }
     }
 
@@ -258,6 +274,24 @@ impl RenderIntrospectionOptions {
 
     pub fn with_timings(mut self, timings: RenderIntrospectionTimingsV1) -> Self {
         self.timings = Some(timings);
+        self
+    }
+
+    pub fn with_focus_report(mut self, focus_report: FocusReportV1) -> Self {
+        self.focus_report = Some(focus_report);
+        self
+    }
+
+    pub fn with_exposure_report(mut self, exposure_report: ExposureReportV1) -> Self {
+        self.exposure_report = Some(exposure_report);
+        self
+    }
+
+    pub fn with_subject_observations(
+        mut self,
+        subject_observations: Vec<SubjectObservationV1>,
+    ) -> Self {
+        self.subject_observations = subject_observations;
         self
     }
 

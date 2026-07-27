@@ -38,7 +38,6 @@ impl Renderer {
                 ),
                 AutoExposureFramePolicy::PriorAsyncMeterSample,
             );
-        #[cfg(not(target_arch = "wasm32"))]
         if surface_auto_exposure {
             self.apply_pending_surface_auto_exposure()?;
         }
@@ -127,10 +126,6 @@ impl Renderer {
                 || self.last_render_work_metrics.readback_copies > 0
                 || cfg!(target_arch = "wasm32");
             if surface_auto_exposure {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    self.apply_managed_auto_exposure_after_render();
-                }
                 break;
             }
             if auto_exposure_attempted
@@ -186,6 +181,12 @@ impl Renderer {
             depth_of_field: self.depth_of_field.is_some(),
             readback_completed_unix_ms: None,
         };
+        let composition_frame_key =
+            super::state::CompositionFrameKey::from_rendered_frame(rendered_frame);
+        debug_assert_eq!(
+            composition_frame_key.staleness_against_rendered_frame(rendered_frame),
+            None
+        );
         self.last_rendered_frame = Some(rendered_frame);
         self.last_readback_frame = (self.gpu.is_none()
             || self.last_render_work_metrics.readback_copies > 0)
@@ -309,14 +310,13 @@ impl Renderer {
         readback_mode: RenderReadbackMode,
         auto_exposure_meter: bool,
     ) -> Result<gpu::GpuRenderResult, RenderError> {
-        #[cfg(target_arch = "wasm32")]
-        let _ = auto_exposure_meter;
         let post_settings = gpu::GpuPostSettings::new(
             self.anti_aliasing,
             self.bloom,
             self.screen_space_ambient_occlusion,
             self.screen_space_reflections,
             depth_of_field_post_config(self.depth_of_field, camera_projection),
+            self.auto_exposure.is_some(),
         );
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -349,6 +349,7 @@ impl Renderer {
                 target,
                 self.output.exposure_ev(),
                 self.output.color_management_uniform(),
+                self.output.white_balance_uniform(),
                 self.background_color,
                 camera_projection,
                 clipping_planes,
@@ -390,11 +391,13 @@ impl Renderer {
                 self.target,
                 self.output.exposure_ev(),
                 self.output.color_management_uniform(),
+                self.output.white_balance_uniform(),
                 self.background_color,
                 camera_projection,
                 clipping_planes,
                 section_box,
                 post_settings,
+                auto_exposure_meter,
             )?;
             if result.submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
@@ -422,8 +425,9 @@ pub(super) fn depth_of_field_post_config(
         camera_projection.depth_buffer_for_camera_distance(config.focus_distance())?;
     Some(output::DepthOfFieldPostConfig::new(
         focus_depth,
-        config.aperture_f_stop(),
-        config.radius_px(),
+        config,
+        camera_projection.near_far(),
+        camera_projection.uses_reversed_z(),
     ))
 }
 

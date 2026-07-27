@@ -7,6 +7,7 @@ mod reference_quality;
 mod target_fit;
 
 use interaction::{compile_interaction_expectation, run_interaction_verification};
+use serde_json::Value;
 use std::path::Path;
 
 pub(crate) struct RecipeVerificationInput<'a> {
@@ -119,6 +120,7 @@ pub(crate) fn verify_recipe_expectations(
     let composition =
         host.composition_report(recipe, manifest, capture, inspection, introspection, expect);
     push_composition_reasons(&composition, &mut reasons);
+    let subject_observations = subject_observations_from_composition(capture, &composition);
 
     let quality = quality::verify_quality_expectations(
         quality::QualityVerificationInput {
@@ -129,20 +131,23 @@ pub(crate) fn verify_recipe_expectations(
             capture,
             introspection,
             composition: &composition,
+            subject_observations: &subject_observations,
             recipe_path,
             recipe_dir,
         },
         &mut reasons,
     )?;
 
-    Ok(scena::SceneRecipeVerificationReportV1::new(
+    let mut report = scena::SceneRecipeVerificationReportV1::new(
         render_checks,
         reasons,
         appearance,
         interaction,
         Some(composition),
         Some(quality),
-    ))
+    );
+    report.subject_observations = subject_observations;
+    Ok(report)
 }
 
 fn verify_visible(
@@ -154,9 +159,33 @@ fn verify_visible(
     let mut checks = 0;
     for visible in &expect.expect_visible {
         checks += 1;
-        let handles = match resolve_target_handles(&visible.target, manifest, true) {
+        let handles = match scena::resolve_scene_recipe_target_handles(
+            manifest,
+            &visible.target,
+            scena::SceneRecipeTargetResolutionMode::Subject,
+        ) {
             Ok(handles) => handles,
-            Err(message) => {
+            Err(error) if error.kind == scena::SceneRecipeTargetResolutionErrorKind::Hidden => {
+                push_reason(
+                    reasons,
+                    "target_not_visible",
+                    "render",
+                    Some(visible.id.clone()),
+                    Vec::new(),
+                    error.message,
+                );
+                continue;
+            }
+            Err(error) => {
+                let message = if error.candidates.is_empty() {
+                    error.message
+                } else {
+                    format!(
+                        "{}; nearest candidates: {}",
+                        error.message,
+                        error.candidates.join(", ")
+                    )
+                };
                 push_reason(
                     reasons,
                     "target_not_found",
@@ -264,39 +293,22 @@ pub(super) fn resolve_target_handles(
     manifest: &scena::SceneRecipeBuildV1,
     allow_import: bool,
 ) -> Result<Vec<u64>, String> {
-    match target {
-        scena::SceneRecipeTargetV1::Node { id } => manifest
-            .nodes
-            .iter()
-            .find(|node| node.id == *id)
-            .map(|node| vec![node.handle])
-            .or_else(|| {
-                manifest.imports.iter().find_map(|import| {
-                    import
-                        .nodes_by_path
-                        .get(id)
-                        .copied()
-                        .map(|handle| vec![handle])
-                })
-            })
-            .ok_or_else(|| {
-                format!("expectation target node id '{id}' was not in the build manifest")
-            }),
-        scena::SceneRecipeTargetV1::Import { id } if allow_import => manifest
-            .imports
-            .iter()
-            .find(|import| import.id == *id)
-            .map(|import| import.root_handles.clone())
-            .ok_or_else(|| {
-                format!("expectation target import id '{id}' was not in the build manifest")
-            }),
-        scena::SceneRecipeTargetV1::Import { id } => Err(format!(
-            "expectation target import id '{id}' requires a specific node target"
-        )),
-        scena::SceneRecipeTargetV1::World { .. } => {
-            Err("expectation target kind 'world' cannot resolve to a stable handle".to_owned())
+    let mode = if allow_import {
+        scena::SceneRecipeTargetResolutionMode::Subject
+    } else {
+        scena::SceneRecipeTargetResolutionMode::SingleHandle
+    };
+    scena::resolve_scene_recipe_target_handles(manifest, target, mode).map_err(|error| {
+        if error.candidates.is_empty() {
+            error.message
+        } else {
+            format!(
+                "{}; nearest candidates: {}",
+                error.message,
+                error.candidates.join(", ")
+            )
         }
-    }
+    })
 }
 
 fn push_reason(
@@ -337,4 +349,231 @@ fn push_composition_reasons(
             message: format!("{}; fix: {}", check.message, check.fix_hint),
         });
     }
+}
+
+fn subject_observations_from_composition(
+    capture: &scena::CaptureRgba8,
+    composition: &scena::SceneCompositionReportV1,
+) -> Vec<scena::SubjectObservationV1> {
+    composition
+        .checks
+        .iter()
+        .filter(|check| check.id.starts_with("subject.") && check.id.ends_with(".projected_bounds"))
+        .filter_map(|projected| {
+            if projected.affected_handles.is_empty() {
+                return None;
+            }
+            let prefix = projected
+                .id
+                .strip_suffix(".projected_bounds")
+                .expect("filter ensures projected suffix");
+            let visible_id = format!("{prefix}.visible_mask");
+            let visible = composition
+                .checks
+                .iter()
+                .find(|check| check.id == visible_id);
+            Some(subject_observation_from_checks(capture, projected, visible))
+        })
+        .collect()
+}
+
+fn subject_observation_from_checks(
+    capture: &scena::CaptureRgba8,
+    projected: &scena::SceneCompositionCheckV1,
+    visible: Option<&scena::SceneCompositionCheckV1>,
+) -> scena::SubjectObservationV1 {
+    let source = observed_str(&projected.observed, "source").unwrap_or("unknown");
+    let target = scena::SubjectObservationTargetV1::new(
+        observed_str(&projected.observed, "target_kind").unwrap_or("unknown"),
+        projected
+            .target_id
+            .as_deref()
+            .or_else(|| observed_str(&projected.observed, "target_id"))
+            .unwrap_or("world"),
+        projected.affected_handles.iter().copied(),
+    );
+    let Some(visible) = visible else {
+        return scena::SubjectObservationV1::degraded(
+            source,
+            target,
+            &capture.descriptor,
+            vec!["subject_visible_mask_missing".to_owned()],
+            vec!["visible_mask_unavailable".to_owned()],
+        );
+    };
+    let mut reason_codes = Vec::new();
+    if projected.status != scena::SceneCompositionStatusV1::Checked {
+        reason_codes.push(projected.code.clone());
+    }
+    if visible.status != scena::SceneCompositionStatusV1::Checked {
+        reason_codes.push(visible.code.clone());
+    }
+    let projected_bounds = observation_bounds(projected);
+    let visible_bounds = observation_bounds(visible);
+    let visible_pixel_count = observed_u64(&visible.observed, "visible_pixels");
+    let projected_area_px = observed_u64(&visible.observed, "projected_area_px")
+        .or_else(|| projected_bounds.map(|bounds| bounds.area_px));
+    let Some(projected_bounds) = projected_bounds else {
+        return degraded_subject_observation(
+            source,
+            target,
+            &capture.descriptor,
+            reason_codes,
+            "projected_bounds_unavailable",
+        );
+    };
+    let Some(visible_bounds) = visible_bounds else {
+        return degraded_subject_observation(
+            source,
+            target,
+            &capture.descriptor,
+            reason_codes,
+            "visible_bounds_unavailable",
+        );
+    };
+    let Some(visible_pixel_count) = visible_pixel_count else {
+        return degraded_subject_observation(
+            source,
+            target,
+            &capture.descriptor,
+            reason_codes,
+            "visible_pixels_unavailable",
+        );
+    };
+    let Some(projected_area_px) = projected_area_px else {
+        return degraded_subject_observation(
+            source,
+            target,
+            &capture.descriptor,
+            reason_codes,
+            "projected_area_unavailable",
+        );
+    };
+
+    let depth = subject_observation_depth(visible);
+    let mut flags = Vec::new();
+    if depth.is_none() {
+        reason_codes.push("subject_depth_unavailable".to_owned());
+        flags.push("depth_unavailable".to_owned());
+    }
+    let confidence = observed_str(&visible.observed, "confidence");
+    if confidence != Some("exact_opaque_semantic_aov") {
+        if let Some(confidence) = confidence {
+            flags.push(format!("confidence:{confidence}"));
+        }
+        if !reason_codes
+            .iter()
+            .any(|code| code == "subject_mask_degraded")
+        {
+            reason_codes.push("subject_mask_degraded".to_owned());
+        }
+    }
+    let fallback = scena::SubjectObservationFallbackV1 {
+        degraded: !flags.is_empty() || !reason_codes.is_empty(),
+        flags,
+        reason_codes,
+    };
+    let mut observation = scena::SubjectObservationV1::observed(
+        source,
+        target,
+        &capture.descriptor,
+        projected_bounds,
+        visible_bounds,
+        scena::SubjectObservationMetricsV1 {
+            visible_pixel_count,
+            projected_area_px,
+            visible_fill_fraction: observed_f32(&visible.observed, "visible_fill_fraction")
+                .unwrap_or(0.0),
+            visible_fraction_of_projected: observed_f32(
+                &visible.observed,
+                "visible_fraction_of_projected",
+            )
+            .unwrap_or(0.0),
+            occlusion_estimate: observed_f32(&visible.observed, "occlusion_estimate")
+                .unwrap_or(0.0),
+        },
+        depth,
+        fallback,
+    );
+    if let Some(pixel_quality) = subject_observation_pixel_quality(visible) {
+        observation = observation.with_pixel_quality(pixel_quality);
+    }
+    observation
+}
+
+fn degraded_subject_observation(
+    source: &str,
+    target: scena::SubjectObservationTargetV1,
+    descriptor: &scena::CaptureDescriptor,
+    mut reason_codes: Vec<String>,
+    flag: &str,
+) -> scena::SubjectObservationV1 {
+    reason_codes.push(flag.to_owned());
+    scena::SubjectObservationV1::degraded(
+        source,
+        target,
+        descriptor,
+        reason_codes,
+        vec![flag.to_owned()],
+    )
+}
+
+fn observation_bounds(
+    check: &scena::SceneCompositionCheckV1,
+) -> Option<scena::SubjectObservationBoundsV1> {
+    let rect = check.region.as_ref()?.rect_css_px.as_ref()?;
+    let area_px = (rect.width.max(0.0) * rect.height.max(0.0)).round() as u64;
+    Some(scena::SubjectObservationBoundsV1 {
+        min_x: rect.min_x,
+        min_y: rect.min_y,
+        max_x: rect.max_x,
+        max_y: rect.max_y,
+        width: rect.width,
+        height: rect.height,
+        area_px,
+    })
+}
+
+fn subject_observation_depth(
+    visible: &scena::SceneCompositionCheckV1,
+) -> Option<scena::SubjectObservationDepthV1> {
+    Some(scena::SubjectObservationDepthV1 {
+        near_m: observed_f32(&visible.observed, "depth_near_m")?,
+        p50_m: observed_f32(&visible.observed, "depth_p50_m")?,
+        far_m: observed_f32(&visible.observed, "depth_far_m")?,
+        sample_count: observed_u64(&visible.observed, "depth_sample_count")?,
+        confidence: observed_f32(&visible.observed, "depth_confidence")?,
+    })
+}
+
+fn subject_observation_pixel_quality(
+    visible: &scena::SceneCompositionCheckV1,
+) -> Option<scena::SubjectObservationPixelQualityV1> {
+    Some(scena::SubjectObservationPixelQualityV1 {
+        mean_luminance_srgb8: observed_f64(&visible.observed, "mean_luminance_srgb8")?,
+        luminance_stddev_srgb8: observed_f64(&visible.observed, "luminance_stddev_srgb8")?,
+        luminance_range_srgb8: observed_f64(&visible.observed, "luminance_range_srgb8")?,
+        low_clip_fraction: observed_f64(&visible.observed, "low_clip_fraction")?,
+        high_clip_fraction: observed_f64(&visible.observed, "high_clip_fraction")?,
+        sample_count: observed_u64(&visible.observed, "subject_pixel_sample_count")?,
+    })
+}
+
+fn observed_str<'a>(
+    observed: &'a std::collections::BTreeMap<String, Value>,
+    key: &str,
+) -> Option<&'a str> {
+    observed.get(key)?.as_str()
+}
+
+fn observed_u64(observed: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<u64> {
+    observed.get(key)?.as_u64()
+}
+
+fn observed_f32(observed: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<f32> {
+    observed.get(key)?.as_f64().map(|value| value as f32)
+}
+
+fn observed_f64(observed: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<f64> {
+    observed.get(key)?.as_f64()
 }

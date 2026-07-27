@@ -98,6 +98,7 @@ impl Renderer {
             self.target.pixel_len(),
             super::cpu::OitAccumPixel::default(),
         );
+        self.cpu_meter_linear_frame.clear();
         if let Some(linear_frame) = &mut self.linear_frame {
             linear_frame.resize(self.target.pixel_len(), Color::BLACK);
         }
@@ -253,6 +254,7 @@ impl Renderer {
             self.target.pixel_len(),
             super::cpu::OitAccumPixel::default(),
         );
+        self.cpu_meter_linear_frame.clear();
         if let Some(linear_frame) = &mut self.linear_frame {
             linear_frame.resize(self.target.pixel_len(), Color::BLACK);
         }

@@ -37,6 +37,7 @@ const fn shader_for_target(format: wgpu::TextureFormat) -> ShaderVariantId {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 pub(super) fn encode(
     encoder: &mut wgpu::CommandEncoder,
     pipeline: &wgpu::RenderPipeline,

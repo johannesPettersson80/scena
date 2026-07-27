@@ -11,7 +11,8 @@ use super::material_mips::mip_level_extents;
 use super::material_uniform::{MATERIAL_UNIFORM_ENTRY_STRIDE, MaterialUniformUpload};
 use super::materials::{
     MaterialTextureBindingResources, MaterialTextureUpload, address_mode,
-    create_material_bind_group, filter_mode, mipmap_filter_mode, write_material_texture_layer_mips,
+    create_material_bind_group, filter_mode, material_anisotropy_clamp, mipmap_filter_mode,
+    write_material_texture_layer_mips,
 };
 
 #[derive(Debug)]
@@ -386,6 +387,7 @@ where
         mag_filter: filter_mode(template.sampler.mag_filter()),
         min_filter: filter_mode(template.sampler.min_filter()),
         mipmap_filter: mipmap_filter_mode(template.sampler.min_filter()),
+        anisotropy_clamp: material_anisotropy_clamp(mip_extents.len(), template.sampler),
         ..wgpu::SamplerDescriptor::default()
     });
     MaterialTextureBindingResources::from_parts(

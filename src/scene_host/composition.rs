@@ -19,8 +19,10 @@ mod placement;
 mod regions;
 mod separation;
 mod state;
+mod subject;
 mod transform;
 
+use crate::diagnostics::Backend;
 use crate::{
     AssetFetcher, CaptureRgba8, SceneCompositionReportV1, SceneInspectionReportV1,
     SceneRecipeBuildV1, SceneRecipeExpectV1, SceneRecipeV1,
@@ -37,6 +39,7 @@ use overlays::{composition_overlay_collision_checks, overlay_line_regions_by_han
 use placement::composition_ground_contact_checks;
 use separation::composition_separation_checks;
 use state::composition_state_checks;
+use subject::{SubjectMaskInput, composition_subject_projection_checks, has_declared_subjects};
 use transform::composition_transform_checks;
 
 pub use regions::CompositionOverlaySegmentV1;
@@ -96,6 +99,30 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         checks.extend(composition_state_checks(manifest, inspection, expect));
         checks.extend(composition_transform_checks(manifest, inspection, expect));
         checks.extend(composition_separation_checks(expect, manifest, inspection));
+        let backend = self.backend();
+        let mut subject_aov_capture = None;
+        let mut subject_aov_error = None;
+        if has_declared_subjects(recipe) && backend == Backend::Headless {
+            match self.capture_semantic_aovs() {
+                Ok(capture) => {
+                    subject_aov_capture = Some(capture);
+                }
+                Err(error) => {
+                    subject_aov_error = Some(error.to_string());
+                }
+            }
+        }
+        checks.extend(composition_subject_projection_checks(
+            recipe,
+            manifest,
+            capture,
+            inspection,
+            SubjectMaskInput {
+                backend,
+                capture: subject_aov_capture.as_ref(),
+                capture_error: subject_aov_error.as_deref(),
+            },
+        ));
         checks.extend(composition_object_checks(ObjectCompositionInput {
             recipe,
             manifest,
@@ -158,6 +185,19 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             );
         }
 
+        for draw in &inspection.draw_list {
+            let generated = self.resolve_node(draw.node).is_ok_and(|node| {
+                self.scene.has_tag(
+                    node,
+                    super::photographic_surroundings::GENERATED_SURROUNDING_TAG,
+                ) || self
+                    .scene
+                    .has_tag(node, super::photographic_lighting::GENERATED_LIGHT_TAG)
+            });
+            if generated {
+                owned_handles.insert(draw.node);
+            }
+        }
         let extra_draws = unexpected_draw_handles(inspection, &owned_handles);
         if extra_draws.is_empty() {
             checks.push(checked_check(

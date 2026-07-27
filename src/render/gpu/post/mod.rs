@@ -10,9 +10,9 @@ use crate::render::PostBloomConfig;
 pub(super) mod blit;
 pub(super) mod bloom;
 pub(super) mod bloom_fxaa;
-mod copy;
 pub(super) mod dof;
 pub(super) mod fxaa;
+mod pipeline_helpers;
 mod resources;
 pub(super) mod ssao;
 pub(super) mod ssr;
@@ -32,15 +32,19 @@ pub(super) use dof::SHADER as DOF_SHADER;
 pub(super) use fxaa::{
     LINEAR_TARGET_SHADER as FXAA_LINEAR_SHADER, SRGB_BYTE_TARGET_SHADER as FXAA_SRGB_BYTE_SHADER,
 };
+use pipeline_helpers::{bind_group, depth_bind_group, view, write_uniform};
+#[allow(unused_imports)]
+pub(super) use pipeline_helpers::{
+    create_post_pipeline, create_post_pipeline_with_shader, create_post_shader,
+    output_blit_pipeline, readback_blit_pipeline, surface_blit_pipeline,
+    surface_bloom_fxaa_pipeline, surface_fxaa_pipeline,
+};
 pub(super) use resources::{create_resources, resource_stats};
 pub(super) use ssao::SHADER as SSAO_SHADER;
 pub(super) use ssr::SHADER as SSR_SHADER;
 pub(in crate::render::gpu) use types::PostResources;
 pub(in crate::render) use types::{GpuOutputPlan, GpuPostPassCounts, GpuPostSettings};
 use types::{POST_UNIFORM_BYTE_LEN, PostChainOutput, PostTextureSlot, PostUniformSlot};
-
-#[allow(unused_imports)]
-pub(super) use copy::copy_output_to_buffer;
 
 pub(super) fn resources_match(resources: &PostResources, target: RasterTarget) -> bool {
     resources.target == target
@@ -143,6 +147,10 @@ pub(super) fn encode_chain(
                 config.roughness(),
                 config.horizon_fraction(),
                 config.fade(),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             ],
         );
         ssr::encode(
@@ -177,6 +185,10 @@ pub(super) fn encode_chain(
                 if depth_prepass.reversed_z() { 1.0 } else { 0.0 },
                 depth_prepass.clear_depth(),
                 0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             ],
         );
         let Some(_depth_color_view) = depth_prepass.color_view() else {
@@ -202,6 +214,8 @@ pub(super) fn encode_chain(
                 backend: resources.target.backend,
             });
         };
+        let physical = config.physical_parameters();
+        let depth = config.depth_parameters();
         write_uniform(
             encoder,
             queue,
@@ -212,10 +226,14 @@ pub(super) fn encode_chain(
                 resources.target.height as f32,
                 config.focus_depth(),
                 f32::from(config.radius_px()),
-                config.aperture_f_stop(),
-                if depth_prepass.reversed_z() { 1.0 } else { 0.0 },
+                physical[0],
+                physical[1],
+                physical[2],
+                physical[3],
+                depth[0],
+                depth[1],
+                depth[2],
                 depth_prepass.clear_depth(),
-                0.0,
             ],
         );
         let Some(_depth_color_view) = depth_prepass.color_view() else {
@@ -250,6 +268,10 @@ pub(super) fn encode_chain(
                 0.0,
                 0.0,
                 0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             ],
         );
         bloom::encode(
@@ -279,6 +301,10 @@ pub(super) fn encode_chain(
                 0.0,
                 0.0,
                 0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             ],
         );
         fxaa::encode(
@@ -295,14 +321,39 @@ pub(super) fn encode_chain(
     Ok((PostChainOutput { slot: current }, counts))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn encode_blit_to_view(
     encoder: &mut wgpu::CommandEncoder,
+    queue: &wgpu::Queue,
     resources: &PostResources,
     output: PostChainOutput,
     target_view: &wgpu::TextureView,
     pipeline: &wgpu::RenderPipeline,
+    exposure_scale: f32,
+    tonemapper_mode: f32,
+    white_balance: [f32; 4],
     draw_submissions: &mut u64,
 ) {
+    write_uniform(
+        encoder,
+        queue,
+        resources,
+        PostUniformSlot::Surface,
+        [
+            resources.target.width as f32,
+            resources.target.height as f32,
+            0.0,
+            0.0,
+            exposure_scale,
+            tonemapper_mode,
+            0.0,
+            0.0,
+            white_balance[0],
+            white_balance[1],
+            white_balance[2],
+            white_balance[3],
+        ],
+    );
     blit::encode(
         encoder,
         pipeline,
@@ -336,6 +387,10 @@ pub(super) fn encode_fxaa_to_view(
             0.0,
             0.0,
             0.0,
+            1.0,
+            1.0,
+            1.0,
+            0.0,
         ],
     );
     fxaa::encode(
@@ -348,6 +403,7 @@ pub(super) fn encode_fxaa_to_view(
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 pub(super) fn encode_bloom_fxaa_to_view(
     encoder: &mut wgpu::CommandEncoder,
     queue: &wgpu::Queue,
@@ -368,6 +424,10 @@ pub(super) fn encode_bloom_fxaa_to_view(
             0.0,
             0.0,
             0.0,
+            1.0,
+            1.0,
+            1.0,
+            0.0,
         ],
     );
     bloom_fxaa::encode(
@@ -384,147 +444,11 @@ fn srgb8_threshold_to_linear(value: u8) -> f32 {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 pub(super) struct BloomFxaaToViewInputs<'a> {
     pub(super) output: PostChainOutput,
     pub(super) target_view: &'a wgpu::TextureView,
     pub(super) pipeline: &'a wgpu::RenderPipeline,
     pub(super) config: PostBloomConfig,
     pub(super) draw_submissions: &'a mut u64,
-}
-
-pub(super) fn surface_blit_pipeline(resources: &PostResources) -> Option<&wgpu::RenderPipeline> {
-    resources.surface_blit_pipeline.as_ref()
-}
-
-#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-pub(super) const fn output_blit_pipeline(resources: &PostResources) -> &wgpu::RenderPipeline {
-    &resources.output_blit_pipeline
-}
-
-#[allow(dead_code)]
-pub(super) fn surface_fxaa_pipeline(resources: &PostResources) -> Option<&wgpu::RenderPipeline> {
-    resources.surface_fxaa_pipeline.as_ref()
-}
-
-#[allow(dead_code)]
-pub(super) fn surface_bloom_fxaa_pipeline(
-    resources: &PostResources,
-) -> Option<&wgpu::RenderPipeline> {
-    resources.surface_bloom_fxaa_pipeline.as_ref()
-}
-
-pub(super) fn create_post_pipeline(
-    device: &wgpu::Device,
-    label: &'static str,
-    shader_variant: ShaderVariantId,
-    pipeline_layout: &wgpu::PipelineLayout,
-    format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
-    let shader = create_post_shader(device, label, shader_variant);
-    create_post_pipeline_with_shader(device, label, &shader, pipeline_layout, format)
-}
-
-pub(super) fn create_post_shader(
-    device: &wgpu::Device,
-    label: &'static str,
-    shader_variant: ShaderVariantId,
-) -> wgpu::ShaderModule {
-    create_shader_module(device, shader_variant, label)
-}
-
-pub(super) fn create_post_pipeline_with_shader(
-    device: &wgpu::Device,
-    label: &'static str,
-    shader: &wgpu::ShaderModule,
-    pipeline_layout: &wgpu::PipelineLayout,
-    format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(label),
-        layout: Some(pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[],
-        },
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
-fn write_uniform(
-    encoder: &mut wgpu::CommandEncoder,
-    queue: &wgpu::Queue,
-    resources: &PostResources,
-    slot: PostUniformSlot,
-    values: [f32; 8],
-) {
-    let offset = slot.byte_offset();
-    queue.write_buffer(
-        &resources.uniform_staging,
-        offset,
-        bytemuck::cast_slice(&values),
-    );
-    encoder.copy_buffer_to_buffer(
-        &resources.uniform_staging,
-        offset,
-        &resources.uniform,
-        0,
-        POST_UNIFORM_BYTE_LEN,
-    );
-}
-
-fn view(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::TextureView {
-    match slot {
-        PostTextureSlot::Scene => &resources.scene_view,
-        PostTextureSlot::Ping => &resources.ping_view,
-        PostTextureSlot::Pong => &resources.pong_view,
-    }
-}
-
-fn bind_group(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::BindGroup {
-    match slot {
-        PostTextureSlot::Scene => &resources.texture_bind_groups[0],
-        PostTextureSlot::Ping => &resources.texture_bind_groups[1],
-        PostTextureSlot::Pong => &resources.texture_bind_groups[2],
-    }
-}
-
-fn depth_bind_group(
-    resources: &PostResources,
-    slot: PostTextureSlot,
-) -> Result<&wgpu::BindGroup, RenderError> {
-    let groups = resources.depth_texture_bind_groups.as_ref().ok_or(
-        RenderError::GpuResourcesNotPrepared {
-            backend: resources.target.backend,
-        },
-    )?;
-    Ok(match slot {
-        PostTextureSlot::Scene => &groups[0],
-        PostTextureSlot::Ping => &groups[1],
-        PostTextureSlot::Pong => &groups[2],
-    })
-}
-
-#[allow(dead_code)]
-fn texture(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::Texture {
-    match slot {
-        PostTextureSlot::Scene => &resources.scene_texture,
-        PostTextureSlot::Ping => &resources.ping_texture,
-        PostTextureSlot::Pong => &resources.pong_texture,
-    }
 }

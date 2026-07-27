@@ -126,6 +126,49 @@ pub(in crate::diagnostics) const fn order_independent_transparency_status(
     }
 }
 
+pub(in crate::diagnostics) const fn subject_visible_mask_status(
+    backend: Backend,
+) -> CapabilityStatus {
+    match backend {
+        Backend::Headless => CapabilityStatus::Supported,
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2 => {
+            CapabilityStatus::Degraded
+        }
+        Backend::SurfaceDescriptor => CapabilityStatus::FeatureDisabled,
+    }
+}
+
+pub(in crate::diagnostics) const fn auto_exposure_metering_average_status(
+    backend: Backend,
+) -> CapabilityStatus {
+    match backend {
+        Backend::SurfaceDescriptor => CapabilityStatus::FeatureDisabled,
+        Backend::Headless
+        | Backend::HeadlessGpu
+        | Backend::NativeSurface
+        | Backend::WebGpu
+        | Backend::WebGl2 => CapabilityStatus::Supported,
+    }
+}
+
+pub(in crate::diagnostics) const fn auto_exposure_metering_subject_status(
+    backend: Backend,
+) -> CapabilityStatus {
+    match backend {
+        Backend::SurfaceDescriptor => CapabilityStatus::FeatureDisabled,
+        Backend::Headless => CapabilityStatus::Supported,
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2 => {
+            CapabilityStatus::Degraded
+        }
+    }
+}
+
+pub(in crate::diagnostics) const fn auto_exposure_metering_unimplemented_status(
+    _backend: Backend,
+) -> CapabilityStatus {
+    CapabilityStatus::FeatureDisabled
+}
+
 pub(in crate::diagnostics) const fn physical_glass_transmission_status(
     backend: Backend,
     gpu_device: bool,

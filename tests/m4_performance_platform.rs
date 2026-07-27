@@ -125,6 +125,36 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         CapabilityStatus::Degraded,
         "CPU culling is the documented fallback for non-compute lanes"
     );
+    assert_eq!(
+        headless.subject_visible_mask,
+        CapabilityStatus::Supported,
+        "CPU headless composition owns exact subject visible masks through semantic AOV attribution"
+    );
+    assert_eq!(
+        headless.auto_exposure_metering_average,
+        CapabilityStatus::Supported,
+        "whole-frame auto exposure is the baseline metering mode"
+    );
+    assert_eq!(
+        headless.auto_exposure_metering_center_weighted,
+        CapabilityStatus::FeatureDisabled,
+        "center-weighted metering is a public recipe contract but is not implemented yet"
+    );
+    assert_eq!(
+        headless.auto_exposure_metering_highlight_weighted,
+        CapabilityStatus::FeatureDisabled,
+        "highlight-weighted metering is distinct from the existing highlight guard and is not implemented yet"
+    );
+    assert_eq!(
+        headless.auto_exposure_metering_subject,
+        CapabilityStatus::Supported,
+        "CPU headless recipe render routes exact semantic subject observations into scene-linear subject metering"
+    );
+    assert_eq!(
+        headless.auto_exposure_metering_spot,
+        CapabilityStatus::FeatureDisabled,
+        "spot metering accepts a recipe rect but is not routed into exposure yet"
+    );
     assert_eq!(headless.compute_shaders, CapabilityStatus::FeatureDisabled);
     // Phase 1F: CPU rasterizer never samples array textures; the field
     // reports FeatureDisabled with zero layers so cap-matrix consumers can
@@ -161,6 +191,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         CapabilityStatus::FeatureDisabled
     );
     assert_eq!(webgl2.per_instance_culling, CapabilityStatus::Degraded);
+    assert_eq!(
+        webgl2.subject_visible_mask,
+        CapabilityStatus::Degraded,
+        "unattached browser capability tables must not claim exact subject-mask composition reports"
+    );
     assert_eq!(webgl2.storage_buffers, CapabilityStatus::FeatureDisabled);
     assert_eq!(
         webgl2.wide_gamut_output,
@@ -213,6 +248,24 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         CapabilityStatus::FeatureDisabled
     );
     assert_eq!(webgpu.per_instance_culling, CapabilityStatus::Supported);
+    assert_eq!(
+        webgpu.subject_visible_mask,
+        CapabilityStatus::Degraded,
+        "browser WebGPU has semantic AOV proof, but recipe composition does not yet claim exact backend subject masks"
+    );
+    assert_eq!(
+        webgpu.auto_exposure_metering_average,
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        webgpu.auto_exposure_metering_subject,
+        CapabilityStatus::Degraded,
+        "WebGPU must not claim subject metering support before E02/E03 route exact subject observations into metering"
+    );
+    assert_eq!(
+        webgpu.auto_exposure_metering_spot,
+        CapabilityStatus::FeatureDisabled
+    );
     assert_eq!(webgpu.compute_shaders, CapabilityStatus::Supported);
     assert_eq!(webgpu.bloom, CapabilityStatus::Supported);
     assert_eq!(

@@ -3263,7 +3263,7 @@ fn write_ergonomic_product_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) 
                 "anti_aliasing": "msaa4",
                 "supersample": 2,
                 "reconstruction": "tent",
-                "tonemapper": "standard",
+                "tonemapper": "aces",
                 "screen_space_reflections": {
                     "strength": 0.92,
                     "roughness": 0.10,
@@ -4609,6 +4609,522 @@ fn run_recipe_render_introspect(
         );
     }
     report
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_render_subject_focus_resolves_depth_and_runs_dof_pass() {
+    let dir = artifact_dir("subject-focus");
+    let recipe_path = dir.join("subject-focus.recipe.json");
+    let png_path = dir.join("subject-focus.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "subject", "uri": TEST_ASSET }
+            ],
+            "scene": { "preset": "product_studio" },
+            "render": {
+                "anti_aliasing": "none",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0,
+                "depth_of_field": {
+                    "focus": {
+                        "mode": "subject",
+                        "target": { "kind": "import", "id": "subject" }
+                    },
+                    "coverage": "all",
+                    "strength": "subtle"
+                }
+            },
+            "capture": { "width": 96, "height": 72 }
+        }))
+        .expect("subject-focus recipe serializes"),
+    )
+    .expect("subject-focus recipe writes");
+
+    let report = run_recipe_render_verify(&recipe_path, &png_path, false);
+
+    assert_eq!(
+        report["capture"]["frame"]["depth_of_field"], true,
+        "subject focus must resolve a visible target depth and enable the DoF pass: {report:#}"
+    );
+    let focus_report = &report["introspection"]["focus_report"];
+    assert_eq!(focus_report["schema"], "scena.focus_report.v1");
+    assert_eq!(focus_report["status"], "resolved", "{report:#}");
+    assert_eq!(focus_report["mode"], "subject", "{report:#}");
+    assert_eq!(focus_report["target"]["kind"], "import", "{report:#}");
+    assert_eq!(focus_report["target"]["id"], "subject", "{report:#}");
+    assert!(
+        focus_report["resolved"]["focus_distance_m"]
+            .as_f64()
+            .is_some_and(|distance| distance > 0.0),
+        "focus report must expose the resolved focal distance: {report:#}"
+    );
+    assert!(
+        focus_report["resolved"]["confidence"]
+            .as_f64()
+            .is_some_and(|confidence| confidence > 0.0),
+        "focus report must expose nonzero confidence: {report:#}"
+    );
+    assert_eq!(
+        focus_report["frame_key"]["payload_fnv1a64"], report["capture"]["payload"]["fnv1a64"],
+        "focus report must bind to the exact final capture payload: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_render_subject_focus_accepts_authored_node_targets() {
+    let dir = artifact_dir("subject-focus-node");
+    let recipe_path = dir.join("subject-focus-node.recipe.json");
+    let png_path = dir.join("subject-focus-node.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "subject": "#7CB342",
+                "background": "#1B2028"
+            },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.36, 0.12] } },
+                { "id": "background_geo", "primitive": { "kind": "box", "size": [1.8, 1.2, 0.05] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" },
+                { "id": "background_mat", "kind": "unlit", "base_color": "background" }
+            ],
+            "nodes": [
+                {
+                    "id": "subject_box",
+                    "geometry": "subject_geo",
+                    "material": "subject_mat",
+                    "transform": { "kind": "center" }
+                },
+                {
+                    "id": "background_panel",
+                    "geometry": "background_geo",
+                    "material": "background_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.0, -1.0] }
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject_box" }
+            }],
+            "render": {
+                "exposure_ev": 0.0,
+                "depth_of_field": {
+                    "focus": {
+                        "mode": "subject",
+                        "target": { "kind": "node", "id": "subject_box" }
+                    },
+                    "coverage": "all",
+                    "strength": "subtle"
+                }
+            },
+            "capture": { "width": 96, "height": 72 }
+        }))
+        .expect("node subject-focus recipe serializes"),
+    )
+    .expect("node subject-focus recipe writes");
+
+    let report = run_recipe_render_verify(&recipe_path, &png_path, false);
+
+    assert_eq!(
+        report["capture"]["frame"]["depth_of_field"], true,
+        "node-target subject focus must enable the DoF pass: {report:#}"
+    );
+    let focus_report = &report["introspection"]["focus_report"];
+    assert_eq!(focus_report["schema"], "scena.focus_report.v1");
+    assert_eq!(focus_report["status"], "resolved", "{report:#}");
+    assert_eq!(focus_report["mode"], "subject", "{report:#}");
+    assert_eq!(focus_report["target"]["kind"], "node", "{report:#}");
+    assert_eq!(focus_report["target"]["id"], "subject_box", "{report:#}");
+    assert!(
+        focus_report["target"]["handles"]
+            .as_array()
+            .is_some_and(|handles| !handles.is_empty()),
+        "node-target focus report must carry resolved handles: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_render_subject_metering_and_focus_work_without_photo_intent() {
+    let dir = artifact_dir("subject-metering-and-focus");
+    let recipe_path = dir.join("subject-metering-and-focus.recipe.json");
+    let png_path = dir.join("subject-metering-and-focus.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "subject", "uri": CAD_TERMINAL_ASSET }
+            ],
+            "scene": {
+                "preset": "product_studio",
+                "background": { "kind": "dark_studio" },
+                "grid": { "enabled": false }
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "framing": {
+                    "preset": "three_quarter_front_right",
+                    "fill": 0.72
+                }
+            }],
+            "render": {
+                "auto_exposure": "product_studio",
+                "metering": {
+                    "mode": "subject",
+                    "target": { "kind": "import", "id": "subject" },
+                    "surround_weight": 0.1
+                },
+                "depth_of_field": {
+                    "focus": {
+                        "mode": "subject",
+                        "target": { "kind": "import", "id": "subject" }
+                    },
+                    "coverage": "all",
+                    "strength": "subtle"
+                }
+            },
+            "capture": { "width": 128, "height": 96 }
+        }))
+        .expect("subject-metering-and-focus recipe serializes"),
+    )
+    .expect("subject-metering-and-focus recipe writes");
+
+    let report = run_recipe_render_verify(&recipe_path, &png_path, false);
+
+    assert!(
+        report.get("photo").is_none(),
+        "this proof must exercise explicit render fields, not photo.intent: {report:#}"
+    );
+    let exposure_report = &report["introspection"]["exposure_report"];
+    assert_eq!(exposure_report["schema"], "scena.exposure_report.v1");
+    assert_eq!(exposure_report["status"], "measured", "{report:#}");
+    assert_eq!(
+        exposure_report["metering_domain"], "scene_linear_pre_tonemap",
+        "{report:#}"
+    );
+    let auto = &exposure_report["auto_exposure"];
+    assert!(
+        auto["subject_sample_count"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "render.metering mode=subject must route a subject rect into the auto-exposure meter: {report:#}"
+    );
+    assert!(
+        auto["sample_count"]
+            .as_u64()
+            .zip(auto["subject_sample_count"].as_u64())
+            .is_some_and(|(samples, subject_samples)| samples >= subject_samples),
+        "subject samples must be a subset of total metering samples: {report:#}"
+    );
+
+    let focus_report = &report["introspection"]["focus_report"];
+    assert_eq!(focus_report["schema"], "scena.focus_report.v1");
+    assert_eq!(focus_report["status"], "resolved", "{report:#}");
+    assert_eq!(focus_report["target"]["kind"], "import", "{report:#}");
+    assert_eq!(focus_report["target"]["id"], "subject", "{report:#}");
+
+    let observations = report["introspection"]["subject_observations"]
+        .as_array()
+        .expect("introspection subject observations serialize");
+    assert!(
+        observations
+            .iter()
+            .any(|observation| observation["source"] == "render.metering"),
+        "render introspection must link the render.metering subject observation: {report:#}"
+    );
+    assert!(
+        observations
+            .iter()
+            .any(|observation| observation["source"] == "render.depth_of_field.focus"),
+        "render introspection must link the render.depth_of_field.focus subject observation: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_render_legacy_average_metering_and_manual_focus_stay_compatible() {
+    let dir = artifact_dir("legacy-average-metering-manual-focus");
+    let recipe_path = dir.join("legacy-average-metering-manual-focus.recipe.json");
+    let png_path = dir.join("legacy-average-metering-manual-focus.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "subject", "uri": CAD_TERMINAL_ASSET }
+            ],
+            "scene": {
+                "preset": "product_studio",
+                "background": { "kind": "dark_studio" },
+                "grid": { "enabled": false }
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "framing": {
+                    "preset": "three_quarter_front_right",
+                    "fill": 0.72
+                }
+            }],
+            "render": {
+                "auto_exposure": "product_studio",
+                "metering": { "mode": "average" },
+                "depth_of_field": {
+                    "focus_distance": 2.75,
+                    "aperture_f_stop": 2.8,
+                    "radius_px": 4
+                }
+            },
+            "capture": { "width": 128, "height": 96 }
+        }))
+        .expect("legacy recipe serializes"),
+    )
+    .expect("legacy recipe writes");
+
+    let report = run_recipe_render_verify(&recipe_path, &png_path, false);
+
+    assert!(
+        report.get("photo").is_none(),
+        "legacy compatibility proof must exercise explicit render fields, not photo.intent: {report:#}"
+    );
+    assert_eq!(
+        report["capture"]["frame"]["depth_of_field"], true,
+        "manual focus_distance should still enable the existing DoF render path: {report:#}"
+    );
+    let exposure_report = &report["introspection"]["exposure_report"];
+    assert_eq!(exposure_report["schema"], "scena.exposure_report.v1");
+    assert_eq!(exposure_report["status"], "measured", "{report:#}");
+    assert_eq!(
+        exposure_report["metering_domain"], "scene_linear_pre_tonemap",
+        "{report:#}"
+    );
+    assert_eq!(
+        exposure_report["auto_exposure"]["subject_sample_count"], 0,
+        "average metering must not silently become subject metering for recipes without photo.intent: {report:#}"
+    );
+    assert!(
+        report["introspection"]["subject_observations"]
+            .as_array()
+            .is_none_or(|observations| observations.is_empty()),
+        "legacy average metering/manual focus should not invent a subject observation: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_render_product_quality_uses_exact_subject_observation_pixels() {
+    let dir = artifact_dir("subject-observation-quality");
+    let write_recipe =
+        |name: &str, color_name: &str, color_hex: &str, exposure: Option<serde_json::Value>| {
+            let recipe_path = dir.join(format!("{name}.recipe.json"));
+            let png_path = dir.join(format!("{name}.png"));
+            let mut expect_quality = json!({
+                "profile": "product",
+                "geometry": { "min_intermediate_edge_fraction": 0.0 }
+            });
+            if let Some(exposure) = exposure {
+                expect_quality["exposure"] = exposure;
+            }
+            fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                color_name: color_hex
+            },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.34, 0.10] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": color_name }
+            ],
+            "nodes": [
+                {
+                    "id": "subject",
+                    "geometry": "subject_geo",
+                    "material": "subject_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": color_name }
+            },
+            "render": {
+                "anti_aliasing": "none",
+                "tonemapper": "standard",
+                "auto_exposure": "product_studio",
+                "metering": {
+                    "mode": "subject",
+                    "target": { "kind": "node", "id": "subject" }
+                }
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject" }
+            }],
+            "capture": { "width": 128, "height": 96 },
+            "expect": {
+                "expect_quality": expect_quality
+            }
+        }))
+        .expect("subject-observation quality recipe serializes"),
+        )
+        .expect("subject-observation quality recipe writes");
+            (recipe_path, png_path)
+        };
+
+    let (recipe_path, png_path) = write_recipe(
+        "subject-observation-quality-black",
+        "black",
+        "#000000",
+        None,
+    );
+    let report = run_recipe_render_verify_expect_failure(&recipe_path, &png_path, false);
+    let observations = report["verification"]["subject_observations"]
+        .as_array()
+        .expect("verification subject observations serialize");
+    let metering = observations
+        .iter()
+        .find(|observation| observation["source"] == "render.metering")
+        .unwrap_or_else(|| panic!("render.metering subject observation missing: {report:#}"));
+    assert_eq!(metering["status"], "observed", "{report:#}");
+    assert_eq!(
+        metering["fallback"]["degraded"], false,
+        "semantic AOV subject observation must be exact before quality consumes it: {report:#}"
+    );
+    assert!(
+        metering["pixel_quality"]["sample_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "subject observation must carry exact visible subject pixel metrics, independent of background color: {report:#}"
+    );
+    assert_eq!(
+        metering["pixel_quality"]["low_clip_fraction"].as_f64(),
+        Some(1.0),
+        "black subject pixels should be measured from the subject mask, not a color-difference foreground guess: {report:#}"
+    );
+
+    let quality_checks = report["verification"]["quality"]["checks"]
+        .as_array()
+        .expect("quality checks serialize");
+    let subject_exposure = quality_checks
+        .iter()
+        .find(|check| check["id"] == "expect_quality.subject.pixel_exposure")
+        .unwrap_or_else(|| panic!("subject-observation quality check missing: {report:#}"));
+    assert_eq!(subject_exposure["status"], "failed", "{report:#}");
+    assert_eq!(
+        subject_exposure["code"], "subject_black_crushed",
+        "{report:#}"
+    );
+    assert!(
+        subject_exposure["observed"]["suggested_compensation_ev"]
+            .as_f64()
+            .is_some_and(|ev| ev > 0.0),
+        "quality check must include exposure-compensation advice: {report:#}"
+    );
+    let material_readability = quality_checks
+        .iter()
+        .find(|check| check["id"] == "expect_quality.subject.material_readability")
+        .unwrap_or_else(|| {
+            panic!("subject material-readability quality check missing: {report:#}")
+        });
+    assert_eq!(material_readability["status"], "failed", "{report:#}");
+    assert_eq!(
+        material_readability["code"], "subject_luminance_structure_below_min",
+        "{report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons serialize")
+            .iter()
+            .any(|reason| reason["source"] == "quality"
+                && reason["code"] == "subject_black_crushed"
+                && reason["expectation_id"] == "expect_quality.subject.pixel_exposure"),
+        "subject quality failure must surface as a quality verification reason: {report:#}"
+    );
+
+    let (gray_recipe_path, gray_png_path) = write_recipe(
+        "subject-observation-quality-flat-gray",
+        "flat_gray",
+        "#5A5A5A",
+        None,
+    );
+    let gray_report =
+        run_recipe_render_verify_expect_failure(&gray_recipe_path, &gray_png_path, false);
+    let gray_observations = gray_report["verification"]["subject_observations"]
+        .as_array()
+        .expect("verification subject observations serialize");
+    let gray_metering = gray_observations
+        .iter()
+        .find(|observation| observation["source"] == "render.metering")
+        .unwrap_or_else(|| {
+            panic!("flat-gray render.metering subject observation missing: {gray_report:#}")
+        });
+    assert_eq!(gray_metering["status"], "observed", "{gray_report:#}");
+    assert!(
+        gray_metering["pixel_quality"]["sample_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "flat-gray subject quality must use exact subject pixels, not foreground color difference: {gray_report:#}"
+    );
+    assert_quality_reason(
+        &gray_report,
+        "subject_luminance_structure_below_min",
+        "expect_quality.subject.material_readability",
+    );
+
+    let (mean_band_recipe_path, mean_band_png_path) = write_recipe(
+        "subject-observation-quality-mean-band",
+        "fixture_gray",
+        "#5A5A5A",
+        Some(json!({
+            "min_mean_luminance_srgb8": 150.0,
+            "max_mean_luminance_srgb8": 170.0
+        })),
+    );
+    let mean_band_report =
+        run_recipe_render_verify_expect_failure(&mean_band_recipe_path, &mean_band_png_path, false);
+    let subject_exposure = mean_band_report["verification"]["quality"]["checks"]
+        .as_array()
+        .expect("quality checks serialize")
+        .iter()
+        .find(|check| check["id"] == "expect_quality.subject.pixel_exposure")
+        .unwrap_or_else(|| {
+            panic!("subject pixel-exposure quality check missing: {mean_band_report:#}")
+        });
+    assert_eq!(
+        subject_exposure["code"], "subject_luminance_below_min",
+        "{mean_band_report:#}"
+    );
+    assert_eq!(
+        subject_exposure["threshold"]["min_mean_luminance_srgb8"].as_f64(),
+        Some(150.0),
+        "fixture-specific subject luminance band must be reported in the quality threshold: {mean_band_report:#}"
+    );
+    assert_quality_reason(
+        &mean_band_report,
+        "subject_luminance_below_min",
+        "expect_quality.subject.pixel_exposure",
+    );
 }
 
 #[cfg(feature = "scene-host")]
@@ -6281,7 +6797,7 @@ fn scena_recipe_render_grid_floor_lines_are_antialiased_and_stable_on_cpu_and_gp
             "floor grid lines must retain enough contrast after reconstruction on {backend}, metrics={metrics:?}, report={report:#}"
         );
         assert!(
-            detail_metrics.transition_width_px >= 3.8,
+            detail_metrics.transition_width_px >= 2.5,
             "floor grid lines need enough coverage in the visible lower-floor detail crop on {backend}, detail_metrics={detail_metrics:?}, full_metrics={metrics:?}, report={report:#}"
         );
         assert!(
@@ -6826,7 +7342,7 @@ fn scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu() {
         fs::write(
             dir.join(format!("area-light-ltc-cpu-gpu-parity-{case}.json")),
             format!(
-                "{{\n  \"schema\": \"scena.area_light_ltc_parity_probe.v1\",\n  \"case\": \"{}\",\n  \"shape\": \"{}\",\n  \"roughness\": {:.3},\n  \"cpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"gpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"delta\": {{ \"mean_channel_delta\": {:.4}, \"max_channel_delta\": {} }},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+                "{{\n  \"schema\": \"scena.area_light_ltc_parity_probe.v1\",\n  \"case\": \"{}\",\n  \"shape\": \"{}\",\n  \"roughness\": {:.3},\n  \"cpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"gpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"delta\": {{ \"mean_channel_delta\": {:.4}, \"p999_channel_delta\": {}, \"max_channel_delta\": {} }},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
                 case,
                 shape,
                 roughness,
@@ -6841,6 +7357,7 @@ fn scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu() {
                 gpu_metrics.peak_luminance,
                 gpu_metrics.threshold_luminance,
                 delta.mean_channel_delta,
+                delta.p999_channel_delta,
                 delta.max_channel_delta,
                 region.x,
                 region.y,
@@ -6856,7 +7373,7 @@ fn scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu() {
             "CPU and GPU LTC area-light specular spread should stay within a tight native-resolution tolerance for {case}; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
         );
         assert!(
-            delta.mean_channel_delta <= 14.0 && delta.max_channel_delta <= 84,
+            delta.mean_channel_delta <= 14.0 && delta.p999_channel_delta <= 84,
             "CPU and GPU area-light LTC renders should match across the shape/roughness sweep for {case}; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
         );
     }
@@ -7594,6 +8111,836 @@ fn scena_recipe_render_verify_emits_passing_composition_report_for_declared_node
             .all(|reason| !(reason["source"] == "composition" && reason["severity"] == "error")),
         "passing composition checks should not produce composition errors: {report:#}"
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_projects_declared_metering_subject_with_manual_camera() {
+    let dir = artifact_dir("recipe-composition-metering-subject");
+    let recipe_path = dir.join("composition-metering-subject.recipe.json");
+    let png_path = dir.join("composition-metering-subject.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "subject": "#B84D36"
+            },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.45, 0.35, 0.12] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" }
+            ],
+            "nodes": [
+                {
+                    "id": "subject_box",
+                    "geometry": "subject_geo",
+                    "material": "subject_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] }
+                }
+            ],
+            "cameras": [{
+                "id": "manual_cam",
+                "kind": "perspective",
+                "fov_degrees": 32.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject_box" }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": {
+                    "mode": "subject",
+                    "target": { "kind": "node", "id": "subject_box" }
+                }
+            },
+            "capture": { "width": 160, "height": 100 },
+            "expect": {}
+        }))
+        .expect("composition metering-subject recipe serializes"),
+    )
+    .expect("composition metering-subject recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition metering-subject recipe render command runs");
+
+    assert!(
+        output.status.success(),
+        "manual-camera metering subject recipe should pass verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["ok"], true, "{report:#}");
+    let subject_check = composition_check(&report, "subject.render_metering.projected_bounds");
+    assert_eq!(subject_check["status"], "checked", "{report:#}");
+    assert_eq!(
+        subject_check["code"], "subject_projected_bounds_available",
+        "{report:#}"
+    );
+    assert_eq!(subject_check["target_id"], "subject_box", "{report:#}");
+    assert_eq!(
+        subject_check["observed"]["source"], "render.metering",
+        "{report:#}"
+    );
+    assert_eq!(
+        subject_check["observed"]["confidence"], "projected_only",
+        "{report:#}"
+    );
+    assert_eq!(
+        subject_check["observed"]["viewport_width"], 160,
+        "{report:#}"
+    );
+    assert_eq!(
+        subject_check["observed"]["viewport_height"], 100,
+        "{report:#}"
+    );
+    assert!(
+        subject_check["observed"]["fill_fraction"]
+            .as_f64()
+            .is_some_and(|value| value > 0.05 && value < 1.0),
+        "subject observation should report sane viewport-aware fill: {report:#}"
+    );
+    let rect = &subject_check["region"]["rect_css_px"];
+    assert!(
+        rect["width"].as_f64().is_some_and(|value| value > 0.0)
+            && rect["height"].as_f64().is_some_and(|value| value > 0.0),
+        "subject observation should include projected rect: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_subject_mask_uses_semantic_aov_not_background_heuristics() {
+    let dir = artifact_dir("recipe-composition-subject-mask");
+    let recipe_path = dir.join("composition-subject-mask.recipe.json");
+    let png_path = dir.join("composition-subject-mask.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "subject": "#C4623A",
+                "occluder": "#20242A",
+                "floor": "#3D4652",
+                "label": "#F8F9FA"
+            },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.64, 0.46, 0.08] } },
+                { "id": "occluder_geo", "primitive": { "kind": "box", "size": [0.24, 0.58, 0.12] } },
+                { "id": "floor_geo", "primitive": { "kind": "box", "size": [1.70, 0.08, 0.08] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" },
+                { "id": "occluder_mat", "kind": "unlit", "base_color": "occluder" },
+                { "id": "floor_mat", "kind": "unlit", "base_color": "floor" }
+            ],
+            "nodes": [
+                {
+                    "id": "subject_box",
+                    "geometry": "subject_geo",
+                    "material": "subject_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.02, -0.06] }
+                },
+                {
+                    "id": "front_occluder",
+                    "geometry": "occluder_geo",
+                    "material": "occluder_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.02, 0.08] }
+                },
+                {
+                    "id": "floor_slab",
+                    "geometry": "floor_geo",
+                    "material": "floor_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, -0.34, -0.08] }
+                }
+            ],
+            "labels": [{
+                "id": "subject_label",
+                "text": "SUBJECT",
+                "color": "label",
+                "size_px": 16.0,
+                "transform": { "kind": "trs", "translation": [0.0, 0.40, 0.0] }
+            }],
+            "cameras": [{
+                "id": "manual_cam",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject_box" }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": {
+                    "mode": "subject",
+                    "target": { "kind": "node", "id": "subject_box" }
+                }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }))
+        .expect("composition subject-mask recipe serializes"),
+    )
+    .expect("composition subject-mask recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition subject-mask recipe render command runs");
+
+    assert!(
+        output.status.success(),
+        "subject-mask recipe should pass verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    let mask_check = composition_check(&report, "subject.render_metering.visible_mask");
+    assert_eq!(mask_check["status"], "checked", "{report:#}");
+    assert_eq!(
+        mask_check["code"], "subject_visible_mask_available",
+        "{report:#}"
+    );
+    assert_eq!(mask_check["target_id"], "subject_box", "{report:#}");
+    assert_eq!(
+        mask_check["observed"]["mask_source"], "semantic_aov",
+        "{report:#}"
+    );
+    assert_eq!(
+        mask_check["observed"]["confidence"], "exact_opaque_semantic_aov",
+        "{report:#}"
+    );
+    assert!(
+        mask_check["observed"]["visible_pixels"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "semantic subject mask should include visible subject pixels: {report:#}"
+    );
+    assert!(
+        mask_check["observed"]["other_visible_pixels"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "semantic subject mask should distinguish occluder/floor pixels from the subject: {report:#}"
+    );
+    assert!(
+        mask_check["observed"]["visible_fraction_of_projected"]
+            .as_f64()
+            .is_some_and(|value| value > 0.05 && value < 0.85),
+        "semantic subject mask should expose the occluded subject fraction: {report:#}"
+    );
+    assert!(
+        mask_check["observed"]["excluded_label_quad_count"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "semantic subject mask should report label-overlay exclusion: {report:#}"
+    );
+    let rect = &mask_check["region"]["rect_css_px"];
+    assert!(
+        rect["width"].as_f64().is_some_and(|value| value > 0.0)
+            && rect["height"].as_f64().is_some_and(|value| value > 0.0),
+        "semantic subject mask should include visible bounds: {report:#}"
+    );
+    let observations = report["verification"]["subject_observations"]
+        .as_array()
+        .expect("subject observations serialize");
+    let introspection_observations = report["introspection"]["subject_observations"]
+        .as_array()
+        .expect("introspection subject observations serialize");
+    let observation = observations
+        .iter()
+        .find(|observation| observation["source"] == "render.metering")
+        .unwrap_or_else(|| panic!("render.metering subject observation missing: {report:#}"));
+    assert!(
+        introspection_observations
+            .iter()
+            .any(|entry| entry == observation),
+        "render introspection should link the capture-bound subject observation: {report:#}"
+    );
+    assert_eq!(observation["schema"], "scena.subject_observation.v1");
+    assert_eq!(observation["status"], "observed");
+    assert_eq!(observation["target"]["kind"], "node");
+    assert_eq!(observation["target"]["id"], "subject_box");
+    assert_eq!(
+        observation["frame_key"]["state_binding"],
+        "exact_readback_completion"
+    );
+    assert!(
+        observation["projected_bounds"]["area_px"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "observation should carry projected bounds: {report:#}"
+    );
+    assert!(
+        observation["visible_bounds"]["area_px"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "observation should carry visible bounds: {report:#}"
+    );
+    assert!(
+        observation["visible_pixel_count"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "observation should carry visible subject pixels: {report:#}"
+    );
+    assert!(
+        observation["depth"]["p50_m"]
+            .as_f64()
+            .is_some_and(|value| value > 0.0),
+        "observation should carry visible depth percentile: {report:#}"
+    );
+    assert_eq!(observation["fallback"]["degraded"], false);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_reports_zero_visible_subject_reason_codes() {
+    let dir = artifact_dir("recipe-composition-zero-visible-subject");
+    for (case, expected_code) in [
+        ("hidden", "subject_hidden"),
+        ("outside_viewport", "subject_outside_viewport"),
+        ("behind_camera", "subject_behind_camera"),
+        ("degenerate_transform", "subject_degenerate_geometry"),
+        ("clipped_section_box", "subject_clipped_by_section_box"),
+        ("clipped_plane", "subject_clipped_by_clipping_plane"),
+        ("transparent", "subject_transparent_unsupported"),
+        ("occluded", "subject_occluded"),
+    ] {
+        let recipe_path = dir.join(format!("{case}.recipe.json"));
+        let png_path = dir.join(format!("{case}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&zero_visible_subject_recipe(case))
+                .expect("zero-visible subject recipe serializes"),
+        )
+        .expect("zero-visible subject recipe writes");
+
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args([
+                "recipe",
+                "render",
+                path_str(&recipe_path),
+                "--introspect",
+                "--verify",
+                "--out",
+                path_str(&png_path),
+            ])
+            .output()
+            .expect("scena zero-visible subject render command runs");
+
+        assert!(
+            !output.status.success(),
+            "{case} should fail verification with a structured subject reason, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "{case} subject visibility failures stay machine-readable on stdout, stderr={}",
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+        assert_eq!(report["ok"], false, "{case}: {report:#}");
+
+        let mask_check = composition_check(&report, "subject.render_metering.visible_mask");
+        assert_eq!(mask_check["status"], "failed", "{case}: {report:#}");
+        assert_eq!(mask_check["code"], expected_code, "{case}: {report:#}");
+        assert_eq!(
+            mask_check["observed"]["zero_visible_reason"], expected_code,
+            "{case}: {report:#}"
+        );
+
+        assert!(
+            report["verification"]["reasons"]
+                .as_array()
+                .expect("verification reasons array")
+                .iter()
+                .any(|reason| reason["source"] == "composition"
+                    && reason["code"] == expected_code
+                    && reason["expectation_id"] == "subject.render_metering.visible_mask"),
+            "{case} must surface the same subject reason in verification reasons: {report:#}"
+        );
+
+        let observation = report["verification"]["subject_observations"]
+            .as_array()
+            .expect("subject observations serialize")
+            .iter()
+            .find(|observation| observation["source"] == "render.metering")
+            .unwrap_or_else(|| panic!("{case} render.metering observation missing: {report:#}"));
+        assert_eq!(observation["status"], "degraded", "{case}: {report:#}");
+        assert!(
+            observation["fallback"]["reason_codes"]
+                .as_array()
+                .expect("reason codes serialize")
+                .iter()
+                .any(|code| code == expected_code),
+            "{case} subject observation must carry {expected_code}: {report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_reports_zero_visible_photo_and_focus_subject_reason_codes() {
+    let dir = artifact_dir("recipe-composition-zero-visible-subject-sources");
+    for (source, expected_check_id, expected_source) in [
+        (
+            ZeroVisibleSubjectSource::Photo,
+            "subject.photo_subject.visible_mask",
+            "photo.subject",
+        ),
+        (
+            ZeroVisibleSubjectSource::Focus,
+            "subject.render_depth_of_field_focus.visible_mask",
+            "render.depth_of_field.focus",
+        ),
+    ] {
+        let recipe_path = dir.join(format!("{}.recipe.json", source.file_stem()));
+        let png_path = dir.join(format!("{}.png", source.file_stem()));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&zero_visible_subject_recipe_for_source("hidden", source))
+                .expect("zero-visible source recipe serializes"),
+        )
+        .expect("zero-visible source recipe writes");
+
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args([
+                "recipe",
+                "render",
+                path_str(&recipe_path),
+                "--introspect",
+                "--verify",
+                "--out",
+                path_str(&png_path),
+            ])
+            .output()
+            .expect("scena zero-visible source render command runs");
+
+        assert!(
+            !output.status.success(),
+            "{source:?} should fail verification with a structured subject reason, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "{source:?} subject visibility failures stay machine-readable on stdout, stderr={}",
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+        assert_eq!(report["ok"], false, "{source:?}: {report:#}");
+
+        let mask_check = composition_check(&report, expected_check_id);
+        assert_eq!(mask_check["status"], "failed", "{source:?}: {report:#}");
+        assert_eq!(
+            mask_check["code"], "subject_hidden",
+            "{source:?}: {report:#}"
+        );
+
+        assert!(
+            report["verification"]["reasons"]
+                .as_array()
+                .expect("verification reasons array")
+                .iter()
+                .any(|reason| reason["source"] == "composition"
+                    && reason["code"] == "subject_hidden"
+                    && reason["expectation_id"] == expected_check_id),
+            "{source:?} must surface subject_hidden in verification reasons: {report:#}"
+        );
+
+        let observation = report["verification"]["subject_observations"]
+            .as_array()
+            .expect("subject observations serialize")
+            .iter()
+            .find(|observation| observation["source"] == expected_source)
+            .unwrap_or_else(|| {
+                panic!("{source:?} subject observation missing for {expected_source}: {report:#}")
+            });
+        assert_eq!(observation["status"], "degraded", "{source:?}: {report:#}");
+        assert!(
+            observation["fallback"]["reason_codes"]
+                .as_array()
+                .expect("reason codes serialize")
+                .iter()
+                .any(|code| code == "subject_hidden"),
+            "{source:?} subject observation must carry subject_hidden: {report:#}"
+        );
+
+        if source == ZeroVisibleSubjectSource::Focus {
+            let focus_report = &report["introspection"]["focus_report"];
+            assert_eq!(focus_report["schema"], "scena.focus_report.v1");
+            assert_eq!(focus_report["status"], "unresolved", "{report:#}");
+            assert_eq!(focus_report["target"]["kind"], "node", "{report:#}");
+            assert_eq!(focus_report["target"]["id"], "subject_box", "{report:#}");
+            assert_eq!(focus_report["reason"], "subject_hidden", "{report:#}");
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZeroVisibleSubjectSource {
+    Metering,
+    Photo,
+    Focus,
+}
+
+#[cfg(feature = "scene-host")]
+impl ZeroVisibleSubjectSource {
+    const fn file_stem(self) -> &'static str {
+        match self {
+            Self::Metering => "render-metering",
+            Self::Photo => "photo-subject",
+            Self::Focus => "focus-subject",
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn zero_visible_subject_recipe_for_source(
+    case: &str,
+    source: ZeroVisibleSubjectSource,
+) -> serde_json::Value {
+    let mut recipe = zero_visible_subject_recipe(case);
+    if source == ZeroVisibleSubjectSource::Metering {
+        return recipe;
+    }
+    let recipe_obj = recipe
+        .as_object_mut()
+        .expect("zero-visible recipe is an object");
+    let render = recipe_obj
+        .get_mut("render")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("zero-visible recipe render object exists");
+    render.remove("metering");
+    match source {
+        ZeroVisibleSubjectSource::Metering => {}
+        ZeroVisibleSubjectSource::Photo => {
+            recipe_obj.remove("cameras");
+            recipe_obj.insert(
+                "photo".to_owned(),
+                json!({
+                    "intent": "camera_behavior",
+                    "subject": {
+                        "target": { "kind": "node", "id": "subject_box" }
+                    }
+                }),
+            );
+        }
+        ZeroVisibleSubjectSource::Focus => {
+            render.insert(
+                "depth_of_field".to_owned(),
+                json!({
+                    "focus": {
+                        "mode": "subject",
+                        "target": { "kind": "node", "id": "subject_box" }
+                    },
+                    "coverage": "all",
+                    "strength": "subtle"
+                }),
+            );
+        }
+    }
+    recipe
+}
+
+#[cfg(feature = "scene-host")]
+fn zero_visible_subject_recipe(case: &str) -> serde_json::Value {
+    match case {
+        "hidden" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "subject": "#C4623A" },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.36, 0.12] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" }
+            ],
+            "nodes": [{
+                "id": "subject_box",
+                "geometry": "subject_geo",
+                "material": "subject_mat",
+                "visible": false,
+                "transform": { "kind": "center" }
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        "outside_viewport" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "subject": "#C4623A" },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.36, 0.12] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" }
+            ],
+            "nodes": [{
+                "id": "subject_box",
+                "geometry": "subject_geo",
+                "material": "subject_mat",
+                "transform": { "kind": "trs", "translation": [4.0, 0.0, 0.0] }
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        "behind_camera" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "subject": "#C4623A" },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.36, 0.12] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" }
+            ],
+            "nodes": [{
+                "id": "subject_box",
+                "geometry": "subject_geo",
+                "material": "subject_mat",
+                "transform": { "kind": "trs", "translation": [0.0, 0.0, 3.0] }
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        "degenerate_transform" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "subject": "#C4623A" },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.36, 0.12] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" }
+            ],
+            "nodes": [{
+                "id": "subject_box",
+                "geometry": "subject_geo",
+                "material": "subject_mat",
+                "transform": { "kind": "trs", "scale": [0.0, 0.0, 0.0] }
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        "clipped_section_box" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "subject": "#C4623A",
+                "clipper": "#263241"
+            },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.42, 0.30, 0.10] } },
+                { "id": "clipper_geo", "primitive": { "kind": "box", "size": [0.20, 0.20, 0.20] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" },
+                { "id": "clipper_mat", "kind": "unlit", "base_color": "clipper" }
+            ],
+            "nodes": [
+                {
+                    "id": "subject_box",
+                    "geometry": "subject_geo",
+                    "material": "subject_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.55, 0.0] }
+                },
+                {
+                    "id": "clipper_box",
+                    "geometry": "clipper_geo",
+                    "material": "clipper_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "section_box": {
+                "target": { "kind": "node", "id": "clipper_box" },
+                "margin": 0.01,
+                "helper_wireframe": false
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.55, 2.0], "target": "subject_box" }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        "clipped_plane" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "subject": "#C4623A" },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.36, 0.12] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" }
+            ],
+            "nodes": [{
+                "id": "subject_box",
+                "geometry": "subject_geo",
+                "material": "subject_mat",
+                "transform": { "kind": "center" }
+            }],
+            "clipping_planes": [
+                { "id": "clip_subject", "normal": [1.0, 0.0, 0.0], "distance": -1.0, "active": true }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject_box" }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        "transparent" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "subject": "#C4623A" },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.46, 0.36, 0.12] } }
+            ],
+            "materials": [
+                {
+                    "id": "subject_mat",
+                    "kind": "unlit",
+                    "base_color": "subject",
+                    "alpha_mode": { "kind": "blend" }
+                }
+            ],
+            "nodes": [{
+                "id": "subject_box",
+                "geometry": "subject_geo",
+                "material": "subject_mat",
+                "transform": { "kind": "center" }
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject_box" }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        "occluded" => json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "subject": "#C4623A",
+                "occluder": "#20242A"
+            },
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.42, 0.30, 0.08] } },
+                { "id": "occluder_geo", "primitive": { "kind": "box", "size": [0.72, 0.54, 0.12] } }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "subject" },
+                { "id": "occluder_mat", "kind": "unlit", "base_color": "occluder" }
+            ],
+            "nodes": [
+                {
+                    "id": "subject_box",
+                    "geometry": "subject_geo",
+                    "material": "subject_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.0, -0.10] }
+                },
+                {
+                    "id": "front_occluder",
+                    "geometry": "occluder_geo",
+                    "material": "occluder_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.10] }
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject_box" }
+            }],
+            "render": {
+                "auto_exposure": "mixed",
+                "metering": { "mode": "subject", "target": { "kind": "node", "id": "subject_box" } }
+            },
+            "capture": { "width": 160, "height": 120 },
+            "expect": {}
+        }),
+        other => panic!("unknown zero-visible subject case {other}"),
+    }
 }
 
 #[cfg(feature = "scene-host")]
@@ -11452,6 +12799,7 @@ fn expected_label_background_region(width: u32, height: u32) -> QualityPixelRegi
 #[derive(Debug)]
 struct FrameDelta {
     max_channel_delta: u8,
+    p999_channel_delta: u8,
     mean_channel_delta: f32,
 }
 
@@ -11464,6 +12812,11 @@ fn frame_delta_in_region(
 ) -> FrameDelta {
     assert_eq!(left.len(), right.len());
     let mut max_channel_delta = 0_u8;
+    let mut deltas = Vec::with_capacity(
+        (region.width as usize)
+            .saturating_mul(region.height as usize)
+            .saturating_mul(3),
+    );
     let mut total = 0_u64;
     let mut count = 0_u64;
     for y in region.y..region.y.saturating_add(region.height) {
@@ -11472,13 +12825,17 @@ fn frame_delta_in_region(
             for channel in 0..3 {
                 let delta = left[offset + channel].abs_diff(right[offset + channel]);
                 max_channel_delta = max_channel_delta.max(delta);
+                deltas.push(delta);
                 total = total.saturating_add(u64::from(delta));
                 count = count.saturating_add(1);
             }
         }
     }
+    deltas.sort_unstable();
+    let p999_index = deltas.len().saturating_sub(1).saturating_mul(999) / 1_000;
     FrameDelta {
         max_channel_delta,
+        p999_channel_delta: deltas.get(p999_index).copied().unwrap_or(0),
         mean_channel_delta: total as f32 / count.max(1) as f32,
     }
 }

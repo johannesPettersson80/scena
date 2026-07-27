@@ -27,6 +27,7 @@ Rules:
   - `scena.capture.v1`
   - `scena.capture_baseline.v1`
   - `scena.render_introspection.v1`
+  - `scena.subject_observation.v1`
   - `scena.render_quality.v1`
   - `scena.scene_composition.v1`
   - `scena.visibility_diagnosis.v1`
@@ -45,6 +46,11 @@ Rules:
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
   - `scena.scene_recipe_build.v1`
+  - `scena.photo_render_result.v1`
+  - `scena.photo_plan.v1`
+  - `scena.photo_candidate_plan.v1`
+  - `scena.photo_shaded_candidate_selection.v1`
+  - `scena.photo_report.v1`
   - `scena.placement_result.v1`
   - `scena.asset_load_report.v1`
   - `scena.asset_geometry_summary.v1`
@@ -750,6 +756,41 @@ Additive optional fields:
 
 Capability enum values use serde names such as `headless`, `supported`,
 `degraded`, and `feature_disabled`.
+
+`capabilities.subject_visible_mask` reports whether exact subject-pixel
+visibility can be derived by the active composition path. The CPU headless
+recipe verification path reports `supported`; GPU/browser backends report a
+degraded static capability until their backend-specific semantic AOV capture is
+wired into subject observation/reporting.
+
+Subject observations and recipe composition reasons use the same zero-visible
+subject reason-code vocabulary. A declared `render.metering`,
+`render.depth_of_field.focus`, or `photo.subject` target that resolves but
+contributes no visible pixels must report one of these codes in
+`verification.reasons[]`, the matching `subject.*.visible_mask` composition
+check, and the relevant `subject_observation.v1.fallback.reason_codes[]`:
+
+| Code | Meaning |
+| --- | --- |
+| `subject_hidden` | The subject or one of its ancestors is hidden. |
+| `subject_outside_viewport` | The subject projects outside the current viewport. |
+| `subject_behind_camera` | Drawable subject geometry is behind the active camera. |
+| `subject_degenerate_geometry` | The subject has no finite nonzero drawable extent. |
+| `subject_clipped_by_section_box` | The active section box removes the subject. |
+| `subject_clipped_by_clipping_plane` | An active clipping plane removes the subject. |
+| `subject_transparent_unsupported` | Exact subject masks cannot attribute the transparent subject. |
+| `subject_occluded` | Other visible geometry fully occludes the subject. |
+| `subject_visible_mask_empty` | The subject has semantic identity but no visible pixels in the frame. |
+| `stale_subject_observation` | The observation frame key no longer matches the rendered frame. |
+
+`capabilities.auto_exposure_metering_*` reports each public auto-exposure
+metering mode separately. A mode that is accepted by recipe validation but not
+yet routed into the exposure meter must report `degraded` or
+`feature_disabled`; it must not be implied by prose or by the existence of the
+recipe field. CPU Headless reports `auto_exposure_metering_subject:"supported"`
+because recipe render routes exact semantic subject observations into the
+scene-linear exposure meter. GPU/browser lanes remain `degraded` until their
+backend-specific subject observations feed metering directly.
 
 `capabilities.color_target_format` is live renderer metadata when a surface is
 attached and may be `Rgba8Unorm`, `Rgba8UnormSrgb`, `Bgra8Unorm`, or
@@ -1521,10 +1562,25 @@ The current v1 recipe slice supports:
   `RecipeBuildPolicy`; missing required environments fail the build.
 - optional `render` setup with profile, quality, anti-aliasing, supersample,
   reconstruction filter, screen-space reflections, bloom, SSAO, depth of field,
-  exposure EV or ergonomic `auto_exposure`, and tonemapper.
+  exposure EV or ergonomic `auto_exposure`, exposure compensation, and
+  tonemapper.
   `auto_exposure` accepts `product_studio`, `indoor`, `outdoor`, or `mixed`
   and routes through `Renderer::set_auto_exposure(AutoExposureConfig::*)`.
   `auto_exposure` and fixed `exposure_ev` are mutually exclusive in v1.
+  `exposure_compensation_ev` composes with `auto_exposure` and is rejected
+  without it; use fixed `exposure_ev` only for full manual exposure.
+  `render.metering` is valid only with `auto_exposure` and accepts
+  `mode:"average"`, `center_weighted`, `highlight_weighted`, `subject`, or
+  `spot`. Subject mode uses the shared recipe target grammar and accepts
+  whole-import targets or authored/imported node targets; spot mode uses a
+  normalized viewport
+  `rect:{x,y,width,height}` that must be non-empty and contained within
+  `[0,1]`. Subject mode accepts `fallback:"error"` (the default) or
+  `fallback:"average_metering_with_warning"` for an explicit degraded fallback.
+  Headless CPU `scena recipe render` resolves visible subject pixels with a
+  semantic-AOV prepass and routes that rect into scene-linear subject-weighted
+  auto exposure. Backend strict/degraded execution evidence is tracked in
+  `docs/checklists/subject-driven-photo-rendering.md`.
   `anti_aliasing` accepts `none`, `fxaa`, `msaa4`, and `msaa8`;
   `quality:"high"` maps to sample AA. The opt-in `supersample` factor accepts
   `1`, `2`, `3`, `4`, or `8` and renders the capture at N× resolution before
@@ -1538,13 +1594,21 @@ The current v1 recipe slice supports:
   high-metallic/low-roughness material fragments, fading to the environment-lit
   material at screen edges or where no screen-space sample exists. Bare
   `transmission_texture` and `thickness_texture` slots remain rejected until the
-  GPU/WebGL2 texture-binding budget can support them. `depth_of_field` accepts
-  `focus_distance`, `aperture_f_stop`, and `radius_px`; recipe verification can
-  pair it with `expect_quality.depth_of_field` so a same-backend no-DoF
-  baseline proves the background lost Sobel detail while the focal subject
-  remains sharp. The Sobel thresholds are finite non-negative measured values;
-  `min_background_sobel_drop_fraction` and `max_focal_mean_delta` are normalized
-  fractions.
+  GPU/WebGL2 texture-binding budget can support them. `depth_of_field` keeps
+  the manual renderable form `focus_distance`, `aperture_f_stop`, and
+  `radius_px`. It also accepts the subject-focus contract
+  `focus:{mode:"subject",target:{kind:"import",id}}` or
+  `focus:{mode:"subject",target:{kind:"node",id}}` with `coverage:"all"` and
+  `strength:"subtle"`, and rejects ambiguous recipes that combine `focus` with
+  `focus_distance`. `scena recipe render` resolves subject focus with a
+  semantic-AOV prepass over the visible target pixels, using the median visible
+  subject depth as the focal plane. A target with no semantic palette entry or
+  no finite visible depth samples fails closed instead of guessing a distance.
+  Recipe verification can pair manual DoF with `expect_quality.depth_of_field`
+  so a same-backend no-DoF baseline proves the background lost Sobel detail
+  while the focal subject remains sharp. The Sobel thresholds are finite
+  non-negative measured values; `min_background_sobel_drop_fraction` and
+  `max_focal_mean_delta` are normalized fractions.
 - `expect.expect_transform[]` compares an authored/imported node target's
   inspected world transform against declared `translation`, `scale`, and/or
   intrinsic X/Y/Z `rotation_degrees` with explicit tolerances. It is a
@@ -1561,7 +1625,12 @@ The current v1 recipe slice supports:
   reject isolated bright HDR specks separately from missing reflection
   structure. Use `min_bright_fraction` and `min_dark_fraction` when a chrome or
   mirror-metal subject must show white-card highlights plus dark edge
-  definition; failures emit `reflection_chrome_read_missing`. `expect_quality.area_light` checks the projected target receiver for
+  definition; failures emit `reflection_chrome_read_missing`.
+  `expect_quality.exposure.min_mean_luminance_srgb8` and
+  `expect_quality.exposure.max_mean_luminance_srgb8` set fixture-specific
+  product subject luminance bands when exact subject observations are available;
+  they are sRGB8 luminance values in `[0,255]`, while clip-fraction thresholds
+  remain normalized `[0,1]`. `expect_quality.area_light` checks the projected target receiver for
   measurable finite-emitter soft-shadow structure and emits
   `area_light_soft_shadow_checked` or
   `area_light_soft_shadow_insufficient` with observed penumbra width, luminance
@@ -1686,6 +1755,205 @@ quality failures and opt-in `expect_quality` / `expect_reference` checks.
 Top-level `ok` is true only when build, introspection, and verification are
 all true. If build fails before a frame exists, `capture` and `introspection`
 are `null` rather than fabricated.
+
+`scena.photo_render_result.v1` is emitted by
+`scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png>
+--report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>]`. It is the stdout command
+envelope for the bounded camera-behavior easy path. On success it reports
+`ok:true`, the normalized intent, emitted PNG/report/descriptor paths, optional
+emitted recipe path, the selected candidate, subject quality metrics, and any
+failure codes. Build or acceptance failure remains a domain failure on stdout
+with the same top-level schema and `ok:false`; CLI usage, I/O, policy, and
+internal failures use `scena.cli_error.v1` on stderr.
+
+`scena.photo_report.v1` is written to the `--report` path by the same command.
+It records the input source kind/path, resolved subject target, evaluated
+candidates, selected candidate, acceptance bands, subject quality metrics,
+bounded retry policy/attempts, bounded work metrics, artifacts, optional
+emitted recipe path, and build summary. The first implementation slice supports the
+`camera_behavior` intent for imported assets, recipe inputs, and authored-node
+recipe subjects through the CLI.
+`scena validate` fully validates the required report sections; missing
+candidate attempts, selected candidate, exposure report, focus report, or
+quality verdict fail closed instead of passing as envelope-only JSON.
+
+`scena.photo_plan.v1` is emitted by
+`scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json>`.
+It wraps the deterministic `scena.photo_candidate_plan.v1` candidate list with
+input source, resolved subject, optional scorer output, selected candidate id,
+rejected-candidate reasons, staging choices, and emitted-recipe artifact path.
+It is intentionally render-free so `scena photo plan` can expose the exact plan
+without writing the final high-resolution image. Multi-import recipes can pass
+`--subject import:<id>` and authored-scene recipes can pass
+`--subject node:<id>`; both route through the same recipe target resolver used
+by subject metering, subject focus, and target-quality expectations.
+
+Photo reports include a nested
+`scena.photo_shaded_candidate_selection.v1` object. It records the bounded
+low-resolution shaded candidate pass: candidate render size, candidate budget,
+evaluated count, total candidate pixels, selected composition candidate,
+per-candidate subject metrics, scorer reasons, the photographic asset-health
+report, and the reused
+`scena.render_quality.v1` report for each rendered candidate. This pass is an
+audit trail for composition/staging selection; it is not a hidden final render
+artifact.
+
+The subject metrics are geometry-attributed from the semantic ID, depth, and
+world-normal buffers. In addition to framing and exposure they report empty
+space, depth/normal variation, highlight fraction/continuity/distribution,
+contact-shadow presence/softness, silhouette separation, saturation, color
+cast, and reflection washout. Candidate selection scores the combined
+photographic result and may perform at most one measured lighting correction
+per low-resolution candidate. It does not infer the subject from its color.
+
+`asset_health` uses the classifications `safe_repair`,
+`appearance_change_required`, and `unrecoverable`. Safe repairs are applied and
+reported. Appearance-changing repairs name the required caller decision.
+Unrecoverable missing or malformed geometry/material/texture data rejects the
+photo command rather than producing `ok:true`. The supported automatic promise
+is coherent visible geometry with sufficient physical material information;
+the renderer does not invent components, markings, substances, or texture
+content. Topology evidence includes boundary, nonmanifold, folded, and
+self-intersecting face counts plus exact duplicate vertices safely removed.
+Scene-hierarchy evidence reports hidden, coincident duplicate, microscopic,
+detached, and far-outlier components; these are never silently deleted.
+
+Photo reports also include top-level `work_metrics` for the complete
+camera-behavior loop. The block records composition candidate budget/count, shaded
+candidate budget/renders/pixels, final retry render budget/renders/pixels,
+total render, prepare, and capture calls, GPU readback copies, blocking
+poll/wait counts, subject-meter sample counts, and the allocation/work policy
+(`allocation_policy:"bounded_by_candidate_count_and_frame_pixels"`).
+Wall-clock timings are explicitly report-only (`timing_policy:"report_only"`,
+`wall_clock_thresholds:"not_used"`) because shared CI/build hosts are not
+controlled performance hardware; deterministic counts and allocation/copy
+budgets remain the blocking evidence.
+
+Recipes may opt into the same camera-behavior path with an optional top-level
+`photo` section:
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [{ "id": "subject", "uri": "model.glb" }],
+  "photo": {
+    "intent": "camera_behavior",
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}
+```
+
+`photo.subject` also accepts the explicit subject spec form
+`{target:{kind:"import",id:"subject"},fallback:"error"}` or
+`{target:{kind:"node",id:"hero"},fallback:"error"}`. The direct target form
+remains valid for existing recipes. `fallback:"error"` is the default;
+`fallback:"average_metering_with_warning"` permits a deliberate degraded path
+and must be reported as such by the rendering surface.
+
+Compatibility: `photo`, `render.metering`, subject-focus
+`render.depth_of_field.focus`, and `render.exposure_compensation_ev` are
+additive. A recipe that omits `photo.intent` keeps the pre-existing explicit
+render contract: fixed `render.exposure_ev` is still the full-manual exposure
+path, `render.depth_of_field.focus_distance` is still the manual focus path,
+and `render.metering:{mode:"average"}` with `render.auto_exposure` remains
+average metering rather than being silently promoted to subject metering.
+Use `render.exposure_compensation_ev` when an auto-exposed product/studio shot
+needs a small nudge; use fixed `render.exposure_ev` only when intentionally
+leaving automatic metering.
+
+An advanced recipe can keep manual camera composition while still using
+subject-driven exposure and focus:
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [{ "id": "subject", "uri": "model.glb" }],
+  "cameras": [{
+    "id": "main",
+    "kind": "perspective",
+    "active": true,
+    "framing": { "preset": "three_quarter_front_right", "fill": 0.72 }
+  }],
+  "render": {
+    "auto_exposure": "product_studio",
+    "exposure_compensation_ev": 0.3,
+    "metering": {
+      "mode": "subject",
+      "target": { "kind": "import", "id": "subject" },
+      "surround_weight": 0.1
+    },
+    "depth_of_field": {
+      "focus": {
+        "mode": "subject",
+        "target": { "kind": "import", "id": "subject" }
+      },
+      "coverage": "all",
+      "strength": "subtle"
+    }
+  }
+}
+```
+
+`scena recipe render <recipe.json> --verify --out <png>` resolves that subject,
+applies the camera-behavior composition defaults, runs the bounded candidate
+render/exposure loop, and includes product-profile import framing/exposure
+checks in the nested `scena.scene_composition.v1` report. Recipes that request
+`render.depth_of_field.focus.mode:"subject"` surface a nested
+`scena.focus_report.v1` under render introspection. The focus report is bound to
+the final capture payload and carries target, mode, coverage, strength, resolved
+focus distance, visible-depth percentiles, visible pixel count, confidence, and
+frame key. `scena photo render` includes the same report shape in its
+`scena.photo_report.v1`; camera-behavior photo renders resolve it from visible
+semantic subject-depth samples and report the physical circle-of-confusion
+model used by the final camera. Photo reports also
+include `scena.exposure_report.v1`, which records the selected EV, measured
+subject luminance, subject low/high clip fractions, suggested compensation, and
+capture-bound frame key. Ordinary recipe render introspection includes the same
+report when `render.auto_exposure` is active, including the metered luminance,
+target luminance, base EV, compensation EV, clamp state, highlight guard,
+subject sample count, and the metering domain. When
+`render.metering.mode:"subject"` is used on the headless CPU backend, the
+report's subject sample count is nonzero and the linked
+`scena.subject_observation.v1` entries identify the subject rect used by
+metering. `metering_domain:"scene_linear_pre_tonemap"` is the strict
+camera-behavior evidence domain; `metering_domain:"encoded_output_feedback"` is
+reported as degraded because the sample already includes the current exposure.
+Remaining backend evidence classes and multi-view candidate planning work are
+tracked in `docs/checklists/subject-driven-photo-rendering.md`.
+
+### `scena.subject_observation.v1`
+
+Produced as a capture-bound nested report when recipe verification or photo
+rendering has an authored subject target. It records the subject source
+(`render.metering`, `render.depth_of_field.focus`, or `photo.subject`), target
+kind/id, resolved runtime handles, exact frame key, projected bounds, visible
+bounds, visible pixel count, visible fill, visible/projected fraction,
+occlusion estimate, optional visible-depth percentiles, optional exact
+`pixel_quality` metrics, and explicit fallback flags/reason codes.
+
+`pixel_quality` is present when the subject was measured from exact visible
+subject pixels, currently the headless CPU semantic-AOV path. It reports final
+sRGB8 subject luminance (`mean_luminance_srgb8`,
+`luminance_stddev_srgb8`, `luminance_range_srgb8`), low/high clip fractions,
+and sample count. Product-quality verification consumes this block for
+subject-specific exposure and material-readability checks instead of relying
+on color-difference foreground guesses.
+
+`status:"observed"` means the payload has non-empty projected and visible
+bounds for the same completed readback frame. `fallback.degraded:true` is still
+allowed on observed payloads when part of the evidence is weaker than exact
+semantic attribution, for example current `scena photo render` camera-behavior
+reports that use projected/luminance subject metrics while the semantic mask is
+not yet routed through the photo path. `status:"degraded"` or
+`status:"unavailable"` require reason codes and must not be treated as exact
+subject-mask proof.
+
+The frame key follows the same capture-provenance rule as
+`scena.focus_report.v1` and `scena.exposure_report.v1`: `state_binding` must be
+`exact_readback_completion`, and stale rendered-frame keys are invalid.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/subject_observation.v1.json`.
 
 ### `scena.capture_sequence_result.v1`
 

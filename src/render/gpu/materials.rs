@@ -12,6 +12,32 @@ pub(super) use super::material_upload::{
     MaterialTextureUpload, address_mode, filter_mode, mipmap_filter_mode,
 };
 
+pub(super) fn material_anisotropy_clamp(
+    mip_count: usize,
+    sampler: crate::assets::TextureSamplerDesc,
+) -> u16 {
+    use crate::assets::TextureFilter;
+
+    let linear_mag = matches!(sampler.mag_filter(), None | Some(TextureFilter::Linear));
+    let linear_min = matches!(
+        sampler.min_filter(),
+        None | Some(
+            TextureFilter::Linear
+                | TextureFilter::LinearMipmapNearest
+                | TextureFilter::LinearMipmapLinear
+        )
+    );
+    let linear_mip = matches!(
+        sampler.min_filter(),
+        Some(TextureFilter::NearestMipmapLinear | TextureFilter::LinearMipmapLinear)
+    );
+    if mip_count > 1 && linear_mag && linear_min && linear_mip {
+        8
+    } else {
+        1
+    }
+}
+
 mod bind_group;
 pub(super) use bind_group::create_material_bind_group;
 mod resource_stats;

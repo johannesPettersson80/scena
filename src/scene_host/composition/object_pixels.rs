@@ -217,6 +217,14 @@ impl ObjectPixelThresholds {
                 max_high_clip_fraction: 0.65,
                 min_mean_background_delta: 0.045,
             },
+            // A product still must fail on a crushed subject; it is the
+            // profile that gates beauty renders. Kept in step with
+            // `RenderQualityProfile::severe_black_crush_max`.
+            "product" | "photo_product" => Self {
+                max_low_clip_fraction: 0.45,
+                max_high_clip_fraction: 0.30,
+                min_mean_background_delta: 0.060,
+            },
             _ => Self {
                 max_low_clip_fraction: 0.80,
                 max_high_clip_fraction: 0.30,

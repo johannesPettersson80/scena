@@ -6,6 +6,7 @@ struct VertexOut {
 struct PostUniform {
     viewport: vec4<f32>,
     config: vec4<f32>,
+    white_balance: vec4<f32>,
 };
 
 @group(0) @binding(0)

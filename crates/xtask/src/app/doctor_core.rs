@@ -13,15 +13,17 @@ mod recipe_policy;
 mod repair_inputs;
 mod runner;
 mod silent_failure_contracts;
+mod subject_photo_contracts;
 mod transform_grammar;
 
 pub(crate) use agent_contracts::check_agent_contracts;
 pub(crate) use capability_discovery::check_a03_live_capability_discovery;
 pub(crate) use cli_ergonomics::check_a04_cli_ergonomics;
 pub(crate) use contracts::{
-    ALLOWED_CONTEXT_TYPES, CATCH_ALL_TYPE_NAMES, CATCH_ALL_TYPE_SUFFIXES,
-    MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE, MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE,
-    REQUIRED_SOURCE_MODULES, SOURCE_SCOPE_TERMS, STALE_DOC_TERMS,
+    ALLOWED_CONTEXT_TYPES, ALLOWED_LARGE_SOURCE_MODULES, CATCH_ALL_TYPE_NAMES,
+    CATCH_ALL_TYPE_SUFFIXES, MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE,
+    MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE, REQUIRED_SOURCE_MODULES, SOURCE_SCOPE_TERMS,
+    STALE_DOC_TERMS,
 };
 pub(crate) use contracts::{check_cli_output_contracts, require_files};
 pub(crate) use conversion_contract::check_a05_scena_convert_contract;
@@ -48,4 +50,5 @@ pub(crate) use runner::{
     check_waterbottle_third_party_reference, repo_root, run_architecture_doctor, run_docs_doctor,
 };
 pub(crate) use silent_failure_contracts::check_full_review_q06_silent_failure_contracts;
+pub(crate) use subject_photo_contracts::check_x01_subject_photo_contracts;
 pub(crate) use transform_grammar::check_a08_transform_grammar;

@@ -522,6 +522,7 @@ fn agent_render_loop(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>> 
         lights: Vec::new(),
         scene: None,
         render: None,
+        photo: None,
         expect: None,
         capture: Some(SceneRecipeCaptureV1 {
             width: 160,

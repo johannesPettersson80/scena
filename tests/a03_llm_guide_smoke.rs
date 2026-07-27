@@ -12,6 +12,38 @@ const START: &str = "<!-- SCENA_CANONICAL_AGENT_SMOKE_BEGIN -->";
 const END: &str = "<!-- SCENA_CANONICAL_AGENT_SMOKE_END -->";
 
 #[test]
+fn camera_behavior_guide_pins_easy_path_reports_and_demo_rule() {
+    assert!(
+        GUIDE.contains(
+            "scena photo render model.glb --out hero.png --report hero.report.json --emit-recipe hero.resolved.recipe.json"
+        ),
+        "LLM guide must route product/model hero stills through the photo-render easy path",
+    );
+    assert!(
+        GUIDE.contains("\"photo\": {\n    \"intent\": \"camera_behavior\""),
+        "LLM guide must show the recipe-native photo.intent path",
+    );
+    assert!(
+        GUIDE.contains("photo_report.exposure_report"),
+        "LLM guide must tell agents where exposure diagnostics live",
+    );
+    assert!(
+        GUIDE.contains("suggested_compensation_ev"),
+        "LLM guide must tell agents how to read suggested exposure compensation",
+    );
+    assert!(
+        GUIDE.contains("public demo hero"),
+        "LLM guide must pin the no-hand-tuned-overrides rule for public demo hero renders",
+    );
+    assert!(
+        GUIDE.contains(
+            "no hand-tuned camera, exposure, focus, floor, grid, or background overrides"
+        ),
+        "LLM guide must keep the public demo hero on the intent path instead of per-shot constants",
+    );
+}
+
+#[test]
 fn canonical_agent_guide_block_runs_from_a_clean_directory() {
     let scena = std::env::var_os("SCENA_A03_BIN")
         .map(PathBuf::from)
