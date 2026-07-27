@@ -299,6 +299,69 @@ guard stays until that is understood. Note that a distinct `AdapterRefused
 (`src/diagnostics.rs:61`), which is not `#[non_exhaustive]` and therefore a
 breaking change.
 
+### V3D intermittent empty frame — minimal reproduction
+
+Reproduces with a single authored cube: no glTF import, no textures, no area
+lights, one draw call.
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "geometries": [{ "id": "box", "primitive": { "kind": "box", "size": [1.0, 1.0, 1.0] } }],
+  "materials": [{ "id": "grey", "kind": "pbr_metallic_roughness", "base_color": "#c8c8c8" }],
+  "nodes": [{ "id": "cube", "geometry": "box", "material": "grey" }],
+  "capture": { "width": 320, "height": 240 }
+}
+```
+
+```bash
+SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU=1 \
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/broadcom_icd.json \
+scena recipe render min.recipe.json --gpu --out out.png
+```
+
+Roughly one run in forty returns `ok:false` with `empty_frame`, and the frame
+contains only the clear colour.
+
+Measured behaviour:
+
+| condition | failures |
+|---|---|
+| idle | 1/40 |
+| under build/test load | 3/40 |
+| `V3D_DEBUG=sync` | 3/20 |
+| fixed `render.exposure_ev` (auto-exposure off) | 3/40 |
+| 320x240 / 640x420 / 1280x840 | 1/30 / 0/30 / 1/30 |
+| minimal authored cube | 1/40 |
+| lavapipe, CPU rasterizer | 0/16 |
+
+So it is V3D-specific, size-independent, load-sensitive, and unrelated to asset
+import, material complexity, area lights, or auto-exposure. `V3D_DEBUG=sync`
+making it *more* frequent points at a per-submission race rather than a
+workload threshold.
+
+Eliminated by measurement, each with the probe used:
+
+- scena skipping draws — instrumented `encode_unlit_pass`: a failing run
+  submitted the same 33 batches and 33 draws as a successful one.
+- nondeterministic framing — capture descriptors byte-identical.
+- nondeterministic adapter selection — five runs, all `V3D 7.1.10.2`.
+- missing readback synchronisation — `map_async`, `poll(wait_indefinitely)`,
+  `recv`, which is the correct wgpu pattern.
+- a swallowed GPU fault — `on_uncaptured_error` never fires, and the headless
+  path does consult `runtime_fault` (`src/render/gpu/draw/native.rs:43`).
+- depth never cleared — the prepass clears unconditionally
+  (`src/render/gpu/depth.rs:407`).
+- auto-exposure applying a stale meter sample — failures persist with a fixed
+  exposure.
+- tile/binning memory exhaustion — no size dependence.
+
+Nothing on scena's side differs between a success and a failure, so this is not
+fixable in scena. Isolating it further needs a Mesa debug build and GPU job
+dumps (`V3D_DEBUG=cl,clif`), and the reproduction above is small enough to file
+upstream. scena already fails closed here: the `empty_frame` check rejects the
+render rather than shipping a black image, which is why the refusal stays.
+
 Guard improvements worth making anyway:
 
 - [ ] Return a distinct `AdapterRefused { reason }` instead of
