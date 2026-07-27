@@ -15,9 +15,10 @@ lights, floor, or staging):
 - `colored_travel_mug` — saturated teal/orange plastic, 9,380 tris
 - `valve_manifold` — chrome/brass/steel assembly, 33 parts, 32,256 tris
 
-Host: Raspberry Pi 5, Mesa 25.0.7-2+rpt4. GPU results are **lavapipe software
-rasterization**; the V3D adapter is refused (see section 6). No result here is
-hardware release evidence.
+Host: Raspberry Pi 5, Mesa 25.0.7-2+rpt4. GPU results in sections 1-5 are
+**lavapipe software rasterization**; the V3D adapter is refused by default (see
+section 6, which also records V3D hardware results obtained with the documented
+escape hatch after the LTC fix). No result here is hardware release evidence.
 
 ## 1. Outcome
 
@@ -45,7 +46,12 @@ path has closed the gap on staging and grounding but not on highlight range.
 
 ## 2. P0 — blocking
 
-- [ ] **Move the LTC lookup tables from shader constants into textures.**
+- [x] **Move the LTC lookup tables from shader constants into a uniform block.**
+      *(Done. The original prescription below said "textures"; that was wrong —
+      `downlevel_defaults()` caps sampled textures AND samplers at 16 per
+      fragment stage on every backend, not only WebGL2, and the shaders already
+      use exactly 16 of each. A uniform block costs neither. See the V3D
+      measurements in section 6.)*
       `src/render/area_ltc_tables.wgsl` declares two `const array<vec4<f32>, 256>`
       tables, and `src/render/area_ltc.wgsl:53-64` indexes them eight times with
       runtime indices. Hardware without indexed constant-register access must
@@ -204,6 +210,69 @@ the LTC shader in section 2 — fix that and V3D becomes viable. Upgrading Mesa
 does not help: no newer package exists for this host
 (`Candidate: 25.0.7-2+rpt4`) and Mesa 26.1.0's v3dv entries are all features
 (`robustness2`, `present_id`, `hdr_metadata`) with nothing on compile time.
+
+### V3D after the LTC uniform-block fix (2026-07-27)
+
+The LTC change (section 2) removed the register-allocation failures outright.
+Measured on this Pi 5 with `V3D_DEBUG=shaderdb,ra`, same asset and resolution:
+
+| | before | after |
+|---|---|---|
+| fragment instructions | 22,518 | 8,894 |
+| uniforms | 15,088 | 2,707 |
+| spills:fills | 200:599 | 199:481 |
+| RA failures | 25, across all 13 strategies | **0** |
+| 320x240 render | 1,159 s, no output | **10 s, `ok:true`** |
+
+**Correctness is confirmed on hardware.** A 1280x840 valve-manifold render on V3D
+matches the lavapipe render to within a mean Chebyshev distance of 0.911, with
+only 574 pixels (0.05 %) differing by more than 16. The adapter renders correctly.
+
+**It is roughly six times faster than software at rasterization.** A plain
+1280x840 render of the valve manifold (no `photo.intent`, so no camera-behavior
+loop) takes **1 s on V3D against 6 s on lavapipe**, producing the same image:
+both 20.2 % non-black, luminance means 36.19 vs 35.95, 0.7 % of pixels differing
+by more than 16. The GPU is doing real work and is clearly worth using.
+
+An earlier revision of this document claimed V3D was "not faster than software",
+from 205 s on V3D against 201 s on lavapipe. That comparison was invalid: both
+were *camera-behavior* renders, where rasterization is not the bottleneck.
+
+**The camera-behavior loop, not rasterization, dominates wall clock.** The same
+asset and resolution costs 1 s as a plain render and 205 s through
+`photo.intent: camera_behavior` on the same adapter, so about 99.5 % of that time
+is spent outside rasterization. It scales with pixel count rather than draw
+count: 320x240 takes 10 s and 1280x840 takes 205 s, a 20x rise for 14x the
+pixels. The candidate loop only accounts for a handful of full-resolution
+renders (`CAMERA_BEHAVIOR_MAX_ATTEMPTS = 6`, plus three 160x105 previews); the
+remainder is per-attempt semantic AOV capture and readback plus
+`measure_subject`'s per-pixel scans in Rust, both running over the whole frame.
+This is the largest remaining performance defect in the feature, it is
+backend-independent, and it supersedes the occupancy question below in priority.
+
+**Occupancy is inherent, not a defect to chase.** V3D compiles the fragment
+shader at 2-thread occupancy with 199:481 spills. Bisecting by deleting the five
+optional material contributions, then also the LTC evaluation, cut it from 8,894
+to 3,198 instructions and from 199:481 to 17:25 spills, yet occupancy stayed at
+2 threads and max-temps stayed pinned at 64. Every shader in the same build shows
+V3D granting 4 threads at 27 and 32 temps but only 2 at 35 and 39, so 4-thread
+occupancy needs roughly 32 temps or fewer, unreachable for a full PBR, IBL,
+shadow and tiled-light fragment shader. Recovering it would need per-feature
+shader permutations, which a 6x speedup over software does not justify.
+
+The five optional contributions (clearcoat, sheen, anisotropy, iridescence,
+dispersion) account for 3,181 instructions and 56:285 of the spilling, but each
+already early-returns on a zero factor, so that is static footprint rather than
+executed cost for materials that do not use them.
+
+**Consequence for the refusal.** `is_unstable_v3d_headless_adapter`
+(`src/render/gpu/build.rs:50`) rejects the adapter because it was "known to
+hang". That is no longer true: it completes, produces correct pixels, and
+rasterizes about six times faster than the software fallback. The stated reason
+no longer holds and the guard should be revisited. Note that a distinct
+`AdapterRefused { reason }` variant means adding to the public `BuildError` enum
+(`src/diagnostics.rs:61`), which is not `#[non_exhaustive]` and therefore a
+breaking change.
 
 Guard improvements worth making anyway:
 
