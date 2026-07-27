@@ -25,7 +25,9 @@ pub(crate) use contracts::{
     MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE, REQUIRED_SOURCE_MODULES, SOURCE_SCOPE_TERMS,
     STALE_DOC_TERMS,
 };
-pub(crate) use contracts::{check_cli_output_contracts, require_files};
+pub(crate) use contracts::{
+    check_allowlisted_modules_are_tracked, check_cli_output_contracts, require_files,
+};
 pub(crate) use conversion_contract::check_a05_scena_convert_contract;
 pub(crate) use execution::run_doctor;
 pub(crate) use feature_discoverability::check_a09_feature_discoverability;

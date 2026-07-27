@@ -150,6 +150,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_m4_platform_contracts(root, findings);
     check_m5_release_contracts(root, findings);
     check_cli_output_contracts(root, findings);
+    check_allowlisted_modules_are_tracked(root, findings);
     check_agent_contracts(root, findings);
     check_m7_ergonomics_contracts(root, findings);
     check_m8_assets_materials_contracts(root, findings);

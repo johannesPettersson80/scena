@@ -521,3 +521,55 @@ fn doctor_rejects_parallel_heavyweight_agent_template_cli_tests() {
         "doctor must reject concurrent heavyweight CLI subprocess tests that can exhaust a hosted runner: {findings:?}",
     );
 }
+
+#[test]
+fn doctor_rejects_a_large_module_exemption_for_an_untracked_file() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/untracked-large-module");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(&fixture_root).expect("fixture dir");
+    let init = ProcessCommand::new("git")
+        .arg("-C")
+        .arg(&fixture_root)
+        .args(["init", "--quiet"])
+        .status()
+        .expect("git init runs");
+    assert!(init.success(), "fixture must be a git repository");
+
+    let mut findings = Vec::new();
+    check_allowlisted_modules_are_tracked(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-KISS-SIZE"
+                && finding.message.contains("src/bin/scena/photo.rs")
+                && finding.message.contains("not tracked by git")
+        }),
+        "doctor must reject a large-module exemption naming a file git cannot show in a diff: {findings:?}",
+    );
+}
+
+#[test]
+fn doctor_skips_the_tracked_module_check_outside_a_git_checkout() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/untracked-large-module-no-git");
+    let _ = fs::remove_dir_all(&fixture_root);
+    fs::create_dir_all(&fixture_root).expect("fixture dir");
+
+    let mut findings = Vec::new();
+    check_allowlisted_modules_are_tracked(&fixture_root, &mut findings);
+    assert!(
+        findings.is_empty(),
+        "absence of git history is not evidence of an untracked module: {findings:?}",
+    );
+}
+
+#[test]
+fn allowlisted_large_modules_are_tracked_in_this_checkout() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let mut findings = Vec::new();
+    check_allowlisted_modules_are_tracked(&root, &mut findings);
+    assert!(
+        findings.is_empty(),
+        "every module exempted from the size limit must be committed: {findings:?}",
+    );
+}
