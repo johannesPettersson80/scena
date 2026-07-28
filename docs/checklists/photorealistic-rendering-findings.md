@@ -229,6 +229,42 @@ costs no texture unit and no sampler, exactly as the LTC tables now do.
 measurement, so improving the analytic fit prompts revisiting the decision
 rather than silently invalidating it. Binding the table is not yet implemented.
 
+### SSR and CPU parallelism: the shape of the fix (not implemented)
+
+`should_parallelize_cpu_geometry_pass` (`src/render/cpu_render/parallel_policy.rs`)
+returns false whenever screen-space reflections are set, so the CPU rasterizer
+drops to one core exactly for the reflective subjects that most need it.
+`photographic_surroundings.rs` enables SSR at `reflective_fraction > 0.194`,
+roughly one reflective material in five, so most product subjects hit it.
+
+The reason it is disabled is real but narrower than the policy assumes. The
+serial pass does two separable things when SSR is on:
+
+1. fills a per-pixel `MaterialReflectionPixel` scratch while rasterizing, which
+   is row-scoped and parallelises exactly like the colour and depth buffers, and
+2. calls `screen_space_reflections::apply_material_linear` over the whole frame
+   at the end, which genuinely needs every row.
+
+Both are keyed off the same `screen_space_reflections.is_some()`, and
+`draw_cpu_geometry_pass_serial` carries a `debug_assert!` stating that
+row-scoped passes do not own the full scratch. Splitting them requires:
+
+- a row-slice of the reflection scratch zipped into the existing
+  `par_chunks_mut` chain in `parallel_pass.rs` alongside `linear_frame`,
+  `depth_frame`, `frame` and `oit_scratch`;
+- distinguishing "fill reflections" from "apply reflections" in the serial pass,
+  since a row-scoped worker must do the first and not the second;
+- moving `apply_material_linear` into the dispatcher, after the reduce;
+- dropping only the SSR term from the policy. The
+  `!has_physical_transmission` term must stay: transmission needs a whole-frame
+  scene-colour snapshot mid-pass, which is a separate and larger change.
+
+It must ship with a pixel-identity oracle - serial and parallel output byte-equal
+with SSR enabled, above `CPU_PARALLEL_MIN_PIXELS` and `CPU_PARALLEL_MIN_PRIMITIVES` -
+because a subtly wrong parallel path is a silent quality regression rather than a
+visible failure. That, plus asserting the reported `CpuRowBandMetrics.workers`
+exceeds one, is what makes the change safe to land.
+
 ## 5. Fixed during this investigation (uncommitted)
 
 - [x] **Wire GPU semantic AOV capture through the camera-behavior path.**
