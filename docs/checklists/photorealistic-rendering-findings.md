@@ -199,6 +199,36 @@ the heuristic does not know that. Deciding whether the gate should widen its
 fill band by aspect, or the corrector should trade fill against clipping
 explicitly, needs a design call rather than another threshold nudge.
 
+### Split-sum BRDF: measured, and the table is worth binding
+
+`PreparedEnvironmentCubemap::brdf_lut` is baked on every prepare, uploaded to
+the GPU, and never bound. The shader calls the analytic `split_sum_brdf_approx`
+instead, because binding the table needs a texture unit and the fragment stage
+already uses all 16 that `downlevel_defaults()` allows on every backend. scena
+pays to compute a table it discards.
+
+Whether to bind it or delete it was an open question, so it was measured against
+the production reference integrator (`integrate_brdf_lut_cell`, 4096 samples,
+33x33 grid over `n_dot_v` 0.05..1.0, excluding the grazing singularity where the
+integral itself is degenerate):
+
+| term | max error | at |
+|---|---|---|
+| scale | **0.361** | `n_dot_v` 0.05, roughness 1.0 |
+| bias | 0.084 | same |
+
+That is the rough-metal grazing corner, which is where a brushed or blasted
+metal product spends its silhouette, so the divergence is not confined to a
+corner nobody renders. **The table is worth binding, not deleting.**
+
+It should go through a uniform block rather than a texture. The texture route is
+what ran out of units and left the table computed-and-discarded; a uniform block
+costs no texture unit and no sampler, exactly as the LTC tables now do.
+
+`analytic_split_sum_fit_diverges_where_the_baked_table_is_needed` pins the
+measurement, so improving the analytic fit prompts revisiting the decision
+rather than silently invalidating it. Binding the table is not yet implemented.
+
 ## 5. Fixed during this investigation (uncommitted)
 
 - [x] **Wire GPU semantic AOV capture through the camera-behavior path.**

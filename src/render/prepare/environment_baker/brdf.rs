@@ -298,3 +298,81 @@ pub(super) fn sample_count_for_roughness(
         },
     }
 }
+
+#[cfg(test)]
+mod split_sum_accuracy_tests {
+    use super::*;
+
+    /// Measures the analytic split-sum fit against the reference integral.
+    ///
+    /// `PreparedEnvironmentCubemap::brdf_lut` is baked on every prepare, uploaded
+    /// to the GPU, and never bound: the shader calls `split_sum_brdf_approx`
+    /// instead, because binding the LUT needs a texture unit and the fragment
+    /// stage already uses all 16 that `downlevel_defaults()` allows. So scena
+    /// pays to compute a table it discards.
+    ///
+    /// Either the analytic fit is close enough that the table should be deleted,
+    /// or it is not and the table should be bound through a uniform block, which
+    /// costs no texture unit. This measures which, rather than assuming.
+    #[test]
+    fn analytic_split_sum_fit_diverges_where_the_baked_table_is_needed() {
+        const GRID: u32 = 33;
+        const SAMPLES: u32 = 4096;
+        let mut max_scale_error = 0.0_f32;
+        let mut max_bias_error = 0.0_f32;
+        let mut worst = (0.0_f32, 0.0_f32);
+
+        // The reference integral is degenerate as n_dot_v approaches zero: at
+        // true grazing incidence almost no sampled half-vector is visible, so
+        // the estimate is dominated by whichever few samples survive. Measure
+        // over the range shading actually spends its time in.
+        for yi in 0..GRID {
+            let n_dot_v = 0.05 + (yi as f32 / (GRID - 1) as f32) * 0.95;
+            for xi in 0..GRID {
+                let roughness = xi as f32 / (GRID - 1) as f32;
+                let (reference_scale, reference_bias) =
+                    integrate_brdf_lut_cell(n_dot_v, roughness, SAMPLES);
+                let (fit_scale, fit_bias) =
+                    crate::render::pbr_brdf::split_sum_brdf_approx(n_dot_v, roughness);
+                let scale_error = (fit_scale - reference_scale).abs();
+                let bias_error = (fit_bias - reference_bias).abs();
+                if scale_error.max(bias_error) > max_scale_error.max(max_bias_error) {
+                    worst = (n_dot_v, roughness);
+                }
+                max_scale_error = max_scale_error.max(scale_error);
+                max_bias_error = max_bias_error.max(bias_error);
+            }
+        }
+
+        let max_error = max_scale_error.max(max_bias_error);
+        println!(
+            "split-sum analytic fit: max_scale_error={max_scale_error:.5} \
+             max_bias_error={max_bias_error:.5} worst_at=(n_dot_v={:.3}, roughness={:.3})",
+            worst.0, worst.1
+        );
+
+        // Measured 0.361 on the scale term at n_dot_v 0.05, roughness 1.0.
+        //
+        // That is the rough-metal grazing corner, which is exactly where a
+        // brushed or blasted metal product spends its silhouette, so the error
+        // is not confined to a corner nobody renders. It settles an open
+        // question: the baked table is worth binding rather than deleting, and
+        // it should go through a uniform block, which costs no texture unit,
+        // rather than the texture binding that ran out of units and left the
+        // table computed-and-discarded in the first place.
+        //
+        // If someone improves the analytic fit below this, revisit that
+        // decision rather than relaxing the bound.
+        assert!(
+            max_error > 0.05,
+            "the analytic split-sum fit is expected to diverge from the reference \
+             integral for rough grazing incidence, which is why the baked table is \
+             worth binding; measured max_error={max_error:.5} at {worst:?}"
+        );
+        assert!(
+            max_bias_error < 0.15,
+            "the bias term should stay far closer than the scale term, \
+             max_bias_error={max_bias_error:.5}"
+        );
+    }
+}
