@@ -528,6 +528,27 @@ impl<F> Assets<F> {
         self.insert_environment(EnvironmentDesc::neutral_studio())
     }
 
+    /// The bundled studio HDRI, decoded from bytes compiled into the binary.
+    ///
+    /// [`Self::default_environment`] returns a preview fixture whose own source
+    /// declares `not HDR input and not IBL proof`: six constant radiance values,
+    /// one per cube face. A metal surface reflecting that has no structure to
+    /// reflect, which is why derived product renders looked like clay. This is a
+    /// real 128x64 equirectangular capture at 27 KiB, so it needs no filesystem,
+    /// no fetcher, and no async, and it works on wasm.
+    ///
+    /// The cubemap is deliberately small: the source has 8,192 pixels, so the
+    /// 256-face default would prefilter far more texels than the capture can
+    /// justify.
+    pub fn bundled_studio_environment(&self) -> Result<EnvironmentHandle, AssetError> {
+        let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
+            crate::assets::environment_preset::BUNDLED_STUDIO_URI,
+            crate::assets::environment_preset::BUNDLED_STUDIO_BYTES,
+        )?
+        .with_cubemap_resolution(64);
+        Ok(self.insert_environment(desc))
+    }
+
     fn storage(&self) -> MutexGuard<'_, AssetStorage> {
         self.storage_lock_acquisitions
             .fetch_add(1, Ordering::Relaxed);

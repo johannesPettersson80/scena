@@ -38,6 +38,9 @@ const STUDIO_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_03_12
 const STUDIO_SOURCE_SHA256: &str =
     "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817";
 const STUDIO_FILES: &[&str] = &[STUDIO_SOURCE_PATH, STUDIO_RUNTIME_PATH];
+pub(crate) const BUNDLED_STUDIO_URI: &str = STUDIO_RUNTIME_URI;
+pub(crate) const BUNDLED_STUDIO_BYTES: &[u8] = STUDIO_RUNTIME_BYTES;
+
 const STUDIO_RUNTIME_BYTES: &[u8] =
     include_bytes!("../../tests/assets/environment/generated/studio_small_03_128x64.hdr");
 

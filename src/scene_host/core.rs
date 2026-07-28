@@ -68,10 +68,24 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) section_box_helper: Option<u64>,
     pub(super) visual_states: BTreeMap<String, SceneHostVisualStateV1>,
     pub(super) product_options: ProductOptionsV1,
+    /// The environment the photographic lighting solver installed, if any.
+    ///
+    /// `renderer.environment().is_some()` cannot answer "did the user author an
+    /// environment", because the solver installs one itself. Recording the
+    /// handle keeps that distinction independent of the order the photographic
+    /// passes run in.
+    pub(super) generated_environment: Option<crate::assets::EnvironmentHandle>,
     next_byte_asset: u64,
 }
 
 impl<F: AssetFetcher> SceneHostCore<F> {
+    /// True when an environment is installed that the photographic lighting
+    /// solver did not derive, i.e. one the caller authored.
+    pub(super) fn has_authored_environment(&self) -> bool {
+        let current = self.renderer.environment();
+        current.is_some() && current != self.generated_environment
+    }
+
     pub fn from_renderer(
         assets: Assets<F>,
         renderer: Renderer,
@@ -101,6 +115,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             section_box_helper: None,
             visual_states: BTreeMap::new(),
             product_options: ProductOptionsV1::empty(),
+            generated_environment: None,
             next_byte_asset: 1,
         };
         let root = host.scene.root();
@@ -139,6 +154,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             section_box_helper: None,
             visual_states: BTreeMap::new(),
             product_options: ProductOptionsV1::empty(),
+            generated_environment: None,
             next_byte_asset: 1,
         };
         let root = host.scene.root();

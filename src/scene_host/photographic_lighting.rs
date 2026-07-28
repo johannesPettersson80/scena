@@ -151,12 +151,28 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .scene
             .node_world_bounds(subject_node, &self.assets)?
             .ok_or(crate::LookupError::ImportHasNoBounds)?;
-        let default_environment = self.assets.default_environment();
+        // Record what the solver installs, so a later pass can tell a derived
+        // environment from one the caller authored regardless of ordering.
         let synthesized_environment = if self.renderer.environment().is_none() {
-            self.renderer.set_environment(default_environment);
+            // Derive a real captured environment rather than the preview
+            // fixture, whose own source declares `not HDR input and not IBL
+            // proof`. Reflective materials need structure to reflect; six
+            // constant cube faces give them none.
+            let derived = match self.assets.bundled_studio_environment() {
+                Ok(handle) => handle,
+                Err(_) => {
+                    // Not a silent fallback: `active_environment_profile` reads
+                    // the environment that actually landed, so the report's
+                    // `name` and `equirectangular_hdr` describe the fixture
+                    // rather than claiming a capture that failed to decode.
+                    self.assets.default_environment()
+                }
+            };
+            self.renderer.set_environment(derived);
+            self.generated_environment = Some(derived);
             true
         } else {
-            self.renderer.environment() == Some(default_environment)
+            self.renderer.environment() == self.generated_environment
         };
         let geometry = subject_geometry_profile(self, subject_node)?;
         let material = subject_material_profile(self, subject_node)?;

@@ -3583,3 +3583,65 @@ fn scene_setup_preset_still_supplies_auto_exposure_when_none_was_chosen() {
         "with no explicit exposure the preset still supplies its metering"
     );
 }
+
+/// The photographic passes must not depend on the order they run in.
+///
+/// `apply_photographic_surroundings` decides whether to generate a cyclorama and
+/// a derived background by asking whether an environment is installed. The
+/// lighting solver installs one itself, so asking `renderer.environment()`
+/// directly makes the answer depend on which pass ran first — it worked only
+/// because the camera-behavior setup happened to call surroundings first.
+#[test]
+fn photographic_surroundings_still_generates_a_cyclorama_after_lighting_ran_first() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    pollster::block_on(host.instantiate_url_under(
+        host.root_handle(),
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    ))
+    .expect("subject instantiates");
+    let subject = host.root_handle();
+
+    // Deliberately the order that used to break: lighting installs the derived
+    // environment before surroundings inspects it.
+    host.apply_photographic_lighting(subject)
+        .expect("photographic lighting applies");
+    let report = host
+        .apply_photographic_surroundings(subject)
+        .expect("photographic surroundings apply");
+
+    assert!(
+        !report.preserved_authored_environment,
+        "an environment the solver derived is not an authored one: {report:?}"
+    );
+    assert!(
+        report.generated_cyclorama,
+        "a derived environment must not suppress the generated cyclorama: {report:?}"
+    );
+}
+
+/// The mirror case: an environment the caller set really is preserved.
+#[test]
+fn photographic_surroundings_preserves_an_authored_environment() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    pollster::block_on(host.instantiate_url_under(
+        host.root_handle(),
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    ))
+    .expect("subject instantiates");
+    let subject = host.root_handle();
+
+    let authored = host.assets().default_environment();
+    host.renderer_mut().set_environment(authored);
+
+    let report = host
+        .apply_photographic_surroundings(subject)
+        .expect("photographic surroundings apply");
+    assert!(
+        report.preserved_authored_environment,
+        "an environment the caller installed must be preserved: {report:?}"
+    );
+    assert!(
+        !report.generated_cyclorama,
+        "an authored environment must suppress the generated cyclorama: {report:?}"
+    );
+}

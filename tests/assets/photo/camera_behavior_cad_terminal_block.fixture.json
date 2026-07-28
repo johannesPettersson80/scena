@@ -51,6 +51,9 @@
     },
     "subject_background_separation_srgb8": {
       "min": 8.0
+    },
+    "subject_specular_headroom_srgb8": {
+      "min": 24.0
     }
   },
   "known_bad_mutations": [
@@ -119,6 +122,12 @@
       "id": "blown_highlights",
       "rejected_by": [
         "subject_high_clip_above_max"
+      ]
+    },
+    {
+      "id": "flat_fixture_environment",
+      "rejected_by": [
+        "subject_specular_headroom_below_min"
       ]
     }
   ]

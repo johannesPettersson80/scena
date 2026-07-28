@@ -76,7 +76,11 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .chain(self.scene.tagged(AUTHORED_ROOM_TAG))
             .next()
             .is_some();
-        let preserved_authored_environment = self.renderer.environment().is_some();
+        // An environment the lighting solver derived is not an authored one, so
+        // it must not suppress the generated cyclorama or the derived
+        // background. This held before only because surroundings happened to run
+        // first.
+        let preserved_authored_environment = self.has_authored_environment();
         let preserved_authored_surroundings = authored_support.is_some() || authored_backdrop;
         let background_color = if authored_backdrop || preserved_authored_environment {
             self.renderer.background_color()
