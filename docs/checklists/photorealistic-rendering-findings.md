@@ -119,11 +119,21 @@ path has closed the gap on staging and grounding but not on highlight range.
 
 ## 4. P2 — staging and quality
 
-- [ ] **Size the generated cyclorama to cover the frame.** Its edge is visible
-      as a hard curved seam in the top-left of both `colored_travel_mug` and the
-      demo hero. `src/scene_host/photographic_surroundings.rs:64-69` derives
-      `extent_m` from `max(radius * 5, camera_distance * 1.35, ...)`, which is
-      not wide enough for tall narrow subjects.
+- [ ] **Raise the generated cyclorama, do not widen it.** Its edge shows as a
+      hard curved seam in the top-left of both `colored_travel_mug` and the demo
+      hero.
+      *Diagnosed, and the obvious fix does not work.* Deriving `extent_m` from
+      the camera frustum instead of `max(radius * 5, camera_distance * 1.35, ...)`
+      was tried and measured: the seam remained. `cyclorama_geometry` sweeps a
+      90-degree curve whose top edge sits `curve_radius = extent * 0.18` above the
+      support, so widening the backdrop raises its top edge at only a fifth of
+      the rate and it stays in frame at any width. The sweep must instead rise
+      far enough to clear the frustum's vertical extent at the backdrop's
+      distance, which means changing the curve height rather than `extent_m`.
+      Verify by rendering a tall narrow subject and asserting the top-left
+      corner holds no hard gradient, not by eye: the environment capture adds
+      real gradient to the backdrop, so a naive corner-gradient metric compares
+      environments rather than seams.
 - [ ] **Stop crushing the backdrop to near-black.** Subject metering reaches its
       target while the surroundings stay underexposed, so composites read dim
       (`mean_luminance 0.263` on the valve, `0.411` on the hero). Consider
