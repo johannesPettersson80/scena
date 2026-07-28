@@ -13,6 +13,8 @@ use super::scena_policy::{effective_recipe_policy, push_allow_root};
 
 const PHOTO_RENDER_RESULT_SCHEMA_V1: &str = "scena.photo_render_result.v1";
 const CAMERA_BEHAVIOR_INTENT: &str = "camera_behavior";
+const DEFAULT_PHOTO_WIDTH: u32 = 1280;
+const DEFAULT_PHOTO_HEIGHT: u32 = 840;
 const CAMERA_BEHAVIOR_TARGET_MEAN_LUMA: f64 = 90.0;
 const CAMERA_BEHAVIOR_MIN_MEAN_LUMA: f64 = 80.0;
 const CAMERA_BEHAVIOR_MAX_MEAN_LUMA: f64 = 100.0;
@@ -36,6 +38,10 @@ const CAMERA_BEHAVIOR_SHADED_CANDIDATE_HEIGHT: u32 = 105;
 #[derive(Debug, Clone, PartialEq)]
 struct PhotoRenderArgs {
     input: PathBuf,
+    /// Whether `--width`/`--height` were passed. Without this the command
+    /// cannot tell a caller-chosen size from its own default, and so cannot
+    /// know whether it may overwrite a size the recipe already declares.
+    capture_explicit: bool,
     intent: String,
     out: PathBuf,
     report: PathBuf,
@@ -51,6 +57,7 @@ struct PhotoRenderArgs {
 #[derive(Debug, Clone, PartialEq)]
 struct PhotoPlanArgs {
     input: PathBuf,
+    capture_explicit: bool,
     intent: String,
     out: PathBuf,
     width: u32,
@@ -268,7 +275,10 @@ fn run_photo_plan_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let args = PhotoPlanArgs::parse(args)?;
     let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
     let policy_report = policy.to_schema_report();
-    let source = photo_source_for(&args.input, args.width, args.height)?;
+    let (source, _width, _height, _capture_source) = photo_source_for(
+        &args.input,
+        args.capture_explicit.then_some((args.width, args.height)),
+    )?;
     let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
         &source.recipe_path,
         &source.recipe_text,
@@ -351,10 +361,14 @@ fn run_photo_plan_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
 }
 
 fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
-    let args = PhotoRenderArgs::parse(args)?;
+    let mut args = PhotoRenderArgs::parse(args)?;
     let policy = effective_recipe_policy(&args.allow_roots, args.max_imports)?;
     let policy_report = policy.to_schema_report();
-    let source = photo_source(&args)?;
+    let (source, effective_width, effective_height, capture_source) = photo_source(&args)?;
+    // The recipe may declare its own capture size; adopt it so reported work
+    // metrics and artifact dimensions describe the frame actually rendered.
+    args.width = effective_width;
+    args.height = effective_height;
     let build = if args.gpu {
         pollster::block_on(scena::SceneHostCore::build_recipe_json_gpu(
             &source.recipe_path,
@@ -537,6 +551,13 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
                 "report_path": path_for_json(&args.report),
                 "emitted_recipe_path": args.emit_recipe.as_deref().map(path_for_json),
             },
+            // States which size was rendered and why, so adopting a recipe's own
+            // capture block is visible rather than inferred from the PNG.
+            "capture": {
+                "width": args.width,
+                "height": args.height,
+                "source": capture_source,
+            },
             "quality": report["quality"].clone(),
             "selected": report["selected"].clone(),
             "failure_codes": report["failure_codes"].clone(),
@@ -588,6 +609,7 @@ pub(crate) fn render_camera_behavior_candidates(
 ) -> Result<SelectedCapture, CliFailure> {
     let mut candidates = Vec::new();
     let mut final_capture = None;
+    let mut best: Option<(usize, PhotoCandidate, scena::CaptureRgba8)> = None;
     let mut work_metrics = PhotoLoopWorkMetrics::default();
     let mut composition = base_candidate.clone();
     let mut pending_adjustment = Some("initial_camera_composition");
@@ -642,6 +664,20 @@ pub(crate) fn render_camera_behavior_candidates(
             failure_codes,
             adjustment: pending_adjustment.take(),
         };
+        // Keep the least-bad attempt and the frame it produced. When no
+        // candidate satisfies the gate the loop used to hand back whichever
+        // attempt happened to run last, which is not the one a caller would
+        // pick from the reported history.
+        let failures = candidate.failure_codes.len();
+        // `<=` so a later attempt wins a tie: each one folds in the previous
+        // correction, so among equally-failing candidates the last is the most
+        // converged.
+        if best
+            .as_ref()
+            .is_none_or(|(best_failures, _, _)| failures <= *best_failures)
+        {
+            best = Some((failures, candidate.clone(), capture.clone()));
+        }
         final_capture = Some(capture);
         candidates.push(candidate.clone());
         if candidate.status == "passed" {
@@ -669,11 +705,22 @@ pub(crate) fn render_camera_behavior_candidates(
         pending_adjustment = Some("exposure_delta");
     }
 
-    let final_candidate = candidates.last().cloned().ok_or_else(|| {
-        CliFailure::new(CliErrorKind::Runtime, "photo render produced no candidate")
-    })?;
+    // No attempt passed. Report the least-bad one with its own frame, rather
+    // than the last attempt the loop happened to make.
+    let (final_candidate, capture) = match best {
+        Some((_, candidate, capture)) => (candidate, capture),
+        None => {
+            let candidate = candidates.last().cloned().ok_or_else(|| {
+                CliFailure::new(CliErrorKind::Runtime, "photo render produced no candidate")
+            })?;
+            let capture = final_capture.ok_or_else(|| {
+                CliFailure::new(CliErrorKind::Runtime, "photo render produced no capture")
+            })?;
+            (candidate, capture)
+        }
+    };
     Ok(SelectedCapture {
-        capture: final_capture.expect("at least one candidate capture exists"),
+        capture,
         candidates,
         final_candidate,
         work_metrics,
@@ -1187,21 +1234,20 @@ fn camera_behavior_focus_report(
             &capture.descriptor,
         );
     };
-    let focus_distance =
-        candidate_focus_distance_m(Some(camera_transform), Some(bounds)).unwrap_or(0.001);
-    let radius = bounds.bounding_sphere_radius();
-    scena::FocusReportV1::resolved(
+    // Reached only when the semantic-AOV measurement above was unavailable.
+    // A focus distance derived from bounds geometry is a guess, not a
+    // measurement: the depth range is the bounding sphere and the confidence
+    // and visible-pixel count were literals. Reporting that as `resolved` told
+    // callers focus had been measured from the subject when nothing had been
+    // sampled, so it is reported as unresolved with the distance the geometry
+    // implies named in the reason.
+    let _ = (bounds, camera_transform);
+    scena::FocusReportV1::unresolved(
         "subject",
         target,
         Some("subject".to_owned()),
         Some("camera_auto".to_owned()),
-        scena::FocusReportResolvedV1 {
-            focus_distance_m: focus_distance,
-            near_depth_m: (focus_distance - radius).max(0.001),
-            far_depth_m: (focus_distance + radius).max(0.001),
-            visible_pixel_count: 1,
-            confidence: 0.65,
-        },
+        "subject depth was not sampled; only bounds-derived focus geometry was available",
         &capture.descriptor,
     )
 }
@@ -1588,7 +1634,12 @@ fn measure_subject(
     let raw_area =
         f64::from((raw_max_x - raw_min_x).max(0.0)) * f64::from((raw_max_y - raw_min_y).max(0.0));
     let clamped_area = f64::from((max_x - min_x).max(0.0)) * f64::from((max_y - min_y).max(0.0));
-    let clipped_fraction = if raw_area > 0.0 {
+    // Magnitude of the overflow, from the union of per-draw projected AABBs.
+    // That union is conservative: for an assembly of rotated parts it bounds a
+    // volume far larger than the silhouette, so on its own it reports clipping
+    // for subjects that are visibly inside the frame. It is trusted only when
+    // the subject's own visible pixels also reach a border, below.
+    let projected_clipped_fraction = if raw_area > 0.0 {
         (1.0 - clamped_area / raw_area).clamp(0.0, 1.0)
     } else {
         0.0
@@ -1663,6 +1714,20 @@ fn measure_subject(
     min_y = visible_min_y;
     max_x = visible_max_x;
     max_y = visible_max_y;
+    // Only report clipping when the semantic mask itself reaches a frame edge.
+    // Without this the conservative AABB above fails renders whose subject is
+    // demonstrably whole, and it makes the acceptance gate unsatisfiable: the
+    // corrector must zoom in to raise fill, which grows the AABB overflow and
+    // trips clipping, so no candidate can satisfy both.
+    let visible_touches_frame_edge = visible_min_x <= 0.5
+        || visible_min_y <= 0.5
+        || visible_max_x >= capture.descriptor.width.saturating_sub(1) as f32 - 0.5
+        || visible_max_y >= capture.descriptor.height.saturating_sub(1) as f32 - 0.5;
+    let clipped_fraction = if visible_touches_frame_edge {
+        projected_clipped_fraction
+    } else {
+        0.0
+    };
     let fill_width_fraction = f64::from((projected_max_x - projected_min_x).max(0.0))
         / f64::from(capture.descriptor.width.max(1));
     let fill_height_fraction = f64::from((projected_max_y - projected_min_y).max(0.0))
@@ -2571,11 +2636,26 @@ pub(crate) fn selected_shaded_composition_candidate<'a>(
         })
 }
 
-fn photo_source(args: &PhotoRenderArgs) -> Result<PhotoSource, CliFailure> {
-    photo_source_for(&args.input, args.width, args.height)
+fn photo_source(
+    args: &PhotoRenderArgs,
+) -> Result<(PhotoSource, u32, u32, &'static str), CliFailure> {
+    photo_source_for(
+        &args.input,
+        args.capture_explicit.then_some((args.width, args.height)),
+    )
 }
 
-fn photo_source_for(input: &Path, width: u32, height: u32) -> Result<PhotoSource, CliFailure> {
+/// Resolves the capture size and reports where it came from.
+///
+/// Precedence is explicit flags, then the recipe's own `capture` block, then
+/// this command's default. Previously any recipe input had its `capture`
+/// overwritten unconditionally, so `scena photo render` silently rendered a
+/// different size than `scena recipe render` did for the same file.
+fn photo_source_for(
+    input: &Path,
+    requested: Option<(u32, u32)>,
+) -> Result<(PhotoSource, u32, u32, &'static str), CliFailure> {
+    let (default_width, default_height) = (DEFAULT_PHOTO_WIDTH, DEFAULT_PHOTO_HEIGHT);
     if input
         .extension()
         .and_then(|extension| extension.to_str())
@@ -2587,18 +2667,33 @@ fn photo_source_for(input: &Path, width: u32, height: u32) -> Result<PhotoSource
                 format!("failed to read recipe '{}': {error}", input.display()),
             )
         })?;
+        let declared = recipe_declared_capture(&text, input)?;
+        let (width, height, capture_source) = match (requested, declared) {
+            (Some((width, height)), _) => (width, height, "cli_flag"),
+            (None, Some((width, height))) => (width, height, "recipe_capture"),
+            (None, None) => (default_width, default_height, "photo_default"),
+        };
         let text = recipe_text_with_capture_override(text, input, width, height)?;
-        return Ok(PhotoSource {
-            recipe_text: text,
-            recipe_path: input.display().to_string(),
-            source_kind: "recipe",
-        });
+        return Ok((
+            PhotoSource {
+                recipe_text: text,
+                recipe_path: input.display().to_string(),
+                source_kind: "recipe",
+            },
+            width,
+            height,
+            capture_source,
+        ));
     }
+    let (width, height, capture_source) = match requested {
+        Some((width, height)) => (width, height, "cli_flag"),
+        None => (default_width, default_height, "photo_default"),
+    };
 
     let recipe_path = std::env::current_dir()
         .map(|cwd| cwd.join("scena-photo.generated.recipe.json"))
         .unwrap_or_else(|_| PathBuf::from("scena-photo.generated.recipe.json"));
-    Ok(PhotoSource {
+    let source = PhotoSource {
         recipe_text: serde_json::to_string_pretty(&json!({
             "schema": "scena.scene_recipe.v1",
             "imports": [{
@@ -2617,7 +2712,27 @@ fn photo_source_for(input: &Path, width: u32, height: u32) -> Result<PhotoSource
         .expect("generated photo recipe serializes"),
         recipe_path: recipe_path.display().to_string(),
         source_kind: "asset",
-    })
+    };
+    Ok((source, width, height, capture_source))
+}
+
+/// The `capture` block a recipe declares for itself, if any.
+fn recipe_declared_capture(text: &str, input: &Path) -> Result<Option<(u32, u32)>, CliFailure> {
+    let value: Value = serde_json::from_str(text).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::InvalidInput,
+            format!("recipe '{}' is not valid JSON: {error}", input.display()),
+        )
+    })?;
+    let Some(capture) = value.get("capture") else {
+        return Ok(None);
+    };
+    let width = capture.get("width").and_then(Value::as_u64);
+    let height = capture.get("height").and_then(Value::as_u64);
+    match (width, height) {
+        (Some(width), Some(height)) => Ok(Some((width as u32, height as u32))),
+        _ => Ok(None),
+    }
 }
 
 fn photo_source_subject_target(
@@ -2701,8 +2816,9 @@ impl PhotoRenderArgs {
         let mut out = None;
         let mut report = None;
         let mut emit_recipe = None;
-        let mut width = 1280_u32;
-        let mut height = 840_u32;
+        let mut capture_explicit = false;
+        let mut width = DEFAULT_PHOTO_WIDTH;
+        let mut height = DEFAULT_PHOTO_HEIGHT;
         let mut gpu = false;
         let mut max_imports = None;
         let mut allow_roots = Vec::new();
@@ -2728,10 +2844,12 @@ impl PhotoRenderArgs {
                     index += 2;
                 }
                 "--width" => {
+                    capture_explicit = true;
                     width = parse_dimension("--width", flag_value(args, index, "--width")?)?;
                     index += 2;
                 }
                 "--height" => {
+                    capture_explicit = true;
                     height = parse_dimension("--height", flag_value(args, index, "--height")?)?;
                     index += 2;
                 }
@@ -2774,6 +2892,7 @@ impl PhotoRenderArgs {
             )));
         }
         Ok(Self {
+            capture_explicit,
             input: PathBuf::from(input),
             intent,
             out: out.ok_or_else(|| {
@@ -2800,8 +2919,9 @@ impl PhotoPlanArgs {
         };
         let mut intent = None;
         let mut out = None;
-        let mut width = 1280_u32;
-        let mut height = 840_u32;
+        let mut capture_explicit = false;
+        let mut width = DEFAULT_PHOTO_WIDTH;
+        let mut height = DEFAULT_PHOTO_HEIGHT;
         let mut max_imports = None;
         let mut allow_roots = Vec::new();
         let mut subject = None;
@@ -2818,10 +2938,12 @@ impl PhotoPlanArgs {
                     index += 2;
                 }
                 "--width" => {
+                    capture_explicit = true;
                     width = parse_dimension("--width", flag_value(args, index, "--width")?)?;
                     index += 2;
                 }
                 "--height" => {
+                    capture_explicit = true;
                     height = parse_dimension("--height", flag_value(args, index, "--height")?)?;
                     index += 2;
                 }
@@ -2860,6 +2982,7 @@ impl PhotoPlanArgs {
             )));
         }
         Ok(Self {
+            capture_explicit,
             input: PathBuf::from(input),
             intent,
             out: out.ok_or_else(|| {

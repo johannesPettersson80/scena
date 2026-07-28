@@ -96,7 +96,10 @@ path has closed the gap on staging and grounding but not on highlight range.
       `SkippedNoBackendSupport` whenever `backend != Backend::Headless`, so
       every GPU verification runs with its most precise check disabled. GPU
       semantic AOV capture now works (section 7), so this gate can be revisited.
-- [ ] **Stop reporting synthetic focus values as `resolved`.**
+- [x] **Stop reporting synthetic focus values as `resolved`.** *(Done: the
+      fallback now reports `unresolved` with the reason. A test that asserted a
+      focus distance always exists was asserting the fabricated value; it now
+      requires a distance only when the report says `resolved`.)*
       `src/bin/scena/photo.rs:1161-1162` hardcodes `visible_pixel_count: 1` and
       `confidence: 0.65` on the fallback path and still calls
       `FocusReportV1::resolved`. When the AOV-measured path is unavailable the
@@ -125,7 +128,10 @@ path has closed the gap on staging and grounding but not on highlight range.
       target while the surroundings stay underexposed, so composites read dim
       (`mean_luminance 0.263` on the valve, `0.411` on the hero). Consider
       metering or grading the surround relative to the subject.
-- [ ] **Use a real environment for image-based lighting.**
+- [x] **Use a real environment for image-based lighting.** *(Done: derives the
+      bundled 27 KiB studio capture. Valve manifold p99 luminance 162.6 -> 203.6,
+      near-white 0.005% -> 0.063%. Gated by `subject_specular_headroom_srgb8`,
+      verified to reject the flat fixture at 16.86 against a 24 minimum.)*
       `apply_photographic_lighting` installs `assets.default_environment()`,
       which resolves to `EnvironmentDesc::neutral_studio()` with
       `source_kind: BundledPreviewFixture`. Its generated cubemap is 25 lines
@@ -136,7 +142,10 @@ path has closed the gap on staging and grounding but not on highlight range.
       by `src/assets/environment_preset.rs:35`, but the camera-behavior path
       never selects it. Rotating a six-flat-colour cubemap changes which flat
       colour a highlight sees, not whether there is structure to reflect.
-- [ ] **Fix the environment ordering hazard.**
+- [x] **Fix the environment ordering hazard.** *(Done: the host records
+      `generated_environment` and answers through `has_authored_environment()`,
+      so a derived environment no longer reads as an authored one. Confirmed the
+      ordering test fails against the old predicate.)*
       `photographic_surroundings.rs:80` computes
       `preserved_authored_environment = self.renderer.environment().is_some()`,
       conflating "the user authored an environment" with "one exists". Because
@@ -155,6 +164,40 @@ path has closed the gap on staging and grounding but not on highlight range.
       `width_fill_target_is_actionable` (`photo.rs:643`) waives the width check
       for subjects too tall to fill 65 % of width without exceeding max fit.
       Principled, but currently undocumented.
+
+### Subject clipping and gate convergence (partial)
+
+`clipped_fraction` came from the union of per-draw projected AABBs clamped to
+the frame. That union is conservative: for a 33-part assembly of rotated
+cylinders it bounds a volume much larger than the silhouette, so it reported
+clipping for subjects visibly inside the frame. Verified on the valve manifold,
+whose bbox overflowed the bottom edge by 35.6 px while no rendered pixel did.
+
+It is now gated on the semantic mask reaching a frame edge. The false positive
+is gone: the valve no longer reports `subject_clipped_by_frame` on its first
+candidate. The retry loop also returns the least-bad attempt with its own frame
+instead of whichever attempt ran last.
+
+**The valve manifold still does not pass**, and the remaining reason is real
+rather than a measurement artifact. Its retry trail at 640x420:
+
+| candidate | adjustment | fill_width | luminance | codes |
+|---|---|---|---|---|
+| 1 | initial composition | 0.477 | 174.8 | fill, luminance |
+| 2 | camera composition | 0.612 | 155.5 | fill, luminance, clipped |
+| 3-5 | exposure delta | 0.612 | 122.3 -> 95.5 | fill, clipped |
+
+Exposure converges correctly. Composition does not: the corrector zooms once to
+0.612, still under the 0.65 minimum, and any further zoom makes the subject
+genuinely touch a frame edge, so clipping then fires legitimately.
+
+`width_fill_target_is_actionable` (`src/bin/scena/photo.rs`) judges the width
+target reachable from `fill_width / fill_fraction * max_fit`, which for this
+subject predicts 0.675 and so demands a width the frame cannot hold. For a wide
+subject in a landscape frame the two constraints are simply incompatible, and
+the heuristic does not know that. Deciding whether the gate should widen its
+fill band by aspect, or the corrector should trade fill against clipping
+explicitly, needs a design call rather than another threshold nudge.
 
 ## 5. Fixed during this investigation (uncommitted)
 

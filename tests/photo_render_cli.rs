@@ -1621,12 +1621,25 @@ fn assert_subject_region_bridge(report_json: &serde_json::Value) {
         region["pixel_quality"].is_object(),
         "subject region must carry the measured foreground-pixel quality: {region:#}"
     );
-    assert!(
-        region["focus_distance_m"]
-            .as_f64()
-            .is_some_and(|value| value.is_finite() && value > 0.0),
-        "subject region must carry resolved focus distance: {region:#}"
-    );
+    // Either a focus distance measured from subject depth, or none at all.
+    // A distance derived from bounding geometry used to be reported here as
+    // though it had been measured, with a literal confidence and visible-pixel
+    // count; a report that cannot distinguish the two is worse than one that
+    // admits the measurement was unavailable.
+    let focus_status = report_json["focus_report"]["status"]
+        .as_str()
+        .expect("focus report carries a status");
+    match region["focus_distance_m"].as_f64() {
+        Some(value) => assert!(
+            focus_status == "resolved" && value.is_finite() && value > 0.0,
+            "a reported focus distance must come from a resolved measurement, \
+             status={focus_status}: {region:#}"
+        ),
+        None => assert_ne!(
+            focus_status, "resolved",
+            "a resolved focus report must carry the distance it measured: {region:#}"
+        ),
+    }
     assert_eq!(
         region["frame_key"]["state_binding"], "exact_readback_completion",
         "subject region must be bound to the exact rendered readback frame: {region:#}"
@@ -1886,4 +1899,91 @@ fn photo_render_costs_the_same_order_as_recipe_render_for_one_intent() {
              photo={photo_secs:.2}s, recipe={recipe_secs:.2}s"
         );
     }
+}
+
+/// `scena photo render` must not silently overwrite a size the recipe declares.
+///
+/// It previously replaced any recipe's `capture` block with its own 1280x840
+/// default, so the same file rendered at a different size through `photo render`
+/// than through `recipe render`, and nothing in the output said so. Precedence
+/// is explicit flags, then the recipe's own block, then the photo default, and
+/// the report names which applied.
+#[test]
+fn photo_render_capture_size_follows_flags_then_recipe_then_default() {
+    let dir = artifact_dir("capture-precedence");
+
+    let sized = dir.join("sized.recipe.json");
+    fs::write(
+        &sized,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{ "id": "subject", "uri": CAMERA_BEHAVIOR_FIXTURE_ASSET }],
+            "photo": { "intent": "camera_behavior", "subject": { "kind": "import", "id": "subject" } },
+            "capture": { "width": 192, "height": 128 }
+        }))
+        .expect("recipe serializes"),
+    )
+    .expect("recipe writes");
+
+    let unsized_recipe = dir.join("unsized.recipe.json");
+    fs::write(
+        &unsized_recipe,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{ "id": "subject", "uri": CAMERA_BEHAVIOR_FIXTURE_ASSET }],
+            "photo": { "intent": "camera_behavior", "subject": { "kind": "import", "id": "subject" } }
+        }))
+        .expect("recipe serializes"),
+    )
+    .expect("recipe writes");
+
+    let render = |recipe: &Path, label: &str, extra: &[&str]| -> (u32, u32, String) {
+        let png = dir.join(format!("{label}.png"));
+        let report = dir.join(format!("{label}.report.json"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        command.args([
+            "photo",
+            "render",
+            path_str(recipe),
+            "--out",
+            path_str(&png),
+            "--report",
+            path_str(&report),
+        ]);
+        command.args(extra);
+        let output = command.output().expect("scena photo render runs");
+        assert!(
+            output.status.success(),
+            "{label} should render, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let decoded = decode_png_rgba8(&fs::read(&png).expect("PNG reads"));
+        let result: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("photo render emits JSON");
+        let source = result["capture"]["source"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        (decoded.width, decoded.height, source)
+    };
+
+    // An authored capture block is honoured, and the PNG proves it.
+    let (width, height, source) = render(&sized, "recipe-capture", &[]);
+    assert_eq!(
+        (width, height, source.as_str()),
+        (192, 128, "recipe_capture")
+    );
+
+    // Explicit flags outrank the recipe.
+    let (width, height, source) =
+        render(&sized, "cli-flag", &["--width", "160", "--height", "112"]);
+    assert_eq!((width, height, source.as_str()), (160, 112, "cli_flag"));
+
+    // With neither, the photo default applies and says so.
+    let (width, height, source) = render(&unsized_recipe, "photo-default", &[]);
+    assert_eq!(
+        (width, height, source.as_str()),
+        (1280, 840, "photo_default")
+    );
 }
