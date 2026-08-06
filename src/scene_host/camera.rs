@@ -5,10 +5,38 @@ use super::{
 #[cfg(target_arch = "wasm32")]
 use crate::OrbitControlAction;
 use crate::{
-    AssetFetcher, CameraBookmark, CameraKey, FramingOptions, LookupError,
-    OrbitControlAction as HostOrbitControlAction, OrbitControls, PointerButton, PointerEvent,
-    PointerEventKind, Scene, Vec3,
+    AssetFetcher, Camera, CameraBookmark, CameraKey, DepthRange, FramingOptions, LookupError,
+    OrbitControlAction as HostOrbitControlAction, OrbitControls, OrthographicCamera,
+    PerspectiveCamera, PointerButton, PointerEvent, PointerEventKind, Scene, Vec3,
 };
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneHostCameraProjection {
+    Perspective,
+    Orthographic,
+}
+
+impl SceneHostCameraProjection {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Perspective => "perspective",
+            Self::Orthographic => "orthographic",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, SceneHostError> {
+        match value {
+            "perspective" => Ok(Self::Perspective),
+            "orthographic" => Ok(Self::Orthographic),
+            _ => Err(SceneHostError::new(
+                SceneHostErrorCode::InvalidInput,
+                format!("unsupported camera projection '{value}'"),
+            )),
+        }
+    }
+}
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) const fn orbit_action_name(action: OrbitControlAction) -> &'static str {
@@ -23,6 +51,72 @@ pub(crate) const fn orbit_action_name(action: OrbitControlAction) -> &'static st
 }
 
 impl<F: AssetFetcher> SceneHostCore<F> {
+    pub fn camera_projection(&self) -> Result<SceneHostCameraProjection, SceneHostError> {
+        match self.scene.camera(self.active_camera) {
+            Some(Camera::Perspective(_)) => Ok(SceneHostCameraProjection::Perspective),
+            Some(Camera::Orthographic(_)) => Ok(SceneHostCameraProjection::Orthographic),
+            None => Err(SceneHostError::new(
+                SceneHostErrorCode::Inspect,
+                "active camera is unavailable",
+            )),
+        }
+    }
+
+    pub fn set_camera_projection(
+        &mut self,
+        projection: SceneHostCameraProjection,
+    ) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
+        if self.camera_projection()? == projection {
+            return Ok(());
+        }
+
+        let distance = self.camera_controls.distance();
+        let aspect = self.viewport_aspect();
+        let current = self
+            .scene
+            .camera(self.active_camera)
+            .cloned()
+            .ok_or(LookupError::CameraNotFound(self.active_camera))?;
+        let replacement = match (current, projection) {
+            (Camera::Perspective(camera), SceneHostCameraProjection::Orthographic) => {
+                let half_height =
+                    (distance * (camera.vertical_fov.radians() * 0.5).tan()).max(0.0001);
+                let half_width = half_height * aspect;
+                Camera::Orthographic(OrthographicCamera {
+                    left: -half_width,
+                    right: half_width,
+                    bottom: -half_height,
+                    top: half_height,
+                    near: -camera.far.max(distance * 2.0),
+                    far: camera.far.max(distance * 2.0),
+                })
+            }
+            (Camera::Orthographic(camera), SceneHostCameraProjection::Perspective) => {
+                let half_height = ((camera.top - camera.bottom).abs() * 0.5).max(0.0001);
+                let fov_degrees = (2.0 * (half_height / distance).atan()).to_degrees();
+                let far = camera.far.abs().max(distance * 2.0).max(1.0);
+                Camera::Perspective(
+                    PerspectiveCamera::default()
+                        .with_fov_degrees(fov_degrees)
+                        .with_aspect(aspect)
+                        .with_depth_range(DepthRange::new(0.001, far)),
+                )
+            }
+            (camera, _) => camera,
+        };
+
+        self.cancel_camera_transition();
+        self.scene.set_camera(self.active_camera, replacement)?;
+        self.camera_controls
+            .apply_to_scene(&mut self.scene, self.active_camera)?;
+        Ok(())
+    }
+
+    fn viewport_aspect(&self) -> f32 {
+        (self.viewport.logical_width() / self.viewport.logical_height()).max(0.0001)
+    }
+
     pub fn camera_state(&self) -> SceneHostCameraState {
         SceneHostCameraState::from_controls(&self.camera_controls)
     }
@@ -258,6 +352,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         &mut self,
         event: PointerEvent,
     ) -> Result<HostOrbitControlAction, SceneHostError> {
+        let previous_distance = self.camera_controls.distance();
         let action = self.camera_controls.handle_pointer(event);
         if matches!(
             action,
@@ -266,10 +361,50 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 | HostOrbitControlAction::Zoom
         ) {
             self.cancel_camera_transition();
+            self.scale_orthographic_projection(previous_distance, self.camera_controls.distance())?;
             self.camera_controls
                 .apply_to_scene(&mut self.scene, self.active_camera)?;
         }
         Ok(action)
+    }
+
+    // An orthographic camera ignores its distance to the target, so orbit zoom
+    // must rescale the frustum itself for the distance change to be visible.
+    fn scale_orthographic_projection(
+        &mut self,
+        previous_distance: f32,
+        next_distance: f32,
+    ) -> Result<(), SceneHostError> {
+        if !previous_distance.is_finite()
+            || !next_distance.is_finite()
+            || previous_distance <= 0.0
+            || next_distance <= 0.0
+        {
+            return Ok(());
+        }
+        let scale = next_distance / previous_distance;
+        if scale == 1.0 {
+            return Ok(());
+        }
+        let Some(Camera::Orthographic(camera)) = self.scene.camera(self.active_camera).cloned()
+        else {
+            return Ok(());
+        };
+        let center_x = (camera.left + camera.right) * 0.5;
+        let center_y = (camera.bottom + camera.top) * 0.5;
+        let half_width = (camera.right - camera.left).abs() * 0.5 * scale;
+        let half_height = (camera.top - camera.bottom).abs() * 0.5 * scale;
+        self.scene.set_camera(
+            self.active_camera,
+            Camera::Orthographic(OrthographicCamera {
+                left: center_x - half_width,
+                right: center_x + half_width,
+                bottom: center_y - half_height,
+                top: center_y + half_height,
+                ..camera
+            }),
+        )?;
+        Ok(())
     }
 }
 

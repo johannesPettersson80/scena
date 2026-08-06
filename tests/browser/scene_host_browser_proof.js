@@ -97,6 +97,8 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setCameraEased"],
   ["prototype", "getCameraJson"],
   ["prototype", "setCameraJson"],
+  ["prototype", "getCameraProjection"],
+  ["prototype", "setCameraProjection"],
   ["prototype", "setCameraBookmarkJson"],
   ["prototype", "timelinePatchJson"],
   ["prototype", "seekTimelineJson"],

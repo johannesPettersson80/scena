@@ -631,9 +631,11 @@ fallback rows such as optional Basis/KTX2 texture fallbacks.
 SceneHost includes interactive camera state without giving the host a render
 loop. Native code can call `SceneHostCore::set_camera`,
 `SceneHostCore::get_camera`, `SceneHostCore::camera_json`,
+`SceneHostCore::camera_projection`, `SceneHostCore::set_camera_projection`,
 `camera_pointer_down`, `camera_pointer_move`, `camera_pointer_up`, and
 `camera_wheel`. The WASM facade exposes the corresponding `setCamera`,
-`setCameraJson`, `getCameraJson`, `cameraPointerDown`, `cameraPointerMove`,
+`setCameraJson`, `getCameraJson`, `getCameraProjection`,
+`setCameraProjection`, `cameraPointerDown`, `cameraPointerMove`,
 `cameraPointerUp`, and `cameraWheel` methods.
 The visual patch contract accepts batched host-owned visual deltas through
 `SceneHostCore::apply_patch`, `SceneHostCore::apply_patch_json`, and WASM

@@ -85,6 +85,7 @@ mod wasm_transitions;
 mod wasm_visual_patch;
 
 pub type SceneHostCameraState = crate::controls::CameraState;
+pub use camera::SceneHostCameraProjection;
 pub type SceneHostEasing = crate::controls::TransitionEasing;
 pub use animation::{SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions};
 pub use callouts::SceneHostCalloutReportV1;

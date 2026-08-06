@@ -5,10 +5,26 @@ use super::inputs::vec3_array_from_slice;
 use super::wasm::{SceneHost, js_error};
 use super::wasm_transitions::parse_easing;
 use super::{SceneHostError, SceneHostErrorCode};
-use crate::{PointerButton, SceneHostCameraState, Vec3};
+use crate::{PointerButton, SceneHostCameraProjection, SceneHostCameraState, Vec3};
 
 #[wasm_bindgen]
 impl SceneHost {
+    #[wasm_bindgen(js_name = getCameraProjection)]
+    pub fn get_camera_projection(&self) -> Result<String, JsValue> {
+        self.core
+            .camera_projection()
+            .map(|projection| projection.as_str().to_owned())
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = setCameraProjection)]
+    pub fn set_camera_projection(&mut self, projection: String) -> Result<(), JsValue> {
+        let projection = SceneHostCameraProjection::parse(&projection).map_err(js_error)?;
+        self.core
+            .set_camera_projection(projection)
+            .map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = getCameraJson)]
     pub fn get_camera_json(&self) -> Result<String, JsValue> {
         self.core.camera_json().map_err(js_error)

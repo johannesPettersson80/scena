@@ -83,6 +83,7 @@ instance roots accept both:
   JSON
 - `setCamera(target, yawRadians, pitchRadians, distance)`
 - `setCameraJson(json)` and `getCameraJson()`
+- `getCameraProjection()` and `setCameraProjection("perspective" | "orthographic")`
 - `cameraPointerDown(x, y, "primary" | "secondary" | "auxiliary")`
 - `cameraPointerMove(x, y, deltaX, deltaY)`
 - `cameraPointerUp(x, y)`

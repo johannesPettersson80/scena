@@ -103,16 +103,33 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         &mut self,
         viewport: SurfaceViewport,
     ) -> Result<(), SceneHostError> {
-        let Some(crate::Camera::Perspective(mut camera)) =
-            self.scene.camera(self.active_camera).cloned()
-        else {
-            return Ok(());
-        };
         let aspect = viewport.logical_width() / viewport.logical_height();
-        if camera.aspect != aspect {
-            camera.aspect = aspect;
-            self.scene
-                .set_camera(self.active_camera, crate::Camera::Perspective(camera))?;
+        match self.scene.camera(self.active_camera).cloned() {
+            Some(crate::Camera::Perspective(mut camera)) => {
+                if camera.aspect != aspect {
+                    camera.aspect = aspect;
+                    self.scene
+                        .set_camera(self.active_camera, crate::Camera::Perspective(camera))?;
+                }
+            }
+            Some(crate::Camera::Orthographic(camera)) => {
+                let center_x = (camera.left + camera.right) * 0.5;
+                let half_height = ((camera.top - camera.bottom).abs() * 0.5).max(0.0001);
+                let half_width = half_height * aspect;
+                let left = center_x - half_width;
+                let right = center_x + half_width;
+                if camera.left != left || camera.right != right {
+                    self.scene.set_camera(
+                        self.active_camera,
+                        crate::Camera::Orthographic(crate::OrthographicCamera {
+                            left,
+                            right,
+                            ..camera
+                        }),
+                    )?;
+                }
+            }
+            None => {}
         }
         Ok(())
     }

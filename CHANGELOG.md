@@ -106,6 +106,11 @@ _Remediation of the full-repository review of 1.9.0. See
   `capture` block was silently overwritten; precedence is now explicit
   `--width`/`--height`, then the recipe's `capture`, then the photo default,
   and the chosen source is reported.
+- Add a scene-host camera projection API. `SceneHostCore::camera_projection`
+  and `set_camera_projection` (wasm: `getCameraProjection` /
+  `setCameraProjection`) report and switch the active camera between
+  perspective and orthographic, deriving the replacement projection from the
+  current orbit distance and viewport aspect so framing is preserved.
 
 - Fix the correction to the 1.9.0 changelog heading: shipped 1.9.0 work was
   still filed under `[Unreleased]` and the section carried the wrong date.
