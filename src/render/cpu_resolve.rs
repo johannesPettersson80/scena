@@ -98,6 +98,79 @@ pub(super) fn downsample_rgba8_reconstruction_filter(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn resolve_rgba8_reconstruction_filter(
+    source_target: RasterTarget,
+    nominal_scale: u32,
+    source_frame: &[u8],
+    target: RasterTarget,
+    target_frame: &mut Vec<u8>,
+    reconstruction_filter: ReconstructionFilter,
+) {
+    if source_target.width == target.width.saturating_mul(nominal_scale)
+        && source_target.height == target.height.saturating_mul(nominal_scale)
+    {
+        downsample_rgba8_reconstruction_filter(
+            source_target,
+            nominal_scale,
+            source_frame,
+            target,
+            target_frame,
+            reconstruction_filter,
+        );
+    } else {
+        resample_rgba8_linear(source_target, source_frame, target, target_frame);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn resample_rgba8_linear(
+    source_target: RasterTarget,
+    source_frame: &[u8],
+    target: RasterTarget,
+    target_frame: &mut Vec<u8>,
+) {
+    debug_assert_eq!(source_frame.len(), source_target.byte_len());
+    target_frame.resize(target.byte_len(), 0);
+    for y in 0..target.height {
+        let (source_y0, source_y1, weight_y1) =
+            resample_axis(y, source_target.height, target.height);
+        for x in 0..target.width {
+            let (source_x0, source_x1, weight_x1) =
+                resample_axis(x, source_target.width, target.width);
+            let mut linear = [0.0_f32; 3];
+            let mut alpha = 0.0_f32;
+            let mut weight_sum = 0.0_f32;
+            for (source_y, weight_y) in [(source_y0, 1.0 - weight_y1), (source_y1, weight_y1)] {
+                for (source_x, weight_x) in [(source_x0, 1.0 - weight_x1), (source_x1, weight_x1)] {
+                    accumulate_rgba8_sample(
+                        source_target,
+                        source_frame,
+                        source_x,
+                        source_y,
+                        weight_x * weight_y,
+                        &mut linear,
+                        &mut alpha,
+                        &mut weight_sum,
+                    );
+                }
+            }
+            let target_offset = target.pixel_index(x, y).saturating_mul(4);
+            target_frame[target_offset..target_offset + 4]
+                .copy_from_slice(&encode_linear_average(linear, alpha, weight_sum));
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn resample_axis(output: u32, source_size: u32, target_size: u32) -> (u32, u32, f32) {
+    let source_position = ((output as f32 + 0.5) * source_size as f32 / target_size as f32 - 0.5)
+        .clamp(0.0, source_size.saturating_sub(1) as f32);
+    let lower = source_position.floor() as u32;
+    let upper = lower.saturating_add(1).min(source_size.saturating_sub(1));
+    (lower, upper, source_position - lower as f32)
+}
+
 fn sample_rgba8_kernel(
     source_target: RasterTarget,
     scale: u32,
@@ -240,6 +313,60 @@ fn accumulate_rgba8_sample(
     linear[2] += srgb_u8_to_linear(source_frame[source_offset + 2]) * weight;
     *alpha += (f32::from(source_frame[source_offset + 3]) / 255.0) * weight;
     *weight_sum += weight;
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod v3d_target_resolve_tests {
+    use super::*;
+    use crate::diagnostics::Backend;
+
+    #[test]
+    fn arbitrary_rgba8_resolve_preserves_solid_color_and_requested_dimensions() {
+        let source_target = RasterTarget {
+            width: 3,
+            height: 2,
+            backend: Backend::HeadlessGpu,
+        };
+        let target = RasterTarget {
+            width: 5,
+            height: 4,
+            backend: Backend::HeadlessGpu,
+        };
+        let source = [24_u8, 96, 180, 255].repeat(source_target.pixel_len());
+        let mut resolved = Vec::new();
+
+        resample_rgba8_linear(source_target, &source, target, &mut resolved);
+
+        assert_eq!(resolved.len(), target.byte_len());
+        assert_eq!(resolved, [24_u8, 96, 180, 255].repeat(target.pixel_len()));
+    }
+
+    #[test]
+    fn arbitrary_rgba8_resolve_preserves_endpoints_and_interpolates_in_order() {
+        let source_target = RasterTarget {
+            width: 2,
+            height: 1,
+            backend: Backend::HeadlessGpu,
+        };
+        let target = RasterTarget {
+            width: 4,
+            height: 1,
+            backend: Backend::HeadlessGpu,
+        };
+        let source = [0_u8, 0, 0, 255, 255, 255, 255, 255];
+        let mut resolved = Vec::new();
+
+        resample_rgba8_linear(source_target, &source, target, &mut resolved);
+
+        let red = resolved
+            .chunks_exact(4)
+            .map(|pixel| pixel[0])
+            .collect::<Vec<_>>();
+        assert_eq!(red[0], 0);
+        assert_eq!(red[3], 255);
+        assert!(red[0] < red[1] && red[1] < red[2] && red[2] < red[3]);
+        assert!(resolved.chunks_exact(4).all(|pixel| pixel[3] == 255));
+    }
 }
 
 fn encode_linear_average(linear: [f32; 3], alpha: f32, weight_sum: f32) -> [u8; 4] {

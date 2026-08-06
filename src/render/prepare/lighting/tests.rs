@@ -4,7 +4,7 @@ use crate::scene::{
 };
 
 #[test]
-fn photographic_micro_surface_is_deterministic_bounded_and_spatially_variant() {
+fn photographic_micro_surface_folds_unresolved_detail_into_uniform_roughness() {
     let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.7, 0.3)
         .with_photographic_micro_surface(0.04, 0.002);
     let normal = Vec3::new(0.0, 0.0, 1.0);
@@ -18,10 +18,10 @@ fn photographic_micro_surface_is_deterministic_bounded_and_spatially_variant() {
         photographic_micro_surface(&material, Vec3::new(0.0017, 0.002, 0.003), normal, tangent);
 
     assert_eq!(first, repeat);
-    assert_ne!(first, nearby);
+    assert_eq!(first, nearby);
+    assert_eq!(first.0, normal);
     assert!((first.0.length() - 1.0).abs() < 1.0e-5);
-    assert!(first.0.dot(normal) > 0.99);
-    assert!((0.0..=0.014).contains(&first.1));
+    assert!((first.1 - 0.007).abs() < 1.0e-6);
 }
 
 #[test]

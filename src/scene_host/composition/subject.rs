@@ -6,7 +6,6 @@ use super::checks::{
     CompositionCheckExt, checked_check, error_check, observed_pairs, round3, skip_check,
 };
 use super::helpers::{clipped_region_from_rect, draws_for_handles, projected_node_rect};
-use crate::diagnostics::Backend;
 use crate::{
     CaptureRgba8, CaptureScreenRect, CaptureScreenRegion, SceneCompositionCheckV1,
     SceneCompositionStatusV1, SceneDrawInspectionV1, SceneHostSemanticAovCaptureV1,
@@ -15,9 +14,11 @@ use crate::{
     SubjectObservationPixelQualityV1, resolve_scene_recipe_target_handles,
 };
 
+const MIN_SUBJECT_COLOR_FRAME_BOUNDARY_DELTA_SRGB8: f64 = 2.0;
+const MIN_SUBJECT_BEAUTY_SEMANTIC_MATCH_FRACTION: f64 = 0.5;
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SubjectMaskInput<'a> {
-    pub(super) backend: Backend,
     pub(super) capture: Option<&'a SceneHostSemanticAovCaptureV1>,
     pub(super) capture_error: Option<&'a str>,
 }
@@ -213,7 +214,10 @@ fn subject_visible_mask_check(
     };
     observed.insert("handle_count".to_owned(), json!(handles.len()));
 
-    if mask_input.backend != Backend::Headless {
+    // Key the skip on whether a mask was actually captured, not on the backend.
+    // The GPU backends emit the same AOVs; asserting otherwise skipped the exact
+    // check on every GPU verification even when a mask was available.
+    if mask_input.capture.is_none() && mask_input.capture_error.is_none() {
         return skip_check(
             id,
             "occlusion_depth",
@@ -344,6 +348,34 @@ fn subject_visible_mask_check(
     }
 
     let metrics = semantic_mask_metrics(aov, &target_palette_indices);
+    observed.insert("visible_pixels".to_owned(), json!(metrics.visible_pixels));
+    observed.insert(
+        "other_visible_pixels".to_owned(),
+        json!(metrics.other_visible_pixels),
+    );
+    let Some(region) = metrics.region else {
+        let reason = subject_zero_visible_reason(SubjectZeroVisibleInput {
+            recipe,
+            inspection,
+            handles: &handle_set,
+            draws: draws.as_slice(),
+            projected_rect,
+            projected_area_px,
+            other_visible_pixels: metrics.other_visible_pixels,
+            target_palette_missing: false,
+            transparent_target_draws,
+        });
+        observed.insert("zero_visible_reason".to_owned(), json!(reason.code));
+        return error_check(
+            id,
+            "occlusion_depth",
+            reason.code,
+            target_id,
+            handles,
+            observed,
+            (reason.message, reason.fix_hint),
+        );
+    };
     if let Some(pixel_quality) =
         semantic_subject_pixel_quality(capture, aov, &target_palette_indices)
     {
@@ -372,11 +404,122 @@ fn subject_visible_mask_check(
             json!(pixel_quality.sample_count),
         );
     }
-    observed.insert("visible_pixels".to_owned(), json!(metrics.visible_pixels));
-    observed.insert(
-        "other_visible_pixels".to_owned(),
-        json!(metrics.other_visible_pixels),
-    );
+    if let Some(beauty_ids) = aov.beauty_id_indices.as_deref() {
+        let Some(agreement) =
+            semantic_beauty_pass_agreement(&aov.id_indices, beauty_ids, &target_palette_indices)
+        else {
+            observed.insert(
+                "color_frame_agreement_confidence".to_owned(),
+                json!("unavailable"),
+            );
+            observed.insert(
+                "beauty_semantic_samples".to_owned(),
+                json!(beauty_ids.len()),
+            );
+            return error_check(
+                id,
+                "completeness",
+                "subject_color_frame_agreement_unavailable",
+                target_id,
+                handles,
+                observed,
+                (
+                    "the same-pass beauty semantic witness dimensions do not match the semantic AOV",
+                    "re-render and capture beauty and semantic attachments from the same prepared target",
+                ),
+            );
+        };
+        observed.insert(
+            "color_frame_agreement_confidence".to_owned(),
+            json!("same_pass_beauty_semantic_mrt"),
+        );
+        observed.insert(
+            "beauty_semantic_aov_target_pixels".to_owned(),
+            json!(agreement.aov_target_pixels),
+        );
+        observed.insert(
+            "beauty_semantic_matching_target_pixels".to_owned(),
+            json!(agreement.matching_target_pixels),
+        );
+        observed.insert(
+            "beauty_semantic_match_fraction".to_owned(),
+            json!(round4_f64(agreement.match_fraction)),
+        );
+        if !agreement.subject_visible_in_beauty_pass() {
+            return error_check(
+                id,
+                "completeness",
+                "subject_color_frame_agreement_below_min",
+                target_id,
+                handles,
+                observed,
+                (
+                    "the separate semantic AOV reports a visible subject but the same fragment invocations that wrote the beauty frame did not emit matching subject coverage",
+                    "treat the render as failed and inspect beauty-pass draw completion; do not infer subject presence from the separate AOV",
+                ),
+            );
+        }
+    } else {
+        let Some(color_frame_agreement) = semantic_color_frame_agreement(
+            capture.descriptor.width,
+            capture.descriptor.height,
+            &capture.rgba8,
+            &aov.id_indices,
+            &target_palette_indices,
+        ) else {
+            observed.insert(
+                "color_frame_agreement_confidence".to_owned(),
+                json!("unavailable"),
+            );
+            return error_check(
+                id,
+                "completeness",
+                "subject_color_frame_agreement_unavailable",
+                target_id,
+                handles,
+                observed,
+                (
+                    "the semantic subject mask could not be compared with the rendered color frame",
+                    "re-render and capture the color frame and semantic AOV at matching dimensions from the same prepared state",
+                ),
+            );
+        };
+        observed.insert(
+            "color_frame_agreement_confidence".to_owned(),
+            json!("heuristic_local_semantic_boundary"),
+        );
+        observed.insert(
+            "color_frame_boundary_mean_delta_srgb8".to_owned(),
+            json!(round2_f64(color_frame_agreement.boundary_mean_delta_srgb8)),
+        );
+        observed.insert(
+            "color_frame_boundary_sample_count".to_owned(),
+            json!(color_frame_agreement.boundary_sample_count),
+        );
+        let heuristic_is_blocking = capture.descriptor.backend != crate::Backend::Headless;
+        observed.insert(
+            "color_frame_agreement_enforcement".to_owned(),
+            json!(if heuristic_is_blocking {
+                "blocking_without_mrt"
+            } else {
+                "report_only_cpu"
+            }),
+        );
+        if heuristic_is_blocking && !color_frame_agreement.subject_visible_in_color_frame() {
+            return error_check(
+                id,
+                "completeness",
+                "subject_color_frame_agreement_below_min",
+                target_id,
+                handles,
+                observed,
+                (
+                    "the semantic AOV reports a visible subject but the rendered color frame has no corresponding local silhouette signal",
+                    "treat the render as failed; inspect beauty-pass draw completion and add a same-pass semantic coverage witness before trusting this backend",
+                ),
+            );
+        }
+    }
     let viewport_area = (aov.width as u64).saturating_mul(aov.height as u64).max(1);
     observed.insert(
         "visible_fill_fraction".to_owned(),
@@ -413,30 +556,6 @@ fn subject_visible_mask_check(
             json!(round3(depth.confidence)),
         );
     }
-
-    let Some(region) = metrics.region else {
-        let reason = subject_zero_visible_reason(SubjectZeroVisibleInput {
-            recipe,
-            inspection,
-            handles: &handle_set,
-            draws: draws.as_slice(),
-            projected_rect,
-            projected_area_px,
-            other_visible_pixels: metrics.other_visible_pixels,
-            target_palette_missing: false,
-            transparent_target_draws,
-        });
-        observed.insert("zero_visible_reason".to_owned(), json!(reason.code));
-        return error_check(
-            id,
-            "occlusion_depth",
-            reason.code,
-            target_id,
-            handles,
-            observed,
-            (reason.message, reason.fix_hint),
-        );
-    };
 
     checked_check(
         id,
@@ -790,6 +909,111 @@ fn semantic_subject_pixel_quality(
     })
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SemanticColorFrameAgreement {
+    boundary_mean_delta_srgb8: f64,
+    boundary_sample_count: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SemanticBeautyPassAgreement {
+    aov_target_pixels: u64,
+    matching_target_pixels: u64,
+    match_fraction: f64,
+}
+
+impl SemanticBeautyPassAgreement {
+    fn subject_visible_in_beauty_pass(self) -> bool {
+        self.aov_target_pixels > 0
+            && self.matching_target_pixels > 0
+            && self.match_fraction >= MIN_SUBJECT_BEAUTY_SEMANTIC_MATCH_FRACTION
+    }
+}
+
+fn semantic_beauty_pass_agreement(
+    aov_ids: &[u32],
+    beauty_ids: &[u32],
+    target_palette_indices: &BTreeSet<u32>,
+) -> Option<SemanticBeautyPassAgreement> {
+    if aov_ids.len() != beauty_ids.len() {
+        return None;
+    }
+    let mut aov_target_pixels = 0_u64;
+    let mut matching_target_pixels = 0_u64;
+    for (aov_id, beauty_id) in aov_ids.iter().zip(beauty_ids) {
+        if !target_palette_indices.contains(aov_id) {
+            continue;
+        }
+        aov_target_pixels = aov_target_pixels.saturating_add(1);
+        if aov_id == beauty_id {
+            matching_target_pixels = matching_target_pixels.saturating_add(1);
+        }
+    }
+    Some(SemanticBeautyPassAgreement {
+        aov_target_pixels,
+        matching_target_pixels,
+        match_fraction: matching_target_pixels as f64 / aov_target_pixels.max(1) as f64,
+    })
+}
+
+impl SemanticColorFrameAgreement {
+    fn subject_visible_in_color_frame(self) -> bool {
+        self.boundary_sample_count > 0
+            && self.boundary_mean_delta_srgb8 >= MIN_SUBJECT_COLOR_FRAME_BOUNDARY_DELTA_SRGB8
+    }
+}
+
+fn semantic_color_frame_agreement(
+    width: u32,
+    height: u32,
+    rgba8: &[u8],
+    id_indices: &[u32],
+    target_palette_indices: &BTreeSet<u32>,
+) -> Option<SemanticColorFrameAgreement> {
+    let pixel_count = (width as usize).checked_mul(height as usize)?;
+    if id_indices.len() != pixel_count || rgba8.len() != pixel_count.checked_mul(4)? {
+        return None;
+    }
+    let width = width as usize;
+    let height = height as usize;
+    let is_subject = |index: usize| target_palette_indices.contains(&id_indices[index]);
+    let mut boundary_delta_sum = 0_u64;
+    let mut boundary_sample_count = 0_u64;
+    for index in 0..pixel_count {
+        if !is_subject(index) {
+            continue;
+        }
+        let x = index % width;
+        let y = index / width;
+        let pixel = &rgba8[index * 4..index * 4 + 4];
+        let boundary_delta = [
+            (x > 0).then_some(index - 1),
+            (x + 1 < width).then_some(index + 1),
+            (y > 0).then_some(index - width),
+            (y + 1 < height).then_some(index + width),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|neighbor| !is_subject(*neighbor))
+        .map(|neighbor| {
+            let neighbor = &rgba8[neighbor * 4..neighbor * 4 + 4];
+            (0..3)
+                .map(|channel| pixel[channel].abs_diff(neighbor[channel]))
+                .max()
+                .unwrap_or(0)
+        })
+        .max();
+        if let Some(delta) = boundary_delta {
+            boundary_delta_sum = boundary_delta_sum.saturating_add(u64::from(delta));
+            boundary_sample_count = boundary_sample_count.saturating_add(1);
+        }
+    }
+    Some(SemanticColorFrameAgreement {
+        boundary_mean_delta_srgb8: boundary_delta_sum as f64 / boundary_sample_count.max(1) as f64,
+        boundary_sample_count,
+    })
+}
+
 const fn region_area(region: CaptureScreenRegion) -> u64 {
     (region.width as u64) * (region.height as u64)
 }
@@ -830,4 +1054,59 @@ fn round2_f64(value: f64) -> f64 {
 
 fn round4_f64(value: f64) -> f64 {
     (value * 10_000.0).round() / 10_000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn semantic_color_frame_agreement_distinguishes_a_drawn_subject_from_a_stale_aov_mask() {
+        let width = 4;
+        let height = 4;
+        let ids = vec![
+            0, 0, 0, 0, //
+            0, 1, 1, 0, //
+            0, 1, 1, 0, //
+            0, 0, 0, 0,
+        ];
+        let target = BTreeSet::from([1]);
+        let flat = [96, 96, 96, 255].repeat((width * height) as usize);
+        let stale = semantic_color_frame_agreement(width, height, &flat, &ids, &target)
+            .expect("well-formed flat capture has boundary samples");
+        assert_eq!(stale.boundary_mean_delta_srgb8, 0.0);
+        assert!(!stale.subject_visible_in_color_frame());
+
+        let mut drawn = flat;
+        for offset in [5_usize, 6, 9, 10] {
+            drawn[offset * 4..offset * 4 + 4].copy_from_slice(&[24, 32, 40, 255]);
+        }
+        let agreement = semantic_color_frame_agreement(width, height, &drawn, &ids, &target)
+            .expect("well-formed drawn capture has boundary samples");
+        assert!(agreement.boundary_mean_delta_srgb8 >= 56.0);
+        assert!(agreement.subject_visible_in_color_frame());
+    }
+
+    #[test]
+    fn semantic_beauty_pass_agreement_rejects_a_stale_aov_without_rgb_guessing() {
+        let aov_ids = vec![
+            0, 0, 0, 0, //
+            0, 7, 7, 0, //
+            0, 7, 7, 0, //
+            0, 0, 0, 0,
+        ];
+        let target = BTreeSet::from([7]);
+        let missing_beauty = vec![0; aov_ids.len()];
+        let missing =
+            semantic_beauty_pass_agreement(&aov_ids, &missing_beauty, &target).expect("same size");
+        assert_eq!(missing.aov_target_pixels, 4);
+        assert_eq!(missing.matching_target_pixels, 0);
+        assert!(!missing.subject_visible_in_beauty_pass());
+
+        let drawn = semantic_beauty_pass_agreement(&aov_ids, &aov_ids, &target)
+            .expect("same-size matching witness");
+        assert_eq!(drawn.matching_target_pixels, 4);
+        assert_eq!(drawn.match_fraction, 1.0);
+        assert!(drawn.subject_visible_in_beauty_pass());
+    }
 }

@@ -1,3 +1,11 @@
+//! Anti-deletion gate for the reflection/transmission contracts.
+//!
+//! These are source-substring pins: they prove the code paths still exist and
+//! still say what they claimed, which is what stops a silent removal. They do
+//! **not** prove the renderer produces good images - the photorealism work
+//! passed every rule here while its output still read as clay. The rendered
+//! evidence gate lives in `photographic_output.rs`.
+
 use crate::app::prelude::*;
 
 pub(crate) fn check_material_reflection_quality_contracts(
@@ -145,4 +153,37 @@ pub(crate) fn check_material_reflection_quality_contracts(
             "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/prepare/lighting.rs",
+        &["(normal, surface.strength() * 0.175)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/prepare/lighting/tests.rs",
+        &["photographic_micro_surface_folds_unresolved_detail_into_uniform_roughness"],
+    );
+    for shader in [
+        "src/render/gpu/output_shader.wgsl",
+        "src/render/gpu/output_shader_texture_2d.wgsl",
+    ] {
+        require_contains(
+            root,
+            findings,
+            "ARCH-RENDER-QUALITY",
+            shader,
+            &["let unresolved_micro_roughness = material.texture_strengths.z * 0.175;"],
+        );
+        forbid_contains(
+            root,
+            findings,
+            "ARCH-RENDER-QUALITY",
+            shader,
+            &["let micro_phase =", "micro_x", "micro_y"],
+        );
+    }
 }

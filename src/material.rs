@@ -112,6 +112,7 @@ pub struct MaterialDesc {
     clearcoat_normal_scale: f32,
     stroke_width_px: Option<f32>,
     edge_angle_threshold_degrees: Option<f32>,
+    photographic_surface_tile_size_m: Option<f32>,
     photographic_micro_surface: Option<PhotographicMicroSurface>,
 }
 
@@ -254,6 +255,7 @@ impl MaterialDesc {
             clearcoat_normal_scale: 1.0,
             stroke_width_px,
             edge_angle_threshold_degrees,
+            photographic_surface_tile_size_m: None,
             photographic_micro_surface: None,
         }
     }
@@ -361,6 +363,26 @@ impl MaterialDesc {
 
     pub const fn photographic_micro_surface(&self) -> Option<PhotographicMicroSurface> {
         self.photographic_micro_surface
+    }
+
+    /// Returns the physical width and height, in metres, represented by one
+    /// generated photographic texture tile.
+    ///
+    /// This is render mapping metadata. It does not alter topology or add CAD
+    /// semantics.
+    pub const fn photographic_surface_tile_size_m(&self) -> Option<f32> {
+        self.photographic_surface_tile_size_m
+    }
+
+    /// Maps generated photographic textures at a stable physical scale.
+    ///
+    /// During prepare, scena derives the source mesh's metres-per-UV scale
+    /// from triangle position and UV derivatives, then repeats the texture so
+    /// one tile spans `tile_size_m`. Invalid values disable physical mapping.
+    pub fn with_photographic_surface_tile_size_m(mut self, tile_size_m: f32) -> Self {
+        self.photographic_surface_tile_size_m =
+            (tile_size_m.is_finite() && tile_size_m > 0.0).then(|| tile_size_m.clamp(0.001, 10.0));
+        self
     }
 
     pub fn with_photographic_micro_surface(mut self, strength: f32, scale_m: f32) -> Self {

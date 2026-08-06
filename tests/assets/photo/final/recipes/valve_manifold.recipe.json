@@ -1,0 +1,349 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "subject",
+      "uri": "../subjects/valve_manifold.glb",
+      "edge_rounding": {
+        "enabled": true,
+        "radius_fraction": 0.0025,
+        "segments": 3,
+        "edge_angle_threshold_degrees": 30.0,
+        "max_derived_triangles": 250000
+      },
+      "material_bindings": [
+        {
+          "source_material": { "index": 0, "name": "machined_steel" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.20
+            },
+            "normal_scale": 0.18,
+            "occlusion_strength": 0.50
+          }
+        },
+        {
+          "source_material": { "index": 1, "name": "painted_red_handwheel" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+              "tile_size_m": 0.16
+            },
+            "base_color": "#B62618",
+            "normal_scale": 0.18,
+            "occlusion_strength": 0.50,
+            "imperfection": {
+              "profile": "fine_scratches",
+              "strength": 0.13,
+              "physical_scale_m": 0.0012,
+              "seed": 782
+            }
+          }
+        },
+        {
+          "source_material": { "index": 2, "name": "chrome_pipe" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.20
+            },
+            "normal_scale": 0.14,
+            "occlusion_strength": 0.45
+          }
+        },
+        {
+          "source_material": { "index": 3, "name": "brass_fitting" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal048a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "3915edefd3c8daaa3deb8be4070af19ff5663977ec01dbc677f1fa9bd3c07e5d",
+              "tile_size_m": 0.16
+            },
+            "normal_scale": 0.12,
+            "occlusion_strength": 0.40
+          }
+        },
+        {
+          "source_material": { "index": 4, "name": "cast_iron_body" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal027/1k/scena-material-pack.json",
+              "expected_archive_sha256": "12b2d9996d532cf8a31820d24f2ea83e3217b89da060c4fb29c3c5177535ac72",
+              "tile_size_m": 0.30
+            },
+            "base_color": "#272A2D",
+            "normal_scale": 0.25,
+            "occlusion_strength": 0.65
+          }
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "id": "valve_cast_iron_authored",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal027/1k/scena-material-pack.json",
+        "expected_archive_sha256": "12b2d9996d532cf8a31820d24f2ea83e3217b89da060c4fb29c3c5177535ac72",
+        "tile_size_m": 0.18
+      }
+    },
+    {
+      "id": "valve_steel_authored",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.12
+      }
+    },
+    {
+      "id": "valve_red_paint_authored",
+      "kind": "pbr_metallic_roughness",
+      "base_color": "#B62618",
+      "metallic": 0.08,
+      "roughness": 0.42
+    }
+  ],
+  "geometries": [
+    {
+      "id": "valve_cast_body_geo",
+      "primitive": {
+        "kind": "sphere",
+        "radius": 0.071,
+        "segments": 72,
+        "rings": 48
+      }
+    },
+    {
+      "id": "valve_bonnet_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.050,
+        "height": 0.036,
+        "bevel": 0.004,
+        "segments": 72
+      }
+    },
+    {
+      "id": "valve_gland_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.032,
+        "height": 0.026,
+        "bevel": 0.003,
+        "segments": 64
+      }
+    },
+    {
+      "id": "valve_hub_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.018,
+        "height": 0.018,
+        "bevel": 0.002,
+        "segments": 48
+      }
+    },
+    {
+      "id": "valve_flange_mate_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.058,
+        "height": 0.018,
+        "bevel": 0.0015,
+        "segments": 72
+      }
+    },
+    {
+      "id": "valve_saddle_geo",
+      "primitive": {
+        "kind": "torus",
+        "major_radius": 0.025,
+        "minor_radius": 0.0045,
+        "segments": 64,
+        "rings": 20
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "valve_cast_body",
+      "geometry": "valve_cast_body_geo",
+      "material": "valve_cast_iron_authored",
+      "name": "rounded cast valve body",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.115, 0.0],
+        "scale": [1.0, 0.84, 0.80]
+      }
+    },
+    {
+      "id": "valve_bonnet",
+      "geometry": "valve_bonnet_geo",
+      "material": "valve_cast_iron_authored",
+      "name": "cast valve bonnet",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.169, 0.0]
+      }
+    },
+    {
+      "id": "valve_gland",
+      "geometry": "valve_gland_geo",
+      "material": "valve_steel_authored",
+      "name": "steel packing gland",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.193, 0.0]
+      }
+    },
+    {
+      "id": "valve_hub",
+      "geometry": "valve_hub_geo",
+      "material": "valve_red_paint_authored",
+      "name": "red-painted handwheel hub",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.211, 0.0]
+      }
+    },
+    {
+      "id": "valve_flange_mate_left",
+      "geometry": "valve_flange_mate_geo",
+      "material": "valve_steel_authored",
+      "name": "left mating flange collar",
+      "transform": {
+        "kind": "trs",
+        "translation": [-0.133, 0.115, 0.0],
+        "rotation_degrees": [0.0, 0.0, 90.0]
+      }
+    },
+    {
+      "id": "valve_flange_mate_right",
+      "geometry": "valve_flange_mate_geo",
+      "material": "valve_steel_authored",
+      "name": "right mating flange collar",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.133, 0.115, 0.0],
+        "rotation_degrees": [0.0, 0.0, 90.0]
+      }
+    },
+    {
+      "id": "valve_saddle_left",
+      "geometry": "valve_saddle_geo",
+      "material": "valve_steel_authored",
+      "name": "left pipe saddle clamp",
+      "transform": {
+        "kind": "trs",
+        "translation": [-0.090, 0.115, 0.0],
+        "rotation_degrees": [0.0, 0.0, 90.0]
+      }
+    },
+    {
+      "id": "valve_saddle_right",
+      "geometry": "valve_saddle_geo",
+      "material": "valve_steel_authored",
+      "name": "right pipe saddle clamp",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.090, 0.115, 0.0],
+        "rotation_degrees": [0.0, 0.0, 90.0]
+      }
+    }
+  ],
+  "named_states": [
+    {
+      "id": "content_corrections",
+      "active": true,
+      "visibility": [
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/riser_0"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/riser_1"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/riser_cap_0"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/riser_cap_1"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/riser_nut_0"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/riser_nut_1"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/valve_body"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/valve_manifold_root/handwheel_hub"
+          },
+          "visible": false
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "expect_color": [
+      {
+        "id": "valve-wheel-red-dominance",
+        "target": {
+          "kind": "node",
+          "id": "valve_hub"
+        },
+        "color_family": "red"
+      }
+    ]
+  },
+  "photo": {
+    "intent": "camera_behavior",
+    "quality": "final",
+    "staging": { "ground": "reflective" },
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}

@@ -5,6 +5,7 @@ use serde_json::Value;
 mod authoring;
 mod expectations;
 mod imports;
+mod material_imperfection;
 mod overlays;
 mod photo;
 mod setup;
@@ -17,6 +18,7 @@ use super::types::{
     SceneRecipeV1, SceneRecipeValidationReportV1,
 };
 use authoring::{has_authored_renderable_nodes, validate_authoring_sections};
+use material_imperfection::validate_material_imperfection;
 use overlays::{
     validate_callouts, validate_exploded_view, validate_measurements, validate_section_box,
 };
@@ -155,15 +157,7 @@ fn validate_scene_recipe_value_inner(
     validate_exploded_view(object.get("exploded_view"), &import_ids, diagnostics);
     setup::validate_scene_setup(object.get("scene"), diagnostics);
     setup::validate_render_setup(object.get("render"), &import_ids, &node_ids, diagnostics);
-    photo::validate_photo(
-        object.get("photo"),
-        object.get("scene"),
-        object.get("render"),
-        object.get("cameras"),
-        &import_ids,
-        &node_ids,
-        diagnostics,
-    );
+    photo::validate_photo(object, &import_ids, &node_ids, diagnostics);
     expectations::validate_expectations(object.get("expect"), diagnostics);
     validate_capture(object.get("capture"), diagnostics);
     validate_metadata(object.get("metadata"), diagnostics);

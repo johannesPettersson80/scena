@@ -108,10 +108,35 @@ fn validate_import(
     if let Some(material) = object.get("material") {
         appearance::validate_import_material(format!("{path}.material"), material, diagnostics);
     }
+    if let Some(material_bindings) = object.get("material_bindings") {
+        appearance::validate_import_material_bindings(
+            format!("{path}.material_bindings"),
+            material_bindings,
+            diagnostics,
+        );
+    }
+    if object.contains_key("material") && object.contains_key("material_bindings") {
+        diagnostics.push(diagnostic(
+            "conflicting_import_material_fields",
+            "error",
+            format!("{path}.material_bindings"),
+            "an import cannot combine a whole-subtree material override with source material bindings",
+            "remove material or material_bindings so material assignment has one unambiguous owner",
+            None,
+            false,
+        ));
+    }
     if let Some(edge_emphasis) = object.get("edge_emphasis") {
         appearance::validate_import_edge_emphasis(
             format!("{path}.edge_emphasis"),
             edge_emphasis,
+            diagnostics,
+        );
+    }
+    if let Some(edge_rounding) = object.get("edge_rounding") {
+        appearance::validate_import_edge_rounding(
+            format!("{path}.edge_rounding"),
+            edge_rounding,
             diagnostics,
         );
     }

@@ -84,10 +84,11 @@ pub(crate) use crate::app::doctor_render::{
     check_diagnostics_contracts, check_fxaa_output_contracts,
     check_headless_gpu_test_guard_contracts, check_material_reflection_quality_contracts,
     check_output_stage_contracts, check_particle_prepare_allocation_contract,
-    check_prepare_asset_contracts, check_render_alpha_contracts, check_render_movement_contracts,
-    check_render_quality_contracts, check_render_quality_reflection_contracts,
-    check_render_world_bake_contracts, check_renderer_standard_math_contracts,
-    check_renderer_stats_contracts, check_renderer_truth_contracts,
+    check_photographic_output_metrics, check_prepare_asset_contracts, check_render_alpha_contracts,
+    check_render_movement_contracts, check_render_quality_contracts,
+    check_render_quality_reflection_contracts, check_render_world_bake_contracts,
+    check_renderer_standard_math_contracts, check_renderer_stats_contracts,
+    check_renderer_truth_contracts,
 };
 pub(crate) use crate::app::doctor_scene_platform::{
     REQUIRED_EXAMPLES, check_agent_validation, check_backend_vocabulary,

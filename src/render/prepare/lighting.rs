@@ -1,7 +1,7 @@
 use super::pbr_contract::{
     PbrMaterial, directional_illuminance_lux, inverse_square_range_attenuation,
-    punctual_intensity_candela, punctual_light_contribution, roughness_or_min,
-    spot_cone_attenuation,
+    pbr_area_light_diffuse_contribution, punctual_intensity_candela, punctual_light_contribution,
+    roughness_or_min, spot_cone_attenuation,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Scene, Vec3};
@@ -53,6 +53,13 @@ pub(super) struct MaterialShadingInput {
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
     pub(super) area_shadow_factor: f32,
+    pub(super) ambient_visibility: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PbrShadingComponents {
+    direct: Vec3,
+    indirect: Vec3,
 }
 
 #[derive(Default)]
@@ -143,6 +150,24 @@ impl PreparedLights {
             .flat_map(|light| area_light_sample_positions(*light))
     }
 
+    pub(super) fn area_shadow_samples(
+        &self,
+        receiver_position: Vec3,
+    ) -> impl Iterator<Item = (Vec3, f32)> + '_ {
+        self.area.iter().flat_map(move |light| {
+            let light = *light;
+            area_light_sample_positions(light)
+                .into_iter()
+                .map(move |sample_position| {
+                    let to_light = subtract_vec3(sample_position, receiver_position);
+                    let incident_weight = light.luminous_flux_lumens
+                        / AREA_LIGHT_SAMPLE_COUNT as f32
+                        * inverse_square_range_attenuation(to_light, light.range);
+                    (sample_position, incident_weight.max(0.0))
+                })
+        })
+    }
+
     pub(super) fn primary_shadow_ray_direction(&self) -> Option<Vec3> {
         self.directional
             .iter()
@@ -213,12 +238,17 @@ pub(super) fn material_color(
         MaterialKind::PbrMetallicRoughness
             if lights.has_direct_lights() || input.environment.is_active() =>
         {
-            let mut color = shade_pbr_base_color(material, base, lights, input);
-            let occlusion = input.occlusion_texture.clamp(0.0, 1.0);
-            color.r *= occlusion;
-            color.g *= occlusion;
-            color.b *= occlusion;
-            color
+            let components = shade_pbr_base_color(material, base, lights, input);
+            let authored_occlusion = 1.0
+                + (input.occlusion_texture.clamp(0.0, 1.0) - 1.0)
+                    * material.occlusion_strength().clamp(0.0, 1.0);
+            let indirect_occlusion = authored_occlusion * input.ambient_visibility.clamp(0.0, 1.0);
+            Color::from_linear_rgba(
+                components.direct.x + components.indirect.x * indirect_occlusion,
+                components.direct.y + components.indirect.y * indirect_occlusion,
+                components.direct.z + components.indirect.z * indirect_occlusion,
+                base.a,
+            )
         }
         MaterialKind::PbrMetallicRoughness => base,
         MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge => base,
@@ -241,7 +271,7 @@ fn shade_pbr_base_color(
     base: Color,
     lights: &PreparedLights,
     input: &MaterialShadingInput,
-) -> Color {
+) -> PbrShadingComponents {
     let (normal, micro_roughness) =
         photographic_micro_surface(material, input.position, input.normal, input.tangent);
     let view = input
@@ -400,17 +430,14 @@ fn shade_pbr_base_color(
             );
             shaded = add_vec3(
                 shaded,
-                punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
+                pbr_area_light_diffuse_contribution(pbr_material, normal, view, incoming, radiance),
             );
             shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
         }
     }
-    shaded = add_vec3(
-        shaded,
-        input
-            .environment
-            .pbr_contribution(pbr_material, normal, view),
-    );
+    let mut indirect = input
+        .environment
+        .pbr_contribution(pbr_material, normal, view);
     if input.environment.is_active() {
         let environment_specular = input.environment.gpu_specular_intensity();
         let environment_radiance = Vec3::new(
@@ -418,37 +445,34 @@ fn shade_pbr_base_color(
             environment_specular[1] * environment_specular[3],
             environment_specular[2] * environment_specular[3],
         );
-        shaded = add_vec3(
-            shaded,
+        indirect = add_vec3(
+            indirect,
             layered_lobes.contribution(normal, environment_radiance),
         );
     }
 
-    Color::from_linear_rgba(shaded.x, shaded.y, shaded.z, base.a)
+    PbrShadingComponents {
+        direct: shaded,
+        indirect,
+    }
 }
 
 fn photographic_micro_surface(
     material: &MaterialDesc,
-    position: Vec3,
+    _position: Vec3,
     authored_normal: Vec3,
-    authored_tangent: Vec3,
+    _authored_tangent: Vec3,
 ) -> (Vec3, f32) {
     let normal = normalize_or(authored_normal, Vec3::new(0.0, 0.0, 1.0));
     let Some(surface) = material.photographic_micro_surface() else {
         return (normal, 0.0);
     };
-    let scale = surface.scale_m().max(1.0e-6);
-    let phase = position / scale;
-    let noise_x = (phase.dot(Vec3::new(12.9898, 78.233, 37.719))).sin();
-    let noise_y = (phase.dot(Vec3::new(39.346, 11.135, 83.155))).sin();
-    let tangent = normalize_or(authored_tangent, Vec3::new(1.0, 0.0, 0.0));
-    let bitangent = normalize_or(normal.cross(tangent), Vec3::new(0.0, 1.0, 0.0));
-    let strength = surface.strength();
-    let perturbed = normalize_or(
-        normal + tangent * (noise_x * strength) + bitangent * (noise_y * strength),
-        normal,
-    );
-    (perturbed, (noise_x * 0.5 + 0.5) * strength * 0.35)
+    // The generated detail scale is below a product-still pixel footprint for
+    // the normal camera range. Resolving it as two world-space sine waves
+    // creates coherent contour bands and aliases under perspective. Preserve
+    // the old mean roughness contribution while folding the unresolved normal
+    // variance into the microfacet distribution.
+    (normal, surface.strength() * 0.175)
 }
 
 #[cfg(test)]

@@ -4,6 +4,33 @@ use crate::scene::Vec3;
 use crate::assets::environment_projection::sample_equirectangular;
 
 impl EnvironmentCubemapFaces {
+    pub(super) fn from_radiance_pixels(resolution: u32, faces: [Vec<[f32; 3]>; 6]) -> Option<Self> {
+        let pixel_count = (resolution as usize).checked_mul(resolution as usize)?;
+        if resolution == 0 || faces.iter().any(|face| face.len() != pixel_count) {
+            return None;
+        }
+        let mut face_radiance = [[0.0_f32; 3]; 6];
+        for (face_index, face) in faces.iter().enumerate() {
+            let mut sum = [0.0_f64; 3];
+            for pixel in face {
+                sum[0] += f64::from(pixel[0]);
+                sum[1] += f64::from(pixel[1]);
+                sum[2] += f64::from(pixel[2]);
+            }
+            let inverse_count = (pixel_count as f64).recip();
+            face_radiance[face_index] = [
+                (sum[0] * inverse_count) as f32,
+                (sum[1] * inverse_count) as f32,
+                (sum[2] * inverse_count) as f32,
+            ];
+        }
+        Some(Self {
+            face_radiance,
+            resolution,
+            face_pixels: Some(faces),
+        })
+    }
+
     /// Parses the bundled `SCENA_CUBEMAP_V1` text fixture into per-face
     /// radiance triplets. Returns `None` if the magic header is missing or any
     /// face block fails to provide three finite, non-negative channel values.

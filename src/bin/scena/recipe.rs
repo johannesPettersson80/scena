@@ -110,6 +110,11 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
             ));
         }
     };
+    let (recipe_text, photo_quality) =
+        scena_photo::normalize_recipe_photo_defaults(recipe_text, &args.recipe)?;
+    if !args.gpu {
+        scena_photo::ensure_final_photo_backend(photo_quality, scena::Backend::Headless)?;
+    }
     let recipe_path = args.recipe.display().to_string();
     let build = if args.gpu {
         pollster::block_on(scena::SceneHostCore::build_recipe_json_gpu(
@@ -143,6 +148,7 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
         .map_err(|error| format!("validated recipe failed to decode: {error}"))?;
 
     let mut host = build.host;
+    scena_photo::ensure_final_photo_backend(photo_quality, host.backend())?;
     // GPU hosts must own semantic AOV resources before the next prepare, because
     // the camera-behavior loop and subject metering read them back.
     if args.gpu {
@@ -169,7 +175,7 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
         let photo_started = Instant::now();
         let planning = scena_photo::camera_behavior_composition_plan(
             &host,
-            subject.root_handle,
+            subject,
             !recipe.cameras.is_empty(),
         )?;
         let shaded_selection = scena_photo::apply_camera_behavior_setup_with_plan(
@@ -178,6 +184,15 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
             !build.manifest.lights.is_empty(),
             &planning,
             args.gpu,
+            photo_quality,
+            scena_photo::photo_ground_from_staging(
+                recipe
+                    .photo
+                    .as_ref()
+                    .and_then(|photo| photo.staging.as_ref())
+                    .and_then(|staging| staging.ground.as_deref()),
+            ),
+            false,
         )?;
         let selected_composition =
             scena_photo::selected_shaded_composition_candidate(&planning, &shaded_selection)?
@@ -186,7 +201,10 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
             &mut host,
             subject,
             &selected_composition,
+            Some(shaded_selection.surroundings_report.clone()),
             args.gpu,
+            photo_quality.is_final(),
+            false,
         )?;
         let duration = photo_started.elapsed();
         let reasons = photo_acceptance_reasons(&selected);

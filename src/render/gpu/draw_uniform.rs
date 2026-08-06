@@ -1,12 +1,13 @@
 use super::vertices::DrawUniformValue;
 
 /// One DrawUniform entry packs world_from_model + normal_from_model + tint +
-/// semantic ID = 40 floats = 160 bytes. WebGPU requires dynamic-offset uniform binding offsets
+/// semantic ID + reflection-probe box projection = 52 floats = 208 bytes.
+/// WebGPU requires dynamic-offset uniform binding offsets
 /// to be aligned to `min_uniform_buffer_offset_alignment`, which is 256 on
 /// every wgpu adapter we target. We pad each entry up to 256 bytes so the
 /// runtime stride matches the alignment requirement; the trailing 112 bytes
 /// per entry are zero-padding.
-pub(super) const DRAW_UNIFORM_ENTRY_SIZE: u64 = 160;
+pub(super) const DRAW_UNIFORM_ENTRY_SIZE: u64 = 208;
 pub(super) const DRAW_UNIFORM_ENTRY_STRIDE: u64 = 256;
 
 pub(super) fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -57,7 +58,8 @@ pub(super) fn create_draw_bind_group(
 /// Encodes a `Vec<DrawUniformValue>` into a packed byte buffer where each
 /// entry occupies `DRAW_UNIFORM_ENTRY_STRIDE` bytes. The first
 /// `DRAW_UNIFORM_ENTRY_SIZE` bytes of each entry hold the world_from_model +
-/// normal_from_model matrices, tint, and semantic ID; the trailing bytes are zero padding required
+/// normal_from_model matrices, tint, semantic ID, and reflection-probe box
+/// projection; the trailing bytes are zero padding required
 /// by `min_uniform_buffer_offset_alignment` for dynamic-offset binding.
 pub(super) fn encode_draw_uniform_bytes(values: &[DrawUniformValue]) -> Vec<u8> {
     let mut bytes = vec![0u8; values.len().max(1) * DRAW_UNIFORM_ENTRY_STRIDE as usize];
@@ -81,6 +83,18 @@ pub(super) fn encode_draw_uniform_bytes(values: &[DrawUniformValue]) -> Vec<u8> 
         for (i, semantic_value) in value.semantic_id.iter().enumerate() {
             let byte_offset = entry_offset + 144 + i * 4;
             bytes[byte_offset..byte_offset + 4].copy_from_slice(&semantic_value.to_ne_bytes());
+        }
+        for (i, probe_value) in value.reflection_probe_bounds_min.iter().enumerate() {
+            let byte_offset = entry_offset + 160 + i * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&probe_value.to_ne_bytes());
+        }
+        for (i, probe_value) in value.reflection_probe_bounds_max.iter().enumerate() {
+            let byte_offset = entry_offset + 176 + i * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&probe_value.to_ne_bytes());
+        }
+        for (i, probe_value) in value.reflection_probe_capture.iter().enumerate() {
+            let byte_offset = entry_offset + 192 + i * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&probe_value.to_ne_bytes());
         }
     }
     bytes

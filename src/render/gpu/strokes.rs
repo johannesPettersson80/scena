@@ -380,6 +380,9 @@ fn draw_uniform_index(
         normal_from_model: identity_matrix4(),
         tint: stroke.tint(),
         semantic_id: [0.0; 4],
+        reflection_probe_bounds_min: [0.0; 4],
+        reflection_probe_bounds_max: [0.0; 4],
+        reflection_probe_capture: [0.0; 4],
     };
     draw_uniforms.intern(value)
 }

@@ -4103,12 +4103,14 @@ fn m8_scene_inspection_reports_material_fallback_and_source_provenance() {
         })
         .expect("base-color texture evidence is exported");
     assert_eq!(texture["source_format"], "png");
+    let texture_source_path = texture["source_path"]
+        .as_str()
+        .expect("source_path is a string");
     assert!(
-        texture["source_path"]
-            .as_str()
-            .expect("source_path is a string")
-            .starts_with("data:image/png;base64,"),
-        "texture source path should name the authored fallback PNG, got {texture:?}"
+        texture_source_path.starts_with("memory:image-sha256-")
+            && texture_source_path.ends_with(".png")
+            && texture_source_path.len() < 128,
+        "texture source path should retain the authored fallback PNG as a bounded content identity, got {texture:?}"
     );
     assert_eq!(texture["fallback"]["kind"], "texture_basisu_fallback");
     assert_eq!(texture["fallback"]["material_index"], 0);

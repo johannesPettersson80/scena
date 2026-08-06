@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use crate::MaterialDesc;
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
+use crate::{MaterialDesc, PhotographicSurfaceKind};
 
 use super::super::{validate_known_fields, validate_required_id};
 use super::material_fields::{
@@ -13,14 +13,127 @@ use super::material_fields::{
 };
 use crate::scene::recipe::validation::diagnostic;
 
+mod details;
+
+use details::{
+    reject_advanced_pbr_fields_for_non_pbr, validate_advanced_pbr_fields, validate_material_pack,
+    validate_photographic_surface,
+};
+
 const MATERIAL_FIELDS: &[&str] = &[
     "id",
     "kind",
     "preset",
+    "photographic_surface",
+    "material_pack",
+    "imperfection",
     "base_color",
     "metallic",
     "roughness",
     "double_sided",
+    "emissive",
+    "emissive_strength",
+    "alpha_mode",
+    "stroke_width_px",
+    "edge_angle_threshold_degrees",
+    "base_color_texture",
+    "normal_texture",
+    "metallic_roughness_texture",
+    "occlusion_texture",
+    "emissive_texture",
+    "clearcoat_factor",
+    "clearcoat_roughness_factor",
+    "clearcoat_normal_scale",
+    "clearcoat_texture",
+    "clearcoat_roughness_texture",
+    "clearcoat_normal_texture",
+    "sheen_color_factor",
+    "sheen_roughness_factor",
+    "sheen_color_texture",
+    "sheen_roughness_texture",
+    "anisotropy_strength_factor",
+    "anisotropy_rotation_radians",
+    "anisotropy_texture",
+    "iridescence_factor",
+    "iridescence_ior",
+    "iridescence_thickness_minimum_nm",
+    "iridescence_thickness_maximum_nm",
+    "iridescence_texture",
+    "iridescence_thickness_texture",
+    "dispersion_factor",
+    "transmission_factor",
+    "ior",
+    "thickness_factor",
+    "attenuation_distance",
+    "attenuation_color",
+    "transmission_texture",
+    "thickness_texture",
+];
+
+const PHOTOGRAPHIC_SURFACE_FIELDS: &[&str] = &[
+    "kind",
+    "tile_size_m",
+    "feature_scale_m",
+    "metallic",
+    "roughness",
+    "variation",
+    "wear",
+    "seed",
+    "resolution",
+];
+
+const MATERIAL_PACK_FIELDS: &[&str] = &["uri", "expected_archive_sha256", "tile_size_m"];
+
+const PHOTOGRAPHIC_SURFACE_CONFLICT_FIELDS: &[&str] = &[
+    "kind",
+    "preset",
+    "metallic",
+    "roughness",
+    "emissive",
+    "emissive_strength",
+    "alpha_mode",
+    "stroke_width_px",
+    "edge_angle_threshold_degrees",
+    "base_color_texture",
+    "normal_texture",
+    "metallic_roughness_texture",
+    "occlusion_texture",
+    "emissive_texture",
+    "clearcoat_factor",
+    "clearcoat_roughness_factor",
+    "clearcoat_normal_scale",
+    "clearcoat_texture",
+    "clearcoat_roughness_texture",
+    "clearcoat_normal_texture",
+    "sheen_color_factor",
+    "sheen_roughness_factor",
+    "sheen_color_texture",
+    "sheen_roughness_texture",
+    "anisotropy_strength_factor",
+    "anisotropy_rotation_radians",
+    "anisotropy_texture",
+    "iridescence_factor",
+    "iridescence_ior",
+    "iridescence_thickness_minimum_nm",
+    "iridescence_thickness_maximum_nm",
+    "iridescence_texture",
+    "iridescence_thickness_texture",
+    "dispersion_factor",
+    "transmission_factor",
+    "ior",
+    "thickness_factor",
+    "attenuation_distance",
+    "attenuation_color",
+    "transmission_texture",
+    "thickness_texture",
+];
+
+const MATERIAL_PACK_CONFLICT_FIELDS: &[&str] = &[
+    "kind",
+    "preset",
+    "photographic_surface",
+    "metallic",
+    "roughness",
     "emissive",
     "emissive_strength",
     "alpha_mode",
@@ -145,16 +258,82 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
         validate_required_id(&path, object.get("id"), diagnostics);
         let kind = object.get("kind").and_then(Value::as_str);
         let preset = object.get("preset").and_then(Value::as_str);
-        if object.contains_key("kind") && object.contains_key("preset") {
+        let photographic_surface = object.get("photographic_surface");
+        let material_pack = object.get("material_pack");
+        if let Some(imperfection) = object.get("imperfection") {
+            crate::scene::recipe::validation::validate_material_imperfection(
+                &format!("{path}.imperfection"),
+                imperfection,
+                diagnostics,
+            );
+            if material_pack.is_none() && photographic_surface.is_none() {
+                diagnostics.push(diagnostic(
+                    "material_imperfection_requires_surface_maps",
+                    "error",
+                    format!("{path}.imperfection"),
+                    "material imperfection requires material_pack or photographic_surface normal and roughness maps",
+                    "add material_pack or photographic_surface, or remove imperfection",
+                    None,
+                    false,
+                ));
+            }
+        }
+        let material_source_count = usize::from(object.contains_key("kind"))
+            + usize::from(object.contains_key("preset"))
+            + usize::from(photographic_surface.is_some())
+            + usize::from(material_pack.is_some());
+        if material_source_count > 1 {
             diagnostics.push(diagnostic(
                 "invalid_material",
                 "error",
-                format!("{path}.preset"),
-                "material must use either preset or kind, not both",
-                "remove kind when using material.preset, or remove preset and use the low-level material kind",
+                if material_pack.is_some() {
+                    format!("{path}.material_pack")
+                } else if photographic_surface.is_some() {
+                    format!("{path}.photographic_surface")
+                } else {
+                    format!("{path}.preset")
+                },
+                "material must use exactly one of kind, preset, photographic_surface, or material_pack",
+                "remove the other material source fields",
                 None,
                 false,
             ));
+        }
+        if let Some(surface) = photographic_surface {
+            validate_photographic_surface(&path, surface, diagnostics);
+            for field in PHOTOGRAPHIC_SURFACE_CONFLICT_FIELDS {
+                if object.contains_key(*field) {
+                    diagnostics.push(diagnostic(
+                        "conflicting_photographic_surface_field",
+                        "error",
+                        format!("{path}.{field}"),
+                        format!(
+                            "{field} cannot override a generated photographic surface in recipe v1"
+                        ),
+                        "remove the field or author a low-level pbr_metallic_roughness material instead",
+                        None,
+                        false,
+                    ));
+                }
+            }
+        }
+        if let Some(pack) = material_pack {
+            validate_material_pack(&path, pack, diagnostics);
+            for field in MATERIAL_PACK_CONFLICT_FIELDS {
+                if object.contains_key(*field) {
+                    diagnostics.push(diagnostic(
+                        "conflicting_material_pack_field",
+                        "error",
+                        format!("{path}.{field}"),
+                        format!(
+                            "{field} cannot override a source-locked material pack in recipe v1"
+                        ),
+                        "remove the field or author a low-level pbr_metallic_roughness material instead",
+                        None,
+                        false,
+                    ));
+                }
+            }
         }
         if let Some(value) = object.get("preset")
             && !value.is_string()
@@ -193,18 +372,23 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
                 None,
                 false,
             )),
-            None if preset.is_none() => diagnostics.push(diagnostic(
+            None if preset.is_none()
+                && photographic_surface.is_none()
+                && material_pack.is_none() =>
+            {
+                diagnostics.push(diagnostic(
                 "missing_material_kind",
                 "error",
                 format!("{path}.kind"),
-                "material must include either a preset string or a kind string",
-                "use preset:\"chrome\" for ergonomic materials or kind:\"pbr_metallic_roughness\" with base_color",
+                "material must include a kind, preset, photographic_surface, or material_pack",
+                "use material_pack for an imported PBR surface, photographic_surface for scena-generated detail, or kind:\"pbr_metallic_roughness\"",
                 None,
                 false,
-            )),
+                ))
+            }
             None => {}
         }
-        if kind.is_some() || object.contains_key("base_color") {
+        if kind.is_some() || object.contains_key("base_color") || photographic_surface.is_some() {
             validate_color_ref(
                 &format!("{path}.base_color"),
                 object.get("base_color"),
@@ -323,92 +507,6 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
                 format!("{path}.edge_angle_threshold_degrees"),
                 "edge_angle_threshold_degrees only applies to edge materials",
                 "remove the field or use kind:\"edge\"",
-                None,
-                false,
-            ));
-        }
-    }
-}
-
-fn validate_advanced_pbr_fields(
-    path: &str,
-    object: &serde_json::Map<String, Value>,
-    colors: &BTreeSet<String>,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
-    for field in [
-        "clearcoat_factor",
-        "clearcoat_roughness_factor",
-        "sheen_roughness_factor",
-        "anisotropy_strength_factor",
-        "iridescence_factor",
-        "transmission_factor",
-    ] {
-        validate_unit_float(&format!("{path}.{field}"), object.get(field), diagnostics);
-    }
-    for field in [
-        "clearcoat_normal_scale",
-        "iridescence_thickness_minimum_nm",
-        "iridescence_thickness_maximum_nm",
-        "dispersion_factor",
-        "thickness_factor",
-    ] {
-        validate_optional_non_negative(&format!("{path}.{field}"), object.get(field), diagnostics);
-    }
-    validate_optional_finite(
-        &format!("{path}.anisotropy_rotation_radians"),
-        object.get("anisotropy_rotation_radians"),
-        diagnostics,
-    );
-    validate_optional_positive(
-        &format!("{path}.iridescence_ior"),
-        object.get("iridescence_ior"),
-        diagnostics,
-    );
-    validate_optional_positive(
-        &format!("{path}.attenuation_distance"),
-        object.get("attenuation_distance"),
-        diagnostics,
-    );
-    validate_optional_ior(&format!("{path}.ior"), object.get("ior"), diagnostics);
-    for field in ["sheen_color_factor", "attenuation_color"] {
-        if let Some(value) = object.get(field) {
-            validate_color_ref(&format!("{path}.{field}"), Some(value), colors, diagnostics);
-        }
-    }
-    for field in GPU_UNSUPPORTED_VOLUME_TEXTURE_FIELDS {
-        if object.contains_key(*field) {
-            diagnostics.push(diagnostic(
-                "unsupported_feature",
-                "error",
-                format!("{path}.{field}"),
-                format!(
-                    "{field} is not exposed by scene_recipe.v1 until the GPU path supports it without exceeding the WebGL2 texture-unit floor"
-                ),
-                "remove this texture slot; transmission_factor remains supported for recipe-authored glass",
-                None,
-                false,
-            ));
-        }
-    }
-}
-
-fn reject_advanced_pbr_fields_for_non_pbr(
-    path: &str,
-    object: &serde_json::Map<String, Value>,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
-    for field in ADVANCED_PBR_SCALAR_FIELDS
-        .iter()
-        .chain(ADVANCED_PBR_TEXTURE_FIELDS)
-    {
-        if object.contains_key(*field) {
-            diagnostics.push(diagnostic(
-                "unsupported_feature",
-                "error",
-                format!("{path}.{field}"),
-                format!("{field} only applies to pbr_metallic_roughness materials"),
-                "remove the field or use kind:\"pbr_metallic_roughness\"",
                 None,
                 false,
             ));

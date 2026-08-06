@@ -55,6 +55,8 @@ pub struct PhotographicEnvironmentProfileV1 {
     pub synthesized: bool,
     pub name: Option<String>,
     pub equirectangular_hdr: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_dimensions: Option<[u32; 2]>,
     pub preview_luminance: Option<f32>,
     pub cubemap_resolution: Option<u32>,
     pub intensity: f32,
@@ -146,6 +148,35 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         subject: u64,
         adjustment: PhotographicLightingAdjustmentV1,
     ) -> Result<PhotographicLightingReportV1, SceneHostError> {
+        self.apply_photographic_lighting_adjusted_for_quality(subject, adjustment, false)
+    }
+
+    /// Applies the final-still lighting contract using the full bundled HDRI.
+    pub fn apply_final_photographic_lighting(
+        &mut self,
+        subject: u64,
+    ) -> Result<PhotographicLightingReportV1, SceneHostError> {
+        self.apply_final_photographic_lighting_adjusted(
+            subject,
+            PhotographicLightingAdjustmentV1::default(),
+        )
+    }
+
+    /// Applies adjusted final-still lighting using the full bundled HDRI.
+    pub fn apply_final_photographic_lighting_adjusted(
+        &mut self,
+        subject: u64,
+        adjustment: PhotographicLightingAdjustmentV1,
+    ) -> Result<PhotographicLightingReportV1, SceneHostError> {
+        self.apply_photographic_lighting_adjusted_for_quality(subject, adjustment, true)
+    }
+
+    fn apply_photographic_lighting_adjusted_for_quality(
+        &mut self,
+        subject: u64,
+        adjustment: PhotographicLightingAdjustmentV1,
+        final_quality: bool,
+    ) -> Result<PhotographicLightingReportV1, SceneHostError> {
         let subject_node = self.resolve_node(subject)?;
         let bounds = self
             .scene
@@ -153,30 +184,49 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .ok_or(crate::LookupError::ImportHasNoBounds)?;
         // Record what the solver installs, so a later pass can tell a derived
         // environment from one the caller authored regardless of ordering.
-        let synthesized_environment = if self.renderer.environment().is_none() {
+        let active_environment = self.renderer.environment();
+        let manages_active_environment =
+            active_environment.is_none() || active_environment == self.generated_environment;
+        let synthesized_environment = if manages_active_environment {
             // Derive a real captured environment rather than the preview
             // fixture, whose own source declares `not HDR input and not IBL
             // proof`. Reflective materials need structure to reflect; six
             // constant cube faces give them none.
-            let derived = match self.assets.bundled_studio_environment() {
-                Ok(handle) => handle,
-                Err(_) => {
-                    // Not a silent fallback: `active_environment_profile` reads
-                    // the environment that actually landed, so the report's
-                    // `name` and `equirectangular_hdr` describe the fixture
-                    // rather than claiming a capture that failed to decode.
-                    self.assets.default_environment()
-                }
+            let active_meets_quality = active_environment
+                .and_then(|handle| self.assets.environment(handle))
+                .is_some_and(|environment| {
+                    !final_quality
+                        || (environment.source_dimensions() == Some((1024, 512))
+                            && environment.cubemap_resolution() >= 512)
+                });
+            if !active_meets_quality {
+                let derived = if final_quality {
+                    self.assets.bundled_final_studio_environment()?
+                } else {
+                    match self.assets.bundled_studio_environment() {
+                        Ok(handle) => handle,
+                        Err(_) => {
+                            // Not a silent fallback: `active_environment_profile`
+                            // reports the fixture that actually landed.
+                            self.assets.default_environment()
+                        }
+                    }
+                };
+                self.renderer.set_environment(derived);
+                self.generated_environment = Some(derived);
+            } else {
+                self.generated_environment = active_environment;
             };
-            self.renderer.set_environment(derived);
-            self.generated_environment = Some(derived);
             true
         } else {
-            self.renderer.environment() == self.generated_environment
+            false
         };
         let geometry = subject_geometry_profile(self, subject_node)?;
         let material = subject_material_profile(self, subject_node)?;
         let mut environment = active_environment_profile(self, synthesized_environment);
+        if final_quality {
+            validate_final_environment(&environment)?;
+        }
         let extent = bounds.half_extent() * 2.0;
         let center = bounds.center();
         let radius = bounds.bounding_sphere_radius().max(0.05);
@@ -230,7 +280,17 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             light.flux *= scale.clamp(0.0, 4.0);
         }
         let illuminant_kelvin = estimated_illuminant_kelvin(&solved);
-        let white_balance = crate::WhiteBalance::from_illuminant_kelvin(illuminant_kelvin);
+        let environment_irradiance_rgb = self
+            .renderer
+            .environment()
+            .and_then(|handle| self.assets.environment(handle))
+            .and_then(|environment| environment.preview_irradiance_rgb());
+        let white_balance = automatic_white_balance(
+            &solved,
+            environment_irradiance_rgb,
+            environment.intensity,
+            illuminant_kelvin,
+        );
         self.renderer.set_white_balance(white_balance);
         let white_balance = PhotographicWhiteBalanceV1 {
             illuminant_kelvin,
@@ -274,6 +334,24 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 }
 
+fn validate_final_environment(
+    environment: &PhotographicEnvironmentProfileV1,
+) -> Result<(), SceneHostError> {
+    if !environment.present
+        || !environment.equirectangular_hdr
+        || environment
+            .source_dimensions
+            .is_none_or(|[width, height]| width < 1024 || height < 512)
+        || environment.cubemap_resolution.is_none_or(|size| size < 512)
+    {
+        return Err(SceneHostError::new(
+            super::SceneHostErrorCode::InvalidInput,
+            "final photographic lighting requires an equirectangular HDR source of at least 1024x512 and a cubemap resolution of at least 512",
+        ));
+    }
+    Ok(())
+}
+
 fn estimated_illuminant_kelvin(lights: &[SolvedLight]) -> f32 {
     let (weighted_sum, weight_sum) = lights.iter().fold((0.0_f32, 0.0_f32), |sum, light| {
         let weight = light.flux.max(0.0);
@@ -283,6 +361,65 @@ fn estimated_illuminant_kelvin(lights: &[SolvedLight]) -> f32 {
         (weighted_sum / weight_sum).clamp(1_000.0, 20_000.0)
     } else {
         6_500.0
+    }
+}
+
+fn automatic_white_balance(
+    lights: &[SolvedLight],
+    environment_irradiance_rgb: Option<[f32; 3]>,
+    environment_intensity: f32,
+    illuminant_kelvin: f32,
+) -> crate::WhiteBalance {
+    let (light_rgb_sum, light_flux_sum) =
+        lights
+            .iter()
+            .fold(([0.0_f32; 3], 0.0_f32), |(mut rgb, flux_sum), light| {
+                let flux = light.flux.max(0.0);
+                let color = Color::from_kelvin(light.kelvin);
+                rgb[0] += color.r * flux;
+                rgb[1] += color.g * flux;
+                rgb[2] += color.b * flux;
+                (rgb, flux_sum + flux)
+            });
+    let light_chroma = (light_flux_sum > 1.0e-6)
+        .then(|| normalize_illuminant_rgb(light_rgb_sum.map(|channel| channel / light_flux_sum)));
+    let environment_chroma = environment_irradiance_rgb
+        .filter(|rgb| {
+            rgb.iter()
+                .all(|channel| channel.is_finite() && *channel >= 0.0)
+        })
+        .map(normalize_illuminant_rgb);
+    let environment_weight = if environment_chroma.is_some() {
+        environment_intensity.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let light_weight = if light_chroma.is_some() { 1.0 } else { 0.0 };
+    let illuminant_rgb = match (light_chroma, environment_chroma) {
+        (Some(light), Some(environment)) => {
+            let weight_sum = light_weight + environment_weight;
+            if weight_sum > 1.0e-6 {
+                std::array::from_fn(|channel| {
+                    (light[channel] * light_weight + environment[channel] * environment_weight)
+                        / weight_sum
+                })
+            } else {
+                [1.0; 3]
+            }
+        }
+        (Some(light), None) => light,
+        (None, Some(environment)) => environment,
+        (None, None) => [1.0; 3],
+    };
+    crate::WhiteBalance::from_linear_illuminant_rgb(illuminant_kelvin, 0.0, illuminant_rgb)
+}
+
+fn normalize_illuminant_rgb(rgb: [f32; 3]) -> [f32; 3] {
+    let luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    if luminance.is_finite() && luminance > 1.0e-6 {
+        rgb.map(|channel| channel / luminance)
+    } else {
+        [1.0; 3]
     }
 }
 
@@ -296,6 +433,7 @@ fn active_environment_profile<F: AssetFetcher>(
             synthesized,
             name: None,
             equirectangular_hdr: false,
+            source_dimensions: None,
             preview_luminance: None,
             cubemap_resolution: None,
             intensity: host.renderer.environment_intensity(),
@@ -308,6 +446,7 @@ fn active_environment_profile<F: AssetFetcher>(
             synthesized,
             name: None,
             equirectangular_hdr: false,
+            source_dimensions: None,
             preview_luminance: None,
             cubemap_resolution: None,
             intensity: host.renderer.environment_intensity(),
@@ -322,6 +461,9 @@ fn active_environment_profile<F: AssetFetcher>(
         synthesized,
         name: Some(environment.name().to_owned()),
         equirectangular_hdr: environment.is_equirectangular_hdr(),
+        source_dimensions: environment
+            .source_dimensions()
+            .map(|(width, height)| [width, height]),
         preview_luminance,
         cubemap_resolution: Some(environment.cubemap_resolution()),
         intensity: host.renderer.environment_intensity(),
@@ -372,10 +514,24 @@ fn subject_material_profile<F: AssetFetcher>(
 ) -> Result<PhotographicMaterialProfileV1, SceneHostError> {
     let subtree = host.scene.subtree_nodes(subject)?;
     let inspection = host.scene.inspect_with_assets(&host.assets);
-    let mut materials = Vec::<MaterialHandle>::new();
+    let mut materials = Vec::<(MaterialHandle, f32)>::new();
     for draw in inspection.draw_list() {
-        if subtree.contains(&draw.node()) && !materials.contains(&draw.material()) {
-            materials.push(draw.material());
+        if !subtree.contains(&draw.node()) {
+            continue;
+        }
+        let area = host
+            .assets
+            .geometry(draw.geometry())
+            .map_or(0.0, |geometry| {
+                geometry_surface_area(&geometry, draw.world_transform())
+            });
+        if let Some((_, accumulated_area)) = materials
+            .iter_mut()
+            .find(|(material, _)| *material == draw.material())
+        {
+            *accumulated_area += area;
+        } else {
+            materials.push((draw.material(), area));
         }
     }
     if materials.is_empty() {
@@ -394,10 +550,14 @@ fn subject_material_profile<F: AssetFetcher>(
     let mut reflective = 0.0;
     let mut transmission = 0.0;
     let mut roughness = 0.0;
-    for material in &materials {
+    let measured_area = materials.iter().map(|(_, area)| area).sum::<f32>();
+    let use_area = measured_area.is_finite() && measured_area > 1.0e-8;
+    let mut weight_sum = 0.0;
+    for (material, area) in &materials {
         let Some(desc) = host.assets.material(*material) else {
             continue;
         };
+        let weight = if use_area { *area } else { 1.0 };
         let color = desc.base_color();
         let luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
         let material_dark = ((0.22 - luminance) / 0.22).clamp(0.0, 1.0);
@@ -406,13 +566,14 @@ fn subject_material_profile<F: AssetFetcher>(
             .metallic_factor()
             .max((1.0 - desc.roughness_factor()) * 0.65)
             .max(material_transmission);
-        dark += material_dark;
-        base_luminance += luminance;
-        reflective += material_reflective;
-        transmission += material_transmission;
-        roughness += desc.roughness_factor();
+        dark += material_dark * weight;
+        base_luminance += luminance * weight;
+        reflective += material_reflective * weight;
+        transmission += material_transmission * weight;
+        roughness += desc.roughness_factor() * weight;
+        weight_sum += weight;
     }
-    let count = materials.len() as f32;
+    let count = weight_sum.max(1.0e-8);
     Ok(PhotographicMaterialProfileV1 {
         material_count: materials.len(),
         mean_base_luminance: (base_luminance / count).clamp(0.0, 1.0),
@@ -421,6 +582,35 @@ fn subject_material_profile<F: AssetFetcher>(
         transmission_fraction: (transmission / count).clamp(0.0, 1.0),
         mean_roughness: (roughness / count).clamp(0.0, 1.0),
     })
+}
+
+fn geometry_surface_area(geometry: &crate::GeometryDesc, transform: Transform) -> f32 {
+    if geometry.topology() != crate::GeometryTopology::Triangles {
+        return 0.0;
+    }
+    geometry
+        .indices()
+        .chunks_exact(3)
+        .filter_map(|triangle| {
+            let a = geometry.vertices().get(triangle[0] as usize)?.position;
+            let b = geometry.vertices().get(triangle[1] as usize)?.position;
+            let c = geometry.vertices().get(triangle[2] as usize)?.position;
+            let transform_point = |point: Vec3| {
+                transform.translation
+                    + transform.rotation
+                        * Vec3::new(
+                            point.x * transform.scale.x,
+                            point.y * transform.scale.y,
+                            point.z * transform.scale.z,
+                        )
+            };
+            let area = (transform_point(b) - transform_point(a))
+                .cross(transform_point(c) - transform_point(a))
+                .length()
+                * 0.5;
+            area.is_finite().then_some(area)
+        })
+        .sum()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -435,12 +625,17 @@ fn solve_lights(
     view: LightingViewBasis,
 ) -> [SolvedLight; 4] {
     let area_scale = radius * radius;
-    let key_flux = 180.0 * area_scale * (1.0 + material.dark_fraction * 0.22);
+    // These dimensions describe real product-photo softboxes rather than
+    // compact emitters. Keep luminous exitance close to the former smaller rig
+    // by scaling flux with the larger panel area.
+    let key_flux = 480.0 * area_scale * (1.0 + material.dark_fraction * 0.22);
+    let dark_coverage_response = material.dark_fraction.sqrt();
     let upward_weight = geometry.normal_axis_weights[1];
     let lateral_span = extent.x.max(extent.z).max(radius * 0.5);
     let vertical_span = extent.y.max(radius * 0.5);
     let key_elevation = 1.25 + upward_weight * 0.75;
-    let fill_ratio = (0.26 + material.dark_fraction * 0.40 - material.reflective_fraction * 0.06)
+    let fill_ratio = (0.26 + material.dark_fraction * 0.40 + dark_coverage_response * 0.45
+        - material.reflective_fraction * 0.06)
         * if environment.present { 0.88 } else { 1.0 };
     let fill_ratio = fill_ratio.clamp(0.22, 0.68);
     let background_luminance =
@@ -448,7 +643,9 @@ fn solve_lights(
     let separation = (material.mean_base_luminance - background_luminance).abs();
     let rim_need = ((0.22 - separation) / 0.22)
         .clamp(0.0, 1.0)
-        .max(material.transmission_fraction);
+        .max(material.transmission_fraction)
+        .max(material.dark_fraction * 0.42)
+        .max(dark_coverage_response * 0.32);
     let rim_ratio =
         ((0.16 + material.reflective_fraction * 0.48 + material.transmission_fraction * 0.12)
             .clamp(0.16, 0.72))
@@ -460,8 +657,8 @@ fn solve_lights(
             role: "key",
             position: center + view.offset(radius * 1.8, radius * key_elevation, radius * 1.45),
             target: center,
-            width: lateral_span * (0.85 + upward_weight * 0.25),
-            height: vertical_span * (0.85 + (1.0 - upward_weight) * 0.25),
+            width: lateral_span * (1.55 + upward_weight * 0.35),
+            height: vertical_span * (1.35 + (1.0 - upward_weight) * 0.40),
             flux: key_flux,
             kelvin: 5_500.0,
         },
@@ -469,8 +666,8 @@ fn solve_lights(
             role: "fill",
             position: center + view.offset(-radius * 1.55, radius * 0.65, radius * 1.25),
             target: center,
-            width: radius * 1.45,
-            height: radius * 1.15,
+            width: lateral_span * 1.8,
+            height: vertical_span * 1.6,
             flux: key_flux * fill_ratio,
             kelvin: 6_100.0 - material.dark_fraction * 350.0,
         },
@@ -478,8 +675,8 @@ fn solve_lights(
             role: "rim",
             position: center + view.offset(-radius * 0.35, radius * 1.35, -radius * 1.8),
             target: center,
-            width: radius,
-            height: radius * 1.35,
+            width: lateral_span * 0.85,
+            height: vertical_span * 2.0,
             flux: key_flux * rim_ratio,
             kelvin: 4_600.0 + material.reflective_fraction * 450.0,
         },
@@ -487,8 +684,8 @@ fn solve_lights(
             role: "overhead",
             position: center + view.offset(0.0, radius * 2.35, radius * 0.15),
             target: center,
-            width: lateral_span * 1.15,
-            height: lateral_span * 0.8,
+            width: lateral_span * 1.7,
+            height: lateral_span * 1.25,
             flux: key_flux * overhead_ratio,
             kelvin: 5_800.0 - material.dark_fraction * 250.0,
         },

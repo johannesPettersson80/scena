@@ -19,6 +19,7 @@ fn fr06_cpu_semantic_aov_proves_occlusion_transparency_and_instance_identity() {
         }],
         "materials": [
             { "id": "opaque_mat", "kind": "unlit", "base_color": "opaque", "double_sided": true },
+            { "id": "instance_mat", "kind": "unlit", "base_color": "#3CB371", "double_sided": true },
             {
                 "id": "transparent_mat",
                 "kind": "unlit",
@@ -49,7 +50,7 @@ fn fr06_cpu_semantic_aov_proves_occlusion_transparency_and_instance_identity() {
         "instance_sets": [{
             "id": "pair",
             "geometry": "box_geo",
-            "material": "opaque_mat",
+            "material": "instance_mat",
             "instances": [
                 { "id": "left", "transform": { "kind": "trs", "translation": [-0.22, 0.0, 0.0] } },
                 { "id": "right", "transform": { "kind": "trs", "translation": [0.22, 0.0, 0.0] } }
@@ -122,6 +123,9 @@ fn fr06_cpu_semantic_aov_proves_occlusion_transparency_and_instance_identity() {
         center_entry.node_handle, front_handle,
         "transparent foreground is excluded and front opaque node occludes back node"
     );
+    let front_material = center_entry
+        .material_handle
+        .expect("opaque beauty identity carries its runtime material handle");
     assert!(aov.depth_meters[center].is_finite());
     assert!(
         aov.world_normals[center]
@@ -142,6 +146,18 @@ fn fr06_cpu_semantic_aov_proves_occlusion_transparency_and_instance_identity() {
     assert_ne!(
         instance_entries[0].palette_index,
         instance_entries[1].palette_index
+    );
+    assert!(
+        instance_entries
+            .iter()
+            .all(|entry| entry.material_handle.is_some()),
+        "every attributable opaque instance carries material identity",
+    );
+    assert!(
+        instance_entries
+            .iter()
+            .all(|entry| entry.material_handle != Some(front_material)),
+        "the instance material remains distinguishable from the front-node material",
     );
     assert!(aov.exclusions.transparent_triangle_count > 0);
     assert!(aov.exclusions.label_quad_count > 0);
@@ -318,11 +334,16 @@ fn fr06_headless_gpu_semantic_aov_matches_cpu_center_truth() {
     let mut gpu = gpu_build.host;
     assert_required_native_hardware_adapter(&gpu);
     gpu.set_semantic_aov_capture_enabled(true);
+    gpu.renderer_mut()
+        .set_supersample_factor(2)
+        .expect("FR06 supersampled target is valid");
     gpu.prepare()
         .expect("FR06 GPU scene prepares AOV resources");
+    gpu.render()
+        .expect("FR06 supersampled beauty render succeeds before AOV capture");
     let gpu_aov = gpu
         .capture_semantic_aovs_gpu()
-        .expect("FR06 headless GPU AOV capture succeeds");
+        .expect("FR06 headless GPU AOV capture succeeds at public frame dimensions");
 
     assert_eq!((gpu_aov.width, gpu_aov.height), (96, 72));
     assert_eq!(gpu_aov.legend.len(), cpu_aov.legend.len());
@@ -332,6 +353,15 @@ fn fr06_headless_gpu_semantic_aov_matches_cpu_center_truth() {
     );
     let center = 36 * 96 + 48;
     assert_ne!(gpu_aov.id_indices[center], 0, "GPU center hits body");
+    let beauty_ids = gpu_aov
+        .beauty_id_indices
+        .as_ref()
+        .expect("GPU AOV capture includes a same-pass beauty semantic witness");
+    assert_eq!(beauty_ids.len(), gpu_aov.id_indices.len());
+    assert_eq!(
+        beauty_ids[center], gpu_aov.id_indices[center],
+        "the beauty fragment invocation and separate AOV agree at the unambiguous center",
+    );
     assert_eq!(
         gpu_aov.id_indices[center], cpu_aov.id_indices[center],
         "GPU and CPU agree on the unambiguous center identity",
@@ -364,6 +394,16 @@ fn fr06_headless_gpu_semantic_aov_matches_cpu_center_truth() {
         .zip(&gpu_aov.id_indices)
         .filter(|(depth, id)| **id != 0 && depth.is_finite())
         .count();
+    let beauty_matching_hit_count = gpu_aov
+        .id_indices
+        .iter()
+        .zip(beauty_ids)
+        .filter(|(aov, beauty)| **aov != 0 && aov == beauty)
+        .count();
+    assert!(
+        beauty_matching_hit_count * 100 >= gpu_hit_count * 80,
+        "same-pass beauty semantic coverage must agree with at least 80% of separate AOV hits after supersample resolve: matching={beauty_matching_hit_count} aov={gpu_hit_count}",
+    );
     let artifact = json!({
         "schema": "scena.fr06.native_semantic_aov_proof.v1",
         "status": "passed",
@@ -379,6 +419,7 @@ fn fr06_headless_gpu_semantic_aov_matches_cpu_center_truth() {
         "coverage": {
             "gpu_hit_count": gpu_hit_count,
             "gpu_finite_depth_count": gpu_finite_depth_count,
+            "beauty_matching_hit_count": beauty_matching_hit_count,
         },
         "center": {
             "index": center,

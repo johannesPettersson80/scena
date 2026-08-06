@@ -3846,6 +3846,67 @@ fn measure_profiled_prepares<F>(
     }
 }
 
+/// Same sampling contract as `measure_profiled_prepares`, but each sample runs
+/// on a renderer that has never seen this scene.
+///
+/// The renderer caches shadow visibility across prepares whose light and
+/// occluder signatures are unchanged, which is what makes the camera-behavior
+/// loop affordable. A warm prepare therefore casts **no** shadow rays, so
+/// sampling a shadow workload on one reused renderer measures cache hits and
+/// reports `shadow_rays: 0` - numbers that would be published as shadow
+/// intersection cost while describing the opposite. Scaling is a cold-path
+/// property, so it is measured on the cold path.
+fn measure_cold_profiled_prepares<F>(
+    scene: &mut Scene,
+    assets: &Assets<F>,
+    sample_count: usize,
+) -> ProfiledPrepareSamples
+where
+    F: scena::AssetFetcher,
+{
+    // Warm the caches that live in `Assets` rather than in the renderer -
+    // generated tangents, most of all - on a throwaway renderer. They are shared
+    // by every sample, so leaving them cold makes only the first sample pay for
+    // them and the counters differ between otherwise identical samples. Only the
+    // renderer-owned shadow visibility cache is meant to be cold here.
+    {
+        let mut warmup = Renderer::headless(1, 1).expect("cold shadow warmup renderer creates");
+        warmup
+            .prepare_with_assets_profiled(scene, assets)
+            .expect("cold shadow warmup prepare succeeds");
+    }
+    let mut duration_ms = Vec::with_capacity(sample_count);
+    let mut allocation_counts = Vec::with_capacity(sample_count);
+    let mut allocated_bytes = Vec::with_capacity(sample_count);
+    let mut expected_metrics = None;
+    for _ in 0..sample_count {
+        let mut renderer = Renderer::headless(1, 1).expect("cold shadow renderer creates");
+        start_allocation_counting();
+        let start = Instant::now();
+        let result = renderer.prepare_with_assets_profiled(scene, assets);
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        stop_allocation_counting();
+        let metrics = result.expect("cold profiled prepare succeeds");
+        if let Some(expected) = expected_metrics {
+            assert_eq!(
+                metrics, expected,
+                "cold profiled prepare counters must be deterministic"
+            );
+        } else {
+            expected_metrics = Some(metrics);
+        }
+        duration_ms.push(elapsed_ms);
+        allocation_counts.push(allocation_count());
+        allocated_bytes.push(allocation_bytes());
+    }
+    ProfiledPrepareSamples {
+        duration_ms,
+        allocation_counts,
+        allocation_bytes: allocated_bytes,
+        metrics: expected_metrics.expect("cold profiled prepare records metrics"),
+    }
+}
+
 fn prepare_work_metrics_json(metrics: scena::PrepareWorkMetrics) -> serde_json::Value {
     serde_json::json!({
         "prepared_triangle_count": metrics.prepared_triangle_count,
@@ -3905,17 +3966,9 @@ fn benchmark_profiled_shadow_workload(
         let mut directional_scene =
             shadow_benchmark_scene(geometry, material, ShadowBenchmarkLight::Directional);
         let mut area_scene = shadow_benchmark_scene(geometry, material, ShadowBenchmarkLight::Area);
-        let mut directional_renderer =
-            Renderer::headless(1, 1).expect("directional shadow renderer creates");
-        let mut area_renderer = Renderer::headless(1, 1).expect("area shadow renderer creates");
-        let directional = measure_profiled_prepares(
-            &mut directional_renderer,
-            &mut directional_scene,
-            &assets,
-            sample_count,
-        );
-        let area =
-            measure_profiled_prepares(&mut area_renderer, &mut area_scene, &assets, sample_count);
+        let directional =
+            measure_cold_profiled_prepares(&mut directional_scene, &assets, sample_count);
+        let area = measure_cold_profiled_prepares(&mut area_scene, &assets, sample_count);
         scales.push(serde_json::json!({
             "triangle_count": triangle_count,
             "vertex_count": triangle_count.saturating_mul(3),

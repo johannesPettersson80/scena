@@ -262,7 +262,7 @@ impl Renderer {
                 raw
             } else {
                 let mut resolved = Vec::new();
-                cpu_resolve::downsample_rgba8_reconstruction_filter(
+                cpu_resolve::resolve_rgba8_reconstruction_filter(
                     target,
                     self.supersample_factor,
                     &raw,
@@ -317,6 +317,7 @@ impl Renderer {
             self.screen_space_reflections,
             depth_of_field_post_config(self.depth_of_field, camera_projection),
             self.auto_exposure.is_some(),
+            self.scene_linear_capture_enabled,
         );
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -334,12 +335,8 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            let scale = if target == self.target {
-                1
-            } else {
-                self.supersample_factor
-            };
-            let frame = if scale > 1 {
+            let resolve_to_logical_target = target != self.target;
+            let frame = if resolve_to_logical_target {
                 self.gpu_supersample_frame.clear();
                 &mut self.gpu_supersample_frame
             } else {
@@ -359,10 +356,12 @@ impl Renderer {
                 resolved_readback_mode == RenderReadbackMode::Synchronous,
                 auto_exposure_meter,
             )?;
-            if scale > 1 && resolved_readback_mode == RenderReadbackMode::Synchronous {
-                cpu_resolve::downsample_rgba8_reconstruction_filter(
+            if resolve_to_logical_target
+                && resolved_readback_mode == RenderReadbackMode::Synchronous
+            {
+                cpu_resolve::resolve_rgba8_reconstruction_filter(
                     target,
-                    scale,
+                    self.supersample_factor,
                     self.gpu_supersample_frame.as_slice(),
                     self.target,
                     &mut self.frame,
@@ -412,7 +411,15 @@ impl Renderer {
         } else {
             1
         };
-        self::target::validate_supersample_target(self.target, scale)
+        let target = self::target::validate_supersample_target(self.target, scale)?;
+        let workaround_required = self
+            .gpu
+            .as_ref()
+            .is_some_and(gpu::GpuDeviceState::requires_v3d_headless_target_alignment);
+        Ok(self::target::v3d_headless_render_target(
+            target,
+            workaround_required,
+        ))
     }
 }
 

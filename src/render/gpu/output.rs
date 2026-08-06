@@ -160,6 +160,16 @@ pub(super) fn create_output_bind_group_layout(
         },
         count: None,
     });
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 11,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(super::shading_tables::BRDF_TABLE_BYTE_LEN),
+        },
+        count: None,
+    });
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.output.bind_group_layout"),
         entries: &entries,
@@ -187,6 +197,7 @@ pub(super) fn create_output_bind_group(
     transmission_color_view: &wgpu::TextureView,
     transmission_color_sampler: &wgpu::Sampler,
     ltc_tables: &wgpu::Buffer,
+    brdf_table: &wgpu::Buffer,
     light_assignment: Option<&LightAssignmentResources>,
 ) -> wgpu::BindGroup {
     let mut entries = vec![
@@ -221,6 +232,10 @@ pub(super) fn create_output_bind_group(
         wgpu::BindGroupEntry {
             binding: 10,
             resource: ltc_tables.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 11,
+            resource: brdf_table.as_entire_binding(),
         },
     ];
     if let Some(light_assignment) = light_assignment {
@@ -851,9 +866,30 @@ mod tests {
             assert!(
                 shader.contains(
                     "let occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength)"
-                ) && shader.contains("shaded_rgb = (direct + environment) * occlusion_applied;")
-                    && !shader.contains("shaded_rgb = (direct + environment) * occlusion_sample;"),
-                "{name} shader must apply glTF occlusionTexture.strength in the lit PBR branch"
+                ) && shader.contains(
+                    "let indirect_occlusion = occlusion_applied * clamp(in.baked_visibility.y, 0.0, 1.0);"
+                )
+                    && shader.contains("shaded_rgb = direct + environment * indirect_occlusion;")
+                    && !shader
+                        .contains("shaded_rgb = (direct + environment) * occlusion_applied;"),
+                "{name} shader must apply authored and baked occlusion to indirect environment \
+                 light without incorrectly dimming direct emitters"
+            );
+        }
+    }
+
+    #[test]
+    fn triangle_shader_consumes_packed_direct_and_ambient_visibility() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("@location(5) baked_visibility: vec2<f32>")
+                    && shader.contains("in.baked_visibility.x")
+                    && shader.contains("in.baked_visibility.y"),
+                "{name} shader must keep the WebGL2 vertex-attribute budget while carrying \
+                 independent direct-shadow and ambient visibility terms"
             );
         }
     }
@@ -912,6 +948,52 @@ mod tests {
                     && shader.contains("fn ltc_clip_quad_to_horizon")
                     && accumulates_ltc_specular,
                 "{name} shader must include the same fitted-table linearly-transformed-cosine area-light specular path as the CPU reference"
+            );
+        }
+    }
+
+    #[test]
+    fn area_light_ltc_does_not_double_count_point_sampled_specular() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            let area_start = shader
+                .find("fn ltc_accumulate_area_light(")
+                .or_else(|| shader.find("let area_count ="))
+                .expect("area-light accumulation block");
+            let area_tail = &shader[area_start..];
+            let area_end = area_tail
+                .find("return shaded;")
+                .expect("end of direct-light accumulation block");
+            let area_block = &area_tail[..area_end];
+
+            assert!(
+                area_block.contains("pbr_area_light_diffuse_contribution(")
+                    && !area_block.contains("shaded += pbr_light_contribution("),
+                "{name} area-light samples must add only diffuse energy after the continuous \
+                 LTC emitter has supplied the base GGX specular lobe"
+            );
+        }
+    }
+
+    #[test]
+    fn triangle_shaders_fold_unresolved_micro_surface_into_roughness_without_wave_normals() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains(
+                    "let unresolved_micro_roughness = material.texture_strengths.z * 0.175;"
+                ) && shader
+                    .contains("material.metallic_roughness_alpha.y * metallic_roughness_sample.g")
+                    && shader.contains("+ unresolved_micro_roughness")
+                    && !shader.contains("let micro_phase =")
+                    && !shader.contains("micro_x")
+                    && !shader.contains("micro_y"),
+                "{name} shader must represent subpixel photographic surface detail as a \
+                 band-limited roughness contribution, not world-space sine-wave normals"
             );
         }
     }
@@ -979,8 +1061,10 @@ mod tests {
             assert!(
                 shader.contains("fn clearcoat_environment_lighting(")
                     && shader.contains(
-                        "environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness);"
-                    ),
+                        "environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness, in.world_position);"
+                    )
+                    && shader
+                        .contains("shaded_rgb = direct + environment * indirect_occlusion;"),
                 "{name} shader must add a separate clearcoat specular IBL lobe; \
                  direct-light clearcoat alone makes coated materials read like ordinary glossy plastic under HDR"
             );
@@ -996,8 +1080,10 @@ mod tests {
             assert!(
                 shader.contains("fn anisotropy_environment_lighting(")
                     && shader.contains(
-                        "environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction);"
-                    ),
+                        "environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction, in.world_position);"
+                    )
+                    && shader
+                        .contains("shaded_rgb = direct + environment * indirect_occlusion;"),
                 "{name} shader must route anisotropy into environment IBL; \
                  direct-light-only anisotropy leaves brushed metal with round HDR highlights"
             );

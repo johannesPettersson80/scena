@@ -1,4 +1,6 @@
 use crate::diagnostics::BuildError;
+#[cfg(any(feature = "scene-host", test))]
+use crate::diagnostics::RenderError;
 #[cfg(all(
     target_arch = "wasm32",
     any(feature = "browser-probe", feature = "scene-host")
@@ -18,6 +20,35 @@ pub struct PixelReadback {
     width: u32,
     height: u32,
     rgba8: Vec<u8>,
+}
+
+#[cfg(any(feature = "scene-host", test))]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SceneLinearCapture {
+    width: u32,
+    height: u32,
+    rgba32f: Vec<[f32; 4]>,
+}
+
+#[cfg(any(feature = "scene-host", test))]
+impl SceneLinearCapture {
+    pub(crate) const fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub(crate) const fn height(&self) -> u32 {
+        self.height
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rgba32f(&self) -> &[[f32; 4]] {
+        &self.rgba32f
+    }
+
+    #[cfg(feature = "scene-host")]
+    pub(crate) fn into_rgba32f(self) -> Vec<[f32; 4]> {
+        self.rgba32f
+    }
 }
 
 impl OffscreenTarget {
@@ -84,6 +115,32 @@ impl Renderer {
 
     pub fn screenshot_rgba8(&self) -> PixelReadback {
         self.read_pixels()
+    }
+
+    #[cfg(any(feature = "scene-host", test))]
+    pub(crate) fn scene_linear_capture(&mut self) -> Result<SceneLinearCapture, RenderError> {
+        if let Some(gpu) = &mut self.gpu {
+            let (target, rgba32f) = gpu.read_scene_linear_rgba32f(self.target.backend)?;
+            return Ok(SceneLinearCapture {
+                width: target.width,
+                height: target.height,
+                rgba32f,
+            });
+        }
+        let rgba32f = self
+            .linear_frame
+            .as_ref()
+            .ok_or(RenderError::GpuResourcesNotPrepared {
+                backend: self.target.backend,
+            })?
+            .iter()
+            .map(|color| [color.r, color.g, color.b, color.a])
+            .collect();
+        Ok(SceneLinearCapture {
+            width: self.target.width,
+            height: self.target.height,
+            rgba32f,
+        })
     }
 
     #[cfg(all(

@@ -7,6 +7,7 @@ use crate::scene::recipe::SceneRecipeDiagnosticV1;
 
 const PHOTO_FIELDS: &[&str] = &[
     "intent",
+    "quality",
     "subject",
     "composition",
     "exposure",
@@ -31,19 +32,19 @@ const CAMERA_BEHAVIOR_METERING: &[&str] = &["subject"];
 const CAMERA_BEHAVIOR_FOCUS_MODES: &[&str] = &["subject"];
 const CAMERA_BEHAVIOR_FOCUS_COVERAGES: &[&str] = &["all"];
 const CAMERA_BEHAVIOR_FOCUS_STRENGTHS: &[&str] = &["subtle"];
-const CAMERA_BEHAVIOR_ENVIRONMENTS: &[&str] = &["studio"];
+const CAMERA_BEHAVIOR_ENVIRONMENTS: &[&str] = &["studio", "bright_product_studio"];
 const CAMERA_BEHAVIOR_BACKGROUNDS: &[&str] = &["dark_studio"];
-const CAMERA_BEHAVIOR_GROUNDS: &[&str] = &["matte_shadow_catcher"];
+const CAMERA_BEHAVIOR_GROUNDS: &[&str] = &["matte", "reflective"];
+const FINAL_PHOTO_MIN_PIXELS: u64 = 8_000_000;
+const FINAL_PHOTO_MIN_SUPERSAMPLE: u64 = 2;
 
 pub(super) fn validate_photo(
-    photo: Option<&Value>,
-    scene: Option<&Value>,
-    render: Option<&Value>,
-    cameras: Option<&Value>,
+    root: &Map<String, Value>,
     import_ids: &BTreeSet<String>,
     node_ids: &BTreeSet<String>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
+    let photo = root.get("photo");
     let Some(photo) = photo else {
         return;
     };
@@ -93,6 +94,33 @@ pub(super) fn validate_photo(
             false,
         )),
     }
+    match object.get("quality") {
+        None => {}
+        Some(Value::String(quality)) => match quality.as_str() {
+            "preview" => {}
+            "final" => {
+                validate_final_photo_contract(root.get("capture"), root.get("render"), diagnostics)
+            }
+            _ => diagnostics.push(diagnostic(
+                "invalid_photo_quality",
+                "error",
+                "$.photo.quality",
+                format!("photo quality '{quality}' is not supported"),
+                "use quality:\"preview\" or quality:\"final\"",
+                None,
+                false,
+            )),
+        },
+        Some(_) => diagnostics.push(diagnostic(
+            "invalid_photo_quality",
+            "error",
+            "$.photo.quality",
+            "photo quality must be a string",
+            "use quality:\"preview\" or quality:\"final\"",
+            None,
+            false,
+        )),
+    }
     validate_photo_subject(object.get("subject"), import_ids, node_ids, diagnostics);
     validate_photo_composition(object.get("composition"), diagnostics);
     validate_photo_exposure(object.get("exposure"), diagnostics);
@@ -102,7 +130,88 @@ pub(super) fn validate_photo(
         object.get("intent").and_then(Value::as_str),
         Some("camera_behavior" | "camera-behavior" | "product_hero" | "product-hero")
     ) {
-        validate_camera_behavior_conflicts(scene, render, cameras, diagnostics);
+        validate_camera_behavior_conflicts(
+            root.get("scene"),
+            root.get("render"),
+            root.get("cameras"),
+            diagnostics,
+        );
+    }
+}
+
+fn validate_final_photo_contract(
+    capture: Option<&Value>,
+    render: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    if let Some(capture) = capture.and_then(Value::as_object) {
+        let pixels = capture
+            .get("width")
+            .and_then(Value::as_u64)
+            .zip(capture.get("height").and_then(Value::as_u64))
+            .and_then(|(width, height)| width.checked_mul(height));
+        if pixels.is_some_and(|pixels| pixels < FINAL_PHOTO_MIN_PIXELS) {
+            diagnostics.push(diagnostic(
+                "final_photo_capture_below_min",
+                "error",
+                "$.capture",
+                format!(
+                    "final photo capture must contain at least {FINAL_PHOTO_MIN_PIXELS} pixels"
+                ),
+                "omit capture for the 3840x2520 final default or request at least 8 megapixels",
+                None,
+                false,
+            ));
+        }
+    }
+
+    let Some(render) = render.and_then(Value::as_object) else {
+        return;
+    };
+    if render
+        .get("supersample")
+        .and_then(Value::as_u64)
+        .is_some_and(|factor| factor < FINAL_PHOTO_MIN_SUPERSAMPLE)
+    {
+        diagnostics.push(diagnostic(
+            "final_photo_supersample_below_min",
+            "error",
+            "$.render.supersample",
+            "final photo rendering requires supersample factor 2 or greater",
+            "omit render.supersample for the SSAA2 final default or request 2, 3, 4, or 8",
+            None,
+            false,
+        ));
+    }
+    if render
+        .get("anti_aliasing")
+        .and_then(Value::as_str)
+        .is_some_and(|anti_aliasing| anti_aliasing != "none")
+    {
+        diagnostics.push(diagnostic(
+            "final_photo_redundant_msaa",
+            "error",
+            "$.render.anti_aliasing",
+            "final photo rendering uses full-frame supersampling and does not combine it with edge-only anti-aliasing",
+            "omit render.anti_aliasing or set it to \"none\"",
+            None,
+            false,
+        ));
+    }
+    if render
+        .get("reconstruction")
+        .and_then(Value::as_str)
+        .is_some_and(|reconstruction| reconstruction != "tent")
+    {
+        diagnostics.push(diagnostic(
+            "final_photo_reconstruction_unsupported",
+            "error",
+            "$.render.reconstruction",
+            "final photo rendering requires tent reconstruction",
+            "omit render.reconstruction for the tent final default or set it to \"tent\"",
+            None,
+            false,
+        ));
     }
 }
 

@@ -1,8 +1,8 @@
 use crate::diagnostics::RenderError;
 use crate::render::RasterTarget;
 
-use super::capture::decode_capture;
-use super::{SemanticAovResources, encode_pass, write_camera_uniform};
+use super::capture::{decode_capture, write_camera_uniform};
+use super::{SemanticAovResources, encode_pass};
 use crate::render::camera::CameraProjection;
 use crate::render::gpu::shader_manifest::{ShaderVariantId, create_shader_module};
 use crate::scene::{ClippingPlane, SectionBox};
@@ -10,13 +10,13 @@ use crate::scene::{ClippingPlane, SectionBox};
 #[derive(Debug)]
 pub(super) struct WebGl2ReadbackResources {
     pipeline: wgpu::RenderPipeline,
-    bind_groups: [wgpu::BindGroup; 3],
+    bind_groups: [wgpu::BindGroup; 4],
 }
 
 pub(super) fn create_resources(
     device: &wgpu::Device,
     surface_format: wgpu::TextureFormat,
-    source_views: [&wgpu::TextureView; 3],
+    source_views: [&wgpu::TextureView; 4],
 ) -> WebGl2ReadbackResources {
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.semantic_aov.webgl2_surface_bind_group_layout"),
@@ -129,7 +129,7 @@ pub(super) fn capture(
     encode_pass(&mut semantic_encoder, resources, semantic);
     state.queue.submit(Some(semantic_encoder.finish()));
 
-    let mut frames = [Vec::new(), Vec::new(), Vec::new()];
+    let mut frames = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     for (slot, frame) in frames.iter_mut().enumerate() {
         let surface_output = match surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(output)
@@ -166,7 +166,15 @@ pub(super) fn capture(
             },
         )?;
     }
-    Ok(decode_capture(semantic, projection.near_far(), frames))
+    Ok(decode_capture(
+        semantic,
+        projection.near_far(),
+        [frames[0].clone(), frames[1].clone(), frames[2].clone()],
+        semantic
+            .beauty
+            .valid
+            .then(|| (semantic.beauty.target, frames[3].clone())),
+    ))
 }
 
 fn encode_blit(

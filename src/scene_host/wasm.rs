@@ -341,6 +341,17 @@ impl SceneHost {
             &JsValue::from_str("idIndices"),
             &js_sys::Uint32Array::from(capture.id_indices.as_slice()),
         );
+        let beauty_id_indices = capture
+            .beauty_id_indices
+            .as_deref()
+            .map(js_sys::Uint32Array::from)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL);
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str("beautyIdIndices"),
+            &beauty_id_indices,
+        );
         let _ = js_sys::Reflect::set(
             &object,
             &JsValue::from_str("depthMeters"),

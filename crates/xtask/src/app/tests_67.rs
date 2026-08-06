@@ -59,8 +59,8 @@ fn a09_doctor_rejects_a_redundant_or_default_agent_feature() {
     let manifest = fixture_root.join("Cargo.toml");
     let source = fs::read_to_string(&manifest).expect("manifest reads");
     let mutated = source.replacen(
-        "agent = [\"scene-host\"]",
-        "agent = [\"scene-host\", \"inspection\"]",
+        "agent = [\"scene-host\", \"material-library\"]",
+        "agent = [\"scene-host\", \"inspection\", \"material-library\"]",
         1,
     );
     assert_ne!(
@@ -73,7 +73,9 @@ fn a09_doctor_rejects_a_redundant_or_default_agent_feature() {
     assert!(
         findings.iter().any(|finding| {
             finding.rule == "A09-FEATURE-DISCOVERABILITY"
-                && finding.message.contains("agent = [\"scene-host\"]")
+                && finding
+                    .message
+                    .contains("agent = [\"scene-host\", \"material-library\"]")
         }),
         "redundant agent composition must fail doctor: {findings:?}",
     );

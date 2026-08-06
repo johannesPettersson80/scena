@@ -169,11 +169,13 @@ path has closed the gap on staging and grounding but not on highlight range.
       SHA-256 `915e9e36…` but a re-render produces `7352e341…` (14.03 % of
       pixels differ, max Chebyshev 111), so the committed proof does not
       reproduce.
-- [ ] **Document or tighten the `fill_width_fraction` waiver.** Measured values
-      of 0.278–0.528 pass against a published minimum of 0.65 because
-      `width_fill_target_is_actionable` (`photo.rs:643`) waives the width check
-      for subjects too tall to fill 65 % of width without exceeding max fit.
-      Principled, but currently undocumented.
+- [x] **Replace the `fill_width_fraction` waiver with a dominant-axis fit.**
+      *(Done. The gate required width and height to each reach 0.65
+      independently, which is only satisfiable when the subject's aspect matches
+      the frame's; the waiver existed to paper over that. It now scores whichever
+      axis limits the subject, so the other follows from the subject's own aspect,
+      and clipping remains the guard against over-filling. The waiver is
+      deleted.)*
 
 ### Subject clipping and gate convergence (partial)
 
@@ -201,13 +203,13 @@ Exposure converges correctly. Composition does not: the corrector zooms once to
 0.612, still under the 0.65 minimum, and any further zoom makes the subject
 genuinely touch a frame edge, so clipping then fires legitimately.
 
-`width_fill_target_is_actionable` (`src/bin/scena/photo.rs`) judges the width
-target reachable from `fill_width / fill_fraction * max_fit`, which for this
-subject predicts 0.675 and so demands a width the frame cannot hold. For a wide
-subject in a landscape frame the two constraints are simply incompatible, and
-the heuristic does not know that. Deciding whether the gate should widen its
-fill band by aspect, or the corrector should trade fill against clipping
-explicitly, needs a design call rather than another threshold nudge.
+The gate now scores the dominant axis instead. Requiring width and height to
+each reach the target is only satisfiable when the subject's aspect matches the
+frame's: a wide subject cannot reach the width target without its height leaving
+the frame, and a tall one cannot reach the height target without its width
+falling below it. Scoring `max(width, height)` makes the target a property of
+the framing and the other axis a property of the subject, which is what it
+always was.
 
 ### Split-sum BRDF: measured, and the table is worth binding
 
@@ -239,7 +241,7 @@ costs no texture unit and no sampler, exactly as the LTC tables now do.
 measurement, so improving the analytic fit prompts revisiting the decision
 rather than silently invalidating it. Binding the table is not yet implemented.
 
-### SSR and CPU parallelism: the shape of the fix (not implemented)
+### SSR and CPU parallelism: the shape of the fix (now implemented, see section 5)
 
 `should_parallelize_cpu_geometry_pass` (`src/render/cpu_render/parallel_policy.rs`)
 returns false whenever screen-space reflections are set, so the CPU rasterizer
@@ -294,7 +296,212 @@ exceeds one, is what makes the change safe to land.
       prepare in both callers. Verified: `recipe render --gpu --verify` went
       from exit 70 to exit 0 in 121 s.
 
-## 6. V3D adapter — investigated, closed
+- [x] **W7 — coverage no longer guesses foreground from background colour.**
+      `visible_coverage_for_rect` classified a pixel as foreground when it
+      differed from `renderer.background_color()` by more than 2/255. Generated
+      surroundings put a lit floor and cyclorama behind the subject, so every
+      pixel differed and the valve manifold reported `foreground_fraction: 1.0` —
+      a number that could not fail. Coverage now uses the exact semantic-AOV
+      subject mask (`SubjectMaskCoverage` in
+      `src/scene_host/composition/helpers.rs`) and reports which method ran as
+      `coverage_source`, so the colour heuristic is an explicitly disclosed
+      degraded mode rather than a silent one.
+
+- [x] **W8 — the exact-mask check no longer skips itself on GPU backends.**
+      `composition/subject.rs` keyed the skip on `backend != Headless`, so the
+      strictest verification silently disappeared on exactly the path the
+      product ships. `composition_report` now captures the AOV on
+      `HeadlessGpu`/`NativeSurface` too and the skip is keyed on capture
+      presence, which is the condition that actually matters.
+
+- [x] **W4 — screen-space reflections no longer serialise the CPU rasterizer.**
+      `should_parallelize_cpu_geometry_pass` returned false whenever SSR was
+      configured, so every reflective scene rendered single-threaded. Recording
+      reflections is row-separable; only the resolve needs the finished frame.
+      The blocker was `record_material_reflection_pixel` indexing the buffer
+      with a frame-global `target.pixel_index(x, y)` while every other per-pixel
+      write used `CpuFrame::local_pixel_index`. With the recorder made
+      row-local, each worker takes its own band of the reflection buffer and
+      `apply_material_linear` runs once after the join.
+      Proof: `cpu_parallel_row_bands_match_serial_output_with_screen_space_reflections`
+      asserts the serial and parallel paths produce **byte-identical** linear
+      frames, depth, RGBA8 output *and* reflection buffers at 512x512 with 96
+      reflective primitives, plus a guard that the fixture actually records
+      reflections. `screen_space_reflections_no_longer_serialize_the_cpu_geometry_pass`
+      asserts `row_bands.workers > 1`.
+
+- [x] **W11 — doctor now judges rendered output, not source text.**
+      Every rule in `doctor_render` pinned source substrings. They all passed
+      while the flagship command produced clay. Added
+      `doctor_render/photographic_output.rs`, which reads the metrics the
+      camera-behavior proof measures off the rendered PNG and holds them to the
+      fixture's own bands (no second copy of the numbers). Absence is advisory
+      locally and blocking under `SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS=1`.
+      `material_reflection.rs` is documented for what it actually is: an
+      anti-deletion gate.
+
+- [x] **W14 — the cyclorama seam was a normal error, not a sizing error.**
+      Widening the frustum extent did nothing because the sweep's top edge sits
+      at `curve_radius = extent * 0.18`, so it barely moves. The real cause:
+      the sweep's tangent at angle t is `away*cos(t) + Y*sin(t)`, so the face
+      normal is `toward_camera*sin(t) + Y*cos(t)` — but the two terms were
+      emitted the other way round. At the floor end it produced a horizontal
+      normal against the floor's `+Y`, and at the wall end a vertical normal
+      against the wall's `toward_camera`: a maximal discontinuity at *both*
+      joins. Measured against the pre-fix source, the emitted normal was nearly
+      *parallel* to the surface it swept (dot = -0.95).
+      Proof: `cyclorama_normals_match_the_surface_they_sweep` compares each
+      emitted normal against a central-difference tangent (exact on a circular
+      arc; a forward difference is off by half a segment angle and would fail a
+      correct sweep) and pins both end normals to the flat surfaces they meet.
+
+- [x] **Fit is scored on the limiting axis, not on width and height separately.**
+      Requiring each axis to reach the fill band independently is only
+      satisfiable when the subject's aspect matches the frame's, so the two
+      constraints fought and the corrector stalled short of the band. Re-measured
+      on the three self-authored subjects after the change, all three pass with
+      `failure_codes: []`:
+
+      | subject | fill width | fill height | fit (max) | centre | clipped | mean luma |
+      |---|---|---|---|---|---|---|
+      | colored_travel_mug | 0.278 | 0.731 | **0.731** | 0.037 | 0.0 | 95.1 |
+      | dark_metal_speaker | 0.453 | 0.702 | **0.702** | 0.062 | 0.0 | 93.5 |
+      | valve_manifold | 0.481 | 0.669 | **0.669** | 0.078 | 0.0 | 98.4 |
+
+      Every one of them has a width fraction far below the 0.65 floor, so under
+      the old two-axis rule **all three would have failed** - the subjects'
+      aspect ratios (0.38, 0.65, 0.72) simply are not the frame's. `clipped` is
+      0.0 everywhere now that the gate measures the mask-tight silhouette rather
+      than a conservative AABB union, and wall-clock is 20-35 s per subject
+      against the 205 s that started this investigation.
+
+- [x] **The staging decision is disclosed instead of discarded.**
+      `apply_photographic_surroundings` returns a
+      `PhotographicSurroundingsReportV1` naming whether a floor, cyclorama and
+      derived background were generated or an authored one preserved, and
+      `photo.rs` bound it to `_surroundings` and dropped it. When the rendered
+      backdrop looked wrong there was no way to tell a suppressed cyclorama from
+      a mis-sized one without inferring it from pixels. It is now reported under
+      `shaded_selection.staging`, and `PhotographicSurroundingsReportV1` is
+      exported from the crate root alongside `PhotographicSurfaceReportV1`.
+
+- [x] **`ibl_brdf_lut_default_size` reported the cubemap size (C3).**
+      It called `ibl_default_size`, so the capability report claimed 256 (128 on
+      WebGL2) for a table that has always been baked at `BRDF_LUT_SIZE` = 64.
+      The BRDF table is a function of the BRDF alone, so the new
+      `ibl_brdf_lut_size` is backend-independent.
+
+- [x] **Mask coverage cannot read past the capture.**
+      `visible_coverage_from_mask` indexed `y * width + x` without checking the
+      region against the capture bounds, so a region reaching past the right edge
+      would wrap into the next row and return a plausible wrong number rather
+      than an error. It now declines and falls back to the disclosed heuristic.
+
+- [x] **W3 — the baked BRDF table is bound instead of discarded.**
+      `PreparedEnvironmentCubemap::brdf_lut` was baked on every prepare,
+      uploaded to a texture, and never read; the shader used the analytic Karis
+      fit, which measures **0.361** error at `n_dot_v` 0.05, roughness 1.0 - the
+      rough-metal grazing corner a blasted metal product spends its silhouette
+      in. It now goes through a uniform block at `@group(0) @binding(11)`,
+      costing no texture unit and no sampler, which is what the texture route ran
+      out of.
+      Two texels of `(scale, bias)` share one `vec4` because std140 pads a
+      `vec2<f32>` array to a 16-byte stride; at 32x32 that is 8 KiB, inside
+      WebGL2's 16 KiB uniform-block floor. The resample cost was measured against
+      the same 4096-sample reference rather than assumed:
+      **max error 0.019** - 19x better than the 0.361 fit it replaces.
+      The never-bound `brdf_lut_texture`, its `create_brdf_lut_texture`, and
+      their two `#[allow(dead_code)]` attributes are deleted; scena no longer
+      pays to upload a texture nothing samples. All seven shader gates still
+      pass, including the per-entry-point SPIR-V budget and the WebGL2 GLSL ES
+      3.00 lowering, so the four-tap uniform read did not blow the budget.
+
+- [x] **W14 — the backdrop is sized from the camera frustum.**
+      `extent = max(radius * 5, camera_distance * 1.35, ...)` is unrelated to
+      what the camera sees, and it only ever erred large. A backdrop pushed
+      metres behind a subject photographed from centimetres away sits outside the
+      light rig, and inverse-square falloff leaves it black: measured on the
+      travel mug, the rendered backdrop had a **median of 6.7/255** against a
+      0.133 albedo, with a bright pool at p95 = 102 where a light happened to
+      reach. Grading the *albedo* - the earlier fix in this section - cannot
+      help a surface that receives no light.
+      Covering the frame is a property of the frustum, so it is now solved from
+      the frustum: `extent = (distance + 0.72 * extent) * tan(half_fov) * margin`
+      solved for `extent`, floored by the subject's own size. For the mug that
+      is 0.97 m rather than 2.70 m.
+      Proof: `backdrop_covers_the_frame_without_retreating_out_of_the_light_rig`
+      sweeps 4 focal lengths x 3 aspects x 4 subject radii x 3 viewing distances
+      and asserts both halves - the backdrop covers the frustum where it stands,
+      *and* is no larger than coverage demands. The retired rule fails the second
+      assertion on the measured mug framing.
+
+- [x] **The dominant-axis contract change is recorded in the mutation oracle.**
+      `camera_behavior_oracle_rejects_known_bad_mutations` carried a mutation
+      named `actionably_too_narrow` (fill 0.72, width 0.53) that the new rule
+      accepts - it describes a subject whose limiting axis fills the band
+      correctly while the other follows from its aspect, which is the same shape
+      as all three verified subjects. Silently deleting a known-bad mutation
+      would weaken the oracle, so it was converted into an explicit **positive
+      control** asserting that a correctly framed non-frame-shaped subject
+      passes, and a genuinely under-filled mutation (0.53 limiting axis) was
+      added beside it to prove relaxing the second axis did not relax the floor.
+
+- [x] **Three regressions the full suite caught, all self-inflicted.**
+      1. `m9_parallel_cpu_render_has_low_steady_state_allocations` and
+         `m9_cpu_supersample_render_reuses_steady_state_scratch_buffers` observed
+         **17** allocations against a budget of 16. The W4 restructure built a
+         `Vec` of per-band reflection slices on every frame, including frames with
+         no reflections at all. The no-SSR path now takes an iterator chain that
+         never builds it; only an SSR frame pays. Byte-identity is unaffected.
+      2. `pf00_shadow_benchmark_row_records_scaling_and_intersection_work` saw
+         `shadow_rays: 0`. That is the W17 shadow-visibility cache working - a
+         warm prepare casts no shadow rays - but the benchmark warmed once and
+         then sampled the *same* renderer, so its "intersection work" counters
+         described cache hits. Publishing those as shadow scaling numbers would
+         be an artifact that proves the opposite of what it claims. Scaling is a
+         cold-path property, so `measure_cold_profiled_prepares` gives each
+         sample its own renderer.
+      3. That exposed a second layer: cold samples disagreed on *tangent*
+         counters, because the tangent cache lives in `Assets` and is shared
+         across renderers, so only the first sample paid for it. The shared asset
+         caches are now warmed on a throwaway renderer first, leaving only the
+         renderer-owned shadow cache cold, so the benchmark isolates the thing it
+         names. `shadow_rays` is 3 rather than 0, and the full
+         `m9_platform_release` binary passes 40/40.
+
+## 6. V3D adapter — investigated, refusal retained
+
+### 2026-07-28 correction
+
+The earlier roughly-7% estimate materially understated the current
+camera-behavior failure. With the same V3D 7.1.10.2 / V3DV Mesa adapter:
+
+- the demo hero dropped its beauty draws in 11/11 attempts across three capture
+  sizes;
+- `dark_metal_speaker` dropped most draws in 4/5 attempts;
+- the mug and valve remained substantially more reliable;
+- the same recipes render correctly on lavapipe.
+
+The final remediation does not claim to fix the driver. It keeps the adapter
+refused by default, reports actual device sample-count support, and fails a
+render whose separate semantic AOV claims subject pixels but whose beauty frame
+has no corresponding silhouette signal. A final blank demo-hero frame was
+rejected at boundary delta 0.53 with 227,897 stale AOV subject pixels. A
+supersample-2 valve frame that retained its contact shadow was rejected at 0.47
+with 169,031 stale AOV subject pixels. Both fail with
+`subject_color_frame_agreement_below_min`.
+
+The exact cleaned-tree 1280x840 valve frame measures boundary delta 33.32 over
+4,108 samples and passes. Its planar baseplate high-pass RMS is 0.370 against
+10.020 before removing the generated world-space micro-surface waves. The
+discarded derivative specular-AA and 256-face bundled-environment experiments
+measured 0.356 on the same crop, so neither is required for the fix.
+
+The agreement check is deliberately reported as
+`heuristic_local_semantic_boundary`: it catches the measured failures but can
+still be fooled by coincident background structure. Exact proof requires
+semantic identity or subject coverage written as a second attachment in the
+beauty pass itself.
 
 `Renderer::headless_gpu` refuses the Pi's V3D adapter unless
 `SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU` is set (`src/render/gpu/build.rs:20-23`).

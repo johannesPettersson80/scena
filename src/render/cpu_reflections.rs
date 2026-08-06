@@ -10,6 +10,10 @@ pub(super) struct MaterialReflectionRecord<'a> {
     pub(super) material_reflections: &'a mut [MaterialReflectionPixel],
     pub(super) x: u32,
     pub(super) y: u32,
+    /// Index of this pixel *within the buffer being written*, which for a
+    /// row-banded parallel worker covers only its own rows. `target` stays the
+    /// whole frame because the reflection sample coordinates are global.
+    pub(super) pixel_index: usize,
     pub(super) position: Vec3,
     pub(super) normal: Vec3,
     pub(super) reflection: super::prepare::PreparedMaterialReflection,
@@ -49,8 +53,7 @@ pub(super) fn record_material_reflection_pixel(input: MaterialReflectionRecord<'
     else {
         return;
     };
-    let index = input.target.pixel_index(input.x, input.y);
-    input.material_reflections[index] = pixel;
+    input.material_reflections[input.pixel_index] = pixel;
 }
 
 fn reflection_edge_fade(u: f32, v: f32) -> f32 {

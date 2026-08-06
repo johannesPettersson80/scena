@@ -24,9 +24,11 @@ mod instances;
 mod interaction_verification;
 mod introspection;
 mod label_quality;
+mod material_resolution;
 mod material_variants;
 mod measurements;
 mod photo;
+mod photo_quality;
 mod photographic_lighting;
 mod photographic_surface;
 mod photographic_surroundings;
@@ -35,6 +37,7 @@ mod presentation_timeline;
 mod product;
 mod product_options;
 mod recipe;
+mod reflection_probe_capture;
 mod reporting;
 mod section_box;
 mod semantic_aov;
@@ -110,19 +113,29 @@ pub use interaction_verification::{
     InteractionVerificationReasonV1, InteractionVerificationReportV1,
     InteractionVerificationSummaryV1, InteractionViewportV1, host_event_kind_name, physical_px,
 };
+pub use material_resolution::{
+    PHOTOGRAPHIC_MATERIAL_RESOLUTION_SELECTION_SCHEMA_V1,
+    PhotographicMaterialResolutionSelectionReportV1, PhotographicMaterialResolutionSelectionV1,
+};
 pub use measurements::{
     SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementAuthorityV1,
     SceneHostMeasurementLabelProjectionV1, SceneHostMeasurementOverlayReportV1,
 };
 pub use photo::{
-    PHOTO_CANDIDATE_PLAN_SCHEMA_V1, PHOTO_PLAN_SCHEMA_V1, PHOTO_REPORT_SCHEMA_V1,
-    PHOTO_SHADED_CANDIDATE_SELECTION_SCHEMA_V1, PHOTO_SUBJECT_REGION_SCHEMA_V1,
-    PhotoCandidateConstraintsV1, PhotoCandidateFillRangeV1, PhotoCandidateObservation,
-    PhotoCandidatePlanV1, PhotoCandidateRequest, PhotoCandidateScore, PhotoCandidateScoringReport,
-    PhotoCandidateStagingV1, PhotoCompositionCandidateV1, PhotoPhysicalCameraV1,
-    PhotoPlanArtifactsV1, PhotoPlanSourceV1, PhotoPlanSubjectV1, PhotoPlanTargetV1, PhotoPlanV1,
-    PhotoReportV1, PhotoSubjectRegionV1, camera_behavior_candidate_plan,
-    product_hero_candidate_plan, score_camera_behavior_candidates, score_product_hero_candidates,
+    PHOTO_CANDIDATE_PLAN_SCHEMA_V1, PHOTO_PLAN_SCHEMA_V1, PHOTO_QUALITY_EXECUTION_SCHEMA_V1,
+    PHOTO_REPORT_SCHEMA_V1, PHOTO_SHADED_CANDIDATE_SELECTION_SCHEMA_V1,
+    PHOTO_SUBJECT_REGION_SCHEMA_V1, PhotoCandidateConstraintsV1, PhotoCandidateFillRangeV1,
+    PhotoCandidateObservation, PhotoCandidatePlanV1, PhotoCandidateRequest, PhotoCandidateScore,
+    PhotoCandidateScoringReport, PhotoCandidateStagingV1, PhotoCompositionCandidateV1,
+    PhotoPhysicalCameraV1, PhotoPlanArtifactsV1, PhotoPlanSourceV1, PhotoPlanSubjectV1,
+    PhotoPlanTargetV1, PhotoPlanV1, PhotoReportV1, PhotoSubjectRegionV1,
+    camera_behavior_candidate_plan, product_hero_candidate_plan, score_camera_behavior_candidates,
+    score_product_hero_candidates,
+};
+pub use photo_quality::{
+    PHOTO_QUALITY_ANALYSIS_SCHEMA_V1, PhotoContourQualityMetricsV1, PhotoGroundingQualityMetricsV1,
+    PhotoMaterialQualityMetricsV1, PhotoProjectedTextureDensityV1, PhotoQualityAnalysisInputV1,
+    PhotoQualityAnalysisReportV1, analyze_photo_quality,
 };
 pub use photographic_lighting::{
     PHOTOGRAPHIC_LIGHTING_REPORT_SCHEMA_V1, PhotographicEnvironmentProfileV1,
@@ -134,7 +147,8 @@ pub use photographic_surface::{
     PhotographicSurfaceRejectedMeshV1, PhotographicSurfaceReportV1,
 };
 pub use photographic_surroundings::{
-    PHOTOGRAPHIC_SURROUNDINGS_REPORT_SCHEMA_V1, PhotographicSurroundingsReportV1,
+    PHOTOGRAPHIC_SURROUNDINGS_REPORT_SCHEMA_V1, PhotographicGroundV1,
+    PhotographicPlanarReflectionCaptureV1, PhotographicSurroundingsReportV1,
 };
 pub use presentation_timeline::{
     PRESENTATION_TIMELINE_SCHEMA_V1, PresentationTimelineActionKindV1,
@@ -148,6 +162,10 @@ pub use product_options::{
     PRODUCT_OPTIONS_SCHEMA_V1, ProductOptionGroupV1, ProductOptionV1, ProductOptionsV1,
 };
 pub use recipe::SceneHostRecipeBuild;
+pub use reflection_probe_capture::{
+    PHOTOGRAPHIC_REFLECTION_PROBE_REPORT_SCHEMA_V1, PhotographicReflectionProbeEntryV1,
+    PhotographicReflectionProbeReportV1,
+};
 pub use reporting::{
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,

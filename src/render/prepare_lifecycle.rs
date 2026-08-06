@@ -158,6 +158,7 @@ impl Renderer {
                 width: self.target.width,
                 height: self.target.height,
             })?;
+        let semantic_aov_target = self.target;
         validate_target_size(target.width, target.height).map_err(|()| {
             PrepareError::InvalidTargetSize {
                 width: target.width,
@@ -205,12 +206,14 @@ impl Renderer {
             self.screen_space_reflections.is_some(),
             self.depth_of_field.is_some(),
             self.auto_exposure.is_some(),
+            self.scene_linear_capture_enabled,
         );
         let active_camera_projection = scene
             .active_camera()
             .and_then(|camera| camera::CameraProjection::from_scene(scene, camera, target).ok());
         let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
         let environment_lighting = self.environment_lighting_for_prepare(environment_desc.as_ref());
+        let reflection_probes = self.reflection_probe_lighting_for_prepare(scene, assets)?;
         let tiled_light_assignment = prepare::collect_gpu_tiled_light_assignment(
             scene,
             scene.origin_shift(),
@@ -331,6 +334,8 @@ impl Renderer {
             &backend_sampled_base_color_textures,
             &backend_material_handles,
             environment_lighting.clone(),
+            &reflection_probes,
+            self.baked_ambient_occlusion,
             work,
             Some(&mut self.shadow_visibility_cache),
         )?;
@@ -405,6 +410,7 @@ impl Renderer {
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(
                 target,
+                semantic_aov_target,
                 gpu_retained_primitives.as_ref(),
                 gpu_primitives.as_ref(),
                 &retained_instances,
@@ -419,6 +425,7 @@ impl Renderer {
                 depth_stats,
                 &backend_material_slots,
                 &environment_lighting,
+                &reflection_probes,
                 &tiled_light_assignment,
                 semantic_aov_capture_enabled,
                 output_plan,

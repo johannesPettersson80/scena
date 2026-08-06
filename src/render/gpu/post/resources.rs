@@ -1,7 +1,9 @@
 use super::super::super::RasterTarget;
 use super::super::pipeline::{GPU_COLOR_FORMAT, create_unlit_pipeline_set};
 use super::super::stats::GpuResourceStats;
-use super::types::{POST_UNIFORM_BYTE_LEN, POST_UNIFORM_SLOT_COUNT, PostResources};
+use super::types::{
+    LinearSceneReadbackResources, POST_UNIFORM_BYTE_LEN, POST_UNIFORM_SLOT_COUNT, PostResources,
+};
 use super::{blit, bloom, bloom_fxaa, dof, fxaa, ssao, ssr};
 
 pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -18,10 +20,27 @@ pub(in crate::render::gpu) fn create_resources(
     surface_format: Option<wgpu::TextureFormat>,
     readback_format: Option<wgpu::TextureFormat>,
     depth_color_view: Option<&wgpu::TextureView>,
+    semantic_aov_capture_enabled: bool,
+    scene_linear_capture_enabled: bool,
 ) -> PostResources {
     let scene = create_post_texture(device, target, "scena.gpu_post.scene_linear_sampling");
     let ping = create_post_texture(device, target, "scena.gpu_post.ping");
     let pong = create_post_texture(device, target, "scena.gpu_post.pong");
+    let linear_scene_readback = scene_linear_capture_enabled.then(|| {
+        let unpadded_bytes_per_row = target.width.saturating_mul(8);
+        let padded_bytes_per_row = unpadded_bytes_per_row
+            .div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            .saturating_mul(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        LinearSceneReadbackResources {
+            buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("scena.gpu_post.scene_linear_readback"),
+                size: u64::from(padded_bytes_per_row).saturating_mul(u64::from(target.height)),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            }),
+            padded_bytes_per_row,
+        }
+    });
     let uniform = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("scena.gpu_post.uniform"),
         size: POST_UNIFORM_BYTE_LEN,
@@ -166,6 +185,7 @@ pub(in crate::render::gpu) fn create_resources(
         draw_bind_group_layout,
         depth_compare,
         1,
+        semantic_aov_capture_enabled.then_some(super::super::semantic_aov::FORMAT),
     );
     let scene_msaa4_pipelines = create_unlit_pipeline_set(
         device,
@@ -176,6 +196,7 @@ pub(in crate::render::gpu) fn create_resources(
         draw_bind_group_layout,
         depth_compare,
         4,
+        semantic_aov_capture_enabled.then_some(super::super::semantic_aov::FORMAT),
     );
     let output_blit_pipeline =
         blit::create_target_pipeline(device, &texture_pipeline_layout, GPU_COLOR_FORMAT);
@@ -197,6 +218,7 @@ pub(in crate::render::gpu) fn create_resources(
         target,
         scene_texture: scene.0,
         scene_view: scene.1,
+        linear_scene_readback,
         ping_texture: ping.0,
         ping_view: ping.1,
         pong_texture: pong.0,
@@ -233,7 +255,7 @@ pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuRe
     let shader_modules =
         optional_surface_pipelines + 6 - u64::from(resources.surface_fxaa_pipeline.is_some());
     GpuResourceStats {
-        buffers: 2,
+        buffers: 2 + u64::from(resources.linear_scene_readback.is_some()),
         textures: 3,
         render_targets: 3,
         pipelines,
@@ -247,7 +269,16 @@ pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuRe
         approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(resources.target, 8, 1)
             .saturating_mul(3)
             .saturating_add(POST_UNIFORM_BYTE_LEN)
-            .saturating_add(POST_UNIFORM_BYTE_LEN.saturating_mul(POST_UNIFORM_SLOT_COUNT)),
+            .saturating_add(POST_UNIFORM_BYTE_LEN.saturating_mul(POST_UNIFORM_SLOT_COUNT))
+            .saturating_add(
+                resources
+                    .linear_scene_readback
+                    .as_ref()
+                    .map_or(0, |readback| {
+                        u64::from(readback.padded_bytes_per_row)
+                            .saturating_mul(u64::from(resources.target.height))
+                    }),
+            ),
         ..GpuResourceStats::default()
     }
 }

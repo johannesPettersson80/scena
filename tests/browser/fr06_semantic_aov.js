@@ -145,19 +145,33 @@ async function captureBackend(page, backend) {
         if (roots.length > 0) host.frameNodeProductView(roots[0]);
         mark("prepare");
         host.prepare();
+        mark("beauty render");
+        const renderOutcome = JSON.parse(host.render());
+        mark("beauty capture");
+        const beautyCapture = await host.captureAsync();
+        const beautyDescriptor = JSON.parse(beautyCapture.descriptorJson);
+        const beautyRgba8 = new Uint8Array(beautyCapture.rgba8);
         mark("first capture");
         const first = await host.captureSemanticAovs();
         mark("repeat capture");
         const second = await host.captureSemanticAovs();
         mark("capture validation");
-      const metadata = JSON.parse(first.metadataJson);
-      const ids = Array.from(first.idIndices);
-      const repeatedIds = Array.from(second.idIndices);
-      const depths = Array.from(first.depthMeters);
-      const normals = Array.from(first.worldNormals);
-      const idRgba8 = new Uint8ClampedArray(first.idRgba8);
+        const metadata = JSON.parse(first.metadataJson);
+        const ids = Array.from(first.idIndices);
+        const repeatedIds = Array.from(second.idIndices);
+        if (first.beautyIdIndices === null || second.beautyIdIndices === null) {
+          throw new Error(`${backend} capture is missing the same-pass beauty semantic witness`);
+        }
+        const beautyIds = Array.from(first.beautyIdIndices);
+        const repeatedBeautyIds = Array.from(second.beautyIdIndices);
+        const depths = Array.from(first.depthMeters);
+        const normals = Array.from(first.worldNormals);
+        const idRgba8 = new Uint8ClampedArray(first.idRgba8);
       if (ids.length !== width * height || depths.length !== width * height) {
         throw new Error(`${backend} AOV dimensions do not match metadata`);
+      }
+      if (beautyIds.length !== ids.length) {
+        throw new Error(`${backend} beauty witness dimensions do not match the AOV`);
       }
       if (normals.length !== width * height * 3) {
         throw new Error(`${backend} normal payload has the wrong length`);
@@ -168,7 +182,59 @@ async function captureBackend(page, backend) {
       if (!ids.every((id, index) => id === repeatedIds[index])) {
         throw new Error(`${backend} repeated ID capture is not deterministic`);
       }
+      if (!beautyIds.every((id, index) => id === repeatedBeautyIds[index])) {
+        throw new Error(`${backend} repeated beauty witness is not deterministic`);
+      }
       const hitCount = ids.filter((id) => id !== 0).length;
+      const beautyHitCount = beautyIds.filter((id) => id !== 0).length;
+      const beautyMatchCount = ids.filter(
+        (id, index) => id !== 0 && beautyIds[index] === id,
+      ).length;
+      const samePassBeautyAgreement = beautyMatchCount / Math.max(1, hitCount);
+      if (beautyHitCount === 0 || samePassBeautyAgreement < 0.8) {
+        throw new Error(
+          `${backend} same-pass beauty agreement failed: `
+          + `${beautyMatchCount}/${hitCount} (${samePassBeautyAgreement})`,
+        );
+      }
+      const uniqueBeautyRgba = new Set();
+      let beautyNonblack = 0;
+      for (let offset = 0; offset < beautyRgba8.length; offset += 4) {
+        uniqueBeautyRgba.add(
+          `${beautyRgba8[offset]},${beautyRgba8[offset + 1]},`
+          + `${beautyRgba8[offset + 2]},${beautyRgba8[offset + 3]}`,
+        );
+        if (beautyRgba8[offset] || beautyRgba8[offset + 1] || beautyRgba8[offset + 2]) {
+          beautyNonblack += 1;
+        }
+      }
+      const beautyDiagnostic = {
+        descriptor: {
+          width: beautyDescriptor.width,
+          height: beautyDescriptor.height,
+          pixel_format: beautyDescriptor.pixel_format,
+          payload: beautyDescriptor.payload,
+          pixels: beautyDescriptor.pixels,
+        },
+        rgba8_length: beautyRgba8.length,
+        nonblack_pixels: beautyNonblack,
+        unique_rgba_count: uniqueBeautyRgba.size,
+        render_outcome: renderOutcome,
+        witness_hit_count: beautyHitCount,
+        witness_matching_aov_hits: beautyMatchCount,
+        witness_agreement: samePassBeautyAgreement,
+      };
+      console.info(`FR06 ${backend}: beauty diagnostic ${JSON.stringify(beautyDiagnostic)}`);
+      if (beautyDescriptor.width !== width
+          || beautyDescriptor.height !== height
+          || beautyRgba8.length !== width * height * 4
+          || beautyNonblack === 0
+          || uniqueBeautyRgba.size < 4) {
+        throw new Error(
+          `${backend} beauty frame is empty or structurally flat: `
+          + JSON.stringify(beautyDiagnostic),
+        );
+      }
       const finiteDepthCount = depths.filter((depth, index) => ids[index] !== 0 && Number.isFinite(depth)).length;
       const proofCanvas = document.createElement("canvas");
       proofCanvas.width = width;
@@ -183,6 +249,17 @@ async function captureBackend(page, backend) {
           hit_count: hitCount,
           finite_depth_count: finiteDepthCount,
           deterministic_repeat: true,
+          render_outcome: renderOutcome,
+          beauty_frame: {
+            nonblack_pixels: beautyNonblack,
+            unique_rgba_count: uniqueBeautyRgba.size,
+          },
+          beauty_witness: {
+            hit_count: beautyHitCount,
+            matching_aov_hits: beautyMatchCount,
+            same_pass_beauty_agreement: samePassBeautyAgreement,
+            deterministic_repeat: true,
+          },
           capability_report: capabilityReport,
           id_png_data_url: proofCanvas.toDataURL("image/png"),
         };

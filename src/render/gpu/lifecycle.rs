@@ -22,6 +22,29 @@ fn browser_uses_automatic_resource_retirement(backend: wgpu::Backend) -> bool {
 }
 
 impl GpuDeviceState {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::render) fn complete_headless_prepare_uploads(
+        &self,
+    ) -> Result<(), wgpu::PollError> {
+        if !self.unstable_v3d_headless {
+            return Ok(());
+        }
+        self.queue.submit(std::iter::empty());
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map(|_| ())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::render) const fn requires_v3d_headless_target_alignment(&self) -> bool {
+        self.unstable_v3d_headless
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(in crate::render) const fn requires_v3d_headless_target_alignment(&self) -> bool {
+        false
+    }
+
     pub(in crate::render) fn adapter_report(&self) -> GpuAdapterReport {
         let info = self.adapter.get_info();
         let limits = self.adapter.limits();

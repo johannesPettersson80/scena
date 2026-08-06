@@ -35,14 +35,27 @@ const NEUTRAL_STUDIO_SOURCE_BYTES: &[u8] =
 const STUDIO_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
 const STUDIO_RUNTIME_PATH: &str = "tests/assets/environment/generated/studio_small_03_128x64.hdr";
 const STUDIO_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_03_128x64.hdr";
+const STUDIO_FINAL_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_08_2k.hdr";
+const STUDIO_FINAL_PROVENANCE_PATH: &str =
+    "tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json";
+const STUDIO_FINAL_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_08_2048x1024.hdr";
 const STUDIO_SOURCE_SHA256: &str =
     "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817";
-const STUDIO_FILES: &[&str] = &[STUDIO_SOURCE_PATH, STUDIO_RUNTIME_PATH];
+const STUDIO_FILES: &[&str] = &[
+    STUDIO_SOURCE_PATH,
+    STUDIO_RUNTIME_PATH,
+    STUDIO_FINAL_SOURCE_PATH,
+    STUDIO_FINAL_PROVENANCE_PATH,
+];
 pub(crate) const BUNDLED_STUDIO_URI: &str = STUDIO_RUNTIME_URI;
 pub(crate) const BUNDLED_STUDIO_BYTES: &[u8] = STUDIO_RUNTIME_BYTES;
+pub(crate) const BUNDLED_FINAL_STUDIO_URI: &str = STUDIO_FINAL_RUNTIME_URI;
+pub(crate) const BUNDLED_FINAL_STUDIO_BYTES: &[u8] = STUDIO_SOURCE_BYTES;
 
 const STUDIO_RUNTIME_BYTES: &[u8] =
     include_bytes!("../../tests/assets/environment/generated/studio_small_03_128x64.hdr");
+const STUDIO_SOURCE_BYTES: &[u8] =
+    include_bytes!("../../tests/assets/environment/polyhaven/studio_small_08_2k.hdr");
 
 /// One bundled, checked environment preset.
 ///
@@ -99,7 +112,7 @@ impl EnvironmentPreset {
     /// The currently checked environment preset source files must stay small
     /// enough for crate packaging. This budget covers the neutral preview
     /// fixture derivatives plus the bundled Poly Haven studio HDR.
-    pub const PACKAGE_SIZE_BUDGET_BYTES: u64 = 2_000_000;
+    pub const PACKAGE_SIZE_BUDGET_BYTES: u64 = 8_000_000;
 
     /// Returns the static metadata for this preset.
     pub const fn metadata(self) -> EnvironmentPresetMetadata {
@@ -221,9 +234,13 @@ impl<F: AssetFetcher> Assets<F> {
 }
 
 pub(super) fn bundled_environment_bytes(path: &AssetPath) -> Option<&'static [u8]> {
-    (path.as_str() == STUDIO_RUNTIME_URI).then_some(STUDIO_RUNTIME_BYTES)
+    match path.as_str() {
+        STUDIO_RUNTIME_URI => Some(STUDIO_RUNTIME_BYTES),
+        STUDIO_FINAL_RUNTIME_URI => Some(STUDIO_SOURCE_BYTES),
+        _ => None,
+    }
 }
 
 pub(super) fn is_bundled_environment_uri(path: &AssetPath) -> bool {
-    path.as_str() == STUDIO_RUNTIME_URI
+    matches!(path.as_str(), STUDIO_RUNTIME_URI | STUDIO_FINAL_RUNTIME_URI)
 }

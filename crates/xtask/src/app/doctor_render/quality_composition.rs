@@ -58,6 +58,64 @@ pub(crate) fn check_scene_composition_quality_contracts(root: &Path, findings: &
         root,
         findings,
         "ARCH-SCENE-COMPOSITION",
+        "src/scene_host/composition/subject.rs",
+        &[
+            "semantic_color_frame_agreement",
+            "subject_color_frame_agreement_below_min",
+            "heuristic_local_semantic_boundary",
+            "semantic_color_frame_agreement_distinguishes_a_drawn_subject_from_a_stale_aov_mask",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "src/render/prepare_lifecycle.rs",
+        &[
+            "let semantic_aov_target = self.target;",
+            "semantic_aov_target,",
+        ],
+    );
+    for path in [
+        "src/render/gpu/prepare_resources.rs",
+        "src/render/gpu/prepare_resources_wasm.rs",
+    ] {
+        require_contains(
+            root,
+            findings,
+            "ARCH-SCENE-COMPOSITION",
+            path,
+            &[
+                "semantic_aov_target: RasterTarget",
+                "target: semantic_aov_target",
+            ],
+        );
+    }
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "tests/fr06_semantic_aov.rs",
+        &["fr06_headless_gpu_semantic_aov_matches_cpu_center_truth"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "tests/scene_host.rs",
+        &["photo_candidate_framing_centers_the_projected_subject_bounds_used_by_the_gate"],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "src/scene_host/photo.rs",
+        &["photographic_visual_center"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
         "src/scene_host/composition/object_textures.rs",
         &[
             "object_texture_result_check",

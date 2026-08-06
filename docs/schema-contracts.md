@@ -1454,8 +1454,14 @@ The current v1 recipe slice supports:
   `pbr_metallic_roughness`, `line`, `wireframe`, and `edge`). Presets route
   through the matching Rust `MaterialDesc::*` helper; optional `base_color`
   tints presets where applicable, and scalar/raw overrides are applied after
-  the helper result. Low-level kinds still require `base_color`. All texture
-  slots are loaded under `RecipeBuildPolicy`.
+  the helper result. A material may instead select one scena-generated
+  `photographic_surface` or one local, compiled `material_pack`; these modes are
+  mutually exclusive with `preset` and low-level `kind`. Generated surfaces
+  use physical `tile_size_m`/`feature_scale_m`, deterministic seed/resolution,
+  and bounded variation/wear controls. Packs carry map hashes and source
+  provenance, accept physical `tile_size_m`, and may pin
+  `expected_archive_sha256`. Low-level kinds still require `base_color`. All
+  generated or loaded texture slots are charged under `RecipeBuildPolicy`.
   Shared material fields include base color, metallic/roughness,
   double-sided, emissive, alpha mode, stroke width, edge threshold, and texture
   slots loaded under `RecipeBuildPolicy`.
@@ -1533,15 +1539,20 @@ The current v1 recipe slice supports:
   `Scene::add_perspective_camera_default_for`; `framing.mode:"principal_face"`
   chooses the imported/rendered bounds' thinnest axis as the view direction so
   thin CAD parts are framed by their broad face rather than their edge.
-- `imports[]` may declare presentation-only `material` and `edge_emphasis`
-  objects. `material` overrides the imported mesh material with either a named
-  material `preset` plus optional tint or a recipe-owned PBR base color,
-  roughness, metallic factor, and optional `double_sided:true` for CAD
-  inspection views where thin imported surfaces must remain visible from the
-  back side. `edge_emphasis` adds renderer edge-material overlay geometry for
-  boundary and crease edges above the requested angle threshold. Both are Scena
-  rendering controls only; they do not change imported geometry, CAD truth, or
-  source glTF bytes.
+- `imports[]` may declare presentation-only `material`, `material_bindings`,
+  and `edge_emphasis` objects. `material` overrides the complete imported
+  subtree with either a named material `preset`, a local compiled
+  `material_pack`, or a recipe-owned PBR base color, plus optional tint,
+  roughness, metallic factor, and `double_sided:true`. `material_bindings`
+  assigns those same controls to individual drawable glTF source materials.
+  Each selector requires `source_material.index` and may lock the exact
+  `source_material.name`; missing indices or changed names fail before any
+  binding is applied, and unselected materials retain their imported
+  appearance. The global and per-source forms are mutually exclusive.
+  `edge_emphasis` adds renderer edge-material overlay geometry for boundary and
+  crease edges above the requested angle threshold. These are Scena rendering
+  controls only; they do not change imported geometry, CAD truth, or source
+  glTF bytes.
 - `lights[]` authored directional, point, spot, area, or `studio_rig` lights
   with presets, color, intensity/range/cone fields, area shape/size/flux
   fields, and transforms. `kind:"studio_rig"` routes through

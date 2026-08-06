@@ -5,7 +5,7 @@
       "name": "agent",
       "owner": "scene_host",
       "kind": "feature-composition",
-      "implementation": { "path": "Cargo.toml", "token": "agent = [\"scene-host\"]" },
+      "implementation": { "path": "Cargo.toml", "token": "agent = [\"scene-host\", \"material-library\"]" },
       "test": { "path": "tests/a09_feature_discoverability.rs", "token": "agent_feature_enables_the_complete_self_verification_surface" },
       "documentation": { "path": "docs/feature-flags.md", "token": "`agent`" }
     },
@@ -102,6 +102,13 @@
       "implementation": { "path": "src/assets/gltf/meshopt.rs", "token": "feature = \"meshopt\"" },
       "test": { "path": "tests/m8_assets_materials_ecosystem.rs", "token": "m8_meshopt_feature_decodes_required_compressed_buffer_views" },
       "documentation": { "path": "docs/feature-flags.md", "token": "`meshopt`" }
+    },
+    {
+      "name": "material-library",
+      "owner": "assets",
+      "implementation": { "path": "src/assets.rs", "token": "feature = \"material-library\"" },
+      "test": { "path": "tests/material_library.rs", "token": "photographic_material_catalog_is_large_source_backed_and_product_focused" },
+      "documentation": { "path": "docs/feature-flags.md", "token": "`material-library`" }
     },
     {
       "name": "obj",

@@ -8,6 +8,67 @@ use super::{
     Renderer, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, Tonemapper,
 };
 
+/// Deterministic prepare-time ambient visibility for indirect lighting.
+///
+/// This is distinct from screen-space ambient occlusion: scena traces a bounded
+/// cosine-weighted hemisphere against the scene BVH at prepared vertices, then
+/// attenuates environment lighting only.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BakedAmbientOcclusionConfig {
+    sample_count: u8,
+    radius_fraction: f32,
+    intensity: f32,
+}
+
+impl BakedAmbientOcclusionConfig {
+    /// A balanced preset for high-resolution product stills.
+    pub const fn product_still() -> Self {
+        Self {
+            sample_count: 16,
+            radius_fraction: 0.10,
+            intensity: 0.80,
+        }
+    }
+
+    /// Creates a bounded ambient-visibility configuration.
+    ///
+    /// `radius_fraction` is relative to the prepared scene's bounding-sphere
+    /// radius, keeping contact scale stable across differently sized assets.
+    pub fn new(sample_count: u8, radius_fraction: f32, intensity: f32) -> Self {
+        Self {
+            sample_count: sample_count.clamp(4, 32),
+            radius_fraction: if radius_fraction.is_finite() {
+                radius_fraction.clamp(0.001, 1.0)
+            } else {
+                0.10
+            },
+            intensity: if intensity.is_finite() {
+                intensity.clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+        }
+    }
+
+    pub const fn sample_count(self) -> u8 {
+        self.sample_count
+    }
+
+    pub const fn radius_fraction(self) -> f32 {
+        self.radius_fraction
+    }
+
+    pub const fn intensity(self) -> f32 {
+        self.intensity
+    }
+}
+
+impl Default for BakedAmbientOcclusionConfig {
+    fn default() -> Self {
+        Self::product_still()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum Profile {
@@ -126,6 +187,19 @@ impl Renderer {
         }
     }
 
+    #[cfg(any(feature = "scene-host", test))]
+    pub(crate) fn set_scene_linear_capture_enabled(&mut self, enabled: bool) {
+        if self.scene_linear_capture_enabled != enabled {
+            self.scene_linear_capture_enabled = enabled;
+            self.mark_output_resources_changed();
+        }
+    }
+
+    #[cfg(feature = "scene-host")]
+    pub(crate) const fn scene_linear_capture_enabled(&self) -> bool {
+        self.scene_linear_capture_enabled
+    }
+
     pub fn exposure_ev(&self) -> f32 {
         self.output.exposure_ev()
     }
@@ -217,6 +291,30 @@ impl Renderer {
             self.target_revision = self.target_revision.saturating_add(1);
             self.clear_rendered_frame();
         }
+    }
+
+    /// Returns the prepare-time indirect-light occlusion configuration.
+    pub const fn baked_ambient_occlusion(&self) -> Option<BakedAmbientOcclusionConfig> {
+        self.baked_ambient_occlusion
+    }
+
+    /// Enables or disables deterministic BVH-baked ambient visibility.
+    ///
+    /// Changing this setting invalidates prepared geometry because visibility is
+    /// stored with each prepared vertex. It does not enable the screen-space AO
+    /// post-process.
+    pub fn set_baked_ambient_occlusion(&mut self, config: Option<BakedAmbientOcclusionConfig>) {
+        if self.baked_ambient_occlusion != config {
+            self.baked_ambient_occlusion = config;
+            self.shadow_visibility_cache = None;
+            self.target_revision = self.target_revision.saturating_add(1);
+            self.prepared = None;
+            self.clear_rendered_frame();
+        }
+    }
+
+    pub fn clear_baked_ambient_occlusion(&mut self) {
+        self.set_baked_ambient_occlusion(None);
     }
 
     pub fn supersample_factor(&self) -> u32 {

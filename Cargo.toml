@@ -107,7 +107,7 @@ wgpu = { version = "29.0.3", features = ["webgl"] }
 
 [features]
 default = []
-agent = ["scene-host"]
+agent = ["scene-host", "material-library"]
 controls = []
 controls-winit = ["controls"]
 controls-web = ["controls"]
@@ -121,6 +121,7 @@ hot-reload = ["dep:notify-debouncer-full"]
 khronos-samples = []
 ktx2 = ["dep:ktx2", "dep:basisu_c_sys"]
 meshopt = ["dep:meshopt"]
+material-library = ["dep:ureq", "dep:zip"]
 obj = []
 production-assets = ["ktx2", "meshopt"]
 
@@ -146,6 +147,8 @@ strip = "debuginfo"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster = "0.4.0"
 rayon = "1.11"
+ureq = { version = "3.3.0", optional = true }
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.98"

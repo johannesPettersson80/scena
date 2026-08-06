@@ -50,6 +50,25 @@ pub struct EnvironmentCubemapFaces {
     pub(crate) face_pixels: Option<[Vec<[f32; 3]>; 6]>,
 }
 
+fn cubemap_radiance_sha256(resolution: u32, faces: &[Vec<[f32; 3]>; 6]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut digest = Sha256::new();
+    digest.update(resolution.to_le_bytes());
+    for face in faces {
+        for pixel in face {
+            for channel in pixel {
+                digest.update(channel.to_le_bytes());
+            }
+        }
+    }
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 const DEFAULT_ENVIRONMENT_NAME: &str = "neutral-studio";
 pub(super) const DEFAULT_ENVIRONMENT_SOURCE_PATH: &str =
     "tests/assets/environment/neutral-studio.fixture.txt";
@@ -76,6 +95,7 @@ pub enum WasmEnvironmentDelivery {
 pub enum EnvironmentSourceKind {
     BundledPreviewFixture,
     EquirectangularHdr,
+    LocalReflectionProbe,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,6 +150,11 @@ pub struct EnvironmentDesc {
     /// cheap. Skipped from `PartialEq` because two equal `EnvironmentDesc`s
     /// should compare by name + source identity, not by raw pixel pointers.
     equirectangular_pixels: Option<std::sync::Arc<DecodedEquirectangular>>,
+    /// Linear HDR cubemap pixels captured from the current scene for a local
+    /// reflection probe. Keeping the six faces in their native projection
+    /// avoids an unnecessary cube-to-equirectangular-to-cube resample before
+    /// the existing GGX prefilter stage.
+    cubemap_pixels: Option<Arc<EnvironmentCubemapFaces>>,
     /// Compressed HDR bytes retained only for sidecar-backed environments. The
     /// matching sidecar path stays cheap: it never decodes these bytes. They are
     /// decoded lazily only when a later render requests a different sidecar
@@ -148,6 +173,7 @@ impl PartialEq for EnvironmentDesc {
             && self.brdf_lut_size == other.brdf_lut_size
             && self.wasm_delivery == other.wasm_delivery
             && self.derivatives == other.derivatives
+            && self.cubemap_pixels == other.cubemap_pixels
     }
 }
 
@@ -179,6 +205,7 @@ impl EnvironmentDesc {
             derivatives,
             prefilter_sidecar: None,
             equirectangular_pixels: None,
+            cubemap_pixels: None,
             lazy_equirectangular_source: None,
         }
     }
@@ -198,6 +225,7 @@ impl EnvironmentDesc {
             derivatives: Vec::new(),
             prefilter_sidecar: None,
             equirectangular_pixels: None,
+            cubemap_pixels: None,
             lazy_equirectangular_source: None,
         }
     }
@@ -231,6 +259,7 @@ impl EnvironmentDesc {
             derivatives: Vec::new(),
             prefilter_sidecar: None,
             equirectangular_pixels: Some(std::sync::Arc::new(decoded)),
+            cubemap_pixels: None,
             lazy_equirectangular_source: None,
         })
     }
@@ -293,6 +322,65 @@ impl EnvironmentDesc {
                 height,
                 pixels,
             })),
+            cubemap_pixels: None,
+            lazy_equirectangular_source: None,
+        })
+    }
+
+    #[doc(hidden)]
+    pub fn from_cubemap_radiance(
+        path: impl Into<AssetPath>,
+        resolution: u32,
+        faces: [Vec<[f32; 3]>; 6],
+    ) -> Result<Self, AssetError> {
+        let path = path.into();
+        let expected_len = (resolution as u64)
+            .checked_mul(resolution as u64)
+            .ok_or_else(|| AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: "cubemap radiance dimensions overflow".to_string(),
+            })?;
+        if resolution == 0 || faces.iter().any(|face| face.len() as u64 != expected_len) {
+            return Err(AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: format!(
+                    "cubemap radiance must contain six resolution*resolution faces for {resolution}x{resolution}"
+                ),
+            });
+        }
+        let mut preview_irradiance_rgb = [0.0_f32; 3];
+        for pixel in faces.iter().flat_map(|face| face.iter()) {
+            if !pixel
+                .iter()
+                .all(|channel| channel.is_finite() && *channel >= 0.0)
+            {
+                return Err(AssetError::Parse {
+                    path: path.as_str().to_string(),
+                    reason: "cubemap radiance pixels must be finite and non-negative".to_string(),
+                });
+            }
+            preview_irradiance_rgb[0] += pixel[0];
+            preview_irradiance_rgb[1] += pixel[1];
+            preview_irradiance_rgb[2] += pixel[2];
+        }
+        let inverse_count = ((expected_len * 6) as f32).recip();
+        preview_irradiance_rgb = preview_irradiance_rgb.map(|channel| channel * inverse_count);
+        let source_sha256 = cubemap_radiance_sha256(resolution, &faces);
+        let cubemap = EnvironmentCubemapFaces::from_radiance_pixels(resolution, faces)
+            .expect("validated cubemap radiance has a nonzero resolution and six full faces");
+        Ok(Self {
+            name: environment_name_from_path(&path).to_string(),
+            provenance: AssetProvenance::new(path).with_source_sha256(source_sha256),
+            source_kind: EnvironmentSourceKind::LocalReflectionProbe,
+            source_dimensions: Some((resolution, resolution)),
+            preview_irradiance_rgb: Some(preview_irradiance_rgb),
+            cubemap_resolution: resolution,
+            brdf_lut_size: DEFAULT_ENVIRONMENT_BRDF_LUT_SIZE,
+            wasm_delivery: WasmEnvironmentDelivery::Bundled,
+            derivatives: Vec::new(),
+            prefilter_sidecar: None,
+            equirectangular_pixels: None,
+            cubemap_pixels: Some(Arc::new(cubemap)),
             lazy_equirectangular_source: None,
         })
     }
@@ -354,6 +442,7 @@ impl EnvironmentDesc {
             derivatives: Vec::new(),
             prefilter_sidecar: Some(std::sync::Arc::new(sidecar)),
             equirectangular_pixels: None,
+            cubemap_pixels: None,
             lazy_equirectangular_source: Some(Arc::new(LazyEquirectangularSource::new(
                 source_bytes,
             ))),
@@ -440,6 +529,9 @@ impl EnvironmentDesc {
     /// fixture decodes today. Equirectangular HDR sources will gain a real
     /// face decode in step 2 alongside the GGX prefilter and BRDF LUT.
     pub fn cubemap_faces(&self) -> Option<EnvironmentCubemapFaces> {
+        if let Some(cubemap) = self.cubemap_pixels.as_ref() {
+            return Some((**cubemap).clone());
+        }
         if let Some(equirect) = self.equirectangular_pixels.as_ref() {
             return EnvironmentCubemapFaces::from_equirectangular(
                 equirect,
@@ -461,7 +553,8 @@ impl EnvironmentDesc {
     }
 
     pub(crate) fn has_cubemap_face_source(&self) -> bool {
-        self.equirectangular_pixels.is_some()
+        self.cubemap_pixels.is_some()
+            || self.equirectangular_pixels.is_some()
             || self.lazy_equirectangular_source.is_some()
             || self.name == DEFAULT_ENVIRONMENT_NAME
     }

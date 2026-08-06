@@ -112,7 +112,14 @@ pub(super) fn encode_instance_draw_state_with_semantics(
             .map(|record| {
                 attribution
                     .map(|attribution| {
-                        attribution.palette_index(set.source_node(), record.source_instance())
+                        attribution.palette_index(
+                            set.source_node(),
+                            record.source_instance(),
+                            set.primitives()
+                                .iter()
+                                .find(|primitive| primitive.semantic_opaque())
+                                .and_then(|primitive| primitive.semantic_material()),
+                        )
                     })
                     .unwrap_or(0)
             })

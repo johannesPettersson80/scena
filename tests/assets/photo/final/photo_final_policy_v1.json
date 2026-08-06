@@ -1,0 +1,93 @@
+{
+  "schema": "scena.photo_final_policy.v1",
+  "version": 1,
+  "mode": "selective_blocking",
+  "acceptance_set": "tests/assets/photo/final/fixture_manifest.json",
+  "identity_source": "same_pass_beauty_semantic",
+  "admission": {
+    "min_relative_separation": 0.2,
+    "requires_all_four_subjects": true,
+    "requires_native_resolution": true,
+    "requires_false_positive_review": true
+  },
+  "calibration": {
+    "contact_shadow_delta_mean_srgb8": {
+      "source": "builder_lavapipe_3840x2520_ss2",
+      "native_positive_srgb8": {
+        "dark_metal_speaker": 33.061,
+        "colored_travel_mug": 15.407,
+        "valve_manifold": 22.701,
+        "demo_hero": 20.188
+      },
+      "minimum_positive_srgb8": 15.407,
+      "detached_control_srgb8": 0.0,
+      "minimum_positive_margin_over_threshold_srgb8": 11.407
+    }
+  },
+  "admission_decisions": {
+    "reflection_structure_rms_srgb8": "report_only_rewards_noise_and_coherent_artifacts",
+    "contact_shadow_delta_mean_srgb8": "admitted_four_subject_native_and_detached_control",
+    "curved_turn_diversity": "report_only_rejects_valid_non_curved_silhouettes",
+    "luminance_p99_srgb8": "report_only_material_intent_dependent",
+    "near_white_fraction": "report_only_material_intent_dependent",
+    "clipped_fraction": "report_only_material_intent_dependent",
+    "projected_texture_density": "report_only_incomplete_material_scope"
+  },
+  "metrics": {
+    "reflection_structure_rms_srgb8": {
+      "direction": "higher_is_more_structured",
+      "scope": "smooth_metal_interior_excluding_saturation_and_silhouette",
+      "status": "report_only_false_positive_risk",
+      "blocking": false,
+      "calibration": "four_subject_native_reviewed_not_admitted"
+    },
+    "contact_shadow_delta_mean_srgb8": {
+      "direction": "higher_is_more_attached",
+      "scope": "same_pass_subject_support_boundary",
+      "status": "four_subject_calibrated",
+      "blocking": true,
+      "failure_code": "contact_shadow_missing",
+      "threshold": {
+        "min": 4.0,
+        "min_boundary_samples": 32,
+        "min_attached_fraction": 0.2
+      },
+      "calibration": "four_subject_native_plus_detached_control"
+    },
+    "curved_turn_diversity": {
+      "direction": "higher_is_less_faceted",
+      "scope": "semantic_silhouette_row_extents",
+      "status": "report_only_false_positive_risk",
+      "blocking": false,
+      "calibration": "four_subject_native_reviewed_not_admitted"
+    },
+    "luminance_p99_srgb8": {
+      "direction": "bounded",
+      "scope": "per_material",
+      "status": "report_only_material_intent_dependent",
+      "blocking": false,
+      "calibration": "four_subject_native_reviewed_not_admitted"
+    },
+    "near_white_fraction": {
+      "direction": "bounded",
+      "scope": "per_material",
+      "status": "report_only_material_intent_dependent",
+      "blocking": false,
+      "calibration": "four_subject_native_reviewed_not_admitted"
+    },
+    "clipped_fraction": {
+      "direction": "lower_is_better",
+      "scope": "per_material",
+      "status": "report_only_material_intent_dependent",
+      "blocking": false,
+      "calibration": "four_subject_native_reviewed_not_admitted"
+    },
+    "projected_texture_density": {
+      "direction": "higher_is_better",
+      "scope": "per_textured_material",
+      "status": "report_only_incomplete_material_scope",
+      "blocking": false,
+      "calibration": "four_subject_native_reviewed_not_admitted"
+    }
+  }
+}

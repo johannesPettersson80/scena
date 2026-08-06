@@ -34,6 +34,7 @@ pub(in crate::render) async fn request_headless_gpu(
         queue,
         surface: None,
         runtime_fault,
+        unstable_v3d_headless: v3d_headless_workarounds_required(&adapter_info),
         pending_destructions: 0,
         triangle_shader_modules: Default::default(),
         sample_count_capabilities: Default::default(),
@@ -56,21 +57,26 @@ pub(in crate::render) async fn request_headless_gpu(
 /// With the tables in a uniform block that is gone: 8,894 instructions, zero
 /// allocation failures, and V3D rasterizes about six times faster than lavapipe.
 ///
-/// The refusal stays because a different, quieter defect remains. Measured over
-/// 40 identical headless renders, roughly 7% return a frame containing only the
-/// clear colour. On those runs scena's own state is indistinguishable from a
-/// success: the same 33 draw batches, the same 33 submissions, a byte-identical
-/// camera, no `on_uncaptured_error` callback, and a clean `runtime_fault`
-/// channel (which this path does consult, see `draw/native.rs`). The failing
-/// frames share one payload hash, so the render pass runs, clears, and discards
-/// the geometry. lavapipe and the CPU rasterizer are clean over the same runs.
+/// Two V3DV defects remain in the explicit diagnostic lane. First, a completed
+/// empty submission after full resource preparation is required before the
+/// first graphics submission. Second, large unaligned headless target widths
+/// silently lose beauty draws without a validation or runtime fault. A
+/// near-identical aligned target renders on the first cycle, so the diagnostic
+/// lane renders to an aspect-preserving 64-pixel-aligned internal target and
+/// resolves back to the caller's exact requested dimensions.
 ///
-/// Silently returning an empty frame is worse than refusing the adapter, so the
-/// refusal is kept until that is understood. `SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU`
-/// still bypasses it for investigation.
+/// The default refusal remains while these workarounds are hardware-only and
+/// the adapter has not passed the complete release matrix. The
+/// `SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU` escape hatch receives the barrier and
+/// remains available for explicit hardware proof.
 #[cfg(not(target_arch = "wasm32"))]
 fn is_unstable_v3d_headless_adapter(info: &wgpu::AdapterInfo) -> bool {
     info.backend == wgpu::Backend::Vulkan && info.name.to_ascii_lowercase().contains("v3d")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn v3d_headless_workarounds_required(info: &wgpu::AdapterInfo) -> bool {
+    is_unstable_v3d_headless_adapter(info)
 }
 
 /// Try the WebGPU baseline first, fall back to `downlevel_defaults` if the
@@ -268,6 +274,8 @@ async fn request_gpu_for_surface(
         queue,
         surface: Some(GpuSurfaceState { surface, config }),
         runtime_fault,
+        #[cfg(not(target_arch = "wasm32"))]
+        unstable_v3d_headless: false,
         pending_destructions: 0,
         triangle_shader_modules: Default::default(),
         sample_count_capabilities: Default::default(),
@@ -539,6 +547,7 @@ mod tests {
         };
 
         assert!(super::is_unstable_v3d_headless_adapter(&info));
+        assert!(super::v3d_headless_workarounds_required(&info));
     }
 
     #[test]
@@ -558,10 +567,12 @@ mod tests {
         };
 
         assert!(!super::is_unstable_v3d_headless_adapter(&info));
+        assert!(!super::v3d_headless_workarounds_required(&info));
 
         info.name = String::from("V3D 7.1.10.2");
         info.backend = wgpu::Backend::Gl;
         assert!(!super::is_unstable_v3d_headless_adapter(&info));
+        assert!(!super::v3d_headless_workarounds_required(&info));
     }
 
     #[test]

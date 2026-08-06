@@ -48,8 +48,9 @@ pub(crate) fn check_c20_browser_execution_ergonomics(root: &Path, findings: &mut
         RULE,
         "src/diagnostics/capabilities/sample_counts.rs",
         &[
-            "Backend::HeadlessGpu | Backend::NativeSurface => [1, 4, 8]",
-            "Backend::WebGpu | Backend::WebGl2",
+            "pub(super) const fn measured_sample_counts(maximum: u32)",
+            "| Backend::WebGpu",
+            "| Backend::WebGl2",
             "CapabilityStatus::ErrorIfRequired",
         ],
     );

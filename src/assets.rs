@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 
 use crate::diagnostics::AssetError;
@@ -12,6 +11,7 @@ use crate::geometry::{GeometryDesc, StaticBatchReport};
 use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
+mod asset_path;
 mod builtin;
 mod catalog;
 mod conversion;
@@ -32,11 +32,18 @@ mod hot_reload;
 #[cfg(feature = "khronos-samples")]
 mod khronos;
 mod load;
+mod material_imperfection;
+#[cfg(test)]
+mod material_imperfection_tests;
+mod material_library;
 mod material_presets;
 mod material_source;
 mod memory_textures;
 #[cfg(feature = "obj")]
 mod obj;
+mod photographic_surface;
+#[cfg(test)]
+mod photographic_surface_tests;
 mod provenance;
 mod recipe_validation;
 mod scene_cache;
@@ -44,6 +51,7 @@ mod scene_loading;
 mod store_id;
 mod texture;
 mod texture_fetch;
+pub use asset_path::AssetPath;
 pub(crate) use builtin::{bundled_scene_bytes, is_bundled_scene_uri};
 pub use catalog::{
     ASSET_CATALOG_SCHEMA_V1, ASSET_READINESS_REPORT_SCHEMA_V1, AssetCatalogAssetV1,
@@ -93,10 +101,29 @@ pub use load::{
     AssetLoadWarningV1, AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1,
     AssetReloadError, GltfSceneSelection,
 };
+pub use material_imperfection::*;
+pub use material_library::{
+    MATERIAL_LIBRARY_CATALOG_SCHEMA_V1, MATERIAL_LIBRARY_CATALOG_SCHEMA_V2,
+    PHOTOGRAPHIC_MATERIAL_ARCHIVE_MAX_BYTES, PHOTOGRAPHIC_MATERIAL_PACK_SCHEMA_V1,
+    PHOTOGRAPHIC_MATERIAL_PACK_SCHEMA_V2, PhotographicMaterialArchiveVariantV2,
+    PhotographicMaterialCatalogEntryV1, PhotographicMaterialCatalogEntryV2,
+    PhotographicMaterialCatalogV1, PhotographicMaterialCatalogV2, PhotographicMaterialCategoryV1,
+    PhotographicMaterialMapKindV1, PhotographicMaterialPackAssets,
+    PhotographicMaterialPackMapRoleV1, PhotographicMaterialPackMapV1,
+    PhotographicMaterialPackSourceV1, PhotographicMaterialPackV1, PhotographicMaterialPackV2,
+    PhotographicMaterialResolutionV1, photographic_material_catalog_v1,
+    photographic_material_catalog_v2, select_photographic_material_resolution,
+};
+#[cfg(all(feature = "material-library", not(target_arch = "wasm32")))]
+pub use material_library::{
+    PhotographicMaterialPackError, compile_photographic_material_archive,
+    compile_photographic_material_archive_at_resolution,
+};
 pub use material_presets::{
     MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
 };
 pub use material_source::{AssetMaterialSource, AssetMaterialSourceKind};
+pub use photographic_surface::*;
 pub use provenance::{AssetDerivative, AssetProvenance};
 pub use recipe_validation::{
     validate_scene_recipe_json_with_assets, validate_scene_recipe_json_with_assets_and_policy,
@@ -120,6 +147,13 @@ new_key_type! {
     pub struct EnvironmentHandle;
 }
 
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct EffectiveMaterialPbr {
+    pub metallic_mean: f32,
+    pub roughness_mean: f32,
+}
+
 /// CPU-side retention behavior for asset data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetainPolicy {
@@ -127,9 +161,6 @@ pub enum RetainPolicy {
     OnContextLossOnly,
     Always,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct AssetPath(String);
 
 /// Process-unique identifier for an [`Assets`] store. Each [`Assets::new`] /
 /// [`Assets::with_fetcher`] call mints a fresh `AssetStoreId` from a
@@ -166,12 +197,16 @@ struct AssetStorage {
     geometries: SlotMap<GeometryHandle, Arc<GeometryDesc>>,
     materials: SlotMap<MaterialHandle, Arc<MaterialDesc>>,
     material_sources: BTreeMap<MaterialHandle, AssetMaterialSource>,
+    #[cfg(feature = "scene-host")]
+    photographic_material_pack_bindings:
+        BTreeMap<MaterialHandle, material_library::PhotographicMaterialPackBinding>,
     textures: SlotMap<TextureHandle, Arc<TextureDesc>>,
     environments: SlotMap<EnvironmentHandle, Arc<EnvironmentDesc>>,
     scene_lookup: BTreeMap<scene_cache::SceneCacheKey, SceneAsset>,
     scene_load_telemetry: BTreeMap<scene_cache::SceneCacheKey, load::AssetLoadTelemetry>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
     memory_texture_lookup: BTreeMap<TextureMemoryId, TextureHandle>,
+    photographic_surface_lookup: photographic_surface::GeneratedFinishStore,
     texture_warnings: Vec<AssetLoadWarning>,
     texture_cache_update_policy: TextureCacheUpdatePolicy,
     environment_lookup: BTreeMap<AssetPath, EnvironmentHandle>,
@@ -206,12 +241,15 @@ impl<F> Assets<F> {
                 geometries: SlotMap::with_key(),
                 materials: SlotMap::with_key(),
                 material_sources: BTreeMap::new(),
+                #[cfg(feature = "scene-host")]
+                photographic_material_pack_bindings: BTreeMap::new(),
                 textures: SlotMap::with_key(),
                 environments: SlotMap::with_key(),
                 scene_lookup: BTreeMap::new(),
                 scene_load_telemetry: BTreeMap::new(),
                 texture_lookup: BTreeMap::new(),
                 memory_texture_lookup: BTreeMap::new(),
+                photographic_surface_lookup: BTreeMap::new(),
                 texture_warnings: Vec::new(),
                 texture_cache_update_policy: TextureCacheUpdatePolicy::Immutable,
                 environment_lookup: BTreeMap::new(),
@@ -524,6 +562,19 @@ impl<F> Assets<F> {
             .and_then(|texture| texture.sample_bilinear(uv))
     }
 
+    #[cfg(feature = "scene-host")]
+    pub(crate) fn effective_material_pbr(&self, material: &MaterialDesc) -> EffectiveMaterialPbr {
+        let sampled = material
+            .metallic_roughness_texture()
+            .and_then(|handle| self.texture_snapshot(handle))
+            .and_then(|texture| metallic_roughness_texture_means(&texture));
+        let (roughness_texture_mean, metallic_texture_mean) = sampled.unwrap_or((1.0, 1.0));
+        EffectiveMaterialPbr {
+            metallic_mean: (material.metallic_factor() * metallic_texture_mean).clamp(0.0, 1.0),
+            roughness_mean: (material.roughness_factor() * roughness_texture_mean).clamp(0.0, 1.0),
+        }
+    }
+
     pub fn default_environment(&self) -> EnvironmentHandle {
         self.insert_environment(EnvironmentDesc::neutral_studio())
     }
@@ -546,6 +597,21 @@ impl<F> Assets<F> {
             crate::assets::environment_preset::BUNDLED_STUDIO_BYTES,
         )?
         .with_cubemap_resolution(64);
+        Ok(self.insert_environment(desc))
+    }
+
+    /// The full-resolution bundled studio HDRI for final product stills.
+    ///
+    /// Unlike [`Self::bundled_studio_environment`], this path retains the
+    /// checked 2048x1024 source and bakes 512-pixel cube faces. Callers should
+    /// select it explicitly because its preparation cost is inappropriate for
+    /// interactive previews.
+    pub fn bundled_final_studio_environment(&self) -> Result<EnvironmentHandle, AssetError> {
+        let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
+            crate::assets::environment_preset::BUNDLED_FINAL_STUDIO_URI,
+            crate::assets::environment_preset::BUNDLED_FINAL_STUDIO_BYTES,
+        )?
+        .with_cubemap_resolution(512);
         Ok(self.insert_environment(desc))
     }
 
@@ -614,27 +680,97 @@ impl<F> Assets<F> {
     }
 }
 
-impl AssetPath {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+#[cfg(feature = "scene-host")]
+fn metallic_roughness_texture_means(texture: &TextureDesc) -> Option<(f32, f32)> {
+    const MAX_SAMPLES_PER_AXIS: u32 = 64;
 
-impl From<&str> for AssetPath {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
+    let (width, height, rgba8) = texture.decoded_rgba8()?;
+    if width == 0 || height == 0 {
+        return None;
     }
-}
-
-impl From<String> for AssetPath {
-    fn from(value: String) -> Self {
-        Self(value)
+    let samples_x = width.min(MAX_SAMPLES_PER_AXIS);
+    let samples_y = height.min(MAX_SAMPLES_PER_AXIS);
+    let mut roughness = 0_u64;
+    let mut metallic = 0_u64;
+    let mut sample_count = 0_u64;
+    for sample_y in 0..samples_y {
+        let y = ((u64::from(sample_y) * 2 + 1) * u64::from(height) / (u64::from(samples_y) * 2))
+            .min(u64::from(height - 1)) as usize;
+        for sample_x in 0..samples_x {
+            let x = ((u64::from(sample_x) * 2 + 1) * u64::from(width) / (u64::from(samples_x) * 2))
+                .min(u64::from(width - 1)) as usize;
+            let offset = (y * width as usize + x).checked_mul(4)?;
+            let pixel = rgba8.get(offset..offset + 4)?;
+            roughness = roughness.saturating_add(u64::from(pixel[1]));
+            metallic = metallic.saturating_add(u64::from(pixel[2]));
+            sample_count = sample_count.saturating_add(1);
+        }
     }
+    let denominator = (sample_count.max(1) * 255) as f32;
+    Some((
+        roughness as f32 / denominator,
+        metallic as f32 / denominator,
+    ))
 }
 
 #[cfg(test)]
 mod snapshot_tests {
     use super::*;
+
+    #[test]
+    fn bundled_studio_environment_does_not_overbake_its_128x64_source() {
+        let assets = Assets::new();
+        let handle = assets
+            .bundled_studio_environment()
+            .expect("bundled studio HDR decodes");
+        let environment = assets
+            .try_environment(handle)
+            .expect("bundled studio environment remains available");
+
+        assert_eq!(environment.source_dimensions(), Some((128, 64)));
+        assert_eq!(
+            environment.cubemap_resolution(),
+            64,
+            "the bundled low-resolution source must retain its explicit 64-face bake"
+        );
+    }
+
+    #[test]
+    fn bundled_final_studio_environment_uses_checked_2k_source_and_512_faces() {
+        let assets = Assets::new();
+        let handle = assets
+            .bundled_final_studio_environment()
+            .expect("bundled final studio HDR decodes");
+        let environment = assets
+            .try_environment(handle)
+            .expect("bundled final studio environment remains available");
+
+        assert_eq!(environment.source_dimensions(), Some((2048, 1024)));
+        assert_eq!(
+            environment.source_sha256(),
+            Some("6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746")
+        );
+        assert_eq!(
+            include_str!(
+                "../tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json"
+            ),
+            concat!(
+                "{\n",
+                "  \"asset\": \"Studio Small 08\",\n",
+                "  \"source_url\": \"https://polyhaven.com/a/studio_small_08\",\n",
+                "  \"download_url\": \"https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/studio_small_08_2k.hdr\",\n",
+                "  \"license\": \"CC0-1.0\",\n",
+                "  \"sha256\": \"6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746\",\n",
+                "  \"size_bytes\": 5930381\n",
+                "}\n"
+            )
+        );
+        assert_eq!(
+            environment.cubemap_resolution(),
+            512,
+            "final product stills require enough directional resolution for smooth metal",
+        );
+    }
 
     #[test]
     fn pf04_snapshot_cache_replacement_preserves_old_view_and_exposes_fresh_content() {

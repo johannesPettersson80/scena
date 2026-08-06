@@ -26,6 +26,9 @@ pub(crate) enum CliErrorKind {
     FeatureUnavailable,
     /// The host lacks a capability or backend the command needs.
     Unsupported,
+    /// The caller explicitly requested the complete final-photo contract on a
+    /// backend where that contract is unavailable.
+    FinalPhotoUnsupported,
     /// Writing or reading a stream or path failed.
     Io,
     /// A fault in scena itself; the caller cannot fix it.
@@ -49,6 +52,9 @@ impl CliErrorKind {
             Self::InvalidInput => Some(("invalid_input", CliExitClass::Input)),
             Self::FeatureUnavailable => Some(("feature_unavailable", CliExitClass::Unsupported)),
             Self::Unsupported => Some(("unsupported", CliExitClass::Unsupported)),
+            Self::FinalPhotoUnsupported => {
+                Some(("final_photo_unsupported", CliExitClass::Unsupported))
+            }
             Self::Io => Some(("io_error", CliExitClass::Io)),
             Self::Internal => Some(("internal_error", CliExitClass::Internal)),
             Self::Runtime => Some(("runtime_error", CliExitClass::Runtime)),

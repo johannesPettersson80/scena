@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::{collections::BTreeMap, f32::consts::PI};
 
 use crate::assets::ENVIRONMENT_CUBEMAP_FACE_NORMALS;
 use crate::scene::Vec3;
@@ -211,7 +211,7 @@ fn prefilter_specular_cubemap_mips_with_quality_profiled(
     let source_mips = build_source_cubemap_mip_chain(source_face_pixels, resolution);
     for mip in 0..mip_count {
         let mip_resolution = (resolution >> mip).max(1);
-        let mip_faces = if mip == 0 {
+        let mut mip_faces = if mip == 0 {
             source_face_pixels.clone()
         } else {
             let roughness = prefilter_roughness_for_mip(mip, mip_count);
@@ -224,12 +224,72 @@ fn prefilter_specular_cubemap_mips_with_quality_profiled(
                 metrics,
             )
         };
+        if mip > 0 {
+            stitch_prefiltered_cubemap_edges(&mut mip_faces, mip_resolution);
+        }
         metrics.prefilter_output_texels = metrics
             .prefilter_output_texels
             .saturating_add(u64::from(mip_resolution).pow(2).saturating_mul(6));
         mips.push(mip_faces);
     }
     mips
+}
+
+fn stitch_prefiltered_cubemap_edges(faces: &mut [Vec<f32>; 6], resolution: u32) {
+    let size = resolution as usize;
+    if size == 0 {
+        return;
+    }
+
+    let mut edge_groups = BTreeMap::<(i32, i32, i32), Vec<(usize, usize)>>::new();
+    for face in 0..6 {
+        for step in 0..size {
+            let tangent = (step as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+            for (x, y, u, v) in [
+                (0, step, -1.0, tangent),
+                (size - 1, step, 1.0, tangent),
+                (step, 0, tangent, -1.0),
+                (step, size - 1, tangent, 1.0),
+            ] {
+                let direction = cubemap_face_direction(face, u, v);
+                let key = (
+                    (direction.x * 1_000_000.0).round() as i32,
+                    (direction.y * 1_000_000.0).round() as i32,
+                    (direction.z * 1_000_000.0).round() as i32,
+                );
+                edge_groups
+                    .entry(key)
+                    .or_default()
+                    .push((face, (y * size + x) * 4));
+            }
+        }
+    }
+
+    let source = faces.clone();
+    let mut updates = BTreeMap::<(usize, usize), ([f64; 4], u32)>::new();
+    for texels in edge_groups.values().filter(|texels| texels.len() >= 2) {
+        let mut average = [0.0_f64; 4];
+        for &(face, offset) in texels {
+            for channel in 0..4 {
+                average[channel] += f64::from(source[face][offset + channel]);
+            }
+        }
+        let inverse_count = (texels.len() as f64).recip();
+        average.iter_mut().for_each(|value| *value *= inverse_count);
+        for &(face, offset) in texels {
+            let update = updates.entry((face, offset)).or_insert(([0.0; 4], 0));
+            for (sum, value) in update.0.iter_mut().zip(average) {
+                *sum += value;
+            }
+            update.1 += 1;
+        }
+    }
+    for ((face, offset), (sum, count)) in updates {
+        let inverse_count = f64::from(count).recip();
+        for (channel, value) in sum.into_iter().enumerate() {
+            faces[face][offset + channel] = (value * inverse_count) as f32;
+        }
+    }
 }
 
 /// Roughness represented by a prefilter mip index.

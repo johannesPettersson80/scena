@@ -34,6 +34,7 @@ fn material_source_inspection_v1(source: &AssetMaterialSource) -> SceneMaterialS
         kind: material_source_kind_name(source.kind()).to_string(),
         asset_path: source.asset_path().map(|path| path.as_str().to_owned()),
         material_index: source.material_index(),
+        material_name: source.material_name().map(str::to_owned),
         reason: source.reason().map(str::to_owned),
     }
 }
@@ -43,6 +44,7 @@ fn unknown_material_source() -> SceneMaterialSourceInspectionV1 {
         kind: "unknown".to_string(),
         asset_path: None,
         material_index: None,
+        material_name: None,
         reason: Some("material source metadata was not recorded".to_string()),
     }
 }

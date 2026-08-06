@@ -127,6 +127,13 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "fn brdf_specular_ggx",
             "fn visibility_ggx_correlated",
             "fn split_sum_brdf_approx",
+            // The baked table is bound through a uniform block, which is what
+            // makes it reachable at all: the fragment stage already uses every
+            // sampled texture and sampler `downlevel_defaults()` allows, so the
+            // texture route left it computed and never sampled. Pin the binding
+            // so unbinding it cannot pass silently again.
+            "var<uniform> brdf_lut_table: BrdfLutTable",
+            "fn split_sum_brdf_table",
         ],
     );
 }

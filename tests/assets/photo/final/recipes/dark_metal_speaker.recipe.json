@@ -1,0 +1,253 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "subject",
+      "uri": "../subjects/dark_metal_speaker.glb",
+      "transform": {
+        "kind": "trs",
+        "scale": [1.0, 1.55, 1.0]
+      },
+      "edge_rounding": {
+        "enabled": true,
+        "radius_fraction": 0.0025,
+        "segments": 3,
+        "edge_angle_threshold_degrees": 30.0,
+        "max_derived_triangles": 250000
+      },
+      "material_bindings": [
+        {
+          "source_material": { "index": 0, "name": "chrome_accent_ring" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal049a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "4f6a79e535261ab55cc6feefed0037124885720ce7b781fc2efa3fa22792af42",
+              "tile_size_m": 0.12
+            },
+            "normal_scale": 0.08,
+            "occlusion_strength": 0.30
+          }
+        },
+        {
+          "source_material": { "index": 1, "name": "anodized_black_aluminium" },
+          "material": {
+            "base_color": "#46515C",
+            "metallic": 0.92,
+            "roughness": 0.36,
+            "normal_scale": 0.16,
+            "occlusion_strength": 0.30
+          }
+        },
+        {
+          "source_material": { "index": 2, "name": "rubber_foot" },
+          "material": {
+            "preset": "rubber",
+            "base_color": "#1A1D28",
+            "roughness": 0.86,
+            "normal_scale": 0.0,
+            "occlusion_strength": 0.55
+          }
+        },
+        {
+          "source_material": { "index": 3, "name": "speaker_grille" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal027/1k/scena-material-pack.json",
+              "expected_archive_sha256": "12b2d9996d532cf8a31820d24f2ea83e3217b89da060c4fb29c3c5177535ac72",
+              "tile_size_m": 0.08
+            },
+            "normal_scale": 0.25,
+            "occlusion_strength": 0.65
+          }
+        },
+        {
+          "source_material": { "index": 4, "name": "machined_knob" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.08
+            },
+            "normal_scale": 0.18,
+            "occlusion_strength": 0.45
+          }
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "id": "speaker_grille_authored",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal027/1k/scena-material-pack.json",
+        "expected_archive_sha256": "12b2d9996d532cf8a31820d24f2ea83e3217b89da060c4fb29c3c5177535ac72",
+        "tile_size_m": 0.025
+      }
+    },
+    {
+      "id": "speaker_top_authored",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal027/1k/scena-material-pack.json",
+        "expected_archive_sha256": "12b2d9996d532cf8a31820d24f2ea83e3217b89da060c4fb29c3c5177535ac72",
+        "tile_size_m": 0.025
+      },
+      "imperfection": {
+        "profile": "dust",
+        "strength": 0.09,
+        "physical_scale_m": 0.0018,
+        "seed": 217
+      }
+    },
+    {
+      "id": "speaker_led_authored",
+      "kind": "pbr_metallic_roughness",
+      "base_color": "#37D995",
+      "metallic": 0.0,
+      "roughness": 0.32,
+      "emissive": "#37D995",
+      "emissive_strength": 1.4
+    },
+    {
+      "id": "speaker_index_authored",
+      "kind": "pbr_metallic_roughness",
+      "base_color": "#E8EDF1",
+      "metallic": 0.55,
+      "roughness": 0.28
+    }
+  ],
+  "geometries": [
+    {
+      "id": "speaker_wrap_grille_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.0468,
+        "height": 0.147,
+        "bevel": 0.0012,
+        "segments": 96
+      }
+    },
+    {
+      "id": "speaker_status_led_geo",
+      "primitive": {
+        "kind": "sphere",
+        "radius": 0.0022,
+        "segments": 24,
+        "rings": 12
+      }
+    },
+    {
+      "id": "speaker_top_cap_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.042,
+        "height": 0.012,
+        "bevel": 0.002,
+        "segments": 96
+      }
+    },
+    {
+      "id": "speaker_knob_index_geo",
+      "primitive": {
+        "kind": "box",
+        "size": [0.0022, 0.0010, 0.012],
+        "bevel": 0.00035
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "speaker_wrap_grille",
+      "geometry": "speaker_wrap_grille_geo",
+      "material": "speaker_grille_authored",
+      "name": "wraparound perforated speaker grille",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.085, 0.0]
+      }
+    },
+    {
+      "id": "speaker_status_led",
+      "geometry": "speaker_status_led_geo",
+      "material": "speaker_led_authored",
+      "name": "speaker status LED",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.016, 0.080, 0.0468]
+      }
+    },
+    {
+      "id": "speaker_top_cap",
+      "geometry": "speaker_top_cap_geo",
+      "material": "speaker_top_authored",
+      "name": "speaker top control cap",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.161, 0.0]
+      }
+    },
+    {
+      "id": "speaker_knob_index",
+      "geometry": "speaker_knob_index_geo",
+      "material": "speaker_index_authored",
+      "name": "speaker knob index",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.1810, 0.0035]
+      }
+    }
+  ],
+  "named_states": [
+    {
+      "id": "content_corrections",
+      "active": true,
+      "visibility": [
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/audio_monitor_root/grille_face"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/audio_monitor_root/grille_ring_0"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/audio_monitor_root/grille_ring_1"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/audio_monitor_root/grille_ring_2"
+          },
+          "visible": false
+        },
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/audio_monitor_root/grille_ring_3"
+          },
+          "visible": false
+        }
+      ]
+    }
+  ],
+  "photo": {
+    "intent": "camera_behavior",
+    "quality": "final",
+    "staging": { "ground": "matte" },
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}

@@ -130,6 +130,8 @@ impl<F> Assets<F> {
             {
                 storage.materials.remove(handle);
                 storage.material_sources.remove(&handle);
+                #[cfg(feature = "scene-host")]
+                storage.photographic_material_pack_bindings.remove(&handle);
                 storage.user_created_materials.remove(&handle);
                 stats.materials_evicted += 1;
             }

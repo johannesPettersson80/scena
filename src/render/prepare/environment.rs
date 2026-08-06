@@ -1,8 +1,14 @@
 use std::sync::Arc;
 
+#[cfg(test)]
+use crate::assets::Assets;
 use crate::assets::{EnvironmentDesc, EnvironmentPrefilterSidecar, EnvironmentSidecarProfile};
 use crate::diagnostics::AssetError;
 use crate::diagnostics::Backend;
+#[cfg(test)]
+use crate::diagnostics::PrepareError;
+#[cfg(test)]
+use crate::scene::Scene;
 use crate::scene::Vec3;
 
 use super::super::pbr_brdf;
@@ -51,6 +57,65 @@ fn warn_environment_sidecar_profile_mismatch(
     }
 }
 
+/// Diagnostic-only: report what the baked environment actually contains.
+///
+/// A mirror surface samples mip 0 of this chain almost directly, so any
+/// per-texel variation here lands in the render as visible structure. This
+/// prints, per mip, the neighbour-to-neighbour variation within each face - the
+/// quantity that becomes high-frequency detail on smooth metal - so the
+/// environment can be judged as data rather than inferred from pixels.
+#[cfg(not(target_arch = "wasm32"))]
+fn debug_report_environment(prepared: &PreparedEnvironmentCubemap) {
+    if std::env::var("SCENA_DEBUG_LOG_ENVIRONMENT").as_deref() != Ok("1") {
+        return;
+    }
+    eprintln!(
+        "[env] resolution={} mip_count={} brdf_lut={}x{}",
+        prepared.resolution, prepared.mip_count, prepared.brdf_lut_size, prepared.brdf_lut_size
+    );
+    for (level, faces) in prepared.mips.iter().enumerate() {
+        let size = (prepared.resolution >> level).max(1) as usize;
+        let mut total_step = 0.0_f64;
+        let mut steps = 0_u64;
+        let mut peak = 0.0_f32;
+        let mut mean = 0.0_f64;
+        let mut samples = 0_u64;
+        for face in faces {
+            for y in 0..size {
+                for x in 0..size.saturating_sub(1) {
+                    let a = face.get((y * size + x) * 4).copied().unwrap_or(0.0);
+                    let b = face.get((y * size + x + 1) * 4).copied().unwrap_or(0.0);
+                    total_step += f64::from((b - a).abs());
+                    steps += 1;
+                }
+            }
+            for texel in face.chunks_exact(4) {
+                mean += f64::from(texel[0]);
+                peak = peak.max(texel[0]);
+                samples += 1;
+            }
+        }
+        let mean = if samples > 0 {
+            mean / samples as f64
+        } else {
+            0.0
+        };
+        let step = if steps > 0 {
+            total_step / steps as f64
+        } else {
+            0.0
+        };
+        eprintln!(
+            "[env] mip {level}: {size}x{size}x6  mean_R={mean:.4} peak_R={peak:.4} \
+             mean|neighbour delta|={step:.5}  relative={:.4}",
+            if mean > 1.0e-6 { step / mean } else { 0.0 }
+        );
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn debug_report_environment(_prepared: &PreparedEnvironmentCubemap) {}
+
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
 /// integrate the GGX kernel at roughness values from the shared
@@ -59,7 +124,7 @@ pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// 2D BRDF LUT resolution. The split-sum approximation indexes the LUT
 /// by `(N·V, roughness)`; 64×64 is enough resolution for visually
 /// smooth specular without blowing the GPU upload budget.
-pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
+pub(crate) const BRDF_LUT_SIZE: u32 = 64;
 const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 1.0;
 const HDR_IBL_INTENSITY_SCALE: f32 = 1.0;
 
@@ -225,13 +290,15 @@ impl PreparedEnvironmentLighting {
                 {
                     log_environment_step("bake_environment_ibl", bake_start);
                 }
-                Arc::new(PreparedEnvironmentCubemap {
+                let prepared = PreparedEnvironmentCubemap {
                     resolution,
                     mips: baked.mips,
                     mip_count: baked.mip_count,
                     brdf_lut: baked.brdf_lut,
                     brdf_lut_size: baked.brdf_lut_size,
-                })
+                };
+                debug_report_environment(&prepared);
+                Arc::new(prepared)
             })
         };
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -456,6 +523,7 @@ pub fn precompute_environment_sidecar_profiled(
     Ok((sidecar, metrics))
 }
 
+#[cfg(test)]
 pub(in crate::render) fn collect_environment_lighting(
     environment: Option<&EnvironmentDesc>,
     backend: Backend,
@@ -464,6 +532,39 @@ pub(in crate::render) fn collect_environment_lighting(
         environment,
         EnvironmentLightingProfile::for_backend(backend),
     )
+}
+
+#[cfg(test)]
+pub(in crate::render) fn collect_prepared_reflection_probes<F>(
+    scene: &Scene,
+    assets: Option<&Assets<F>>,
+    backend: Backend,
+) -> Result<Vec<super::PreparedReflectionProbe>, PrepareError> {
+    if !scene.reflection_probes_enabled() {
+        return Ok(Vec::new());
+    }
+    scene
+        .reflection_probes()
+        .filter_map(|(key, probe)| {
+            probe
+                .environment()
+                .map(|environment| (key, probe, environment))
+        })
+        .enumerate()
+        .map(|(slot, (key, probe, environment))| {
+            let assets = assets.ok_or(PrepareError::EnvironmentAssetsRequired { environment })?;
+            let description = assets
+                .environment(environment)
+                .ok_or(PrepareError::EnvironmentNotFound { environment })?;
+            Ok(super::PreparedReflectionProbe::new(
+                key,
+                slot as u32,
+                probe.bounds(),
+                probe.capture_position(),
+                collect_environment_lighting(Some(&description), backend),
+            ))
+        })
+        .collect()
 }
 
 /// Average mip-0 radiance across the six cubemap faces. Used as a fallback
@@ -524,6 +625,90 @@ fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn final_studio_low_roughness_prefilter_keeps_cube_edges_continuous() {
+        let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
+            "memory://studio-small-03-1k.hdr",
+            include_bytes!("../../../tests/assets/environment/polyhaven/studio_small_03_1k.hdr"),
+        )
+        .expect("bundled final studio HDR decodes")
+        .with_cubemap_resolution(512);
+        let lighting = PreparedEnvironmentLighting::from_environment_with_profile(
+            Some(&desc),
+            EnvironmentLightingProfile::Reference,
+        );
+        let cubemap = lighting
+            .cubemap()
+            .expect("final studio prepares a prefiltered cubemap");
+
+        for level in 0..cubemap.mip_count as usize {
+            let size = (cubemap.resolution >> level).max(1) as usize;
+            let faces = &cubemap.mips[level];
+            let mut within_total = 0.0_f64;
+            let mut within_count = 0_u64;
+            for face in faces {
+                for y in 0..size {
+                    for x in 0..size.saturating_sub(1) {
+                        within_total += f64::from(
+                            (diagnostic_face_luminance(face, size, x + 1, y)
+                                - diagnostic_face_luminance(face, size, x, y))
+                            .abs(),
+                        );
+                        within_count += 1;
+                    }
+                }
+            }
+            let within_mean = within_total / within_count.max(1) as f64;
+
+            let half_texel = 1.0 / size as f32;
+            let mut seam_total = 0.0_f64;
+            let mut seam_peak = 0.0_f32;
+            let mut seam_count = 0_u64;
+            for face in 0..6 {
+                for step in 0..size {
+                    let tangent = (step as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+                    for ((inside_u, inside_v), (outside_u, outside_v)) in [
+                        ((-1.0 + half_texel, tangent), (-1.0 - half_texel, tangent)),
+                        ((1.0 - half_texel, tangent), (1.0 + half_texel, tangent)),
+                        ((tangent, -1.0 + half_texel), (tangent, -1.0 - half_texel)),
+                        ((tangent, 1.0 - half_texel), (tangent, 1.0 + half_texel)),
+                    ] {
+                        let inside = sample_prefiltered_cubemap_lod(
+                            &cubemap.mips,
+                            diagnostic_cube_face_direction(face, inside_u, inside_v),
+                            level as f32,
+                        );
+                        let outside = sample_prefiltered_cubemap_lod(
+                            &cubemap.mips,
+                            diagnostic_cube_face_direction(face, outside_u, outside_v),
+                            level as f32,
+                        );
+                        let delta = (luminance(inside) - luminance(outside)).abs();
+                        seam_total += f64::from(delta);
+                        seam_peak = seam_peak.max(delta);
+                        seam_count += 1;
+                    }
+                }
+            }
+            let seam_mean = seam_total / seam_count.max(1) as f64;
+            eprintln!(
+                "[env-seam] mip={level} size={size} within_mean={within_mean:.6} \
+                 seam_mean={seam_mean:.6} seam_peak={seam_peak:.6} \
+                 seam_to_within={:.3}",
+                seam_mean / within_mean.max(1.0e-9)
+            );
+            assert!(seam_mean.is_finite() && seam_peak.is_finite());
+            if level == 1 {
+                assert!(
+                    seam_mean <= within_mean * 1.25,
+                    "the first low-roughness prefilter mip must not introduce a cube-edge \
+                     discontinuity above ordinary within-face variation; \
+                     seam_mean={seam_mean:.6}, within_mean={within_mean:.6}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn pbr_contribution_uses_prepared_diffuse_irradiance_not_raw_cubemap_radiance() {
@@ -676,6 +861,23 @@ mod tests {
 
     fn luminance(value: Vec3) -> f32 {
         value.x * 0.2126 + value.y * 0.7152 + value.z * 0.0722
+    }
+
+    fn diagnostic_face_luminance(face: &[f32], size: usize, x: usize, y: usize) -> f32 {
+        let index = (y * size + x) * 4;
+        luminance(Vec3::new(face[index], face[index + 1], face[index + 2]))
+    }
+
+    fn diagnostic_cube_face_direction(face: usize, u: f32, v: f32) -> Vec3 {
+        let raw = match face {
+            0 => Vec3::new(1.0, -v, -u),
+            1 => Vec3::new(-1.0, -v, u),
+            2 => Vec3::new(u, 1.0, v),
+            3 => Vec3::new(u, -1.0, -v),
+            4 => Vec3::new(u, -v, 1.0),
+            _ => Vec3::new(-u, -v, -1.0),
+        };
+        raw / raw.length().max(1.0e-6)
     }
 
     fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {

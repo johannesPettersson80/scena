@@ -1,0 +1,112 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "subject",
+      "uri": "../subjects/valve_manifold.glb",
+      "edge_rounding": {
+        "enabled": true,
+        "radius_fraction": 0.0025,
+        "segments": 3,
+        "edge_angle_threshold_degrees": 30.0,
+        "max_derived_triangles": 250000
+      },
+      "material_bindings": [
+        {
+          "source_material": {
+            "index": 0,
+            "name": "machined_steel"
+          },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.20
+            },
+            "normal_scale": 0.18,
+            "occlusion_strength": 0.50
+          }
+        },
+        {
+          "source_material": {
+            "index": 1,
+            "name": "painted_red_handwheel"
+          },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/plastic013a/scena-material-pack.json",
+              "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+              "tile_size_m": 0.16
+            },
+            "base_color": "#B62618",
+            "normal_scale": 0.18,
+            "occlusion_strength": 0.50
+          }
+        },
+        {
+          "source_material": {
+            "index": 2,
+            "name": "chrome_pipe"
+          },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal049a/scena-material-pack.json",
+              "expected_archive_sha256": "4f6a79e535261ab55cc6feefed0037124885720ce7b781fc2efa3fa22792af42",
+              "tile_size_m": 0.20
+            },
+            "normal_scale": 0.06,
+            "occlusion_strength": 0.25
+          }
+        },
+        {
+          "source_material": {
+            "index": 3,
+            "name": "brass_fitting"
+          },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal048a/scena-material-pack.json",
+              "expected_archive_sha256": "3915edefd3c8daaa3deb8be4070af19ff5663977ec01dbc677f1fa9bd3c07e5d",
+              "tile_size_m": 0.16
+            },
+            "normal_scale": 0.12,
+            "occlusion_strength": 0.40
+          }
+        },
+        {
+          "source_material": {
+            "index": 4,
+            "name": "cast_iron_body"
+          },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal027/scena-material-pack.json",
+              "expected_archive_sha256": "12b2d9996d532cf8a31820d24f2ea83e3217b89da060c4fb29c3c5177535ac72",
+              "tile_size_m": 0.30
+            },
+            "base_color": "#272A2D",
+            "normal_scale": 0.25,
+            "occlusion_strength": 0.65
+          }
+        }
+      ]
+    }
+  ],
+  "photo": {
+    "intent": "camera_behavior",
+    "quality": "preview",
+    "subject": {
+      "kind": "import",
+      "id": "subject"
+    }
+  },
+  "capture": {
+    "width": 1280,
+    "height": 840
+  },
+  "render": {
+    "anti_aliasing": "msaa4",
+    "supersample": 1,
+    "tonemapper": "aces"
+  }
+}

@@ -12,9 +12,10 @@ cargo install scena --features agent
 
 This is deliberate:
 
-- making `agent` a package default would also compile scene-host and inspection
-  into every ordinary library dependency, increasing build time and binary
-  surface for users who only need the renderer library;
+- making `agent` a package default would also compile scene-host, inspection,
+  and the native material downloader/compiler into every ordinary library
+  dependency, increasing build time and binary surface for users who only need
+  the renderer library;
 - Cargo cannot enable a package feature only for one binary in the same package,
   so “always enabled for the CLI only” is not a real single-package option;
 - a separate `scena-cli` package would isolate those costs but adds a second

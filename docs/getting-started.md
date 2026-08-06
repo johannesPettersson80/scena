@@ -59,9 +59,11 @@ The JSON result is render introspection by default. Existing scripts may keep
 This sequence is portable from any working directory. The generated recipe
 uses package-embedded sample assets and the licensed `studio` environment
 preset; it does not require a cloned `scena` repository.
-The opt-in `agent` feature is the one-step self-verification surface: it enables
-`scene-host`, which already enables `inspection`. Default library builds remain
-feature-empty; do not redundantly request both lower-level features.
+The opt-in `agent` feature is the one-step self-verification and
+material-authoring surface: it enables `scene-host` and the native
+`material-library` compiler; `scene-host` already enables `inspection`. Default
+library builds remain feature-empty; do not redundantly request both lower-level
+inspection features.
 Commands that accept `<asset-or-recipe>` keep raw glTF/GLB on the direct asset
 path, but always build a parsed recipe in full through the same sandbox as
 `recipe build`. A rejected later import is a nonzero structured failure, never
@@ -91,6 +93,76 @@ The intent path handles composition, staging, subject metering, and focus from
 the declared subject. It is the first path when you need a good product image
 with no manual camera, exposure, or focus. Drop down to Rust framing and
 lighting APIs only when the application intentionally owns those choices.
+
+To replace a handmade model's flat material with a map-complete product finish,
+list the offline catalog of 301 audited CC0 finishes and explicitly compile one
+source archive:
+
+```bash
+scena materials list --category metal --query brushed
+scena materials fetch ambientcg-metal009 --resolution 1k --out materials/brushed-steel/1k
+scena materials fetch ambientcg-metal009 --resolution 2k --out materials/brushed-steel/2k
+scena materials fetch ambientcg-metal009 --resolution 4k --out materials/brushed-steel/4k
+```
+
+Reference the emitted pack from a specific source material in the import:
+
+```json
+{
+  "id": "subject",
+  "uri": "model.glb",
+  "edge_rounding": {},
+  "material_bindings": [
+    {
+      "source_material": {
+        "index": 0,
+        "name": "machined_housing"
+      },
+      "material": {
+        "material_pack": {
+          "uri": "materials/brushed-steel/1k/scena-material-pack.json",
+          "expected_archive_sha256": "<fetch-result archive_sha256>",
+          "tile_size_m": 0.18
+        }
+      }
+    }
+  ]
+}
+```
+
+Set the recipe photo profile to final:
+
+```json
+{
+  "photo": {
+    "intent": "camera_behavior",
+    "quality": "final",
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}
+```
+
+Then render the final product still:
+
+```bash
+scena photo render product.recipe.json --gpu \
+  --out product.png --report product.photo.json
+```
+
+The final profile derives studio staging, reflections, shadowed area lighting,
+contact grounding, composition, exposure, 3840x2520 capture, SSAA 2, and tent
+reconstruction. After framing, it selects the smallest installed `1k`, `2k`,
+or `4k` sibling that retains at least one material texel per output pixel.
+
+The catalog is bundled and deterministic. Only `materials fetch` downloads;
+recipe build and render use local, hash-checked color, normal, and
+occlusion/roughness/metallic maps. For provenance-sensitive builds, copy the
+fetch result's archive hash into `expected_archive_sha256`. The source material
+index is required; adding its exact name protects the recipe against a changed
+or reordered GLB. A missing or mismatched selector rejects the complete
+assignment instead of partially restyling the model. Omit bindings for parts
+that should retain their imported appearance, or use the singular `material`
+field to replace the complete imported subtree.
 
 If a recipe intentionally references a model library outside the working
 directory, authorize only that directory and reuse the option on every step:

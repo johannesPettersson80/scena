@@ -47,6 +47,7 @@ fn scene_recipe_photo_and_focus_targets_use_shared_target_grammar() {
     );
 }
 
+#[cfg(feature = "scene-host")]
 #[test]
 fn scene_recipe_verification_fails_when_nested_quality_report_fails() {
     let quality = scena::RenderQualityReportV1 {
@@ -229,6 +230,183 @@ fn scene_recipe_validation_accepts_camera_behavior_photo_intent_and_rejects_bad_
 }
 
 #[test]
+fn scene_recipe_final_photo_quality_contract_is_fail_closed() {
+    let preview_compatible = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" }
+        }
+    }));
+    assert!(
+        preview_compatible.ok,
+        "omitting photo.quality must retain preview-compatible v1 behavior: \
+         {preview_compatible:#?}"
+    );
+    let preview_recipe = scena::parse_valid_scene_recipe_json(
+        &serde_json::to_string(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+            ],
+            "photo": { "intent": "camera_behavior" }
+        }))
+        .expect("preview recipe serializes"),
+    )
+    .expect("omitted photo quality parses");
+    assert_eq!(
+        preview_recipe.photo.expect("photo exists").quality,
+        scena::SceneRecipePhotoQualityV1::Preview
+    );
+
+    let final_defaults = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": "final",
+            "subject": { "kind": "import", "id": "subject" }
+        }
+    }));
+    assert!(
+        final_defaults.ok,
+        "final mode owns documented capture/sampling defaults: {final_defaults:#?}"
+    );
+
+    let explicit_final = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": "final",
+            "subject": { "kind": "import", "id": "subject" }
+        },
+        "capture": { "width": 3840, "height": 2520 },
+        "render": {
+            "anti_aliasing": "none",
+            "supersample": 2,
+            "reconstruction": "tent"
+        }
+    }));
+    assert!(
+        explicit_final.ok,
+        "documented explicit final settings must validate: {explicit_final:#?}"
+    );
+    let final_recipe = scena::parse_valid_scene_recipe_json(
+        &serde_json::to_string(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+            ],
+            "photo": { "intent": "camera_behavior", "quality": "final" }
+        }))
+        .expect("final recipe serializes"),
+    )
+    .expect("final photo quality parses");
+    assert_eq!(
+        final_recipe.photo.expect("photo exists").quality,
+        scena::SceneRecipePhotoQualityV1::Final
+    );
+
+    let unknown_quality = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": "cinematic"
+        }
+    }));
+    assert!(!unknown_quality.ok);
+    assert_reason_at(&unknown_quality, "invalid_photo_quality", "$.photo.quality");
+    let non_string_quality = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": 2
+        }
+    }));
+    assert!(!non_string_quality.ok);
+    assert_reason_at(
+        &non_string_quality,
+        "invalid_photo_quality",
+        "$.photo.quality",
+    );
+
+    let undersized = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": "final"
+        },
+        "capture": { "width": 2560, "height": 1680 }
+    }));
+    assert!(!undersized.ok);
+    assert_reason_at(&undersized, "final_photo_capture_below_min", "$.capture");
+
+    let undersampled = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": "final"
+        },
+        "render": {
+            "supersample": 1,
+            "reconstruction": "tent"
+        }
+    }));
+    assert!(!undersampled.ok);
+    assert_reason_at(
+        &undersampled,
+        "final_photo_supersample_below_min",
+        "$.render.supersample",
+    );
+
+    let redundant_msaa = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": "final"
+        },
+        "render": {
+            "anti_aliasing": "msaa4",
+            "supersample": 2,
+            "reconstruction": "tent"
+        }
+    }));
+    assert!(!redundant_msaa.ok);
+    assert_reason_at(
+        &redundant_msaa,
+        "final_photo_redundant_msaa",
+        "$.render.anti_aliasing",
+    );
+
+    let wrong_reconstruction = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "photo": {
+            "intent": "camera_behavior",
+            "quality": "final"
+        },
+        "render": {
+            "anti_aliasing": "none",
+            "supersample": 2,
+            "reconstruction": "box"
+        }
+    }));
+    assert!(!wrong_reconstruction.ok);
+    assert_reason_at(
+        &wrong_reconstruction,
+        "final_photo_reconstruction_unsupported",
+        "$.render.reconstruction",
+    );
+}
+
+#[test]
 fn scene_recipe_validation_rejects_manual_exposure_focus_and_accepts_authored_camera() {
     let fixed_exposure = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",
@@ -327,9 +505,9 @@ fn scene_recipe_validation_accepts_camera_behavior_policy_subobjects_and_rejects
                 "strength": "subtle"
             },
             "staging": {
-                "environment": "studio",
+                "environment": "bright_product_studio",
                 "background": "dark_studio",
-                "ground": "matte_shadow_catcher",
+                "ground": "matte",
                 "grid": false
             }
         }
@@ -338,6 +516,41 @@ fn scene_recipe_validation_accepts_camera_behavior_policy_subobjects_and_rejects
         valid.ok,
         "camera behavior policy subobjects should validate: {valid:#?}"
     );
+
+    let reflective = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "subject", "uri": "tests/assets/gltf/cad_terminal_block.gltf" }
+        ],
+        "photo": {
+            "intent": "camera_behavior",
+            "subject": { "kind": "import", "id": "subject" },
+            "staging": { "ground": "reflective" }
+        }
+    }));
+    assert!(
+        reflective.ok,
+        "camera behavior must accept the bounded reflective ground intent: {reflective:#?}"
+    );
+
+    for (recipe, expected_ground) in [
+        ("colored_travel_mug.recipe.json", "reflective"),
+        ("valve_manifold.recipe.json", "reflective"),
+        ("dark_metal_speaker.recipe.json", "matte"),
+        ("demo_hero.recipe.json", "matte"),
+    ] {
+        let path = Path::new("tests/assets/photo/final/recipes").join(recipe);
+        let value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).expect("final recipe reads"))
+                .expect("final recipe parses");
+        assert_eq!(
+            value
+                .pointer("/photo/staging/ground")
+                .and_then(serde_json::Value::as_str),
+            Some(expected_ground),
+            "{recipe} must pin its agreed ground intent"
+        );
+    }
 
     let manual_grid = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",
@@ -1059,6 +1272,104 @@ fn scene_recipe_validation_rejects_unknown_import_material_preset() {
 }
 
 #[test]
+fn scene_recipe_material_imperfection_accepts_only_fixed_bounded_profiles() {
+    for profile in ["dust", "smudge", "fine_scratches", "oil_film"] {
+        let valid = scena::validate_scene_recipe_value(json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{
+                "id": "subject",
+                "uri": "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+                "material": {
+                    "material_pack": { "uri": "materials/steel/scena-material-pack.json" },
+                    "imperfection": {
+                        "profile": profile,
+                        "strength": 0.16,
+                        "physical_scale_m": 0.003,
+                        "seed": 42
+                    }
+                }
+            }]
+        }));
+        assert!(
+            valid.ok,
+            "fixed imperfection profile {profile} must validate: {valid:#?}"
+        );
+    }
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "materials": [{
+            "id": "surface",
+            "preset": "brushed_steel",
+            "imperfection": {
+                "profile": "procedural_damage",
+                "strength": 1.2,
+                "physical_scale_m": 0.0,
+                "seed": -1
+            }
+        }]
+    }));
+    assert!(!invalid.ok);
+    assert_reason_at(
+        &invalid,
+        "invalid_material_imperfection_profile",
+        "$.materials[0].imperfection.profile",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_material_imperfection_strength",
+        "$.materials[0].imperfection.strength",
+    );
+    let strength_help = invalid
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "invalid_material_imperfection_strength")
+        .map(|diagnostic| diagnostic.help.as_str())
+        .unwrap();
+    assert!(strength_help.contains("dust 0.30"));
+    assert!(strength_help.contains("oil_film 0.65"));
+    assert!(!strength_help.contains("0.08 through 0.20"));
+    assert_reason_at(
+        &invalid,
+        "invalid_material_imperfection_scale",
+        "$.materials[0].imperfection.physical_scale_m",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_material_imperfection_seed",
+        "$.materials[0].imperfection.seed",
+    );
+
+    for (recipe, expected_profile) in [
+        ("dark_metal_speaker.recipe.json", "dust"),
+        ("colored_travel_mug.recipe.json", "smudge"),
+        ("valve_manifold.recipe.json", "fine_scratches"),
+        ("demo_hero.recipe.json", "oil_film"),
+    ] {
+        let path = Path::new("tests/assets/photo/final/recipes").join(recipe);
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let profiles = value
+            .pointer("/imports/0/material_bindings")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|binding| binding.pointer("/material/imperfection/profile"))
+            .chain(
+                value
+                    .pointer("/materials")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|material| material.pointer("/imperfection/profile")),
+            )
+            .filter_map(serde_json::Value::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(profiles, vec![expected_profile], "{path:?}");
+    }
+}
+
+#[test]
 fn scene_recipe_validation_rejects_unknown_ergonomic_presets_at_exact_paths() {
     let invalid = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",
@@ -1133,6 +1444,78 @@ fn scene_recipe_validation_rejects_unknown_ergonomic_presets_at_exact_paths() {
         "conflicting_exposure_settings",
         "$.render.auto_exposure",
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_builds_photographic_surface_into_renderer_material_slots() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            {
+                "id": "body_geo",
+                "primitive": { "kind": "box", "size": [0.16, 0.10, 0.08], "bevel": 0.008 }
+            }
+        ],
+        "materials": [
+            {
+                "id": "body_mat",
+                "base_color": "#aeb4ba",
+                "photographic_surface": {
+                    "kind": "brushed_metal",
+                    "tile_size_m": 0.12,
+                    "feature_scale_m": 0.00035,
+                    "variation": 0.7,
+                    "wear": 0.12,
+                    "seed": 9182,
+                    "resolution": 32
+                }
+            }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ]
+    });
+    let validation = scena::validate_scene_recipe_value(recipe.clone());
+    assert!(validation.ok, "{validation:#?}");
+
+    let text = serde_json::to_string(&recipe).expect("recipe serializes");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/photographic-surface.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("photographic surface recipe builds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+
+    let inspection = build
+        .host
+        .scene()
+        .inspect_with_assets(build.host.assets())
+        .to_schema_report();
+    let material = inspection.draw_list[0]
+        .material
+        .as_ref()
+        .expect("draw material is inspectable");
+    for expected_slot in [
+        "baseColorTexture",
+        "normalTexture",
+        "metallicRoughnessTexture",
+        "occlusionTexture",
+    ] {
+        let slot = material
+            .textures
+            .iter()
+            .find(|slot| slot.slot == expected_slot)
+            .unwrap_or_else(|| panic!("missing generated {expected_slot} slot: {material:#?}"));
+        assert_eq!(slot.decoded_dimensions, Some([32, 32]));
+        assert!(slot.has_decoded_pixels);
+        assert!(
+            slot.source_path
+                .starts_with("memory://scena/photographic-surface/v1/"),
+            "generated texture must be owned by scena: {slot:#?}"
+        );
+    }
 }
 
 #[cfg(feature = "scene-host")]

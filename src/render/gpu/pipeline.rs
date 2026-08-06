@@ -59,10 +59,13 @@ impl TriangleShaderModuleCache {
 pub(super) struct UnlitPass<'a> {
     pub(super) view: &'a wgpu::TextureView,
     pub(super) resolve_target: Option<&'a wgpu::TextureView>,
+    pub(super) semantic_view: Option<&'a wgpu::TextureView>,
+    pub(super) semantic_resolve_target: Option<&'a wgpu::TextureView>,
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) instance_buffer: &'a wgpu::Buffer,
     pub(super) output_bind_group: &'a wgpu::BindGroup,
+    pub(super) reflection_probe_output_bind_groups: &'a [wgpu::BindGroup],
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
     pub(super) material_resources: &'a MaterialResources,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
@@ -119,6 +122,21 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
             store: wgpu::StoreOp::Store,
         },
     });
+    let mut color_attachments = vec![color_attachment];
+    if let Some(view) = inputs.semantic_view {
+        color_attachments.push(Some(wgpu::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: inputs.semantic_resolve_target,
+            ops: wgpu::Operations {
+                load: match inputs.color_load {
+                    ColorLoad::Clear(_) => wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    ColorLoad::Load => wgpu::LoadOp::Load,
+                },
+                store: wgpu::StoreOp::Store,
+            },
+        }));
+    }
     let depth_stencil_attachment =
         inputs
             .depth_view
@@ -132,7 +150,7 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
             });
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(inputs.label),
-        color_attachments: &[color_attachment],
+        color_attachments: &color_attachments,
         depth_stencil_attachment,
         timestamp_writes: None,
         occlusion_query_set: None,
@@ -153,6 +171,15 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
                 for batch in inputs.draw_batches.iter().filter(|batch| {
                     inputs.draw_filter.includes(batch) && side_filter.includes(batch)
                 }) {
+                    let output_bind_group = batch
+                        .reflection_probe_slot
+                        .and_then(|slot| {
+                            inputs
+                                .reflection_probe_output_bind_groups
+                                .get(slot as usize)
+                        })
+                        .unwrap_or(inputs.output_bind_group);
+                    pass.set_bind_group(0, output_bind_group, &[]);
                     let material = slots
                         .get(batch.material_slot as usize)
                         .unwrap_or(fallback_material);
@@ -171,6 +198,7 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
                     );
                     *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
                 }
+                pass.set_bind_group(0, inputs.output_bind_group, &[]);
                 for batch in inputs.instance_batches.iter().filter(|batch| {
                     inputs.draw_filter.includes_instance(batch)
                         && side_filter.includes_instance(batch)
@@ -201,6 +229,15 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
                 for batch in inputs.draw_batches.iter().filter(|batch| {
                     inputs.draw_filter.includes(batch) && side_filter.includes(batch)
                 }) {
+                    let output_bind_group = batch
+                        .reflection_probe_slot
+                        .and_then(|slot| {
+                            inputs
+                                .reflection_probe_output_bind_groups
+                                .get(slot as usize)
+                        })
+                        .unwrap_or(inputs.output_bind_group);
+                    pass.set_bind_group(0, output_bind_group, &[]);
                     let layer_index = (batch.material_slot as u64)
                         .min(u64::from(batched.layer_count.saturating_sub(1)));
                     let material_offset =
@@ -216,6 +253,7 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
                     );
                     *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
                 }
+                pass.set_bind_group(0, inputs.output_bind_group, &[]);
                 for batch in inputs.instance_batches.iter().filter(|batch| {
                     inputs.draw_filter.includes_instance(batch)
                         && side_filter.includes_instance(batch)
@@ -306,6 +344,7 @@ pub(super) fn create_unlit_pipeline_set(
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
     sample_count: u32,
+    semantic_target_format: Option<wgpu::TextureFormat>,
 ) -> MeshPipelineSet {
     MeshPipelineSet {
         single_sided: create_unlit_pipeline(
@@ -318,6 +357,7 @@ pub(super) fn create_unlit_pipeline_set(
             depth_compare,
             false,
             sample_count,
+            semantic_target_format,
         ),
         double_sided: create_unlit_pipeline(
             device,
@@ -329,6 +369,7 @@ pub(super) fn create_unlit_pipeline_set(
             depth_compare,
             true,
             sample_count,
+            semantic_target_format,
         ),
     }
 }
@@ -344,6 +385,7 @@ fn create_unlit_pipeline(
     depth_compare: Option<wgpu::CompareFunction>,
     double_sided: bool,
     sample_count: u32,
+    semantic_target_format: Option<wgpu::TextureFormat>,
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m0.pipeline_layout"),
@@ -369,6 +411,27 @@ fn create_unlit_pipeline(
     } else {
         "scena.m0.unlit_triangle_pipeline.single_sided"
     };
+    let fragment_entry_point = if semantic_target_format.is_some() {
+        "fs_beauty_semantic"
+    } else {
+        "fs_main"
+    };
+    let mut color_targets = vec![Some(wgpu::ColorTargetState {
+        format,
+        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+        write_mask: wgpu::ColorWrites::ALL,
+    })];
+    if let Some(format) = semantic_target_format {
+        // Alpha zero means "not semantically attributable", so ordinary alpha
+        // blending preserves the opaque ID already behind transparent or
+        // generated staging draws. Alpha one replaces it for attributable
+        // opaque fragments.
+        color_targets.push(Some(wgpu::ColorTargetState {
+            format,
+            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+            write_mask: wgpu::ColorWrites::ALL,
+        }));
+    }
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(&pipeline_layout),
@@ -396,13 +459,9 @@ fn create_unlit_pipeline(
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(fragment_entry_point),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
+            targets: &color_targets,
         }),
         multiview_mask: None,
         cache: None,
@@ -486,6 +545,35 @@ mod tests {
                 && implementation.contains("depth_prepass_eligible"),
             "physical glass needs an opaque scene-color pass followed by a transparent \
              transmission pass; one all-material alpha-blended pass can still ship fake glass"
+        );
+    }
+
+    #[test]
+    fn semantic_capture_pipeline_writes_a_witness_in_the_beauty_pass() {
+        let pipeline = include_str!("pipeline.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("pipeline implementation precedes tests");
+        let scene_color = include_str!("scene_color.rs");
+        for (label, shader) in [
+            ("output_shader.wgsl", include_str!("output_shader.wgsl")),
+            (
+                "output_shader_texture_2d.wgsl",
+                include_str!("output_shader_texture_2d.wgsl"),
+            ),
+        ] {
+            assert!(
+                shader.contains("fn fs_beauty_semantic")
+                    && shader.contains("@location(0) color")
+                    && shader.contains("@location(1) semantic_id"),
+                "{label} must emit beauty color and semantic identity from one fragment invocation",
+            );
+        }
+        assert!(
+            pipeline.contains("entry_point: Some(fragment_entry_point)")
+                && pipeline.contains("semantic_target_format")
+                && scene_color.contains("semantic_view"),
+            "the visible color pipeline must bind the semantic witness as a second attachment"
         );
     }
 }

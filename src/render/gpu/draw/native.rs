@@ -7,19 +7,20 @@ use crate::render::camera::CameraProjection;
 
 use super::super::depth;
 use super::super::draw_common::{
-    camera_position_uniform, identity_matrix, target_color_management_uniform,
-    wgpu_clear_color_for_target,
+    camera_position_uniform, identity_matrix, wgpu_clear_color_for_target,
 };
 use super::super::draw_overlays::{encode_offscreen_overlay_pass, encode_surface_overlay_pass};
 use super::super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
 use super::super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::super::shadow::{self, encode_shadow_caster_pass};
 use super::super::{
-    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, surface_frame,
+    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, semantic_aov,
+    surface_frame,
 };
 use super::plans::{
-    NativeFrameResultInputs, NativeSceneTargetPlan, native_depth_view, native_scene_color_format,
-    native_scene_target_plan, native_surface_depth_plan,
+    NativeFrameResultInputs, NativeSceneTargetPlan, native_color_management, native_depth_view,
+    native_scene_color_format, native_scene_target_plan, native_surface_depth_plan,
+    validate_native_sample_count,
 };
 
 impl GpuDeviceState {
@@ -67,32 +68,19 @@ impl GpuDeviceState {
                 backend: target.backend,
             });
         }
-        let mut scene_color_management =
-            target_color_management_uniform(color_management, scene_format);
-        let mut surface_color_management = surface_format.map(|surface_format| {
-            target_color_management_uniform(color_management, surface_format)
-        });
-        if let Some(reflections) = post_settings.reflections() {
-            scene_color_management[2] = reflections.strength();
-            scene_color_management[3] = reflections.roughness();
-            if let Some(surface_color_management) = surface_color_management.as_mut() {
-                surface_color_management[2] = reflections.strength();
-                surface_color_management[3] = reflections.roughness();
-            }
-        }
-        let max_supported_sample_count = self
-            .max_supported_sample_count_cached(&[scene_format, wgpu::TextureFormat::Depth32Float]);
-        if sample_count > max_supported_sample_count {
-            return Err(RenderError::UnsupportedSampleCount {
-                backend: target.backend,
-                requested: sample_count,
-                maximum: max_supported_sample_count,
-            });
-        }
+        let reflections = post_settings
+            .reflections()
+            .map(|reflections| [reflections.strength(), reflections.roughness()]);
+        let (scene_color_management, surface_color_management) =
+            native_color_management(color_management, scene_format, surface_format, reflections);
+        validate_native_sample_count(self, target, scene_format, sample_count)?;
         let resources = self
             .resources
             .as_mut()
             .expect("GPU resources were validated above");
+        if let Some(semantic) = resources.semantic_aov.as_mut() {
+            semantic_aov::invalidate_beauty_witness(semantic);
+        }
         let (clipping_planes, clipping_control) =
             encode_clipping_uniform(clipping_planes, section_box);
         let encode_uniform = |color_management| {
@@ -177,6 +165,7 @@ impl GpuDeviceState {
             });
         let mut draw_submissions = 0;
         let mut native_scene_color_passes = 0_u64;
+        let mut beauty_witness_encoded = false;
         encode_shadow_caster_pass(
             &mut encoder,
             &resources.shadow_caster,
@@ -279,11 +268,21 @@ impl GpuDeviceState {
             let msaa_view = resources.msaa_color.as_ref().map(|msaa| &msaa.view);
             let scene_attachment_view = msaa_view.unwrap_or(final_view);
             let scene_resolve_target = msaa_view.map(|_| final_view);
+            let (semantic_view, semantic_resolve_target) = resources
+                .semantic_aov
+                .as_ref()
+                .and_then(|semantic| semantic_aov::beauty_attachment_views(semantic, target))
+                .map_or((None, None), |(view, resolve_target)| {
+                    (Some(view), resolve_target)
+                });
+            beauty_witness_encoded = semantic_view.is_some();
             encode_scene_color_passes(
                 &mut encoder,
                 SceneColorPasses {
                     final_view: scene_attachment_view,
                     final_resolve_target: scene_resolve_target,
+                    semantic_view,
+                    semantic_resolve_target,
                     final_pipelines,
                     depth_view: resources
                         .depth_prepass
@@ -293,6 +292,10 @@ impl GpuDeviceState {
                     instance_buffer: &resources.instance_buffer,
                     output_bind_group: &resources.output_bind_group,
                     opaque_output_bind_group: &resources.opaque_output_bind_group,
+                    reflection_probe_output_bind_groups: &resources
+                        .reflection_probe_output_bind_groups,
+                    reflection_probe_opaque_output_bind_groups: &resources
+                        .reflection_probe_opaque_output_bind_groups,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
@@ -402,6 +405,8 @@ impl GpuDeviceState {
                 SceneColorPasses {
                     final_view: surface_attachment_view,
                     final_resolve_target: surface_resolve_target,
+                    semantic_view: None,
+                    semantic_resolve_target: None,
                     final_pipelines: surface_pipeline.refs(),
                     depth_view: surface_scene_depth_view,
                     vertex_buffer: &resources.vertex_buffer,
@@ -417,6 +422,10 @@ impl GpuDeviceState {
                         .ok_or(RenderError::GpuResourcesNotPrepared {
                         backend: target.backend,
                     })?,
+                    reflection_probe_output_bind_groups: &resources
+                        .surface_reflection_probe_output_bind_groups,
+                    reflection_probe_opaque_output_bind_groups: &resources
+                        .surface_reflection_probe_opaque_output_bind_groups,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
@@ -465,6 +474,9 @@ impl GpuDeviceState {
         };
         let meter_submitted = meter_submission.is_some();
         self.queue.submit(Some(encoder.finish()));
+        if beauty_witness_encoded && let Some(semantic) = resources.semantic_aov.as_mut() {
+            semantic_aov::mark_beauty_witness_written(semantic);
+        }
         if let Some(submission) = meter_submission {
             self.auto_exposure_meter.begin_mapping(submission);
         }

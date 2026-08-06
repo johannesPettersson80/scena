@@ -19,8 +19,8 @@ use super::overlays::{OverlayPasses, encode_overlay_passes};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
 use super::{
-    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, labels, post, strokes,
-    surface_frame,
+    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, labels, post,
+    semantic_aov, strokes, surface_frame,
 };
 
 impl GpuDeviceState {
@@ -43,6 +43,9 @@ impl GpuDeviceState {
         let Some(resources) = self.resources.as_mut() else {
             return self.render_empty_surface(target, background_color);
         };
+        if let Some(semantic) = resources.semantic_aov.as_mut() {
+            semantic_aov::invalidate_beauty_witness(semantic);
+        }
         if resources.target != target {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: target.backend,
@@ -211,6 +214,10 @@ impl GpuDeviceState {
                     instance_buffer: &resources.instance_buffer,
                     output_bind_group: &resources.output_bind_group,
                     opaque_output_bind_group: &resources.opaque_output_bind_group,
+                    reflection_probe_output_bind_groups: &resources
+                        .reflection_probe_output_bind_groups,
+                    reflection_probe_opaque_output_bind_groups: &resources
+                        .reflection_probe_opaque_output_bind_groups,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     stroke_resources: resources.strokes.as_ref(),
@@ -239,17 +246,30 @@ impl GpuDeviceState {
                 "scena.browser.render_pass",
             )
         };
+        let (semantic_view, semantic_resolve_target) = resources
+            .semantic_aov
+            .as_ref()
+            .and_then(|semantic| semantic_aov::beauty_attachment_views(semantic, target))
+            .map_or((None, None), |(view, resolve_target)| {
+                (Some(view), resolve_target)
+            });
+        let beauty_witness_encoded = semantic_view.is_some();
         encode_scene_color_passes(
             &mut encoder,
             SceneColorPasses {
                 final_view,
                 final_resolve_target: None,
+                semantic_view,
+                semantic_resolve_target,
                 final_pipelines,
                 depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                 vertex_buffer: &resources.vertex_buffer,
                 instance_buffer: &resources.instance_buffer,
                 output_bind_group: &resources.output_bind_group,
                 opaque_output_bind_group: &resources.opaque_output_bind_group,
+                reflection_probe_output_bind_groups: &resources.reflection_probe_output_bind_groups,
+                reflection_probe_opaque_output_bind_groups: &resources
+                    .reflection_probe_opaque_output_bind_groups,
                 draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
@@ -402,6 +422,9 @@ impl GpuDeviceState {
             };
             let meter_submitted = meter_submission.is_some();
             self.queue.submit(Some(encoder.finish()));
+            if beauty_witness_encoded && let Some(semantic) = resources.semantic_aov.as_mut() {
+                semantic_aov::mark_beauty_witness_written(semantic);
+            }
             if let Some(submission) = meter_submission {
                 self.browser_auto_exposure_meter.begin_mapping(submission);
             }
@@ -438,6 +461,9 @@ impl GpuDeviceState {
             encode_texture_readback_copy(&mut encoder, &surface_output.texture, readback, target);
         }
         self.queue.submit(Some(encoder.finish()));
+        if beauty_witness_encoded && let Some(semantic) = resources.semantic_aov.as_mut() {
+            semantic_aov::mark_beauty_witness_written(semantic);
+        }
         surface_output.present();
         if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
             let change = surface_frame::refresh_surface_configuration(

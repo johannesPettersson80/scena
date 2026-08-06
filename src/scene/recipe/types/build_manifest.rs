@@ -212,6 +212,24 @@ pub struct SceneRecipeBuildImportV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_root: Option<u64>,
     pub nodes_by_path: BTreeMap<String, u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_rounding: Option<SceneRecipeImportEdgeRoundingReportV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeImportEdgeRoundingReportV1 {
+    pub enabled: bool,
+    pub inspected_meshes: usize,
+    pub rounded_meshes: usize,
+    pub skipped_meshes: usize,
+    pub eligible_edges: usize,
+    pub rounded_edges: usize,
+    pub skipped_edges: usize,
+    pub rejected_edges: usize,
+    #[serde(default)]
+    pub removed_degenerate_triangles: usize,
+    pub source_triangles: usize,
+    pub derived_triangles: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

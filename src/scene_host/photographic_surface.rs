@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::{SceneHostCore, SceneHostError};
-use crate::{Aabb, AssetFetcher, MaterialDesc, MaterialKind, Transform, Vec3};
+use crate::{
+    Aabb, AssetFetcher, Color, MaterialDesc, MaterialKind, PhotographicSurfaceDesc,
+    PhotographicSurfaceKind, Transform, Vec3,
+};
 
 mod asset_health;
 
@@ -329,9 +332,8 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             if preserve_sharp {
                 report.preserved_sharp_meshes += 1;
             }
-            let material_textured = material_has_authored_surface_texture(&original_material);
             let deforming = geometry.skin().is_some() || !geometry.morph_targets().is_empty();
-            if !preserve_sharp && !material_textured && !deforming {
+            if !preserve_sharp && !deforming {
                 let size = geometry.bounds().half_extent() * 2.0;
                 let bevel = size.min_element().max(0.0) * 0.006;
                 if bevel > 1.0e-7
@@ -375,17 +377,49 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             }
             let uniform_surface = material.kind() == MaterialKind::PbrMetallicRoughness
                 && !material_has_authored_surface_texture(&material);
-            if uniform_surface && material.photographic_micro_surface().is_none() {
-                let strength = (0.018 + material.roughness_factor() * 0.025).clamp(0.018, 0.045);
-                material = material.with_photographic_micro_surface(strength, micro_scale_m);
+            if uniform_surface {
+                let surface_kind = inferred_surface_kind(&material);
+                let surface = self.assets.create_photographic_surface(
+                    PhotographicSurfaceDesc::new(surface_kind, material.base_color())
+                        .with_feature_scale_m(micro_scale_m)
+                        .with_metallic(material.metallic_factor())
+                        .with_roughness(material.roughness_factor())
+                        .with_variation(0.55)
+                        .with_resolution(256),
+                )?;
+                let generated_defaults = self
+                    .assets
+                    .material(surface.material())
+                    .expect("generated photographic material resolves");
+                material = material
+                    .with_base_color(Color::WHITE)
+                    .with_base_color_texture(surface.base_color_texture())
+                    .with_normal_texture(surface.normal_texture())
+                    .with_metallic_roughness_texture(surface.metallic_roughness_texture())
+                    .with_occlusion_texture(surface.occlusion_texture())
+                    .with_metallic_factor(1.0)
+                    .with_roughness_factor(1.0)
+                    .with_normal_scale(generated_defaults.normal_scale())
+                    .with_occlusion_strength(generated_defaults.occlusion_strength())
+                    .with_photographic_surface_tile_size_m(
+                        generated_defaults
+                            .photographic_surface_tile_size_m()
+                            .expect("generated photographic material has a physical tile"),
+                    )
+                    .with_photographic_micro_surface(0.0, micro_scale_m);
                 let material = self.assets.create_material(material);
                 self.scene.set_mesh_material(node, material)?;
                 report.micro_surface_materials += 1;
+                report.minimum_texture_dimension = Some(
+                    report
+                        .minimum_texture_dimension
+                        .map_or(256, |current| current.min(256)),
+                );
                 report.issues.push(asset_issue(
                     PhotographicAssetIssueClassV1::SafeRepair,
-                    "neutral_micro_surface_added",
+                    "generated_physical_surface_added",
                     Some(self.register_node(node)),
-                    "scale-aware neutral micro-roughness was added without changing material identity",
+                    "deterministic scale-aware PBR surface maps were generated while preserving the authored material means",
                     None,
                 ));
             }
@@ -451,6 +485,27 @@ fn material_has_authored_surface_texture(material: &MaterialDesc) -> bool {
         || material.thickness_texture().is_some()
 }
 
+fn inferred_surface_kind(material: &MaterialDesc) -> PhotographicSurfaceKind {
+    let roughness = material.roughness_factor();
+    if material.metallic_factor() >= 0.65 {
+        if roughness <= 0.14 {
+            PhotographicSurfaceKind::PolishedMetal
+        } else if roughness <= 0.42 {
+            PhotographicSurfaceKind::SatinMetal
+        } else {
+            PhotographicSurfaceKind::CastMetal
+        }
+    } else if material.clearcoat_factor() >= 0.25 {
+        PhotographicSurfaceKind::ClearcoatPlastic
+    } else if roughness <= 0.28 {
+        PhotographicSurfaceKind::PaintedMetal
+    } else if roughness <= 0.64 {
+        PhotographicSurfaceKind::MoldedPlastic
+    } else {
+        PhotographicSurfaceKind::Rubber
+    }
+}
+
 fn rejected(node: u64, reason: &str) -> PhotographicSurfaceRejectedMeshV1 {
     PhotographicSurfaceRejectedMeshV1 {
         node,
@@ -461,7 +516,10 @@ fn rejected(node: u64, reason: &str) -> PhotographicSurfaceRejectedMeshV1 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Color, GeometryDesc, SceneHostCore};
+    use crate::{
+        Color, GeometryDesc, NodeKind, SceneHostCore, TextureMemoryDesc, TextureMemoryId,
+        TextureSlot,
+    };
 
     #[test]
     fn photographic_asset_health_reports_safe_repairs_and_supported_promise() {
@@ -469,7 +527,11 @@ mod tests {
         let geometry = host.assets.create_geometry(GeometryDesc::plane(1.0, 1.0));
         let material = host
             .assets
-            .create_material(MaterialDesc::pbr_metallic_roughness(Color::GRAY, 0.0, 0.7));
+            .create_material(MaterialDesc::pbr_metallic_roughness(
+                Color::GRAY,
+                0.83,
+                0.27,
+            ));
         let node = host
             .scene
             .mesh(geometry, material)
@@ -483,10 +545,48 @@ mod tests {
         assert!(report.coherent_visible_subject);
         assert!(report.boundary_edges > 0);
         assert!(report.micro_surface_materials > 0);
-        assert!(report.issues.iter().any(|issue| {
-            issue.class == PhotographicAssetIssueClassV1::SafeRepair
-                && issue.code == "neutral_micro_surface_added"
-        }));
+        assert!(
+            report.issues.iter().any(|issue| {
+                issue.class == PhotographicAssetIssueClassV1::SafeRepair
+                    && issue.code == "generated_physical_surface_added"
+            }),
+            "{:#?}",
+            report.issues
+        );
+        let NodeKind::Mesh(mesh) = host.scene.node(node).expect("mesh remains").kind() else {
+            panic!("subject node must remain a mesh");
+        };
+        let generated = host
+            .assets
+            .material(mesh.material())
+            .expect("generated material resolves");
+        assert!(generated.base_color_texture().is_some());
+        assert!(generated.normal_texture().is_some());
+        assert!(generated.metallic_roughness_texture().is_some());
+        assert!(generated.occlusion_texture().is_some());
+        assert_eq!(generated.photographic_micro_surface(), None);
+        assert_eq!(
+            generated.photographic_surface_tile_size_m(),
+            Some(0.1),
+            "automatic photographic surfaces must retain their physical tile size"
+        );
+        let packed = host
+            .assets
+            .sample_texture(
+                generated
+                    .metallic_roughness_texture()
+                    .expect("packed generated map"),
+                [0.37, 0.61],
+            )
+            .expect("packed map samples");
+        assert!(
+            (packed.b - 0.83).abs() <= 0.01,
+            "authored metallic mean must survive generation: {packed:?}"
+        );
+        assert!(
+            (packed.g - 0.27).abs() <= 0.09,
+            "authored roughness mean must survive bounded variation: {packed:?}"
+        );
         assert!(report.supported_promise.contains("coherent geometry"));
         assert!(
             report
@@ -536,5 +636,63 @@ mod tests {
             );
         }
         assert!(report.coherent_visible_subject);
+    }
+
+    #[test]
+    fn photographic_surface_micro_bevel_preserves_textured_box_material() {
+        let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+        let texture = host
+            .assets
+            .create_texture(TextureMemoryDesc::rgba8_for_slot(
+                TextureMemoryId::new("photographic/textured-box").expect("texture id"),
+                1,
+                1,
+                vec![128, 128, 128, 255],
+                TextureSlot::BaseColor,
+            ))
+            .expect("texture creates");
+        let geometry = host
+            .assets
+            .create_geometry(GeometryDesc::box_xyz(1.0, 0.6, 0.4));
+        let material = host.assets.create_material(
+            MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.8, 0.3)
+                .with_base_color_texture(texture),
+        );
+        let node = host
+            .scene
+            .mesh(geometry, material)
+            .add()
+            .expect("textured box inserts");
+        let subject = host.register_node(node);
+
+        let report = host
+            .apply_photographic_surface(subject)
+            .expect("photographic surface applies");
+
+        assert_eq!(report.micro_beveled_meshes, 1);
+        let NodeKind::Mesh(mesh) = host.scene.node(node).expect("mesh remains").kind() else {
+            panic!("subject remains a mesh");
+        };
+        let beveled = host
+            .assets
+            .geometry(mesh.geometry())
+            .expect("beveled geometry resolves");
+        assert!(beveled.indices().len() > 36);
+        let preserved = host
+            .assets
+            .material(mesh.material())
+            .expect("material resolves");
+        assert_eq!(preserved.base_color_texture(), Some(texture));
+    }
+
+    #[test]
+    fn ambiguous_mid_roughness_metal_infers_isotropic_satin_finish() {
+        let material = MaterialDesc::pbr_metallic_roughness(Color::GRAY, 1.0, 0.33);
+
+        assert_eq!(
+            inferred_surface_kind(&material),
+            PhotographicSurfaceKind::SatinMetal,
+            "scalar metallic-roughness values cannot justify inventing a directional brushed finish"
+        );
     }
 }

@@ -2,6 +2,7 @@ mod asset_alpha_output;
 mod diagnostics_stats_world;
 mod material_reflection;
 mod movement;
+mod photographic_output;
 mod primitive_winding;
 mod quality;
 mod quality_composition;
@@ -20,6 +21,7 @@ pub(crate) use diagnostics_stats_world::{
 };
 pub(crate) use material_reflection::check_material_reflection_quality_contracts;
 pub(crate) use movement::check_render_movement_contracts;
+pub(crate) use photographic_output::check_photographic_output_metrics;
 pub(crate) use primitive_winding::check_c05_primitive_winding_contract;
 pub(crate) use quality::check_render_quality_contracts;
 pub(crate) use quality_reflection::check_render_quality_reflection_contracts;

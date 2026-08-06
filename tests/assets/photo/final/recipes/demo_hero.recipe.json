@@ -1,0 +1,168 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "machine",
+      "uri": "../../../../../demo/samples/connector-snap/connector_snap_assembly.glb",
+      "edge_rounding": {
+        "enabled": true,
+        "radius_fraction": 0.0025,
+        "segments": 3,
+        "edge_angle_threshold_degrees": 30.0,
+        "max_derived_triangles": 250000
+      },
+      "material_bindings": [
+        {
+          "source_material": { "index": 0, "name": "stainless bolt.002" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.10
+      },
+      "normal_scale": 0.14,
+      "occlusion_strength": 0.45
+          }
+        },
+        {
+          "source_material": { "index": 3, "name": "machined aluminium.002" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.20
+            },
+            "normal_scale": 0.18,
+            "occlusion_strength": 0.50
+          }
+        },
+        {
+          "source_material": { "index": 4, "name": "recessed bore.002" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+              "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+              "tile_size_m": 0.22
+            },
+            "normal_scale": 0.18,
+            "occlusion_strength": 0.60
+          }
+        },
+        {
+          "source_material": { "index": 5, "name": "baseplate steel.002" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.45
+            },
+            "normal_scale": 0.10,
+            "imperfection": {
+              "profile": "smudge",
+              "strength": 0.40,
+              "physical_scale_m": 0.040,
+              "seed": 523
+            }
+          }
+        },
+        {
+          "source_material": { "index": 6, "name": "isolator pad.002" },
+          "material": {
+      "preset": "rubber",
+      "base_color": "#1A1D28",
+      "roughness": 0.86,
+      "normal_scale": 0.0,
+      "occlusion_strength": 0.55
+          }
+        },
+        {
+          "source_material": { "index": 7, "name": "navy powder coat.002" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+              "tile_size_m": 0.20
+            },
+            "base_color": "#183764"
+          }
+        },
+        {
+          "source_material": { "index": 8, "name": "data plate.002" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.12
+      },
+      "normal_scale": 0.12,
+      "occlusion_strength": 0.40
+          }
+        },
+        {
+          "source_material": { "index": 9, "name": "dark flywheel disc" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+              "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+              "tile_size_m": 0.32
+            },
+            "normal_scale": 0.22,
+            "occlusion_strength": 0.65,
+            "imperfection": {
+              "profile": "oil_film",
+              "strength": 0.10,
+              "physical_scale_m": 0.018,
+              "seed": 1193
+            }
+          }
+        },
+        {
+          "source_material": { "index": 10, "name": "turned steel shaft" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+              "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+              "tile_size_m": 0.22
+      },
+      "normal_scale": 0.12,
+      "occlusion_strength": 0.40
+          }
+        },
+        {
+          "source_material": { "index": 11, "name": "satin gearbox aluminium" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.32
+            },
+            "normal_scale": 0.10,
+            "occlusion_strength": 0.45,
+            "imperfection": {
+              "profile": "oil_film",
+              "strength": 0.65,
+              "physical_scale_m": 0.028,
+              "seed": 411
+            }
+          }
+        },
+        {
+          "source_material": { "index": 12, "name": "ribbed black rubber" },
+          "material": {
+      "preset": "rubber",
+      "base_color": "#1A1D28",
+      "roughness": 0.86,
+      "normal_scale": 0.0,
+      "occlusion_strength": 0.55
+          }
+        }
+      ]
+    }
+  ],
+  "photo": {
+    "intent": "camera_behavior",
+    "quality": "final",
+    "staging": { "ground": "reflective" },
+    "subject": { "kind": "import", "id": "machine" }
+  }
+}

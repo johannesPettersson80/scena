@@ -480,6 +480,156 @@ fn camera_behavior_shaded_candidate_scoring_rejects_black_silhouette_and_flat_gr
 }
 
 #[test]
+fn photo_candidate_framing_centers_the_projected_subject_bounds_used_by_the_gate() {
+    const WIDTH: u32 = 640;
+    const HEIGHT: u32 = 480;
+
+    let mut host = SceneHostCore::headless(WIDTH, HEIGHT).expect("host builds");
+    let subject = host
+        .add_empty(
+            Some(host.root_handle()),
+            Transform::IDENTITY,
+            Some("asymmetric-subject"),
+        )
+        .expect("subject root inserts");
+    for (index, x) in [-4.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0].into_iter().enumerate() {
+        let frame = host
+            .add_empty(
+                Some(subject),
+                Transform::at(Vec3::new(x, 0.0, 0.0)),
+                Some(&format!("part-{index}")),
+            )
+            .expect("part frame inserts");
+        pollster::block_on(
+            host.instantiate_url_under(frame, AssetPath::from("tests/assets/gltf/load_unit.glb")),
+        )
+        .expect("unit mesh instantiates");
+    }
+
+    let bounds = host
+        .node_world_bounds(subject)
+        .expect("subject bounds query succeeds")
+        .expect("subject has bounds");
+    let plan = camera_behavior_candidate_plan(
+        PhotoCandidateRequest::camera_behavior(bounds, (WIDTH, HEIGHT))
+            .preferred_view("front")
+            .max_candidates(1),
+    )
+    .expect("candidate plan builds");
+    host.frame_node_with_photo_candidate(
+        subject,
+        plan.candidates.first().expect("candidate exists"),
+    )
+    .expect("candidate frames subject");
+
+    let camera = host
+        .scene()
+        .active_camera()
+        .expect("host keeps an active camera");
+    let corners = [
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
+    ];
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    for corner in corners {
+        let projected = host
+            .scene()
+            .project_world_point(camera, corner, WIDTH, HEIGHT)
+            .expect("bounds corner projection succeeds")
+            .expect("framed bounds corner stays in front of the camera");
+        min_x = min_x.min(projected.x);
+        max_x = max_x.max(projected.x);
+    }
+    let center_offset_fraction = (((min_x + max_x) * 0.5) / WIDTH as f32 - 0.5).abs();
+    assert!(
+        center_offset_fraction <= 0.01,
+        "photo framing and the projected-bounds gate must use the same center, got {center_offset_fraction}"
+    );
+}
+
+#[test]
+fn photo_candidate_framing_unions_multiple_subject_roots() {
+    const WIDTH: u32 = 640;
+    const HEIGHT: u32 = 480;
+
+    let mut host = SceneHostCore::headless(WIDTH, HEIGHT).expect("host builds");
+    let mut roots = Vec::new();
+    for (index, x) in [-3.0, 2.0].into_iter().enumerate() {
+        let root = host
+            .add_empty(
+                Some(host.root_handle()),
+                Transform::at(Vec3::new(x, 0.0, 0.0)),
+                Some(&format!("subject-root-{index}")),
+            )
+            .expect("subject root inserts");
+        pollster::block_on(
+            host.instantiate_url_under(root, AssetPath::from("tests/assets/gltf/load_unit.glb")),
+        )
+        .expect("unit mesh instantiates");
+        roots.push(root);
+    }
+
+    let bounds = roots
+        .iter()
+        .map(|root| {
+            host.node_world_bounds(*root)
+                .expect("subject bounds query succeeds")
+                .expect("subject root has bounds")
+        })
+        .reduce(Aabb::union)
+        .expect("multi-root subject has bounds");
+    let plan = camera_behavior_candidate_plan(
+        PhotoCandidateRequest::camera_behavior(bounds, (WIDTH, HEIGHT))
+            .preferred_view("front")
+            .max_candidates(1),
+    )
+    .expect("candidate plan builds");
+    host.frame_nodes_with_photo_candidate(
+        &roots,
+        plan.candidates.first().expect("candidate exists"),
+    )
+    .expect("candidate frames every subject root");
+
+    let camera = host
+        .scene()
+        .active_camera()
+        .expect("host keeps an active camera");
+    let corners = [
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
+    ];
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    for corner in corners {
+        let projected = host
+            .scene()
+            .project_world_point(camera, corner, WIDTH, HEIGHT)
+            .expect("bounds corner projection succeeds")
+            .expect("framed bounds corner stays in front of the camera");
+        min_x = min_x.min(projected.x);
+        max_x = max_x.max(projected.x);
+    }
+    let center_offset_fraction = (((min_x + max_x) * 0.5) / WIDTH as f32 - 0.5).abs();
+    assert!(
+        center_offset_fraction <= 0.01,
+        "multi-root framing must center the union measured by the gate, got {center_offset_fraction}"
+    );
+}
+
+#[test]
 fn scene_host_post_processing_setters_update_capability_report() {
     let mut host = SceneHostCore::headless(64, 64).expect("host builds");
 

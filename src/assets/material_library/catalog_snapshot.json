@@ -1,0 +1,4324 @@
+{
+  "schema": "scena.material_library_provider_snapshot.v1",
+  "provider": "ambientcg",
+  "provider_api": "https://ambientcg.com/api/v3/assets?type=material&limit=500&include=title,tags,technique,maps,downloads",
+  "retrieved_utc": "2026-07-29T17:00:33.392Z",
+  "provider_material_count": 2005,
+  "entries": [
+    {
+      "provider_asset_id": "Fabric001",
+      "label": "Fabric 001",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "1",
+        "cloth",
+        "fabric",
+        "old",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric001_1K-JPG.zip",
+      "archive_bytes": 6297718
+    },
+    {
+      "provider_asset_id": "Fabric002",
+      "label": "Fabric 002",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "2",
+        "cloth",
+        "fabric",
+        "pattern",
+        "red"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric002_1K-JPG.zip",
+      "archive_bytes": 7984153
+    },
+    {
+      "provider_asset_id": "Fabric003",
+      "label": "Fabric 003",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "3",
+        "blue",
+        "clean",
+        "fabric",
+        "jeans",
+        "new"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric003_1K-JPG.zip",
+      "archive_bytes": 5391891
+    },
+    {
+      "provider_asset_id": "Fabric004",
+      "label": "Fabric 004",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "4",
+        "black",
+        "carbon",
+        "clean",
+        "dark",
+        "fabric",
+        "fi",
+        "fiber",
+        "modern",
+        "sci"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric004_1K-JPG.zip",
+      "archive_bytes": 3046393
+    },
+    {
+      "provider_asset_id": "Fabric005",
+      "label": "Fabric 005",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "5",
+        "blue",
+        "fabric",
+        "stripes",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric005_1K-JPG.zip",
+      "archive_bytes": 10386734
+    },
+    {
+      "provider_asset_id": "Fabric006",
+      "label": "Fabric 006",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "6",
+        "fabric",
+        "red",
+        "stripes",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric006_1K-JPG.zip",
+      "archive_bytes": 11179467
+    },
+    {
+      "provider_asset_id": "Fabric007",
+      "label": "Fabric 007",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "7",
+        "blue",
+        "diamond",
+        "fabric",
+        "rectangle",
+        "square"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric007_1K-JPG.zip",
+      "archive_bytes": 8245416
+    },
+    {
+      "provider_asset_id": "Fabric008",
+      "label": "Fabric 008",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "8",
+        "diamond",
+        "fabric",
+        "rectangle",
+        "square",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric008_1K-JPG.zip",
+      "archive_bytes": 7958528
+    },
+    {
+      "provider_asset_id": "Fabric009",
+      "label": "Fabric 009",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "9",
+        "diamond",
+        "fabric",
+        "rectangle",
+        "red",
+        "square"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric009_1K-JPG.zip",
+      "archive_bytes": 7486659
+    },
+    {
+      "provider_asset_id": "Fabric010",
+      "label": "Fabric 010",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "10",
+        "chair",
+        "fabric",
+        "plastic",
+        "weave",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric010_1K-JPG.zip",
+      "archive_bytes": 6241161
+    },
+    {
+      "provider_asset_id": "Fabric011",
+      "label": "Fabric 011",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "11",
+        "brown",
+        "fabric",
+        "light",
+        "pattern",
+        "weave",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric011_1K-JPG.zip",
+      "archive_bytes": 6531910
+    },
+    {
+      "provider_asset_id": "Fabric012",
+      "label": "Fabric 012",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "12",
+        "blue",
+        "dark",
+        "fabric",
+        "pattern",
+        "weave",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric012_1K-JPG.zip",
+      "archive_bytes": 7480394
+    },
+    {
+      "provider_asset_id": "Fabric013",
+      "label": "Fabric 013",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "13",
+        "brown",
+        "fabric",
+        "pattern",
+        "weave",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric013_1K-JPG.zip",
+      "archive_bytes": 6899653
+    },
+    {
+      "provider_asset_id": "Fabric014",
+      "label": "Fabric 014",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "14",
+        "fabric",
+        "green",
+        "light",
+        "plastic",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric014_1K-JPG.zip",
+      "archive_bytes": 4865430
+    },
+    {
+      "provider_asset_id": "Fabric015",
+      "label": "Fabric 015",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "15",
+        "blue",
+        "fabric",
+        "plastic",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric015_1K-JPG.zip",
+      "archive_bytes": 5094038
+    },
+    {
+      "provider_asset_id": "Fabric016",
+      "label": "Fabric 016",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "16",
+        "fabric",
+        "red",
+        "weave",
+        "wool",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric016_1K-JPG.zip",
+      "archive_bytes": 7757533
+    },
+    {
+      "provider_asset_id": "Fabric017",
+      "label": "Fabric 017",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "17",
+        "blue",
+        "cyan",
+        "fabric",
+        "weave",
+        "wool",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric017_1K-JPG.zip",
+      "archive_bytes": 8522927
+    },
+    {
+      "provider_asset_id": "Fabric018",
+      "label": "Fabric 018",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "18",
+        "cloth",
+        "fabric",
+        "green",
+        "lime",
+        "weave",
+        "wool",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric018_1K-JPG.zip",
+      "archive_bytes": 6440835
+    },
+    {
+      "provider_asset_id": "Fabric019",
+      "label": "Fabric 019",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "19",
+        "cloth",
+        "fabric",
+        "weave",
+        "white",
+        "wool",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric019_1K-JPG.zip",
+      "archive_bytes": 7577528
+    },
+    {
+      "provider_asset_id": "Fabric020",
+      "label": "Fabric 020",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "20",
+        "blue",
+        "fabric",
+        "towel",
+        "weave",
+        "wool",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric020_1K-JPG.zip",
+      "archive_bytes": 7731804
+    },
+    {
+      "provider_asset_id": "Fabric021",
+      "label": "Fabric 021",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "21",
+        "blue",
+        "fabric",
+        "towel",
+        "weave",
+        "wool",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric021_1K-JPG.zip",
+      "archive_bytes": 6909810
+    },
+    {
+      "provider_asset_id": "Fabric022",
+      "label": "Fabric 022",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "22",
+        "blue",
+        "carpet",
+        "cloth",
+        "dark",
+        "fabric",
+        "floor"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric022_1K-JPG.zip",
+      "archive_bytes": 8456497
+    },
+    {
+      "provider_asset_id": "Fabric023",
+      "label": "Fabric 023",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "23",
+        "blue",
+        "carpet",
+        "cloth",
+        "dark",
+        "fabric",
+        "floor"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric023_1K-JPG.zip",
+      "archive_bytes": 7945819
+    },
+    {
+      "provider_asset_id": "Fabric024",
+      "label": "Fabric 024",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "24",
+        "carpet",
+        "cloth",
+        "fabric",
+        "floor",
+        "green",
+        "tiled"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric024_1K-JPG.zip",
+      "archive_bytes": 8668140
+    },
+    {
+      "provider_asset_id": "Fabric025",
+      "label": "Fabric 025",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "25",
+        "beige",
+        "brown",
+        "carpet",
+        "cloth",
+        "fabric",
+        "floor",
+        "orange",
+        "tiled"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric025_1K-JPG.zip",
+      "archive_bytes": 8396830
+    },
+    {
+      "provider_asset_id": "Fabric026",
+      "label": "Fabric 026",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "26",
+        "carpet",
+        "cloth",
+        "fabric",
+        "floor",
+        "red",
+        "tiled"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric026_1K-JPG.zip",
+      "archive_bytes": 8021292
+    },
+    {
+      "provider_asset_id": "Fabric027",
+      "label": "Fabric 027",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "27",
+        "beige",
+        "carpet",
+        "cloth",
+        "fabric",
+        "floor",
+        "small",
+        "tiled"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric027_1K-JPG.zip",
+      "archive_bytes": 8578018
+    },
+    {
+      "provider_asset_id": "Fabric028",
+      "label": "Fabric 028",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "28",
+        "beige",
+        "carpet",
+        "cloth",
+        "dirty",
+        "fabric",
+        "floor",
+        "smudge"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric028_1K-JPG.zip",
+      "archive_bytes": 8226697
+    },
+    {
+      "provider_asset_id": "Fabric029",
+      "label": "Fabric 029",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "29",
+        "black",
+        "brown",
+        "carpet",
+        "cloth",
+        "dark",
+        "dirty",
+        "fabric",
+        "floor",
+        "smudge"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric029_1K-JPG.zip",
+      "archive_bytes": 8197400
+    },
+    {
+      "provider_asset_id": "Fabric030",
+      "label": "Fabric 030",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "30",
+        "cloth",
+        "fabric",
+        "grey"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric030_1K-JPG.zip",
+      "archive_bytes": 11064340
+    },
+    {
+      "provider_asset_id": "Fabric031",
+      "label": "Fabric 031",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "31",
+        "fabric",
+        "grey",
+        "large",
+        "weave",
+        "wool",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric031_1K-JPG.zip",
+      "archive_bytes": 8137817
+    },
+    {
+      "provider_asset_id": "Fabric032",
+      "label": "Fabric 032",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "32",
+        "cloth",
+        "fabric",
+        "white",
+        "wool"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric032_1K-JPG.zip",
+      "archive_bytes": 8884696
+    },
+    {
+      "provider_asset_id": "Fabric033",
+      "label": "Fabric 033",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "33",
+        "carpet",
+        "fabric",
+        "green",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric033_1K-JPG.zip",
+      "archive_bytes": 9147842
+    },
+    {
+      "provider_asset_id": "Fabric034",
+      "label": "Fabric 034",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "34",
+        "fabric",
+        "felt",
+        "grey",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric034_1K-JPG.zip",
+      "archive_bytes": 8219829
+    },
+    {
+      "provider_asset_id": "Fabric035",
+      "label": "Fabric 035",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "35",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric035_1K-JPG.zip",
+      "archive_bytes": 10488710
+    },
+    {
+      "provider_asset_id": "Fabric036",
+      "label": "Fabric 036",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "36",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric036_1K-JPG.zip",
+      "archive_bytes": 9644900
+    },
+    {
+      "provider_asset_id": "Fabric037",
+      "label": "Fabric 037",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "37",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric037_1K-JPG.zip",
+      "archive_bytes": 9719664
+    },
+    {
+      "provider_asset_id": "Fabric038",
+      "label": "Fabric 038",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "38",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric038_1K-JPG.zip",
+      "archive_bytes": 10713595
+    },
+    {
+      "provider_asset_id": "Fabric039",
+      "label": "Fabric 039",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "39",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric039_1K-JPG.zip",
+      "archive_bytes": 8339959
+    },
+    {
+      "provider_asset_id": "Fabric040",
+      "label": "Fabric 040",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "40",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric040_1K-JPG.zip",
+      "archive_bytes": 9980925
+    },
+    {
+      "provider_asset_id": "Fabric041",
+      "label": "Fabric 041",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "41",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric041_1K-JPG.zip",
+      "archive_bytes": 10515068
+    },
+    {
+      "provider_asset_id": "Fabric042",
+      "label": "Fabric 042",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "42",
+        "clean",
+        "fabric",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric042_1K-JPG.zip",
+      "archive_bytes": 10037326
+    },
+    {
+      "provider_asset_id": "Fabric043",
+      "label": "Fabric 043",
+      "creation_method": "surface-photogrammetry",
+      "tags": [
+        "43",
+        "fabric",
+        "grey",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric043_1K-JPG.zip",
+      "archive_bytes": 9364923
+    },
+    {
+      "provider_asset_id": "Fabric044",
+      "label": "Fabric 044",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "44",
+        "fabric",
+        "grey",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric044_1K-JPG.zip",
+      "archive_bytes": 8761042
+    },
+    {
+      "provider_asset_id": "Fabric045",
+      "label": "Fabric 045",
+      "creation_method": "surface-photogrammetry",
+      "tags": [
+        "45",
+        "fabric",
+        "grey",
+        "rough",
+        "rug",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric045_1K-JPG.zip",
+      "archive_bytes": 9237703
+    },
+    {
+      "provider_asset_id": "Fabric046",
+      "label": "Fabric 046",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "46",
+        "blue",
+        "fabric",
+        "polyester",
+        "substance",
+        "vest"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric046_1K-JPG.zip",
+      "archive_bytes": 7279141
+    },
+    {
+      "provider_asset_id": "Fabric047",
+      "label": "Fabric 047",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "47",
+        "fabric",
+        "green",
+        "polyester",
+        "substance",
+        "vest"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric047_1K-JPG.zip",
+      "archive_bytes": 6780456
+    },
+    {
+      "provider_asset_id": "Fabric048",
+      "label": "Fabric 048",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "48",
+        "fabric",
+        "polyester",
+        "substance",
+        "vest",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric048_1K-JPG.zip",
+      "archive_bytes": 6570548
+    },
+    {
+      "provider_asset_id": "Fabric049",
+      "label": "Fabric 049",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "49",
+        "black",
+        "fabric",
+        "polyester",
+        "substance",
+        "vest"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric049_1K-JPG.zip",
+      "archive_bytes": 6570324
+    },
+    {
+      "provider_asset_id": "Fabric050",
+      "label": "Fabric 050",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "50",
+        "fabric",
+        "pattern",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric050_1K-JPG.zip",
+      "archive_bytes": 9939968
+    },
+    {
+      "provider_asset_id": "Fabric051",
+      "label": "Fabric 051",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "51",
+        "black",
+        "fabric",
+        "pattern",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric051_1K-JPG.zip",
+      "archive_bytes": 9328334
+    },
+    {
+      "provider_asset_id": "Fabric052",
+      "label": "Fabric 052",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "52",
+        "fabric",
+        "green",
+        "pattern",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric052_1K-JPG.zip",
+      "archive_bytes": 9428092
+    },
+    {
+      "provider_asset_id": "Fabric053",
+      "label": "Fabric 053",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "53",
+        "fabric",
+        "pattern",
+        "red",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric053_1K-JPG.zip",
+      "archive_bytes": 9464799
+    },
+    {
+      "provider_asset_id": "Fabric054",
+      "label": "Fabric 054",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "54",
+        "fabric",
+        "pattern",
+        "red",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric054_1K-JPG.zip",
+      "archive_bytes": 8946921
+    },
+    {
+      "provider_asset_id": "Fabric055",
+      "label": "Fabric 055",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "55",
+        "cloth",
+        "fabric",
+        "pattern",
+        "red",
+        "table",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric055_1K-JPG.zip",
+      "archive_bytes": 8486941
+    },
+    {
+      "provider_asset_id": "Fabric056",
+      "label": "Fabric 056",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "56",
+        "blue",
+        "cloth",
+        "fabric",
+        "pattern",
+        "table",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric056_1K-JPG.zip",
+      "archive_bytes": 8499157
+    },
+    {
+      "provider_asset_id": "Fabric057",
+      "label": "Fabric 057",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "57",
+        "blue",
+        "fabric",
+        "pattern",
+        "red",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric057_1K-JPG.zip",
+      "archive_bytes": 9255794
+    },
+    {
+      "provider_asset_id": "Fabric058",
+      "label": "Fabric 058",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "58",
+        "blue",
+        "fabric",
+        "pattern",
+        "pink",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric058_1K-JPG.zip",
+      "archive_bytes": 9765597
+    },
+    {
+      "provider_asset_id": "Fabric059",
+      "label": "Fabric 059",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "59",
+        "blue",
+        "fabric",
+        "pattern",
+        "plain",
+        "smooth",
+        "tartan"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric059_1K-JPG.zip",
+      "archive_bytes": 8912549
+    },
+    {
+      "provider_asset_id": "Fabric060",
+      "label": "Fabric 060",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "60",
+        "fabric",
+        "pattern",
+        "plain",
+        "smooth",
+        "tartan",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric060_1K-JPG.zip",
+      "archive_bytes": 8646092
+    },
+    {
+      "provider_asset_id": "Fabric061",
+      "label": "Fabric 061",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "61",
+        "fabric",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric061_1K-JPG.zip",
+      "archive_bytes": 8984802
+    },
+    {
+      "provider_asset_id": "Fabric062",
+      "label": "Fabric 062",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "62",
+        "fabric",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric062_1K-JPG.zip",
+      "archive_bytes": 8521939
+    },
+    {
+      "provider_asset_id": "Fabric063",
+      "label": "Fabric 063",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "63",
+        "fabric",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric063_1K-JPG.zip",
+      "archive_bytes": 8963010
+    },
+    {
+      "provider_asset_id": "Fabric064",
+      "label": "Fabric 064",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "64",
+        "fabric",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric064_1K-JPG.zip",
+      "archive_bytes": 8982500
+    },
+    {
+      "provider_asset_id": "Fabric065",
+      "label": "Fabric 065",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "65",
+        "fabric",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric065_1K-JPG.zip",
+      "archive_bytes": 8848351
+    },
+    {
+      "provider_asset_id": "Fabric066",
+      "label": "Fabric 066",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "66",
+        "fabric",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric066_1K-JPG.zip",
+      "archive_bytes": 9676056
+    },
+    {
+      "provider_asset_id": "Fabric067",
+      "label": "Fabric 067",
+      "creation_method": "surface-photogrammetry",
+      "tags": [
+        "67",
+        "cloth",
+        "fabric",
+        "table"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric067_1K-JPG.zip",
+      "archive_bytes": 7085847
+    },
+    {
+      "provider_asset_id": "Fabric068",
+      "label": "Fabric 068",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "68",
+        "fabric",
+        "orange",
+        "wool"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric068_1K-JPG.zip",
+      "archive_bytes": 8944389
+    },
+    {
+      "provider_asset_id": "Fabric069",
+      "label": "Fabric 069",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "69",
+        "fabric",
+        "jeans"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric069_1K-JPG.zip",
+      "archive_bytes": 9678748
+    },
+    {
+      "provider_asset_id": "Fabric070",
+      "label": "Fabric 070",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "70",
+        "fabric",
+        "green",
+        "light",
+        "sport",
+        "sportswear"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric070_1K-JPG.zip",
+      "archive_bytes": 9115547
+    },
+    {
+      "provider_asset_id": "Fabric071",
+      "label": "Fabric 071",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "71",
+        "blue",
+        "fabric",
+        "striped",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric071_1K-JPG.zip",
+      "archive_bytes": 8977823
+    },
+    {
+      "provider_asset_id": "Fabric072",
+      "label": "Fabric 072",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "72",
+        "blue",
+        "dark",
+        "fabric",
+        "striped"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric072_1K-JPG.zip",
+      "archive_bytes": 9284746
+    },
+    {
+      "provider_asset_id": "Fabric073",
+      "label": "Fabric 073",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "73",
+        "blue",
+        "fabric",
+        "striped",
+        "stripes"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric073_1K-JPG.zip",
+      "archive_bytes": 9862473
+    },
+    {
+      "provider_asset_id": "Fabric074",
+      "label": "Fabric 074",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "74",
+        "blue",
+        "fabric"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric074_1K-JPG.zip",
+      "archive_bytes": 8684000
+    },
+    {
+      "provider_asset_id": "Fabric075",
+      "label": "Fabric 075",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "75",
+        "blue",
+        "dark",
+        "fabric",
+        "grey"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric075_1K-JPG.zip",
+      "archive_bytes": 8891567
+    },
+    {
+      "provider_asset_id": "Fabric076",
+      "label": "Fabric 076",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "76",
+        "blue",
+        "fabric",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric076_1K-JPG.zip",
+      "archive_bytes": 9079137
+    },
+    {
+      "provider_asset_id": "Fabric077",
+      "label": "Fabric 077",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "77",
+        "fabric",
+        "jeans",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric077_1K-JPG.zip",
+      "archive_bytes": 9954883
+    },
+    {
+      "provider_asset_id": "Fabric078",
+      "label": "Fabric 078",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "78",
+        "cloth",
+        "fabric",
+        "green"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric078_1K-JPG.zip",
+      "archive_bytes": 10324455
+    },
+    {
+      "provider_asset_id": "Fabric079",
+      "label": "Fabric 079",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "79",
+        "black",
+        "fabric",
+        "grey",
+        "stripes",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric079_1K-JPG.zip",
+      "archive_bytes": 8076277
+    },
+    {
+      "provider_asset_id": "Fabric080",
+      "label": "Fabric 080",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "080",
+        "80",
+        "checkered",
+        "clean",
+        "clothing",
+        "cotton",
+        "fabric",
+        "indoor",
+        "modern",
+        "pattern",
+        "patterned",
+        "plaid",
+        "red",
+        "smooth",
+        "soft",
+        "textile",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric080_1K-JPG.zip",
+      "archive_bytes": 4902996
+    },
+    {
+      "provider_asset_id": "Fabric081A",
+      "label": "Fabric 081 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "81",
+        "blue",
+        "fabric",
+        "fine",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric081A_1K-JPG.zip",
+      "archive_bytes": 6064964
+    },
+    {
+      "provider_asset_id": "Fabric081B",
+      "label": "Fabric 081 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "81",
+        "damaged",
+        "fabric",
+        "plastisol",
+        "printed",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric081B_1K-JPG.zip",
+      "archive_bytes": 7179991
+    },
+    {
+      "provider_asset_id": "Fabric081C",
+      "label": "Fabric 081 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "81",
+        "fabric",
+        "plastisol",
+        "printed",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric081C_1K-JPG.zip",
+      "archive_bytes": 5040951
+    },
+    {
+      "provider_asset_id": "Fabric082A",
+      "label": "Fabric 082 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "82",
+        "fabric",
+        "fine",
+        "grey",
+        "smooth",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric082A_1K-JPG.zip",
+      "archive_bytes": 5156029
+    },
+    {
+      "provider_asset_id": "Fabric082B",
+      "label": "Fabric 082 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "82",
+        "blue",
+        "damaged",
+        "fabric",
+        "plastisol",
+        "printed"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric082B_1K-JPG.zip",
+      "archive_bytes": 8274884
+    },
+    {
+      "provider_asset_id": "Fabric082C",
+      "label": "Fabric 082 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "82",
+        "blue",
+        "damaged",
+        "fabric"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric082C_1K-JPG.zip",
+      "archive_bytes": 3946024
+    },
+    {
+      "provider_asset_id": "Fabric083",
+      "label": "Fabric 083",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "083",
+        "83",
+        "checkered",
+        "clean",
+        "cloth",
+        "fabric",
+        "gray",
+        "patterned",
+        "smooth",
+        "textile",
+        "woven"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Fabric083_1K-JPG.zip",
+      "archive_bytes": 8064054
+    },
+    {
+      "provider_asset_id": "Leather001",
+      "label": "Leather 001",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "1",
+        "brown",
+        "cloth",
+        "leather",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather001_1K-JPG.zip",
+      "archive_bytes": 6337916
+    },
+    {
+      "provider_asset_id": "Leather002",
+      "label": "Leather 002",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "2",
+        "brown",
+        "cloth",
+        "leather",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather002_1K-JPG.zip",
+      "archive_bytes": 7033418
+    },
+    {
+      "provider_asset_id": "Leather003",
+      "label": "Leather 003",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "3",
+        "brown",
+        "cloth",
+        "leather",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather003_1K-JPG.zip",
+      "archive_bytes": 7830888
+    },
+    {
+      "provider_asset_id": "Leather004",
+      "label": "Leather 004",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "4",
+        "cloth",
+        "leather",
+        "smooth",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather004_1K-JPG.zip",
+      "archive_bytes": 7062320
+    },
+    {
+      "provider_asset_id": "Leather005",
+      "label": "Leather 005",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "5",
+        "leather",
+        "red",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather005_1K-JPG.zip",
+      "archive_bytes": 7549784
+    },
+    {
+      "provider_asset_id": "Leather006",
+      "label": "Leather 006",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "6",
+        "brown",
+        "dark",
+        "leather",
+        "rough",
+        "used"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather006_1K-JPG.zip",
+      "archive_bytes": 7920486
+    },
+    {
+      "provider_asset_id": "Leather007",
+      "label": "Leather 007",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "7",
+        "brown",
+        "dark",
+        "leather",
+        "rough",
+        "used"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather007_1K-JPG.zip",
+      "archive_bytes": 7124812
+    },
+    {
+      "provider_asset_id": "Leather008",
+      "label": "Leather 008",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "8",
+        "black",
+        "crocodile",
+        "dark",
+        "leather",
+        "skin",
+        "snake"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather008_1K-JPG.zip",
+      "archive_bytes": 8794509
+    },
+    {
+      "provider_asset_id": "Leather009",
+      "label": "Leather 009",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "9",
+        "black",
+        "couch",
+        "leather",
+        "sofa"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather009_1K-JPG.zip",
+      "archive_bytes": 5246276
+    },
+    {
+      "provider_asset_id": "Leather010",
+      "label": "Leather 010",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "10",
+        "brown",
+        "couch",
+        "leather",
+        "sofa"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather010_1K-JPG.zip",
+      "archive_bytes": 6850301
+    },
+    {
+      "provider_asset_id": "Leather011",
+      "label": "Leather 011",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "11",
+        "couch",
+        "leather",
+        "red",
+        "sofa"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather011_1K-JPG.zip",
+      "archive_bytes": 5605677
+    },
+    {
+      "provider_asset_id": "Leather012",
+      "label": "Leather 012",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "12",
+        "couch",
+        "leather",
+        "sofa",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather012_1K-JPG.zip",
+      "archive_bytes": 5843242
+    },
+    {
+      "provider_asset_id": "Leather013",
+      "label": "Leather 013",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "13",
+        "couch",
+        "dark",
+        "leather",
+        "red",
+        "sofa"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather013_1K-JPG.zip",
+      "archive_bytes": 6271625
+    },
+    {
+      "provider_asset_id": "Leather014",
+      "label": "Leather 014",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "14",
+        "brown",
+        "leather",
+        "old",
+        "scratched",
+        "scratches",
+        "scuffs",
+        "used",
+        "vintage"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather014_1K-JPG.zip",
+      "archive_bytes": 7561208
+    },
+    {
+      "provider_asset_id": "Leather015",
+      "label": "Leather 015",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "15",
+        "brown",
+        "dark",
+        "leather",
+        "perforated",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather015_1K-JPG.zip",
+      "archive_bytes": 6862345
+    },
+    {
+      "provider_asset_id": "Leather016",
+      "label": "Leather 016",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "16",
+        "beige",
+        "leather",
+        "perforated",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather016_1K-JPG.zip",
+      "archive_bytes": 8171864
+    },
+    {
+      "provider_asset_id": "Leather017",
+      "label": "Leather 017",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "17",
+        "beige",
+        "leather",
+        "light",
+        "perforated",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather017_1K-JPG.zip",
+      "archive_bytes": 8200369
+    },
+    {
+      "provider_asset_id": "Leather018",
+      "label": "Leather 018",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "18",
+        "leather",
+        "light",
+        "perforated",
+        "smooth",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather018_1K-JPG.zip",
+      "archive_bytes": 7550024
+    },
+    {
+      "provider_asset_id": "Leather019",
+      "label": "Leather 019",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "19",
+        "brown",
+        "dark",
+        "leather",
+        "perforated",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather019_1K-JPG.zip",
+      "archive_bytes": 7693056
+    },
+    {
+      "provider_asset_id": "Leather020",
+      "label": "Leather 020",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "20",
+        "dark",
+        "leather",
+        "perforated",
+        "red",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather020_1K-JPG.zip",
+      "archive_bytes": 8371755
+    },
+    {
+      "provider_asset_id": "Leather021",
+      "label": "Leather 021",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "21",
+        "black",
+        "brown",
+        "dark",
+        "leather",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather021_1K-JPG.zip",
+      "archive_bytes": 7331500
+    },
+    {
+      "provider_asset_id": "Leather022",
+      "label": "Leather 022",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "22",
+        "brown",
+        "leather",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather022_1K-JPG.zip",
+      "archive_bytes": 6912390
+    },
+    {
+      "provider_asset_id": "Leather023",
+      "label": "Leather 023",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "23",
+        "beige",
+        "brown",
+        "leather",
+        "light",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather023_1K-JPG.zip",
+      "archive_bytes": 7803956
+    },
+    {
+      "provider_asset_id": "Leather024",
+      "label": "Leather 024",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "24",
+        "leather",
+        "red",
+        "shiny",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather024_1K-JPG.zip",
+      "archive_bytes": 7152186
+    },
+    {
+      "provider_asset_id": "Leather025",
+      "label": "Leather 025",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "25",
+        "leather",
+        "rough",
+        "smooth",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather025_1K-JPG.zip",
+      "archive_bytes": 6669293
+    },
+    {
+      "provider_asset_id": "Leather026",
+      "label": "Leather 026",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "26",
+        "black",
+        "dark",
+        "leather",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather026_1K-JPG.zip",
+      "archive_bytes": 6841165
+    },
+    {
+      "provider_asset_id": "Leather027",
+      "label": "Leather 027",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "27",
+        "black",
+        "dark",
+        "leather",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather027_1K-JPG.zip",
+      "archive_bytes": 6646279
+    },
+    {
+      "provider_asset_id": "Leather028",
+      "label": "Leather 028",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "28",
+        "brown",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather028_1K-JPG.zip",
+      "archive_bytes": 7495301
+    },
+    {
+      "provider_asset_id": "Leather029",
+      "label": "Leather 029",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "29",
+        "brown",
+        "leather",
+        "light"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather029_1K-JPG.zip",
+      "archive_bytes": 7519209
+    },
+    {
+      "provider_asset_id": "Leather030",
+      "label": "Leather 030",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "30",
+        "brown",
+        "dark",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather030_1K-JPG.zip",
+      "archive_bytes": 7526716
+    },
+    {
+      "provider_asset_id": "Leather031",
+      "label": "Leather 031",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "31",
+        "black",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather031_1K-JPG.zip",
+      "archive_bytes": 6841261
+    },
+    {
+      "provider_asset_id": "Leather032",
+      "label": "Leather 032",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "32",
+        "black",
+        "leather",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather032_1K-JPG.zip",
+      "archive_bytes": 6841177
+    },
+    {
+      "provider_asset_id": "Leather033A",
+      "label": "Leather 033 A",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "33",
+        "brown",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather033A_1K-JPG.zip",
+      "archive_bytes": 7520216
+    },
+    {
+      "provider_asset_id": "Leather033B",
+      "label": "Leather 033 B",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "33",
+        "brown",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather033B_1K-JPG.zip",
+      "archive_bytes": 8102621
+    },
+    {
+      "provider_asset_id": "Leather033C",
+      "label": "Leather 033 C",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "33",
+        "brown",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather033C_1K-JPG.zip",
+      "archive_bytes": 8566487
+    },
+    {
+      "provider_asset_id": "Leather034A",
+      "label": "Leather 034 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "34",
+        "black",
+        "brown",
+        "dark",
+        "leather",
+        "stitched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather034A_1K-JPG.zip",
+      "archive_bytes": 8227896
+    },
+    {
+      "provider_asset_id": "Leather034B",
+      "label": "Leather 034 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "34",
+        "black",
+        "brown",
+        "dark",
+        "leather",
+        "stitched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather034B_1K-JPG.zip",
+      "archive_bytes": 8137529
+    },
+    {
+      "provider_asset_id": "Leather034C",
+      "label": "Leather 034 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "34",
+        "black",
+        "brown",
+        "dark",
+        "leather",
+        "stitched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather034C_1K-JPG.zip",
+      "archive_bytes": 7706419
+    },
+    {
+      "provider_asset_id": "Leather034D",
+      "label": "Leather 034 D",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "34",
+        "brown",
+        "dark",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather034D_1K-JPG.zip",
+      "archive_bytes": 7179259
+    },
+    {
+      "provider_asset_id": "Leather035A",
+      "label": "Leather 035 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "35",
+        "beige",
+        "leather",
+        "stitched",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather035A_1K-JPG.zip",
+      "archive_bytes": 8477320
+    },
+    {
+      "provider_asset_id": "Leather035B",
+      "label": "Leather 035 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "35",
+        "beige",
+        "leather",
+        "stitched",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather035B_1K-JPG.zip",
+      "archive_bytes": 8358225
+    },
+    {
+      "provider_asset_id": "Leather035C",
+      "label": "Leather 035 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "35",
+        "beige",
+        "leather",
+        "stitched",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather035C_1K-JPG.zip",
+      "archive_bytes": 7945059
+    },
+    {
+      "provider_asset_id": "Leather035D",
+      "label": "Leather 035 D",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "35",
+        "beige",
+        "leather",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather035D_1K-JPG.zip",
+      "archive_bytes": 7357396
+    },
+    {
+      "provider_asset_id": "Leather036A",
+      "label": "Leather 036 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "36",
+        "diamond",
+        "leather",
+        "red",
+        "stitched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather036A_1K-JPG.zip",
+      "archive_bytes": 9300046
+    },
+    {
+      "provider_asset_id": "Leather036B",
+      "label": "Leather 036 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "36",
+        "diamond",
+        "leather",
+        "red",
+        "stitched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather036B_1K-JPG.zip",
+      "archive_bytes": 8989827
+    },
+    {
+      "provider_asset_id": "Leather036C",
+      "label": "Leather 036 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "36",
+        "diamond",
+        "leather",
+        "red",
+        "stitched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather036C_1K-JPG.zip",
+      "archive_bytes": 8632163
+    },
+    {
+      "provider_asset_id": "Leather036D",
+      "label": "Leather 036 D",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "36",
+        "diamond",
+        "leather",
+        "red",
+        "stitched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather036D_1K-JPG.zip",
+      "archive_bytes": 7918983
+    },
+    {
+      "provider_asset_id": "Leather037",
+      "label": "Leather 037",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "37",
+        "brown",
+        "clean",
+        "dark",
+        "leather"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather037_1K-JPG.zip",
+      "archive_bytes": 7323418
+    },
+    {
+      "provider_asset_id": "Leather038",
+      "label": "Leather 038",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "38",
+        "brown",
+        "fine",
+        "leather",
+        "orange",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather038_1K-JPG.zip",
+      "archive_bytes": 6472440
+    },
+    {
+      "provider_asset_id": "Leather039",
+      "label": "Leather 039",
+      "creation_method": "surface-photometric-stereo",
+      "tags": [
+        "39",
+        "bright",
+        "fine",
+        "leather",
+        "light",
+        "rough",
+        "suede"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Leather039_1K-JPG.zip",
+      "archive_bytes": 7783448
+    },
+    {
+      "provider_asset_id": "Metal001",
+      "label": "Metal 001",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "1",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal001_1K-JPG.zip",
+      "archive_bytes": 4715830
+    },
+    {
+      "provider_asset_id": "Metal002",
+      "label": "Metal 002",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "2",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal002_1K-JPG.zip",
+      "archive_bytes": 5572064
+    },
+    {
+      "provider_asset_id": "Metal003",
+      "label": "Metal 003",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "3",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal003_1K-JPG.zip",
+      "archive_bytes": 5137699
+    },
+    {
+      "provider_asset_id": "Metal004",
+      "label": "Metal 004",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "4",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal004_1K-JPG.zip",
+      "archive_bytes": 5623007
+    },
+    {
+      "provider_asset_id": "Metal005",
+      "label": "Metal 005",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "5",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal005_1K-JPG.zip",
+      "archive_bytes": 8934501
+    },
+    {
+      "provider_asset_id": "Metal006",
+      "label": "Metal 006",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "6",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal006_1K-JPG.zip",
+      "archive_bytes": 3046314
+    },
+    {
+      "provider_asset_id": "Metal007",
+      "label": "Metal 007",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "7",
+        "bumpy",
+        "gold",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal007_1K-JPG.zip",
+      "archive_bytes": 4951992
+    },
+    {
+      "provider_asset_id": "Metal008",
+      "label": "Metal 008",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "8",
+        "bronze",
+        "bumpy",
+        "copper",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal008_1K-JPG.zip",
+      "archive_bytes": 5205954
+    },
+    {
+      "provider_asset_id": "Metal009",
+      "label": "Metal 009",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "9",
+        "brushed",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal009_1K-JPG.zip",
+      "archive_bytes": 4767000
+    },
+    {
+      "provider_asset_id": "Metal010",
+      "label": "Metal 010",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "10",
+        "brushed",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal010_1K-JPG.zip",
+      "archive_bytes": 5153516
+    },
+    {
+      "provider_asset_id": "Metal011",
+      "label": "Metal 011",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "11",
+        "brushed",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal011_1K-JPG.zip",
+      "archive_bytes": 4305137
+    },
+    {
+      "provider_asset_id": "Metal012",
+      "label": "Metal 012",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "12",
+        "brushed",
+        "bumpy",
+        "metal",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal012_1K-JPG.zip",
+      "archive_bytes": 3961854
+    },
+    {
+      "provider_asset_id": "Metal013",
+      "label": "Metal 013",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "13",
+        "bronze",
+        "dark",
+        "eroded",
+        "erosion",
+        "metal",
+        "old",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal013_1K-JPG.zip",
+      "archive_bytes": 8695747
+    },
+    {
+      "provider_asset_id": "Metal014",
+      "label": "Metal 014",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "14",
+        "clean",
+        "grey",
+        "light",
+        "metal",
+        "reflection",
+        "rough",
+        "scratch",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal014_1K-JPG.zip",
+      "archive_bytes": 6883685
+    },
+    {
+      "provider_asset_id": "Metal015",
+      "label": "Metal 015",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "15",
+        "bronze",
+        "brown",
+        "dark",
+        "eroded",
+        "erosion",
+        "metal",
+        "rough",
+        "scratched",
+        "scuffed"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal015_1K-JPG.zip",
+      "archive_bytes": 6964328
+    },
+    {
+      "provider_asset_id": "Metal016",
+      "label": "Metal 016",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "16",
+        "light",
+        "metal",
+        "painted",
+        "rough",
+        "scratched",
+        "steel",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal016_1K-JPG.zip",
+      "archive_bytes": 7338557
+    },
+    {
+      "provider_asset_id": "Metal017",
+      "label": "Metal 017",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "17",
+        "bronze",
+        "dark",
+        "erode",
+        "erosion",
+        "metal",
+        "old",
+        "scratched",
+        "scratches"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal017_1K-JPG.zip",
+      "archive_bytes": 6878480
+    },
+    {
+      "provider_asset_id": "Metal018",
+      "label": "Metal 018",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "18",
+        "bronze",
+        "dark",
+        "erode",
+        "erosion",
+        "metal",
+        "old",
+        "rust",
+        "rusted",
+        "scratched",
+        "scratches"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal018_1K-JPG.zip",
+      "archive_bytes": 7967374
+    },
+    {
+      "provider_asset_id": "Metal019",
+      "label": "Metal 019",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "19",
+        "dark",
+        "dirty",
+        "metal",
+        "rough",
+        "smooth",
+        "smudge"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal019_1K-JPG.zip",
+      "archive_bytes": 4674324
+    },
+    {
+      "provider_asset_id": "Metal020",
+      "label": "Metal 020",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "20",
+        "leaks",
+        "metal",
+        "old",
+        "rust",
+        "rusty",
+        "spots",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal020_1K-JPG.zip",
+      "archive_bytes": 7865327
+    },
+    {
+      "provider_asset_id": "Metal021",
+      "label": "Metal 021",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "21",
+        "leaks",
+        "metal",
+        "old",
+        "rust",
+        "rusty",
+        "spots",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal021_1K-JPG.zip",
+      "archive_bytes": 6986024
+    },
+    {
+      "provider_asset_id": "Metal022",
+      "label": "Metal 022",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "22",
+        "leaks",
+        "metal",
+        "old",
+        "rust",
+        "rusty",
+        "spots",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal022_1K-JPG.zip",
+      "archive_bytes": 9159177
+    },
+    {
+      "provider_asset_id": "Metal023",
+      "label": "Metal 023",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "23",
+        "leaks",
+        "metal",
+        "old",
+        "rust",
+        "rusty",
+        "spots",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal023_1K-JPG.zip",
+      "archive_bytes": 8784175
+    },
+    {
+      "provider_asset_id": "Metal024",
+      "label": "Metal 024",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "24",
+        "leaks",
+        "metal",
+        "old",
+        "rust",
+        "rusty",
+        "spots",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal024_1K-JPG.zip",
+      "archive_bytes": 6150058
+    },
+    {
+      "provider_asset_id": "Metal025",
+      "label": "Metal 025",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "25",
+        "leaks",
+        "metal",
+        "old",
+        "rust",
+        "rusty",
+        "spots",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal025_1K-JPG.zip",
+      "archive_bytes": 8530025
+    },
+    {
+      "provider_asset_id": "Metal026",
+      "label": "Metal 026",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "26",
+        "leaks",
+        "metal",
+        "old",
+        "rust",
+        "rusty",
+        "spots",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal026_1K-JPG.zip",
+      "archive_bytes": 8199680
+    },
+    {
+      "provider_asset_id": "Metal027",
+      "label": "Metal 027",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "27",
+        "black",
+        "covered",
+        "metal",
+        "painted",
+        "powder",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal027_1K-JPG.zip",
+      "archive_bytes": 6311401
+    },
+    {
+      "provider_asset_id": "Metal028",
+      "label": "Metal 028",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "28",
+        "black",
+        "covered",
+        "metal",
+        "painted",
+        "powder",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal028_1K-JPG.zip",
+      "archive_bytes": 7048756
+    },
+    {
+      "provider_asset_id": "Metal029",
+      "label": "Metal 029",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "29",
+        "black",
+        "covered",
+        "metal",
+        "painted",
+        "powder",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal029_1K-JPG.zip",
+      "archive_bytes": 6543197
+    },
+    {
+      "provider_asset_id": "Metal030",
+      "label": "Metal 030",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "30",
+        "grey",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal030_1K-JPG.zip",
+      "archive_bytes": 3096905
+    },
+    {
+      "provider_asset_id": "Metal031",
+      "label": "Metal 031",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "31",
+        "grey",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal031_1K-JPG.zip",
+      "archive_bytes": 3176766
+    },
+    {
+      "provider_asset_id": "Metal032",
+      "label": "Metal 032",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "32",
+        "grey",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal032_1K-JPG.zip",
+      "archive_bytes": 3650556
+    },
+    {
+      "provider_asset_id": "Metal033",
+      "label": "Metal 033",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "33",
+        "grey",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal033_1K-JPG.zip",
+      "archive_bytes": 3625171
+    },
+    {
+      "provider_asset_id": "Metal034",
+      "label": "Metal 034",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "34",
+        "gold",
+        "metal",
+        "smooth",
+        "yellow"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal034_1K-JPG.zip",
+      "archive_bytes": 3038830
+    },
+    {
+      "provider_asset_id": "Metal035",
+      "label": "Metal 035",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "35",
+        "brown",
+        "copper",
+        "metal",
+        "orange",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal035_1K-JPG.zip",
+      "archive_bytes": 3743722
+    },
+    {
+      "provider_asset_id": "Metal036",
+      "label": "Metal 036",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "36",
+        "grey",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal036_1K-JPG.zip",
+      "archive_bytes": 3743619
+    },
+    {
+      "provider_asset_id": "Metal037",
+      "label": "Metal 037",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "37",
+        "metal",
+        "scratched",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal037_1K-JPG.zip",
+      "archive_bytes": 5401138
+    },
+    {
+      "provider_asset_id": "Metal038",
+      "label": "Metal 038",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "38",
+        "metal",
+        "scratched",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal038_1K-JPG.zip",
+      "archive_bytes": 5291072
+    },
+    {
+      "provider_asset_id": "Metal039",
+      "label": "Metal 039",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "39",
+        "metal",
+        "scratched",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal039_1K-JPG.zip",
+      "archive_bytes": 7655891
+    },
+    {
+      "provider_asset_id": "Metal040",
+      "label": "Metal 040",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "40",
+        "metal",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal040_1K-JPG.zip",
+      "archive_bytes": 5924085
+    },
+    {
+      "provider_asset_id": "Metal041A",
+      "label": "Metal 041 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "41",
+        "clean",
+        "iron",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal041A_1K-JPG.zip",
+      "archive_bytes": 4330718
+    },
+    {
+      "provider_asset_id": "Metal041B",
+      "label": "Metal 041 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "41",
+        "iron",
+        "metal",
+        "rust"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal041B_1K-JPG.zip",
+      "archive_bytes": 6924078
+    },
+    {
+      "provider_asset_id": "Metal041C",
+      "label": "Metal 041 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "41",
+        "iron",
+        "metal",
+        "rust"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal041C_1K-JPG.zip",
+      "archive_bytes": 6886378
+    },
+    {
+      "provider_asset_id": "Metal042A",
+      "label": "Metal 042 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "42",
+        "clean",
+        "gold",
+        "metal",
+        "shiny"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal042A_1K-JPG.zip",
+      "archive_bytes": 3538158
+    },
+    {
+      "provider_asset_id": "Metal042B",
+      "label": "Metal 042 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "42",
+        "dirty",
+        "gold",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal042B_1K-JPG.zip",
+      "archive_bytes": 6228363
+    },
+    {
+      "provider_asset_id": "Metal043A",
+      "label": "Metal 043 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "43",
+        "clean",
+        "copper",
+        "metal",
+        "shiny"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal043A_1K-JPG.zip",
+      "archive_bytes": 4876952
+    },
+    {
+      "provider_asset_id": "Metal043B",
+      "label": "Metal 043 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "43",
+        "copper",
+        "dirty",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal043B_1K-JPG.zip",
+      "archive_bytes": 5774194
+    },
+    {
+      "provider_asset_id": "Metal044A",
+      "label": "Metal 044 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "44",
+        "metal",
+        "shiny",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal044A_1K-JPG.zip",
+      "archive_bytes": 3434665
+    },
+    {
+      "provider_asset_id": "Metal044B",
+      "label": "Metal 044 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "44",
+        "metal",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal044B_1K-JPG.zip",
+      "archive_bytes": 4025516
+    },
+    {
+      "provider_asset_id": "Metal045A",
+      "label": "Metal 045 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "45",
+        "clean",
+        "metal",
+        "nickel",
+        "shiny"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal045A_1K-JPG.zip",
+      "archive_bytes": 5711592
+    },
+    {
+      "provider_asset_id": "Metal045B",
+      "label": "Metal 045 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "45",
+        "metal",
+        "nickel",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal045B_1K-JPG.zip",
+      "archive_bytes": 6147665
+    },
+    {
+      "provider_asset_id": "Metal046A",
+      "label": "Metal 046 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "46",
+        "black",
+        "clean",
+        "dark",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal046A_1K-JPG.zip",
+      "archive_bytes": 5488016
+    },
+    {
+      "provider_asset_id": "Metal046B",
+      "label": "Metal 046 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "46",
+        "black",
+        "dark",
+        "dirty",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal046B_1K-JPG.zip",
+      "archive_bytes": 6827203
+    },
+    {
+      "provider_asset_id": "Metal047A",
+      "label": "Metal 047 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "47",
+        "clean",
+        "copper",
+        "metal",
+        "shiny"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal047A_1K-JPG.zip",
+      "archive_bytes": 4384489
+    },
+    {
+      "provider_asset_id": "Metal047B",
+      "label": "Metal 047 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "47",
+        "copper",
+        "dirty",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal047B_1K-JPG.zip",
+      "archive_bytes": 6665645
+    },
+    {
+      "provider_asset_id": "Metal048A",
+      "label": "Metal 048 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "48",
+        "clean",
+        "gold",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal048A_1K-JPG.zip",
+      "archive_bytes": 2595307
+    },
+    {
+      "provider_asset_id": "Metal048B",
+      "label": "Metal 048 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "48",
+        "dirty",
+        "fingerprints",
+        "gold",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal048B_1K-JPG.zip",
+      "archive_bytes": 3218603
+    },
+    {
+      "provider_asset_id": "Metal048C",
+      "label": "Metal 048 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "48",
+        "gold",
+        "impure",
+        "metal",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal048C_1K-JPG.zip",
+      "archive_bytes": 4470410
+    },
+    {
+      "provider_asset_id": "Metal049A",
+      "label": "Metal 049 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "49",
+        "clean",
+        "metal",
+        "silver",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal049A_1K-JPG.zip",
+      "archive_bytes": 2744738
+    },
+    {
+      "provider_asset_id": "Metal049B",
+      "label": "Metal 049 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "49",
+        "clean",
+        "dirty",
+        "metal",
+        "silver",
+        "smeared",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal049B_1K-JPG.zip",
+      "archive_bytes": 2976457
+    },
+    {
+      "provider_asset_id": "Metal049C",
+      "label": "Metal 049 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "49",
+        "dented",
+        "metal",
+        "rough",
+        "silver"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal049C_1K-JPG.zip",
+      "archive_bytes": 3226022
+    },
+    {
+      "provider_asset_id": "Metal050A",
+      "label": "Metal 050 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "50",
+        "aluminum",
+        "clean",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal050A_1K-JPG.zip",
+      "archive_bytes": 2648186
+    },
+    {
+      "provider_asset_id": "Metal050B",
+      "label": "Metal 050 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "50",
+        "aluminum",
+        "metal",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal050B_1K-JPG.zip",
+      "archive_bytes": 2794239
+    },
+    {
+      "provider_asset_id": "Metal050C",
+      "label": "Metal 050 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "50",
+        "aluminum",
+        "metal",
+        "rough",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal050C_1K-JPG.zip",
+      "archive_bytes": 3642612
+    },
+    {
+      "provider_asset_id": "Metal051A",
+      "label": "Metal 051 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "51",
+        "aluminum",
+        "brushed",
+        "circular",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal051A_1K-JPG.zip",
+      "archive_bytes": 3086692
+    },
+    {
+      "provider_asset_id": "Metal051B",
+      "label": "Metal 051 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "51",
+        "aluminum",
+        "brushed",
+        "circular",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal051B_1K-JPG.zip",
+      "archive_bytes": 2952770
+    },
+    {
+      "provider_asset_id": "Metal051C",
+      "label": "Metal 051 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "51",
+        "aluminum",
+        "brushed",
+        "circular",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal051C_1K-JPG.zip",
+      "archive_bytes": 3440350
+    },
+    {
+      "provider_asset_id": "Metal052A",
+      "label": "Metal 052 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "52",
+        "iron",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal052A_1K-JPG.zip",
+      "archive_bytes": 2743788
+    },
+    {
+      "provider_asset_id": "Metal052B",
+      "label": "Metal 052 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "52",
+        "impure",
+        "iron",
+        "metal",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal052B_1K-JPG.zip",
+      "archive_bytes": 3536844
+    },
+    {
+      "provider_asset_id": "Metal052C",
+      "label": "Metal 052 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "52",
+        "impure",
+        "iron",
+        "metal",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal052C_1K-JPG.zip",
+      "archive_bytes": 5094841
+    },
+    {
+      "provider_asset_id": "Metal053A",
+      "label": "Metal 053 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "53",
+        "clean",
+        "iron",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal053A_1K-JPG.zip",
+      "archive_bytes": 3101004
+    },
+    {
+      "provider_asset_id": "Metal053B",
+      "label": "Metal 053 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "53",
+        "iron",
+        "metal",
+        "rusty"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal053B_1K-JPG.zip",
+      "archive_bytes": 4916714
+    },
+    {
+      "provider_asset_id": "Metal053C",
+      "label": "Metal 053 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "53",
+        "damaged",
+        "iron",
+        "metal",
+        "old",
+        "rusted"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal053C_1K-JPG.zip",
+      "archive_bytes": 6327290
+    },
+    {
+      "provider_asset_id": "Metal054A",
+      "label": "Metal 054 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "54",
+        "iron",
+        "metal",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal054A_1K-JPG.zip",
+      "archive_bytes": 3398500
+    },
+    {
+      "provider_asset_id": "Metal054B",
+      "label": "Metal 054 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "54",
+        "iron",
+        "metal",
+        "rusted",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal054B_1K-JPG.zip",
+      "archive_bytes": 5881845
+    },
+    {
+      "provider_asset_id": "Metal054C",
+      "label": "Metal 054 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "54",
+        "iron",
+        "metal",
+        "rusted",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal054C_1K-JPG.zip",
+      "archive_bytes": 6220136
+    },
+    {
+      "provider_asset_id": "Metal055A",
+      "label": "Metal 055 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "55",
+        "iron",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal055A_1K-JPG.zip",
+      "archive_bytes": 4280189
+    },
+    {
+      "provider_asset_id": "Metal055B",
+      "label": "Metal 055 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "55",
+        "iron",
+        "metal",
+        "rusted",
+        "rusty"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal055B_1K-JPG.zip",
+      "archive_bytes": 4473533
+    },
+    {
+      "provider_asset_id": "Metal055C",
+      "label": "Metal 055 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "55",
+        "iron",
+        "metal",
+        "rusted",
+        "rusty"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal055C_1K-JPG.zip",
+      "archive_bytes": 5560992
+    },
+    {
+      "provider_asset_id": "Metal056A",
+      "label": "Metal 056 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "56",
+        "damaged",
+        "iron",
+        "metal",
+        "rusted",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal056A_1K-JPG.zip",
+      "archive_bytes": 5579632
+    },
+    {
+      "provider_asset_id": "Metal056B",
+      "label": "Metal 056 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "56",
+        "damaged",
+        "iron",
+        "metal",
+        "rusted",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal056B_1K-JPG.zip",
+      "archive_bytes": 5909955
+    },
+    {
+      "provider_asset_id": "Metal056C",
+      "label": "Metal 056 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "56",
+        "damaged",
+        "iron",
+        "metal",
+        "rusted",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal056C_1K-JPG.zip",
+      "archive_bytes": 6939811
+    },
+    {
+      "provider_asset_id": "Metal057A",
+      "label": "Metal 057 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "57",
+        "clean",
+        "copper",
+        "metal",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal057A_1K-JPG.zip",
+      "archive_bytes": 2679654
+    },
+    {
+      "provider_asset_id": "Metal057B",
+      "label": "Metal 057 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "57",
+        "copper",
+        "metal",
+        "smooth",
+        "smudge"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal057B_1K-JPG.zip",
+      "archive_bytes": 3196590
+    },
+    {
+      "provider_asset_id": "Metal057C",
+      "label": "Metal 057 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "57",
+        "copper",
+        "metal",
+        "smooth",
+        "smudge"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal057C_1K-JPG.zip",
+      "archive_bytes": 3730258
+    },
+    {
+      "provider_asset_id": "Metal058A",
+      "label": "Metal 058 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "58",
+        "copper",
+        "metal",
+        "smudge"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal058A_1K-JPG.zip",
+      "archive_bytes": 2998820
+    },
+    {
+      "provider_asset_id": "Metal058B",
+      "label": "Metal 058 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "58",
+        "copper",
+        "metal",
+        "oxidation"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal058B_1K-JPG.zip",
+      "archive_bytes": 4902949
+    },
+    {
+      "provider_asset_id": "Metal058C",
+      "label": "Metal 058 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "58",
+        "copper",
+        "metal",
+        "oxidation"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal058C_1K-JPG.zip",
+      "archive_bytes": 6827662
+    },
+    {
+      "provider_asset_id": "Metal059A",
+      "label": "Metal 059 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "59",
+        "clean",
+        "metal",
+        "titanium"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal059A_1K-JPG.zip",
+      "archive_bytes": 2546145
+    },
+    {
+      "provider_asset_id": "Metal059B",
+      "label": "Metal 059 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "59",
+        "clean",
+        "impure",
+        "metal",
+        "titanium"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal059B_1K-JPG.zip",
+      "archive_bytes": 4213800
+    },
+    {
+      "provider_asset_id": "Metal059C",
+      "label": "Metal 059 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "59",
+        "clean",
+        "damaged",
+        "impure",
+        "metal",
+        "titanium"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal059C_1K-JPG.zip",
+      "archive_bytes": 5671778
+    },
+    {
+      "provider_asset_id": "Metal060A",
+      "label": "Metal 060 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "60",
+        "metal",
+        "nickel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal060A_1K-JPG.zip",
+      "archive_bytes": 2551149
+    },
+    {
+      "provider_asset_id": "Metal060B",
+      "label": "Metal 060 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "60",
+        "metal",
+        "nickel",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal060B_1K-JPG.zip",
+      "archive_bytes": 3733799
+    },
+    {
+      "provider_asset_id": "Metal060C",
+      "label": "Metal 060 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "60",
+        "impure",
+        "metal",
+        "nickel",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal060C_1K-JPG.zip",
+      "archive_bytes": 5288660
+    },
+    {
+      "provider_asset_id": "Metal061A",
+      "label": "Metal 061 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "61",
+        "cobalt",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal061A_1K-JPG.zip",
+      "archive_bytes": 3536629
+    },
+    {
+      "provider_asset_id": "Metal061B",
+      "label": "Metal 061 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "61",
+        "cobalt",
+        "metal"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal061B_1K-JPG.zip",
+      "archive_bytes": 4103510
+    },
+    {
+      "provider_asset_id": "Metal061C",
+      "label": "Metal 061 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "61",
+        "cobalt",
+        "metal",
+        "oxidized",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal061C_1K-JPG.zip",
+      "archive_bytes": 4912515
+    },
+    {
+      "provider_asset_id": "Metal062A",
+      "label": "Metal 062 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "62",
+        "metal",
+        "platinum"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal062A_1K-JPG.zip",
+      "archive_bytes": 2628395
+    },
+    {
+      "provider_asset_id": "Metal062B",
+      "label": "Metal 062 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "62",
+        "damaged",
+        "metal",
+        "platinum"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal062B_1K-JPG.zip",
+      "archive_bytes": 3757936
+    },
+    {
+      "provider_asset_id": "Metal062C",
+      "label": "Metal 062 C",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "62",
+        "damaged",
+        "dirty",
+        "metal",
+        "platinum"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal062C_1K-JPG.zip",
+      "archive_bytes": 6676361
+    },
+    {
+      "provider_asset_id": "Metal063",
+      "label": "Metal 063",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "063",
+        "63",
+        "aged",
+        "black",
+        "brown",
+        "dark",
+        "fine",
+        "glossy",
+        "industrial",
+        "metal",
+        "oxidized",
+        "polished",
+        "rust",
+        "rusty",
+        "smooth",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Metal063_1K-JPG.zip",
+      "archive_bytes": 5620613
+    },
+    {
+      "provider_asset_id": "MetalPlates001",
+      "label": "Metal Plates 001",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "1",
+        "brushed",
+        "bumpy",
+        "metal",
+        "plates",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates001_1K-JPG.zip",
+      "archive_bytes": 5069618
+    },
+    {
+      "provider_asset_id": "MetalPlates002",
+      "label": "Metal Plates 002",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "2",
+        "brushed",
+        "bumpy",
+        "metal",
+        "plates",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates002_1K-JPG.zip",
+      "archive_bytes": 4738234
+    },
+    {
+      "provider_asset_id": "MetalPlates003",
+      "label": "Metal Plates 003",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "3",
+        "brushed",
+        "bumpy",
+        "metal",
+        "plates",
+        "scratches",
+        "silver",
+        "steel"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates003_1K-JPG.zip",
+      "archive_bytes": 4738541
+    },
+    {
+      "provider_asset_id": "MetalPlates004",
+      "label": "Metal Plates 004",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "4",
+        "decoration",
+        "design",
+        "metal",
+        "plates"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates004_1K-JPG.zip",
+      "archive_bytes": 3086111
+    },
+    {
+      "provider_asset_id": "MetalPlates005",
+      "label": "Metal Plates 005",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "5",
+        "decoration",
+        "design",
+        "metal",
+        "plates"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates005_1K-JPG.zip",
+      "archive_bytes": 3155480
+    },
+    {
+      "provider_asset_id": "MetalPlates006",
+      "label": "Metal Plates 006",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "6",
+        "decoration",
+        "design",
+        "metal",
+        "plates"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates006_1K-JPG.zip",
+      "archive_bytes": 5247281
+    },
+    {
+      "provider_asset_id": "MetalPlates007",
+      "label": "Metal Plates 007",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "7",
+        "decoration",
+        "design",
+        "metal",
+        "plates"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates007_1K-JPG.zip",
+      "archive_bytes": 3780912
+    },
+    {
+      "provider_asset_id": "MetalPlates008",
+      "label": "Metal Plates 008",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "8",
+        "decoration",
+        "design",
+        "metal",
+        "plates"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates008_1K-JPG.zip",
+      "archive_bytes": 3608831
+    },
+    {
+      "provider_asset_id": "MetalPlates009",
+      "label": "Metal Plates 009",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "9",
+        "decoration",
+        "design",
+        "metal",
+        "plates"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates009_1K-JPG.zip",
+      "archive_bytes": 3712275
+    },
+    {
+      "provider_asset_id": "MetalPlates010",
+      "label": "Metal Plates 010",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "10",
+        "metal",
+        "plates",
+        "rust",
+        "rusted"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates010_1K-JPG.zip",
+      "archive_bytes": 7638462
+    },
+    {
+      "provider_asset_id": "MetalPlates011",
+      "label": "Metal Plates 011",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "11",
+        "metal",
+        "plates",
+        "rust",
+        "rusted"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates011_1K-JPG.zip",
+      "archive_bytes": 6791524
+    },
+    {
+      "provider_asset_id": "MetalPlates012",
+      "label": "Metal Plates 012",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "12",
+        "metal",
+        "plates",
+        "rust",
+        "rusted"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates012_1K-JPG.zip",
+      "archive_bytes": 8262778
+    },
+    {
+      "provider_asset_id": "MetalPlates013",
+      "label": "Metal Plates 013",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "13",
+        "metal",
+        "plates",
+        "rust",
+        "rusted"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates013_1K-JPG.zip",
+      "archive_bytes": 7022039
+    },
+    {
+      "provider_asset_id": "MetalPlates014",
+      "label": "Metal Plates 014",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "14",
+        "metal",
+        "plates"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates014_1K-JPG.zip",
+      "archive_bytes": 5159963
+    },
+    {
+      "provider_asset_id": "MetalPlates015A",
+      "label": "Metal Plates 015 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "15",
+        "metal",
+        "panels",
+        "plates",
+        "scifi"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates015A_1K-JPG.zip",
+      "archive_bytes": 5282007
+    },
+    {
+      "provider_asset_id": "MetalPlates015B",
+      "label": "Metal Plates 015 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "15",
+        "metal",
+        "panels",
+        "plates",
+        "scifi"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates015B_1K-JPG.zip",
+      "archive_bytes": 5818502
+    },
+    {
+      "provider_asset_id": "MetalPlates016A",
+      "label": "Metal Plates 016 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "16",
+        "metal",
+        "panels",
+        "plates",
+        "scifi"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates016A_1K-JPG.zip",
+      "archive_bytes": 4583223
+    },
+    {
+      "provider_asset_id": "MetalPlates016B",
+      "label": "Metal Plates 016 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "16",
+        "metal",
+        "panels",
+        "plates",
+        "scifi"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates016B_1K-JPG.zip",
+      "archive_bytes": 5054287
+    },
+    {
+      "provider_asset_id": "MetalPlates017A",
+      "label": "Metal Plates 017 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "17",
+        "metal",
+        "panels",
+        "plates",
+        "scifi"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates017A_1K-JPG.zip",
+      "archive_bytes": 7119737
+    },
+    {
+      "provider_asset_id": "MetalPlates017B",
+      "label": "Metal Plates 017 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "17",
+        "metal",
+        "panels",
+        "plates",
+        "scifi"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalPlates017B_1K-JPG.zip",
+      "archive_bytes": 8192444
+    },
+    {
+      "provider_asset_id": "MetalWalkway001",
+      "label": "Metal Walkway 001",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "1",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway001_1K-JPG.zip",
+      "archive_bytes": 6231979
+    },
+    {
+      "provider_asset_id": "MetalWalkway002",
+      "label": "Metal Walkway 002",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "2",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway002_1K-JPG.zip",
+      "archive_bytes": 6268457
+    },
+    {
+      "provider_asset_id": "MetalWalkway003",
+      "label": "Metal Walkway 003",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "3",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway003_1K-JPG.zip",
+      "archive_bytes": 11352949
+    },
+    {
+      "provider_asset_id": "MetalWalkway004",
+      "label": "Metal Walkway 004",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "4",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway004_1K-JPG.zip",
+      "archive_bytes": 4942542
+    },
+    {
+      "provider_asset_id": "MetalWalkway005",
+      "label": "Metal Walkway 005",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "5",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway005_1K-JPG.zip",
+      "archive_bytes": 5533199
+    },
+    {
+      "provider_asset_id": "MetalWalkway006",
+      "label": "Metal Walkway 006",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "6",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway006_1K-JPG.zip",
+      "archive_bytes": 6301433
+    },
+    {
+      "provider_asset_id": "MetalWalkway007",
+      "label": "Metal Walkway 007",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "7",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway007_1K-JPG.zip",
+      "archive_bytes": 4395574
+    },
+    {
+      "provider_asset_id": "MetalWalkway008",
+      "label": "Metal Walkway 008",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "8",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway008_1K-JPG.zip",
+      "archive_bytes": 6828900
+    },
+    {
+      "provider_asset_id": "MetalWalkway009",
+      "label": "Metal Walkway 009",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "9",
+        "metal",
+        "steel",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway009_1K-JPG.zip",
+      "archive_bytes": 6311862
+    },
+    {
+      "provider_asset_id": "MetalWalkway010",
+      "label": "Metal Walkway 010",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "10",
+        "fence",
+        "floor",
+        "grid",
+        "metal",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway010_1K-JPG.zip",
+      "archive_bytes": 6543905
+    },
+    {
+      "provider_asset_id": "MetalWalkway011",
+      "label": "Metal Walkway 011",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "11",
+        "fence",
+        "floor",
+        "grid",
+        "metal",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway011_1K-JPG.zip",
+      "archive_bytes": 6352764
+    },
+    {
+      "provider_asset_id": "MetalWalkway012",
+      "label": "Metal Walkway 012",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "12",
+        "fence",
+        "floor",
+        "grid",
+        "metal",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway012_1K-JPG.zip",
+      "archive_bytes": 6740938
+    },
+    {
+      "provider_asset_id": "MetalWalkway013",
+      "label": "Metal Walkway 013",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "13",
+        "fence",
+        "floor",
+        "grid",
+        "metal",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway013_1K-JPG.zip",
+      "archive_bytes": 6736985
+    },
+    {
+      "provider_asset_id": "MetalWalkway014",
+      "label": "Metal Walkway 014",
+      "creation_method": "surface-photogrammetry",
+      "tags": [
+        "14",
+        "metal",
+        "rust",
+        "rusted",
+        "rusty",
+        "walkway"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=MetalWalkway014_1K-JPG.zip",
+      "archive_bytes": 8551448
+    },
+    {
+      "provider_asset_id": "Plastic001",
+      "label": "Plastic 001",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "1",
+        "black",
+        "blue",
+        "plastic",
+        "scratched",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic001_1K-JPG.zip",
+      "archive_bytes": 6634430
+    },
+    {
+      "provider_asset_id": "Plastic002",
+      "label": "Plastic 002",
+      "creation_method": "surface-approximated",
+      "tags": [
+        "2",
+        "brown",
+        "plastic",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic002_1K-JPG.zip",
+      "archive_bytes": 7778904
+    },
+    {
+      "provider_asset_id": "Plastic003",
+      "label": "Plastic 003",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "3",
+        "brown",
+        "dark",
+        "plastic"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic003_1K-JPG.zip",
+      "archive_bytes": 6116809
+    },
+    {
+      "provider_asset_id": "Plastic004",
+      "label": "Plastic 004",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "4",
+        "brown",
+        "light",
+        "plastic",
+        "rough"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic004_1K-JPG.zip",
+      "archive_bytes": 8008976
+    },
+    {
+      "provider_asset_id": "Plastic005",
+      "label": "Plastic 005",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "5",
+        "blue",
+        "light",
+        "plastic",
+        "shiny",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic005_1K-JPG.zip",
+      "archive_bytes": 5182841
+    },
+    {
+      "provider_asset_id": "Plastic006",
+      "label": "Plastic 006",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "6",
+        "black",
+        "plastic",
+        "shiny",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic006_1K-JPG.zip",
+      "archive_bytes": 4454894
+    },
+    {
+      "provider_asset_id": "Plastic007",
+      "label": "Plastic 007",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "7",
+        "plastic",
+        "red",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic007_1K-JPG.zip",
+      "archive_bytes": 5048668
+    },
+    {
+      "provider_asset_id": "Plastic008",
+      "label": "Plastic 008",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "8",
+        "blue",
+        "plastic",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic008_1K-JPG.zip",
+      "archive_bytes": 4465917
+    },
+    {
+      "provider_asset_id": "Plastic009",
+      "label": "Plastic 009",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "9",
+        "dark",
+        "green",
+        "plastic",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic009_1K-JPG.zip",
+      "archive_bytes": 3656853
+    },
+    {
+      "provider_asset_id": "Plastic010",
+      "label": "Plastic 010",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "10",
+        "plastic",
+        "smooth",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic010_1K-JPG.zip",
+      "archive_bytes": 3535012
+    },
+    {
+      "provider_asset_id": "Plastic011",
+      "label": "Plastic 011",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "11",
+        "grey",
+        "plastic",
+        "smooth"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic011_1K-JPG.zip",
+      "archive_bytes": 3965484
+    },
+    {
+      "provider_asset_id": "Plastic012A",
+      "label": "Plastic 012 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "12",
+        "black",
+        "plastic"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic012A_1K-JPG.zip",
+      "archive_bytes": 6372576
+    },
+    {
+      "provider_asset_id": "Plastic012B",
+      "label": "Plastic 012 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "12",
+        "black",
+        "plastic",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic012B_1K-JPG.zip",
+      "archive_bytes": 6469720
+    },
+    {
+      "provider_asset_id": "Plastic013A",
+      "label": "Plastic 013 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "13",
+        "plastic",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic013A_1K-JPG.zip",
+      "archive_bytes": 6300537
+    },
+    {
+      "provider_asset_id": "Plastic013B",
+      "label": "Plastic 013 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "13",
+        "plastic",
+        "scratched",
+        "white"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic013B_1K-JPG.zip",
+      "archive_bytes": 6487400
+    },
+    {
+      "provider_asset_id": "Plastic014A",
+      "label": "Plastic 014 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "14",
+        "orange",
+        "plastic",
+        "red"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic014A_1K-JPG.zip",
+      "archive_bytes": 4970777
+    },
+    {
+      "provider_asset_id": "Plastic014B",
+      "label": "Plastic 014 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "14",
+        "orange",
+        "plastic",
+        "red",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic014B_1K-JPG.zip",
+      "archive_bytes": 5956782
+    },
+    {
+      "provider_asset_id": "Plastic015A",
+      "label": "Plastic 015 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "15",
+        "blue",
+        "plastic"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic015A_1K-JPG.zip",
+      "archive_bytes": 3918059
+    },
+    {
+      "provider_asset_id": "Plastic015B",
+      "label": "Plastic 015 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "15",
+        "blue",
+        "plastic",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic015B_1K-JPG.zip",
+      "archive_bytes": 4579968
+    },
+    {
+      "provider_asset_id": "Plastic016A",
+      "label": "Plastic 016 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "16",
+        "plastic",
+        "yellow"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic016A_1K-JPG.zip",
+      "archive_bytes": 3386788
+    },
+    {
+      "provider_asset_id": "Plastic016B",
+      "label": "Plastic 016 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "16",
+        "plastic",
+        "yellow"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic016B_1K-JPG.zip",
+      "archive_bytes": 4219788
+    },
+    {
+      "provider_asset_id": "Plastic017A",
+      "label": "Plastic 017 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "17",
+        "green",
+        "plastic"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic017A_1K-JPG.zip",
+      "archive_bytes": 2902204
+    },
+    {
+      "provider_asset_id": "Plastic017B",
+      "label": "Plastic 017 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "17",
+        "green",
+        "plastic"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic017B_1K-JPG.zip",
+      "archive_bytes": 5298818
+    },
+    {
+      "provider_asset_id": "Plastic018A",
+      "label": "Plastic 018 A",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "18",
+        "grey",
+        "plastic"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic018A_1K-JPG.zip",
+      "archive_bytes": 6430118
+    },
+    {
+      "provider_asset_id": "Plastic018B",
+      "label": "Plastic 018 B",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "18",
+        "dirty",
+        "gray",
+        "plastic",
+        "scratched"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Plastic018B_1K-JPG.zip",
+      "archive_bytes": 6768772
+    },
+    {
+      "provider_asset_id": "Rubber001",
+      "label": "Rubber 001",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "1",
+        "black",
+        "floor",
+        "gym",
+        "rubber"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Rubber001_1K-JPG.zip",
+      "archive_bytes": 8442514
+    },
+    {
+      "provider_asset_id": "Rubber002",
+      "label": "Rubber 002",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "2",
+        "black",
+        "floor",
+        "gym",
+        "rubber"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Rubber002_1K-JPG.zip",
+      "archive_bytes": 8949974
+    },
+    {
+      "provider_asset_id": "Rubber003",
+      "label": "Rubber 003",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "3",
+        "black",
+        "floor",
+        "gym",
+        "rubber"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Rubber003_1K-JPG.zip",
+      "archive_bytes": 9643067
+    },
+    {
+      "provider_asset_id": "Rubber004",
+      "label": "Rubber 004",
+      "creation_method": "surface-fully-procedural",
+      "tags": [
+        "4",
+        "black",
+        "floor",
+        "gym",
+        "rubber"
+      ],
+      "archive_uri": "https://ambientcg.com/get?file=Rubber004_1K-JPG.zip",
+      "archive_bytes": 8419107
+    }
+  ]
+}

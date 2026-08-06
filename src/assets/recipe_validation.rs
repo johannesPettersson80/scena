@@ -134,6 +134,66 @@ async fn add_asset_validation_diagnostics<F: AssetFetcher>(
                         .map(|_| ())
                         .map_err(|error| ("font_load_failed", error.to_string()))
                 }),
+            RecipeResourceRole::MaterialPack(index) => match assets
+                .load_photographic_material_pack(AssetPath::from(normalized_uri.as_str()))
+                .await
+            {
+                Ok(loaded) => {
+                    let expected = recipe.materials[index]
+                        .material_pack
+                        .as_ref()
+                        .and_then(|pack| pack.expected_archive_sha256.as_deref());
+                    match expected {
+                        Some(expected)
+                            if !expected
+                                .eq_ignore_ascii_case(&loaded.pack().source.archive_sha256) =>
+                        {
+                            Err((
+                                "material_pack_source_sha256_mismatch",
+                                format!(
+                                    "material pack archive SHA-256 is {}, but the recipe pins {expected}",
+                                    loaded.pack().source.archive_sha256
+                                ),
+                            ))
+                        }
+                        _ => Ok(()),
+                    }
+                }
+                Err(error) => Err(("material_pack_load_failed", error.to_string())),
+            },
+            RecipeResourceRole::ImportMaterialPack {
+                import_index,
+                binding_index,
+            } => match assets
+                .load_photographic_material_pack(AssetPath::from(normalized_uri.as_str()))
+                .await
+            {
+                Ok(loaded) => {
+                    let import = &recipe.imports[import_index];
+                    let expected = binding_index
+                        .and_then(|index| import.material_bindings.get(index))
+                        .map(|binding| &binding.material)
+                        .or(import.material.as_ref())
+                        .and_then(|material| material.material_pack.as_ref())
+                        .and_then(|pack| pack.expected_archive_sha256.as_deref());
+                    match expected {
+                        Some(expected)
+                            if !expected
+                                .eq_ignore_ascii_case(&loaded.pack().source.archive_sha256) =>
+                        {
+                            Err((
+                                "material_pack_source_sha256_mismatch",
+                                format!(
+                                    "material pack archive SHA-256 is {}, but the recipe pins {expected}",
+                                    loaded.pack().source.archive_sha256
+                                ),
+                            ))
+                        }
+                        _ => Ok(()),
+                    }
+                }
+                Err(error) => Err(("material_pack_load_failed", error.to_string())),
+            },
             RecipeResourceRole::Texture(ref color_space) => {
                 let color_space = match color_space {
                     SceneRecipeTextureColorSpaceV1::Srgb => TextureColorSpace::Srgb,

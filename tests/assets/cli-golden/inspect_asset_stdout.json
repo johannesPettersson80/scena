@@ -88,6 +88,7 @@
           "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
           "kind": "source_material",
           "material_index": 0,
+          "material_name": "UnlitTexturedMaterial",
           "reason": null
         },
         "textures": [
@@ -233,6 +234,7 @@
           "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
           "kind": "source_material",
           "material_index": 0,
+          "material_name": "UnlitTexturedMaterial",
           "reason": null
         },
         "textures": [

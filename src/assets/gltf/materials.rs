@@ -460,9 +460,10 @@ pub(super) fn parse_materials(
                 let handle = storage.materials.insert(std::sync::Arc::new(desc));
                 storage.material_sources.insert(
                     handle,
-                    AssetMaterialSource::source_material(
+                    AssetMaterialSource::source_material_named(
                         path.clone(),
                         material_index,
+                        material_name.clone(),
                         source_fallbacks,
                     ),
                 );

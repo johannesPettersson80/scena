@@ -44,8 +44,10 @@ fn post_chain_preserves_scene_linear_hdr_until_final_display_transform() {
 fn automatic_exposure_forces_the_scene_linear_hdr_path() {
     use crate::render::AntiAliasing;
 
-    let ordinary = super::GpuOutputPlan::new(AntiAliasing::None, false, false, false, false, false);
-    let metered = super::GpuOutputPlan::new(AntiAliasing::None, false, false, false, false, true);
+    let ordinary =
+        super::GpuOutputPlan::new(AntiAliasing::None, false, false, false, false, false, false);
+    let metered =
+        super::GpuOutputPlan::new(AntiAliasing::None, false, false, false, false, true, false);
 
     assert!(!ordinary.post_enabled());
     assert!(

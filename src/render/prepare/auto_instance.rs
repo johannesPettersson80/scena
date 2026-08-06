@@ -40,6 +40,7 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
     lights: &PreparedLights,
     shadow_occluders: &shadows::ShadowOccluderSet,
     shadow_visibility_cache: &shadows::ShadowVisibilityCache,
+    baked_ambient_occlusion: Option<crate::BakedAmbientOcclusionConfig>,
     camera_projection: Option<&CameraProjection>,
     backend_sampled_base_color_textures: &[TextureHandle],
     backend_material_slots: &[crate::assets::MaterialHandle],
@@ -51,6 +52,9 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
     let Some(assets) = assets else {
         return Ok(Vec::new());
     };
+    if scene.reflection_probes().next().is_some() {
+        return Ok(Vec::new());
+    }
     let mut groups: Vec<AutoInstanceGroup> = Vec::new();
     for (node, mesh, transform) in scene.mesh_nodes() {
         if scene.mesh_lods(node).is_some() {
@@ -104,6 +108,12 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
         ) {
             continue;
         }
+        if material.photographic_surface_tile_size_m().is_some() {
+            // Physical UV scale depends on each node's world transform. Keep
+            // these nodes on the ordinary per-draw prepare path so automatic
+            // batching cannot silently reuse the first instance's scale.
+            continue;
+        }
         validate_material_texture_handles(source_node, group.material, &material, assets)?;
         let material_textures = PreparedMaterialTextures::new(assets, &material);
 
@@ -130,10 +140,12 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
                 lights,
                 shadow_occluders,
                 shadow_visibility_cache,
+                baked_ambient_occlusion,
                 camera_projection,
                 backend_sampled_base_color_textures,
                 backend_material_slots,
                 environment_lighting: environment_lighting.clone(),
+                reflection_probe: None,
                 work,
             },
             PrimitiveSinks {

@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::SceneHostSemanticAovCaptureV1;
 use crate::geometry::{Aabb, GeometryTopology};
 use crate::scene::view_math::transform_aabb;
 use crate::{
@@ -19,6 +20,11 @@ pub(super) struct VisibleCoverage {
     pub(super) region_pixels: u64,
     pub(super) foreground_pixels: u64,
     pub(super) foreground_fraction: f32,
+    /// How foreground was decided: `semantic_mask` counts pixels the renderer
+    /// attributed to the target, `background_delta` compares each pixel to the
+    /// clear colour. The latter cannot separate a subject from a lit floor or
+    /// backdrop, so which one ran belongs in the report rather than inferred.
+    pub(super) source: &'static str,
 }
 
 pub(super) fn declared_draw_handles(manifest: &SceneRecipeBuildV1) -> BTreeSet<u64> {
@@ -94,9 +100,82 @@ pub(super) fn visible_coverage_for_rect(
     capture: &CaptureRgba8,
     rect: CaptureScreenRect,
     background: Color,
+    mask: Option<&SubjectMaskCoverage<'_>>,
 ) -> Option<VisibleCoverage> {
     let region = clipped_region_from_rect(capture, rect)?;
+    if let Some(mask) = mask
+        && let Some(coverage) = visible_coverage_from_mask(region, mask)
+    {
+        return Some(coverage);
+    }
     Some(visible_coverage_for_region(capture, region, background))
+}
+
+/// The renderer's own attribution of pixels to a set of host handles.
+pub(super) struct SubjectMaskCoverage<'a> {
+    pub(super) capture: &'a SceneHostSemanticAovCaptureV1,
+    pub(super) handles: &'a BTreeSet<u64>,
+}
+
+/// Counts pixels the renderer attributed to the target, rather than pixels that
+/// merely differ from the clear colour.
+///
+/// The colour heuristic assumed an empty background. Generated surroundings put
+/// a lit floor and cyclorama behind the subject, so it began counting backdrop
+/// as subject and saturated at `foreground_fraction: 1.0`.
+fn visible_coverage_from_mask(
+    region: CaptureScreenRegion,
+    mask: &SubjectMaskCoverage<'_>,
+) -> Option<VisibleCoverage> {
+    let palette = mask
+        .capture
+        .legend
+        .iter()
+        .filter(|entry| {
+            mask.handles.contains(&entry.node_handle)
+                || entry
+                    .instance_handle
+                    .is_some_and(|handle| mask.handles.contains(&handle))
+        })
+        .map(|entry| entry.palette_index)
+        .collect::<BTreeSet<_>>();
+    if palette.is_empty() {
+        return None;
+    }
+    // A region reaching past the capture would wrap into the next row and count
+    // the wrong pixels, which reads as a plausible number rather than an error.
+    if region.x.saturating_add(region.width) > mask.capture.width
+        || region.y.saturating_add(region.height) > mask.capture.height
+    {
+        return None;
+    }
+    let width = mask.capture.width as usize;
+    let mut foreground_pixels = 0_u64;
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            let index = (y as usize).checked_mul(width)?.checked_add(x as usize)?;
+            if mask
+                .capture
+                .id_indices
+                .get(index)
+                .is_some_and(|palette_index| palette.contains(palette_index))
+            {
+                foreground_pixels = foreground_pixels.saturating_add(1);
+            }
+        }
+    }
+    let region_pixels = u64::from(region.width).saturating_mul(u64::from(region.height));
+    Some(VisibleCoverage {
+        region,
+        region_pixels,
+        foreground_pixels,
+        foreground_fraction: if region_pixels > 0 {
+            foreground_pixels as f32 / region_pixels as f32
+        } else {
+            0.0
+        },
+        source: "semantic_mask",
+    })
 }
 
 pub(super) fn visible_coverage_for_region(
@@ -127,6 +206,7 @@ pub(super) fn visible_coverage_for_region(
         region_pixels,
         foreground_pixels,
         foreground_fraction: fraction(foreground_pixels, region_pixels),
+        source: "background_delta",
     }
 }
 

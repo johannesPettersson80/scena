@@ -5,13 +5,18 @@ const RECIPE_BUILD_COMMAND: &str =
     "recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...";
 const RECIPE_RENDER_COMMAND: &str = "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
 const PHOTO_PLAN_COMMAND: &str = "photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...";
-const PHOTO_RENDER_COMMAND: &str = "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
+const PHOTO_RENDER_COMMAND: &str = "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]...";
 const RENDER_COMMAND: &str =
     "render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--allow-root <directory>]...";
 const INSPECT_COMMAND: &str = "inspect <asset-or-recipe> [--allow-root <directory>]...";
 const DIAGNOSE_COMMAND: &str =
     "diagnose <asset-or-recipe> --visibility [--handle <u64>] [--allow-root <directory>]...";
 const DOCTOR_COMMAND: &str = "doctor <asset-or-recipe> [--allow-root <directory>]...";
+const MATERIALS_LIST_COMMAND: &str =
+    "materials list [--category metal|plastic|fabric|leather|rubber] [--query <text>]";
+const MATERIALS_FETCH_COMMAND: &str = "materials fetch <id> [--out <dir>] [--expect-sha256 <hex>]";
+const MATERIALS_IMPORT_COMMAND: &str =
+    "materials import <id> <archive.zip> [--out <dir>] [--expect-sha256 <hex>]";
 const REPAIR_COMMAND: &str =
     "repair <asset-or-recipe> --from <report.json> [--allow-root <directory>]...";
 
@@ -28,6 +33,9 @@ pub(crate) fn help_json() -> String {
             "vocab list",
             "vocab get <name>",
             "capabilities [--live] [--json]",
+            MATERIALS_LIST_COMMAND,
+            MATERIALS_FETCH_COMMAND,
+            MATERIALS_IMPORT_COMMAND,
             POLICY_RECIPE_COMMAND,
             VALIDATE_COMMAND,
             VALIDATE_RECIPE_COMMAND,
@@ -61,6 +69,9 @@ pub(crate) fn help_json() -> String {
             emits("vocab list", &["scena.vocab.v1"], &["scena.cli_error.v1"]),
             emits("vocab get <name>", &["scena.vocab.v1"], &["scena.cli_error.v1"]),
             emits("capabilities [--live] [--json]", &["scena.capability_report.v1"], &["scena.capability_report.v1", "scena.cli_error.v1"]),
+            emits(MATERIALS_LIST_COMMAND, &["scena.material_library_catalog.v1"], &["scena.cli_error.v1"]),
+            emits(MATERIALS_FETCH_COMMAND, &["scena.photographic_material_pack.v1"], &["scena.cli_error.v1"]),
+            emits(MATERIALS_IMPORT_COMMAND, &["scena.photographic_material_pack.v1"], &["scena.cli_error.v1"]),
             emits(POLICY_RECIPE_COMMAND, &["scena.recipe_policy.v1"], &["scena.cli_error.v1"]),
             emits(VALIDATE_COMMAND, &["scena.contract_validation.v1"], &["scena.contract_validation.v1", "scena.cli_error.v1"]),
             emits(VALIDATE_RECIPE_COMMAND, &["scena.scene_recipe_validation.v1"], &["scena.scene_recipe_validation.v1", "scena.cli_error.v1"]),
@@ -180,6 +191,19 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
             "policy",
             "scena policy recipe [--allow-root <directory>]...",
         ),
+        ["materials"] => ("materials", "scena materials <list|fetch|import>"),
+        ["materials", "list"] => (
+            MATERIALS_LIST_COMMAND,
+            "scena materials list [--category metal|plastic|fabric|leather|rubber] [--query <text>]",
+        ),
+        ["materials", "fetch"] => (
+            MATERIALS_FETCH_COMMAND,
+            "scena materials fetch <id> [--out <dir>] [--expect-sha256 <hex>]",
+        ),
+        ["materials", "import"] => (
+            MATERIALS_IMPORT_COMMAND,
+            "scena materials import <id> <archive.zip> [--out <dir>] [--expect-sha256 <hex>]",
+        ),
         ["policy", "recipe"] => (
             POLICY_RECIPE_COMMAND,
             "scena policy recipe [--allow-root <directory>]...",
@@ -211,7 +235,7 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
         ),
         ["photo", "render"] => (
             PHOTO_RENDER_COMMAND,
-            "scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>] [--allow-root <directory>]...",
+            "scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]...",
         ),
         ["recipe"] => (
             "recipe",
@@ -338,7 +362,9 @@ fn failure_exit_rows(classes: &[&str]) -> Vec<serde_json::Value> {
 }
 
 fn feature_requirements_for_command(command: &str) -> &'static [&'static str] {
-    if command.starts_with("diff ")
+    if command.starts_with("materials fetch ") || command.starts_with("materials import ") {
+        &["material-library"]
+    } else if command.starts_with("diff ")
         || command.starts_with("recipe ")
         || command.starts_with("photo ")
         || command.starts_with("examples agent ")
@@ -364,7 +390,9 @@ fn error_classes_for_command(command: &str) -> Vec<&'static str> {
         command,
         "capabilities [--live] [--json]"
             | "diff <before.recipe.json> <after.recipe.json> [--numeric-tolerance <n>] [--render --out-dir <dir>] [--exit-code]"
-    ) || command.starts_with("recipe ")
+    ) || command.starts_with("materials fetch ")
+        || command.starts_with("materials import ")
+        || command.starts_with("recipe ")
         || command.starts_with("photo ")
         || command.starts_with("render ")
         || command.starts_with("inspect ")

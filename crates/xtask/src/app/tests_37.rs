@@ -12,7 +12,9 @@ fn fr06_doctor_rejects_persistent_runtime_handle_claims() {
         "src/render/cpu_geometry.rs",
         "src/render/semantic_aov.rs",
         "src/render/settings.rs",
+        "src/render/gpu/pipeline.rs",
         "src/render/gpu/semantic_aov.rs",
+        "src/render/gpu/semantic_aov/beauty.rs",
         "src/render/gpu/semantic_aov/capture.rs",
         "src/render/gpu/semantic_aov/webgl2.rs",
         "src/render/gpu/output_shader.wgsl",
@@ -149,6 +151,25 @@ fn fr06_doctor_rejects_persistent_runtime_handle_claims() {
     );
 
     fs::write(&wasm, source).expect("FR06 wasm fixture restores");
+    let browser = fixture_root.join("tests/browser/fr06_semantic_aov.js");
+    let source = fs::read_to_string(&browser).expect("FR06 browser fixture reads");
+    let mutated = source.replace("same_pass_beauty_agreement", "unchecked_beauty_agreement");
+    assert_ne!(
+        source, mutated,
+        "FR06 same-pass beauty witness mutation must alter source"
+    );
+    fs::write(&browser, mutated).expect("FR06 beauty witness mutation writes");
+    findings.clear();
+    check_fr06_semantic_aov_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "FR06-SEMANTIC-AOV"
+                && finding.message.contains("same_pass_beauty_agreement")
+        }),
+        "removing the browser beauty/AOV agreement proof must fail: {findings:?}"
+    );
+
+    fs::write(&browser, source).expect("FR06 browser fixture restores");
     let workflow = fixture_root.join(".github/workflows/hardware-gpu.yml");
     let source = fs::read_to_string(&workflow).expect("FR06 hardware workflow fixture reads");
     let mutated = source.replace(

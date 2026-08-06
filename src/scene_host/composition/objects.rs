@@ -6,8 +6,8 @@ use super::checks::{
     CompositionCheckExt, checked_check, error_check, observed_pairs, round3, skip_check,
 };
 use super::helpers::{
-    draws_for_handle, expected_color_handles, projected_node_rect, visible_coverage_for_rect,
-    visible_coverage_for_region,
+    SubjectMaskCoverage, draws_for_handle, expected_color_handles, projected_node_rect,
+    visible_coverage_for_rect, visible_coverage_for_region,
 };
 use super::object_framing::object_framing_check;
 use super::object_pixels::object_pixel_quality_check;
@@ -28,6 +28,10 @@ pub(super) struct ObjectCompositionInput<'a> {
     pub(super) label_regions: &'a BTreeMap<u64, CaptureScreenRegion>,
     pub(super) line_regions: &'a BTreeMap<u64, CaptureScreenRegion>,
     pub(super) background: Color,
+    /// The renderer's per-pixel attribution, when a mask was captured. Coverage
+    /// falls back to comparing pixels against the clear colour without it, which
+    /// cannot separate a subject from a lit floor or backdrop.
+    pub(super) subject_aov: Option<&'a crate::SceneHostSemanticAovCaptureV1>,
 }
 
 pub(super) fn composition_object_checks(
@@ -274,8 +278,20 @@ pub(super) fn composition_object_checks(
             }
         }
 
+        let target_handles = BTreeSet::from([target.handle]);
+        let target_mask = input.subject_aov.map(|capture| SubjectMaskCoverage {
+            capture,
+            handles: &target_handles,
+        });
         let visible_coverage = projected_rect
-            .and_then(|rect| visible_coverage_for_rect(input.capture, rect, input.background))
+            .and_then(|rect| {
+                visible_coverage_for_rect(
+                    input.capture,
+                    rect,
+                    input.background,
+                    target_mask.as_ref(),
+                )
+            })
             .or_else(|| {
                 label_region.map(|region| {
                     visible_coverage_for_region(input.capture, region, input.background)
@@ -302,6 +318,7 @@ pub(super) fn composition_object_checks(
                                 "foreground_fraction",
                                 json!(round3(coverage.foreground_fraction)),
                             ),
+                            ("coverage_source", json!(coverage.source)),
                         ]),
                         (
                             "declared node has measured non-background pixels in its projected screen region",
@@ -347,6 +364,7 @@ pub(super) fn composition_object_checks(
                                 "foreground_fraction",
                                 json!(round3(coverage.foreground_fraction)),
                             ),
+                            ("coverage_source", json!(coverage.source)),
                             ("profile", json!(required_profile.unwrap_or_default())),
                         ]),
                         (

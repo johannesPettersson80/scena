@@ -4,7 +4,7 @@ use crate::diagnostics::Backend;
 use crate::geometry::GeometryDesc;
 use crate::material::{Color, MaterialDesc};
 use crate::render::prepare::cpu_bake::baked_shadow_visibility;
-use crate::scene::Transform;
+use crate::scene::{ReflectionProbe, Transform};
 
 #[test]
 fn backend_shaded_materials_skip_cpu_shadow_visibility_bake() {
@@ -331,5 +331,80 @@ fn screen_space_strokes_scale_to_full_frame_supersample_pixels() {
         prepared.strokes[0].width_px(),
         4.0,
         "screen-space stroke widths are authored in final-frame pixels and must be expanded when drawing into a supersampled internal target"
+    );
+}
+
+#[test]
+fn assigned_mesh_primitives_retain_their_local_reflection_probe() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 1.0, 0.2));
+    let probe_environment = assets.create_environment(
+        crate::assets::EnvironmentDesc::from_cubemap_radiance(
+            "scena://generated/reflection-probe/test",
+            2,
+            std::array::from_fn(|face| vec![[face as f32 + 1.0; 3]; 4]),
+        )
+        .expect("probe cubemap is valid"),
+    );
+    let mut scene = Scene::new();
+    let assigned = scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(-1.0, 0.0, 0.0)))
+        .add()
+        .expect("assigned mesh inserts");
+    let unassigned = scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(2.0, 0.0, 0.0)))
+        .add()
+        .expect("unassigned mesh inserts");
+    scene
+        .add_reflection_probe(
+            ReflectionProbe::new(crate::geometry::Aabb::new(
+                Vec3::new(-2.0, -1.0, -1.0),
+                Vec3::new(0.0, 1.0, 1.0),
+            ))
+            .with_environment(probe_environment)
+            .assign_node(assigned),
+        )
+        .expect("probe inserts");
+    let material_slots = collect_backend_material_slots(&scene, Some(&assets));
+    let material_handles = material_slots
+        .iter()
+        .map(|slot| slot.handle)
+        .collect::<Vec<_>>();
+
+    let prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::HeadlessGpu,
+        },
+        1.0,
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &material_handles,
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("scene prepares");
+
+    assert!(
+        prepared
+            .primitives
+            .iter()
+            .filter(|primitive| primitive.source_node() == Some(assigned))
+            .all(|primitive| primitive.reflection_probe().is_some()),
+        "every triangle of the assigned component must retain the selected probe",
+    );
+    assert!(
+        prepared
+            .primitives
+            .iter()
+            .filter(|primitive| primitive.source_node() == Some(unassigned))
+            .all(|primitive| primitive.reflection_probe().is_none()),
+        "unassigned geometry must fall back to the renderer's global environment",
     );
 }

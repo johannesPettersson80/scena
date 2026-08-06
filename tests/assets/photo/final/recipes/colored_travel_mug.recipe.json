@@ -1,0 +1,188 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "subject",
+      "uri": "../subjects/colored_travel_mug.glb",
+      "edge_rounding": {
+        "enabled": true,
+        "radius_fraction": 0.0025,
+        "segments": 3,
+        "edge_angle_threshold_degrees": 30.0,
+        "max_derived_triangles": 250000
+      },
+      "material_bindings": [
+        {
+          "source_material": { "index": 0, "name": "smoke_sip_cap" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/plastic012a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "46503e4196d5ca0af96b15570ce2a89c3df3c450eeae642976f9446b9a43001d",
+              "tile_size_m": 0.10
+            },
+            "normal_scale": 0.20,
+            "occlusion_strength": 0.50
+          }
+        },
+        {
+          "source_material": { "index": 1, "name": "harbor_teal_plastic" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+              "tile_size_m": 0.14
+            },
+            "base_color": "#148E9A",
+            "normal_scale": 0.22,
+            "occlusion_strength": 0.55
+          }
+        },
+        {
+          "source_material": { "index": 2, "name": "silicone_grip" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+              "tile_size_m": 0.08
+            },
+            "base_color": "#25292D",
+            "normal_scale": 0.30,
+            "occlusion_strength": 0.65
+          }
+        },
+        {
+          "source_material": { "index": 3, "name": "signal_orange_lid" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+              "tile_size_m": 0.10
+            },
+            "base_color": "#E04C17",
+            "normal_scale": 0.20,
+            "occlusion_strength": 0.50,
+            "imperfection": {
+              "profile": "smudge",
+              "strength": 0.11,
+              "physical_scale_m": 0.012,
+              "seed": 431
+            }
+          }
+        },
+        {
+          "source_material": { "index": 4, "name": "steel_ring" },
+          "material": {
+            "material_pack": {
+              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+              "tile_size_m": 0.08
+            },
+            "normal_scale": 0.12,
+            "occlusion_strength": 0.40
+          }
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "id": "mug_body_authored",
+      "kind": "pbr_metallic_roughness",
+      "base_color": "#148E9A",
+      "metallic": 0.02,
+      "roughness": 0.46
+    },
+    {
+      "id": "mug_smoke_authored",
+      "kind": "pbr_metallic_roughness",
+      "base_color": "#20242A",
+      "metallic": 0.0,
+      "roughness": 0.40
+    }
+  ],
+  "geometries": [
+    {
+      "id": "mug_smooth_body_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.0414,
+        "height": 0.152,
+        "bevel": 0.003,
+        "segments": 96
+      }
+    },
+    {
+      "id": "mug_sip_hinge_geo",
+      "primitive": {
+        "kind": "cylinder",
+        "radius": 0.0042,
+        "height": 0.022,
+        "bevel": 0.0008,
+        "segments": 48
+      }
+    },
+    {
+      "id": "mug_thumb_tab_geo",
+      "primitive": {
+        "kind": "box",
+        "size": [0.022, 0.005, 0.012],
+        "bevel": 0.0018
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "mug_smooth_body",
+      "geometry": "mug_smooth_body_geo",
+      "material": "mug_body_authored",
+      "name": "smooth authored travel mug body",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.080, 0.0]
+      }
+    },
+    {
+      "id": "mug_sip_hinge",
+      "geometry": "mug_sip_hinge_geo",
+      "material": "mug_smoke_authored",
+      "name": "sip-cap hinge",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.198, -0.014],
+        "rotation_degrees": [0.0, 0.0, 90.0]
+      }
+    },
+    {
+      "id": "mug_thumb_tab",
+      "geometry": "mug_thumb_tab_geo",
+      "material": "mug_smoke_authored",
+      "name": "sip-cap thumb tab",
+      "transform": {
+        "kind": "trs",
+        "translation": [0.0, 0.202, 0.014]
+      }
+    }
+  ],
+  "named_states": [
+    {
+      "id": "content_corrections",
+      "active": true,
+      "visibility": [
+        {
+          "target": {
+            "kind": "import_node",
+            "import": "subject",
+            "path": "/travel_mug_root/body"
+          },
+          "visible": false
+        }
+      ]
+    }
+  ],
+  "photo": {
+    "intent": "camera_behavior",
+    "quality": "final",
+    "staging": { "ground": "reflective" },
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}

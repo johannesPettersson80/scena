@@ -7,6 +7,8 @@ use std::sync::{Arc, OnceLock};
 
 mod bounds;
 mod deformation;
+#[cfg(any(feature = "scene-host", test))]
+pub(crate) mod edge_rounding;
 mod helpers;
 mod morph;
 #[cfg(feature = "scene-host")]
@@ -17,6 +19,7 @@ mod skinning;
 mod spatial;
 mod static_batch;
 mod tangents;
+mod texture_scale;
 pub use morph::GeometryMorphTarget;
 pub use skinning::{GeometrySkin, SkinningMatrix};
 pub(crate) use spatial::TriangleBvh;
@@ -287,6 +290,7 @@ pub(crate) struct PrimitiveVertexAttributes {
     pub(crate) tangent: Vec3,
     pub(crate) tangent_handedness: f32,
     pub(crate) shadow_visibility: f32,
+    pub(crate) ambient_visibility: f32,
 }
 
 impl Default for PrimitiveVertexAttributes {
@@ -297,6 +301,7 @@ impl Default for PrimitiveVertexAttributes {
             tangent: Vec3::new(1.0, 0.0, 0.0),
             tangent_handedness: 1.0,
             shadow_visibility: 1.0,
+            ambient_visibility: 1.0,
         }
     }
 }
@@ -645,6 +650,189 @@ mod optional_attribute_tests {
         assert_eq!(geometry.tex_coord0_or_default(2), [0.0, 0.0]);
         assert_eq!(geometry.vertex_colors(), [Color::WHITE; 3]);
         assert_eq!(geometry.tex_coords0(), [[0.0, 0.0]; 3]);
+    }
+}
+
+#[cfg(test)]
+mod edge_rounding_contract_tests {
+    use super::*;
+    use crate::geometry::edge_rounding::{
+        EdgeRoundingError, EdgeRoundingOptions, round_hard_edges,
+    };
+
+    #[test]
+    fn imported_closed_box_rounds_hard_edges_and_preserves_authored_attributes() {
+        let geometry = GeometryDesc::box_xyz(1.0, 0.6, 0.4);
+        let source_vertices = geometry.vertices().len();
+        let source_triangles = geometry.indices().len() / 3;
+
+        let (rounded, report) = round_hard_edges(&geometry, EdgeRoundingOptions::new(0.01))
+            .expect("closed static box supports render-only edge rounding");
+
+        assert_eq!(report.eligible_edges, 12);
+        assert_eq!(report.rounded_edges, 12);
+        assert_eq!(report.rejected_edges, 0);
+        assert!(rounded.vertices().len() > source_vertices);
+        assert!(rounded.indices().len() / 3 > source_triangles);
+        assert_eq!(
+            rounded.authored_tex_coords0().map(<[_]>::len),
+            Some(rounded.vertices().len())
+        );
+        assert_eq!(
+            rounded.authored_vertex_colors().map(<[_]>::len),
+            geometry
+                .authored_vertex_colors()
+                .map(|_| rounded.vertices().len())
+        );
+        assert!(
+            rounded
+                .vertices()
+                .iter()
+                .all(|vertex| vertex.normal.is_finite() && vertex.normal.length() > 0.99)
+        );
+    }
+
+    #[test]
+    fn imported_open_mesh_is_rejected_instead_of_emitting_corrupt_geometry() {
+        let open = GeometryDesc::plane(1.0, 1.0);
+        assert_eq!(
+            round_hard_edges(&open, EdgeRoundingOptions::new(0.01)),
+            Err(EdgeRoundingError::OpenMesh { boundary_edges: 4 })
+        );
+    }
+
+    #[test]
+    fn imported_edge_rounding_enforces_the_derived_geometry_budget() {
+        let geometry = GeometryDesc::box_xyz(1.0, 0.6, 0.4);
+        let options = EdgeRoundingOptions::new(0.01).with_max_derived_triangles(12);
+        assert!(matches!(
+            round_hard_edges(&geometry, options),
+            Err(EdgeRoundingError::DerivedTriangleBudgetExceeded { limit: 12, .. })
+        ));
+    }
+
+    #[test]
+    fn imported_edge_rounding_reduces_radius_instead_of_collapsing_thin_faces() {
+        let geometry = GeometryDesc::box_xyz(1.0, 1.0, 0.001);
+        let (rounded, report) = round_hard_edges(&geometry, EdgeRoundingOptions::new(0.1))
+            .expect("local bevel radius is capped by adjacent face altitude");
+
+        assert_eq!(report.rounded_edges, 12);
+        assert!(
+            rounded.indices().chunks_exact(3).all(|triangle| {
+                let a = rounded.vertices()[triangle[0] as usize].position;
+                let b = rounded.vertices()[triangle[1] as usize].position;
+                let c = rounded.vertices()[triangle[2] as usize].position;
+                (b - a).cross(c - a).length_squared() > 0.0
+            }),
+            "derived edge geometry must not contain collapsed faces"
+        );
+    }
+
+    #[test]
+    fn imported_edge_rounding_isolates_zero_area_faces_before_topology_validation() {
+        let source = GeometryDesc::box_xyz(1.0, 0.6, 0.4);
+        let mut indices = source.indices().to_vec();
+        indices.extend_from_slice(&[0, 0, 0]);
+        let geometry = GeometryDesc::try_new_with_optional_vertex_attributes(
+            GeometryTopology::Triangles,
+            source.vertices().to_vec(),
+            indices,
+            source.authored_vertex_colors().map(<[_]>::to_vec),
+            source.authored_tex_coords0().map(<[_]>::to_vec),
+        )
+        .expect("test geometry streams remain structurally valid");
+
+        let (_, report) = round_hard_edges(&geometry, EdgeRoundingOptions::new(0.01))
+            .expect("zero-area faces are isolated before manifold validation");
+
+        assert_eq!(report.removed_degenerate_triangles, 1);
+        assert_eq!(report.source_triangles, 13);
+        assert_eq!(report.rounded_edges, 12);
+    }
+
+    #[test]
+    fn imported_edge_rounding_refines_low_tessellation_curves_without_changing_radius() {
+        let cylinder = GeometryDesc::cylinder(1.0, 2.0, 16);
+        let source_triangles = cylinder.indices().len() / 3;
+        let source_side_angles = quantized_side_angles(&cylinder);
+        let (rounded, report) = round_hard_edges(&cylinder, EdgeRoundingOptions::new(0.04))
+            .expect("closed cylinder supports bounded render-time refinement");
+
+        assert_eq!(report.rounded_edges, 0);
+        assert!(report.skipped_edges > 0);
+        assert!(
+            rounded.indices().len() / 3 > source_triangles,
+            "smooth curvature must gain real silhouette triangles"
+        );
+        let refined_side_angles = quantized_side_angles(&rounded);
+        assert!(
+            refined_side_angles.len() >= source_side_angles.len() * 2,
+            "expected at least twice as many distinct side directions: \
+             source={} refined={}",
+            source_side_angles.len(),
+            refined_side_angles.len()
+        );
+        let side_radii = rounded
+            .vertices()
+            .iter()
+            .filter(|vertex| vertex.normal.y.abs() < 0.1)
+            .map(|vertex| (vertex.position.x.powi(2) + vertex.position.z.powi(2)).sqrt())
+            .collect::<Vec<_>>();
+        let minimum_radius = side_radii.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum_radius = side_radii.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            side_radii
+                .iter()
+                .all(|radius| (*radius - 1.0).abs() <= 0.01),
+            "curve refinement must preserve the authored cylinder radius; \
+             min={minimum_radius} max={maximum_radius}"
+        );
+    }
+
+    #[test]
+    fn imported_curve_refinement_shares_continuous_render_vertices() {
+        let cylinder = GeometryDesc::cylinder(1.0, 2.0, 16);
+        let (rounded, _) = round_hard_edges(&cylinder, EdgeRoundingOptions::new(0.04))
+            .expect("closed cylinder supports bounded render-time refinement");
+        let tex_coords = rounded
+            .authored_tex_coords0()
+            .expect("the cylinder has authored texture coordinates");
+        let signatures = rounded
+            .vertices()
+            .iter()
+            .zip(tex_coords)
+            .map(|(vertex, uv)| {
+                [
+                    (vertex.position.x * 1_000_000.0).round() as i64,
+                    (vertex.position.y * 1_000_000.0).round() as i64,
+                    (vertex.position.z * 1_000_000.0).round() as i64,
+                    (vertex.normal.x * 1_000_000.0).round() as i64,
+                    (vertex.normal.y * 1_000_000.0).round() as i64,
+                    (vertex.normal.z * 1_000_000.0).round() as i64,
+                    (uv[0] * 1_000_000.0).round() as i64,
+                    (uv[1] * 1_000_000.0).round() as i64,
+                ]
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(
+            signatures.len(),
+            rounded.vertices().len(),
+            "continuous positions, normals, and UVs must share one render vertex so \
+             generated tangent frames do not retain source-facet boundaries"
+        );
+    }
+
+    fn quantized_side_angles(geometry: &GeometryDesc) -> std::collections::BTreeSet<i32> {
+        geometry
+            .vertices()
+            .iter()
+            .filter(|vertex| vertex.normal.y.abs() < 0.1)
+            .map(|vertex| {
+                (vertex.position.z.atan2(vertex.position.x).to_degrees() * 100.0).round() as i32
+            })
+            .collect()
     }
 }
 

@@ -1,14 +1,23 @@
+#[cfg(not(target_arch = "wasm32"))]
 use super::instancing::INSTANCE_BYTE_LEN;
+#[cfg(not(target_arch = "wasm32"))]
 use super::pipeline::GPU_COLOR_FORMAT;
+#[cfg(not(target_arch = "wasm32"))]
 use super::resource_encoding::retained_instance_buffer_capacity;
+#[cfg(not(target_arch = "wasm32"))]
 use super::{GpuDeviceState, GpuOutputPlan};
 use crate::PrepareError;
+use crate::diagnostics::Backend;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::render::RasterTarget;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::render::prepare::{
     PreparedInstanceSet, PreparedLabelAtlas, PreparedPrimitive, PreparedStrokeSegment,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use crate::render::semantic_aov::GpuSemanticAttribution;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) struct GeometryBuffers {
     pub(super) vertex_buffer: wgpu::Buffer,
     pub(super) vertex_buffer_size: u64,
@@ -17,6 +26,23 @@ pub(super) struct GeometryBuffers {
     pub(super) instance_buffer_capacity: usize,
 }
 
+pub(super) fn validate_geometry_buffer_size(
+    backend: Backend,
+    requested: u64,
+    maximum: u64,
+) -> Result<(), PrepareError> {
+    if requested <= maximum {
+        return Ok(());
+    }
+    Err(PrepareError::GpuResourceUpload {
+        backend,
+        reason: format!(
+            "prepared geometry requires {requested} vertex-buffer bytes, exceeding device max_buffer_size {maximum}"
+        ),
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn create_geometry_buffers(
     device: &wgpu::Device,
     vertex_bytes: &[u8],
@@ -63,6 +89,7 @@ pub(super) fn create_geometry_buffers(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn validate_sample_count(
     gpu: &GpuDeviceState,
     target: RasterTarget,
@@ -92,6 +119,7 @@ pub(super) fn validate_sample_count(
     Ok((sample_count, scene_format))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn build_semantic_attribution(
     target: RasterTarget,
     enabled: bool,
@@ -116,4 +144,23 @@ pub(super) fn build_semantic_attribution(
                 "semantic AOV requires {entries} palette entries, exceeding the 24-bit limit"
             ),
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diagnostics::Backend;
+
+    #[test]
+    fn oversized_geometry_buffer_is_rejected_before_wgpu_allocation() {
+        let error = validate_geometry_buffer_size(Backend::HeadlessGpu, 912_567_276, 268_435_456)
+            .expect_err("an oversized vertex buffer must fail before Device::create_buffer");
+        let PrepareError::GpuResourceUpload { backend, reason } = error else {
+            panic!("unexpected error: {error:?}");
+        };
+        assert_eq!(backend, Backend::HeadlessGpu);
+        assert!(reason.contains("912567276"));
+        assert!(reason.contains("268435456"));
+        assert!(reason.contains("prepared geometry"));
+    }
 }

@@ -46,6 +46,7 @@ mod particles;
 mod picking;
 mod placement;
 pub mod recipe;
+mod reflection_probes;
 mod removal;
 mod render_nodes;
 mod resolved_cache;
@@ -117,6 +118,10 @@ pub use placement::{
     placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
     placement_place_on_feature_transform,
 };
+pub use reflection_probes::{
+    DEFAULT_REFLECTION_PROBE_RESOLUTION, MAX_REFLECTION_PROBES, ReflectionProbe,
+    ReflectionProbeError,
+};
 pub use resolved_cache::ResolvedSceneCacheStats;
 pub use skinning::SceneSkinBinding;
 
@@ -130,6 +135,7 @@ new_key_type! {
     pub struct LabelKey;
     pub struct AnchorKey;
     pub struct ConnectorKey;
+    pub struct ReflectionProbeKey;
 }
 
 #[derive(Debug)]
@@ -149,6 +155,8 @@ pub struct Scene {
     measurements: BTreeMap<String, measurements::SceneMeasurementOverlayState>,
     overlay_owners: BTreeMap<NodeKey, overlay_ownership::OverlayOwner>,
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
+    reflection_probes: SlotMap<ReflectionProbeKey, ReflectionProbe>,
+    reflection_probes_enabled: bool,
     retired_connectors: BTreeMap<ConnectorKey, Option<String>>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
@@ -236,6 +244,8 @@ impl Scene {
             measurements: BTreeMap::new(),
             overlay_owners: BTreeMap::new(),
             connectors: SlotMap::with_key(),
+            reflection_probes: SlotMap::with_key(),
+            reflection_probes_enabled: true,
             retired_connectors: BTreeMap::new(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),

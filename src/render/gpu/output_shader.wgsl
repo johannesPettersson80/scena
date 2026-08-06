@@ -11,7 +11,7 @@ struct VertexIn {
     @location(2) normal: vec3<f32>,
     @location(3) tex_coord0: vec2<f32>,
     @location(4) tangent: vec4<f32>,
-    @location(5) shadow_visibility: f32,
+    @location(5) baked_visibility: vec2<f32>,
     @location(6) instance_world_0: vec4<f32>,
     @location(7) instance_world_1: vec4<f32>,
     @location(8) instance_world_2: vec4<f32>,
@@ -31,7 +31,7 @@ struct VertexOut {
     @location(2) tex_coord0: vec2<f32>,
     @location(3) world_position: vec3<f32>,
     @location(4) tangent: vec4<f32>,
-    @location(5) shadow_visibility: f32,
+    @location(5) baked_visibility: vec2<f32>,
     @location(6) instance_tint: vec4<f32>,
     @location(7) semantic_id: vec4<f32>,
 };
@@ -86,6 +86,9 @@ struct DrawUniform {
     normal_from_model: mat4x4<f32>,
     tint: vec4<f32>,
     semantic_id: vec4<f32>,
+    reflection_probe_bounds_min: vec4<f32>,
+    reflection_probe_bounds_max: vec4<f32>,
+    reflection_probe_capture: vec4<f32>,
 };
 
 struct MaterialUniform {
@@ -320,7 +323,7 @@ fn vs_main(in: VertexIn) -> VertexOut {
     out.tex_coord0 = in.tex_coord0;
     out.world_position = world_position.xyz;
     out.tangent = vec4<f32>((normal_from_model * vec4<f32>(in.tangent.xyz, 0.0)).xyz, in.tangent.w);
-    out.shadow_visibility = clamp(in.shadow_visibility, 0.0, 1.0);
+    out.baked_visibility = clamp(in.baked_visibility, vec2<f32>(0.0), vec2<f32>(1.0));
     out.instance_tint = in.instance_tint;
     out.semantic_id = select(draw.semantic_id, in.instance_semantic_id, in.instance_semantic_id.a > 0.5);
     return out;
@@ -377,8 +380,7 @@ fn fs_semantic(in: VertexOut) -> SemanticOutput {
     return output;
 }
 
-@fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+fn shade_fragment(in: VertexOut) -> vec4<f32> {
     if clipped_by_scene(in.world_position) {
         discard;
     }
@@ -415,18 +417,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let world_normal = normalize(in.normal);
     let world_tangent = normalize(in.tangent.xyz);
     let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w);
-    var normal = normalize(normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal);
-    let micro_strength = material.texture_strengths.z;
-    let micro_phase = in.world_position * material.texture_strengths.w;
-    let micro_x = sin(dot(micro_phase, vec3<f32>(12.9898, 78.233, 37.719)));
-    let micro_y = sin(dot(micro_phase, vec3<f32>(39.346, 11.135, 83.155)));
-    if micro_strength > 0.0 {
-        normal = normalize(
-            normal
-                + world_tangent * (micro_x * micro_strength)
-                + bitangent * (micro_y * micro_strength)
-        );
-    }
+    let normal = normalize(normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal);
+    // Auto-generated micro detail is smaller than a normal product-still pixel.
+    // Fold its variance into roughness instead of resolving world-space waves
+    // that alias into coherent contour bands under perspective.
+    let unresolved_micro_roughness = material.texture_strengths.z * 0.175;
     let clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);
     let clearcoat_roughness = clamp(material.clearcoat_factors.y * clearcoat_roughness_sample.g, 0.04, 1.0);
     let clearcoat_normal_scale = material.clearcoat_factors.z;
@@ -449,7 +444,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(
         material.metallic_roughness_alpha.y * metallic_roughness_sample.g
-            + (micro_x * 0.5 + 0.5) * micro_strength * 0.35,
+            + unresolved_micro_roughness,
         0.04,
         1.0,
     );
@@ -458,6 +453,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // at full intensity. glTF spec default = 1.0.
     let occlusion_strength = material.texture_strengths.y;
     let occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength);
+    let indirect_occlusion = occlusion_applied * clamp(in.baked_visibility.y, 0.0, 1.0);
     let base = in.color * material.base_color_factor * base_color_sample * draw.tint * in.instance_tint;
     if material.metallic_roughness_alpha.z > 0.0 && base.a < material.metallic_roughness_alpha.z {
         discard;
@@ -490,14 +486,14 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             dispersion_ior,
             in.world_position,
             in.position,
-            in.shadow_visibility,
+            in.baked_visibility.x,
         );
-        var environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view);
-        environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness);
+        var environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view, in.world_position);
+        environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness, in.world_position);
         environment += sheen_environment_lighting(normal, view, sheen_color, sheen_roughness);
-        environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction);
+        environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction, in.world_position);
         if has_punctual_light() || has_environment_light() {
-            shaded_rgb = (direct + environment) * occlusion_applied;
+            shaded_rgb = direct + environment * indirect_occlusion;
         }
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
@@ -892,7 +888,7 @@ fn pbr_punctual_lighting(
                 let to_light = sample_position - world_position;
                 let incoming = normalize(to_light);
                 let radiance = area_light_radiance(i, sample_position, world_position) * area_shadow_visibility;
-                shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+                shaded += pbr_area_light_diffuse_contribution(base, metallic, normal, view, incoming, radiance);
                 shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
                 shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
                 shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
@@ -902,6 +898,24 @@ fn pbr_punctual_lighting(
         }
     }
     return shaded;
+}
+
+struct BeautySemanticOutput {
+    @location(0) color: vec4<f32>,
+    @location(1) semantic_id: vec4<f32>,
+};
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    return shade_fragment(in);
+}
+
+@fragment
+fn fs_beauty_semantic(in: VertexOut) -> BeautySemanticOutput {
+    var output: BeautySemanticOutput;
+    output.color = shade_fragment(in);
+    output.semantic_id = in.semantic_id;
+    return output;
 }
 
 fn has_punctual_light() -> bool {
@@ -945,12 +959,38 @@ fn rotate_environment_direction(direction: vec3<f32>) -> vec3<f32> {
     );
 }
 
+fn environment_reflection_direction(
+    world_position: vec3<f32>,
+    direction: vec3<f32>,
+) -> vec3<f32> {
+    if draw.reflection_probe_bounds_min.w < 0.5 {
+        return rotate_environment_direction(direction);
+    }
+    let epsilon = vec3<f32>(0.000001);
+    let safe_direction = select(
+        select(-epsilon, epsilon, direction >= vec3<f32>(0.0)),
+        direction,
+        abs(direction) >= epsilon,
+    );
+    let exit_plane = select(
+        draw.reflection_probe_bounds_min.xyz,
+        draw.reflection_probe_bounds_max.xyz,
+        safe_direction >= vec3<f32>(0.0),
+    );
+    let distances = (exit_plane - world_position) / safe_direction;
+    let distance = max(min(distances.x, min(distances.y, distances.z)), 0.0);
+    let projected = world_position + safe_direction * distance - draw.reflection_probe_capture.xyz;
+    let projected_length = length(projected);
+    return select(direction, projected / max(projected_length, 0.000001), projected_length > 0.000001);
+}
+
 fn pbr_environment_lighting(
     base: vec3<f32>,
     metallic: f32,
     roughness: f32,
     normal: vec3<f32>,
     view: vec3<f32>,
+    world_position: vec3<f32>,
 ) -> vec3<f32> {
     if !has_environment_light() {
         return vec3<f32>(0.0);
@@ -963,15 +1003,13 @@ fn pbr_environment_lighting(
     //   - Diffuse: prepared irradiance from the active environment.
     //   - Specular: GGX-prefiltered cubemap sampled in the reflection
     //     direction at a roughness-driven mip, then composited with an
-    //     analytic split-sum BRDF approximation. The shader cannot bind the
-    //     BRDF LUT and physical transmission texture at the same time on
-    //     WebGL2's 16 sampled-texture floor.
+    //     baked split-sum BRDF table.
     let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb;
     let diffuse = diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w;
-    let reflection = rotate_environment_direction(reflect(-view, normal));
+    let reflection = environment_reflection_direction(world_position, reflect(-view, normal));
     let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = split_sum_brdf_approx(n_dot_v, roughness);
+    let lut_sample = split_sum_brdf_table(n_dot_v, roughness);
     let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y)) * camera.lighting.environment_specular_intensity.w;
     return diffuse + specular;
 }
@@ -981,15 +1019,16 @@ fn clearcoat_environment_lighting(
     view: vec3<f32>,
     factor: f32,
     roughness: f32,
+    world_position: vec3<f32>,
 ) -> vec3<f32> {
     if !has_environment_light() || factor <= 0.0 {
         return vec3<f32>(0.0);
     }
     let n_dot_v = max(dot(normal, view), 0.001);
-    let reflection = rotate_environment_direction(reflect(-view, normal));
+    let reflection = environment_reflection_direction(world_position, reflect(-view, normal));
     let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = split_sum_brdf_approx(n_dot_v, roughness);
+    let lut_sample = split_sum_brdf_table(n_dot_v, roughness);
     let specular = prefiltered * (vec3<f32>(0.04) * lut_sample.x + vec3<f32>(lut_sample.y));
     return specular * camera.lighting.environment_specular_intensity.w * factor;
 }
@@ -1026,6 +1065,7 @@ fn anisotropy_environment_lighting(
     strength: f32,
     rotation: f32,
     direction: vec2<f32>,
+    world_position: vec3<f32>,
 ) -> vec3<f32> {
     if !has_environment_light() || strength <= 0.0 {
         return vec3<f32>(0.0);
@@ -1036,11 +1076,11 @@ fn anisotropy_environment_lighting(
     let anisotropic_t = normalize(safe_tangent * anisotropy_direction.x + bitangent * anisotropy_direction.y);
     let anisotropic_normal = normalize(mix(normal, anisotropic_t, clamp(strength * 0.55, 0.0, 0.55)));
     let n_dot_v = max(dot(normal, view), 0.001);
-    let reflection = rotate_environment_direction(reflect(-view, anisotropic_normal));
+    let reflection = environment_reflection_direction(world_position, reflect(-view, anisotropic_normal));
     let directional_roughness = clamp(roughness * (1.0 - strength * 0.60), 0.04, 1.0);
     let prefilter_mip = environment_prefilter_mip(directional_roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = split_sum_brdf_approx(n_dot_v, directional_roughness);
+    let lut_sample = split_sum_brdf_table(n_dot_v, directional_roughness);
     let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
     let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y));
     return specular * camera.lighting.environment_specular_intensity.w * strength;
@@ -1071,6 +1111,26 @@ fn pbr_light_contribution(
     let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
     let diffuse = diffuse_energy * base / PI;
     return (diffuse + specular) * radiance * n_dot_l;
+}
+
+fn pbr_area_light_diffuse_contribution(
+    base: vec3<f32>,
+    metallic: f32,
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    incoming: vec3<f32>,
+    radiance: vec3<f32>,
+) -> vec3<f32> {
+    let n_dot_l = max(dot(normal, incoming), 0.0);
+    if n_dot_l <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let half_vector = normalize(view + incoming);
+    let v_dot_h = max(dot(view, half_vector), 0.0);
+    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
+    let fresnel = fresnel_schlick(v_dot_h, f0);
+    let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
+    return diffuse_energy * base * radiance * n_dot_l / PI;
 }
 
 fn clearcoat_light_contribution(

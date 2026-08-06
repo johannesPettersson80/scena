@@ -58,6 +58,21 @@ fn recipe_field_model_covers_authoring_and_rendering_surface() {
 }
 
 #[test]
+fn photo_ground_field_model_advertises_the_general_bounded_intents() {
+    let model = scena::scene_recipe_field_model_v1();
+    let ground = model
+        .fields
+        .iter()
+        .find(|field| field.path == "$.photo.staging.ground")
+        .expect("photo ground field remains discoverable");
+    assert_eq!(
+        ground.enum_values,
+        [serde_json::json!("matte"), serde_json::json!("reflective")]
+    );
+    assert_eq!(ground.default, Some(serde_json::json!("matte")));
+}
+
+#[test]
 fn recipe_json_schema_and_field_model_have_bidirectional_path_parity() {
     let model = scena::scene_recipe_field_model_v1();
     let schema = scena::scene_recipe_json_schema_v1();

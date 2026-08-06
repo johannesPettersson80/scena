@@ -22,6 +22,16 @@ pub(in crate::diagnostics) const fn forward_pbr_status(
     }
 }
 
+pub(in crate::diagnostics) const fn final_photo_status(
+    backend: Backend,
+    gpu_device: bool,
+) -> CapabilityStatus {
+    match (backend, gpu_device) {
+        (Backend::HeadlessGpu | Backend::NativeSurface, true) => CapabilityStatus::Supported,
+        _ => CapabilityStatus::ErrorIfRequired,
+    }
+}
+
 pub(in crate::diagnostics) const fn directional_shadow_status(
     backend: Backend,
     gpu_device: bool,
@@ -94,6 +104,16 @@ pub(in crate::diagnostics) const fn directional_shadow_map_max_size(backend: Bac
         | Backend::NativeSurface
         | Backend::WebGpu => 4096,
     }
+}
+
+/// Size of the split-sum BRDF lookup table the renderer bakes.
+///
+/// This used to reuse `ibl_default_size`, which is the *cubemap* size, so the
+/// report claimed 256 (128 on WebGL2) for a table that has always been baked at
+/// `BRDF_LUT_SIZE`. It is backend-independent: the table is a function of the
+/// BRDF alone, not of the environment or the backend.
+pub(in crate::diagnostics) const fn ibl_brdf_lut_size(_backend: Backend) -> u32 {
+    crate::render::BRDF_LUT_SIZE
 }
 
 pub(in crate::diagnostics) const fn ibl_default_size(backend: Backend) -> u32 {

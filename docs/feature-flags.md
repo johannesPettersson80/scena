@@ -16,7 +16,7 @@ package version.
 
 | Feature | Purpose |
 |---|---|
-| `agent` | complete opt-in self-verification surface; enables `scene-host`, which already enables `inspection` |
+| `agent` | complete opt-in self-verification and material-authoring surface; enables `scene-host` and `material-library` |
 | `controls` | compatibility marker; platform-neutral orbit, pan, zoom, and focus controls are always compiled |
 | `controls-winit` | compatibility alias enabling `controls`; no `winit` dependency or hidden event loop is added |
 | `controls-web` | compatibility alias enabling `controls`; browser hosts translate DOM events explicitly |
@@ -30,6 +30,7 @@ package version.
 | `khronos-samples` | checked Khronos glTF sample-asset catalog and loader helpers |
 | `ktx2` | KTX2/Basis texture descriptor and decode support for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
+| `material-library` | native CC0 material download/import and deterministic scena pack compilation |
 | `obj` | OBJ import path |
 | `production-assets` | compressed glTF asset profile; enables `ktx2` + `meshopt` without changing defaults |
 
@@ -40,9 +41,9 @@ Inspection contracts require `inspection`; the browser/native host facade
 requires `scene-host`, which enables `inspection`.
 
 The `agent` composition is the public one-step choice for recipe authoring,
-inspection, rendering, and verification loops. It intentionally names only
-`scene-host`; listing `inspection` again would misrepresent the actual feature
-graph.
+inspection, rendering, verification, and native material-pack compilation. It
+names `scene-host` and `material-library`; listing `inspection` again would
+misrepresent the actual feature graph because `scene-host` already enables it.
 
 ## Recommended combinations
 
@@ -85,6 +86,12 @@ Diagnostic tooling:
 cargo add scena --features inspection
 ```
 
+Native material catalog download/import without SceneHost:
+
+```bash
+cargo add scena --features material-library
+```
+
 Browser host facade:
 
 ```bash
@@ -99,9 +106,10 @@ cargo add scena --features scene-host,controls-web
 
 ## Default feature set
 
-The default feature set is exactly empty. `agent` is opt-in and aliases only
-existing code, so it adds no dependencies or package files beyond selecting
-the already documented `scene-host` -> `inspection` graph. Add only the
+The default feature set is exactly empty. `agent` is opt-in and selects the
+documented `scene-host` -> `inspection` graph plus the native material archive
+downloader/compiler. Applications that only load already-compiled scena
+material packs do not need the native downloader dependencies. Add only the
 integrations your application needs.
 
 PNG, JPEG, and WebP decoding is available without an opt-in feature because

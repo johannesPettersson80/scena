@@ -27,6 +27,23 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
     );
     assert_contract(
         &help,
+        "materials list [--category metal|plastic|fabric|leather|rubber] [--query <text>]",
+        &["scena.material_library_catalog.v1"],
+        &["scena.cli_error.v1"],
+    );
+    for command in [
+        "materials fetch <id> [--out <dir>] [--expect-sha256 <hex>]",
+        "materials import <id> <archive.zip> [--out <dir>] [--expect-sha256 <hex>]",
+    ] {
+        assert_contract(
+            &help,
+            command,
+            &["scena.photographic_material_pack.v1"],
+            &["scena.cli_error.v1"],
+        );
+    }
+    assert_contract(
+        &help,
         "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>]",
         &[
             "scena.render_introspection.v1",
@@ -342,6 +359,9 @@ fn fr04_each_command_has_a_real_structured_argument_error_fixture() {
         vec!["vocab", "list", "unexpected"],
         vec!["vocab", "get"],
         vec!["capabilities", "unexpected"],
+        vec!["materials"],
+        vec!["materials", "fetch"],
+        vec!["materials", "import"],
         vec!["policy", "recipe", "unexpected"],
         vec!["validate"],
         vec!["validate-recipe"],
@@ -520,6 +540,27 @@ const EVIDENCE: &[Evidence] = &[
         "scena.capability_report.v1",
         "tests/a03_capabilities_cli.rs",
         "live_capabilities_are_measured_or_fail_closed_with_a_structured_reason"
+    ),
+    evidence!(
+        "materials list [--category metal|plastic|fabric|leather|rubber] [--query <text>]",
+        "success",
+        "scena.material_library_catalog.v1",
+        "tests/material_library.rs",
+        "materials_list_cli_filters_without_network_access"
+    ),
+    evidence!(
+        "materials fetch <id> [--out <dir>] [--expect-sha256 <hex>]",
+        "success",
+        "scena.photographic_material_pack.v1",
+        "tests/material_library.rs",
+        "materials_import_and_cached_fetch_cli_compile_and_reuse_source_locked_pack"
+    ),
+    evidence!(
+        "materials import <id> <archive.zip> [--out <dir>] [--expect-sha256 <hex>]",
+        "success",
+        "scena.photographic_material_pack.v1",
+        "tests/material_library.rs",
+        "materials_import_and_cached_fetch_cli_compile_and_reuse_source_locked_pack"
     ),
     evidence!(
         "policy recipe",

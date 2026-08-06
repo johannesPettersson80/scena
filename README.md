@@ -62,6 +62,88 @@ guide rather than as an uncompiled excerpt.
 See [Easy scene setup](docs/guides/easy-scene-setup.md) for the full workflow,
 including connector mating and projected labels.
 
+## Photographic Materials
+
+`scena` ships an offline catalog of 301 audited, map-complete product finishes:
+metal, plastic, fabric, leather, and rubber. Catalog entries retain their source,
+creation method, download URL, and CC0 license. Downloading is an explicit
+authoring action; rendering a compiled pack never contacts the provider.
+
+```bash
+scena materials list --category metal --query brushed
+scena materials fetch ambientcg-metal009 --resolution 1k --out materials/brushed-steel/1k
+scena materials fetch ambientcg-metal009 --resolution 2k --out materials/brushed-steel/2k
+scena materials fetch ambientcg-metal009 --resolution 4k --out materials/brushed-steel/4k
+```
+
+Apply the compiled PBR maps to an imported handmade model in the scene recipe:
+
+```json
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [{
+    "id": "subject",
+    "uri": "model.glb",
+    "edge_rounding": {},
+    "material": {
+      "material_pack": {
+        "uri": "materials/brushed-steel/1k/scena-material-pack.json",
+        "tile_size_m": 0.18
+      }
+    }
+  }],
+  "photo": {
+    "intent": "camera_behavior",
+    "quality": "final",
+    "subject": { "kind": "import", "id": "subject" }
+  }
+}
+```
+
+Render the final product still with one command:
+
+```bash
+scena photo render product.recipe.json --gpu \
+  --out product.png --report product.photo.json
+```
+
+The final profile owns the studio environment, reflection probes, shadowed area
+lights, contact grounding, composition, exposure, 3840x2520 capture, SSAA 2,
+and tent reconstruction. It measures each visible material after framing and
+uses the smallest installed `1k`, `2k`, or `4k` sibling that retains at least
+one source texel per output pixel.
+
+For a GLB with several handmade material slots, bind each visible source
+material independently:
+
+```json
+{
+  "id": "subject",
+  "uri": "model.glb",
+  "material_bindings": [{
+    "source_material": { "index": 0, "name": "machined_housing" },
+    "material": {
+      "material_pack": {
+        "uri": "materials/brushed-steel/1k/scena-material-pack.json",
+        "expected_archive_sha256": "<fetch-result archive_sha256>",
+        "tile_size_m": 0.18
+      }
+    }
+  }]
+}
+```
+
+The index is required and the optional source name locks its identity. A
+missing or renamed source material fails the recipe before any partial
+assignment; source materials without a binding retain their imported
+appearance. Use the singular `material` form only when one finish should
+replace the entire imported subtree.
+
+The fetch result includes the archive SHA-256. Put it in
+`expected_archive_sha256` when the recipe must reproduce the exact source
+archive. `base_color` may tint a pack without replacing its normal and
+roughness structure.
+
 ## Why scena
 
 Rust applications benefit from a focused rendering layer: a library that lets an
@@ -311,7 +393,7 @@ Cargo features:
 
 | Feature | Purpose |
 |---|---|
-| `agent` | complete opt-in recipe, inspection, verification, and SceneHost surface; enables `scene-host`, which enables `inspection` |
+| `agent` | complete opt-in recipe, inspection, verification, SceneHost, and native material-pack workflow; enables `scene-host` and `material-library` |
 | `controls` | compatibility marker; platform-neutral controls are always available |
 | `controls-winit` | compatibility alias enabling `controls`; hosts translate native events explicitly |
 | `controls-web` | compatibility alias enabling `controls`; hosts translate browser events explicitly |
@@ -320,12 +402,14 @@ Cargo features:
 | `scene-host` | native/browser SceneHost facade; enables `inspection` |
 | `ktx2` | KTX2/Basis texture descriptors for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
+| `material-library` | native CC0 material download/import and deterministic scena pack compilation |
 | `obj` | OBJ import feature path |
 
 The default feature set remains empty. Use `agent` for the complete
-self-verification workflow; use `inspection` or `scene-host` directly only
-when deliberately selecting the smaller owner surface. Never list
-`scene-host,inspection`: the former already enables the latter.
+self-verification and material-authoring workflow; use `inspection`,
+`scene-host`, or `material-library` directly only when deliberately selecting
+a smaller owner surface. Never list `scene-host,inspection`: the former already
+enables the latter.
 
 ## Happy Path
 

@@ -108,7 +108,10 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "fresnel_schlick",
             "distribution_ggx",
             "brdf_specular_ggx",
-            "split_sum_brdf_approx",
+            // The shader reads the baked split-sum table now, not the analytic
+            // fit it used to call. The binding itself is pinned against
+            // pbr_brdf.wgsl, which declares it.
+            "split_sum_brdf_table",
             "base_color_uv_offset_scale",
             "base_color_uv_rotation",
             "var base_color_texture: texture_2d_array<f32>",

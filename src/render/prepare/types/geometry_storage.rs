@@ -92,6 +92,7 @@ pub(in crate::render) fn share_model_space_vertex_buffer(
                         }),
                         tangent_handedness: attributes.tangent_handedness,
                         shadow_visibility: attributes.shadow_visibility,
+                        ambient_visibility: attributes.ambient_visibility,
                     },
                 }),
         );

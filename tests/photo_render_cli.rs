@@ -53,6 +53,10 @@ fn camera_behavior_fixture_manifest_pins_source_bands_and_mutations() {
     assert_eq!(bands["subject_luminance_stddev_srgb8"]["min"], 6.0);
     assert_eq!(bands["subject_luminance_range_srgb8"]["min"], 32.0);
     assert_eq!(bands["subject_background_separation_srgb8"]["min"], 8.0);
+    assert_eq!(
+        bands["subject_color_frame_boundary_separation"]["min"],
+        0.01
+    );
 
     let mutations = manifest["known_bad_mutations"]
         .as_array()
@@ -64,6 +68,7 @@ fn camera_behavior_fixture_manifest_pins_source_bands_and_mutations() {
         "average_metered_silhouette",
         "stale_subject_mask",
         "wrong_subject_target",
+        "missing_beauty_subject",
         "old_ev_cap_underexposed",
         "post_tonemap_metering_strict_lane",
         "pulled_back_empty_slab",
@@ -460,24 +465,27 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
         Some(final_attempts),
         "final candidate render count must match retry attempts: {report_json:#}"
     );
-    // Focus resolution sets depth of field after the retry loop has accepted a
-    // candidate, so one further render delivers the focused frame. It is counted
-    // separately from the retry budget and included in the total: every render
-    // the command performs must appear here, which is precisely what the removed
-    // path tracer failed to do.
+    // Focus resolution sets depth of field after the initial retry loop has
+    // accepted a candidate. The delivered post-effect pixels get their own
+    // bounded exposure revalidation loop; accepting only the unfocused frame can
+    // otherwise ship an underexposed image.
     let focus_delivery_renders = report_json["work_metrics"]["focus_delivery_renders"]
         .as_u64()
         .expect("work metrics report focus delivery renders");
+    let focus_delivery_budget = report_json["work_metrics"]["focus_delivery_render_budget"]
+        .as_u64()
+        .expect("work metrics report focus delivery budget");
+    assert_eq!(focus_delivery_budget, 6, "{report_json:#}");
     assert!(
-        focus_delivery_renders <= 1,
-        "focus delivery must render at most one frame: {report_json:#}"
+        focus_delivery_renders <= focus_delivery_budget,
+        "focus delivery exposure correction must stay bounded: {report_json:#}"
     );
     assert!(
         work_metrics["total_render_calls"]
             .as_u64()
             .is_some_and(
                 |calls| calls == shaded_renders + final_attempts + focus_delivery_renders
-                    && calls <= 13
+                    && calls <= 18
             ),
         "candidate loop must expose its bounded preview-adjustment, final retry, and focus delivery budget: {report_json:#}"
     );
@@ -685,6 +693,17 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
     let low_clip = metrics["low_clip_fraction"]
         .as_f64()
         .expect("low-clip metric is numeric");
+    let color_frame_boundary_separation = metrics["silhouette_separation"]
+        .as_f64()
+        .expect("local color-frame boundary separation is numeric");
+    assert_metric_in_range(
+        "subject color-frame boundary separation",
+        color_frame_boundary_separation,
+        &serde_json::json!({
+            "min": fixture["quality_bands"]["subject_color_frame_boundary_separation"]["min"],
+            "max": 1.0
+        }),
+    );
     // A derived environment must give reflective materials something to reflect.
     // The preview fixture is six constant cube faces, which caps how many
     // distinct radiance levels a metal can return and flattens it toward its
@@ -703,6 +722,21 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
         png_metrics.low_clip_fraction,
         &fixture["quality_bands"]["subject_low_clip_fraction"],
     );
+
+    // Publish what was measured so `doctor` can judge rendered output instead of
+    // re-reading the source that produced it. A source-substring rule cannot tell
+    // a working renderer from one that still compiles.
+    write_photographic_output_metrics(&serde_json::json!({
+        "schema": "scena.photographic_output_metrics.v1",
+        "fixture": CAMERA_BEHAVIOR_FIXTURE_MANIFEST,
+        "asset": CAMERA_BEHAVIOR_FIXTURE_ASSET,
+        "measured": {
+            "subject_mean_luminance_srgb8": round3(mean_luma),
+            "subject_specular_headroom_srgb8": round3(png_metrics.specular_headroom_srgb8),
+            "subject_low_clip_fraction": round3(png_metrics.low_clip_fraction),
+            "subject_color_frame_boundary_separation": round3(color_frame_boundary_separation),
+        },
+    }));
     // `measure_png_foreground_region` separates subject from background by
     // comparing each pixel to the top-left one, so it only isolates the subject
     // when the backdrop is a flat fill. Generated surroundings put a lit
@@ -1409,6 +1443,68 @@ fn photo_render_failed_loop_reports_measured_candidate_history() {
 }
 
 #[test]
+fn recipe_render_final_photo_rejects_cpu_backend_before_rendering() {
+    let dir = artifact_dir("recipe-final-photo-cpu-rejected");
+    let recipe = dir.join("hero.recipe.json");
+    let png = dir.join("hero.png");
+    fs::write(
+        &recipe,
+        serde_json::json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [{
+                "id": "hero_geo",
+                "primitive": { "kind": "box", "size": [0.12, 0.08, 0.08] }
+            }],
+            "materials": [{
+                "id": "hero_mat",
+                "kind": "pbr_metallic_roughness",
+                "base_color": "#607080",
+                "roughness": 0.35,
+                "metallic": 0.8
+            }],
+            "nodes": [{
+                "id": "hero",
+                "geometry": "hero_geo",
+                "material": "hero_mat"
+            }],
+            "photo": {
+                "intent": "camera_behavior",
+                "quality": "final",
+                "subject": { "kind": "node", "id": "hero" }
+            }
+        })
+        .to_string(),
+    )
+    .expect("final photo recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe),
+            "--out",
+            path_str(&png),
+        ])
+        .output()
+        .expect("scena recipe render command runs");
+
+    assert_eq!(output.status.code(), Some(69), "{output:#?}");
+    assert!(
+        output.stdout.is_empty(),
+        "typed CLI failures belong on stderr: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let error: serde_json::Value =
+        serde_json::from_slice(&output.stderr).expect("CLI error is structured JSON");
+    assert_eq!(error["code"], "final_photo_unsupported", "{error:#}");
+    assert_eq!(error["exit_class"], "unsupported", "{error:#}");
+    assert!(
+        !png.exists(),
+        "unsupported final photo must fail before producing a preview PNG"
+    );
+}
+
+#[test]
 fn recipe_render_camera_behavior_photo_intent_is_easy_path_for_imported_asset() {
     let dir = artifact_dir("recipe-camera-behavior-intent");
     let recipe = dir.join("hero.recipe.json");
@@ -1501,6 +1597,28 @@ fn recipe_render_camera_behavior_photo_intent_is_easy_path_for_imported_asset() 
         low_clip <= 0.20,
         "photo intent should not leave a silhouette, low_clip_fraction={low_clip}; check={exposure:#}",
     );
+}
+
+/// Path `doctor` reads to judge the renderer on measured pixels. Kept next to
+/// the other gate artifacts so a lane that collects `target/gate-artifacts`
+/// picks it up with no extra wiring.
+const PHOTOGRAPHIC_OUTPUT_METRICS: &str =
+    "target/gate-artifacts/photographic-output/camera_behavior_metrics.json";
+
+fn round3(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
+}
+
+fn write_photographic_output_metrics(metrics: &serde_json::Value) {
+    let path = PathBuf::from(PHOTOGRAPHIC_OUTPUT_METRICS);
+    let parent = path.parent().expect("metrics artifact has a parent");
+    fs::create_dir_all(parent).expect("metrics artifact directory creates");
+    fs::write(
+        &path,
+        serde_json::to_vec_pretty(metrics).expect("metrics serialize"),
+    )
+    .expect("metrics artifact writes");
+    eprintln!("photographic output metrics: {}", path.display());
 }
 
 fn find_check<'a>(checks: &'a [serde_json::Value], id: &str, code: &str) -> &'a serde_json::Value {

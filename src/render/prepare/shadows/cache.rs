@@ -3,11 +3,22 @@ use std::collections::BTreeMap;
 
 use super::super::lighting::PreparedLights;
 use super::{PrepareWorkCounter, ShadowOccluderSet, Vec3};
+use crate::BakedAmbientOcclusionConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct ShadowVisibilityKey {
     world_position_bits: [u32; 3],
     light_state_signature: u64,
+    occluder_state_signature: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct AmbientVisibilityKey {
+    world_position_bits: [u32; 3],
+    world_normal_bits: [u32; 3],
+    sample_count: u8,
+    radius_fraction_bits: u32,
+    intensity_bits: u32,
     occluder_state_signature: u64,
 }
 
@@ -17,6 +28,7 @@ pub(in crate::render) struct ShadowVisibilityCache {
     occluder_state_signature: u64,
     directional: RefCell<BTreeMap<ShadowVisibilityKey, f32>>,
     area: RefCell<BTreeMap<ShadowVisibilityKey, f32>>,
+    ambient: RefCell<BTreeMap<AmbientVisibilityKey, f32>>,
 }
 
 impl ShadowVisibilityCache {
@@ -29,6 +41,7 @@ impl ShadowVisibilityCache {
             occluder_state_signature: occluders.state_signature,
             directional: RefCell::new(BTreeMap::new()),
             area: RefCell::new(BTreeMap::new()),
+            ambient: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -63,6 +76,40 @@ impl ShadowVisibilityCache {
         compute: impl FnOnce() -> f32,
     ) -> f32 {
         self.cached(&self.area, position, work, compute)
+    }
+
+    pub(in crate::render::prepare) fn ambient(
+        &self,
+        position: Vec3,
+        normal: Vec3,
+        config: BakedAmbientOcclusionConfig,
+        work: Option<&PrepareWorkCounter>,
+        compute: impl FnOnce() -> f32,
+    ) -> f32 {
+        let key = AmbientVisibilityKey {
+            world_position_bits: [
+                position.x.to_bits(),
+                position.y.to_bits(),
+                position.z.to_bits(),
+            ],
+            world_normal_bits: [normal.x.to_bits(), normal.y.to_bits(), normal.z.to_bits()],
+            sample_count: config.sample_count(),
+            radius_fraction_bits: config.radius_fraction().to_bits(),
+            intensity_bits: config.intensity().to_bits(),
+            occluder_state_signature: self.occluder_state_signature,
+        };
+        if let Some(value) = self.ambient.borrow().get(&key).copied() {
+            if let Some(work) = work {
+                work.record_shadow_visibility_cache(true);
+            }
+            return value;
+        }
+        let value = compute();
+        self.ambient.borrow_mut().insert(key, value);
+        if let Some(work) = work {
+            work.record_shadow_visibility_cache(false);
+        }
+        value
     }
 
     fn cached(

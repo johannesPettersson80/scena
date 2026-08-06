@@ -17,6 +17,8 @@ pub use capability_types::{
     OutputStageStatus,
 };
 use color_formats::static_color_target_format;
+#[cfg(not(target_arch = "wasm32"))]
+use sample_counts::measured_sample_counts;
 use sample_counts::{
     explicit_msaa_default, explicit_msaa_status, renderer_sample_counts, single_sample_counts,
 };
@@ -81,6 +83,10 @@ pub struct Capabilities {
     pub output_stage: OutputStageStatus,
     pub alpha_pipeline: AlphaPipelineStatus,
     pub forward_pbr: CapabilityStatus,
+    /// Whether an explicit `photo.quality = "final"` request can run without
+    /// backend degradation. Unsupported backends must return
+    /// `final_photo_unsupported`.
+    pub final_photo: CapabilityStatus,
     pub directional_shadows: CapabilityStatus,
     pub point_shadows: CapabilityStatus,
     pub spot_shadows: CapabilityStatus,
@@ -143,6 +149,8 @@ struct CapabilitiesDeserialize {
     output_stage: OutputStageStatus,
     alpha_pipeline: AlphaPipelineStatus,
     forward_pbr: CapabilityStatus,
+    #[serde(default = "final_photo_error_if_required_default")]
+    final_photo: CapabilityStatus,
     directional_shadows: CapabilityStatus,
     point_shadows: CapabilityStatus,
     spot_shadows: CapabilityStatus,
@@ -203,6 +211,7 @@ impl<'de> Deserialize<'de> for Capabilities {
             output_stage: value.output_stage,
             alpha_pipeline: value.alpha_pipeline,
             forward_pbr: value.forward_pbr,
+            final_photo: value.final_photo,
             directional_shadows: value.directional_shadows,
             point_shadows: value.point_shadows,
             spot_shadows: value.spot_shadows,
@@ -254,6 +263,10 @@ fn metering_feature_disabled_default() -> CapabilityStatus {
     CapabilityStatus::FeatureDisabled
 }
 
+fn final_photo_error_if_required_default() -> CapabilityStatus {
+    CapabilityStatus::ErrorIfRequired
+}
+
 impl Capabilities {
     pub const fn headless() -> Self {
         Self::for_backend(Backend::Headless)
@@ -272,6 +285,7 @@ impl Capabilities {
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend, false),
+            final_photo: final_photo_status(backend, false),
             directional_shadows: directional_shadow_status(backend, false),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
@@ -279,7 +293,7 @@ impl Capabilities {
             directional_shadow_map_max_size: directional_shadow_map_max_size(backend),
             directional_shadow_pcf_kernel: 3,
             ibl_cubemap_default_size: ibl_default_size(backend),
-            ibl_brdf_lut_default_size: ibl_default_size(backend),
+            ibl_brdf_lut_default_size: ibl_brdf_lut_size(backend),
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             order_independent_transparency: order_independent_transparency_status(backend),
@@ -326,6 +340,7 @@ impl Capabilities {
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend, true),
+            final_photo: final_photo_status(backend, true),
             directional_shadows: directional_shadow_status(backend, true),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
@@ -333,7 +348,7 @@ impl Capabilities {
             directional_shadow_map_max_size: directional_shadow_map_max_size(backend),
             directional_shadow_pcf_kernel: 3,
             ibl_cubemap_default_size: ibl_default_size(backend),
-            ibl_brdf_lut_default_size: ibl_default_size(backend),
+            ibl_brdf_lut_default_size: ibl_brdf_lut_size(backend),
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             order_independent_transparency: order_independent_transparency_status(backend),
@@ -380,6 +395,7 @@ impl Capabilities {
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend, true),
+            final_photo: final_photo_status(backend, true),
             directional_shadows: directional_shadow_status(backend, true),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
@@ -387,7 +403,7 @@ impl Capabilities {
             directional_shadow_map_max_size: directional_shadow_map_max_size(backend),
             directional_shadow_pcf_kernel: 3,
             ibl_cubemap_default_size: ibl_default_size(backend),
-            ibl_brdf_lut_default_size: ibl_default_size(backend),
+            ibl_brdf_lut_default_size: ibl_brdf_lut_size(backend),
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             order_independent_transparency: order_independent_transparency_status(backend),
@@ -439,6 +455,24 @@ impl Capabilities {
         color_target_format: &'static str,
     ) -> Self {
         self.color_target_format = color_target_format;
+        self
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) const fn with_measured_sample_count_maxima(
+        mut self,
+        render_maximum: u32,
+        depth_maximum: u32,
+    ) -> Self {
+        self.render_sample_counts = measured_sample_counts(render_maximum);
+        self.depth_sample_counts = measured_sample_counts(depth_maximum);
+        if matches!(self.backend, Backend::HeadlessGpu | Backend::NativeSurface) {
+            self.explicit_msaa = if render_maximum >= 4 && depth_maximum >= 4 {
+                CapabilityStatus::Supported
+            } else {
+                CapabilityStatus::ErrorIfRequired
+            };
+        }
         self
     }
 
@@ -594,5 +628,29 @@ impl CapabilityReport {
     pub fn to_schema_json(&self) -> serde_json::Value {
         serde_json::to_value(self.to_schema_report())
             .expect("capability report schema contains only serializable fields")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_gpu_sample_counts_are_conservative_until_a_device_is_measured() {
+        let unprobed = Capabilities::for_gpu_backend(Backend::HeadlessGpu);
+        assert_eq!(unprobed.render_sample_counts, [1, 0, 0]);
+        assert_eq!(unprobed.depth_sample_counts, [1, 0, 0]);
+        assert_eq!(unprobed.explicit_msaa, CapabilityStatus::ErrorIfRequired);
+
+        let measured = unprobed.with_measured_sample_count_maxima(4, 4);
+        assert_eq!(measured.render_sample_counts, [1, 4, 0]);
+        assert_eq!(measured.depth_sample_counts, [1, 4, 0]);
+        assert_eq!(measured.explicit_msaa, CapabilityStatus::Supported);
+
+        let mismatched = unprobed.with_measured_sample_count_maxima(8, 4);
+        assert_eq!(mismatched.render_sample_counts, [1, 4, 8]);
+        assert_eq!(mismatched.depth_sample_counts, [1, 4, 0]);
+        assert_eq!(mismatched.explicit_msaa, CapabilityStatus::Supported);
     }
 }

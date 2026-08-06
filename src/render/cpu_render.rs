@@ -100,6 +100,7 @@ impl Renderer {
                 oit_scratch: &mut self.cpu_supersample_oit_scratch,
                 screen_space_reflections: self.screen_space_reflections,
                 material_reflection_scratch: Some(&mut self.cpu_material_reflection_scratch),
+                material_reflection_rows: None,
                 linear_scratch: Some(&mut self.cpu_effect_linear_scratch),
                 row_band_bins: Some(&mut self.cpu_row_band_bins),
                 primitive_indices: None,
@@ -151,6 +152,7 @@ impl Renderer {
                 oit_scratch: &mut self.oit_scratch,
                 screen_space_reflections: self.screen_space_reflections,
                 material_reflection_scratch: Some(&mut self.cpu_material_reflection_scratch),
+                material_reflection_rows: None,
                 linear_scratch: Some(&mut self.cpu_effect_linear_scratch),
                 row_band_bins: Some(&mut self.cpu_row_band_bins),
                 primitive_indices: None,
@@ -301,6 +303,10 @@ struct CpuGeometryPass<'a> {
     screen_space_reflections: Option<super::ScreenSpaceReflectionConfig>,
     material_reflection_scratch:
         Option<&'a mut Vec<screen_space_reflections::MaterialReflectionPixel>>,
+    /// Row-banded slice of the frame-wide reflection buffer, handed to a worker
+    /// that owns only part of the frame. When set, the caller is responsible for
+    /// resolving reflections once the whole frame exists.
+    material_reflection_rows: Option<&'a mut [screen_space_reflections::MaterialReflectionPixel]>,
     linear_scratch: Option<&'a mut Vec<Color>>,
     row_band_bins: Option<&'a mut CpuRowBandBins>,
     primitive_indices: Option<&'a [usize]>,
@@ -346,22 +352,35 @@ fn draw_cpu_geometry_pass_serial(
     primitive_flags: CpuPrimitiveFlags,
 ) -> CpuGeometryPassResult {
     debug_assert!(
-        input.row_start == 0 || input.screen_space_reflections.is_none(),
-        "row-scoped CPU geometry passes do not own the full material-reflection scratch buffer"
+        input.row_start == 0
+            || input.screen_space_reflections.is_none()
+            || input.material_reflection_rows.is_some(),
+        "a row-scoped SSR pass must be handed its own row band of the reflection buffer"
     );
-    let mut material_reflections = input.screen_space_reflections.map(|_| {
-        let scratch = input
-            .material_reflection_scratch
-            .as_mut()
-            .expect("serial SSR pass receives prepared reflection scratch");
-        resize_reusable_scratch(
-            scratch,
-            input.target.pixel_len(),
-            screen_space_reflections::MaterialReflectionPixel::default(),
-        );
-        scratch.fill(screen_space_reflections::MaterialReflectionPixel::default());
-        &mut scratch[..]
-    });
+    // A worker that owns only some rows cannot resolve reflections - the ray
+    // march reads the whole frame - so it records into its band and leaves the
+    // resolve to whoever owns the finished frame.
+    let owns_whole_frame = input.material_reflection_rows.is_none();
+    let mut material_reflections = match (
+        input.screen_space_reflections,
+        input.material_reflection_rows.take(),
+    ) {
+        (None, _) => None,
+        (Some(_), Some(rows)) => Some(rows),
+        (Some(_), None) => {
+            let scratch = input
+                .material_reflection_scratch
+                .as_mut()
+                .expect("serial SSR pass receives prepared reflection scratch");
+            resize_reusable_scratch(
+                scratch,
+                input.target.pixel_len(),
+                screen_space_reflections::MaterialReflectionPixel::default(),
+            );
+            scratch.fill(screen_space_reflections::MaterialReflectionPixel::default());
+            Some(&mut scratch[..])
+        }
+    };
     let (oit_passes, output_pixels_encoded) = {
         let mut cpu_frame = cpu::CpuFrame::new_rows(
             input.target,
@@ -469,7 +488,8 @@ fn draw_cpu_geometry_pass_serial(
         }
     };
 
-    if let (Some(config), Some(material_reflections)) = (
+    if let (true, Some(config), Some(material_reflections)) = (
+        owns_whole_frame,
         input.screen_space_reflections,
         material_reflections.as_deref(),
     ) {

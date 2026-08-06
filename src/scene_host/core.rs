@@ -8,6 +8,7 @@ use super::handles::{HandleKind, HandleTable};
 use super::inputs::validate_transform;
 use super::instances::HostInstanceBinding;
 use super::product_options::ProductOptionsV1;
+use super::reflection_probe_capture::PhotographicReflectionProbeBakeCache;
 use super::reporting::{diagnostics_json, stats_json};
 use super::transitions::HostTransitions;
 use super::visual_states::SceneHostVisualStateV1;
@@ -75,6 +76,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     /// handle keeps that distinction independent of the order the photographic
     /// passes run in.
     pub(super) generated_environment: Option<crate::assets::EnvironmentHandle>,
+    pub(super) photographic_reflection_probe_cache: Option<PhotographicReflectionProbeBakeCache>,
     next_byte_asset: u64,
 }
 
@@ -116,6 +118,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             visual_states: BTreeMap::new(),
             product_options: ProductOptionsV1::empty(),
             generated_environment: None,
+            photographic_reflection_probe_cache: None,
             next_byte_asset: 1,
         };
         let root = host.scene.root();
@@ -155,6 +158,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             visual_states: BTreeMap::new(),
             product_options: ProductOptionsV1::empty(),
             generated_environment: None,
+            photographic_reflection_probe_cache: None,
             next_byte_asset: 1,
         };
         let root = host.scene.root();
@@ -412,6 +416,17 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn node_world_bounds(&self, node: u64) -> Result<Option<Aabb>, SceneHostError> {
         let node = self.resolve_node(node)?;
         Ok(self.scene.node_world_bounds(node, &self.assets)?)
+    }
+
+    pub fn nodes_world_bounds(&self, nodes: &[u64]) -> Result<Option<Aabb>, SceneHostError> {
+        let mut bounds = None;
+        for node in nodes {
+            let node = self.resolve_node(*node)?;
+            if let Some(next) = self.scene.node_world_bounds(node, &self.assets)? {
+                bounds = Some(bounds.map_or(next, |current: Aabb| current.union(next)));
+            }
+        }
+        Ok(bounds)
     }
 
     pub fn node_world_bounds_json(&self, node: u64) -> Result<String, SceneHostError> {

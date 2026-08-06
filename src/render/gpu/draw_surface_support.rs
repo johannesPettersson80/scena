@@ -177,4 +177,29 @@ impl GpuDeviceState {
         }
         Ok(Some(frame))
     }
+
+    #[cfg(any(feature = "scene-host", test))]
+    pub(in crate::render) fn read_scene_linear_rgba32f(
+        &mut self,
+        backend: crate::diagnostics::Backend,
+    ) -> Result<(RasterTarget, Vec<[f32; 4]>), RenderError> {
+        let resources = self
+            .resources
+            .as_ref()
+            .ok_or(RenderError::GpuResourcesNotPrepared { backend })?;
+        let post = resources
+            .post
+            .as_ref()
+            .ok_or(RenderError::GpuResourcesNotPrepared { backend })?;
+        if post.linear_scene_readback.is_none() {
+            return Err(RenderError::GpuResourcesNotPrepared { backend });
+        }
+        // A synchronous scene-linear readback cannot finish inside one browser
+        // task: WebGL2 sync objects only signal after the event loop turns and
+        // WebGPU buffer mapping resolves through a Promise, so blocking here
+        // would freeze the tab rather than produce pixels. Report the readback
+        // as failed; a browser consumer needs an async capture modeled on
+        // `capture_semantic_aov`.
+        Err(RenderError::GpuReadback { backend })
+    }
 }

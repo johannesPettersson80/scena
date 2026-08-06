@@ -1,4 +1,6 @@
-use crate::diagnostics::PrepareError;
+use std::sync::Arc;
+
+use crate::diagnostics::{Backend, PrepareError};
 use crate::geometry::{GeometryVertex, Primitive, PrimitiveVertexAttributes, Vertex};
 use crate::material::{MaterialDesc, MaterialKind};
 use crate::render::camera::CameraProjection;
@@ -8,8 +10,10 @@ use crate::render::physical_transmission::{
 use crate::scene::Vec3;
 
 use super::cpu_bake::{
-    CpuBakeCorner, baked_area_shadow_visibility_profiled, baked_shadow_visibility_profiled,
-    cpu_texture_subdivisions, push_material_pass_primitive, subdivided_cpu_corners,
+    CpuBakeCorner, area_shadow_subdivisions_for_scale, baked_ambient_visibility_profiled,
+    baked_area_shadow_visibility_profiled, baked_shadow_visibility_profiled,
+    bounded_gpu_subdivisions, cpu_texture_subdivisions, push_material_pass_primitive,
+    subdivided_cpu_corners,
 };
 use super::lighting::{MaterialShadingInput, material_color};
 use super::materials::{
@@ -40,8 +44,75 @@ pub(in crate::render) use material_helpers::draw_uniform_tint;
 use material_helpers::{
     average_texture_sample, brighter_color, camera_facing_double_sided_normal,
     cpu_texture_sample_slot_count, material_reflection, material_transmission,
-    structural_vertex_tint, tinted_vertex_color, triangle_screen_edge_pixels, triangle_uv_span,
+    photographic_uv_scale, scale_uv, structural_vertex_tint, tinted_vertex_color,
+    triangle_screen_edge_pixels, triangle_uv_span,
 };
+
+#[derive(Debug)]
+struct VisibilityDebugStats {
+    samples: u64,
+    area_sum: f64,
+    area_min: f32,
+    area_occluded: u64,
+    ambient_sum: f64,
+    ambient_min: f32,
+    ambient_occluded: u64,
+}
+
+impl Default for VisibilityDebugStats {
+    fn default() -> Self {
+        Self {
+            samples: 0,
+            area_sum: 0.0,
+            area_min: 1.0,
+            area_occluded: 0,
+            ambient_sum: 0.0,
+            ambient_min: 1.0,
+            ambient_occluded: 0,
+        }
+    }
+}
+
+impl VisibilityDebugStats {
+    fn record(&mut self, area: f32, ambient: f32) {
+        self.samples = self.samples.saturating_add(1);
+        self.area_sum += f64::from(area);
+        self.area_min = self.area_min.min(area);
+        self.area_occluded = self.area_occluded.saturating_add(u64::from(area < 0.999));
+        self.ambient_sum += f64::from(ambient);
+        self.ambient_min = self.ambient_min.min(ambient);
+        self.ambient_occluded = self
+            .ambient_occluded
+            .saturating_add(u64::from(ambient < 0.999));
+    }
+
+    fn log(self, node: crate::NodeKey) {
+        if self.samples == 0 {
+            return;
+        }
+        let samples = self.samples as f64;
+        eprintln!(
+            "[visibility] node={node:?} samples={} area_min={:.4} area_mean={:.4} area_occluded_fraction={:.4} ambient_min={:.4} ambient_mean={:.4} ambient_occluded_fraction={:.4}",
+            self.samples,
+            self.area_min,
+            self.area_sum / samples,
+            self.area_occluded as f64 / samples,
+            self.ambient_min,
+            self.ambient_sum / samples,
+            self.ambient_occluded as f64 / samples,
+        );
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn visibility_debug_enabled() -> bool {
+    std::env::var_os("SCENA_DEBUG_LOG_VISIBILITY").is_some()
+}
+
+#[cfg(target_arch = "wasm32")]
+const fn visibility_debug_enabled() -> bool {
+    false
+}
 
 fn append_triangle_primitives(
     source: GeometryPrimitiveSource<'_>,
@@ -174,7 +245,14 @@ fn append_triangle_primitives(
     let textured_thickness = transmissive && source.material.thickness_factor() > 0.0;
     let texture_samples_per_shaded_vertex = cpu_texture_sample_slot_count(source.material);
     let material_reflection = material_reflection(source.material);
+    let source_triangle_count = (source.geometry.indices().len() / 3).max(1) as u32;
+    let gpu_backend = matches!(
+        params.target.backend,
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2
+    );
     let mut subdivision_scratch = Vec::new();
+    let photographic_uv_scale = photographic_uv_scale(&source, params.transform.scale);
+    let mut visibility_debug = visibility_debug_enabled().then(VisibilityDebugStats::default);
 
     for triangle in source.geometry.indices().chunks_exact(3) {
         let position_a = transform_position(
@@ -198,9 +276,18 @@ fn append_triangle_primitives(
             transform_normal(vertices[triangle[1] as usize].normal, params.transform);
         let geometric_normal_c =
             transform_normal(vertices[triangle[2] as usize].normal, params.transform);
-        let uv_a = source.geometry.tex_coord0_or_default(triangle[0] as usize);
-        let uv_b = source.geometry.tex_coord0_or_default(triangle[1] as usize);
-        let uv_c = source.geometry.tex_coord0_or_default(triangle[2] as usize);
+        let uv_a = scale_uv(
+            source.geometry.tex_coord0_or_default(triangle[0] as usize),
+            photographic_uv_scale,
+        );
+        let uv_b = scale_uv(
+            source.geometry.tex_coord0_or_default(triangle[1] as usize),
+            photographic_uv_scale,
+        );
+        let uv_c = scale_uv(
+            source.geometry.tex_coord0_or_default(triangle[2] as usize),
+            photographic_uv_scale,
+        );
         let tangent_a = vertex_tangents[triangle[0] as usize];
         let tangent_b = vertex_tangents[triangle[1] as usize];
         let tangent_c = vertex_tangents[triangle[2] as usize];
@@ -245,6 +332,30 @@ fn append_triangle_primitives(
         let area_shadow_visibility_c = baked_area_shadow_visibility_profiled(
             position_c,
             params.lights,
+            params.shadow_occluders,
+            params.shadow_visibility_cache,
+            params.work,
+        );
+        let ambient_visibility_a = baked_ambient_visibility_profiled(
+            position_a,
+            geometric_normal_a,
+            params.baked_ambient_occlusion,
+            params.shadow_occluders,
+            params.shadow_visibility_cache,
+            params.work,
+        );
+        let ambient_visibility_b = baked_ambient_visibility_profiled(
+            position_b,
+            geometric_normal_b,
+            params.baked_ambient_occlusion,
+            params.shadow_occluders,
+            params.shadow_visibility_cache,
+            params.work,
+        );
+        let ambient_visibility_c = baked_ambient_visibility_profiled(
+            position_c,
+            geometric_normal_c,
+            params.baked_ambient_occlusion,
             params.shadow_occluders,
             params.shadow_visibility_cache,
             params.work,
@@ -342,9 +453,14 @@ fn append_triangle_primitives(
                             iridescence_thickness_texture,
                             transmission_texture,
                             thickness_texture,
-                            environment: params.environment_lighting.clone(),
+                            environment: params
+                                .reflection_probe
+                                .as_ref()
+                                .map(|probe| probe.lighting().clone())
+                                .unwrap_or_else(|| params.environment_lighting.clone()),
                             directional_shadow_factor: corner.directional_shadow_visibility,
                             area_shadow_factor: corner.area_shadow_visibility,
+                            ambient_visibility: corner.ambient_visibility,
                         },
                     )
                 };
@@ -374,6 +490,7 @@ fn append_triangle_primitives(
                 ),
                 directional_shadow_visibility: directional_shadow_visibility_a,
                 area_shadow_visibility: area_shadow_visibility_a,
+                ambient_visibility: ambient_visibility_a,
             },
             CpuBakeCorner {
                 position: position_b,
@@ -389,6 +506,7 @@ fn append_triangle_primitives(
                 ),
                 directional_shadow_visibility: directional_shadow_visibility_b,
                 area_shadow_visibility: area_shadow_visibility_b,
+                ambient_visibility: ambient_visibility_b,
             },
             CpuBakeCorner {
                 position: position_c,
@@ -404,16 +522,31 @@ fn append_triangle_primitives(
                 ),
                 directional_shadow_visibility: directional_shadow_visibility_c,
                 area_shadow_visibility: area_shadow_visibility_c,
+                ambient_visibility: ambient_visibility_c,
             },
         ];
-        let subdivisions = cpu_texture_subdivisions(
+        let screen_edge_pixels =
+            triangle_screen_edge_pixels(corners, params.camera_projection, params.target);
+        let requested_subdivisions = cpu_texture_subdivisions(
             source.material,
             backend_shaded_material,
-            triangle_screen_edge_pixels(corners, params.camera_projection, params.target),
+            screen_edge_pixels,
             triangle_uv_span(corners),
             source.textures.max_decoded_dimension() as f32,
+        )
+        .max(area_shadow_subdivisions_for_scale(
+            params.lights.has_area_lights() || params.baked_ambient_occlusion.is_some(),
+            screen_edge_pixels,
+            params.screen_space_scale,
+        ));
+        let subdivisions =
+            bounded_gpu_subdivisions(requested_subdivisions, source_triangle_count, gpu_backend);
+        let sub_triangles = subdivided_cpu_corners(
+            corners,
+            subdivisions,
+            backend_shaded_material,
+            &mut subdivision_scratch,
         );
-        let sub_triangles = subdivided_cpu_corners(corners, subdivisions, &mut subdivision_scratch);
         if let Some(work) = params.work {
             work.record_cpu_bake_triangles(
                 sub_triangles.len(),
@@ -421,7 +554,35 @@ fn append_triangle_primitives(
                     .saturating_mul(std::mem::size_of::<[CpuBakeCorner; 3]>() as u64),
             );
         }
-        for sub_triangle in sub_triangles {
+        for mut sub_triangle in sub_triangles {
+            if subdivisions > 1 && params.lights.has_area_lights() {
+                for corner in &mut sub_triangle {
+                    corner.area_shadow_visibility = baked_area_shadow_visibility_profiled(
+                        corner.position,
+                        params.lights,
+                        params.shadow_occluders,
+                        params.shadow_visibility_cache,
+                        params.work,
+                    );
+                }
+            }
+            if subdivisions > 1 && params.baked_ambient_occlusion.is_some() {
+                for corner in &mut sub_triangle {
+                    corner.ambient_visibility = baked_ambient_visibility_profiled(
+                        corner.position,
+                        corner.geometric_normal,
+                        params.baked_ambient_occlusion,
+                        params.shadow_occluders,
+                        params.shadow_visibility_cache,
+                        params.work,
+                    );
+                }
+            }
+            if let Some(debug) = &mut visibility_debug {
+                for corner in sub_triangle {
+                    debug.record(corner.area_shadow_visibility, corner.ambient_visibility);
+                }
+            }
             if let Some(work) = params.work {
                 let averaged_texture_samples = 3u64.saturating_mul(
                     u64::from(transmissive && source.material.transmission_texture().is_some())
@@ -459,6 +620,7 @@ fn append_triangle_primitives(
                     tangent: corner.tangent,
                     tangent_handedness: corner.tangent_handedness,
                     shadow_visibility: corner.area_shadow_visibility,
+                    ambient_visibility: corner.ambient_visibility,
                 }),
             )
             .with_render_material_slot(render_material_slot);
@@ -470,11 +632,13 @@ fn append_triangle_primitives(
                     Arc::clone(&draw_transform),
                 ),
                 source.instance,
+                source.material_handle,
                 material_pass,
             )
             .with_double_sided(source.material.double_sided())
             .with_material_reflection(material_reflection)
-            .with_material_transmission(material_transmission);
+            .with_material_transmission(material_transmission)
+            .with_reflection_probe(params.reflection_probe.clone());
             push_material_pass_primitive(
                 primitive,
                 material_pass,
@@ -484,6 +648,8 @@ fn append_triangle_primitives(
         }
     }
 
+    if let Some(debug) = visibility_debug {
+        debug.log(source.node);
+    }
     Ok(())
 }
-use std::sync::Arc;

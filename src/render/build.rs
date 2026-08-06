@@ -236,6 +236,14 @@ impl Renderer {
         }
         .with_color_target_format(color_target_format)
         .with_display_p3_output(display_p3_configured);
+        #[cfg(not(target_arch = "wasm32"))]
+        let capabilities = match gpu.as_ref() {
+            Some(gpu) => {
+                let (render_maximum, depth_maximum) = gpu.measured_sample_count_maxima();
+                capabilities.with_measured_sample_count_maxima(render_maximum, depth_maximum)
+            }
+            None => capabilities,
+        };
         let target = RasterTarget {
             width,
             height,
@@ -280,10 +288,12 @@ impl Renderer {
             anti_aliasing,
             cpu_occlusion_culling: true,
             semantic_aov_capture_enabled: options.semantic_aov_capture(),
+            scene_linear_capture_enabled: false,
             supersample_factor: 1,
             reconstruction_filter: super::ReconstructionFilter::Box,
             order_independent_transparency: None,
             screen_space_ambient_occlusion: None,
+            baked_ambient_occlusion: None,
             screen_space_reflections: None,
             depth_of_field: None,
             bloom: None,
@@ -435,5 +445,38 @@ fn resolve_render_mode(options: RendererOptions, profile: Profile) -> RenderMode
         Profile::Auto | Profile::Quality | Profile::Balanced | Profile::Compatibility => {
             RenderMode::Manual
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headless_gpu_capability_matrix_uses_measured_device_limits() {
+        let Ok(renderer) = Renderer::headless_gpu(4, 4) else {
+            return;
+        };
+        let gpu = renderer
+            .gpu
+            .as_ref()
+            .expect("headless GPU renderer owns a device");
+        let (render_maximum, depth_maximum) = gpu.measured_sample_count_maxima();
+        let supported_counts = |maximum| {
+            [
+                1,
+                if maximum >= 4 { 4 } else { 0 },
+                if maximum >= 8 { 8 } else { 0 },
+            ]
+        };
+
+        assert_eq!(
+            renderer.capabilities.render_sample_counts,
+            supported_counts(render_maximum)
+        );
+        assert_eq!(
+            renderer.capabilities.depth_sample_counts,
+            supported_counts(depth_maximum)
+        );
     }
 }

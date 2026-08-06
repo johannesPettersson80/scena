@@ -8,8 +8,9 @@ use super::overlays::SceneRecipeTargetV1;
 use super::{default_true, is_false, is_true};
 
 pub use imports::{
-    SceneRecipeExpectedExtentV1, SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportMaterialV1,
-    SceneRecipeImportV1,
+    SceneRecipeExpectedExtentV1, SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportEdgeRoundingV1,
+    SceneRecipeImportMaterialBindingV1, SceneRecipeImportMaterialV1, SceneRecipeImportV1,
+    SceneRecipeSourceMaterialSelectorV1,
 };
 pub use transform::{
     SceneRecipeLookAtTargetV1, SceneRecipeTransformConversionError, SceneRecipeTransformV1,
@@ -121,6 +122,12 @@ pub struct SceneRecipeMaterialV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photographic_surface: Option<SceneRecipePhotographicSurfaceV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material_pack: Option<SceneRecipeMaterialPackV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imperfection: Option<SceneRecipeMaterialImperfectionV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metallic: Option<f64>,
@@ -202,6 +209,47 @@ pub struct SceneRecipeMaterialV1 {
     pub transmission_texture: Option<SceneRecipeTextureSlotV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thickness_texture: Option<SceneRecipeTextureSlotV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipePhotographicSurfaceV1 {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile_size_m: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_scale_m: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metallic: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variation: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wear: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeMaterialImperfectionV1 {
+    pub profile: crate::assets::MaterialImperfectionProfileV1,
+    pub strength: f64,
+    pub physical_scale_m: f64,
+    pub seed: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeMaterialPackV1 {
+    pub uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_archive_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile_size_m: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

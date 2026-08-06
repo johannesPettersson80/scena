@@ -424,6 +424,16 @@
       "fixture_path": "tests/assets/stable-contracts/host_event.v1.json"
     },
     {
+      "schema": "scena.material_library_catalog.v1",
+      "owner_module": "assets/material_library",
+      "summary": "Curated source-licensed photographic product-material catalog."
+    },
+    {
+      "schema": "scena.photographic_material_pack.v1",
+      "owner_module": "assets/material_library",
+      "summary": "Source-locked canonical base-color, normal, and ORM photographic material pack."
+    },
+    {
       "schema": "scena.agent_guide.v1",
       "owner_module": "schema_catalog/agent_guide",
       "summary": "Packaged public application-builder workflow, commands, schemas, policies, and templates.",

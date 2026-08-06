@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::scene::recipe::{RecipeBuildPolicy, SceneRecipeDiagnosticV1};
 
 use super::super::error_diagnostic;
@@ -171,6 +173,7 @@ impl RecipeBuildBudget {
 pub(in crate::scene_host::recipe) struct RecipeTextureBudget {
     texture_count: usize,
     decoded_texture_bytes: usize,
+    loaded_texture_resources: BTreeSet<String>,
 }
 
 impl RecipeTextureBudget {
@@ -268,6 +271,30 @@ impl RecipeTextureBudget {
         }
         self.texture_count = next_count;
         self.decoded_texture_bytes = next_bytes;
+        None
+    }
+
+    pub(in crate::scene_host::recipe) fn reserve_loaded_texture_resources(
+        &mut self,
+        policy: &RecipeBuildPolicy,
+        diagnostic_path: &str,
+        resources: impl IntoIterator<Item = (String, usize)>,
+    ) -> Option<SceneRecipeDiagnosticV1> {
+        let new_resources = resources
+            .into_iter()
+            .filter(|(identity, _)| !self.loaded_texture_resources.contains(identity))
+            .collect::<Vec<_>>();
+        let texture_count = new_resources.len();
+        let decoded_bytes = new_resources
+            .iter()
+            .fold(0usize, |total, (_, bytes)| total.saturating_add(*bytes));
+        if let Some(diagnostic) =
+            self.reserve_loaded_textures(policy, diagnostic_path, texture_count, decoded_bytes)
+        {
+            return Some(diagnostic);
+        }
+        self.loaded_texture_resources
+            .extend(new_resources.into_iter().map(|(identity, _)| identity));
         None
     }
 
@@ -381,4 +408,43 @@ fn decoded_rgba8_bytes(width: u32, height: u32) -> Result<usize, Box<SceneRecipe
             "use smaller textures before building the recipe",
         ))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_loaded_texture_resources_are_budgeted_once() {
+        let policy = RecipeBuildPolicy::default().with_max_texture_bytes(12);
+        let mut budget = RecipeTextureBudget::default();
+
+        assert!(
+            budget
+                .reserve_loaded_texture_resources(
+                    &policy,
+                    "$.materials[0].material_pack",
+                    [("shared-map".to_owned(), 8)],
+                )
+                .is_none()
+        );
+        assert!(
+            budget
+                .reserve_loaded_texture_resources(
+                    &policy,
+                    "$.materials[1].material_pack",
+                    [("shared-map".to_owned(), 8)],
+                )
+                .is_none()
+        );
+        assert!(
+            budget
+                .reserve_loaded_texture_resources(
+                    &policy,
+                    "$.materials[2].material_pack",
+                    [("different-map".to_owned(), 8)],
+                )
+                .is_some()
+        );
+    }
 }

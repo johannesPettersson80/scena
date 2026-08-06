@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -15,11 +15,19 @@ const PHOTO_RENDER_RESULT_SCHEMA_V1: &str = "scena.photo_render_result.v1";
 const CAMERA_BEHAVIOR_INTENT: &str = "camera_behavior";
 const DEFAULT_PHOTO_WIDTH: u32 = 1280;
 const DEFAULT_PHOTO_HEIGHT: u32 = 840;
+const DEFAULT_FINAL_PHOTO_WIDTH: u32 = 3840;
+const DEFAULT_FINAL_PHOTO_HEIGHT: u32 = 2520;
+const FINAL_PHOTO_MATERIAL_TEXTURE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
+const FINAL_PHOTO_POLICY_JSON: &str =
+    include_str!("../../../tests/assets/photo/final/photo_final_policy_v1.json");
 const CAMERA_BEHAVIOR_TARGET_MEAN_LUMA: f64 = 90.0;
 const CAMERA_BEHAVIOR_MIN_MEAN_LUMA: f64 = 80.0;
 const CAMERA_BEHAVIOR_MAX_MEAN_LUMA: f64 = 100.0;
 const CAMERA_BEHAVIOR_MAX_LOW_CLIP: f64 = 0.20;
-const CAMERA_BEHAVIOR_MAX_HIGH_CLIP: f64 = 0.05;
+const CAMERA_BEHAVIOR_MAX_HIGH_CLIP: f64 = 0.005;
+const CAMERA_BEHAVIOR_DARK_PRODUCT_MIN_MEAN_LUMA: f64 = 20.0;
+const CAMERA_BEHAVIOR_DARK_PRODUCT_MAX_MEAN_LUMA: f64 = 45.0;
+const CAMERA_BEHAVIOR_HIGHLIGHT_LIMITED_MIN_CLIP: f64 = 0.001;
 const CAMERA_BEHAVIOR_MIN_FILL_WIDTH: f64 = 0.65;
 const CAMERA_BEHAVIOR_MAX_FILL_WIDTH: f64 = 0.85;
 const CAMERA_BEHAVIOR_TARGET_FILL_WIDTH: f64 = 0.75;
@@ -27,9 +35,17 @@ const CAMERA_BEHAVIOR_MAX_FIT_FRACTION: f64 = 0.96;
 const CAMERA_BEHAVIOR_MAX_CENTER_OFFSET: f64 = 0.16;
 const CAMERA_BEHAVIOR_MIN_LUMA_STDDEV: f64 = 6.0;
 const CAMERA_BEHAVIOR_MIN_LUMA_RANGE: f64 = 32.0;
+const CAMERA_BEHAVIOR_MIN_SILHOUETTE_SEPARATION: f64 = 0.01;
 const CAMERA_BEHAVIOR_MIN_EXPOSURE_EV: f32 = -8.0;
 const CAMERA_BEHAVIOR_MAX_EXPOSURE_EV: f32 = 8.0;
+// Scena's built-in directional studio rig is deliberately moderate. This
+// fixed base keeps its zero-config product-photo output near the established
+// bright studio anchor before the single bounded exposure correction runs.
+const FINAL_PHOTO_BASE_EXPOSURE_EV: f32 = 0.25;
+const DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV: f32 = 0.75;
 const CAMERA_BEHAVIOR_MAX_ATTEMPTS: usize = 6;
+const CAMERA_BEHAVIOR_FOCUS_DELIVERY_MAX_ATTEMPTS: usize = 6;
+const FINAL_DARK_MATERIAL_LIGHTING_MAX_RETRIES: usize = 1;
 const CAMERA_BEHAVIOR_COMPOSITION_CANDIDATE_BUDGET: usize = 10;
 const CAMERA_BEHAVIOR_SHADED_CANDIDATE_BUDGET: usize = 3;
 const CAMERA_BEHAVIOR_SHADED_CANDIDATE_WIDTH: u32 = 160;
@@ -49,6 +65,7 @@ struct PhotoRenderArgs {
     width: u32,
     height: u32,
     gpu: bool,
+    optimize: bool,
     max_imports: Option<usize>,
     allow_roots: Vec<PathBuf>,
     subject: Option<scena::SceneRecipeTargetV1>,
@@ -72,6 +89,35 @@ struct PhotoSource {
     recipe_text: String,
     recipe_path: String,
     source_kind: &'static str,
+    quality: scena::SceneRecipePhotoQualityV1,
+    ground: scena::scene_host::PhotographicGroundV1,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct FinalPhotoPolicyV1 {
+    schema: String,
+    version: u32,
+    mode: String,
+    metrics: FinalPhotoPolicyMetricsV1,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct FinalPhotoPolicyMetricsV1 {
+    contact_shadow_delta_mean_srgb8: FinalPhotoGroundingPolicyV1,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct FinalPhotoGroundingPolicyV1 {
+    blocking: bool,
+    failure_code: String,
+    threshold: FinalPhotoGroundingThresholdV1,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct FinalPhotoGroundingThresholdV1 {
+    min: f64,
+    min_boundary_samples: u64,
+    min_attached_fraction: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +125,7 @@ pub(crate) struct SubjectSelection {
     target_kind: String,
     id: String,
     pub(crate) root_handle: u64,
+    root_handles: Vec<u64>,
     draw_handles: BTreeSet<u64>,
 }
 
@@ -92,6 +139,8 @@ struct SubjectMetrics {
     fill_width_fraction: f64,
     fill_height_fraction: f64,
     mean_luminance_srgb8: f64,
+    dark_material_mean_luminance_srgb8: Option<f64>,
+    dark_material_coverage: f64,
     luminance_stddev_srgb8: f64,
     luminance_range_srgb8: f64,
     background_separation_srgb8: f64,
@@ -207,6 +256,8 @@ struct PhotoReportInput<'a> {
     focus_report: scena::FocusReportV1,
     exposure_report: scena::ExposureReportV1,
     subject_observation: scena::SubjectObservationV1,
+    quality_execution: Value,
+    quality_analysis: Value,
     artifacts: PhotoArtifactPaths,
 }
 
@@ -219,6 +270,11 @@ pub(crate) struct ShadedCandidateSelection {
     scoring: scena::PhotoCandidateScoringReport,
     work_metrics: PhotoLoopWorkMetrics,
     surface_report: scena::PhotographicSurfaceReportV1,
+    lighting_report: Option<scena::scene_host::PhotographicLightingReportV1>,
+    reflection_probe_report: Option<scena::scene_host::PhotographicReflectionProbeReportV1>,
+    /// What the renderer decided to stage. Discarding this is why "is there a
+    /// backdrop in this frame?" could only be answered by squinting at pixels.
+    pub(crate) surroundings_report: scena::PhotographicSurroundingsReportV1,
 }
 
 #[derive(Debug, Clone)]
@@ -306,11 +362,8 @@ fn run_photo_plan_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let subject = select_camera_behavior_subject(&build.manifest, requested_subject.as_ref())?;
     let host = build.host;
     let backend_selection = CliBackendSelectionV1::new(false, Some(host.backend()));
-    let planning = camera_behavior_composition_plan(
-        &host,
-        subject.root_handle,
-        !build.manifest.cameras.is_empty(),
-    )?;
+    let planning =
+        camera_behavior_composition_plan(&host, &subject, !build.manifest.cameras.is_empty())?;
     let scoring = render_free_photo_plan_scoring(&planning);
     let staging_choices = unique_staging_choices(&planning);
     let plan = scena::PhotoPlanV1 {
@@ -408,51 +461,125 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let authored_lights = !build.manifest.lights.is_empty();
     let authored_camera = !build.manifest.cameras.is_empty();
     let mut host = build.host;
+    ensure_final_photo_backend(source.quality, host.backend())?;
     // GPU hosts must own semantic AOV resources before the next prepare, because
     // every camera-behavior measurement below reads them back.
     if args.gpu {
         host.set_semantic_aov_capture_enabled(true);
     }
     let backend_selection = CliBackendSelectionV1::new(args.gpu, Some(host.backend()));
-    let planning = camera_behavior_composition_plan(&host, subject.root_handle, authored_camera)?;
+    let planning = camera_behavior_composition_plan(&host, &subject, authored_camera)?;
     let mut shaded_selection = apply_camera_behavior_setup_with_plan(
         &mut host,
         &subject,
         authored_lights,
         &planning,
         args.gpu,
+        source.quality,
+        source.ground,
+        args.optimize,
     )?;
     let selected_composition =
         selected_shaded_composition_candidate(&planning, &shaded_selection)?.clone();
-    let mut selected =
-        render_camera_behavior_candidates(&mut host, &subject, &selected_composition, args.gpu)?;
+    let mut selected = render_camera_behavior_candidates(
+        &mut host,
+        &subject,
+        &selected_composition,
+        Some(shaded_selection.surroundings_report.clone()),
+        args.gpu,
+        source.quality.is_final(),
+        args.optimize,
+    )?;
+    // The loop re-sized the backdrop for the camera it settled on, so the
+    // staging the report discloses has to be that one, not the setup-time guess.
+    if let Some(staging) = selected.surroundings.clone() {
+        shaded_selection.surroundings_report = staging;
+    }
     let visible_focus =
-        apply_visible_subject_physical_focus(&mut host, &subject, &selected_composition, args.gpu)?;
-    // Focus resolution sets depth of field, so the accepted candidate's capture
-    // predates it. Re-render once through the same raster path the loop used, so
-    // the delivered image, the reported metrics, and the focus report all
-    // describe the same frame.
+        apply_visible_subject_physical_focus(&mut host, &subject, &selected.composition, args.gpu)?;
+    // Focus resolution enables a post effect after the camera/exposure loop has
+    // already accepted its frame. Revalidate the delivered pixels and keep
+    // exposure correction bounded here as well: a focused frame that moved out
+    // of band is not the frame the earlier loop approved.
     let mut focus_work = PhotoLoopWorkMetrics::default();
     if visible_focus.is_some() {
-        selected.capture = render_capture(&mut host, &mut focus_work)?;
+        render_focused_delivery(
+            &mut host,
+            &subject,
+            args.gpu,
+            &mut selected,
+            &mut focus_work,
+            args.optimize,
+            true,
+        )?;
     }
-    let inspection_json = host.inspect_json().map_err(runtime_failure)?;
-    let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
-        .map_err(|error| {
-            CliFailure::new(
-                CliErrorKind::Internal,
-                format!("failed to decode final scene inspection report: {error}"),
-            )
-        })?;
-    let final_aov = capture_camera_behavior_semantic_aovs(&mut host, args.gpu)?;
-    let final_metrics = match measure_subject(&selected.capture, &inspection, &final_aov, &subject)
-    {
-        Ok(metrics) => metrics,
-        Err(error) if photo_subject_measurement_can_degrade(&error.message) => {
-            empty_subject_metrics()
+    let (mut final_aov, mut final_metrics) =
+        measure_photo_subject_frame(&mut host, &selected.capture, &subject, args.gpu)?;
+    for _ in 0..FINAL_DARK_MATERIAL_LIGHTING_MAX_RETRIES {
+        if !args.optimize
+            || !source.quality.is_final()
+            || !should_retry_final_dark_material_lighting(final_metrics)
+            || shaded_selection.lighting_report.is_none()
+        {
+            break;
         }
-        Err(error) => return Err(error),
-    };
+        let adjustment = corrected_photographic_lighting(final_metrics)
+            .expect("an unreadable dark material always requests lighting correction");
+        if let Some(previous) = shaded_selection.lighting_report.take() {
+            remove_generated_photographic_lights(&mut host, previous)?;
+        }
+        shaded_selection.lighting_report = Some(
+            host.apply_final_photographic_lighting_adjusted(subject.root_handle, adjustment)
+                .map_err(runtime_failure)?,
+        );
+        shaded_selection.reflection_probe_report = Some(
+            host.bake_photographic_reflection_probes(subject.root_handle)
+                .map_err(runtime_failure)?,
+        );
+        selected.capture = render_capture(&mut host, &mut selected.work_metrics)?;
+        (final_aov, final_metrics) =
+            measure_photo_subject_frame(&mut host, &selected.capture, &subject, args.gpu)?;
+        selected.final_candidate.adjustment = Some("final_dark_material_lighting");
+    }
+    if source.quality.is_final()
+        && source.ground == scena::scene_host::PhotographicGroundV1::Reflective
+        && let Some(planar) = host
+            .capture_photographic_planar_reflection(&mut shaded_selection.surroundings_report)
+            .map_err(runtime_failure)?
+    {
+        selected.capture = render_capture(&mut host, &mut selected.work_metrics)?;
+        final_aov = capture_camera_behavior_semantic_aovs(&mut host, args.gpu)?;
+        let floor_mask = planar_reflection_floor_mask(
+            &final_aov,
+            &shaded_selection.surroundings_report.support_nodes,
+        );
+        let mut rgba8 = selected.capture.rgba8.clone();
+        composite_planar_reflection_rgba8(
+            &mut rgba8,
+            &planar.capture.rgba8,
+            selected.capture.descriptor.width,
+            selected.capture.descriptor.height,
+            &floor_mask,
+            planar.roughness,
+            planar.strength,
+        );
+        selected.capture = host
+            .capture_from_rgba8(
+                selected.capture.descriptor.width,
+                selected.capture.descriptor.height,
+                rgba8,
+            )
+            .map_err(runtime_failure)?;
+        final_metrics =
+            measure_photo_subject_with_aov(&host, &selected.capture, &subject, &final_aov)?;
+        selected.final_candidate.adjustment = Some("planar_ground_reflection");
+    }
+    let mut quality_analysis = photo_quality_analysis_json(
+        &selected.capture,
+        &final_aov,
+        &subject,
+        &shaded_selection.surroundings_report,
+    )?;
     record_texture_resolution_health(
         &mut shaded_selection.surface_report,
         final_metrics,
@@ -461,13 +588,30 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     );
     selected.final_candidate.metrics = final_metrics;
     selected.final_candidate.failure_codes = camera_behavior_failure_codes(final_metrics);
+    apply_final_photo_quality_policy(
+        source.quality,
+        &mut quality_analysis,
+        &mut selected.final_candidate.failure_codes,
+    )?;
     selected.final_candidate.status = if selected.final_candidate.failure_codes.is_empty() {
         "passed"
     } else {
         "failed"
     };
-    if let Some(last) = selected.candidates.last_mut() {
-        *last = selected.final_candidate.clone();
+    let subject_bounds = host
+        .nodes_world_bounds(&subject.root_handles)
+        .ok()
+        .flatten();
+    selected.final_candidate.camera =
+        PhotoCandidateCamera::from_capture(&selected.capture, subject_bounds);
+    if !refresh_selected_candidate_history(&mut selected.candidates, &selected.final_candidate) {
+        return Err(CliFailure::new(
+            CliErrorKind::Internal,
+            format!(
+                "selected photo candidate '{}' is missing from its attempt history",
+                selected.final_candidate.id
+            ),
+        ));
     }
     let capture = selected.capture;
 
@@ -495,12 +639,65 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
         )
     })?;
 
-    let subject_bounds = host.node_world_bounds(subject.root_handle).ok().flatten();
     let focus_report =
         camera_behavior_focus_report(&subject, subject_bounds, visible_focus.as_ref(), &capture);
-    let exposure_report = camera_behavior_exposure_report(&selected.final_candidate, &capture);
+    let exposure_report =
+        camera_behavior_exposure_report(&selected.final_candidate, &capture, args.optimize);
     let subject_observation =
         camera_behavior_subject_observation(&subject, &selected.final_candidate, &capture);
+    let capability_report = host.renderer().capability_report();
+    let adapter = capability_report.adapter();
+    let evidence_class = classify_photo_evidence(
+        host.backend(),
+        adapter.map(|adapter| adapter.name.as_str()),
+        adapter.map(|adapter| adapter.driver.as_str()),
+        adapter.map(|adapter| adapter.driver_info.as_str()),
+    );
+    let reconstruction = match host.renderer().reconstruction_filter() {
+        scena::ReconstructionFilter::Box => "box",
+        scena::ReconstructionFilter::Tent => "tent",
+        scena::ReconstructionFilter::Gaussian => "gaussian",
+    };
+    let quality_execution = photo_quality_execution_json(PhotoQualityExecutionInput {
+        quality: source.quality,
+        backend: host.backend(),
+        evidence_class,
+        capture: [args.width, args.height],
+        supersample_factor: capture.descriptor.frame.supersample_factor,
+        reconstruction,
+        anti_aliasing: &capture.descriptor.frame.anti_aliasing,
+        environment_source_dimensions: shaded_selection
+            .lighting_report
+            .as_ref()
+            .and_then(|report| report.environment.source_dimensions),
+        environment_cubemap_resolution: shaded_selection
+            .lighting_report
+            .as_ref()
+            .and_then(|report| report.environment.cubemap_resolution),
+        reflection_probe_count: shaded_selection
+            .reflection_probe_report
+            .as_ref()
+            .map_or(0, |report| report.probes.len()),
+        shadow_mode: if shaded_selection
+            .lighting_report
+            .as_ref()
+            .is_some_and(|report| report.source == "built_in_studio_directional")
+        {
+            "directional_key_shadow"
+        } else if source.quality.is_final() {
+            "weighted_area_visibility"
+        } else {
+            "prepared_area_visibility"
+        },
+        tonemapper: &capture.descriptor.frame.tonemapper,
+        edge_rounding: build
+            .manifest
+            .imports
+            .iter()
+            .filter_map(|import| import.edge_rounding.clone())
+            .collect(),
+        material_resolution_selection: selected.material_resolution_selection.clone(),
+    });
     let report = photo_report(PhotoReportInput {
         args: &args,
         source: &source,
@@ -516,6 +713,8 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
         focus_report,
         exposure_report,
         subject_observation,
+        quality_execution,
+        quality_analysis,
         artifacts: PhotoArtifactPaths {
             capture_png_path: path_for_json(&args.out),
             capture_descriptor_path: path_for_json(&descriptor_path),
@@ -569,11 +768,107 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     add_recipe_policy_to_outcome(outcome, &policy_report)
 }
 
+fn apply_final_photo_quality_policy(
+    quality: scena::SceneRecipePhotoQualityV1,
+    quality_analysis: &mut Value,
+    failure_codes: &mut Vec<&'static str>,
+) -> Result<(), CliFailure> {
+    let same_pass_grounding_confirmed = quality_analysis
+        .pointer("/grounding/contact_shadow_confirmed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !quality.is_final() {
+        if same_pass_grounding_confirmed {
+            failure_codes.retain(|code| *code != "contact_shadow_missing");
+        }
+        return Ok(());
+    }
+
+    let policy: FinalPhotoPolicyV1 =
+        serde_json::from_str(FINAL_PHOTO_POLICY_JSON).map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::Internal,
+                format!("failed to parse tracked final-photo policy: {error}"),
+            )
+        })?;
+    let grounding_policy = &policy.metrics.contact_shadow_delta_mean_srgb8;
+    if policy.version != 1
+        || policy.mode != "selective_blocking"
+        || !grounding_policy.blocking
+        || grounding_policy.failure_code != "contact_shadow_missing"
+    {
+        return Err(CliFailure::new(
+            CliErrorKind::Internal,
+            "tracked final-photo policy has an unsupported grounding contract",
+        ));
+    }
+
+    let boundary_sample_count = quality_analysis
+        .pointer("/grounding/boundary_sample_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let contact_shadow_delta_mean_srgb8 = quality_analysis
+        .pointer("/grounding/contact_shadow_delta_mean_srgb8")
+        .and_then(Value::as_f64);
+    let attached_fraction = quality_analysis
+        .pointer("/grounding/attached_fraction")
+        .and_then(Value::as_f64);
+    let threshold = &grounding_policy.threshold;
+    let grounding_passed = boundary_sample_count >= threshold.min_boundary_samples
+        && contact_shadow_delta_mean_srgb8.is_some_and(|value| value >= threshold.min)
+        && attached_fraction.is_some_and(|value| value >= threshold.min_attached_fraction);
+
+    let analysis = quality_analysis.as_object_mut().ok_or_else(|| {
+        CliFailure::new(
+            CliErrorKind::Internal,
+            "final photo quality analysis must be a JSON object",
+        )
+    })?;
+    analysis.insert("mode".to_owned(), Value::String(policy.mode.clone()));
+    analysis.insert(
+        "policy".to_owned(),
+        json!({
+            "schema": policy.schema,
+            "version": policy.version,
+            "mode": policy.mode,
+            "blocking_metrics": ["contact_shadow_delta_mean_srgb8"],
+            "checks": [{
+                "metric": "contact_shadow_delta_mean_srgb8",
+                "status": if grounding_passed { "checked" } else { "failed" },
+                "failure_code": grounding_policy.failure_code,
+                "observed": {
+                    "value": contact_shadow_delta_mean_srgb8,
+                    "boundary_sample_count": boundary_sample_count,
+                    "attached_fraction": attached_fraction,
+                },
+                "threshold": {
+                    "min": threshold.min,
+                    "min_boundary_samples": threshold.min_boundary_samples,
+                    "min_attached_fraction": threshold.min_attached_fraction,
+                }
+            }]
+        }),
+    );
+    if grounding_passed {
+        failure_codes.retain(|code| *code != "contact_shadow_missing");
+    } else if !failure_codes.contains(&"contact_shadow_missing") {
+        failure_codes.push("contact_shadow_missing");
+    }
+    Ok(())
+}
+
 pub(crate) struct SelectedCapture {
     pub(crate) capture: scena::CaptureRgba8,
     candidates: Vec<PhotoCandidate>,
     pub(crate) final_candidate: PhotoCandidate,
+    composition: scena::PhotoCompositionCandidateV1,
     work_metrics: PhotoLoopWorkMetrics,
+    /// The staging that produced the returned frame. The loop re-sizes the
+    /// backdrop for each camera it tries, so the setup-time report describes a
+    /// backdrop that is not the one in the delivered image.
+    pub(crate) surroundings: Option<scena::PhotographicSurroundingsReportV1>,
+    pub(crate) material_resolution_selection:
+        Option<scena::PhotographicMaterialResolutionSelectionReportV1>,
 }
 
 /// Captures the semantic AOVs the camera-behavior loop measures from, using the
@@ -601,24 +896,166 @@ fn capture_camera_behavior_semantic_aovs(
     host.capture_semantic_aovs().map_err(runtime_failure)
 }
 
+fn measure_photo_subject_frame(
+    host: &mut scena::SceneHostCore,
+    capture: &scena::CaptureRgba8,
+    subject: &SubjectSelection,
+    gpu: bool,
+) -> Result<(scena::SceneHostSemanticAovCaptureV1, SubjectMetrics), CliFailure> {
+    let semantic_aov = capture_camera_behavior_semantic_aovs(host, gpu)?;
+    let metrics = measure_photo_subject_with_aov(host, capture, subject, &semantic_aov)?;
+    Ok((semantic_aov, metrics))
+}
+
+fn measure_photo_subject_with_aov(
+    host: &scena::SceneHostCore,
+    capture: &scena::CaptureRgba8,
+    subject: &SubjectSelection,
+    semantic_aov: &scena::SceneHostSemanticAovCaptureV1,
+) -> Result<SubjectMetrics, CliFailure> {
+    let inspection_json = host.inspect_json().map_err(runtime_failure)?;
+    let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
+        .map_err(|error| {
+            CliFailure::new(
+                CliErrorKind::Internal,
+                format!("failed to decode final scene inspection report: {error}"),
+            )
+        })?;
+    let metrics = match measure_subject(capture, &inspection, semantic_aov, subject) {
+        Ok(metrics) => metrics,
+        Err(error) if photo_subject_measurement_can_degrade(&error.message) => {
+            empty_subject_metrics()
+        }
+        Err(error) => return Err(error),
+    };
+    Ok(metrics)
+}
+
+fn photo_quality_analysis_json(
+    capture: &scena::CaptureRgba8,
+    semantic_aov: &scena::SceneHostSemanticAovCaptureV1,
+    subject: &SubjectSelection,
+    surroundings: &scena::PhotographicSurroundingsReportV1,
+) -> Result<Value, CliFailure> {
+    let Some(analysis) =
+        photo_material_density_analysis(capture, semantic_aov, subject, Some(surroundings))?
+    else {
+        return Ok(json!({
+            "schema": scena::PHOTO_QUALITY_ANALYSIS_SCHEMA_V1,
+            "mode": "report_only",
+            "identity_source": "unavailable",
+            "materials": [],
+            "grounding": {
+                "method": "unavailable",
+                "boundary_sample_count": 0,
+            },
+            "contour": {
+                "method": "unavailable",
+                "boundary_sample_count": 0,
+            },
+            "unavailable_metrics": [
+                "same_pass_beauty_semantic_unavailable",
+                "projected_texture_density_requires_beauty_identity_and_linear_depth",
+            ],
+        }));
+    };
+    serde_json::to_value(analysis).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::Internal,
+            format!("failed to serialize final photo quality analysis: {error}"),
+        )
+    })
+}
+
+fn photo_material_density_analysis(
+    capture: &scena::CaptureRgba8,
+    semantic_aov: &scena::SceneHostSemanticAovCaptureV1,
+    subject: &SubjectSelection,
+    surroundings: Option<&scena::PhotographicSurroundingsReportV1>,
+) -> Result<Option<scena::PhotoQualityAnalysisReportV1>, CliFailure> {
+    let Some(beauty_id_indices) = semantic_aov.beauty_id_indices.as_deref() else {
+        return Ok(None);
+    };
+    let subject_handles = subject_handles(subject);
+    let support_handles = surroundings
+        .map(|surroundings| surroundings.support_nodes.as_slice())
+        .unwrap_or(&[]);
+    let analysis = scena::analyze_photo_quality(scena::PhotoQualityAnalysisInputV1 {
+        width: capture.descriptor.width,
+        height: capture.descriptor.height,
+        rgba8: &capture.rgba8,
+        beauty_id_indices,
+        depth_meters: &semantic_aov.depth_meters,
+        projection: capture.descriptor.camera.projection,
+        legend: &semantic_aov.legend,
+        subject_handles: &subject_handles,
+        support_handles,
+    })
+    .map_err(|code| {
+        CliFailure::new(
+            CliErrorKind::Runtime,
+            format!("final photo quality analysis failed: {code}"),
+        )
+    })?;
+    Ok(Some(analysis))
+}
+
 pub(crate) fn render_camera_behavior_candidates(
     host: &mut scena::SceneHostCore,
     subject: &SubjectSelection,
     base_candidate: &scena::PhotoCompositionCandidateV1,
+    surroundings: Option<scena::PhotographicSurroundingsReportV1>,
     gpu: bool,
+    select_material_resolutions: bool,
+    optimize: bool,
 ) -> Result<SelectedCapture, CliFailure> {
     let mut candidates = Vec::new();
     let mut final_capture = None;
-    let mut best: Option<(usize, PhotoCandidate, scena::CaptureRgba8)> = None;
+    let mut best: Option<(
+        usize,
+        PhotoCandidate,
+        scena::CaptureRgba8,
+        Option<scena::PhotographicSurroundingsReportV1>,
+        scena::PhotoCompositionCandidateV1,
+    )> = None;
     let mut work_metrics = PhotoLoopWorkMetrics::default();
     let mut composition = base_candidate.clone();
     let mut pending_adjustment = Some("initial_camera_composition");
-    let subject_bounds = host.node_world_bounds(subject.root_handle).ok().flatten();
+    let mut surroundings = surroundings;
+    let mut material_resolution_selection = None;
+    let subject_bounds = host
+        .nodes_world_bounds(&subject.root_handles)
+        .ok()
+        .flatten();
     for attempt in 0..CAMERA_BEHAVIOR_MAX_ATTEMPTS {
-        host.frame_node_with_photo_candidate(subject.root_handle, &composition)
+        host.frame_nodes_with_photo_candidate(&subject.root_handles, &composition)
             .map_err(runtime_failure)?;
-        let capture = render_capture(host, &mut work_metrics)?;
-        let semantic_aov = capture_camera_behavior_semantic_aovs(host, gpu)?;
+        // The generated backdrop is sized for the frustum it has to fill, so it
+        // is only correct for the camera it was solved against. This loop moves
+        // the camera; leaving the backdrop where setup put it is what let its
+        // edge into the frame.
+        surroundings = resized_photographic_surroundings(host, subject, surroundings)?;
+        let mut capture = render_capture(host, &mut work_metrics)?;
+        let mut semantic_aov = capture_camera_behavior_semantic_aovs(host, gpu)?;
+        if select_material_resolutions
+            && let Some(analysis) = photo_material_density_analysis(
+                &capture,
+                &semantic_aov,
+                subject,
+                surroundings.as_ref(),
+            )?
+        {
+            let selection = pollster::block_on(host.select_photographic_material_resolutions(
+                &analysis,
+                FINAL_PHOTO_MATERIAL_TEXTURE_BUDGET_BYTES,
+            ))
+            .map_err(runtime_failure)?;
+            if selection.selections.iter().any(|entry| entry.changed) {
+                material_resolution_selection = Some(selection);
+                capture = render_capture(host, &mut work_metrics)?;
+                semantic_aov = capture_camera_behavior_semantic_aovs(host, gpu)?;
+            }
+        }
         let camera = PhotoCandidateCamera::from_capture(&capture, subject_bounds);
         let inspection_json = host.inspect_json().map_err(runtime_failure)?;
         let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
@@ -674,9 +1111,18 @@ pub(crate) fn render_camera_behavior_candidates(
         // converged.
         if best
             .as_ref()
-            .is_none_or(|(best_failures, _, _)| failures <= *best_failures)
+            .is_none_or(|(best_failures, _, _, _, _)| failures <= *best_failures)
         {
-            best = Some((failures, candidate.clone(), capture.clone()));
+            // Carry this attempt's staging with its frame. The backdrop is
+            // re-sized per attempt, so the report has to describe the frame that
+            // is actually returned, not whichever attempt ran last.
+            best = Some((
+                failures,
+                candidate.clone(),
+                capture.clone(),
+                surroundings.clone(),
+                composition.clone(),
+            ));
         }
         final_capture = Some(capture);
         candidates.push(candidate.clone());
@@ -685,30 +1131,71 @@ pub(crate) fn render_camera_behavior_candidates(
                 capture: final_capture.expect("candidate capture exists"),
                 candidates,
                 final_candidate: candidate,
+                composition,
                 work_metrics,
+                surroundings,
+                material_resolution_selection,
+            });
+        }
+
+        if !optimize {
+            if attempt == 0
+                && let Some(next_ev) =
+                    bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, metrics)
+            {
+                host.renderer_mut().clear_auto_exposure();
+                host.renderer_mut().set_exposure_ev(next_ev);
+                pending_adjustment = Some("bounded_exposure_delta");
+                continue;
+            }
+            return Ok(SelectedCapture {
+                capture: final_capture.expect("candidate capture exists"),
+                candidates,
+                final_candidate: candidate,
+                composition,
+                work_metrics,
+                surroundings,
+                material_resolution_selection,
             });
         }
 
         if attempt + 1 >= CAMERA_BEHAVIOR_MAX_ATTEMPTS {
             break;
         }
-        if let Some(next_composition) = corrected_composition_candidate(&composition, metrics) {
-            composition = next_composition;
-            pending_adjustment = Some("camera_composition");
-            continue;
-        }
-        let Some(next_ev) = corrected_exposure_ev(candidate.exposure_ev, metrics) else {
-            break;
+        // Composition and exposure are independent controls: one moves the
+        // camera, the other moves the exposure, and neither correction depends
+        // on the other having converged. Applying only the first while it is out
+        // of band starves the second for the whole budget - a subject whose fill
+        // target is unreachable (its aspect is not the frame's, so any further
+        // zoom clips) re-frames six times and never once corrects exposure, then
+        // reports an underexposure the loop never attempted. Measured on the
+        // demo hero: `subject_fill_below_min` and `subject_luminance_below_min`
+        // together, with the exposure untouched at every attempt.
+        let next_composition = corrected_composition_candidate(&composition, metrics);
+        let next_ev = corrected_exposure_ev(candidate.exposure_ev, metrics);
+        pending_adjustment = match (next_composition.is_some(), next_ev.is_some()) {
+            (true, true) => Some("camera_composition+exposure_delta"),
+            (true, false) => Some("camera_composition"),
+            (false, true) => Some("exposure_delta"),
+            // Neither control has anything left to give; another attempt would
+            // render the same frame.
+            (false, false) => break,
         };
-        host.renderer_mut().clear_auto_exposure();
-        host.renderer_mut().set_exposure_ev(next_ev);
-        pending_adjustment = Some("exposure_delta");
+        if let Some(next_composition) = next_composition {
+            composition = next_composition;
+        }
+        if let Some(next_ev) = next_ev {
+            host.renderer_mut().clear_auto_exposure();
+            host.renderer_mut().set_exposure_ev(next_ev);
+        }
     }
 
     // No attempt passed. Report the least-bad one with its own frame, rather
     // than the last attempt the loop happened to make.
-    let (final_candidate, capture) = match best {
-        Some((_, candidate, capture)) => (candidate, capture),
+    let (final_candidate, _selected_capture, surroundings, composition) = match best {
+        Some((_, candidate, capture, staging, composition)) => {
+            (candidate, capture, staging, composition)
+        }
         None => {
             let candidate = candidates.last().cloned().ok_or_else(|| {
                 CliFailure::new(CliErrorKind::Runtime, "photo render produced no candidate")
@@ -716,14 +1203,26 @@ pub(crate) fn render_camera_behavior_candidates(
             let capture = final_capture.ok_or_else(|| {
                 CliFailure::new(CliErrorKind::Runtime, "photo render produced no capture")
             })?;
-            (candidate, capture)
+            (candidate, capture, surroundings, composition)
         }
     };
+    // Callers verify and may re-render through this host, so its camera and
+    // staging must describe the selected frame, not the final attempted one.
+    host.frame_nodes_with_photo_candidate(&subject.root_handles, &composition)
+        .map_err(runtime_failure)?;
+    let surroundings = resized_photographic_surroundings(host, subject, surroundings)?;
+    host.renderer_mut().clear_auto_exposure();
+    host.renderer_mut()
+        .set_exposure_ev(final_candidate.exposure_ev);
+    let capture = render_capture(host, &mut work_metrics)?;
     Ok(SelectedCapture {
         capture,
         candidates,
         final_candidate,
+        composition,
         work_metrics,
+        surroundings,
+        material_resolution_selection,
     })
 }
 
@@ -734,31 +1233,27 @@ fn corrected_composition_candidate(
     if metrics.sample_count == 0 || !metrics.fill_width_fraction.is_finite() {
         return None;
     }
-    let width_actionable = width_fill_target_is_actionable(metrics);
-    let width_out_of_band = width_actionable
-        && (metrics.fill_width_fraction < CAMERA_BEHAVIOR_MIN_FILL_WIDTH
-            || metrics.fill_width_fraction > CAMERA_BEHAVIOR_MAX_FILL_WIDTH);
-    let fit_out_of_band = metrics.fill_fraction < CAMERA_BEHAVIOR_MIN_FILL_WIDTH
-        || metrics.fill_fraction > CAMERA_BEHAVIOR_MAX_FIT_FRACTION;
+    // Drive the axis that limits the subject, the same one the gate scores.
+    // Targeting width and height independently makes the corrector chase two
+    // constraints that fight whenever the subject's aspect differs from the
+    // frame's, which is why it used to stall short of the band.
+    let fit = subject_fit_fraction(metrics);
+    let fit_out_of_band =
+        !(CAMERA_BEHAVIOR_MIN_FILL_WIDTH..=CAMERA_BEHAVIOR_MAX_FILL_WIDTH).contains(&fit);
+    let over_fit = metrics.fill_fraction > CAMERA_BEHAVIOR_MAX_FIT_FRACTION;
     let off_center = metrics.center_offset_fraction > CAMERA_BEHAVIOR_MAX_CENTER_OFFSET;
     let clipped = metrics.clipped_fraction > 0.01;
-    if !width_out_of_band && !fit_out_of_band && !off_center && !clipped {
+    if !fit_out_of_band && !over_fit && !off_center && !clipped {
         return None;
     }
-    let target_fit = if width_out_of_band {
-        metrics.fill_fraction
-            * (CAMERA_BEHAVIOR_TARGET_FILL_WIDTH / metrics.fill_width_fraction.max(0.001))
-    } else if metrics.fill_fraction < CAMERA_BEHAVIOR_MIN_FILL_WIDTH {
-        CAMERA_BEHAVIOR_TARGET_FILL_WIDTH
-    } else if clipped {
-        (metrics.fill_fraction * 0.86).min(CAMERA_BEHAVIOR_MAX_FIT_FRACTION * 0.90)
-    } else if metrics.fill_fraction > CAMERA_BEHAVIOR_MAX_FIT_FRACTION {
-        CAMERA_BEHAVIOR_MAX_FIT_FRACTION * 0.96
+    // Clipping and over-fit pull outward; an under-filled frame pulls inward.
+    let target_fit = if clipped || over_fit {
+        (fit * 0.86).min(CAMERA_BEHAVIOR_MAX_FILL_WIDTH * 0.94)
     } else {
-        metrics.fill_fraction
+        CAMERA_BEHAVIOR_TARGET_FILL_WIDTH
     };
-    let next_fill = if width_out_of_band || fit_out_of_band || clipped {
-        (current.fill_fraction * (target_fit / metrics.fill_fraction.max(0.001))).clamp(0.20, 1.0)
+    let next_fill = if fit_out_of_band || over_fit || clipped {
+        (current.fill_fraction * (target_fit / fit.max(0.001))).clamp(0.20, 1.0)
     } else {
         current.fill_fraction
     };
@@ -794,13 +1289,21 @@ fn corrected_composition_candidate(
     Some(next)
 }
 
-fn width_fill_target_is_actionable(metrics: SubjectMetrics) -> bool {
-    if metrics.fill_fraction <= 0.0 || !metrics.fill_fraction.is_finite() {
-        return false;
-    }
-    let width_at_max_fit =
-        metrics.fill_width_fraction / metrics.fill_fraction * CAMERA_BEHAVIOR_MAX_FIT_FRACTION;
-    width_at_max_fit >= CAMERA_BEHAVIOR_MIN_FILL_WIDTH
+/// How much of the frame the subject fills along whichever axis limits it.
+///
+/// Requiring width and height to each reach the target independently is only
+/// satisfiable when the subject's aspect matches the frame's. A wide subject in
+/// a landscape frame cannot reach the width target without its height leaving
+/// the frame, and a tall one cannot reach the height target without its width
+/// shrinking below it, so the two constraints fight and no camera satisfies
+/// both. That is what made the gate unsatisfiable for the valve manifold and
+/// failed the demo hero at 0.644.
+///
+/// The subject's aspect is a property of the subject, not a framing decision, so
+/// only the limiting axis is a composition target; the other follows from it.
+/// Clipping remains the guard against over-filling.
+fn subject_fit_fraction(metrics: SubjectMetrics) -> f64 {
+    metrics.fill_fraction.max(metrics.fill_width_fraction)
 }
 
 fn photo_subject_measurement_can_degrade(message: &str) -> bool {
@@ -818,6 +1321,8 @@ fn empty_subject_metrics() -> SubjectMetrics {
         fill_width_fraction: 0.0,
         fill_height_fraction: 0.0,
         mean_luminance_srgb8: 0.0,
+        dark_material_mean_luminance_srgb8: None,
+        dark_material_coverage: 0.0,
         luminance_stddev_srgb8: 0.0,
         luminance_range_srgb8: 0.0,
         background_separation_srgb8: 0.0,
@@ -848,17 +1353,253 @@ fn render_capture(
 ) -> Result<scena::CaptureRgba8, CliFailure> {
     host.prepare().map_err(runtime_failure)?;
     host.render().map_err(runtime_failure)?;
-    let render_work = host.renderer().last_render_work_metrics();
-    work_metrics.record_capture(render_work);
+    work_metrics.record_capture(host.renderer().last_render_work_metrics());
     host.capture().map_err(runtime_failure)
+}
+
+fn planar_reflection_floor_mask(
+    semantic_aov: &scena::SceneHostSemanticAovCaptureV1,
+    floor_nodes: &[u64],
+) -> Vec<bool> {
+    let floor_nodes = floor_nodes.iter().copied().collect::<BTreeSet<_>>();
+    let floor_palette = semantic_aov
+        .legend
+        .iter()
+        .filter(|entry| floor_nodes.contains(&entry.node_handle))
+        .map(|entry| entry.palette_index)
+        .collect::<BTreeSet<_>>();
+    semantic_aov
+        .id_indices
+        .iter()
+        .zip(&semantic_aov.world_normals)
+        .map(|(palette, normal)| floor_palette.contains(palette) && normal[1] >= 0.85)
+        .collect()
+}
+
+fn composite_planar_reflection_rgba8(
+    beauty: &mut [u8],
+    reflected: &[u8],
+    width: u32,
+    height: u32,
+    floor_mask: &[bool],
+    roughness: f32,
+    strength: f32,
+) {
+    let pixel_count = (width as usize).saturating_mul(height as usize);
+    if beauty.len() != pixel_count.saturating_mul(4)
+        || reflected.len() != beauty.len()
+        || floor_mask.len() != pixel_count
+    {
+        return;
+    }
+    let radius = if roughness <= 0.0 {
+        0
+    } else {
+        ((width.min(height) as f32 * roughness.clamp(0.0, 1.0) * 0.012).round() as usize)
+            .clamp(1, 24)
+    };
+    let reflected = box_blur_rgba8(reflected, width as usize, height as usize, radius);
+    for (index, is_floor) in floor_mask.iter().copied().enumerate() {
+        if !is_floor {
+            continue;
+        }
+        let offset = index * 4;
+        let luma = (0.2126 * f32::from(beauty[offset])
+            + 0.7152 * f32::from(beauty[offset + 1])
+            + 0.0722 * f32::from(beauty[offset + 2]))
+            / 255.0;
+        let mix = strength.clamp(0.0, 1.0) * luma.clamp(0.25, 1.0);
+        for channel in 0..3 {
+            beauty[offset + channel] = (f32::from(beauty[offset + channel]) * (1.0 - mix)
+                + f32::from(reflected[offset + channel]) * mix)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+        }
+    }
+}
+
+fn box_blur_rgba8(input: &[u8], width: usize, height: usize, radius: usize) -> Vec<u8> {
+    if radius == 0 || width == 0 || height == 0 {
+        return input.to_vec();
+    }
+    let mut horizontal = vec![0_u8; input.len()];
+    for y in 0..height {
+        let mut sums = [0_u32; 4];
+        for sample_x in 0..=radius.min(width - 1) {
+            for channel in 0..4 {
+                sums[channel] += u32::from(input[(y * width + sample_x) * 4 + channel]);
+            }
+        }
+        for x in 0..width {
+            let min_x = x.saturating_sub(radius);
+            let max_x = (x + radius).min(width - 1);
+            let count = (max_x - min_x + 1) as u32;
+            for channel in 0..4 {
+                horizontal[(y * width + x) * 4 + channel] = (sums[channel] / count) as u8;
+            }
+            let next_min = (x + 1).saturating_sub(radius);
+            if next_min > min_x {
+                for channel in 0..4 {
+                    sums[channel] -= u32::from(input[(y * width + min_x) * 4 + channel]);
+                }
+            }
+            let next_max = (x + 1 + radius).min(width - 1);
+            if next_max > max_x {
+                for channel in 0..4 {
+                    sums[channel] += u32::from(input[(y * width + next_max) * 4 + channel]);
+                }
+            }
+        }
+    }
+    let mut output = vec![0_u8; input.len()];
+    for x in 0..width {
+        let mut sums = [0_u32; 4];
+        for sample_y in 0..=radius.min(height - 1) {
+            for channel in 0..4 {
+                sums[channel] += u32::from(horizontal[(sample_y * width + x) * 4 + channel]);
+            }
+        }
+        for y in 0..height {
+            let min_y = y.saturating_sub(radius);
+            let max_y = (y + radius).min(height - 1);
+            let count = (max_y - min_y + 1) as u32;
+            for channel in 0..4 {
+                output[(y * width + x) * 4 + channel] = (sums[channel] / count) as u8;
+            }
+            let next_min = (y + 1).saturating_sub(radius);
+            if next_min > min_y {
+                for channel in 0..4 {
+                    sums[channel] -= u32::from(horizontal[(min_y * width + x) * 4 + channel]);
+                }
+            }
+            let next_max = (y + 1 + radius).min(height - 1);
+            if next_max > max_y {
+                for channel in 0..4 {
+                    sums[channel] += u32::from(horizontal[(next_max * width + x) * 4 + channel]);
+                }
+            }
+        }
+    }
+    output
+}
+
+/// Rebuild the generated surroundings for the camera that is framed right now.
+///
+/// Sizing the backdrop is a function of the frustum, and the frustum changes
+/// every time the composition corrector moves the camera. Regenerating keeps the
+/// two consistent; without it the backdrop keeps whatever size the setup-time
+/// camera implied and its edge walks into the frame as the loop zooms.
+///
+/// `None` in means the caller generated nothing to resize - an authored backdrop
+/// or an authored environment - and that decision is preserved.
+fn resized_photographic_surroundings(
+    host: &mut scena::SceneHostCore,
+    subject: &SubjectSelection,
+    previous: Option<scena::PhotographicSurroundingsReportV1>,
+) -> Result<Option<scena::PhotographicSurroundingsReportV1>, CliFailure> {
+    let Some(previous) = previous else {
+        return Ok(None);
+    };
+    if !previous.generated_floor && !previous.generated_cyclorama {
+        return Ok(Some(previous));
+    }
+    let synthetic_contact_shadow = previous.contact_shadow_strength > 0.0;
+    let ground = previous.ground;
+    host.remove_photographic_surroundings(&previous)
+        .map_err(runtime_failure)?;
+    let mut report = host
+        .apply_photographic_surroundings_with_ground(subject.root_handle, ground)
+        .map_err(runtime_failure)?;
+    apply_synthetic_contact_shadow_policy(host, &mut report, synthetic_contact_shadow)?;
+    Ok(Some(report))
+}
+
+fn apply_synthetic_contact_shadow_policy(
+    host: &mut scena::SceneHostCore,
+    report: &mut scena::PhotographicSurroundingsReportV1,
+    enabled: bool,
+) -> Result<(), CliFailure> {
+    if enabled {
+        return Ok(());
+    }
+    // Final stills use geometry-derived area-light visibility. Surroundings are
+    // regenerated after every reframe, and that generator supplies preview SSAO
+    // as a fallback; clear it here as part of the same final grounding policy so
+    // a resize cannot silently re-enable the depth-threshold pass.
+    host.renderer_mut().set_screen_space_ambient_occlusion(None);
+    if std::env::var_os("SCENA_DEBUG_LOG_STAGING").is_some() {
+        eprintln!(
+            "[staging] final grounding policy area_visibility=true ssao enabled={}",
+            host.renderer().screen_space_ambient_occlusion().is_some()
+        );
+    }
+    let contact_nodes = std::mem::take(&mut report.contact_shadow_nodes);
+    for node in &contact_nodes {
+        host.remove_node(*node).map_err(runtime_failure)?;
+    }
+    report
+        .generated_nodes
+        .retain(|node| !contact_nodes.contains(node));
+    report.contact_shadow_strength = 0.0;
+    Ok(())
 }
 
 fn corrected_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32> {
     if metrics.sample_count == 0 || !metrics.mean_luminance_srgb8.is_finite() {
         return None;
     }
-    let correction =
-        (CAMERA_BEHAVIOR_TARGET_MEAN_LUMA / metrics.mean_luminance_srgb8.max(1.0)).log2();
+    if unreadable_dark_material(metrics)
+        && metrics.high_clip_fraction >= CAMERA_BEHAVIOR_HIGHLIGHT_LIMITED_MIN_CLIP
+    {
+        // Exposure cannot open the body without worsening the already-limited
+        // chrome. Hold EV so the single final lighting retry can act on the
+        // readable-body problem instead of first crushing it further.
+        return None;
+    }
+    let mut correction = if metrics.high_clip_fraction > CAMERA_BEHAVIOR_MAX_HIGH_CLIP {
+        // Clipped samples no longer contain enough information to solve an
+        // exact compensation. Move down conservatively and remeasure instead
+        // of allowing a dark product's mean to drive chrome farther into the
+        // shoulder on every retry.
+        let clip_ratio =
+            metrics.high_clip_fraction / CAMERA_BEHAVIOR_MAX_HIGH_CLIP.max(f64::EPSILON);
+        -(0.5 * clip_ratio.log2()).clamp(0.25, 1.5)
+    } else if dark_product_is_readable(metrics) {
+        // A deliberately dark, structured material is correctly exposed in
+        // this range. Chasing the generic subject target would turn charcoal,
+        // black paint, and dark rubber gray while consuming highlight
+        // headroom on adjacent metal.
+        return None;
+    } else if metrics.mean_luminance_srgb8 < CAMERA_BEHAVIOR_TARGET_MEAN_LUMA
+        && metrics.high_clip_fraction >= CAMERA_BEHAVIOR_HIGHLIGHT_LIMITED_MIN_CLIP
+    {
+        // A positive EV change cannot open the body without consuming the
+        // remaining highlight budget. Leave this failure for lighting or
+        // material correction instead of oscillating across the clip limit.
+        return None;
+    } else {
+        let measured =
+            (CAMERA_BEHAVIOR_TARGET_MEAN_LUMA / metrics.mean_luminance_srgb8.max(1.0)).log2();
+        if measured > 0.0 {
+            // Preserve headroom as the clipped-pixel budget fills. Lighting is
+            // responsible for opening a dark body; exposure must not turn a
+            // small polished accent into a white patch to hit an average.
+            let remaining_clip_headroom =
+                (1.0 - metrics.high_clip_fraction / CAMERA_BEHAVIOR_MAX_HIGH_CLIP).clamp(0.0, 1.0);
+            measured.min(0.15 + 0.85 * remaining_clip_headroom)
+        } else {
+            measured
+        }
+    };
+    if unreadable_dark_material(metrics)
+        && metrics.high_clip_fraction < CAMERA_BEHAVIOR_HIGHLIGHT_LIMITED_MIN_CLIP
+    {
+        // The subject-wide mean can be dominated by chrome and an indicator
+        // while most of a dark body remains crushed. Give that body one small
+        // exposure step, but cap it below half a stop so the next measured
+        // frame retains authority over polished highlights.
+        correction = correction.max(0.25).min(0.50);
+    }
     if correction.abs() <= 0.03 && metrics.low_clip_fraction <= CAMERA_BEHAVIOR_MAX_LOW_CLIP {
         return None;
     }
@@ -866,6 +1607,44 @@ fn corrected_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32
         CAMERA_BEHAVIOR_MIN_EXPOSURE_EV,
         CAMERA_BEHAVIOR_MAX_EXPOSURE_EV,
     ))
+}
+
+fn bounded_default_exposure_ev(base_ev: f32, metrics: SubjectMetrics) -> Option<f32> {
+    if metrics.sample_count == 0 || !metrics.mean_luminance_srgb8.is_finite() {
+        return None;
+    }
+    let correction = if metrics.high_clip_fraction > CAMERA_BEHAVIOR_MAX_HIGH_CLIP {
+        let clip_ratio =
+            metrics.high_clip_fraction / CAMERA_BEHAVIOR_MAX_HIGH_CLIP.max(f64::EPSILON);
+        -(0.5 * clip_ratio.log2()).clamp(0.25, 1.5)
+    } else {
+        (CAMERA_BEHAVIOR_TARGET_MEAN_LUMA / metrics.mean_luminance_srgb8.max(1.0)).log2()
+    };
+    if correction.abs() <= 0.03 && metrics.low_clip_fraction <= CAMERA_BEHAVIOR_MAX_LOW_CLIP {
+        return None;
+    }
+    let bounded = base_ev
+        + (correction as f32).clamp(
+            -DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV,
+            DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV,
+        );
+    ((bounded - base_ev).abs() > f32::EPSILON).then_some(bounded)
+}
+
+fn corrected_focus_delivery_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32> {
+    let failures = camera_behavior_failure_codes(metrics);
+    if !failures.iter().any(|code| {
+        matches!(
+            *code,
+            "subject_luminance_below_min"
+                | "subject_luminance_above_max"
+                | "subject_low_clip_above_max"
+                | "subject_high_clip_above_max"
+        )
+    }) {
+        return None;
+    }
+    corrected_exposure_ev(current_ev, metrics)
 }
 
 fn corrected_photographic_lighting(
@@ -876,6 +1655,17 @@ fn corrected_photographic_lighting(
     }
     let mut adjustment = scena::scene_host::PhotographicLightingAdjustmentV1::default();
     let mut changed = false;
+    let needs_dark_material_readability = unreadable_dark_material(metrics);
+    if needs_dark_material_readability {
+        // Open the dark material with broad sources and environment response,
+        // not a harder key that would only make adjacent chrome clip sooner.
+        adjustment.fill_scale = adjustment.fill_scale.max(3.0);
+        adjustment.overhead_scale = adjustment.overhead_scale.max(1.40);
+        adjustment.rim_scale = adjustment.rim_scale.max(1.50);
+        adjustment.environment_intensity_scale = adjustment.environment_intensity_scale.max(1.50);
+        adjustment.key_scale = adjustment.key_scale.min(0.85);
+        changed = true;
+    }
     if metrics.luminance_stddev_srgb8 < CAMERA_BEHAVIOR_MIN_LUMA_STDDEV
         || metrics.luminance_range_srgb8 < CAMERA_BEHAVIOR_MIN_LUMA_RANGE
     {
@@ -900,9 +1690,17 @@ fn corrected_photographic_lighting(
         adjustment.environment_rotation_offset_degrees += 42.0;
         changed = true;
     }
+    let dark_clipping = metrics.low_clip_fraction > CAMERA_BEHAVIOR_MAX_LOW_CLIP;
     if metrics.shadow_presence < 0.01 {
-        adjustment.key_scale *= 1.06;
-        adjustment.fill_scale *= 0.76;
+        if dark_clipping {
+            // A dark reflective product needs readable fill before stronger
+            // key contrast. Reducing fill here made the speaker body black
+            // while the chrome clipped, then exposure amplified both defects.
+            adjustment.key_scale *= 0.92;
+        } else {
+            adjustment.key_scale *= 1.06;
+            adjustment.fill_scale *= 0.76;
+        }
         changed = true;
     } else if metrics.shadow_softness < 0.20 {
         adjustment.key_scale *= 0.90;
@@ -918,15 +1716,57 @@ fn corrected_photographic_lighting(
         adjustment.overhead_scale *= 0.82;
         adjustment.environment_intensity_scale = 0.88;
         changed = true;
-    } else if metrics.low_clip_fraction > CAMERA_BEHAVIOR_MAX_LOW_CLIP {
-        adjustment.fill_scale *= 1.18;
+    }
+    if dark_clipping {
+        adjustment.fill_scale = adjustment.fill_scale.max(1.8);
+        adjustment.overhead_scale = adjustment.overhead_scale.max(1.10);
+        adjustment.key_scale = adjustment.key_scale.min(0.92);
         changed = true;
+    }
+    if needs_dark_material_readability {
+        // Other observations may rotate or soften the setup, but they must not
+        // erase the readability correction that made this branch necessary.
+        adjustment.key_scale = adjustment.key_scale.min(0.85);
+        adjustment.fill_scale = adjustment.fill_scale.max(3.0);
+        adjustment.rim_scale = adjustment.rim_scale.max(1.50);
+        adjustment.overhead_scale = adjustment.overhead_scale.max(1.40);
+        adjustment.environment_intensity_scale = adjustment.environment_intensity_scale.max(1.50);
     }
     changed.then_some(adjustment)
 }
 
 fn camera_behavior_failure_codes(metrics: SubjectMetrics) -> Vec<&'static str> {
     camera_behavior_acceptance_failure_codes(CameraBehaviorGateEvidence::from_metrics(metrics))
+}
+
+fn dark_product_is_readable(metrics: SubjectMetrics) -> bool {
+    let measured_dark = metrics
+        .dark_material_mean_luminance_srgb8
+        .filter(|_| metrics.dark_material_coverage >= 0.05)
+        .unwrap_or(metrics.mean_luminance_srgb8);
+    metrics.mean_luminance_srgb8 <= CAMERA_BEHAVIOR_MAX_MEAN_LUMA
+        && measured_dark >= CAMERA_BEHAVIOR_DARK_PRODUCT_MIN_MEAN_LUMA
+        && measured_dark <= CAMERA_BEHAVIOR_DARK_PRODUCT_MAX_MEAN_LUMA
+        && metrics.low_clip_fraction <= CAMERA_BEHAVIOR_MAX_LOW_CLIP
+        && metrics.high_clip_fraction <= CAMERA_BEHAVIOR_MAX_HIGH_CLIP
+        && metrics.luminance_stddev_srgb8 >= CAMERA_BEHAVIOR_MIN_LUMA_STDDEV
+        && metrics.luminance_range_srgb8 >= CAMERA_BEHAVIOR_MIN_LUMA_RANGE
+}
+
+fn unreadable_dark_material(metrics: SubjectMetrics) -> bool {
+    let identified_dark_material = metrics.dark_material_coverage >= 0.05
+        && metrics
+            .dark_material_mean_luminance_srgb8
+            .is_some_and(|mean| mean < CAMERA_BEHAVIOR_DARK_PRODUCT_MIN_MEAN_LUMA);
+    let missing_material_identity_with_crushed_region =
+        metrics.dark_material_mean_luminance_srgb8.is_none()
+            && metrics.low_clip_fraction > CAMERA_BEHAVIOR_MAX_LOW_CLIP;
+    identified_dark_material || missing_material_identity_with_crushed_region
+}
+
+fn should_retry_final_dark_material_lighting(metrics: SubjectMetrics) -> bool {
+    unreadable_dark_material(metrics)
+        && metrics.high_clip_fraction >= CAMERA_BEHAVIOR_HIGHLIGHT_LIMITED_MIN_CLIP
 }
 
 fn camera_behavior_acceptance_failure_codes(
@@ -943,14 +1783,15 @@ fn camera_behavior_acceptance_failure_codes(
     if metrics.sample_count == 0 {
         failures.push("subject_visible_pixels_missing");
     }
-    if metrics.fill_fraction < CAMERA_BEHAVIOR_MIN_FILL_WIDTH
-        || (width_fill_target_is_actionable(metrics)
-            && metrics.fill_width_fraction < CAMERA_BEHAVIOR_MIN_FILL_WIDTH)
-    {
+    if metrics.silhouette_separation < CAMERA_BEHAVIOR_MIN_SILHOUETTE_SEPARATION {
+        failures.push("subject_color_frame_agreement_below_min");
+    }
+    let fit = subject_fit_fraction(metrics);
+    if fit < CAMERA_BEHAVIOR_MIN_FILL_WIDTH {
         failures.push("subject_fill_below_min");
     }
-    if metrics.fill_fraction > CAMERA_BEHAVIOR_MAX_FIT_FRACTION
-        || metrics.fill_width_fraction > CAMERA_BEHAVIOR_MAX_FILL_WIDTH
+    if fit > CAMERA_BEHAVIOR_MAX_FILL_WIDTH
+        || metrics.fill_fraction > CAMERA_BEHAVIOR_MAX_FIT_FRACTION
     {
         failures.push("subject_fill_above_max");
     }
@@ -977,6 +1818,11 @@ fn camera_behavior_acceptance_failure_codes(
     {
         failures.push("subject_luminance_structure_below_min");
     }
+    if metrics.shadow_presence < 0.01 {
+        failures.push("contact_shadow_missing");
+    } else if metrics.shadow_softness < 0.20 {
+        failures.push("shadow_too_hard");
+    }
     failures
 }
 
@@ -996,6 +1842,8 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
         focus_report,
         exposure_report,
         subject_observation,
+        quality_execution,
+        quality_analysis,
         artifacts,
     } = input;
     let failure_codes = selected
@@ -1026,7 +1874,12 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
         "shaded_selection": shaded_selection_json(shaded_selection),
         "selected": candidate_json(selected),
         "candidates": candidates.iter().map(candidate_json).collect::<Vec<_>>(),
-        "retry": retry_json(candidates),
+        "correction_mode": if args.optimize {
+            "iterative_optimizer"
+        } else {
+            "deterministic_one_shot"
+        },
+        "retry": retry_json(candidates, args.optimize),
         "work_metrics": photo_work_metrics(
             args,
             planning,
@@ -1060,6 +1913,8 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
             },
         },
         "quality": {
+            "analysis": quality_analysis,
+            "execution": quality_execution,
             "subject": metrics_json(selected.metrics),
         },
         "focus_report": serde_json::to_value(focus_report)
@@ -1080,6 +1935,9 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
             "ok": manifest.ok,
             "import_count": manifest.imports.len(),
             "node_count": manifest.nodes.len(),
+            "edge_rounding": manifest.imports.iter()
+                .filter_map(|import| import.edge_rounding.as_ref())
+                .collect::<Vec<_>>(),
         },
     })
 }
@@ -1139,12 +1997,21 @@ fn photo_work_metrics(
         "shaded_candidate_height": shaded_selection.low_resolution[1],
         "shaded_candidate_pixels": shaded_candidate_pixels
             .saturating_mul(shaded_work.render_calls),
-        "final_candidate_render_budget": CAMERA_BEHAVIOR_MAX_ATTEMPTS,
+        "final_candidate_render_budget": if args.optimize {
+            CAMERA_BEHAVIOR_MAX_ATTEMPTS
+        } else {
+            2
+        },
         "final_candidate_renders": final_work.render_calls,
         "final_candidate_width": args.width,
         "final_candidate_height": args.height,
         "final_candidate_pixels": final_candidate_pixels
             .saturating_mul(final_work.render_calls),
+        "focus_delivery_render_budget": if args.optimize {
+            CAMERA_BEHAVIOR_FOCUS_DELIVERY_MAX_ATTEMPTS
+        } else {
+            1
+        },
         "focus_delivery_renders": focus_work.render_calls,
         "total_render_calls": total_render_calls,
         "prepare_calls": prepare_calls,
@@ -1168,13 +2035,23 @@ fn photo_work_metrics(
 fn camera_behavior_exposure_report(
     candidate: &PhotoCandidate,
     capture: &scena::CaptureRgba8,
+    optimize: bool,
 ) -> scena::ExposureReportV1 {
     let metrics = candidate.metrics;
-    let suggested_compensation_ev = corrected_exposure_ev(candidate.exposure_ev, metrics)
+    let suggested_ev = if optimize {
+        corrected_exposure_ev(candidate.exposure_ev, metrics)
+    } else {
+        bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, metrics)
+    };
+    let suggested_compensation_ev = suggested_ev
         .map(|next_ev| next_ev - candidate.exposure_ev)
         .unwrap_or(0.0);
     scena::ExposureReportV1::measured_subject(
-        "camera_behavior_retry",
+        if optimize {
+            "camera_behavior_optimizer"
+        } else {
+            "camera_behavior_one_shot"
+        },
         candidate.exposure_ev,
         scena::ExposureReportSubjectV1::new(
             round2_f64(metrics.mean_luminance_srgb8),
@@ -1299,6 +2176,79 @@ fn apply_visible_subject_physical_focus(
     Ok(Some(observation))
 }
 
+fn render_focused_delivery(
+    host: &mut scena::SceneHostCore,
+    subject: &SubjectSelection,
+    gpu: bool,
+    selected: &mut SelectedCapture,
+    work_metrics: &mut PhotoLoopWorkMetrics,
+    optimize: bool,
+    rerender_initial: bool,
+) -> Result<(), CliFailure> {
+    let max_attempts = if optimize {
+        CAMERA_BEHAVIOR_FOCUS_DELIVERY_MAX_ATTEMPTS
+    } else {
+        1
+    };
+    for attempt in 0..max_attempts {
+        let capture = if attempt == 0 && !rerender_initial {
+            selected.capture.clone()
+        } else {
+            render_capture(host, work_metrics)?
+        };
+        let semantic_aov = capture_camera_behavior_semantic_aovs(host, gpu)?;
+        let inspection_json = host.inspect_json().map_err(runtime_failure)?;
+        let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
+            .map_err(|error| {
+                CliFailure::new(
+                    CliErrorKind::Internal,
+                    format!("failed to decode focused scene inspection report: {error}"),
+                )
+            })?;
+        let metrics = match measure_subject(&capture, &inspection, &semantic_aov, subject) {
+            Ok(metrics) => metrics,
+            Err(error) if photo_subject_measurement_can_degrade(&error.message) => {
+                empty_subject_metrics()
+            }
+            Err(error) => return Err(error),
+        };
+        work_metrics.record_subject_samples(metrics.sample_count);
+
+        selected.capture = capture;
+        selected.final_candidate.exposure_ev = host.renderer().exposure_ev();
+        selected.final_candidate.metrics = metrics;
+        selected.final_candidate.failure_codes = camera_behavior_failure_codes(metrics);
+        selected.final_candidate.status = if selected.final_candidate.failure_codes.is_empty() {
+            "passed"
+        } else {
+            "failed"
+        };
+        if selected.final_candidate.status == "passed" || attempt + 1 >= max_attempts {
+            break;
+        }
+
+        let next_ev = if optimize {
+            corrected_focus_delivery_exposure_ev(selected.final_candidate.exposure_ev, metrics)
+        } else {
+            bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, metrics)
+        };
+        let Some(next_ev) = next_ev else {
+            break;
+        };
+        if (next_ev - selected.final_candidate.exposure_ev).abs() <= f32::EPSILON {
+            break;
+        }
+        host.renderer_mut().clear_auto_exposure();
+        host.renderer_mut().set_exposure_ev(next_ev);
+        selected.final_candidate.adjustment = Some(if optimize {
+            "subject_focus+exposure_delta"
+        } else {
+            "bounded_exposure_delta"
+        });
+    }
+    Ok(())
+}
+
 fn physical_aperture_for_depth_range(
     focal_length_mm: f32,
     circle_of_confusion_mm: f32,
@@ -1376,8 +2326,8 @@ fn camera_behavior_subject_observation(
 }
 
 fn subject_handles(subject: &SubjectSelection) -> Vec<u64> {
-    let mut handles = Vec::with_capacity(subject.draw_handles.len() + 1);
-    handles.push(subject.root_handle);
+    let mut handles = Vec::with_capacity(subject.draw_handles.len() + subject.root_handles.len());
+    handles.extend(subject.root_handles.iter().copied());
     handles.extend(subject.draw_handles.iter().copied());
     handles.sort_unstable();
     handles.dedup();
@@ -1417,6 +2367,13 @@ fn shaded_selection_json(selection: &ShadedCandidateSelection) -> Value {
         "evaluated_count": selection.candidates.len(),
         "asset_health": serde_json::to_value(&selection.surface_report)
             .expect("photographic asset health report serializes"),
+        "staging": serde_json::to_value(&selection.surroundings_report)
+            .expect("photographic surroundings report serializes"),
+        "reflection_probes": selection.reflection_probe_report,
+        "lighting": selection.lighting_report.as_ref().map(|report| json!({
+            "source": report.source,
+            "generated_local_light_count": report.lights.len(),
+        })),
         "work_metrics": {
             "rendered_candidates": selection.candidates.len(),
             "candidate_width": selection.low_resolution[0],
@@ -1448,16 +2405,21 @@ fn shaded_selection_json(selection: &ShadedCandidateSelection) -> Value {
     })
 }
 
-fn retry_json(candidates: &[PhotoCandidate]) -> Value {
-    let budget_exhausted = candidates.len() >= CAMERA_BEHAVIOR_MAX_ATTEMPTS
+fn retry_json(candidates: &[PhotoCandidate], optimize: bool) -> Value {
+    let max_attempts = if optimize {
+        CAMERA_BEHAVIOR_MAX_ATTEMPTS
+    } else {
+        2
+    };
+    let budget_exhausted = candidates.len() >= max_attempts
         && candidates
             .last()
             .is_some_and(|candidate| candidate.status != "passed");
-    let first_retryable_failure =
-        candidates
-            .iter()
-            .find(|candidate| candidate.status != "passed")
-            .and_then(|candidate| {
+    let first_retryable_failure = candidates
+        .iter()
+        .find(|candidate| candidate.status != "passed")
+        .and_then(|candidate| {
+            if optimize {
                 if candidate.failure_codes.iter().any(|code| {
                     matches!(*code, "subject_fill_below_min" | "subject_fill_above_max")
                 }) {
@@ -1467,15 +2429,28 @@ fn retry_json(candidates: &[PhotoCandidate]) -> Value {
                         "target_fill_width_fraction": CAMERA_BEHAVIOR_TARGET_FILL_WIDTH,
                     }));
                 }
-                corrected_exposure_ev(candidate.exposure_ev, candidate.metrics).map(|next_ev| {
+                return corrected_exposure_ev(candidate.exposure_ev, candidate.metrics).map(
+                    |next_ev| {
+                        json!({
+                            "source_candidate_id": candidate.id,
+                            "kind": "exposure_compensation_ev",
+                            "delta_ev": next_ev - candidate.exposure_ev,
+                            "next_exposure_ev": next_ev,
+                        })
+                    },
+                );
+            }
+            bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, candidate.metrics).map(
+                |next_ev| {
                     json!({
                         "source_candidate_id": candidate.id,
                         "kind": "exposure_compensation_ev",
-                        "delta_ev": next_ev - candidate.exposure_ev,
+                        "delta_ev": next_ev - FINAL_PHOTO_BASE_EXPOSURE_EV,
                         "next_exposure_ev": next_ev,
                     })
-                })
-            });
+                },
+            )
+        });
     let retry_input = if candidates.len() > 1 {
         candidates.get(1).map(|candidate| {
             json!({
@@ -1488,10 +2463,14 @@ fn retry_json(candidates: &[PhotoCandidate]) -> Value {
     };
     json!({
         "policy": {
-            "max_attempts": CAMERA_BEHAVIOR_MAX_ATTEMPTS,
-            "max_retries": CAMERA_BEHAVIOR_MAX_ATTEMPTS.saturating_sub(1),
-            "allowed_adjustments": ["camera_composition", "exposure_compensation_ev"],
-            "loop": "bounded",
+            "max_attempts": max_attempts,
+            "max_retries": max_attempts.saturating_sub(1),
+            "allowed_adjustments": if optimize {
+                json!(["camera_composition", "exposure_compensation_ev"])
+            } else {
+                json!(["exposure_compensation_ev"])
+            },
+            "loop": if optimize { "bounded" } else { "one_shot" },
         },
         "attempts": candidates.len(),
         "retry_used": candidates.len() > 1,
@@ -1500,6 +2479,20 @@ fn retry_json(candidates: &[PhotoCandidate]) -> Value {
         "suggestion": first_retryable_failure,
         "retry_input": retry_input,
     })
+}
+
+fn refresh_selected_candidate_history(
+    candidates: &mut [PhotoCandidate],
+    selected: &PhotoCandidate,
+) -> bool {
+    let Some(candidate) = candidates
+        .iter_mut()
+        .find(|candidate| candidate.id == selected.id)
+    else {
+        return false;
+    };
+    *candidate = selected.clone();
+    true
 }
 
 fn candidate_json(candidate: &PhotoCandidate) -> Value {
@@ -1539,6 +2532,10 @@ fn metrics_json(metrics: SubjectMetrics) -> Value {
         "fill_width_fraction": round4(metrics.fill_width_fraction),
         "fill_height_fraction": round4(metrics.fill_height_fraction),
         "mean_luminance_srgb8": round2_f64(metrics.mean_luminance_srgb8),
+        "dark_material_mean_luminance_srgb8": metrics
+            .dark_material_mean_luminance_srgb8
+            .map(round2_f64),
+        "dark_material_coverage": round4(metrics.dark_material_coverage),
         "luminance_stddev_srgb8": round2_f64(metrics.luminance_stddev_srgb8),
         "luminance_range_srgb8": round2_f64(metrics.luminance_range_srgb8),
         "background_separation_srgb8": round2_f64(metrics.background_separation_srgb8),
@@ -1569,16 +2566,24 @@ fn measure_subject(
     semantic_aov: &scena::SceneHostSemanticAovCaptureV1,
     subject: &SubjectSelection,
 ) -> Result<SubjectMetrics, CliFailure> {
+    let pixel_count = (capture.descriptor.width * capture.descriptor.height) as usize;
     if semantic_aov.width != capture.descriptor.width
         || semantic_aov.height != capture.descriptor.height
-        || semantic_aov.id_indices.len()
-            != (capture.descriptor.width * capture.descriptor.height) as usize
+        || semantic_aov.id_indices.len() != pixel_count
+        || semantic_aov
+            .beauty_id_indices
+            .as_ref()
+            .is_some_and(|ids| ids.len() != pixel_count)
     {
         return Err(CliFailure::new(
             CliErrorKind::Runtime,
             "photo semantic subject mask dimensions do not match the rendered frame",
         ));
     }
+    let subject_mask_ids = semantic_aov
+        .beauty_id_indices
+        .as_deref()
+        .unwrap_or(&semantic_aov.id_indices);
     let subject_handles = subject_handles(subject)
         .into_iter()
         .collect::<BTreeSet<_>>();
@@ -1593,6 +2598,21 @@ fn measure_subject(
         })
         .map(|entry| entry.palette_index)
         .collect::<BTreeSet<_>>();
+    let subject_material_by_palette = semantic_aov
+        .legend
+        .iter()
+        .filter(|entry| {
+            subject_handles.contains(&entry.node_handle)
+                || entry
+                    .instance_handle
+                    .is_some_and(|handle| subject_handles.contains(&handle))
+        })
+        .filter_map(|entry| {
+            entry
+                .material_handle
+                .map(|material| (entry.palette_index, material))
+        })
+        .collect::<BTreeMap<_, _>>();
     if subject_palette.is_empty() {
         return Err(CliFailure::new(
             CliErrorKind::Runtime,
@@ -1664,6 +2684,7 @@ fn measure_subject(
     let mut low_clip = 0_u64;
     let mut high_clip = 0_u64;
     let mut sample_count = 0_u64;
+    let mut material_luminance = BTreeMap::<u64, (f64, u64)>::new();
     let background = capture_background_rgba8(capture);
     for y in start_y..end_y {
         for x in start_x..end_x {
@@ -1672,13 +2693,13 @@ fn measure_subject(
                 continue;
             };
             let pixel_index = y as usize * capture.descriptor.width as usize + x as usize;
-            if !semantic_aov
-                .id_indices
+            let Some(palette_index) = subject_mask_ids
                 .get(pixel_index)
-                .is_some_and(|index| subject_palette.contains(index))
-            {
+                .copied()
+                .filter(|index| subject_palette.contains(index))
+            else {
                 continue;
-            }
+            };
             if pixel[3] == 0 {
                 continue;
             }
@@ -1688,6 +2709,11 @@ fn measure_subject(
                 + 0.0722 * f64::from(pixel[2]);
             sum_luma += luma;
             sum_luma_sq += luma * luma;
+            if let Some(material_handle) = subject_material_by_palette.get(&palette_index) {
+                let material = material_luminance.entry(*material_handle).or_default();
+                material.0 += luma;
+                material.1 = material.1.saturating_add(1);
+            }
             background_delta_sum += f64::from(background_delta);
             min_luma = min_luma.min(luma);
             max_luma = max_luma.max(luma);
@@ -1698,7 +2724,7 @@ fn measure_subject(
             if luma <= 10.0 {
                 low_clip = low_clip.saturating_add(1);
             }
-            if luma >= 245.0 {
+            if pixel_has_output_channel_clip(pixel) {
                 high_clip = high_clip.saturating_add(1);
             }
             sample_count = sample_count.saturating_add(1);
@@ -1733,6 +2759,8 @@ fn measure_subject(
     let fill_height_fraction = f64::from((projected_max_y - projected_min_y).max(0.0))
         / f64::from(capture.descriptor.height.max(1));
     let mean_luminance_srgb8 = sum_luma / sample_count as f64;
+    let (dark_material_mean_luminance_srgb8, dark_material_coverage) =
+        select_dark_material_region(&material_luminance, sample_count);
     let variance = (sum_luma_sq / sample_count as f64 - mean_luminance_srgb8.powi(2)).max(0.0);
     let center_x = (f64::from(projected_min_x) + f64::from(projected_max_x)) * 0.5;
     let center_y = (f64::from(projected_min_y) + f64::from(projected_max_y)) * 0.5;
@@ -1764,6 +2792,8 @@ fn measure_subject(
         fill_width_fraction,
         fill_height_fraction,
         mean_luminance_srgb8,
+        dark_material_mean_luminance_srgb8,
+        dark_material_coverage,
         luminance_stddev_srgb8: variance.sqrt(),
         luminance_range_srgb8: max_luma - min_luma,
         background_separation_srgb8: background_delta_sum / sample_count as f64,
@@ -1788,6 +2818,24 @@ fn measure_subject(
     })
 }
 
+fn select_dark_material_region(
+    material_luminance: &BTreeMap<u64, (f64, u64)>,
+    subject_sample_count: u64,
+) -> (Option<f64>, f64) {
+    let minimum_samples = (subject_sample_count / 20).max(32);
+    material_luminance
+        .values()
+        .filter(|(_, samples)| *samples >= minimum_samples)
+        .map(|(sum, samples)| {
+            (
+                sum / *samples as f64,
+                *samples as f64 / subject_sample_count.max(1) as f64,
+            )
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map_or((None, 0.0), |(mean, coverage)| (Some(mean), coverage))
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct SubjectAppearanceMeasurements {
     background_mean_luminance_srgb8: f64,
@@ -1805,6 +2853,67 @@ struct SubjectAppearanceMeasurements {
     reflection_washout: f64,
 }
 
+const SUPPORT_SHADOW_MIN_DELTA_SRGB8: f64 = 3.0;
+const SUPPORT_SHADOW_SOFT_MAX_DELTA_SRGB8: f64 = 48.0;
+
+fn measure_local_support_shadow(
+    receiver_luma: &[f64],
+    width: usize,
+    height: usize,
+    outer_radius: usize,
+) -> (f64, f64) {
+    if width == 0 || height == 0 || receiver_luma.len() != width.saturating_mul(height) || width < 5
+    {
+        return (0.0, 0.0);
+    }
+    let outer_radius = outer_radius.clamp(2, width.saturating_sub(1) / 2);
+    let inner_radius = (outer_radius / 2).max(1);
+    let mut shadow_count = 0_u64;
+    let mut soft_shadow_count = 0_u64;
+    let mut support_samples = 0_u64;
+    let mut row_sum = vec![0.0_f64; width + 1];
+    let mut row_count = vec![0_u64; width + 1];
+
+    for y in 0..height {
+        row_sum.fill(0.0);
+        row_count.fill(0);
+        for x in 0..width {
+            let sample = receiver_luma[y * width + x];
+            row_sum[x + 1] = row_sum[x] + if sample.is_finite() { sample } else { 0.0 };
+            row_count[x + 1] = row_count[x].saturating_add(u64::from(sample.is_finite()));
+        }
+        for x in outer_radius..width.saturating_sub(outer_radius) {
+            let sample = receiver_luma[y * width + x];
+            if !sample.is_finite() {
+                continue;
+            }
+            let left_start = x - outer_radius;
+            let left_end = x - inner_radius;
+            let right_start = x + inner_radius + 1;
+            let right_end = x + outer_radius + 1;
+            let reference_sum =
+                row_sum[left_end] - row_sum[left_start] + row_sum[right_end] - row_sum[right_start];
+            let reference_count = row_count[left_end]
+                .saturating_sub(row_count[left_start])
+                .saturating_add(row_count[right_end].saturating_sub(row_count[right_start]));
+            if reference_count < 2 {
+                continue;
+            }
+            let delta = reference_sum / reference_count as f64 - sample;
+            support_samples = support_samples.saturating_add(1);
+            if delta >= SUPPORT_SHADOW_MIN_DELTA_SRGB8 {
+                shadow_count = shadow_count.saturating_add(1);
+                soft_shadow_count += u64::from(delta <= SUPPORT_SHADOW_SOFT_MAX_DELTA_SRGB8);
+            }
+        }
+    }
+
+    (
+        shadow_count as f64 / support_samples.max(1) as f64,
+        soft_shadow_count as f64 / shadow_count.max(1) as f64,
+    )
+}
+
 fn measure_subject_appearance(
     capture: &scena::CaptureRgba8,
     semantic_aov: &scena::SceneHostSemanticAovCaptureV1,
@@ -1815,9 +2924,12 @@ fn measure_subject_appearance(
 ) -> SubjectAppearanceMeasurements {
     let width = capture.descriptor.width as usize;
     let height = capture.descriptor.height as usize;
+    let subject_mask_ids = semantic_aov
+        .beauty_id_indices
+        .as_deref()
+        .unwrap_or(&semantic_aov.id_indices);
     let is_subject = |index: usize| {
-        semantic_aov
-            .id_indices
+        subject_mask_ids
             .get(index)
             .is_some_and(|palette| subject_palette.contains(palette))
     };
@@ -1904,8 +3016,26 @@ fn measure_subject_appearance(
             || (y > 0 && !is_subject(index - width))
             || (y + 1 < height && !is_subject(index + width));
         if boundary {
-            silhouette_delta_sum += f64::from(max_rgb_delta_rgba8(pixel, background));
-            silhouette_count = silhouette_count.saturating_add(1);
+            let boundary_delta = [
+                (x > 0).then_some(index - 1),
+                (x + 1 < width).then_some(index + 1),
+                (y > 0).then_some(index - width),
+                (y + 1 < height).then_some(index + width),
+            ]
+            .into_iter()
+            .flatten()
+            .filter(|neighbor| !is_subject(*neighbor))
+            .filter_map(|neighbor| {
+                capture
+                    .rgba8
+                    .get(neighbor * 4..neighbor * 4 + 4)
+                    .map(|neighbor| max_rgb_delta_between_rgba8(pixel, neighbor))
+            })
+            .max();
+            if let Some(delta) = boundary_delta {
+                silhouette_delta_sum += f64::from(delta);
+                silhouette_count = silhouette_count.saturating_add(1);
+            }
         }
     }
 
@@ -1914,28 +3044,26 @@ fn measure_subject_appearance(
     } else {
         pixel_luminance(&background)
     };
-    let mut shadow_count = 0_u64;
-    let mut soft_shadow_count = 0_u64;
     let min_x = projected_rect[0].floor().max(0.0) as usize;
     let max_x = projected_rect[2].ceil().min(width as f32) as usize;
     let start_y = projected_rect[3].floor().max(0.0) as usize;
     let end_y = (start_y + (height / 10).max(2)).min(height);
-    let mut support_samples = 0_u64;
+    let support_width = max_x.saturating_sub(min_x);
+    let support_height = end_y.saturating_sub(start_y);
+    let mut receiver_luma = Vec::with_capacity(support_width.saturating_mul(support_height));
     for y in start_y..end_y {
         for x in min_x..max_x {
             let index = y * width + x;
             if is_subject(index) {
+                receiver_luma.push(f64::NAN);
                 continue;
             }
-            let luma = pixel_luminance(&capture.rgba8[index * 4..index * 4 + 4]);
-            let delta = background_mean_luminance_srgb8 - luma;
-            support_samples = support_samples.saturating_add(1);
-            if delta >= 6.0 {
-                shadow_count = shadow_count.saturating_add(1);
-                soft_shadow_count += u64::from(delta <= 48.0);
-            }
+            receiver_luma.push(pixel_luminance(&capture.rgba8[index * 4..index * 4 + 4]));
         }
     }
+    let shadow_radius = (support_width / 5).max(2);
+    let (shadow_presence, shadow_softness) =
+        measure_local_support_shadow(&receiver_luma, support_width, support_height, shadow_radius);
     let subject_count_f64 = subject_count.max(1) as f64;
     let mean_rgb = rgb_sum.map(|sum| sum / subject_count_f64);
     let mean_channel = (mean_rgb[0] + mean_rgb[1] + mean_rgb[2]) / 3.0;
@@ -1974,8 +3102,8 @@ fn measure_subject_appearance(
             .filter(|value| *value)
             .count() as f64
             / 4.0,
-        shadow_presence: shadow_count as f64 / support_samples.max(1) as f64,
-        shadow_softness: soft_shadow_count as f64 / shadow_count.max(1) as f64,
+        shadow_presence,
+        shadow_softness,
         silhouette_separation: silhouette_delta_sum / silhouette_count.max(1) as f64 / 255.0,
         mean_saturation,
         color_cast,
@@ -1985,6 +3113,10 @@ fn measure_subject_appearance(
 
 fn pixel_luminance(pixel: &[u8]) -> f64 {
     0.2126 * f64::from(pixel[0]) + 0.7152 * f64::from(pixel[1]) + 0.0722 * f64::from(pixel[2])
+}
+
+fn pixel_has_output_channel_clip(pixel: &[u8]) -> bool {
+    pixel.get(..3).is_some_and(|rgb| rgb.contains(&u8::MAX))
 }
 
 fn capture_background_rgba8(capture: &scena::CaptureRgba8) -> [u8; 4] {
@@ -1998,6 +3130,13 @@ fn capture_background_rgba8(capture: &scena::CaptureRgba8) -> [u8; 4] {
 fn max_rgb_delta_rgba8(pixel: &[u8], background: [u8; 4]) -> u8 {
     (0..3)
         .map(|channel| pixel[channel].abs_diff(background[channel]))
+        .max()
+        .unwrap_or(0)
+}
+
+fn max_rgb_delta_between_rgba8(left: &[u8], right: &[u8]) -> u8 {
+    (0..3)
+        .map(|channel| left[channel].abs_diff(right[channel]))
         .max()
         .unwrap_or(0)
 }
@@ -2022,24 +3161,35 @@ pub(crate) fn select_camera_behavior_subject(
     };
     let handles = resolve_photo_subject_handles(manifest, &target)?;
     let (target_kind, id) = photo_target_kind_and_id(&target);
-    let root_handle = match &target {
-        scena::SceneRecipeTargetV1::Import { id } => manifest
-            .imports
-            .iter()
-            .find(|import| import.id == *id)
-            .and_then(|import| {
-                import
-                    .primary_root
-                    .or_else(|| import.root_handles.first().copied())
-            })
-            .or_else(|| handles.first().copied())
-            .ok_or_else(|| {
-                CliFailure::new(
-                    CliErrorKind::Runtime,
-                    format!("photo subject import '{id}' resolved to no root handle"),
-                )
-            })?,
-        scena::SceneRecipeTargetV1::Node { .. } => handles[0],
+    let (root_handle, root_handles) = match &target {
+        scena::SceneRecipeTargetV1::Import { id } => {
+            let import = manifest
+                .imports
+                .iter()
+                .find(|import| import.id == *id)
+                .ok_or_else(|| {
+                    CliFailure::new(
+                        CliErrorKind::Runtime,
+                        format!("photo subject import '{id}' has no build manifest entry"),
+                    )
+                })?;
+            let root_handle = import
+                .primary_root
+                .or_else(|| import.root_handles.first().copied())
+                .or_else(|| handles.first().copied())
+                .ok_or_else(|| {
+                    CliFailure::new(
+                        CliErrorKind::Runtime,
+                        format!("photo subject import '{id}' resolved to no root handle"),
+                    )
+                })?;
+            let mut root_handles = import.root_handles.clone();
+            if root_handles.is_empty() {
+                root_handles.push(root_handle);
+            }
+            (root_handle, root_handles)
+        }
+        scena::SceneRecipeTargetV1::Node { .. } => (handles[0], vec![handles[0]]),
         scena::SceneRecipeTargetV1::World { .. } => unreachable!("world targets are rejected"),
     };
     let draw_handles = handles.into_iter().collect::<BTreeSet<_>>();
@@ -2047,6 +3197,7 @@ pub(crate) fn select_camera_behavior_subject(
         target_kind,
         id,
         root_handle,
+        root_handles,
         draw_handles,
     })
 }
@@ -2097,25 +3248,37 @@ pub(crate) fn apply_camera_behavior_setup_with_plan(
     authored_lights: bool,
     planning: &scena::PhotoCandidatePlanV1,
     gpu: bool,
+    quality: scena::SceneRecipePhotoQualityV1,
+    ground: scena::scene_host::PhotographicGroundV1,
+    optimize: bool,
 ) -> Result<ShadedCandidateSelection, CliFailure> {
-    let surface_report = host
-        .apply_photographic_surface(subject.root_handle)
-        .map_err(runtime_failure)?;
+    let use_builtin_studio = use_builtin_studio_lighting(authored_lights, optimize);
+    let surface_report = apply_subject_photographic_surface(host, subject)?;
     ensure_photographic_asset_usable(&surface_report)?;
-    let _surroundings = host
-        .apply_photographic_surroundings(subject.root_handle)
+    let mut surroundings_report = host
+        .apply_photographic_surroundings_with_ground(subject.root_handle, ground)
         .map_err(runtime_failure)?;
-    configure_camera_behavior_renderer(host);
-    let shaded_selection = select_camera_behavior_shaded_candidate(
+    apply_synthetic_contact_shadow_policy(
+        host,
+        &mut surroundings_report,
+        synthetic_contact_shadow_enabled(quality),
+    )?;
+    configure_camera_behavior_renderer(host, quality, optimize)?;
+    if use_builtin_studio {
+        host.add_studio_lighting().map_err(runtime_failure)?;
+    }
+    let mut shaded_selection = select_camera_behavior_shaded_candidate(
         host,
         subject,
         planning,
-        authored_lights,
+        authored_lights || use_builtin_studio,
         surface_report,
+        surroundings_report,
         gpu,
+        optimize,
     )?;
     let selected = selected_shaded_composition_candidate(planning, &shaded_selection)?;
-    host.frame_node_with_photo_candidate(subject.root_handle, selected)
+    host.frame_nodes_with_photo_candidate(&subject.root_handles, selected)
         .map_err(runtime_failure)?;
     let selected_adjustment = shaded_selection
         .candidates
@@ -2124,20 +3287,115 @@ pub(crate) fn apply_camera_behavior_setup_with_plan(
         .and_then(|candidate| candidate.lighting_adjustment);
     if !authored_lights || selected_adjustment.is_some() {
         let adjustment = selected_adjustment.unwrap_or_default();
-        host.apply_photographic_lighting_adjusted(subject.root_handle, adjustment)
-            .map_err(runtime_failure)?;
+        let mut lighting_report = if quality.is_final() {
+            host.apply_final_photographic_lighting_adjusted(subject.root_handle, adjustment)
+        } else {
+            host.apply_photographic_lighting_adjusted(subject.root_handle, adjustment)
+        }
+        .map_err(runtime_failure)?;
+        if use_builtin_studio {
+            for light in &lighting_report.lights {
+                host.remove_node(light.node).map_err(runtime_failure)?;
+            }
+            lighting_report.lights.clear();
+            lighting_report.source = "built_in_studio_directional".to_owned();
+        }
+        shaded_selection.lighting_report = Some(lighting_report);
     }
-    configure_camera_behavior_renderer(host);
+    configure_camera_behavior_renderer(host, quality, optimize)?;
+    if automatic_reflection_probe_bake_enabled(quality) {
+        shaded_selection.reflection_probe_report = Some(
+            host.bake_photographic_reflection_probes(subject.root_handle)
+                .map_err(runtime_failure)?,
+        );
+    }
     Ok(shaded_selection)
+}
+
+const fn use_builtin_studio_lighting(authored_lights: bool, optimize: bool) -> bool {
+    !authored_lights && !optimize
+}
+
+fn apply_subject_photographic_surface(
+    host: &mut scena::SceneHostCore,
+    subject: &SubjectSelection,
+) -> Result<scena::PhotographicSurfaceReportV1, CliFailure> {
+    let mut roots = subject.root_handles.clone();
+    if !roots.contains(&subject.root_handle) {
+        roots.push(subject.root_handle);
+    }
+    roots.sort_unstable();
+    roots.dedup();
+
+    let mut reports = roots.into_iter().map(|root| {
+        host.apply_photographic_surface(root)
+            .map_err(runtime_failure)
+    });
+    let mut aggregate = reports.next().transpose()?.ok_or_else(|| {
+        CliFailure::new(
+            CliErrorKind::Runtime,
+            "photo subject resolved to no roots for photographic surface preparation",
+        )
+    })?;
+    for report in reports {
+        merge_photographic_surface_report(&mut aggregate, report?);
+    }
+    aggregate.subject = subject.root_handle;
+    Ok(aggregate)
+}
+
+fn merge_photographic_surface_report(
+    aggregate: &mut scena::PhotographicSurfaceReportV1,
+    report: scena::PhotographicSurfaceReportV1,
+) {
+    aggregate.mesh_count += report.mesh_count;
+    aggregate.repaired_normal_meshes += report.repaired_normal_meshes;
+    aggregate.reversed_winding_meshes += report.reversed_winding_meshes;
+    aggregate.disconnected_meshes += report.disconnected_meshes;
+    aggregate.maximum_disconnected_components = aggregate
+        .maximum_disconnected_components
+        .max(report.maximum_disconnected_components);
+    aggregate.removed_degenerate_triangles += report.removed_degenerate_triangles;
+    aggregate.generated_tangent_frames += report.generated_tangent_frames;
+    aggregate.micro_beveled_meshes += report.micro_beveled_meshes;
+    aggregate.preserved_sharp_meshes += report.preserved_sharp_meshes;
+    aggregate.micro_surface_materials += report.micro_surface_materials;
+    aggregate.neutral_fallback_materials += report.neutral_fallback_materials;
+    aggregate.max_bevel_m = aggregate.max_bevel_m.max(report.max_bevel_m);
+    aggregate.boundary_edges += report.boundary_edges;
+    aggregate.nonmanifold_edges += report.nonmanifold_edges;
+    aggregate.folded_edges += report.folded_edges;
+    aggregate.self_intersections += report.self_intersections;
+    aggregate.duplicate_vertices_removed += report.duplicate_vertices_removed;
+    aggregate.minimum_texture_dimension = match (
+        aggregate.minimum_texture_dimension,
+        report.minimum_texture_dimension,
+    ) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (left, right) => left.or(right),
+    };
+    for scope in report.inspection_scope {
+        if !aggregate.inspection_scope.contains(&scope) {
+            aggregate.inspection_scope.push(scope);
+        }
+    }
+    aggregate.coherent_visible_subject &= report.coherent_visible_subject;
+    aggregate.issues.extend(report.issues);
+    aggregate.rejected_meshes.extend(report.rejected_meshes);
+    for claim in report.substance_claims {
+        if !aggregate.substance_claims.contains(&claim) {
+            aggregate.substance_claims.push(claim);
+        }
+    }
 }
 
 pub(crate) fn camera_behavior_composition_plan(
     host: &scena::SceneHostCore,
-    root_handle: u64,
+    subject: &SubjectSelection,
     preserve_authored_camera: bool,
 ) -> Result<scena::PhotoCandidatePlanV1, CliFailure> {
     let subject_bounds = host
-        .node_world_bounds(root_handle)
+        .nodes_world_bounds(&subject.root_handles)
         .map_err(runtime_failure)?
         .ok_or_else(|| {
             CliFailure::new(
@@ -2234,22 +3492,79 @@ fn plan_rejection_reasons(
         .collect()
 }
 
-fn configure_camera_behavior_renderer(host: &mut scena::SceneHostCore) {
+fn configure_camera_behavior_renderer(
+    host: &mut scena::SceneHostCore,
+    quality: scena::SceneRecipePhotoQualityV1,
+    optimize: bool,
+) -> Result<(), CliFailure> {
     let renderer = host.renderer_mut();
-    renderer.set_tonemapper(scena::Tonemapper::Aces);
-    if renderer.auto_exposure().is_none() && !renderer.has_explicit_exposure_ev() {
+    // Final stills shade full-frame samples and resolve once. Preview keeps the
+    // cheaper edge-only sampling path for compatibility.
+    if quality.is_final() {
+        renderer.set_anti_aliasing(scena::AntiAliasing::None);
+        if camera_behavior_baked_ambient_visibility_enabled(quality) {
+            renderer.set_baked_ambient_occlusion(Some(
+                scena::BakedAmbientOcclusionConfig::product_still(),
+            ));
+        } else {
+            renderer.clear_baked_ambient_occlusion();
+        }
+        if renderer.supersample_factor() < 2 {
+            renderer
+                .set_supersample_factor(2)
+                .map_err(runtime_failure)?;
+        }
+        renderer.set_reconstruction_filter(scena::ReconstructionFilter::Tent);
+    } else {
+        renderer.set_anti_aliasing(scena::AntiAliasing::Msaa4);
+        renderer.clear_baked_ambient_occlusion();
+    }
+    renderer.set_tonemapper(if quality.is_final() {
+        scena::Tonemapper::PbrNeutral
+    } else {
+        scena::Tonemapper::Aces
+    });
+    if optimize && renderer.auto_exposure().is_none() && !renderer.has_explicit_exposure_ev() {
         renderer.set_auto_exposure(
             scena::AutoExposureConfig::new(0.20)
                 .with_ev_range(-8.0, 8.0)
                 .with_highlight_guard(0.92, 0.78),
         );
+    } else if !optimize {
+        renderer.clear_auto_exposure();
+        renderer.set_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV);
     }
     renderer.set_bloom(Some(scena::PostBloomConfig::new(232, 0.04, 3)));
-    if renderer.screen_space_ambient_occlusion().is_none() {
+    if !camera_behavior_ssao_enabled(quality)
+        || std::env::var_os("SCENA_DEBUG_DISABLE_SSAO").is_some()
+    {
+        renderer.set_screen_space_ambient_occlusion(None);
+    } else if renderer.screen_space_ambient_occlusion().is_none() {
         renderer.set_screen_space_ambient_occlusion(Some(
             scena::ScreenSpaceAmbientOcclusionConfig::new(4, 0.32, 0.025),
         ));
     }
+    Ok(())
+}
+
+const fn camera_behavior_ssao_enabled(quality: scena::SceneRecipePhotoQualityV1) -> bool {
+    !quality.is_final()
+}
+
+const fn camera_behavior_baked_ambient_visibility_enabled(
+    _quality: scena::SceneRecipePhotoQualityV1,
+) -> bool {
+    false
+}
+
+const fn automatic_reflection_probe_bake_enabled(
+    quality: scena::SceneRecipePhotoQualityV1,
+) -> bool {
+    quality.is_final()
+}
+
+const fn synthetic_contact_shadow_enabled(quality: scena::SceneRecipePhotoQualityV1) -> bool {
+    !quality.is_final()
 }
 
 fn select_camera_behavior_shaded_candidate(
@@ -2258,7 +3573,9 @@ fn select_camera_behavior_shaded_candidate(
     planning: &scena::PhotoCandidatePlanV1,
     authored_lights: bool,
     surface_report: scena::PhotographicSurfaceReportV1,
+    surroundings_report: scena::PhotographicSurroundingsReportV1,
     gpu: bool,
+    optimize: bool,
 ) -> Result<ShadedCandidateSelection, CliFailure> {
     let original_size = host.viewport_size();
     host.resize(
@@ -2274,7 +3591,9 @@ fn select_camera_behavior_shaded_candidate(
         planning,
         authored_lights,
         surface_report,
+        surroundings_report,
         gpu,
+        optimize,
     );
     let restore = host.resize(original_size.0 as f32, original_size.1 as f32, 1.0);
     match (result, restore) {
@@ -2290,7 +3609,9 @@ fn render_camera_behavior_shaded_candidates(
     planning: &scena::PhotoCandidatePlanV1,
     authored_lights: bool,
     surface_report: scena::PhotographicSurfaceReportV1,
+    surroundings_report: scena::PhotographicSurroundingsReportV1,
     gpu: bool,
+    optimize: bool,
 ) -> Result<ShadedCandidateSelection, CliFailure> {
     let mut scored_plan = planning.clone();
     scored_plan
@@ -2312,7 +3633,7 @@ fn render_camera_behavior_shaded_candidates(
     let mut observations = Vec::with_capacity(scored_plan.candidates.len());
     let mut work_metrics = PhotoLoopWorkMetrics::default();
     for candidate in &scored_plan.candidates {
-        host.frame_node_with_photo_candidate(subject.root_handle, candidate)
+        host.frame_nodes_with_photo_candidate(&subject.root_handles, candidate)
             .map_err(runtime_failure)?;
         let mut generated_lighting = if authored_lights {
             None
@@ -2341,7 +3662,7 @@ fn render_camera_behavior_shaded_candidates(
         };
         work_metrics.record_subject_samples(metrics.sample_count);
         let mut lighting_adjustment = None;
-        if let Some(adjustment) = corrected_photographic_lighting(metrics) {
+        if optimize && let Some(adjustment) = corrected_photographic_lighting(metrics) {
             if let Some(previous) = generated_lighting.take() {
                 remove_generated_photographic_lights(host, previous)?;
             }
@@ -2391,6 +3712,7 @@ fn render_camera_behavior_shaded_candidates(
     let scoring = scena::score_camera_behavior_candidates(&scored_plan, &observations)
         .map_err(runtime_failure)?;
     Ok(ShadedCandidateSelection {
+        surroundings_report,
         selected_candidate_id: scoring.selected_candidate_id.clone(),
         low_resolution: [
             CAMERA_BEHAVIOR_SHADED_CANDIDATE_WIDTH,
@@ -2401,6 +3723,8 @@ fn render_camera_behavior_shaded_candidates(
         scoring,
         work_metrics,
         surface_report,
+        lighting_report: None,
+        reflection_probe_report: None,
     })
 }
 
@@ -2655,7 +3979,6 @@ fn photo_source_for(
     input: &Path,
     requested: Option<(u32, u32)>,
 ) -> Result<(PhotoSource, u32, u32, &'static str), CliFailure> {
-    let (default_width, default_height) = (DEFAULT_PHOTO_WIDTH, DEFAULT_PHOTO_HEIGHT);
     if input
         .extension()
         .and_then(|extension| extension.to_str())
@@ -2667,28 +3990,26 @@ fn photo_source_for(
                 format!("failed to read recipe '{}': {error}", input.display()),
             )
         })?;
+        let quality = recipe_photo_quality(&text, input)?;
+        let ground = recipe_photo_ground(&text, input)?;
         let declared = recipe_declared_capture(&text, input)?;
-        let (width, height, capture_source) = match (requested, declared) {
-            (Some((width, height)), _) => (width, height, "cli_flag"),
-            (None, Some((width, height))) => (width, height, "recipe_capture"),
-            (None, None) => (default_width, default_height, "photo_default"),
-        };
-        let text = recipe_text_with_capture_override(text, input, width, height)?;
+        let (width, height, capture_source) = resolve_photo_capture(quality, requested, declared);
+        let text = recipe_text_with_capture_override(text, input, quality, width, height)?;
         return Ok((
             PhotoSource {
                 recipe_text: text,
                 recipe_path: input.display().to_string(),
                 source_kind: "recipe",
+                quality,
+                ground,
             },
             width,
             height,
             capture_source,
         ));
     }
-    let (width, height, capture_source) = match requested {
-        Some((width, height)) => (width, height, "cli_flag"),
-        None => (default_width, default_height, "photo_default"),
-    };
+    let quality = scena::SceneRecipePhotoQualityV1::Preview;
+    let (width, height, capture_source) = resolve_photo_capture(quality, requested, None);
 
     let recipe_path = std::env::current_dir()
         .map(|cwd| cwd.join("scena-photo.generated.recipe.json"))
@@ -2712,8 +4033,206 @@ fn photo_source_for(
         .expect("generated photo recipe serializes"),
         recipe_path: recipe_path.display().to_string(),
         source_kind: "asset",
+        quality,
+        ground: scena::scene_host::PhotographicGroundV1::Matte,
     };
     Ok((source, width, height, capture_source))
+}
+
+fn recipe_photo_ground(
+    text: &str,
+    input: &Path,
+) -> Result<scena::scene_host::PhotographicGroundV1, CliFailure> {
+    let value: Value = serde_json::from_str(text).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::InvalidInput,
+            format!("recipe '{}' is not valid JSON: {error}", input.display()),
+        )
+    })?;
+    Ok(photo_ground_from_staging(
+        value
+            .pointer("/photo/staging/ground")
+            .and_then(Value::as_str),
+    ))
+}
+
+pub(crate) fn photo_ground_from_staging(
+    ground: Option<&str>,
+) -> scena::scene_host::PhotographicGroundV1 {
+    match ground {
+        Some("reflective") => scena::scene_host::PhotographicGroundV1::Reflective,
+        _ => scena::scene_host::PhotographicGroundV1::Matte,
+    }
+}
+
+fn resolve_photo_capture(
+    quality: scena::SceneRecipePhotoQualityV1,
+    requested: Option<(u32, u32)>,
+    declared: Option<(u32, u32)>,
+) -> (u32, u32, &'static str) {
+    match (requested, declared, quality) {
+        (Some((width, height)), _, _) => (width, height, "cli_flag"),
+        (None, Some((width, height)), _) => (width, height, "recipe_capture"),
+        (None, None, scena::SceneRecipePhotoQualityV1::Final) => (
+            DEFAULT_FINAL_PHOTO_WIDTH,
+            DEFAULT_FINAL_PHOTO_HEIGHT,
+            "final_photo_default",
+        ),
+        (None, None, scena::SceneRecipePhotoQualityV1::Preview) => {
+            (DEFAULT_PHOTO_WIDTH, DEFAULT_PHOTO_HEIGHT, "photo_default")
+        }
+    }
+}
+
+fn recipe_photo_quality(
+    text: &str,
+    input: &Path,
+) -> Result<scena::SceneRecipePhotoQualityV1, CliFailure> {
+    let value: Value = serde_json::from_str(text).map_err(|error| {
+        CliFailure::new(
+            CliErrorKind::InvalidInput,
+            format!("recipe '{}' is not valid JSON: {error}", input.display()),
+        )
+    })?;
+    Ok(
+        match value.pointer("/photo/quality").and_then(Value::as_str) {
+            Some("final") => scena::SceneRecipePhotoQualityV1::Final,
+            _ => scena::SceneRecipePhotoQualityV1::Preview,
+        },
+    )
+}
+
+pub(crate) fn normalize_recipe_photo_defaults(
+    text: String,
+    input: &Path,
+) -> Result<(String, scena::SceneRecipePhotoQualityV1), CliFailure> {
+    let quality = recipe_photo_quality(&text, input)?;
+    if quality.is_preview() {
+        return Ok((text, quality));
+    }
+
+    let declared = recipe_declared_capture(&text, input)?;
+    let (width, height, _) = resolve_photo_capture(quality, None, declared);
+    let text = recipe_text_with_capture_override(text, input, quality, width, height)?;
+    Ok((text, quality))
+}
+
+pub(crate) fn ensure_final_photo_backend(
+    quality: scena::SceneRecipePhotoQualityV1,
+    backend: scena::Backend,
+) -> Result<(), CliFailure> {
+    if !quality.is_final()
+        || matches!(
+            backend,
+            scena::Backend::HeadlessGpu | scena::Backend::NativeSurface
+        )
+    {
+        return Ok(());
+    }
+    Err(CliFailure::new(
+        CliErrorKind::FinalPhotoUnsupported,
+        format!(
+            "final_photo_unsupported: backend {backend:?} cannot provide the complete native final-photo contract; use HeadlessGpu or NativeSurface"
+        ),
+    ))
+}
+
+struct PhotoQualityExecutionInput<'a> {
+    quality: scena::SceneRecipePhotoQualityV1,
+    backend: scena::Backend,
+    evidence_class: &'a str,
+    capture: [u32; 2],
+    supersample_factor: u32,
+    reconstruction: &'a str,
+    anti_aliasing: &'a str,
+    environment_source_dimensions: Option<[u32; 2]>,
+    environment_cubemap_resolution: Option<u32>,
+    reflection_probe_count: usize,
+    shadow_mode: &'a str,
+    tonemapper: &'a str,
+    edge_rounding: Vec<scena::SceneRecipeImportEdgeRoundingReportV1>,
+    material_resolution_selection: Option<scena::PhotographicMaterialResolutionSelectionReportV1>,
+}
+
+fn photo_quality_execution_json(input: PhotoQualityExecutionInput<'_>) -> Value {
+    let quality = match input.quality {
+        scena::SceneRecipePhotoQualityV1::Preview => "preview",
+        scena::SceneRecipePhotoQualityV1::Final => "final",
+    };
+    let [width, height] = input.capture;
+    json!({
+        "schema": scena::PHOTO_QUALITY_EXECUTION_SCHEMA_V1,
+        "requested": quality,
+        "effective": quality,
+        "backend": input.backend,
+        "evidence_class": input.evidence_class,
+        "capture": {
+            "width": width,
+            "height": height,
+            "pixel_count": u64::from(width).saturating_mul(u64::from(height)),
+        },
+        "sampling": {
+            "supersample_factor": input.supersample_factor,
+            "reconstruction": input.reconstruction,
+            "anti_aliasing": input.anti_aliasing,
+        },
+        "environment": {
+            "source_dimensions": input.environment_source_dimensions,
+            "cubemap_resolution": input.environment_cubemap_resolution,
+        },
+        "reflections": {
+            "local_probe_count": input.reflection_probe_count,
+        },
+        "shadows": {
+            "mode": input.shadow_mode,
+        },
+        "color": {
+            "linear_scene_format": "rgba16_float",
+            "tonemapper": input.tonemapper,
+            "output_encoding": "srgb8_png",
+        },
+        "geometry": {
+            "edge_rounding": input.edge_rounding,
+        },
+        "materials": {
+            "resolution_selection": input.material_resolution_selection,
+        },
+    })
+}
+
+fn classify_photo_evidence(
+    backend: scena::Backend,
+    adapter_name: Option<&str>,
+    adapter_driver: Option<&str>,
+    adapter_driver_info: Option<&str>,
+) -> &'static str {
+    if matches!(backend, scena::Backend::WebGpu | scena::Backend::WebGl2) {
+        return "browser_conformance";
+    }
+    let adapter = format!(
+        "{} {} {}",
+        adapter_name.unwrap_or_default(),
+        adapter_driver.unwrap_or_default(),
+        adapter_driver_info.unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    if adapter.contains("v3d") || adapter.contains("v3dv") {
+        return "v3d_diagnostic";
+    }
+    if adapter.contains("lavapipe")
+        || adapter.contains("llvmpipe")
+        || adapter.contains("swiftshader")
+        || adapter.contains("software raster")
+    {
+        return "software_conformance";
+    }
+    if matches!(
+        backend,
+        scena::Backend::HeadlessGpu | scena::Backend::NativeSurface
+    ) {
+        return "supported_hardware";
+    }
+    "cpu_preview"
 }
 
 /// The `capture` block a recipe declares for itself, if any.
@@ -2781,6 +4300,7 @@ fn emit_effective_recipe(args: &PhotoRenderArgs, source: &PhotoSource) -> Result
 fn recipe_text_with_capture_override(
     text: String,
     input: &Path,
+    quality: scena::SceneRecipePhotoQualityV1,
     width: u32,
     height: u32,
 ) -> Result<String, CliFailure> {
@@ -2790,11 +4310,24 @@ fn recipe_text_with_capture_override(
             format!("recipe '{}' is not valid JSON: {error}", input.display()),
         )
     })?;
-    let Some(object) = value.as_object_mut() else {
-        return Err(CliFailure::new(
+    apply_photo_quality_defaults(&mut value, quality, width, height).map_err(|error| {
+        CliFailure::new(
             CliErrorKind::InvalidInput,
-            format!("recipe '{}' must be a JSON object", input.display()),
-        ));
+            format!("recipe '{}': {error}", input.display()),
+        )
+    })?;
+    serde_json::to_string_pretty(&value)
+        .map_err(|error| CliFailure::new(CliErrorKind::Internal, error.to_string()))
+}
+
+fn apply_photo_quality_defaults(
+    value: &mut Value,
+    quality: scena::SceneRecipePhotoQualityV1,
+    width: u32,
+    height: u32,
+) -> Result<(), &'static str> {
+    let Some(object) = value.as_object_mut() else {
+        return Err("must be a JSON object");
     };
     object.insert(
         "capture".to_owned(),
@@ -2803,8 +4336,38 @@ fn recipe_text_with_capture_override(
             "height": height,
         }),
     );
-    serde_json::to_string_pretty(&value)
-        .map_err(|error| CliFailure::new(CliErrorKind::Internal, error.to_string()))
+    if quality.is_preview() {
+        return Ok(());
+    }
+    if let Some(imports) = object.get_mut("imports").and_then(Value::as_array_mut) {
+        for import in imports.iter_mut().filter_map(Value::as_object_mut) {
+            import.entry("edge_rounding").or_insert_with(|| {
+                json!({
+                    "enabled": true,
+                    "radius_fraction": 0.0025,
+                    "segments": 3,
+                    "edge_angle_threshold_degrees": 30.0,
+                    "max_derived_triangles": 250000,
+                })
+            });
+        }
+    }
+    let render = object
+        .entry("render")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or("final photo render settings must be an object")?;
+    render
+        .entry("anti_aliasing")
+        .or_insert_with(|| json!("none"));
+    render.entry("supersample").or_insert_with(|| json!(2));
+    render
+        .entry("reconstruction")
+        .or_insert_with(|| json!("tent"));
+    render
+        .entry("tonemapper")
+        .or_insert_with(|| json!("pbr_neutral"));
+    Ok(())
 }
 
 impl PhotoRenderArgs {
@@ -2820,6 +4383,7 @@ impl PhotoRenderArgs {
         let mut width = DEFAULT_PHOTO_WIDTH;
         let mut height = DEFAULT_PHOTO_HEIGHT;
         let mut gpu = false;
+        let mut optimize = false;
         let mut max_imports = None;
         let mut allow_roots = Vec::new();
         let mut subject = None;
@@ -2855,6 +4419,10 @@ impl PhotoRenderArgs {
                 }
                 "--gpu" => {
                     gpu = true;
+                    index += 1;
+                }
+                "--optimize" => {
+                    optimize = true;
                     index += 1;
                 }
                 "--subject" => {
@@ -2905,6 +4473,7 @@ impl PhotoRenderArgs {
             width,
             height,
             gpu,
+            optimize,
             max_imports,
             allow_roots,
             subject,
@@ -3092,11 +4661,11 @@ fn runtime_failure(error: impl std::fmt::Display) -> CliFailure {
 }
 
 fn photo_usage() -> &'static str {
-    "usage: scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...; scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...; scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]..."
 }
 
 fn photo_render_usage() -> &'static str {
-    "usage: scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]..."
 }
 
 fn photo_plan_usage() -> &'static str {
@@ -3106,6 +4675,44 @@ fn photo_plan_usage() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multi_root_photo_subject_applies_surface_solver_to_every_import_root() {
+        let repository_root = std::path::Path::new(".")
+            .canonicalize()
+            .expect("repository root canonicalizes");
+        let recipe = json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{
+                "id": "machine",
+                "uri": "demo/samples/connector-snap/connector_snap_assembly.glb"
+            }],
+            "scene": {},
+            "render": {}
+        });
+        let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+            "hero-multi-root-surface.recipe.json",
+            &serde_json::to_string_pretty(&recipe).expect("focused recipe serializes"),
+            scena::RecipeBuildPolicy::testing().with_allowed_root(repository_root),
+        ))
+        .expect("frozen hero import builds");
+        let subject = select_camera_behavior_subject(&build.manifest, None)
+            .expect("hero import resolves as the photo subject");
+        assert_eq!(
+            subject.root_handles.len(),
+            2,
+            "the frozen hero keeps its load-unit and drive-unit scene roots"
+        );
+        let mut host = build.host;
+
+        let report = apply_subject_photographic_surface(&mut host, &subject)
+            .expect("photo surface solver completes");
+
+        assert_eq!(
+            report.mesh_count, 78,
+            "the general photo path must process all 35 load-unit and 43 drive-unit meshes"
+        );
+    }
 
     #[test]
     fn photo_intent_parser_canonicalizes_legacy_product_hero_aliases() {
@@ -3123,6 +4730,713 @@ mod tests {
         }
     }
 
+    #[test]
+    fn final_photo_defaults_and_backend_support_are_fail_closed() {
+        assert_eq!(
+            resolve_photo_capture(scena::SceneRecipePhotoQualityV1::Final, None, None),
+            (3840, 2520, "final_photo_default")
+        );
+        assert_eq!(
+            resolve_photo_capture(scena::SceneRecipePhotoQualityV1::Preview, None, None),
+            (DEFAULT_PHOTO_WIDTH, DEFAULT_PHOTO_HEIGHT, "photo_default")
+        );
+
+        let mut recipe = json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{
+                "id": "subject",
+                "uri": "subject.glb"
+            }],
+            "photo": {
+                "intent": "camera_behavior",
+                "quality": "final"
+            }
+        });
+        apply_photo_quality_defaults(
+            &mut recipe,
+            scena::SceneRecipePhotoQualityV1::Final,
+            3840,
+            2520,
+        )
+        .expect("final defaults apply");
+        assert_eq!(recipe["capture"], json!({ "width": 3840, "height": 2520 }));
+        assert_eq!(recipe["render"]["anti_aliasing"], "none");
+        assert_eq!(recipe["render"]["supersample"], 2);
+        assert_eq!(recipe["render"]["reconstruction"], "tent");
+        assert_eq!(recipe["render"]["tonemapper"], "pbr_neutral");
+        assert_eq!(
+            recipe["imports"][0]["edge_rounding"],
+            json!({
+                "enabled": true,
+                "radius_fraction": 0.0025,
+                "segments": 3,
+                "edge_angle_threshold_degrees": 30.0,
+                "max_derived_triangles": 250000
+            })
+        );
+
+        let mut preview = json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{ "id": "subject", "uri": "subject.glb" }]
+        });
+        apply_photo_quality_defaults(
+            &mut preview,
+            scena::SceneRecipePhotoQualityV1::Preview,
+            1280,
+            840,
+        )
+        .expect("preview defaults apply");
+        assert!(preview["imports"][0].get("edge_rounding").is_none());
+        let execution = photo_quality_execution_json(PhotoQualityExecutionInput {
+            quality: scena::SceneRecipePhotoQualityV1::Final,
+            backend: scena::Backend::HeadlessGpu,
+            evidence_class: "software_conformance",
+            capture: [3840, 2520],
+            supersample_factor: 2,
+            reconstruction: "tent",
+            anti_aliasing: "none",
+            environment_source_dimensions: Some([1024, 512]),
+            environment_cubemap_resolution: Some(512),
+            reflection_probe_count: 3,
+            shadow_mode: "weighted_area_visibility",
+            tonemapper: "pbr_neutral",
+            edge_rounding: vec![scena::SceneRecipeImportEdgeRoundingReportV1 {
+                enabled: true,
+                inspected_meshes: 4,
+                rounded_meshes: 3,
+                skipped_meshes: 1,
+                eligible_edges: 24,
+                rounded_edges: 24,
+                skipped_edges: 8,
+                rejected_edges: 0,
+                removed_degenerate_triangles: 2,
+                source_triangles: 120,
+                derived_triangles: 288,
+            }],
+            material_resolution_selection: None,
+        });
+        assert_eq!(execution["schema"], "scena.photo_quality_execution.v1");
+        assert_eq!(execution["requested"], "final");
+        assert_eq!(execution["effective"], "final");
+        assert_eq!(execution["capture"]["pixel_count"], 9_676_800_u64);
+        assert_eq!(execution["sampling"]["supersample_factor"], 2);
+        assert_eq!(execution["sampling"]["reconstruction"], "tent");
+        assert_eq!(execution["sampling"]["anti_aliasing"], "none");
+        assert_eq!(
+            execution["environment"]["source_dimensions"],
+            json!([1024, 512])
+        );
+        assert_eq!(execution["environment"]["cubemap_resolution"], 512);
+        assert_eq!(execution["reflections"]["local_probe_count"], 3);
+        assert_eq!(execution["shadows"]["mode"], "weighted_area_visibility");
+        assert_eq!(execution["color"]["linear_scene_format"], "rgba16_float");
+        assert_eq!(execution["color"]["tonemapper"], "pbr_neutral");
+        assert_eq!(execution["color"]["output_encoding"], "srgb8_png");
+        assert_eq!(
+            execution["geometry"]["edge_rounding"][0]["rounded_edges"],
+            24
+        );
+        assert_eq!(execution["backend"], "headless_gpu");
+        assert_eq!(execution["evidence_class"], "software_conformance");
+        assert_eq!(
+            classify_photo_evidence(
+                scena::Backend::HeadlessGpu,
+                Some("llvmpipe (LLVM 19)"),
+                Some("lavapipe"),
+                Some("Mesa")
+            ),
+            "software_conformance"
+        );
+        assert_eq!(
+            classify_photo_evidence(
+                scena::Backend::HeadlessGpu,
+                Some("V3D 7.1.10.2"),
+                Some("V3DV"),
+                Some("Mesa")
+            ),
+            "v3d_diagnostic"
+        );
+        assert_eq!(
+            classify_photo_evidence(
+                scena::Backend::HeadlessGpu,
+                Some("NVIDIA RTX"),
+                Some("NVIDIA"),
+                Some("Vulkan")
+            ),
+            "supported_hardware"
+        );
+        assert_eq!(
+            classify_photo_evidence(scena::Backend::WebGl2, None, None, None),
+            "browser_conformance"
+        );
+
+        assert!(
+            ensure_final_photo_backend(
+                scena::SceneRecipePhotoQualityV1::Final,
+                scena::Backend::HeadlessGpu
+            )
+            .is_ok()
+        );
+        assert!(
+            ensure_final_photo_backend(
+                scena::SceneRecipePhotoQualityV1::Final,
+                scena::Backend::NativeSurface
+            )
+            .is_ok()
+        );
+        for backend in [
+            scena::Backend::Headless,
+            scena::Backend::SurfaceDescriptor,
+            scena::Backend::WebGpu,
+            scena::Backend::WebGl2,
+        ] {
+            let error =
+                ensure_final_photo_backend(scena::SceneRecipePhotoQualityV1::Final, backend)
+                    .expect_err("unsupported final-photo backend must fail closed");
+            assert_eq!(error.kind, CliErrorKind::FinalPhotoUnsupported);
+            assert!(
+                error.message.contains("final_photo_unsupported"),
+                "{error:?}"
+            );
+        }
+        assert!(
+            ensure_final_photo_backend(
+                scena::SceneRecipePhotoQualityV1::Preview,
+                scena::Backend::Headless
+            )
+            .is_ok(),
+            "preview remains compatible with the CPU renderer"
+        );
+    }
+
+    #[test]
+    fn final_photo_color_and_dark_material_contract() {
+        let mut final_host = scena::SceneHostCore::headless(64, 64).expect("final host builds");
+        configure_camera_behavior_renderer(
+            &mut final_host,
+            scena::SceneRecipePhotoQualityV1::Final,
+            false,
+        )
+        .expect("final renderer configures");
+        assert_eq!(
+            final_host.renderer().tonemapper(),
+            scena::Tonemapper::PbrNeutral,
+            "final photography must use the existing Khronos PBR Neutral output transform"
+        );
+
+        let mut preview_host = scena::SceneHostCore::headless(64, 64).expect("preview host builds");
+        configure_camera_behavior_renderer(
+            &mut preview_host,
+            scena::SceneRecipePhotoQualityV1::Preview,
+            false,
+        )
+        .expect("preview renderer configures");
+        assert_eq!(
+            preview_host.renderer().tonemapper(),
+            scena::Tonemapper::Aces,
+            "the preview compatibility path remains unchanged"
+        );
+
+        let mut readable_dark_material = sane_camera_subject();
+        readable_dark_material.mean_luminance_srgb8 = 35.0;
+        readable_dark_material.low_clip_fraction = 0.08;
+        readable_dark_material.high_clip_fraction = 0.0;
+        readable_dark_material.luminance_stddev_srgb8 = 34.0;
+        readable_dark_material.luminance_range_srgb8 = 180.0;
+        assert!(
+            camera_behavior_failure_codes(readable_dark_material).is_empty(),
+            "a structured dark material in the 20-45 sRGB range must remain intentionally dark"
+        );
+        assert!(
+            corrected_exposure_ev(0.0, readable_dark_material).is_none(),
+            "exposure correction must not lift a readable dark material out of its 20-45 sRGB range"
+        );
+
+        let mut unreadable_dark_fixture = readable_dark_material;
+        unreadable_dark_fixture.mean_luminance_srgb8 = 18.0;
+        unreadable_dark_fixture.dark_material_mean_luminance_srgb8 = Some(18.0);
+        assert!(
+            corrected_exposure_ev(0.0, unreadable_dark_fixture).is_some(),
+            "a dark material below 20 sRGB with highlight headroom must still request correction"
+        );
+
+        let material_luminance = BTreeMap::from([
+            (10, (5.0 * 650.0, 650)),
+            (20, (210.0 * 300.0, 300)),
+            (30, (95.0 * 50.0, 50)),
+        ]);
+        let (dark_mean, dark_coverage) = select_dark_material_region(&material_luminance, 1_000);
+        assert_eq!(dark_mean, Some(5.0));
+        assert!((dark_coverage - 0.65).abs() <= f64::EPSILON);
+
+        let mut chrome_biased_dark_body = sane_camera_subject();
+        chrome_biased_dark_body.mean_luminance_srgb8 = 83.0;
+        chrome_biased_dark_body.dark_material_mean_luminance_srgb8 = Some(5.0);
+        chrome_biased_dark_body.dark_material_coverage = 0.65;
+        chrome_biased_dark_body.luminance_stddev_srgb8 = 1.0;
+        chrome_biased_dark_body.luminance_range_srgb8 = 8.0;
+        chrome_biased_dark_body.background_separation_srgb8 = 3.0;
+        chrome_biased_dark_body.low_clip_fraction = 0.58;
+        chrome_biased_dark_body.high_clip_fraction = 0.0;
+        chrome_biased_dark_body.highlight_continuity = 0.01;
+        chrome_biased_dark_body.highlight_distribution = 0.0;
+        chrome_biased_dark_body.reflection_washout = 0.45;
+        chrome_biased_dark_body.shadow_presence = 0.0;
+        chrome_biased_dark_body.silhouette_separation = 0.02;
+        let dark_body_lighting = corrected_photographic_lighting(chrome_biased_dark_body)
+            .expect("a chrome-biased meter must still request dark-body lighting");
+        assert!(
+            dark_body_lighting.fill_scale >= 3.0
+                && dark_body_lighting.overhead_scale >= 1.4
+                && dark_body_lighting.rim_scale >= 1.5
+                && dark_body_lighting.environment_intensity_scale >= 1.5
+                && dark_body_lighting.key_scale <= 0.85,
+            "dark-body correction must open the material without using a harder key: \
+             {dark_body_lighting:#?}"
+        );
+        chrome_biased_dark_body.high_clip_fraction = 0.0;
+        let dark_body_exposure = corrected_exposure_ev(0.0, chrome_biased_dark_body)
+            .expect("a sub-20 dark material with clean highlights needs bounded exposure support");
+        assert!(
+            (0.25..=0.50).contains(&dark_body_exposure),
+            "dark-body exposure support must be conservative enough to retain chrome headroom, \
+             got {dark_body_exposure}"
+        );
+        let mut highlight_limited_dark_body = chrome_biased_dark_body;
+        highlight_limited_dark_body.high_clip_fraction = 0.0299;
+        let highlight_limited_lighting =
+            corrected_photographic_lighting(highlight_limited_dark_body)
+                .expect("highlight-limited dark body still needs lighting correction");
+        assert!(
+            highlight_limited_lighting.fill_scale >= 3.0
+                && highlight_limited_lighting.overhead_scale >= 1.4
+                && highlight_limited_lighting.rim_scale >= 1.5
+                && highlight_limited_lighting.key_scale <= 0.85,
+            "dark readability must preserve broad fill under highlight-limited exposure: \
+             {highlight_limited_lighting:#?}"
+        );
+        assert!(
+            corrected_exposure_ev(-0.096, highlight_limited_dark_body).is_none(),
+            "exposure must hold while the bounded lighting retry opens an unreadable dark body"
+        );
+
+        let mut missing_material_metric = chrome_biased_dark_body;
+        missing_material_metric.mean_luminance_srgb8 = 83.0;
+        missing_material_metric.dark_material_mean_luminance_srgb8 = None;
+        missing_material_metric.dark_material_coverage = 0.0;
+        missing_material_metric.low_clip_fraction = 0.58;
+        missing_material_metric.high_clip_fraction = 0.003;
+        assert!(
+            !dark_product_is_readable(missing_material_metric),
+            "a large crushed region must fail closed when material metering is unavailable"
+        );
+        assert!(
+            unreadable_dark_material(missing_material_metric),
+            "the bounded lighting retry must remain available when a large crushed region lacks material identity"
+        );
+        assert_eq!(FINAL_DARK_MATERIAL_LIGHTING_MAX_RETRIES, 1);
+        assert!(
+            should_retry_final_dark_material_lighting(missing_material_metric),
+            "highlight-limited final output with an unreadable dark region needs one lighting retry"
+        );
+
+        let valve: Value = serde_json::from_slice(
+            &std::fs::read("tests/assets/photo/final/recipes/valve_manifold.recipe.json")
+                .expect("valve final recipe reads"),
+        )
+        .expect("valve final recipe parses");
+        let red_wheel_control = valve["expect"]["expect_color"]
+            .as_array()
+            .expect("valve must carry a rendered red-wheel control")
+            .iter()
+            .find(|control| control["id"] == "valve-wheel-red-dominance")
+            .expect("valve red-wheel dominance control exists");
+        assert_eq!(red_wheel_control["color_family"], "red");
+        assert_eq!(
+            red_wheel_control["target"],
+            json!({
+                "kind": "node",
+                "id": "valve_hub"
+            })
+        );
+        assert!(
+            red_wheel_control.get("swatch_srgb8").is_none(),
+            "the control checks diffuse red dominance without rejecting permitted white specular peaks"
+        );
+        assert!(
+            !pixel_has_output_channel_clip(&[252, 252, 252, 255]),
+            "bright rolled-off specular structure must not be mislabeled as output clipping"
+        );
+        assert!(
+            pixel_has_output_channel_clip(&[255, 240, 220, 255]),
+            "an RGB channel at display maximum must count as output clipping"
+        );
+    }
+
+    #[test]
+    fn default_photo_correction_is_one_shot_bounded_and_fail_closed() {
+        let args = PhotoRenderArgs::parse(&[
+            "fixture.glb".to_owned(),
+            "--out".to_owned(),
+            "out.png".to_owned(),
+            "--report".to_owned(),
+            "out.json".to_owned(),
+        ])
+        .expect("default photo arguments parse");
+        assert!(
+            !args.optimize,
+            "the easy path must not enter the iterative optimizer"
+        );
+
+        let optimized = PhotoRenderArgs::parse(&[
+            "fixture.glb".to_owned(),
+            "--out".to_owned(),
+            "out.png".to_owned(),
+            "--report".to_owned(),
+            "out.json".to_owned(),
+            "--optimize".to_owned(),
+        ])
+        .expect("explicit optimizer arguments parse");
+        assert!(optimized.optimize, "optimizer use must be explicit");
+        assert!(
+            use_builtin_studio_lighting(false, false),
+            "the zero-config default must use Scena's stable built-in studio rig"
+        );
+        assert!(
+            !use_builtin_studio_lighting(true, false) && !use_builtin_studio_lighting(false, true),
+            "authored lighting and explicit optimization keep their selected lighting paths"
+        );
+
+        let mut clipped = sane_camera_subject();
+        clipped.high_clip_fraction = 0.12;
+        let base_ev = FINAL_PHOTO_BASE_EXPOSURE_EV;
+        let next_ev = bounded_default_exposure_ev(base_ev, clipped)
+            .expect("a severely clipped subject requests one correction");
+        assert!(
+            (next_ev - (base_ev - DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV)).abs() < 1.0e-6,
+            "the default correction must stop at one -0.75 EV step: base={base_ev} next={next_ev}"
+        );
+
+        let mut goodhart_frame = sane_camera_subject();
+        goodhart_frame.mean_luminance_srgb8 = 59.55;
+        goodhart_frame.dark_material_mean_luminance_srgb8 = Some(21.53);
+        goodhart_frame.dark_material_coverage = 0.0771;
+        assert!(
+            dark_product_is_readable(goodhart_frame),
+            "the focused dark-material diagnostic remains useful"
+        );
+        assert!(
+            camera_behavior_failure_codes(goodhart_frame).contains(&"subject_luminance_below_min"),
+            "a readable dark patch must not rubber-stamp an underexposed complete subject"
+        );
+        let corrected_goodhart = bounded_default_exposure_ev(base_ev, goodhart_frame)
+            .expect("the one-shot default must brighten an underexposed complete subject");
+        assert!(
+            corrected_goodhart > base_ev,
+            "the dark-patch diagnostic must not suppress whole-subject exposure correction"
+        );
+    }
+
+    #[test]
+    fn final_photo_ground_intent_and_planar_composite_contract() {
+        let (mug, _, _, _) = photo_source_for(
+            Path::new("tests/assets/photo/final/recipes/colored_travel_mug.recipe.json"),
+            None,
+        )
+        .expect("mug final source resolves");
+        let (hero, _, _, _) = photo_source_for(
+            Path::new("tests/assets/photo/final/recipes/demo_hero.recipe.json"),
+            None,
+        )
+        .expect("hero final source resolves");
+        assert_eq!(
+            mug.ground,
+            scena::scene_host::PhotographicGroundV1::Reflective
+        );
+        assert_eq!(hero.ground, scena::scene_host::PhotographicGroundV1::Matte);
+
+        let aov = scena::SceneHostSemanticAovCaptureV1 {
+            schema: scena::SCENE_HOST_SEMANTIC_AOV_SCHEMA_V1.to_owned(),
+            width: 3,
+            height: 1,
+            identity_scope: "node_material".to_owned(),
+            sample_pattern: "pixel_center".to_owned(),
+            depth_convention: "linear_camera_distance_scene_meters".to_owned(),
+            normal_space: "world".to_owned(),
+            near: 0.1,
+            far: 100.0,
+            id_indices: vec![1, 2, 1],
+            beauty_id_indices: None,
+            depth_meters: vec![2.0; 3],
+            world_normals: vec![[0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            legend: vec![
+                scena::SceneHostSemanticAovLegendEntryV1 {
+                    palette_index: 1,
+                    rgba8: scena::scene_host::palette_rgba8(1),
+                    node_handle: 42,
+                    material_handle: None,
+                    material_kind: None,
+                    metallic_factor: None,
+                    roughness_factor: None,
+                    effective_metallic_mean: None,
+                    effective_roughness_mean: None,
+                    surface_texture_min_dimension_px: None,
+                    surface_tile_size_m: None,
+                    instance_handle: None,
+                    instance_id: None,
+                },
+                scena::SceneHostSemanticAovLegendEntryV1 {
+                    palette_index: 2,
+                    rgba8: scena::scene_host::palette_rgba8(2),
+                    node_handle: 7,
+                    material_handle: None,
+                    material_kind: None,
+                    metallic_factor: None,
+                    roughness_factor: None,
+                    effective_metallic_mean: None,
+                    effective_roughness_mean: None,
+                    surface_texture_min_dimension_px: None,
+                    surface_tile_size_m: None,
+                    instance_handle: None,
+                    instance_id: None,
+                },
+            ],
+            exclusions: scena::SceneHostSemanticAovExclusionsV1::default(),
+        };
+        let mask = planar_reflection_floor_mask(&aov, &[42]);
+        assert_eq!(mask, vec![true, false, false]);
+        let mut beauty = vec![40, 40, 40, 255, 80, 80, 80, 255, 120, 120, 120, 255];
+        let reflected = [200, 160, 120, 255].repeat(3);
+        composite_planar_reflection_rgba8(&mut beauty, &reflected, 3, 1, &mask, 0.0, 0.5);
+        assert_ne!(&beauty[0..4], &[40, 40, 40, 255]);
+        assert_eq!(&beauty[4..8], &[80, 80, 80, 255]);
+        assert_eq!(&beauty[8..12], &[120, 120, 120, 255]);
+    }
+
+    #[test]
+    fn live_speaker_semantic_material_probe_clears_sample_floor() {
+        let recipe_path = "tests/assets/photo/final/recipes/dark_metal_speaker.recipe.json";
+        let repository_root = std::path::Path::new(".")
+            .canonicalize()
+            .expect("repository root canonicalizes");
+        let material_root = repository_root.join("target/photo-materials");
+        let recipe_text = std::fs::read_to_string(recipe_path)
+            .expect("speaker recipe reads")
+            .replace(
+                "../../../../../target/photo-materials",
+                material_root
+                    .to_str()
+                    .expect("material fixture path is UTF-8"),
+            );
+        let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+            recipe_path,
+            &recipe_text,
+            scena::RecipeBuildPolicy::testing().with_allowed_root(repository_root),
+        ))
+        .expect("speaker recipe builds on the CPU diagnostic path");
+        let subject = select_camera_behavior_subject(&build.manifest, None)
+            .expect("speaker import resolves as the photo subject");
+        let mut host = build.host;
+        let planning = camera_behavior_composition_plan(&host, &subject, false)
+            .expect("speaker camera candidates plan");
+        host.resize(80.0, 53.0, 1.0)
+            .expect("speaker diagnostic viewport resizes");
+        host.frame_nodes_with_photo_candidate(&subject.root_handles, &planning.candidates[0])
+            .expect("first speaker candidate frames");
+        host.prepare().expect("speaker diagnostic prepares");
+        let semantic_aov = host
+            .capture_semantic_aovs()
+            .expect("speaker semantic AOV captures on CPU");
+        let handles = subject_handles(&subject)
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let material_by_palette = semantic_aov
+            .legend
+            .iter()
+            .filter(|entry| {
+                handles.contains(&entry.node_handle)
+                    || entry
+                        .instance_handle
+                        .is_some_and(|handle| handles.contains(&handle))
+            })
+            .filter_map(|entry| {
+                entry
+                    .material_handle
+                    .map(|material| (entry.palette_index, material))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut material_samples = BTreeMap::<u64, u64>::new();
+        for palette in &semantic_aov.id_indices {
+            if let Some(material) = material_by_palette.get(palette) {
+                *material_samples.entry(*material).or_default() += 1;
+            }
+        }
+        let subject_samples = material_samples.values().sum::<u64>();
+        let minimum_samples = (subject_samples / 20).max(32);
+        eprintln!(
+            "speaker live semantic material probe: subject_samples={subject_samples}, \
+             minimum_samples={minimum_samples}, material_samples={material_samples:?}"
+        );
+        assert!(
+            !material_by_palette.is_empty(),
+            "the live speaker semantic legend must carry material handles"
+        );
+        assert!(
+            material_samples
+                .values()
+                .any(|samples| *samples >= minimum_samples),
+            "at least one live speaker material must clear the dark-region sample floor"
+        );
+    }
+
+    #[test]
+    fn final_photo_policy_blocks_only_uncalibrated_same_pass_grounding() {
+        let mut grounded = json!({
+            "schema": scena::PHOTO_QUALITY_ANALYSIS_SCHEMA_V1,
+            "mode": "report_only",
+            "grounding": {
+                "boundary_sample_count": 887,
+                "contact_shadow_delta_mean_srgb8": 15.407,
+                "attached_fraction": 0.883,
+                "contact_shadow_confirmed": true
+            }
+        });
+        let mut grounded_failures = vec!["contact_shadow_missing"];
+        apply_final_photo_quality_policy(
+            scena::SceneRecipePhotoQualityV1::Final,
+            &mut grounded,
+            &mut grounded_failures,
+        )
+        .expect("tracked final-photo policy applies");
+        assert!(grounded_failures.is_empty());
+        assert_eq!(grounded["mode"], "selective_blocking");
+        assert_eq!(
+            grounded["policy"]["checks"][0]["status"], "checked",
+            "the weakest current four-subject positive must pass the admitted threshold"
+        );
+
+        let mut detached = json!({
+            "schema": scena::PHOTO_QUALITY_ANALYSIS_SCHEMA_V1,
+            "mode": "report_only",
+            "grounding": {
+                "boundary_sample_count": 64,
+                "contact_shadow_delta_mean_srgb8": 0.0,
+                "attached_fraction": 0.0,
+                "contact_shadow_confirmed": false
+            }
+        });
+        let mut detached_failures = Vec::new();
+        apply_final_photo_quality_policy(
+            scena::SceneRecipePhotoQualityV1::Final,
+            &mut detached,
+            &mut detached_failures,
+        )
+        .expect("tracked final-photo policy applies");
+        assert_eq!(detached_failures, vec!["contact_shadow_missing"]);
+        assert_eq!(detached["policy"]["checks"][0]["status"], "failed");
+
+        let mut preview = detached.clone();
+        preview["mode"] = json!("report_only");
+        preview
+            .as_object_mut()
+            .expect("analysis is an object")
+            .remove("policy");
+        let mut preview_failures = Vec::new();
+        apply_final_photo_quality_policy(
+            scena::SceneRecipePhotoQualityV1::Preview,
+            &mut preview,
+            &mut preview_failures,
+        )
+        .expect("preview remains report-only");
+        assert!(preview_failures.is_empty());
+        assert_eq!(preview["mode"], "report_only");
+        assert!(preview.get("policy").is_none());
+    }
+
+    #[test]
+    fn final_photo_enables_automatic_reflection_probe_bake() {
+        assert!(automatic_reflection_probe_bake_enabled(
+            scena::SceneRecipePhotoQualityV1::Final
+        ));
+        assert!(!automatic_reflection_probe_bake_enabled(
+            scena::SceneRecipePhotoQualityV1::Preview
+        ));
+        assert!(!synthetic_contact_shadow_enabled(
+            scena::SceneRecipePhotoQualityV1::Final
+        ));
+        assert!(synthetic_contact_shadow_enabled(
+            scena::SceneRecipePhotoQualityV1::Preview
+        ));
+        assert!(
+            !camera_behavior_ssao_enabled(scena::SceneRecipePhotoQualityV1::Final),
+            "final stills use geometry-derived area visibility; the depth-threshold SSAO pass bands smooth cycloramas"
+        );
+        assert!(
+            camera_behavior_ssao_enabled(scena::SceneRecipePhotoQualityV1::Preview),
+            "preview keeps the inexpensive screen-space grounding path"
+        );
+        assert!(
+            !camera_behavior_baked_ambient_visibility_enabled(
+                scena::SceneRecipePhotoQualityV1::Final
+            ),
+            "the 16-sample prepared ambient field creates visible polygonal patches on the \
+             generated receiver; final stills must retain only physical area-light visibility"
+        );
+        assert!(!camera_behavior_baked_ambient_visibility_enabled(
+            scena::SceneRecipePhotoQualityV1::Preview
+        ));
+    }
+
+    #[test]
+    fn local_support_shadow_measurement_detects_soft_contact_on_a_bright_receiver() {
+        let width = 100;
+        let height = 24;
+        let mut receiver = (0..height)
+            .flat_map(|y| (0..width).map(move |x| 226.0 + x as f64 * 0.04 + y as f64 * 0.18))
+            .collect::<Vec<_>>();
+        for y in 0..14 {
+            for x in 25..76 {
+                let dx = (x as f64 - 50.0) / 25.0;
+                let dy = (y as f64 - 5.0) / 9.0;
+                let falloff = (1.0 - (dx * dx + dy * dy).sqrt()).max(0.0);
+                receiver[y * width + x] -= falloff * 18.0;
+            }
+        }
+
+        let (presence, softness) = measure_local_support_shadow(&receiver, width, height, 20);
+
+        assert!(
+            presence > 0.01,
+            "a localized soft contact shadow must be measured against the receiver, got {presence}"
+        );
+        assert!(
+            softness > 0.80,
+            "the continuous falloff should be classified as soft, got {softness}"
+        );
+    }
+
+    #[test]
+    fn local_support_shadow_measurement_rejects_receiver_gradients_and_backdrop_offsets() {
+        let width = 100;
+        let height = 24;
+        let receiver = (0..height)
+            .flat_map(|y| {
+                (0..width).map(move |x| {
+                    // The receiver is deliberately much brighter than the
+                    // backdrop value used by the retired global comparison.
+                    226.0 + x as f64 * 0.04 + y as f64 * 0.18
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let (presence, _) = measure_local_support_shadow(&receiver, width, height, 20);
+
+        assert!(
+            presence < 0.005,
+            "a smooth receiver-lighting gradient is not a contact shadow, got {presence}"
+        );
+    }
+
     fn sane_camera_subject() -> SubjectMetrics {
         SubjectMetrics {
             min_x: 32.0,
@@ -3133,6 +5447,8 @@ mod tests {
             fill_width_fraction: 0.75,
             fill_height_fraction: 0.76,
             mean_luminance_srgb8: 90.0,
+            dark_material_mean_luminance_srgb8: None,
+            dark_material_coverage: 0.0,
             luminance_stddev_srgb8: 18.0,
             luminance_range_srgb8: 88.0,
             background_separation_srgb8: 72.0,
@@ -3195,20 +5511,59 @@ mod tests {
         wrong_subject_target.fill_height_fraction = 0.0;
         assert_failure(wrong_subject_target, "subject_visible_pixels_missing");
 
+        let mut missing_beauty_subject = sane_camera_subject();
+        missing_beauty_subject.background_separation_srgb8 = 0.0;
+        missing_beauty_subject.silhouette_separation = 0.0;
+        assert_failure(
+            missing_beauty_subject,
+            "subject_color_frame_agreement_below_min",
+        );
+
         let mut old_ev_cap = sane_camera_subject();
         old_ev_cap.mean_luminance_srgb8 = 72.0;
         assert_failure(old_ev_cap, "subject_luminance_below_min");
+
+        let mut highlight_limited_dark_product = sane_camera_subject();
+        highlight_limited_dark_product.mean_luminance_srgb8 = 42.0;
+        highlight_limited_dark_product.luminance_stddev_srgb8 = 34.0;
+        highlight_limited_dark_product.luminance_range_srgb8 = 180.0;
+        highlight_limited_dark_product.low_clip_fraction = 0.08;
+        highlight_limited_dark_product.high_clip_fraction = 0.003;
+        assert!(
+            camera_behavior_failure_codes(highlight_limited_dark_product).is_empty(),
+            "a readable dark product must not be exposed to a fixed mid-gray mean: {:?}",
+            camera_behavior_failure_codes(highlight_limited_dark_product)
+        );
 
         let mut pulled_back_empty_slab = sane_camera_subject();
         pulled_back_empty_slab.fill_fraction = 0.50;
         pulled_back_empty_slab.fill_width_fraction = 0.25;
         assert_failure(pulled_back_empty_slab, "subject_fill_below_min");
 
-        let mut actionably_too_narrow = sane_camera_subject();
-        actionably_too_narrow.fill_fraction = 0.72;
-        actionably_too_narrow.fill_width_fraction = 0.53;
-        actionably_too_narrow.fill_height_fraction = 0.72;
-        assert_failure(actionably_too_narrow, "subject_fill_below_min");
+        // Positive control for a deliberate contract change, not a mutation.
+        // A subject whose limiting axis fills the band while the other does not
+        // is correctly framed: the aspect belongs to the subject, not to the
+        // camera. Requiring both axes independently is only satisfiable when the
+        // subject happens to be frame-shaped, which is why the valve manifold
+        // (0.481 wide, 0.669 tall) could never pass however the camera moved.
+        let mut narrow_but_well_framed = sane_camera_subject();
+        narrow_but_well_framed.fill_fraction = 0.72;
+        narrow_but_well_framed.fill_width_fraction = 0.53;
+        narrow_but_well_framed.fill_height_fraction = 0.72;
+        assert!(
+            camera_behavior_failure_codes(narrow_but_well_framed).is_empty(),
+            "a correctly framed subject that is not frame-shaped must pass, got {:?}",
+            camera_behavior_failure_codes(narrow_but_well_framed)
+        );
+
+        // Under-filled on the limiting axis too, which is a real framing
+        // failure and must still be rejected: relaxing the second axis must not
+        // relax the floor.
+        let mut actionably_too_small = sane_camera_subject();
+        actionably_too_small.fill_fraction = 0.53;
+        actionably_too_small.fill_width_fraction = 0.40;
+        actionably_too_small.fill_height_fraction = 0.53;
+        assert_failure(actionably_too_small, "subject_fill_below_min");
 
         let mut off_center = sane_camera_subject();
         off_center.center_offset_fraction = 0.31;
@@ -3218,10 +5573,68 @@ mod tests {
         blown_highlights.high_clip_fraction = 0.12;
         assert_failure(blown_highlights, "subject_high_clip_above_max");
 
+        let mut visibly_clipped_product_highlights = sane_camera_subject();
+        visibly_clipped_product_highlights.high_clip_fraction = 0.012;
+        assert_failure(
+            visibly_clipped_product_highlights,
+            "subject_high_clip_above_max",
+        );
+
         let mut flat_gray_metal = sane_camera_subject();
         flat_gray_metal.luminance_stddev_srgb8 = 0.4;
         flat_gray_metal.luminance_range_srgb8 = 2.0;
         assert_failure(flat_gray_metal, "subject_luminance_structure_below_min");
+
+        let mut floating_subject = sane_camera_subject();
+        floating_subject.shadow_presence = 0.0;
+        floating_subject.shadow_softness = 0.0;
+        assert_failure(floating_subject, "contact_shadow_missing");
+        let mut reconciled_failures = camera_behavior_failure_codes(floating_subject);
+        let mut confirmed_grounding = json!({
+            "mode": "report_only",
+            "grounding": {
+                "boundary_sample_count": 1461,
+                "contact_shadow_delta_mean_srgb8": 32.7,
+                "attached_fraction": 0.99,
+                "contact_shadow_confirmed": true
+            }
+        });
+        apply_final_photo_quality_policy(
+            scena::SceneRecipePhotoQualityV1::Final,
+            &mut confirmed_grounding,
+            &mut reconciled_failures,
+        )
+        .expect("tracked final-photo policy applies");
+        assert!(
+            !reconciled_failures.contains(&"contact_shadow_missing"),
+            "same-pass subject/support contact must resolve the observed local-strip presence \
+             and softness false negative"
+        );
+        let mut unconfirmed_failures = camera_behavior_failure_codes(floating_subject);
+        let mut unconfirmed_grounding = json!({
+            "mode": "report_only",
+            "grounding": {
+                "boundary_sample_count": 64,
+                "contact_shadow_delta_mean_srgb8": 0.0,
+                "attached_fraction": 0.0,
+                "contact_shadow_confirmed": false
+            }
+        });
+        apply_final_photo_quality_policy(
+            scena::SceneRecipePhotoQualityV1::Final,
+            &mut unconfirmed_grounding,
+            &mut unconfirmed_failures,
+        )
+        .expect("tracked final-photo policy applies");
+        assert!(
+            unconfirmed_failures.contains(&"contact_shadow_missing"),
+            "unconfirmed grounding must remain rejected"
+        );
+
+        let mut hard_cutout_shadow = sane_camera_subject();
+        hard_cutout_shadow.shadow_presence = 0.08;
+        hard_cutout_shadow.shadow_softness = 0.05;
+        assert_failure(hard_cutout_shadow, "shadow_too_hard");
 
         let mut missing_steel_reflection_structure = sane_camera_subject();
         missing_steel_reflection_structure.luminance_stddev_srgb8 = 2.0;
@@ -3283,11 +5696,30 @@ mod tests {
         let washout_adjustment = corrected_photographic_lighting(washed_out)
             .expect("washed-out reflections should reduce and rotate illumination");
         assert!(washout_adjustment.environment_intensity_scale < 1.0);
+
+        let mut dark_metal = sane_camera_subject();
+        dark_metal.mean_luminance_srgb8 = 35.0;
+        dark_metal.low_clip_fraction = 0.58;
+        dark_metal.high_clip_fraction = 0.004;
+        dark_metal.shadow_presence = 0.0;
+        let dark_metal_adjustment = corrected_photographic_lighting(dark_metal)
+            .expect("dark metal should request readable fill illumination");
+        assert!(
+            dark_metal_adjustment.fill_scale >= 1.5,
+            "dark metal needs materially stronger fill, got {}",
+            dark_metal_adjustment.fill_scale
+        );
+        assert!(
+            dark_metal_adjustment.key_scale <= 1.0,
+            "dark metal must not trade unreadable body values for harder clipped highlights, got {}",
+            dark_metal_adjustment.key_scale
+        );
     }
 
     #[test]
     fn camera_behavior_retry_policy_is_bounded_camera_and_exposure_loop() {
         assert_eq!(CAMERA_BEHAVIOR_MAX_ATTEMPTS, 6);
+        assert_eq!(CAMERA_BEHAVIOR_FOCUS_DELIVERY_MAX_ATTEMPTS, 6);
 
         let mut underexposed = sane_camera_subject();
         underexposed.mean_luminance_srgb8 = 72.0;
@@ -3305,6 +5737,46 @@ mod tests {
         assert!(
             next_ev < -1.5,
             "camera behavior must apply the measured correction instead of pinning EV at -1.5, got {next_ev}"
+        );
+
+        let mut dark_product_with_clipped_highlights = sane_camera_subject();
+        dark_product_with_clipped_highlights.mean_luminance_srgb8 = 70.0;
+        dark_product_with_clipped_highlights.low_clip_fraction = 0.08;
+        dark_product_with_clipped_highlights.high_clip_fraction = 0.02;
+        let next_ev = corrected_exposure_ev(0.0, dark_product_with_clipped_highlights)
+            .expect("clipped product highlights must request exposure protection");
+        assert!(
+            next_ev < 0.0,
+            "highlight clipping must take precedence over a dark product mean, got {next_ev}"
+        );
+
+        let mut readable_highlight_limited_product = sane_camera_subject();
+        readable_highlight_limited_product.mean_luminance_srgb8 = 42.0;
+        readable_highlight_limited_product.luminance_stddev_srgb8 = 34.0;
+        readable_highlight_limited_product.luminance_range_srgb8 = 180.0;
+        readable_highlight_limited_product.low_clip_fraction = 0.08;
+        readable_highlight_limited_product.high_clip_fraction = 0.003;
+        assert!(
+            corrected_exposure_ev(0.0, readable_highlight_limited_product).is_none(),
+            "exposure must stop once a readable dark product has used its highlight headroom"
+        );
+
+        let mut unreadable_highlight_limited_product = readable_highlight_limited_product;
+        unreadable_highlight_limited_product.mean_luminance_srgb8 = 16.0;
+        unreadable_highlight_limited_product.low_clip_fraction = 0.69;
+        assert!(
+            corrected_exposure_ev(0.0, unreadable_highlight_limited_product).is_none(),
+            "exposure must not oscillate when lighting or material correction is required"
+        );
+
+        let mut focused_underexposure = sane_camera_subject();
+        focused_underexposure.mean_luminance_srgb8 = 66.44;
+        let focused_next_ev =
+            corrected_focus_delivery_exposure_ev(0.016_609_073, focused_underexposure)
+                .expect("the delivered focused frame must re-enter exposure correction");
+        assert!(
+            focused_next_ev > 0.4,
+            "post-effect metering must correct the delivered frame, got {focused_next_ev}"
         );
 
         let mut passed_after_retry = underexposed;
@@ -3335,7 +5807,7 @@ mod tests {
             failure_codes: Vec::new(),
             adjustment: Some("exposure_delta"),
         };
-        let report = retry_json(&[first, second]);
+        let report = retry_json(&[first, second], true);
         assert_eq!(report["policy"]["max_attempts"], 6);
         assert_eq!(report["policy"]["max_retries"], 5);
         assert_eq!(
@@ -3436,6 +5908,37 @@ mod tests {
     }
 
     #[test]
+    fn final_candidate_refresh_updates_the_selected_attempt_not_the_last_attempt() {
+        let candidate = |id: &str| PhotoCandidate {
+            id: id.to_owned(),
+            exposure_ev: 0.0,
+            composition_fill_fraction: 0.75,
+            camera: test_candidate_camera(),
+            metrics: sane_camera_subject(),
+            status: "failed",
+            failure_codes: vec!["subject_fill_below_min"],
+            adjustment: Some("camera_composition"),
+        };
+        let mut candidates = vec![
+            candidate("candidate_1"),
+            candidate("candidate_2"),
+            candidate("candidate_3"),
+        ];
+        let mut selected = candidate("candidate_2");
+        selected.status = "passed";
+        selected.failure_codes.clear();
+
+        refresh_selected_candidate_history(&mut candidates, &selected);
+
+        assert_eq!(candidates[1].id, "candidate_2");
+        assert_eq!(candidates[1].status, "passed");
+        assert_eq!(
+            candidates[2].id, "candidate_3",
+            "refreshing a best non-final attempt must not duplicate its ID over the last attempt"
+        );
+    }
+
+    #[test]
     fn camera_loop_budget_exhaustion_report_keeps_all_attempts() {
         let mut metrics = sane_camera_subject();
         metrics.mean_luminance_srgb8 = 20.0;
@@ -3455,7 +5958,7 @@ mod tests {
                 },
             })
             .collect::<Vec<_>>();
-        let report = retry_json(&candidates);
+        let report = retry_json(&candidates, true);
         assert_eq!(report["policy"]["max_attempts"], 6);
         assert_eq!(report["attempts"], 6);
         assert_eq!(report["retry_used"], true);

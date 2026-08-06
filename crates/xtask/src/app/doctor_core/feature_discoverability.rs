@@ -8,8 +8,9 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
             "Cargo.toml",
             &[
                 "default = []",
-                "agent = [\"scene-host\"]",
+                "agent = [\"scene-host\", \"material-library\"]",
                 "scene-host = [\"inspection\"]",
+                "material-library = [\"dep:ureq\", \"dep:zip\"]",
                 "[package.metadata.scena.cli-install]",
                 "default-contract = \"core-discovery-validation\"",
                 "application-builder-feature = \"agent\"",
@@ -50,7 +51,8 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
             &[
                 "\"name\": \"agent\"",
                 "\"kind\": \"feature-composition\"",
-                "agent = [\\\"scene-host\\\"]",
+                "agent = [\\\"scene-host\\\", \\\"material-library\\\"]",
+                "\"name\": \"material-library\"",
                 "agent_feature_enables_the_complete_self_verification_surface",
             ][..],
         ),
@@ -70,7 +72,8 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
             "docs/getting-started.md",
             &[
                 "cargo install scena --features agent",
-                "one-step self-verification surface",
+                "one-step self-verification and",
+                "`material-library` compiler",
                 "scena photo render model.glb --out hero.png --report hero.report.json",
                 "photo.intent",
                 "no manual camera, exposure, or focus",
@@ -88,7 +91,8 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
         (
             "docs/feature-flags.md",
             &[
-                "`agent` | complete opt-in self-verification surface",
+                "`agent` | complete opt-in self-verification and material-authoring surface",
+                "`material-library` | native CC0 material download/import",
                 "cargo add scena --features agent",
                 "The default feature set is exactly empty",
             ][..],
@@ -243,7 +247,7 @@ pub(crate) fn check_a09_feature_discoverability(root: &Path, findings: &mut Vec<
         ),
         (
             "tests/assets/cli-golden/process_contract_table.sha256",
-            &["5886e2d90331dcf61bbf74a96cf66b6f2782b08a40d4f9211a2bbc1e45634cbb"][..],
+            &["15c8d5374d73530531a21966accea16fe34ad4166c9b6275a2254597047a56cb"][..],
         ),
         (
             "tests/assets/stable-contracts/contract_validation.v1.json",

@@ -141,6 +141,11 @@ impl Scene {
     }
 
     fn remove_cross_node_metadata(&mut self, removed: &BTreeSet<NodeKey>) {
+        for probe in self.reflection_probes.values_mut() {
+            probe.remove_nodes(removed);
+        }
+        self.reflection_probes
+            .retain(|_, probe| probe.has_assignment());
         let anchors = self
             .anchors
             .iter()

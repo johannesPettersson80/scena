@@ -37,6 +37,8 @@ fn environment_preset_catalog_exposes_metadata_and_package_budget() {
         &[
             studio.source_path(),
             "tests/assets/environment/generated/studio_small_03_128x64.hdr",
+            "tests/assets/environment/polyhaven/studio_small_08_2k.hdr",
+            "tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json",
         ]
     );
     assert!(

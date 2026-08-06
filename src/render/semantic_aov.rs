@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::assets::MaterialHandle;
 use crate::diagnostics::{Backend, RenderError};
 use crate::scene::{CameraKey, InstanceId, NodeKey, Scene};
 
@@ -26,6 +27,7 @@ impl From<RenderError> for RawSemanticAovError {
 pub(crate) struct RawSemanticIdentity {
     pub(crate) node: NodeKey,
     pub(crate) instance: Option<InstanceId>,
+    pub(crate) material: Option<MaterialHandle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +53,9 @@ pub(crate) struct RawSemanticAovCapture {
     pub(crate) near: f32,
     pub(crate) far: f32,
     pub(crate) id_indices: Vec<u32>,
+    /// Semantic IDs emitted by the same fragment invocations as the last
+    /// beauty frame. GPU-only; CPU capture has no MRT attachment.
+    pub(crate) beauty_id_indices: Option<Vec<u32>>,
     pub(crate) depth_meters: Vec<f32>,
     pub(crate) world_normals: Vec<[f32; 3]>,
     pub(crate) legend: Vec<RawSemanticLegendEntry>,
@@ -65,9 +70,18 @@ pub(crate) struct GpuSemanticAttribution {
 }
 
 impl GpuSemanticAttribution {
-    pub(crate) fn palette_index(&self, node: NodeKey, instance: Option<InstanceId>) -> u32 {
+    pub(crate) fn palette_index(
+        &self,
+        node: NodeKey,
+        instance: Option<InstanceId>,
+        material: Option<MaterialHandle>,
+    ) -> u32 {
         self.palette
-            .get(&RawSemanticIdentity { node, instance })
+            .get(&RawSemanticIdentity {
+                node,
+                instance,
+                material,
+            })
             .copied()
             .unwrap_or(0)
     }
@@ -119,6 +133,11 @@ pub(in crate::render) fn build_gpu_semantic_attribution(
             identities.insert(RawSemanticIdentity {
                 node: set.source_node(),
                 instance: record.source_instance(),
+                material: set
+                    .primitives()
+                    .iter()
+                    .find(|primitive| primitive.semantic_opaque())
+                    .and_then(PreparedPrimitive::semantic_material),
             });
         }
     }
@@ -170,6 +189,7 @@ fn collect_primitive_identity(
     identities.insert(RawSemanticIdentity {
         node,
         instance: primitive.source_instance(),
+        material: primitive.semantic_material(),
     });
 }
 
@@ -201,6 +221,7 @@ impl Renderer {
             near,
             far,
             id_indices: vec![0; self.target.pixel_len()],
+            beauty_id_indices: None,
             depth_meters: vec![f32::INFINITY; self.target.pixel_len()],
             world_normals: vec![[0.0; 3]; self.target.pixel_len()],
             legend: attribution.legend,
@@ -216,6 +237,7 @@ impl Renderer {
             let identity = RawSemanticIdentity {
                 node,
                 instance: primitive.source_instance(),
+                material: primitive.semantic_material(),
             };
             let Some(palette_index) = palette.get(&identity).copied() else {
                 continue;
@@ -453,6 +475,7 @@ mod depth_clipping_tests {
             near: 0.5,
             far: 5.0,
             id_indices: vec![0; target.pixel_len()],
+            beauty_id_indices: None,
             depth_meters: vec![f32::INFINITY; target.pixel_len()],
             world_normals: vec![[0.0; 3]; target.pixel_len()],
             legend: Vec::new(),

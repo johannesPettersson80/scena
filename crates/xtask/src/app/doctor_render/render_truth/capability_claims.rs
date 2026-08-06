@@ -67,5 +67,43 @@ pub(crate) fn check_renderer_truth_capability_claim_contracts(
         "examples/glb_model_viewer.rs",
         &["minimal_scene.gltf"],
     );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/diagnostics/capabilities/sample_counts.rs",
+        &[
+            "pub(super) const fn measured_sample_counts(maximum: u32)",
+            "if maximum >= 4 { 4 } else { 0 }",
+            "if maximum >= 8 { 8 } else { 0 }",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/diagnostics/capabilities/sample_counts.rs",
+        &["Backend::HeadlessGpu | Backend::NativeSurface => [1, 4, 8]"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu.rs",
+        &[
+            "fn measured_sample_count_maxima",
+            "post::scene_color_format()",
+            "wgpu::TextureFormat::Depth32Float",
+        ],
+    );
+    for path in ["src/render/build.rs", "src/render/surface.rs"] {
+        require_contains(
+            root,
+            findings,
+            "ARCH-RENDER-TRUTH",
+            path,
+            &["with_measured_sample_count_maxima"],
+        );
+    }
     check_renderer_standard_math_contracts(root, findings);
 }

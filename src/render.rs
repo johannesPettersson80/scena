@@ -37,12 +37,17 @@ mod frame;
 mod gpu;
 #[cfg(feature = "inspection")]
 pub mod introspection;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod linear_capture_tests;
 mod offscreen;
 mod output;
 mod parallel;
 mod pbr_brdf;
 mod physical_transmission;
 mod prepare;
+/// Size of the baked split-sum BRDF table, re-exported so the capability report
+/// can state the real number instead of reusing the cubemap size.
+pub(crate) use prepare::BRDF_LUT_SIZE;
 mod prepare_lifecycle;
 mod prepare_retained;
 #[cfg(feature = "inspection")]
@@ -107,7 +112,9 @@ pub use self::prepare::{
     EnvironmentBakeMetrics, precompute_environment_sidecar, precompute_environment_sidecar_profiled,
 };
 pub use self::screen_space_reflections::ScreenSpaceReflectionConfig;
-pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
+pub use self::settings::{
+    BakedAmbientOcclusionConfig, Profile, Quality, RenderMode, RendererOptions,
+};
 use self::state::{PreparedSceneState, RenderedFrameState};
 #[cfg(feature = "inspection")]
 pub use self::subject_observation::{
@@ -152,10 +159,12 @@ pub struct Renderer {
     anti_aliasing: AntiAliasing,
     cpu_occlusion_culling: bool,
     semantic_aov_capture_enabled: bool,
+    scene_linear_capture_enabled: bool,
     supersample_factor: u32,
     reconstruction_filter: ReconstructionFilter,
     order_independent_transparency: Option<OrderIndependentTransparencyConfig>,
     screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
+    baked_ambient_occlusion: Option<BakedAmbientOcclusionConfig>,
     screen_space_reflections: Option<ScreenSpaceReflectionConfig>,
     depth_of_field: Option<DepthOfFieldConfig>,
     bloom: Option<PostBloomConfig>,

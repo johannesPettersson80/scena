@@ -9,7 +9,7 @@ use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
 use super::{
     GpuPostPassCounts, GpuPostSettings, GpuPreparedResources, GpuRenderResult, depth, labels, post,
-    strokes,
+    semantic_aov, strokes,
 };
 
 pub(super) fn render_browser_probe(
@@ -61,17 +61,29 @@ pub(super) fn render_browser_probe(
     }
     let post_counts = if post_settings.enabled() {
         let post_resources = resources.post.as_ref().expect("post resources exist");
+        let (semantic_view, semantic_resolve_target) = resources
+            .semantic_aov
+            .as_ref()
+            .and_then(|semantic| semantic_aov::beauty_attachment_views(semantic, target))
+            .map_or((None, None), |(view, resolve_target)| {
+                (Some(view), resolve_target)
+            });
         encode_scene_color_passes(
             &mut encoder,
             SceneColorPasses {
                 final_view: post::scene_view(post_resources),
                 final_resolve_target: None,
+                semantic_view,
+                semantic_resolve_target,
                 final_pipelines: post::scene_pipelines(post_resources, 1),
                 depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
                 vertex_buffer: &resources.vertex_buffer,
                 instance_buffer: &resources.instance_buffer,
                 output_bind_group: &resources.output_bind_group,
                 opaque_output_bind_group: &resources.opaque_output_bind_group,
+                reflection_probe_output_bind_groups: &resources.reflection_probe_output_bind_groups,
+                reflection_probe_opaque_output_bind_groups: &resources
+                    .reflection_probe_opaque_output_bind_groups,
                 draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
@@ -145,6 +157,9 @@ pub(super) fn render_browser_probe(
                 vertex_buffer: &resources.vertex_buffer,
                 output_bind_group: &resources.output_bind_group,
                 opaque_output_bind_group: &resources.opaque_output_bind_group,
+                reflection_probe_output_bind_groups: &resources.reflection_probe_output_bind_groups,
+                reflection_probe_opaque_output_bind_groups: &resources
+                    .reflection_probe_opaque_output_bind_groups,
                 draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 stroke_resources: resources.strokes.as_ref(),

@@ -11,6 +11,11 @@ pub(crate) enum RecipeResourceRole {
     Environment,
     Font(usize),
     Texture(SceneRecipeTextureColorSpaceV1),
+    MaterialPack(usize),
+    ImportMaterialPack {
+        import_index: usize,
+        binding_index: Option<usize>,
+    },
     BuiltinEnvironment,
 }
 
@@ -118,6 +123,40 @@ fn collect_resources(recipe: &SceneRecipeV1, resources: &mut Vec<PlannedRecipeRe
             !import.optional,
             RecipeResourceRole::Import(index),
         );
+        if let Some(pack) = import
+            .material
+            .as_ref()
+            .and_then(|material| material.material_pack.as_ref())
+        {
+            push_uri(
+                resources,
+                format!("$.imports[{index}].material.material_pack.uri"),
+                "material_pack",
+                &pack.uri,
+                true,
+                RecipeResourceRole::ImportMaterialPack {
+                    import_index: index,
+                    binding_index: None,
+                },
+            );
+        }
+        for (binding_index, binding) in import.material_bindings.iter().enumerate() {
+            if let Some(pack) = binding.material.material_pack.as_ref() {
+                push_uri(
+                    resources,
+                    format!(
+                        "$.imports[{index}].material_bindings[{binding_index}].material.material_pack.uri"
+                    ),
+                    "material_pack",
+                    &pack.uri,
+                    true,
+                    RecipeResourceRole::ImportMaterialPack {
+                        import_index: index,
+                        binding_index: Some(binding_index),
+                    },
+                );
+            }
+        }
     }
     for (index, font) in recipe.fonts.iter().enumerate() {
         push_uri(
@@ -169,6 +208,16 @@ fn collect_material_textures(
     material: &SceneRecipeMaterialV1,
     resources: &mut Vec<PlannedRecipeResource>,
 ) {
+    if let Some(pack) = material.material_pack.as_ref() {
+        push_uri(
+            resources,
+            format!("$.materials[{index}].material_pack.uri"),
+            "material_pack",
+            &pack.uri,
+            true,
+            RecipeResourceRole::MaterialPack(index),
+        );
+    }
     for (field, slot) in [
         ("base_color_texture", material.base_color_texture.as_ref()),
         ("normal_texture", material.normal_texture.as_ref()),

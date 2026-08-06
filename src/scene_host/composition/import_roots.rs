@@ -5,7 +5,9 @@ use serde_json::json;
 use super::checks::{
     CompositionCheckExt, checked_check, error_check, observed_pairs, round3, skip_check,
 };
-use super::helpers::{draws_for_handles, projected_node_rect, visible_coverage_for_rect};
+use super::helpers::{
+    SubjectMaskCoverage, draws_for_handles, projected_node_rect, visible_coverage_for_rect,
+};
 use super::object_framing::object_framing_check;
 use super::object_pixels::object_pixel_quality_check;
 use super::object_textures::object_texture_result_check;
@@ -164,9 +166,13 @@ pub(super) fn composition_import_checks(
             ));
         }
 
-        if let Some(coverage) = projected_rect
-            .and_then(|rect| visible_coverage_for_rect(input.capture, rect, input.background))
-        {
+        let import_mask = input.subject_aov.map(|capture| SubjectMaskCoverage {
+            capture,
+            handles: &handles,
+        });
+        if let Some(coverage) = projected_rect.and_then(|rect| {
+            visible_coverage_for_rect(input.capture, rect, input.background, import_mask.as_ref())
+        }) {
             if coverage.foreground_pixels > 0 {
                 checks.push(
                     checked_check(
@@ -182,6 +188,7 @@ pub(super) fn composition_import_checks(
                                 "foreground_fraction",
                                 json!(round3(coverage.foreground_fraction)),
                             ),
+                            ("coverage_source", json!(coverage.source)),
                         ]),
                         (
                             "declared import has measured non-background pixels in its projected screen region",

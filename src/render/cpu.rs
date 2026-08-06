@@ -244,11 +244,13 @@ fn draw_projected_primitive_cpu(
             }
             let color = multiply_color(mix_color(vertices, weights), primitive.tint());
             let depth = mix_depth(vertices, [w0, w1, w2]);
+            let local_pixel_index = cpu_frame.local_pixel_index(x, y);
             if write_pixel(cpu_frame, x, y, color, depth)
-                && let (Some(buffer), Some(config), Some(reflection)) = (
+                && let (Some(buffer), Some(config), Some(reflection), Some(pixel_index)) = (
                     material_reflections.as_deref_mut(),
                     reflection_config,
                     primitive.material_reflection(),
+                    local_pixel_index,
                 )
             {
                 super::cpu_reflections::record_material_reflection_pixel(
@@ -258,6 +260,7 @@ fn draw_projected_primitive_cpu(
                         material_reflections: buffer,
                         x,
                         y,
+                        pixel_index,
                         position,
                         normal: cpu_geometry::weighted_vec3(
                             [

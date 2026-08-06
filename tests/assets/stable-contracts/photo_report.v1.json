@@ -304,6 +304,41 @@
     }
   },
   "quality": {
+    "analysis": {
+      "schema": "scena.photo_quality_analysis.v1",
+      "mode": "report_only",
+      "identity_source": "unavailable",
+      "materials": [],
+      "grounding": {
+        "method": "unavailable",
+        "boundary_sample_count": 0
+      },
+      "contour": {
+        "method": "unavailable",
+        "boundary_sample_count": 0
+      },
+      "unavailable_metrics": [
+        "same_pass_beauty_semantic_unavailable",
+        "projected_texture_density_requires_beauty_uv_attachment"
+      ]
+    },
+    "execution": {
+      "schema": "scena.photo_quality_execution.v1",
+      "requested": "preview",
+      "effective": "preview",
+      "backend": "headless",
+      "evidence_class": "cpu_preview",
+      "capture": {
+        "width": 256,
+        "height": 168,
+        "pixel_count": 43008
+      },
+      "sampling": {
+        "supersample_factor": 1,
+        "reconstruction": "box",
+        "anti_aliasing": "msaa4"
+      }
+    },
     "subject": {
       "rect_css_px": {
         "min_x": 32.0,

@@ -313,6 +313,77 @@ mod split_sum_accuracy_tests {
     ///
     /// Either the analytic fit is close enough that the table should be deleted,
     /// or it is not and the table should be bound through a uniform block, which
+    /// The uniform block halves the table's edge to fit WebGL2's 16 KiB
+    /// uniform-block floor, so the resample has to be measured against the same
+    /// reference the analytic fit was measured against - otherwise binding the
+    /// table could trade a 0.361 error for a comparable one and claim a win.
+    #[test]
+    fn brdf_table_resample_error_stays_far_below_the_analytic_fit() {
+        const GRID: u32 = 33;
+        const SAMPLES: u32 = 4096;
+        let baked = build_brdf_lut_with_sample_count(crate::render::BRDF_LUT_SIZE, SAMPLES);
+        let bytes = crate::render::gpu::shading_tables::brdf_table_bytes(
+            &baked,
+            crate::render::BRDF_LUT_SIZE,
+        );
+        let size = crate::render::gpu::shading_tables::BRDF_TABLE_SIZE;
+
+        // Read the packed block exactly as `split_sum_brdf_table` does.
+        let texel = |index: usize| -> (f32, f32) {
+            let at = index * 8;
+            let scale = f32::from_le_bytes(bytes[at..at + 4].try_into().expect("scale"));
+            let bias = f32::from_le_bytes(bytes[at + 4..at + 8].try_into().expect("bias"));
+            (scale, bias)
+        };
+        let sample = |n_dot_v: f32, roughness: f32| -> (f32, f32) {
+            let last = size - 1;
+            let u = (n_dot_v.clamp(0.0, 1.0) * size as f32 - 0.5).clamp(0.0, last as f32);
+            let v = (roughness.clamp(0.0, 1.0) * size as f32 - 0.5).clamp(0.0, last as f32);
+            let (x0, y0) = (u.floor() as u32, v.floor() as u32);
+            let (x1, y1) = ((x0 + 1).min(last), (y0 + 1).min(last));
+            let (fx, fy) = (u - u.floor(), v - v.floor());
+            let at = |x: u32, y: u32| texel((y * size + x) as usize);
+            let mix = |a: (f32, f32), b: (f32, f32), t: f32| {
+                (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
+            };
+            let lower = mix(at(x0, y0), at(x1, y0), fx);
+            let upper = mix(at(x0, y1), at(x1, y1), fx);
+            mix(lower, upper, fy)
+        };
+
+        let mut max_error = 0.0_f32;
+        let mut worst = (0.0_f32, 0.0_f32);
+        for yi in 0..GRID {
+            let n_dot_v = 0.05 + (yi as f32 / (GRID - 1) as f32) * 0.95;
+            for xi in 0..GRID {
+                let roughness = xi as f32 / (GRID - 1) as f32;
+                let (reference_scale, reference_bias) =
+                    integrate_brdf_lut_cell(n_dot_v, roughness, SAMPLES);
+                let (table_scale, table_bias) = sample(n_dot_v, roughness);
+                let error = (table_scale - reference_scale)
+                    .abs()
+                    .max((table_bias - reference_bias).abs());
+                if error > max_error {
+                    worst = (n_dot_v, roughness);
+                }
+                max_error = max_error.max(error);
+            }
+        }
+
+        println!(
+            "brdf table resample: max_error={max_error:.5} \
+             worst_at=(n_dot_v={:.3}, roughness={:.3})",
+            worst.0, worst.1
+        );
+        // The analytic fit this replaces measures 0.361 at its worst. Binding
+        // the table is only worth its bytes if the resample is far below that.
+        assert!(
+            max_error < 0.05,
+            "resampled BRDF table error {max_error} is too close to the 0.361 analytic fit \
+             it replaces; a larger table or a different packing is needed"
+        );
+    }
+
     /// costs no texture unit. This measures which, rather than assuming.
     #[test]
     fn analytic_split_sum_fit_diverges_where_the_baked_table_is_needed() {

@@ -7,7 +7,7 @@ use crate::render::prepare::transforms::{
 };
 use crate::render::semantic_aov::GpuSemanticAttribution;
 
-pub(super) const VERTEX_BYTE_LEN: usize = 17 * std::mem::size_of::<f32>();
+pub(super) const VERTEX_BYTE_LEN: usize = 18 * std::mem::size_of::<f32>();
 pub(super) const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 6] = [
     wgpu::VertexAttribute {
         format: wgpu::VertexFormat::Float32x3,
@@ -35,7 +35,7 @@ pub(super) const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 6] = [
         shader_location: 4,
     },
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32,
+        format: wgpu::VertexFormat::Float32x2,
         offset: 16 * std::mem::size_of::<f32>() as u64,
         shader_location: 5,
     },
@@ -50,6 +50,7 @@ pub(super) struct PrimitiveDrawBatch {
     pub(super) depth_prepass_eligible: bool,
     pub(super) double_sided: bool,
     pub(super) semantic_eligible: bool,
+    pub(super) reflection_probe_slot: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -58,6 +59,9 @@ pub(super) struct DrawUniformValue {
     pub(super) normal_from_model: [f32; 16],
     pub(super) tint: crate::material::Color,
     pub(super) semantic_id: [f32; 4],
+    pub(super) reflection_probe_bounds_min: [f32; 4],
+    pub(super) reflection_probe_bounds_max: [f32; 4],
+    pub(super) reflection_probe_capture: [f32; 4],
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -71,6 +75,9 @@ struct DrawUniformKey {
     normal_from_model: [u32; 16],
     tint: [u32; 4],
     semantic_id: [u32; 4],
+    reflection_probe_bounds_min: [u32; 4],
+    reflection_probe_bounds_max: [u32; 4],
+    reflection_probe_capture: [u32; 4],
 }
 
 impl From<DrawUniformValue> for DrawUniformKey {
@@ -85,6 +92,9 @@ impl From<DrawUniformValue> for DrawUniformKey {
                 value.tint.a.to_bits(),
             ],
             semantic_id: value.semantic_id.map(f32::to_bits),
+            reflection_probe_bounds_min: value.reflection_probe_bounds_min.map(f32::to_bits),
+            reflection_probe_bounds_max: value.reflection_probe_bounds_max.map(f32::to_bits),
+            reflection_probe_capture: value.reflection_probe_capture.map(f32::to_bits),
         }
     }
 }
@@ -116,6 +126,9 @@ impl DrawUniformInterner {
                 normal_from_model: identity_matrix4(),
                 tint: crate::material::Color::WHITE,
                 semantic_id: [0.0; 4],
+                reflection_probe_bounds_min: [0.0; 4],
+                reflection_probe_bounds_max: [0.0; 4],
+                reflection_probe_capture: [0.0; 4],
             });
         }
         (self.values, self.metrics)
@@ -188,6 +201,7 @@ pub(super) fn encode_vertices_iter<'a>(
                     tangent: unbake_normal_to_model_space(attributes.tangent, &inv),
                     tangent_handedness: attributes.tangent_handedness,
                     shadow_visibility: attributes.shadow_visibility,
+                    ambient_visibility: attributes.ambient_visibility,
                 },
                 None => *attributes,
             };
@@ -231,6 +245,7 @@ pub(super) fn encode_draw_batches_indexed_with_semantics(
         let depth_prepass_eligible = primitive.depth_prepass_eligible();
         let double_sided = primitive.double_sided();
         let semantic_eligible = primitive.semantic_opaque() && primitive.source_node().is_some();
+        let reflection_probe_slot = primitive.reflection_probe().map(|probe| probe.slot());
         let draw_uniform_index =
             interner.intern(draw_uniform_value_for_semantics(primitive, attribution));
         if let Some(last) = batches.last_mut()
@@ -239,6 +254,7 @@ pub(super) fn encode_draw_batches_indexed_with_semantics(
             && last.depth_prepass_eligible == depth_prepass_eligible
             && last.double_sided == double_sided
             && last.semantic_eligible == semantic_eligible
+            && last.reflection_probe_slot == reflection_probe_slot
             && last.start_vertex.saturating_add(last.vertex_count) == start_vertex
         {
             last.vertex_count = last.vertex_count.saturating_add(3);
@@ -252,6 +268,7 @@ pub(super) fn encode_draw_batches_indexed_with_semantics(
             depth_prepass_eligible,
             double_sided,
             semantic_eligible,
+            reflection_probe_slot,
         });
     }
     batches
@@ -284,6 +301,18 @@ pub(super) fn draw_uniform_value_for_semantics(
     } else {
         identity_matrix4()
     };
+    let (reflection_probe_bounds_min, reflection_probe_bounds_max, reflection_probe_capture) =
+        primitive
+            .reflection_probe()
+            .map_or(([0.0; 4], [0.0; 4], [0.0; 4]), |probe| {
+                let bounds = probe.bounds();
+                let capture = probe.capture_position();
+                (
+                    [bounds.min.x, bounds.min.y, bounds.min.z, 1.0],
+                    [bounds.max.x, bounds.max.y, bounds.max.z, 0.0],
+                    [capture.x, capture.y, capture.z, 0.0],
+                )
+            });
     DrawUniformValue {
         world_from_model,
         normal_from_model,
@@ -291,10 +320,17 @@ pub(super) fn draw_uniform_value_for_semantics(
         semantic_id: attribution
             .and_then(|attribution| {
                 primitive.source_node().map(|node| {
-                    palette_rgba_f32(attribution.palette_index(node, primitive.source_instance()))
+                    palette_rgba_f32(attribution.palette_index(
+                        node,
+                        primitive.source_instance(),
+                        primitive.semantic_material(),
+                    ))
                 })
             })
             .unwrap_or([0.0; 4]),
+        reflection_probe_bounds_min,
+        reflection_probe_bounds_max,
+        reflection_probe_capture,
     }
 }
 
@@ -336,6 +372,7 @@ fn encode_vertex(bytes: &mut Vec<u8>, vertex: Vertex, attributes: PrimitiveVerte
         attributes.tangent.z,
         attributes.tangent_handedness,
         attributes.shadow_visibility.clamp(0.0, 1.0),
+        attributes.ambient_visibility.clamp(0.0, 1.0),
     ] {
         bytes.extend_from_slice(&value.to_ne_bytes());
     }
@@ -344,14 +381,16 @@ fn encode_vertex(bytes: &mut Vec<u8>, vertex: Vertex, attributes: PrimitiveVerte
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
+    use crate::geometry::{Aabb, Primitive, PrimitiveVertexAttributes, Vertex};
     use crate::material::Color;
-    use crate::render::prepare::PreparedDrawTransform;
-    use crate::scene::{NodeKey, Vec3};
+    use crate::render::prepare::{
+        PreparedDrawTransform, PreparedEnvironmentLighting, PreparedReflectionProbe,
+    };
+    use crate::scene::{NodeKey, ReflectionProbeKey, Vec3};
 
     #[test]
     fn gpu_vertex_stream_carries_normals_and_texcoord0() {
-        assert_eq!(VERTEX_BYTE_LEN, 17 * std::mem::size_of::<f32>());
+        assert_eq!(VERTEX_BYTE_LEN, 18 * std::mem::size_of::<f32>());
         assert!(
             VERTEX_ATTRIBUTES
                 .iter()
@@ -377,8 +416,8 @@ mod tests {
             VERTEX_ATTRIBUTES
                 .iter()
                 .any(|attribute| attribute.shader_location == 5
-                    && attribute.format == wgpu::VertexFormat::Float32),
-            "prepared directional shadow visibility must be passed to GPU shaders"
+                    && attribute.format == wgpu::VertexFormat::Float32x2),
+            "prepared direct and ambient visibility must share one GPU attribute"
         );
 
         let primitive = Primitive::triangle_with_attributes(
@@ -403,6 +442,7 @@ mod tests {
                     tangent: Vec3::new(1.0, 0.0, 0.0),
                     tangent_handedness: -1.0,
                     shadow_visibility: 0.25,
+                    ambient_visibility: 0.40,
                 },
                 PrimitiveVertexAttributes::default(),
                 PrimitiveVertexAttributes::default(),
@@ -418,7 +458,7 @@ mod tests {
             first_vertex,
             vec![
                 1.0, 2.0, 3.0, 0.1, 0.2, 0.3, 0.4, 0.0, 1.0, 0.0, 0.25, 0.75, 1.0, 0.0, 0.0, -1.0,
-                0.25
+                0.25, 0.40
             ]
         );
     }
@@ -442,6 +482,7 @@ mod tests {
                     depth_prepass_eligible: true,
                     double_sided: false,
                     semantic_eligible: true,
+                    reflection_probe_slot: None,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 6,
@@ -451,6 +492,7 @@ mod tests {
                     depth_prepass_eligible: true,
                     double_sided: false,
                     semantic_eligible: true,
+                    reflection_probe_slot: None,
                 },
             ],
             "GPU draw encoding must preserve prepared per-material slots instead of drawing \
@@ -499,6 +541,42 @@ mod tests {
             draw_uniforms[1].world_from_model[12], 5.0,
             "the second draw-uniform slot must record the translated world transform exactly, \
              not the per-vertex baked positions"
+        );
+    }
+
+    #[test]
+    fn gpu_draw_encoding_carries_probe_slot_and_box_projection() {
+        let bounds = Aabb::new(Vec3::new(-2.0, -1.0, -3.0), Vec3::new(2.0, 3.0, 1.0));
+        let capture_position = Vec3::new(0.25, 0.5, -0.75);
+        let primitive = prepared(Primitive::unlit_triangle(), 0).with_reflection_probe(Some(
+            PreparedReflectionProbe::new(
+                ReflectionProbeKey::default(),
+                2,
+                bounds,
+                capture_position,
+                PreparedEnvironmentLighting::default(),
+            ),
+        ));
+
+        let (batches, uniforms) = encode_draw_batches(&[primitive]);
+
+        assert_eq!(batches[0].reflection_probe_slot, Some(2));
+        assert_eq!(
+            uniforms[0].reflection_probe_bounds_min,
+            [bounds.min.x, bounds.min.y, bounds.min.z, 1.0],
+        );
+        assert_eq!(
+            uniforms[0].reflection_probe_bounds_max,
+            [bounds.max.x, bounds.max.y, bounds.max.z, 0.0],
+        );
+        assert_eq!(
+            uniforms[0].reflection_probe_capture,
+            [
+                capture_position.x,
+                capture_position.y,
+                capture_position.z,
+                0.0
+            ],
         );
     }
 
@@ -562,6 +640,7 @@ mod tests {
                     depth_prepass_eligible: true,
                     double_sided: false,
                     semantic_eligible: true,
+                    reflection_probe_slot: None,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 3,
@@ -571,6 +650,7 @@ mod tests {
                     depth_prepass_eligible: false,
                     double_sided: false,
                     semantic_eligible: true,
+                    reflection_probe_slot: None,
                 },
             ],
             "eligible triangles and ineligible helper strokes must not merge into one draw batch; the depth pass needs to skip the helper stroke while the color pass still draws it",
@@ -601,6 +681,7 @@ mod tests {
                     depth_prepass_eligible: true,
                     double_sided: false,
                     semantic_eligible: true,
+                    reflection_probe_slot: None,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 3,
@@ -610,6 +691,7 @@ mod tests {
                     depth_prepass_eligible: true,
                     double_sided: true,
                     semantic_eligible: true,
+                    reflection_probe_slot: None,
                 },
             ],
             "single- and double-sided triangles need separate GPU draw batches so the encoder can use the culling pipeline for only the single-sided draws",

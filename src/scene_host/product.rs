@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{
-    AntiAliasing, AssetFetcher, AutoExposureConfig, Background, EnvironmentPreset,
-    GridFloorOptions, LookupError, PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Vec3,
+    AntiAliasing, AssetFetcher, AutoExposureConfig, Background, Color, DirectionalLight,
+    EnvironmentPreset, GridFloorOptions, LookupError, MaterialDesc, PostBloomConfig,
+    ScreenSpaceAmbientOcclusionConfig, Transform, Vec3,
 };
 
 pub const SCENE_HOST_GROUNDING_SCHEMA_V1: &str = "scena.scene_host_grounding.v1";
@@ -134,6 +135,16 @@ pub struct SceneHostGroundingFallbackV1 {
 }
 
 impl<F: AssetFetcher> SceneHostCore<F> {
+    /// Adds Scena's stable three-directional-light studio rig and registers its
+    /// nodes for host-side reporting and cleanup.
+    pub fn add_studio_lighting(&mut self) -> Result<Vec<u64>, SceneHostError> {
+        let lights = self.scene.add_studio_lighting()?;
+        Ok([lights.key, lights.fill, lights.rim]
+            .into_iter()
+            .map(|node| self.register_node(node))
+            .collect())
+    }
+
     pub fn apply_scene_setup_preset_renderer(&mut self, preset: SceneSetupPreset) {
         self.renderer.set_background(preset.background());
         if self.renderer.auto_exposure().is_none() && !self.renderer.has_explicit_exposure_ev() {
@@ -147,6 +158,78 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 
     pub fn apply_product_studio_visuals(&mut self, background: &str) -> Result<(), SceneHostError> {
         self.apply_product_studio_visuals_with_lighting(background, true)
+    }
+
+    /// Applies the lightweight shaded-with-edges presentation used by interactive CAD viewers.
+    ///
+    /// This changes only renderer-owned presentation state and the host scene's material
+    /// bindings. It does not mutate imported geometry or source assets.
+    pub fn apply_cad_viewport_visuals(
+        &mut self,
+        roots: &[u64],
+        background: &str,
+    ) -> Result<Vec<u64>, SceneHostError> {
+        let roots = roots
+            .iter()
+            .map(|handle| self.resolve_node(*handle))
+            .collect::<Result<Vec<_>, _>>()?;
+        let background = scene_host_background(background)?;
+
+        self.renderer.set_background(background);
+        self.renderer
+            .set_anti_aliasing(SceneSetupPreset::CadStudio.anti_aliasing());
+
+        if self.scene.light_nodes().next().is_none() {
+            let key = self
+                .scene
+                .directional_light(DirectionalLight::default().with_illuminance_lux(18_000.0))
+                .transform(Transform::default().rotate_x_deg(-35.0).rotate_y_deg(25.0))
+                .add()?;
+            let fill = self
+                .scene
+                .directional_light(
+                    DirectionalLight::default()
+                        .with_color(Color::COOL_WHITE)
+                        .with_illuminance_lux(8_000.0),
+                )
+                .transform(Transform::default().rotate_x_deg(20.0).rotate_y_deg(-130.0))
+                .add()?;
+            self.register_node(key);
+            self.register_node(fill);
+        }
+
+        let surface = self
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(
+                Color::from_srgb_u8(196, 206, 211),
+                0.0,
+                0.82,
+            ));
+        let edges = self.assets.create_material(
+            MaterialDesc::edge(Color::from_srgb_u8(53, 65, 71), 1.25)
+                .with_edge_angle_threshold_degrees(18.0),
+        );
+
+        let mut overlay_handles = Vec::new();
+        for root in roots {
+            self.scene.set_subtree_mesh_material(root, surface)?;
+            for overlay in self.scene.add_subtree_edge_overlays(root, edges)? {
+                self.scene.set_helper_on_top(overlay, false)?;
+                overlay_handles.push(self.register_node(overlay));
+            }
+        }
+        Ok(overlay_handles)
+    }
+
+    /// Updates only the renderer-owned background of an interactive CAD viewport.
+    ///
+    /// Hosts use this when a UI theme changes after the scene has already been
+    /// styled. It deliberately leaves geometry, materials, lights, camera state,
+    /// anti-aliasing, and edge overlays untouched.
+    pub fn set_cad_viewport_background(&mut self, background: &str) -> Result<(), SceneHostError> {
+        self.renderer
+            .set_background(scene_host_background(background)?);
+        Ok(())
     }
 
     pub fn apply_product_studio_visuals_with_lighting(
@@ -297,6 +380,96 @@ fn scene_host_background(background: &str) -> Result<Background, SceneHostError>
 }
 
 #[cfg(test)]
+mod cad_viewport_tests {
+    use super::*;
+    use crate::{
+        AntiAliasing, Color, GeometryDesc, MaterialDesc, MaterialKind, NodeKind, Transform,
+    };
+
+    #[test]
+    fn cad_viewport_visuals_add_lightweight_shading_and_feature_edges() {
+        let mut host = SceneHostCore::headless(96, 64).expect("headless host builds");
+        let root = host
+            .scene
+            .add_empty(host.scene.root(), Transform::IDENTITY)
+            .expect("CAD import root inserts");
+        let geometry = host
+            .assets
+            .create_geometry(GeometryDesc::box_xyz(2.0, 1.0, 0.5));
+        let source_material = host
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(Color::RED, 0.7, 0.1));
+        let mesh = host
+            .scene
+            .mesh(geometry, source_material)
+            .parent(root)
+            .add()
+            .expect("CAD mesh inserts");
+        let root_handle = host.register_node(root);
+
+        let overlays = host
+            .apply_cad_viewport_visuals(&[root_handle], "studio")
+            .expect("CAD viewport presentation applies");
+
+        assert_eq!(host.renderer.background_color(), Color::STUDIO_BACKDROP);
+        assert_eq!(host.renderer.anti_aliasing(), AntiAliasing::Fxaa);
+        assert_eq!(
+            host.scene.light_nodes().count(),
+            2,
+            "the interactive CAD path uses a cheap key/fill rig, not product-studio effects"
+        );
+        assert_eq!(overlays.len(), 1, "one source mesh gets one edge overlay");
+
+        let NodeKind::Mesh(surface) = host.scene.node(mesh).expect("surface remains").kind() else {
+            panic!("CAD surface remains a mesh");
+        };
+        let surface_material = host
+            .assets
+            .material(surface.material())
+            .expect("CAD surface material exists");
+        assert_eq!(surface_material.kind(), MaterialKind::PbrMetallicRoughness);
+        assert_ne!(
+            surface_material.base_color(),
+            Color::RED,
+            "CAD inspection uses a neutral presentation material without mutating the source asset"
+        );
+
+        let overlay = host
+            .resolve_node(overlays[0])
+            .expect("edge overlay handle resolves");
+        assert_eq!(host.scene.helper_on_top(overlay), Some(false));
+        let NodeKind::Mesh(edge_mesh) = host.scene.node(overlay).expect("overlay remains").kind()
+        else {
+            panic!("CAD edge overlay is a mesh drawable");
+        };
+        let edge_material = host
+            .assets
+            .material(edge_mesh.material())
+            .expect("edge material exists");
+        assert_eq!(edge_material.kind(), MaterialKind::Edge);
+        assert_eq!(edge_material.stroke_width_px(), Some(1.25));
+        assert_eq!(edge_material.edge_angle_threshold_degrees(), Some(18.0));
+    }
+
+    #[test]
+    fn cad_viewport_background_changes_only_renderer_background() {
+        let mut host = SceneHostCore::headless(96, 64).expect("headless host builds");
+        let material = host
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(Color::RED, 0.7, 0.1));
+        let material_before = host.assets.material(material).expect("material exists");
+        let light_count = host.scene.light_nodes().count();
+
+        host.set_cad_viewport_background("dark_studio")
+            .expect("CAD viewport background applies");
+
+        assert_eq!(host.renderer.background_color(), Color::CHARCOAL);
+        assert_eq!(host.assets.material(material), Some(material_before));
+        assert_eq!(host.scene.light_nodes().count(), light_count);
+    }
+}
+
+#[cfg(test)]
 mod photographic_lighting_tests {
     use super::*;
     use crate::{Color, GeometryDesc, MaterialDesc, Transform};
@@ -354,6 +527,91 @@ mod photographic_lighting_tests {
                 .iter()
                 .all(|light| light.position.is_finite() && light.target.is_finite()),
             "the solver must emit finite continuous light parameters: {small:#?}"
+        );
+        let small_lateral_span = small.subject_extent_m.x.max(small.subject_extent_m.z);
+        assert!(
+            small.lights[0].emitter_width_m >= small_lateral_span * 1.5
+                && small.lights[0].emitter_height_m >= small.subject_extent_m.y * 1.25,
+            "the key must be a subject-sized softbox that produces broad photographic \
+             highlights, not a compact emitter: {small:#?}"
+        );
+        assert!(
+            small.lights[1].emitter_width_m >= small_lateral_span * 1.5,
+            "the fill must be broad enough to lift material detail without a point-like \
+             highlight: {small:#?}"
+        );
+    }
+
+    #[test]
+    fn final_photographic_lighting_uses_full_resolution_environment() {
+        let material = MaterialDesc::pbr_metallic_roughness(Color::LIGHT_GRAY, 1.0, 0.2);
+        let (mut preview_host, preview_subject) =
+            subject_host(Vec3::new(1.0, 0.6, 0.8), material.clone());
+        let (mut final_host, final_subject) = subject_host(Vec3::new(1.0, 0.6, 0.8), material);
+
+        let preview = preview_host
+            .apply_photographic_lighting(preview_subject)
+            .expect("preview lighting solves");
+        let final_report = final_host
+            .apply_final_photographic_lighting(final_subject)
+            .expect("final lighting solves");
+
+        assert_eq!(preview.environment.source_dimensions, Some([128, 64]));
+        assert_eq!(preview.environment.cubemap_resolution, Some(64));
+        assert_eq!(
+            final_report.environment.source_dimensions,
+            Some([2048, 1024])
+        );
+        assert_eq!(final_report.environment.cubemap_resolution, Some(512));
+        assert_eq!(
+            final_report.environment.name.as_deref(),
+            Some("studio_small_08_2048x1024.hdr")
+        );
+        assert!(preview.environment.equirectangular_hdr);
+        assert!(final_report.environment.equirectangular_hdr);
+    }
+
+    #[test]
+    fn photographic_white_balance_includes_environment_irradiance_color() {
+        let (mut host, subject) = subject_host(
+            Vec3::ONE,
+            MaterialDesc::pbr_metallic_roughness(Color::GRAY, 0.0, 0.8),
+        );
+        let warm_irradiance = [2.0, 1.0, 0.5];
+        let environment = host.assets.create_environment(
+            crate::EnvironmentDesc::from_equirectangular_radiance(
+                "warm-control_2x1.hdr",
+                2,
+                1,
+                vec![warm_irradiance; 2],
+            )
+            .expect("warm gray-ball environment is valid")
+            .with_cubemap_resolution(1),
+        );
+        host.renderer.set_environment(environment);
+        let report = host
+            .apply_photographic_lighting_adjusted(
+                subject,
+                crate::scene_host::PhotographicLightingAdjustmentV1 {
+                    key_scale: 0.0,
+                    fill_scale: 0.0,
+                    rim_scale: 0.0,
+                    overhead_scale: 0.0,
+                    ..Default::default()
+                },
+            )
+            .expect("environment-only lighting solves");
+
+        let balanced = std::array::from_fn::<_, 3, _>(|channel| {
+            warm_irradiance[channel] * report.white_balance.linear_multipliers[channel]
+        });
+        let srgb = balanced.map(linear_channel_to_srgb_u8);
+        let minimum = *srgb.iter().min().expect("three gray-ball channels");
+        let maximum = *srgb.iter().max().expect("three gray-ball channels");
+        assert!(
+            maximum - minimum <= 3,
+            "automatic white balance must neutralize environment-lit gray within three sRGB \
+             levels, got linear={balanced:?} srgb={srgb:?}: {report:#?}"
         );
     }
 
@@ -576,6 +834,114 @@ mod photographic_lighting_tests {
     }
 
     #[test]
+    fn photographic_lighting_solver_weights_dark_fraction_by_surface_coverage() {
+        let mut host = SceneHostCore::headless(96, 64).expect("headless host builds");
+        let root = host
+            .scene
+            .add_empty(host.scene.root(), Transform::IDENTITY)
+            .expect("assembly root inserts");
+        let dark = host
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(
+                Color::from_srgb_u8(8, 10, 12),
+                0.0,
+                0.9,
+            ));
+        let light = host
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.9));
+        let large = host.assets.create_geometry(GeometryDesc::plane(4.0, 4.0));
+        let small = host.assets.create_geometry(GeometryDesc::plane(0.1, 0.1));
+        host.scene
+            .mesh(large, dark)
+            .parent(root)
+            .add()
+            .expect("large dark surface inserts");
+        host.scene
+            .mesh(small, light)
+            .parent(root)
+            .transform(Transform::at(Vec3::new(0.0, 0.01, 0.0)))
+            .add()
+            .expect("small light surface inserts");
+        host.renderer.set_background_color(Color::WHITE);
+        let subject = host.register_node(root);
+
+        let report = host
+            .apply_photographic_lighting(subject)
+            .expect("coverage-aware lighting solves");
+
+        assert!(
+            report.material.dark_fraction > 0.9,
+            "dark fraction must follow surface coverage rather than material count: {report:#?}"
+        );
+        assert!(
+            report.lights[2].luminous_flux_lumens > 0.0,
+            "a predominantly dark surface needs minimum rim contribution even when its \
+             average material/background separation is high: {report:#?}"
+        );
+    }
+
+    #[test]
+    fn photographic_lighting_solver_keeps_a_small_dark_surface_readable() {
+        let mut host = SceneHostCore::headless(96, 64).expect("headless host builds");
+        let root = host
+            .scene
+            .add_empty(host.scene.root(), Transform::IDENTITY)
+            .expect("assembly root inserts");
+        let light = host
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(
+                Color::LIGHT_GRAY,
+                0.8,
+                0.24,
+            ));
+        let dark = host
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(
+                Color::from_srgb_u8(8, 10, 12),
+                0.7,
+                0.32,
+            ));
+        let large = host.assets.create_geometry(GeometryDesc::plane(4.0, 4.0));
+        let small = host.assets.create_geometry(GeometryDesc::plane(1.3, 1.3));
+        host.scene
+            .mesh(large, light)
+            .parent(root)
+            .add()
+            .expect("large light surface inserts");
+        host.scene
+            .mesh(small, dark)
+            .parent(root)
+            .transform(Transform::at(Vec3::new(0.0, 0.01, 0.0)))
+            .add()
+            .expect("small dark surface inserts");
+        host.renderer.set_background_color(Color::WHITE);
+        let subject = host.register_node(root);
+
+        let report = host
+            .apply_photographic_lighting(subject)
+            .expect("mixed-coverage lighting solves");
+        let key_flux = report.lights[0].luminous_flux_lumens;
+        let fill_ratio = report.lights[1].luminous_flux_lumens / key_flux;
+        let rim_ratio = report.lights[2].luminous_flux_lumens / key_flux;
+
+        assert!(
+            report.material.dark_fraction > 0.08 && report.material.dark_fraction < 0.15,
+            "control must represent a small but meaningful dark-surface share: {report:#?}"
+        );
+        assert!(
+            fill_ratio >= 0.34,
+            "small dark-surface coverage needs enough broad fill for face readability, got \
+             {fill_ratio}: {report:#?}"
+        );
+        assert!(
+            rim_ratio >= 0.05,
+            "small dark-surface coverage needs a bounded minimum rim even when average \
+             background separation is high, got {rim_ratio}: {report:#?}"
+        );
+    }
+
+    #[test]
     fn photographic_lighting_solver_applies_measured_continuous_adjustments() {
         let (mut host, subject) = subject_host(
             Vec3::ONE,
@@ -670,6 +1036,15 @@ mod photographic_lighting_tests {
         assert!(report.geometry.vertex_normal_samples >= 48);
         assert!(report.subject_extent_m.x > 1.7);
     }
+
+    fn linear_channel_to_srgb_u8(value: f32) -> u8 {
+        let encoded = if value <= 0.003_130_8 {
+            value * 12.92
+        } else {
+            1.055 * value.powf(1.0 / 2.4) - 0.055
+        };
+        (encoded.clamp(0.0, 1.0) * 255.0).round() as u8
+    }
 }
 
 #[cfg(test)]
@@ -717,7 +1092,11 @@ mod photographic_surroundings_tests {
             report.background_luminance > 0.02 && report.background_luminance < 0.8,
             "automatic background must avoid pure black and white: {report:#?}"
         );
-        assert_eq!(report.generated_nodes.len(), 3);
+        assert_eq!(
+            report.generated_nodes.len(),
+            2,
+            "the generated cyclorama owns its floor in one mesh, plus one contact-shadow node"
+        );
         assert_eq!(report.contact_shadow_nodes.len(), 1);
         assert!(report.grid_nodes.is_empty());
         assert!(host.scene.node_transforms().count() > authored_nodes);
@@ -788,7 +1167,7 @@ mod photographic_surface_tests {
     };
 
     #[test]
-    fn photographic_surface_repairs_geometry_and_adds_scale_aware_neutral_detail() {
+    fn photographic_surface_repairs_geometry_and_adds_generated_physical_detail() {
         let mut host = SceneHostCore::headless(128, 96).expect("headless host builds");
         let geometry = host
             .assets
@@ -824,11 +1203,21 @@ mod photographic_surface_tests {
             .assets
             .material(mesh.material())
             .expect("improved material exists");
-        let micro = improved
-            .photographic_micro_surface()
-            .expect("neutral micro surface is explicit");
-        assert!(micro.strength() > 0.0);
-        assert!(micro.scale_m() > 0.0);
+        assert_eq!(improved.photographic_micro_surface(), None);
+        assert!(improved.base_color_texture().is_some());
+        assert!(improved.normal_texture().is_some());
+        let packed = host
+            .assets
+            .sample_texture(
+                improved
+                    .metallic_roughness_texture()
+                    .expect("generated packed material map"),
+                [0.31, 0.73],
+            )
+            .expect("generated map samples");
+        assert!((packed.b - 0.7).abs() <= 0.01);
+        assert!((packed.g - 0.24).abs() <= 0.09);
+        assert!(improved.occlusion_texture().is_some());
     }
 
     #[test]

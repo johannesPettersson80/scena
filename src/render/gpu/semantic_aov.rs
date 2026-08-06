@@ -1,22 +1,18 @@
-use crate::render::camera::CameraProjection;
 use crate::render::semantic_aov::{
     GpuSemanticAttribution, RawSemanticAovExclusions, RawSemanticLegendEntry,
 };
-use crate::scene::{ClippingPlane, SectionBox};
 
 use super::GpuPreparedResources;
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
 use super::materials::MaterialResources;
-use super::output::{
-    DRAW_UNIFORM_ENTRY_STRIDE, OutputUniformUpload, encode_clipping_uniform, encode_output_uniform,
-};
+use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::pipeline::SCENA_FRONT_FACE;
 use super::stats::GpuResourceStats;
 use super::vertices::{VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 use crate::render::RasterTarget;
-use crate::render::gpu::draw_common::{camera_position_uniform, identity_matrix};
 
+mod beauty;
 mod capture;
 #[cfg(target_arch = "wasm32")]
 mod webgl2;
@@ -28,7 +24,7 @@ pub(super) const WEBGL2_READBACK_SHADER: &str = concat!(
     include_str!("../color_contract.wgsl")
 );
 
-const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub(super) const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 
 #[derive(Debug)]
@@ -53,6 +49,7 @@ pub(super) struct SemanticAovResources {
     depth_view: wgpu::TextureView,
     reversed_z: bool,
     pipelines: SemanticPipelines,
+    beauty: beauty::Target,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
     legend: Vec<RawSemanticLegendEntry>,
@@ -63,6 +60,8 @@ pub(super) struct SemanticAovResources {
 
 pub(super) struct SemanticAovResourceDescriptor<'a> {
     pub(super) target: RasterTarget,
+    pub(super) beauty_target: RasterTarget,
+    pub(super) beauty_sample_count: u32,
     pub(super) output_layout: &'a wgpu::BindGroupLayout,
     pub(super) material_layout: &'a wgpu::BindGroupLayout,
     pub(super) draw_layout: &'a wgpu::BindGroupLayout,
@@ -79,6 +78,8 @@ pub(super) fn create_resources(
 ) -> SemanticAovResources {
     let SemanticAovResourceDescriptor {
         target,
+        beauty_target,
+        beauty_sample_count,
         output_layout,
         material_layout,
         draw_layout,
@@ -132,6 +133,7 @@ pub(super) fn create_resources(
         view_formats: &[],
     });
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let beauty = beauty::create(device, beauty_target, beauty_sample_count);
     let pipelines = SemanticPipelines {
         single_sided: create_pipeline(
             device,
@@ -157,7 +159,12 @@ pub(super) fn create_resources(
         webgl2::create_resources(
             device,
             surface_format,
-            targets.each_ref().map(|target| &target.view),
+            [
+                &targets[0].view,
+                &targets[1].view,
+                &targets[2].view,
+                &beauty.view,
+            ],
         )
     });
     SemanticAovResources {
@@ -167,6 +174,7 @@ pub(super) fn create_resources(
         depth_view,
         reversed_z,
         pipelines,
+        beauty,
         padded_bytes_per_row,
         unpadded_bytes_per_row,
         legend: attribution.legend,
@@ -184,25 +192,50 @@ pub(super) fn resource_stats(resources: &SemanticAovResources) -> GpuResourceSta
     let webgl2_readback = resources.webgl2_readback.is_some();
     #[cfg(not(target_arch = "wasm32"))]
     let webgl2_readback = false;
+    let beauty_target_bytes = GpuResourceStats::target_bytes(resources.beauty.target, 4, 1);
+    let beauty_msaa_bytes =
+        GpuResourceStats::target_bytes(resources.beauty.target, 4, resources.beauty.sample_count)
+            .saturating_mul(u64::from(resources.beauty.sample_count > 1));
+    let beauty_readback_bytes = u64::from(resources.beauty.padded_bytes_per_row)
+        .saturating_mul(u64::from(resources.beauty.target.height));
     GpuResourceStats {
-        buffers: 3,
-        textures: 4,
-        render_targets: 4,
+        buffers: 4,
+        textures: 5 + u64::from(resources.beauty.sample_count > 1),
+        render_targets: 5 + u64::from(resources.beauty.sample_count > 1),
         pipelines: 2 + u64::from(webgl2_readback),
-        bind_groups: u64::from(webgl2_readback) * 3,
+        bind_groups: u64::from(webgl2_readback) * 4,
         shader_modules: u64::from(webgl2_readback),
         shader_module_creations: u64::from(webgl2_readback),
         approximate_gpu_memory_bytes: target_bytes
             .saturating_mul(4)
-            .saturating_add(readback_bytes.saturating_mul(3)),
+            .saturating_add(readback_bytes.saturating_mul(3))
+            .saturating_add(beauty_target_bytes)
+            .saturating_add(beauty_msaa_bytes)
+            .saturating_add(beauty_readback_bytes),
         ..GpuResourceStats::default()
     }
+}
+
+pub(super) fn beauty_attachment_views(
+    resources: &SemanticAovResources,
+    target: RasterTarget,
+) -> Option<(&wgpu::TextureView, Option<&wgpu::TextureView>)> {
+    beauty::attachment_views(resources, target)
+}
+
+pub(super) fn mark_beauty_witness_written(resources: &mut SemanticAovResources) {
+    resources.beauty.valid = true;
+}
+
+pub(super) fn invalidate_beauty_witness(resources: &mut SemanticAovResources) {
+    resources.beauty.valid = false;
 }
 
 pub(super) fn update_attribution(
     resources: &mut SemanticAovResources,
     attribution: GpuSemanticAttribution,
 ) {
+    resources.beauty.valid = false;
     resources.legend = attribution.legend;
     resources.exclusions = attribution.exclusions;
 }
@@ -447,40 +480,8 @@ fn encode_copies(encoder: &mut wgpu::CommandEncoder, semantic: &SemanticAovResou
     }
 }
 
-fn write_camera_uniform(
-    queue: &wgpu::Queue,
-    resources: &GpuPreparedResources,
-    projection: &CameraProjection,
-    target: RasterTarget,
-    clipping_planes: &[ClippingPlane],
-    section_box: Option<SectionBox>,
-) {
-    let (clipping_planes, clipping_control) = encode_clipping_uniform(clipping_planes, section_box);
-    queue.write_buffer(
-        &resources.output_uniform,
-        0,
-        &encode_output_uniform(OutputUniformUpload {
-            exposure_ev: 0.0,
-            view_from_world: projection
-                .view_from_world_matrix()
-                .unwrap_or_else(identity_matrix),
-            clip_from_view: projection
-                .clip_from_view_matrix()
-                .unwrap_or_else(identity_matrix),
-            clip_from_world: projection
-                .clip_from_world_matrix()
-                .unwrap_or_else(identity_matrix),
-            light_from_world: resources.light_from_world,
-            camera_position: camera_position_uniform(projection),
-            viewport: [target.width as f32, target.height as f32],
-            near_far: projection.near_far(),
-            color_management: [0.0; 4],
-            white_balance: [1.0, 1.0, 1.0, 0.0],
-            lighting: resources.light_uniform,
-            clipping_planes,
-            clipping_control,
-        }),
-    );
+fn encode_beauty_copy(encoder: &mut wgpu::CommandEncoder, semantic: &SemanticAovResources) {
+    beauty::encode_copy(encoder, semantic);
 }
 
 fn extent(target: RasterTarget) -> wgpu::Extent3d {

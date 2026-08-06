@@ -66,12 +66,14 @@ does not turn diagnostic output into release evidence.
 | `RUST_TOOLCHAIN` | Rust toolchain used by the scene-host browser proof's WASM build. | `1.93.1` |
 | `SCENA_SKIP_WASM_BUILD` | Reuses a prebuilt scene-host WASM package when set to `1`; intended for scoped diagnostics with separately verified build provenance. | build WASM before proof |
 | `SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU` | Product-code escape hatch. `Renderer::headless_gpu` refuses the Pi V3D adapter because roughly 7% of headless renders return a frame containing only the clear colour, with scena-side state indistinguishable from a success and no driver error reported. It no longer hangs — that was scena's LTC shader, fixed — and V3D rasterizes ~6x faster than lavapipe when it works. Setting this variable lets the request proceed. Diagnostic only — a release lane must not set it. | unset → the V3D adapter is refused with `BuildError::RequestDevice` |
+| `SCENA_DEBUG_LOG_ENVIRONMENT` | Diagnostic-only photographic-render probe that writes per-mip derived-environment size, mean/peak radiance, and neighbour-delta statistics to stderr. | unset → no environment statistics |
 | `SCENA_EASY_SCENE_SHOWCASE_ONLY` | Restricts `examples/easy_scene_showcase` to one subset. `reflective-cards` renders only the lens, auto-exposure, environment, and chrome comparison cards. | unset → render the full showcase |
 | `SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS` | Makes a missing generated WASM artifact blocking in `doctor --full`. Release workflows set it to `1`; a normal local run treats absence as non-blocking so a fresh checkout is not failed for artifacts it never built. | unset → generated-artifact absence is advisory |
 | `SCENA_GLTF_VALIDATOR` | Path to the official Khronos glTF Validator binary used by `xtask asset-doctor`. | unset → scena's native asset guidance only |
 | `SCENA_GPU_EVIDENCE_CLASS` | Declares which evidence class a GPU parity artifact may claim: `software-conformance` or `hardware-release`. The hosted software-adapter browser lane sets `software-conformance` so its artifacts cannot be read as hardware release evidence. | unset → `hardware-release` |
 | `SCENA_RELEASE_ARTIFACT_ROOT` | Directory `xtask release-readiness` reads staged artifacts from when `--artifact-root` is not passed. Empty or unset with no flag is a hard error, never a silent default. | unset → `--artifact-root` is required |
 | `SCENA_REQUIRE_CI_PROVENANCE` | Requires CI-issued provenance on every staged release artifact; self-reported commit metadata is rejected. Required release workflows set it to `1`. | unset → local provenance is accepted for non-release staging |
+| `XDG_CACHE_HOME` | Selects the standard user cache root used by `scena materials fetch` when `--out` is omitted. | unset → `$HOME/.cache` |
 
 To exercise the headline WaterBottle GPU render on an approved proof host:
 

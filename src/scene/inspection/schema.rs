@@ -130,6 +130,8 @@ pub struct SceneMaterialSourceInspectionV1 {
     pub asset_path: Option<String>,
     #[serde(default)]
     pub material_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material_name: Option<String>,
     #[serde(default)]
     pub reason: Option<String>,
 }

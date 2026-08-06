@@ -9,6 +9,20 @@ pub(super) struct SchemaEntryRow {
 pub(super) fn operational_schema_entry_rows() -> &'static [SchemaEntryRow] {
     &[
         SchemaEntryRow {
+            schema: crate::MATERIAL_LIBRARY_CATALOG_SCHEMA_V1,
+            owner_module: "assets/material_library",
+            summary: "Curated source-licensed photographic product-material catalog.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
+            schema: crate::PHOTOGRAPHIC_MATERIAL_PACK_SCHEMA_V1,
+            owner_module: "assets/material_library",
+            summary: "Source-locked canonical base-color, normal, and ORM photographic material pack.",
+            feature_flag: None,
+            fixture_path: None,
+        },
+        SchemaEntryRow {
             schema: super::AGENT_GUIDE_SCHEMA_V1,
             owner_module: "schema_catalog/agent_guide",
             summary: "Packaged public application-builder workflow, commands, schemas, policies, and templates.",

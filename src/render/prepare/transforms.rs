@@ -284,6 +284,7 @@ fn transform_vertex_attributes(
         tangent: transform_normal(attributes.tangent, transform),
         tangent_handedness: attributes.tangent_handedness,
         shadow_visibility: attributes.shadow_visibility,
+        ambient_visibility: attributes.ambient_visibility,
     }
 }
 

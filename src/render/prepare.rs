@@ -8,7 +8,6 @@ pub(super) use self::diagnostics::{
     collect_camera_visibility_diagnostics, collect_precision_diagnostics,
 };
 pub(super) use self::dynamic::collect_dynamic_light_from_world;
-pub(super) use self::environment::collect_environment_lighting;
 pub(in crate::render) use self::environment::{
     EnvironmentLightingProfile, PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
 };
@@ -50,6 +49,7 @@ mod cpu_bake;
 mod diagnostics;
 mod dynamic;
 mod environment;
+pub(crate) use environment::BRDF_LUT_SIZE;
 mod environment_baker;
 mod labels;
 mod material_batch;
@@ -72,7 +72,8 @@ mod types;
 pub(in crate::render) use types::{
     PreparedDrawTransform, PreparedGeometryStorageMetrics, PreparedInstanceRecord,
     PreparedInstanceSet, PreparedLabelAtlas, PreparedLabelQuad, PreparedMaterialReflection,
-    PreparedPrimitive, PreparedStrokeSegment, share_model_space_vertex_buffer,
+    PreparedPrimitive, PreparedReflectionProbe, PreparedStrokeSegment,
+    share_model_space_vertex_buffer,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -87,6 +88,8 @@ pub(super) fn collect_prepared_primitives<F>(
     backend_material_slots: &[crate::assets::MaterialHandle],
     environment_lighting: PreparedEnvironmentLighting,
 ) -> Result<PreparedScene, PrepareError> {
+    let reflection_probes =
+        environment::collect_prepared_reflection_probes(scene, assets, target.backend)?;
     collect_prepared_primitives_profiled(
         target,
         screen_space_scale,
@@ -96,6 +99,8 @@ pub(super) fn collect_prepared_primitives<F>(
         backend_sampled_base_color_textures,
         backend_material_slots,
         environment_lighting,
+        &reflection_probes,
+        None,
         None,
         None,
     )
@@ -111,6 +116,8 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
     backend_sampled_base_color_textures: &[TextureHandle],
     backend_material_slots: &[crate::assets::MaterialHandle],
     environment_lighting: PreparedEnvironmentLighting,
+    reflection_probes: &[PreparedReflectionProbe],
+    baked_ambient_occlusion: Option<crate::BakedAmbientOcclusionConfig>,
     work: Option<&PrepareWorkCounter>,
     reusable_shadow_visibility: Option<&mut Option<shadows::ShadowVisibilityCache>>,
 ) -> Result<PreparedScene, PrepareError> {
@@ -120,8 +127,9 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
 
     let origin_shift = scene.origin_shift();
     let lights = PreparedLights::from_scene(scene, origin_shift);
-    let needs_cpu_shadow_visibility =
-        cpu_shadow_visibility_required(scene, backend_material_slots) || lights.has_area_lights();
+    let needs_cpu_shadow_visibility = cpu_shadow_visibility_required(scene, backend_material_slots)
+        || lights.has_area_lights()
+        || baked_ambient_occlusion.is_some();
     let shadow_occluders = if needs_cpu_shadow_visibility {
         collect_shadow_occluders(scene, assets, origin_shift)?
     } else {
@@ -187,6 +195,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
             &lights,
             &shadow_occluders,
             &shadow_visibility_cache,
+            baked_ambient_occlusion,
             camera_projection,
             backend_sampled_base_color_textures,
             backend_material_slots,
@@ -237,6 +246,15 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 })?;
         validate_material_texture_handles(node, mesh.material(), &material, assets)?;
         let material_textures = PreparedMaterialTextures::new(assets, &material);
+        let reflection_probe = selected_reflection_probe(
+            scene,
+            reflection_probes,
+            node,
+            mesh.material(),
+            geometry.bounds(),
+            transform,
+            origin_shift,
+        );
         append_geometry_primitives(
             GeometryPrimitiveSource {
                 node,
@@ -260,10 +278,12 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 lights: &lights,
                 shadow_occluders: &shadow_occluders,
                 shadow_visibility_cache: &shadow_visibility_cache,
+                baked_ambient_occlusion,
                 camera_projection,
                 backend_sampled_base_color_textures,
                 backend_material_slots,
                 environment_lighting: environment_lighting.clone(),
+                reflection_probe,
                 work,
             },
             PrimitiveSinks {
@@ -294,6 +314,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
         let material_textures = PreparedMaterialTextures::new(assets, &material);
 
         let can_use_gpu_instance_path = gpu_instance_path
+            && reflection_probes.is_empty()
             && !matches!(
                 material.kind(),
                 crate::material::MaterialKind::Line
@@ -324,10 +345,12 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                     lights: &lights,
                     shadow_occluders: &shadow_occluders,
                     shadow_visibility_cache: &shadow_visibility_cache,
+                    baked_ambient_occlusion,
                     camera_projection,
                     backend_sampled_base_color_textures,
                     backend_material_slots,
                     environment_lighting: environment_lighting.clone(),
+                    reflection_probe: None,
                     work,
                 },
                 PrimitiveSinks {
@@ -358,6 +381,16 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 .instances()
                 .filter(|instance| instance.visible())
             {
+                let instance_transform = compose_transform(node_transform, instance.transform());
+                let reflection_probe = selected_reflection_probe(
+                    scene,
+                    reflection_probes,
+                    node,
+                    instance_set.material(),
+                    geometry.bounds(),
+                    instance_transform,
+                    origin_shift,
+                );
                 append_geometry_primitives(
                     GeometryPrimitiveSource {
                         node,
@@ -373,15 +406,17 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                     PrimitiveBakeParams {
                         target,
                         screen_space_scale,
-                        transform: compose_transform(node_transform, instance.transform()),
+                        transform: instance_transform,
                         origin_shift,
                         lights: &lights,
                         shadow_occluders: &shadow_occluders,
                         shadow_visibility_cache: &shadow_visibility_cache,
+                        baked_ambient_occlusion,
                         camera_projection,
                         backend_sampled_base_color_textures,
                         backend_material_slots,
                         environment_lighting: environment_lighting.clone(),
+                        reflection_probe,
                         work,
                     },
                     PrimitiveSinks {
@@ -436,6 +471,27 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
         instances,
         light_from_world,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn selected_reflection_probe(
+    scene: &Scene,
+    prepared: &[PreparedReflectionProbe],
+    node: crate::scene::NodeKey,
+    material: crate::assets::MaterialHandle,
+    local_bounds: crate::geometry::Aabb,
+    transform: crate::scene::Transform,
+    origin_shift: Vec3,
+) -> Option<PreparedReflectionProbe> {
+    let world_center = crate::scene::view_math::transform_aabb(local_bounds, transform).center();
+    let selected = scene
+        .select_reflection_probe(node, material, world_center)
+        .map(|(key, _)| key)?;
+    prepared
+        .iter()
+        .find(|probe| probe.key() == selected)
+        .cloned()
+        .map(|probe| probe.with_origin_shift(origin_shift))
 }
 
 fn collect_prepared_instance_records(

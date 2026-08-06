@@ -22,8 +22,11 @@ pub(super) fn should_parallelize_cpu_geometry_pass(
     input: &CpuGeometryPass<'_>,
     primitive_flags: CpuPrimitiveFlags,
 ) -> bool {
-    input.screen_space_reflections.is_none()
-        && !primitive_flags.has_physical_transmission
+    // Screen-space reflections used to force this to false. They no longer do:
+    // recording is row-separable and the resolve happens once, after the bands
+    // are joined. Physical transmission still needs the finished frame *during*
+    // rasterization, so it stays serial.
+    !primitive_flags.has_physical_transmission
         && input.primitives.len() >= CPU_PARALLEL_MIN_PRIMITIVES
         && input.target.pixel_len() >= CPU_PARALLEL_MIN_PIXELS
         && cpu_geometry_worker_count(input.target) > 1

@@ -572,6 +572,18 @@ fn photo_report_contract_rejects_missing_required_diagnostics() {
         Err("photo_subject_region_stale"),
         "photo report must reject stale subject-region bridge data"
     );
+    let mut missing_quality_analysis: scena::PhotoReportV1 =
+        serde_json::from_value(fixture.clone()).expect("photo report fixture decodes");
+    missing_quality_analysis
+        .quality
+        .as_object_mut()
+        .expect("photo quality is an object")
+        .remove("analysis");
+    assert_eq!(
+        missing_quality_analysis.validate_contract(),
+        Err("photo_report_quality_analysis_missing"),
+        "a photo report cannot claim quality without disclosing the report-only pixel analysis",
+    );
 
     for (field, expected_code) in [
         ("candidates", "contract_mismatch"),

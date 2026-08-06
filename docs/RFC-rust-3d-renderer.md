@@ -97,6 +97,11 @@ semantics, networking, gameplay ECS, audio, or application business logic.
   `docs/checklists/full-repo-review-v1.9.1-remediation.md`.
   Its section 8 carries the forward feature backlog (`F01`-`F09` and the
   deferred renderer work); its section 7 carries the performance track.
+- Renderer fidelity and final product-still implementation:
+  `docs/checklists/renderer-fidelity-forward-backlog.md`.
+  This is the concrete forward backlog required by section 8 above. It keeps
+  final-photo rendering inside the renderer charter and explicitly excludes
+  CAD, source-asset mutation, simulation, and replacement-model workflows.
 
 ### Historical evidence tracks
 

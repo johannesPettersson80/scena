@@ -1,4 +1,6 @@
-use super::super::prepare::{PreparedEnvironmentCubemap, PreparedEnvironmentLighting};
+use super::super::prepare::{
+    PreparedEnvironmentCubemap, PreparedEnvironmentLighting, PreparedReflectionProbe,
+};
 use super::light_assignment::LightAssignmentResources;
 use super::output::create_output_bind_group;
 use super::shadow::{
@@ -16,16 +18,21 @@ pub(super) struct OutputResources {
     pub(super) shadow_sampler: wgpu::Sampler,
     pub(super) environment_cubemap: wgpu::Texture,
     pub(super) environment_sampler: wgpu::Sampler,
-    pub(super) brdf_lut_texture: wgpu::Texture,
     /// Kept alive for the lifetime of the bind groups that reference it.
     pub(super) ltc_tables: wgpu::Buffer,
+    /// Likewise: the split-sum BRDF table the shader samples at binding 11.
+    pub(super) brdf_table: wgpu::Buffer,
     pub(super) output_bind_group: wgpu::BindGroup,
     pub(super) opaque_output_bind_group: wgpu::BindGroup,
+    pub(super) reflection_probe_cubemaps: Vec<wgpu::Texture>,
+    pub(super) reflection_probe_output_bind_groups: Vec<wgpu::BindGroup>,
+    pub(super) reflection_probe_opaque_output_bind_groups: Vec<wgpu::BindGroup>,
 }
 
 pub(super) fn resource_stats(
     directional_shadow_map_resolution: Option<u32>,
     environment_lighting: &PreparedEnvironmentLighting,
+    reflection_probes: &[PreparedReflectionProbe],
 ) -> GpuResourceStats {
     let shadow_edge = u64::from(directional_shadow_map_resolution.unwrap_or(1).max(1));
     let (cubemap_bytes, brdf_lut_bytes) = environment_lighting
@@ -46,17 +53,32 @@ pub(super) fn resource_stats(
             )
         })
         .unwrap_or((6 * 8, 8));
+    let probe_cubemap_bytes = reflection_probes
+        .iter()
+        .filter_map(|probe| probe.lighting().cubemap())
+        .map(|cubemap| {
+            (0..cubemap.mip_count)
+                .map(|mip| {
+                    let edge = u64::from((cubemap.resolution >> mip).max(1));
+                    edge.saturating_mul(edge)
+                        .saturating_mul(6)
+                        .saturating_mul(8)
+                })
+                .sum::<u64>()
+        })
+        .sum::<u64>();
     GpuResourceStats {
-        textures: 3,
+        textures: 3 + reflection_probes.len() as u64,
         render_targets: 1,
         pipelines: 1,
-        bind_groups: 4,
+        bind_groups: 4 + reflection_probes.len() as u64 * 2,
         shader_modules: 1,
         shader_module_creations: 1,
         approximate_gpu_memory_bytes: shadow_edge
             .saturating_mul(shadow_edge)
             .saturating_mul(4)
             .saturating_add(cubemap_bytes)
+            .saturating_add(probe_cubemap_bytes)
             .saturating_add(brdf_lut_bytes),
         ..GpuResourceStats::default()
     }
@@ -76,6 +98,7 @@ pub(super) fn build_output_resources(
     include_tiled_light_storage: bool,
     directional_shadow_map_resolution: Option<u32>,
     environment_lighting: &PreparedEnvironmentLighting,
+    reflection_probes: &[PreparedReflectionProbe],
 ) -> OutputResources {
     let _ = shadow::SHADOW_CASTER_SHADER;
     let shadow_caster = create_shadow_caster_resources(
@@ -93,8 +116,12 @@ pub(super) fn build_output_resources(
         ..Default::default()
     });
     let environment_sampler = create_environment_sampler(device);
-    let brdf_lut_texture = create_brdf_lut_texture(device, queue, environment_lighting.cubemap());
     let ltc_tables = super::shading_tables::create_ltc_table_buffer(device, queue);
+    let brdf_table = super::shading_tables::create_brdf_table_buffer(
+        device,
+        queue,
+        environment_lighting.cubemap(),
+    );
     let output_bind_group = create_output_bind_group(
         device,
         output_bind_group_layout,
@@ -106,6 +133,7 @@ pub(super) fn build_output_resources(
         transmission_color_view,
         transmission_color_sampler,
         &ltc_tables,
+        &brdf_table,
         include_tiled_light_storage.then_some(light_assignment),
     );
     let opaque_output_bind_group = create_output_bind_group(
@@ -119,17 +147,62 @@ pub(super) fn build_output_resources(
         transmission_placeholder_view,
         transmission_color_sampler,
         &ltc_tables,
+        &brdf_table,
         include_tiled_light_storage.then_some(light_assignment),
     );
+    let mut reflection_probe_cubemaps = Vec::with_capacity(reflection_probes.len());
+    let mut reflection_probe_output_bind_groups = Vec::with_capacity(reflection_probes.len());
+    let mut reflection_probe_opaque_output_bind_groups =
+        Vec::with_capacity(reflection_probes.len());
+    for probe in reflection_probes {
+        let cubemap = create_environment_cubemap_texture(device, queue, probe.lighting().cubemap());
+        let view = cubemap.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("scena.output.reflection_probe_cubemap_view"),
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            ..Default::default()
+        });
+        reflection_probe_output_bind_groups.push(create_output_bind_group(
+            device,
+            output_bind_group_layout,
+            output_uniform,
+            &shadow_caster.view,
+            &shadow_sampler,
+            &view,
+            &environment_sampler,
+            transmission_color_view,
+            transmission_color_sampler,
+            &ltc_tables,
+            &brdf_table,
+            include_tiled_light_storage.then_some(light_assignment),
+        ));
+        reflection_probe_opaque_output_bind_groups.push(create_output_bind_group(
+            device,
+            output_bind_group_layout,
+            output_uniform,
+            &shadow_caster.view,
+            &shadow_sampler,
+            &view,
+            &environment_sampler,
+            transmission_placeholder_view,
+            transmission_color_sampler,
+            &ltc_tables,
+            &brdf_table,
+            include_tiled_light_storage.then_some(light_assignment),
+        ));
+        reflection_probe_cubemaps.push(cubemap);
+    }
     OutputResources {
         shadow_caster,
         shadow_sampler,
         environment_cubemap,
         environment_sampler,
-        brdf_lut_texture,
         ltc_tables,
+        brdf_table,
         output_bind_group,
         opaque_output_bind_group,
+        reflection_probe_cubemaps,
+        reflection_probe_output_bind_groups,
+        reflection_probe_opaque_output_bind_groups,
     }
 }
 
@@ -248,51 +321,6 @@ fn f32_to_f16_bits(value: f32) -> u16 {
 /// pixels. Falls back to a 1×1 zero placeholder when no environment is
 /// bound; the WGSL shader gates the LUT sample on the same coverage flag
 /// as the diffuse cubemap so the placeholder is never read.
-pub(super) fn create_brdf_lut_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    prepared: Option<&PreparedEnvironmentCubemap>,
-) -> wgpu::Texture {
-    let size = prepared.map(|c| c.brdf_lut_size).unwrap_or(1).max(1);
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("scena.m3.brdf_lut"),
-        size: wgpu::Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rg32Float,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    if let Some(prepared) = prepared {
-        let bytes = f32_slice_to_bytes_le(&prepared.brdf_lut);
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(prepared.brdf_lut_size * 8),
-                rows_per_image: Some(prepared.brdf_lut_size),
-            },
-            wgpu::Extent3d {
-                width: prepared.brdf_lut_size,
-                height: prepared.brdf_lut_size,
-                depth_or_array_layers: 1,
-            },
-        );
-    }
-    texture
-}
-
 /// Linear-filtered sampler for the environment cubemap. ClampToEdge addressing
 /// matches WebGPU's recommendation for cubemaps; mipmap_filter is `Linear` so
 /// the same sampler trilinearly interpolates the GGX prefilter mip chain that
@@ -308,12 +336,4 @@ pub(super) fn create_environment_sampler(device: &wgpu::Device) -> wgpu::Sampler
         mipmap_filter: wgpu::MipmapFilterMode::Linear,
         ..Default::default()
     })
-}
-
-fn f32_slice_to_bytes_le(values: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(values.len() * 4);
-    for value in values {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
 }

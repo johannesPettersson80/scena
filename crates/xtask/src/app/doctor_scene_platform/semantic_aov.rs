@@ -66,14 +66,36 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
             ],
         ),
         (
+            "src/render/gpu/pipeline.rs",
+            &[
+                "semantic_view: Option<&'a wgpu::TextureView>",
+                "semantic_resolve_target: Option<&'a wgpu::TextureView>",
+                "let fragment_entry_point = if semantic_target_format.is_some()",
+                "\"fs_beauty_semantic\"",
+                "semantic_target_format",
+            ],
+        ),
+        (
             "src/render/gpu/semantic_aov.rs",
             &[
                 "wgpu::TextureFormat::Rgba8Unorm",
                 "wgpu::TextureFormat::Depth32Float",
                 "wgpu::TextureUsages::TEXTURE_BINDING",
                 "entry_point: Some(\"fs_semantic\")",
+                "mod beauty;",
+                "beauty: beauty::Target",
                 "semantic.reversed_z",
                 "webgl2_readback",
+            ],
+        ),
+        (
+            "src/render/gpu/semantic_aov/beauty.rs",
+            &[
+                "pub(super) struct Target",
+                "scena.beauty_semantic.resolved",
+                "scena.beauty_semantic.msaa",
+                "pub(super) fn attachment_views",
+                "pub(super) fn encode_copy",
             ],
         ),
         (
@@ -83,6 +105,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
                 "super::webgl2::capture",
                 "js_sys::Promise",
                 "semantic AOV readback failed",
+                "decode_beauty_ids",
             ],
         ),
         ("src/render/gpu/semantic_aov.rs", &["blit_srgb.wgsl"]),
@@ -99,6 +122,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
             &[
                 "@location(15) instance_semantic_id",
                 "fn fs_semantic",
+                "fn fs_beauty_semantic",
                 "encode_semantic_depth",
             ],
         ),
@@ -107,6 +131,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
             &[
                 "@location(15) instance_semantic_id",
                 "fn fs_semantic",
+                "fn fs_beauty_semantic",
                 "encode_semantic_depth",
             ],
         ),
@@ -131,6 +156,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
             &[
                 "scena.semantic_aov_capture.v1",
                 "pub fn capture_semantic_aovs",
+                "pub beauty_id_indices: Option<Vec<u32>>",
                 "identity_scope: \"runtime_scoped\".to_owned()",
                 "linear_camera_distance_scene_meters",
                 "normal_space: \"world\"",
@@ -148,6 +174,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
                 "captureSemanticAovs",
                 "capture_semantic_aovs_gpu_async",
                 "idIndices",
+                "beautyIdIndices",
                 "depthMeters",
                 "worldNormals",
             ],
@@ -209,6 +236,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
                 "scena.fr06_semantic_aov_browser_proof.v1",
                 "webgpu,webgl2",
                 "deterministic_repeat",
+                "same_pass_beauty_agreement",
                 "identity_agreement_on_common_hits",
                 "max_depth_error_meters",
                 "min_normal_dot",
@@ -314,6 +342,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
             "SCENA_HARDWARE_PROOF_ROOT",
             "native-semantic-aov-proof.json",
             "SCENA_HARDWARE_PROOF_COMMAND",
+            "same-pass beauty semantic witness",
         ],
     );
 }

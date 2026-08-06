@@ -52,6 +52,9 @@
     "subject_background_separation_srgb8": {
       "min": 8.0
     },
+    "subject_color_frame_boundary_separation": {
+      "min": 0.01
+    },
     "subject_specular_headroom_srgb8": {
       "min": 24.0
     }
@@ -74,6 +77,12 @@
       "id": "wrong_subject_target",
       "rejected_by": [
         "subject_visible_pixels_missing"
+      ]
+    },
+    {
+      "id": "missing_beauty_subject",
+      "rejected_by": [
+        "subject_color_frame_agreement_below_min"
       ]
     },
     {

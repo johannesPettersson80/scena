@@ -72,6 +72,8 @@ impl Scene {
             measurements: self.measurements.clone(),
             overlay_owners: self.overlay_owners.clone(),
             connectors: self.connectors.clone(),
+            reflection_probes: self.reflection_probes.clone(),
+            reflection_probes_enabled: self.reflection_probes_enabled,
             retired_connectors: self.retired_connectors.clone(),
             connection_locked_nodes: self.connection_locked_nodes.clone(),
             node_bounds: self.node_bounds.clone(),

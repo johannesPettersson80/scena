@@ -1,6 +1,7 @@
 use crate::diagnostics::RenderError;
 use crate::render::RasterTarget;
 
+use super::super::draw_common::target_color_management_uniform;
 use super::super::{
     GpuDeviceState, GpuPostPassCounts, GpuPreparedResources, GpuRenderResult, post, readback,
     surface_frame,
@@ -134,6 +135,44 @@ pub(super) fn native_scene_color_format(
     } else {
         super::super::pipeline::GPU_COLOR_FORMAT
     }
+}
+
+pub(super) fn native_color_management(
+    color_management: [f32; 4],
+    scene_format: wgpu::TextureFormat,
+    surface_format: Option<wgpu::TextureFormat>,
+    reflections: Option<[f32; 2]>,
+) -> ([f32; 4], Option<[f32; 4]>) {
+    let mut scene = target_color_management_uniform(color_management, scene_format);
+    let mut surface =
+        surface_format.map(|format| target_color_management_uniform(color_management, format));
+    if let Some([strength, roughness]) = reflections {
+        scene[2] = strength;
+        scene[3] = roughness;
+        if let Some(surface) = surface.as_mut() {
+            surface[2] = strength;
+            surface[3] = roughness;
+        }
+    }
+    (scene, surface)
+}
+
+pub(super) fn validate_native_sample_count(
+    state: &GpuDeviceState,
+    target: RasterTarget,
+    scene_format: wgpu::TextureFormat,
+    sample_count: u32,
+) -> Result<(), RenderError> {
+    let maximum =
+        state.max_supported_sample_count_cached(&[scene_format, wgpu::TextureFormat::Depth32Float]);
+    if sample_count > maximum {
+        return Err(RenderError::UnsupportedSampleCount {
+            backend: target.backend,
+            requested: sample_count,
+            maximum,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

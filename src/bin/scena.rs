@@ -27,6 +27,8 @@ mod scena_guide;
 mod scena_help;
 #[path = "scena/input.rs"]
 mod scena_input;
+#[path = "scena/materials.rs"]
+mod scena_materials;
 #[path = "scena/output.rs"]
 mod scena_output;
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
@@ -188,6 +190,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, Box<CliError>> {
         [command, rest @ ..] if command == "capabilities" => {
             scena_capabilities::run_capabilities_command(rest)
         }
+        [command, rest @ ..] if command == "materials" => {
+            scena_materials::run_materials_command(rest)
+        }
         [command, subcommand, name] if command == "vocab" && subcommand == "get" => {
             scena_vocab::run_vocab_get_command(name)
         }
@@ -244,11 +249,14 @@ fn run(args: Vec<String>) -> Result<CliOutcome, Box<CliError>> {
                 "unknown command; expected 'schema list', 'schema get <scena.*.vN>', 'schema json <scena.*.vN>', 'guide agent [--json|--markdown]', \
              'vocab list', 'vocab get <name>', 'policy recipe [--allow-root <directory>]...', \
              'capabilities [--live] [--json]', \
+             'materials list [--category metal|plastic|fabric|leather|rubber] [--query <text>]', \
+             'materials fetch <id> [--out <dir>] [--expect-sha256 <hex>]', \
+             'materials import <id> <archive.zip> [--out <dir>] [--expect-sha256 <hex>]', \
              'validate <file>', \
              'validate-recipe <recipe.json> [--allow-root <directory>]...', \
              'place <recipe.json> (--import <id>|--node <id>) --verb <verb>', \
              'photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json>', \
-             'photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>]', \
+             'photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--optimize]', \
              'diff <before.recipe.json> <after.recipe.json> [--render --out-dir <dir>] [--exit-code]', \
              'recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...', \
              'recipe render <recipe.json> --verify --out <png> [--allow-root <directory>]...', \
@@ -327,6 +335,7 @@ fn version_json() -> String {
             "khronos_samples": cfg!(feature = "khronos-samples"),
             "ktx2": cfg!(feature = "ktx2"),
             "meshopt": cfg!(feature = "meshopt"),
+            "material_library": cfg!(feature = "material-library"),
             "obj": cfg!(feature = "obj"),
             "production_assets": cfg!(feature = "production-assets"),
             "proof_harness": cfg!(feature = "proof-harness"),

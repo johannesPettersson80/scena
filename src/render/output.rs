@@ -160,6 +160,46 @@ impl WhiteBalance {
         }
     }
 
+    #[cfg(feature = "scene-host")]
+    pub(crate) fn from_linear_illuminant_rgb(
+        illuminant_kelvin: f32,
+        tint: f32,
+        illuminant_rgb: [f32; 3],
+    ) -> Self {
+        let illuminant_kelvin = if illuminant_kelvin.is_finite() {
+            illuminant_kelvin.clamp(1_000.0, 20_000.0)
+        } else {
+            6_500.0
+        };
+        let tint = if tint.is_finite() {
+            tint.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        let illuminant_rgb = illuminant_rgb.map(|channel| {
+            if channel.is_finite() {
+                channel.max(1.0e-4)
+            } else {
+                1.0
+            }
+        });
+        let tint_green = 2.0_f32.powf(-tint * 0.25);
+        let mut multipliers = [
+            illuminant_rgb[0].recip(),
+            illuminant_rgb[1].recip() * tint_green,
+            illuminant_rgb[2].recip(),
+        ];
+        let normalization = multipliers[1].max(1.0e-4);
+        for channel in &mut multipliers {
+            *channel = (*channel / normalization).clamp(0.25, 4.0);
+        }
+        Self {
+            illuminant_kelvin,
+            tint,
+            linear_multipliers: multipliers,
+        }
+    }
+
     pub const fn illuminant_kelvin(self) -> f32 {
         self.illuminant_kelvin
     }
@@ -815,6 +855,46 @@ mod tests {
         output.set_tonemapper(Tonemapper::PbrNeutral);
 
         assert_eq!(output.color_management_uniform(), [2.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[cfg(feature = "scene-host")]
+    #[test]
+    fn row7_final_png_preserves_the_enabled_dithered_gradient_result() {
+        let width = 32_u32;
+        let height = 4_u32;
+        let output = OutputTransform::default();
+        let mut disabled = Vec::with_capacity((width * height * 4) as usize);
+        let mut enabled = Vec::with_capacity((width * height * 4) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                let value = 0.08 + x as f32 / (width - 1) as f32 * 0.12;
+                let color = Color::from_linear_rgb(value, value, value);
+                disabled.extend_from_slice(&output.encode_rgba8(color));
+                enabled.extend_from_slice(&output.encode_rgba8_dithered(color, x, y));
+            }
+        }
+        assert_ne!(
+            enabled, disabled,
+            "the controlled gradient must discriminate dithering"
+        );
+
+        let mut host = crate::scene_host::SceneHostCore::headless(width, height)
+            .expect("diagnostic capture host builds");
+        host.prepare().expect("diagnostic capture host prepares");
+        host.render().expect("diagnostic capture host renders");
+        let capture = host
+            .capture_from_rgba8(width, height, enabled.clone())
+            .expect("final capture accepts the enabled output");
+        let png = capture.to_png_bytes().expect("final PNG encodes");
+        let decoded = image::load_from_memory(&png)
+            .expect("final PNG decodes")
+            .into_rgba8()
+            .into_raw();
+        assert_eq!(decoded, enabled, "final PNG must use the enabled result");
+        assert_ne!(
+            decoded, disabled,
+            "final PNG must not substitute the disabled result"
+        );
     }
 
     #[test]

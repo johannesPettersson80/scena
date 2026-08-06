@@ -10,6 +10,7 @@ use crate::{
 pub const PHOTO_CANDIDATE_PLAN_SCHEMA_V1: &str = "scena.photo_candidate_plan.v1";
 pub const PHOTO_PLAN_SCHEMA_V1: &str = "scena.photo_plan.v1";
 pub const PHOTO_REPORT_SCHEMA_V1: &str = "scena.photo_report.v1";
+pub const PHOTO_QUALITY_EXECUTION_SCHEMA_V1: &str = "scena.photo_quality_execution.v1";
 pub const PHOTO_SUBJECT_REGION_SCHEMA_V1: &str = "scena.photo_subject_region.v1";
 pub const PHOTO_SHADED_CANDIDATE_SELECTION_SCHEMA_V1: &str =
     "scena.photo_shaded_candidate_selection.v1";
@@ -274,6 +275,16 @@ impl PhotoReportV1 {
         }
         if !self.quality.get("subject").is_some_and(Value::is_object) {
             return Err("photo_report_quality_verdict_missing");
+        }
+        if self.quality.get("execution").and_then(value_schema)
+            != Some(PHOTO_QUALITY_EXECUTION_SCHEMA_V1)
+        {
+            return Err("photo_report_quality_execution_missing");
+        }
+        if self.quality.get("analysis").and_then(value_schema)
+            != Some(super::photo_quality::PHOTO_QUALITY_ANALYSIS_SCHEMA_V1)
+        {
+            return Err("photo_report_quality_analysis_missing");
         }
         if value_schema(&self.focus_report) != Some(crate::render::FOCUS_REPORT_SCHEMA_V1) {
             return Err("photo_report_focus_report_missing");
@@ -832,11 +843,17 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         node: u64,
         candidate: &PhotoCompositionCandidateV1,
     ) -> Result<(), SceneHostError> {
+        self.frame_nodes_with_photo_candidate(&[node], candidate)
+    }
+
+    pub fn frame_nodes_with_photo_candidate(
+        &mut self,
+        nodes: &[u64],
+        candidate: &PhotoCompositionCandidateV1,
+    ) -> Result<(), SceneHostError> {
         self.ensure_active_camera()?;
-        let node = self.resolve_node(node)?;
         let bounds = self
-            .scene
-            .node_world_bounds(node, &self.assets)?
+            .nodes_world_bounds(nodes)?
             .ok_or(crate::LookupError::ImportHasNoBounds)?;
         if candidate.preserve_authored_camera {
             let camera_position = self
@@ -882,20 +899,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         if let Some(up_hint) = candidate.up_hint {
             options = options.up(up_hint);
         }
-        let mut framing = self
+        let framing = self
             .scene
             .frame_bounds(self.active_camera, bounds, options)?;
-        if let Some(visual_center) = photographic_visual_center(&self.scene, &self.assets, node) {
-            let offset = visual_center - framing.target;
-            if offset.length_squared().is_finite() && offset.length_squared() > 1.0e-12 {
-                framing.camera_transform.translation += offset;
-                framing.target = visual_center;
-                if let Some(camera_node) = self.scene.camera_node(self.active_camera) {
-                    self.scene
-                        .set_transform(camera_node, framing.camera_transform)?;
-                }
-            }
-        }
         let focus_distance = framing.distance.max(0.001);
         self.renderer
             .set_depth_of_field(Some(DepthOfFieldConfig::physical(
@@ -910,40 +916,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         self.camera_controls = OrbitControls::from_framing(framing);
         Ok(())
     }
-}
-
-fn photographic_visual_center<F: AssetFetcher>(
-    scene: &crate::Scene,
-    assets: &crate::Assets<F>,
-    root: crate::NodeKey,
-) -> Option<Vec3> {
-    let subtree = scene
-        .subtree_nodes(root)
-        .ok()?
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    let inspection = scene.inspect_with_assets(assets);
-    let mut weighted = Vec3::ZERO;
-    let mut total_weight = 0.0_f32;
-    for draw in inspection
-        .draw_list()
-        .iter()
-        .filter(|draw| subtree.contains(&draw.node()))
-    {
-        let transform = draw.world_transform();
-        let local_center = draw.local_bounds().center();
-        let world_center =
-            transform.translation + transform.rotation * (local_center * transform.scale);
-        let extent = draw.local_bounds().max - draw.local_bounds().min;
-        let geometric_weight = (extent.x * extent.y + extent.y * extent.z + extent.z * extent.x)
-            .abs()
-            .max(1.0e-6);
-        let detail_weight = (draw.primitive_count().max(1) as f32).sqrt();
-        let weight = geometric_weight * detail_weight;
-        weighted += world_center * weight;
-        total_weight += weight;
-    }
-    (total_weight > 0.0).then_some(weighted / total_weight)
 }
 
 fn photo_candidate_margin_px(width: u32, height: u32, fill_fraction: f64) -> f32 {

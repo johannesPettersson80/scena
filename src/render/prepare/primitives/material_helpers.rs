@@ -1,8 +1,30 @@
+use crate::assets::MaterialHandle;
+
 use super::*;
+
+pub(super) fn photographic_uv_scale(
+    source: &GeometryPrimitiveSource<'_>,
+    object_scale: Vec3,
+) -> [f32; 2] {
+    source
+        .material
+        .photographic_surface_tile_size_m()
+        .and_then(|tile_size_m| {
+            source
+                .geometry
+                .photographic_texture_uv_scale(object_scale, tile_size_m)
+        })
+        .unwrap_or([1.0, 1.0])
+}
+
+pub(super) fn scale_uv(uv: [f32; 2], scale: [f32; 2]) -> [f32; 2] {
+    [uv[0] * scale[0], uv[1] * scale[1]]
+}
 
 pub(super) fn semantic_attribution(
     primitive: PreparedPrimitive,
     instance: Option<crate::scene::InstanceId>,
+    material: MaterialHandle,
     material_pass: super::super::materials::MaterialPass,
 ) -> PreparedPrimitive {
     let (opaque, alpha_cutoff) = match material_pass {
@@ -12,7 +34,7 @@ pub(super) fn semantic_attribution(
     };
     primitive
         .with_source_instance(instance)
-        .with_semantic_material(opaque, alpha_cutoff)
+        .with_semantic_material(material, opaque, alpha_cutoff)
 }
 
 pub(super) fn cpu_texture_sample_slot_count(material: &MaterialDesc) -> u64 {

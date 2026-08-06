@@ -4,7 +4,7 @@ use crate::diagnostics::Backend;
 use super::super::RasterTarget;
 use super::super::prepare::{
     PreparedDepthStats, PreparedEnvironmentLighting, PreparedGpuLightUniform,
-    PreparedLightingStats, PreparedMaterialSlot,
+    PreparedLightingStats, PreparedMaterialSlot, PreparedReflectionProbe,
 };
 #[cfg(target_arch = "wasm32")]
 use super::browser_readback::create_browser_readback_resources;
@@ -13,7 +13,8 @@ use super::materials::{create_material_bind_group_layout, create_material_resour
 use super::output::{create_output_bind_group_layout, create_output_uniform_buffer};
 use super::pipeline::GPU_COLOR_FORMAT;
 use super::prepare_resources_support::{
-    build_semantic_attribution, create_geometry_buffers, validate_sample_count,
+    build_semantic_attribution, create_geometry_buffers, validate_geometry_buffer_size,
+    validate_sample_count,
 };
 mod pipelines;
 use super::resource_encoding::{
@@ -38,6 +39,7 @@ impl GpuDeviceState {
     pub(in crate::render) fn prepare(
         &mut self,
         target: RasterTarget,
+        semantic_aov_target: RasterTarget,
         retained_primitives: &[PreparedPrimitive],
         draw_primitives: &[PreparedPrimitive],
         retained_instances: &[PreparedInstanceSet],
@@ -52,6 +54,7 @@ impl GpuDeviceState {
         depth_stats: PreparedDepthStats,
         material_slots: &[PreparedMaterialSlot],
         environment_lighting: &PreparedEnvironmentLighting,
+        reflection_probes: &[PreparedReflectionProbe],
         tiled_light_assignment: &TiledLightAssignment,
         semantic_aov_capture_enabled: bool,
         output_plan: GpuOutputPlan,
@@ -78,6 +81,11 @@ impl GpuDeviceState {
             draw_labels,
         )?;
         let vertex_bytes = encode_retained_vertices(retained_primitives, retained_instances);
+        validate_geometry_buffer_size(
+            target.backend,
+            vertex_bytes.len() as u64,
+            self.device.limits().max_buffer_size,
+        )?;
         let encoded_draw_resources = encode_draw_resources(
             draw_primitives,
             draw_instances,
@@ -186,10 +194,13 @@ impl GpuDeviceState {
             shadow_sampler,
             environment_cubemap,
             environment_sampler,
-            brdf_lut_texture,
             ltc_tables,
+            brdf_table,
             output_bind_group,
             opaque_output_bind_group,
+            reflection_probe_cubemaps,
+            reflection_probe_output_bind_groups,
+            reflection_probe_opaque_output_bind_groups,
         } = environment::build_output_resources(
             &self.device,
             &self.queue,
@@ -203,12 +214,14 @@ impl GpuDeviceState {
             true,
             lighting_stats.directional_shadow_map_resolution,
             environment_lighting,
+            reflection_probes,
         );
         let pipeline_resources = create_pipeline_resources(
             &self.device,
             self.surface.as_ref().map(|surface| surface.config.format),
             output_plan,
             sample_count,
+            semantic_aov_capture_enabled,
             &triangle_shader,
             &output_bind_group_layout,
             &material_bind_group_layout,
@@ -217,16 +230,22 @@ impl GpuDeviceState {
             &shadow_caster.view,
             &shadow_sampler,
             &environment_cubemap,
+            &reflection_probe_cubemaps,
             &environment_sampler,
             &transmission.view,
             &transmission.placeholder_view,
             &transmission.sampler,
             &ltc_tables,
+            &brdf_table,
             &light_assignment,
         );
         let surface_output_uniform = pipeline_resources.surface_output_uniform;
         let surface_output_bind_group = pipeline_resources.surface_output_bind_group;
         let surface_opaque_output_bind_group = pipeline_resources.surface_opaque_output_bind_group;
+        let surface_reflection_probe_output_bind_groups =
+            pipeline_resources.surface_reflection_probe_output_bind_groups;
+        let surface_reflection_probe_opaque_output_bind_groups =
+            pipeline_resources.surface_reflection_probe_opaque_output_bind_groups;
         let offscreen_pipelines = pipeline_resources.offscreen_pipelines;
         let offscreen_msaa4_pipelines = pipeline_resources.offscreen_msaa4_pipelines;
         let offscreen_msaa8_pipelines = pipeline_resources.offscreen_msaa8_pipelines;
@@ -262,7 +281,9 @@ impl GpuDeviceState {
             super::semantic_aov::create_resources(
                 &self.device,
                 super::semantic_aov::SemanticAovResourceDescriptor {
-                    target,
+                    target: semantic_aov_target,
+                    beauty_target: target,
+                    beauty_sample_count: sample_count,
                     output_layout: &output_bind_group_layout,
                     material_layout: &material_bind_group_layout,
                     draw_layout: &draw_bind_group_layout,
@@ -286,6 +307,8 @@ impl GpuDeviceState {
                 depth_prepass
                     .as_ref()
                     .and_then(depth::DepthPrepassResources::color_view),
+                semantic_aov_capture_enabled,
+                output_plan.scene_linear_capture_enabled(),
             )
         });
         if sample_count == 8
@@ -301,6 +324,7 @@ impl GpuDeviceState {
                 &material_bind_group_layout,
                 &draw_bind_group_layout,
                 depth_compare,
+                semantic_aov_capture_enabled,
             )
             .map_err(|error| match error {
                 crate::RenderError::UnsupportedSampleCount {
@@ -386,6 +410,7 @@ impl GpuDeviceState {
         stats.add_assign(environment::resource_stats(
             lighting_stats.directional_shadow_map_resolution,
             environment_lighting,
+            reflection_probes,
         ));
         stats.add_assign(transmission::resource_stats(target));
         if let Some(resources) = &depth_prepass {
@@ -431,6 +456,15 @@ impl GpuDeviceState {
             });
         }
 
+        self.complete_headless_prepare_uploads().map_err(|error| {
+            crate::PrepareError::GpuResourceUpload {
+                backend: target.backend,
+                reason: format!(
+                    "failed to complete V3D headless resource uploads before first use: {error}"
+                ),
+            }
+        })?;
+
         self.resources = Some(GpuPreparedResources {
             target,
             texture,
@@ -442,9 +476,13 @@ impl GpuDeviceState {
             output_uniform,
             output_bind_group,
             opaque_output_bind_group,
+            reflection_probe_output_bind_groups,
+            reflection_probe_opaque_output_bind_groups,
             surface_output_uniform,
             surface_output_bind_group,
             surface_opaque_output_bind_group,
+            surface_reflection_probe_output_bind_groups,
+            surface_reflection_probe_opaque_output_bind_groups,
             light_uniform,
             light_assignment,
             light_from_world,
@@ -452,9 +490,10 @@ impl GpuDeviceState {
             shadow_caster,
             shadow_sampler,
             environment_cubemap,
+            reflection_probe_cubemaps,
             environment_sampler,
-            brdf_lut_texture,
             ltc_tables,
+            brdf_table,
             transmission,
             depth_prepass,
             overlay_depth_prepass,

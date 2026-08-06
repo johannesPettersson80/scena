@@ -260,6 +260,11 @@ fn intersect_depth(start: ClipVertex, end: ClipVertex, plane_depth: f32) -> Clip
                 end.attributes.shadow_visibility,
                 t,
             ),
+            ambient_visibility: mix_f32(
+                start.attributes.ambient_visibility,
+                end.attributes.ambient_visibility,
+                t,
+            ),
         },
         view_depth: plane_depth,
     }
@@ -411,6 +416,7 @@ mod tests {
             );
             assert!(vertex.attributes.tangent_handedness.is_finite());
             assert!(vertex.attributes.shadow_visibility.is_finite());
+            assert!(vertex.attributes.ambient_visibility.is_finite());
             assert!(vertex.attributes.tex_coord0[0] > 0.0);
             assert!(vertex.attributes.tex_coord0[0] < 3.0);
             assert_approx(vertex.attributes.normal.x, value);
@@ -422,6 +428,7 @@ mod tests {
             assert_approx(vertex.attributes.tangent.z, value + 5.0);
             assert_approx(vertex.attributes.tangent_handedness, value + 6.0);
             assert_approx(vertex.attributes.shadow_visibility, value + 7.0);
+            assert_approx(vertex.attributes.ambient_visibility, value + 8.0);
         }
     }
 
@@ -532,6 +539,7 @@ mod tests {
             tangent: Vec3::new(value + 3.0, value + 4.0, value + 5.0),
             tangent_handedness: value + 6.0,
             shadow_visibility: value + 7.0,
+            ambient_visibility: value + 8.0,
         }
     }
 

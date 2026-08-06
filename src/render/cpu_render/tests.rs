@@ -78,6 +78,7 @@ fn cpu_parallel_row_bands_match_serial_opaque_output() {
             oit_scratch: &mut serial_oit,
             screen_space_reflections: None,
             material_reflection_scratch: None,
+            material_reflection_rows: None,
             linear_scratch: None,
             row_band_bins: None,
             primitive_indices: None,
@@ -104,6 +105,7 @@ fn cpu_parallel_row_bands_match_serial_opaque_output() {
             oit_scratch: &mut parallel_oit,
             screen_space_reflections: None,
             material_reflection_scratch: None,
+            material_reflection_rows: None,
             linear_scratch: None,
             row_band_bins: None,
             primitive_indices: None,
@@ -201,6 +203,7 @@ fn cpu_parallel_oit_completes_every_row_band_when_rayon_is_contended() {
             oit_scratch: &mut serial_oit,
             screen_space_reflections: None,
             material_reflection_scratch: None,
+            material_reflection_rows: None,
             linear_scratch: None,
             row_band_bins: None,
             primitive_indices: None,
@@ -240,6 +243,7 @@ fn cpu_parallel_oit_completes_every_row_band_when_rayon_is_contended() {
             oit_scratch: &mut parallel_oit,
             screen_space_reflections: None,
             material_reflection_scratch: None,
+            material_reflection_rows: None,
             linear_scratch: None,
             row_band_bins: None,
             primitive_indices: None,
@@ -359,3 +363,5 @@ fn pf09_row_band_bins_reduce_candidate_scans_and_preserve_order() {
     );
     assert_eq!(second.storage_growth_bytes, 0);
 }
+
+mod reflections;

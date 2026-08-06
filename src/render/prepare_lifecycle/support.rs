@@ -9,12 +9,24 @@ impl Renderer {
         } else {
             1
         };
-        super::super::target::validate_supersample_target(self.target, scale).map_err(|_| ())
+        let target = super::super::target::validate_supersample_target(self.target, scale)
+            .map_err(|_| ())?;
+        let workaround_required = self
+            .gpu
+            .as_ref()
+            .is_some_and(super::super::gpu::GpuDeviceState::requires_v3d_headless_target_alignment);
+        Ok(super::super::target::v3d_headless_render_target(
+            target,
+            workaround_required,
+        ))
     }
 
     pub(super) fn screen_space_prepare_scale(&self) -> f32 {
-        if self.gpu.is_none() || self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
+        if self.gpu.is_none() {
             self.supersample_factor.max(1) as f32
+        } else if self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
+            self.prepare_target()
+                .map_or(1.0, |target| target.width as f32 / self.target.width as f32)
         } else {
             1.0
         }
@@ -48,6 +60,9 @@ impl Renderer {
         }
         if prepared.transform_revision == scene.transform_revision() {
             return None;
+        }
+        if scene.reflection_probes().next().is_some() {
+            return Some("reflection probe selection requires full prepare");
         }
         if scene.model_nodes().next().is_some() {
             return Some("model nodes present");

@@ -41,7 +41,6 @@ mod pipeline;
 mod post;
 #[cfg(not(target_arch = "wasm32"))]
 mod prepare_resources;
-#[cfg(not(target_arch = "wasm32"))]
 mod prepare_resources_support;
 #[cfg(target_arch = "wasm32")]
 mod prepare_resources_wasm;
@@ -52,7 +51,7 @@ mod scene_color;
 #[cfg_attr(not(feature = "scene-host"), allow(dead_code))]
 mod semantic_aov;
 mod shader_manifest;
-mod shading_tables;
+pub(crate) mod shading_tables;
 mod shadow;
 mod stats;
 mod strokes;
@@ -92,6 +91,10 @@ pub(super) struct GpuDeviceState {
     queue: wgpu::Queue,
     surface: Option<GpuSurfaceState>,
     runtime_fault: surface_frame::GpuRuntimeFaultState,
+    // Enables the measured V3DV headless upload and target-alignment
+    // workarounds. Attached surfaces and every other adapter stay untouched.
+    #[cfg(not(target_arch = "wasm32"))]
+    unstable_v3d_headless: bool,
     pending_destructions: u64,
     triangle_shader_modules: pipeline::TriangleShaderModuleCache,
     sample_count_capabilities: msaa::SampleCountCapabilityCache,
@@ -169,9 +172,13 @@ struct GpuPreparedResources {
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
+    reflection_probe_output_bind_groups: Vec<wgpu::BindGroup>,
+    reflection_probe_opaque_output_bind_groups: Vec<wgpu::BindGroup>,
     surface_output_uniform: Option<wgpu::Buffer>,
     surface_output_bind_group: Option<wgpu::BindGroup>,
     surface_opaque_output_bind_group: Option<wgpu::BindGroup>,
+    surface_reflection_probe_output_bind_groups: Vec<wgpu::BindGroup>,
+    surface_reflection_probe_opaque_output_bind_groups: Vec<wgpu::BindGroup>,
     light_uniform: PreparedGpuLightUniform,
     #[allow(dead_code)]
     light_assignment: LightAssignmentResources,
@@ -186,12 +193,16 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     environment_cubemap: wgpu::Texture,
     #[allow(dead_code)]
-    environment_sampler: wgpu::Sampler,
+    reflection_probe_cubemaps: Vec<wgpu::Texture>,
     #[allow(dead_code)]
-    brdf_lut_texture: wgpu::Texture,
+    environment_sampler: wgpu::Sampler,
     /// Kept alive for the lifetime of the output bind groups that reference it.
     #[allow(dead_code)]
     ltc_tables: wgpu::Buffer,
+    /// Likewise. Replaces the `brdf_lut_texture` that used to be baked,
+    /// uploaded and never bound because no texture unit was free for it.
+    #[allow(dead_code)]
+    brdf_table: wgpu::Buffer,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     overlay_depth_prepass: Option<depth::DepthPrepassResources>,
@@ -246,6 +257,8 @@ struct GpuPreparedResources {
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
+    reflection_probe_output_bind_groups: Vec<wgpu::BindGroup>,
+    reflection_probe_opaque_output_bind_groups: Vec<wgpu::BindGroup>,
     light_uniform: PreparedGpuLightUniform,
     #[allow(dead_code)]
     light_assignment: LightAssignmentResources,
@@ -262,12 +275,16 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     environment_cubemap: wgpu::Texture,
     #[allow(dead_code)]
-    environment_sampler: wgpu::Sampler,
+    reflection_probe_cubemaps: Vec<wgpu::Texture>,
     #[allow(dead_code)]
-    brdf_lut_texture: wgpu::Texture,
+    environment_sampler: wgpu::Sampler,
     /// Kept alive for the lifetime of the output bind groups that reference it.
     #[allow(dead_code)]
     ltc_tables: wgpu::Buffer,
+    /// Likewise. Replaces the `brdf_lut_texture` that used to be baked,
+    /// uploaded and never bound because no texture unit was free for it.
+    #[allow(dead_code)]
+    brdf_table: wgpu::Buffer,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
@@ -298,6 +315,18 @@ impl GpuDeviceState {
     pub(super) fn max_supported_sample_count_cached(&self, formats: &[wgpu::TextureFormat]) -> u32 {
         self.sample_count_capabilities
             .maximum_for_device(&self.device, &self.adapter, formats)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn measured_sample_count_maxima(&self) -> (u32, u32) {
+        let render_maximum = self.max_supported_sample_count_cached(&[
+            pipeline::GPU_COLOR_FORMAT,
+            post::scene_color_format(),
+            self.color_target_format(),
+        ]);
+        let depth_maximum =
+            self.max_supported_sample_count_cached(&[wgpu::TextureFormat::Depth32Float]);
+        (render_maximum, depth_maximum)
     }
 
     pub(super) fn sample_count_capability_probe_count(&self) -> u64 {

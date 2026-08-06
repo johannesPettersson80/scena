@@ -49,7 +49,9 @@ pub(super) const IMPORT_FIELDS: &[&str] = &[
     "transform",
     "expected_extent",
     "material",
+    "material_bindings",
     "edge_emphasis",
+    "edge_rounding",
 ];
 pub(super) const IMPORT_TRANSFORM_KINDS: &[&str] = &["raw", "trs"];
 pub(crate) const AUTHORING_TRANSFORM_KINDS: &[&str] = &[
@@ -478,6 +480,9 @@ fn curated_field_model_v1() -> SchemaFieldModelV1 {
         .with_enum_strings(&["subtle"]),
         field("$.photo.intent", "string", true, json!("camera_behavior"))
             .with_enum_strings(&["camera_behavior"]),
+        field("$.photo.quality", "string", false, json!("final"))
+            .with_enum_strings(&["preview", "final"])
+            .with_default(json!("preview")),
         field("$.photo.subject.kind", "string", true, json!("import"))
             .with_enum_strings(&["import", "node"]),
         field("$.photo.subject.id", "string", true, json!("subject")),
@@ -578,13 +583,9 @@ fn curated_field_model_v1() -> SchemaFieldModelV1 {
             json!("dark_studio"),
         )
         .with_enum_strings(&["dark_studio"]),
-        field(
-            "$.photo.staging.ground",
-            "string",
-            false,
-            json!("matte_shadow_catcher"),
-        )
-        .with_enum_strings(&["matte_shadow_catcher"]),
+        field("$.photo.staging.ground", "string", false, json!("matte"))
+            .with_enum_strings(&["matte", "reflective"])
+            .with_default(json!("matte")),
         field("$.photo.staging.grid", "boolean", false, json!(false)),
         field("$.capture.width", "integer", true, json!(800)).with_range(1.0, f64::from(u32::MAX)),
         field("$.capture.height", "integer", true, json!(600)).with_range(1.0, f64::from(u32::MAX)),

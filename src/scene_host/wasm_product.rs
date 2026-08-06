@@ -4,6 +4,24 @@ use super::wasm::{SceneHost, js_error};
 
 #[wasm_bindgen]
 impl SceneHost {
+    #[wasm_bindgen(js_name = setCadViewportBackground)]
+    pub fn set_cad_viewport_background(&mut self, background: String) -> Result<(), JsValue> {
+        self.core
+            .set_cad_viewport_background(&background)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = applyCadViewportVisuals)]
+    pub fn apply_cad_viewport_visuals(
+        &mut self,
+        roots: js_sys::BigUint64Array,
+        background: String,
+    ) -> Result<Vec<u64>, JsValue> {
+        self.core
+            .apply_cad_viewport_visuals(&roots.to_vec(), &background)
+            .map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = applyProductStudioVisuals)]
     pub fn apply_product_studio_visuals(&mut self, background: String) -> Result<(), JsValue> {
         self.core

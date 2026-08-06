@@ -13,6 +13,7 @@ pub(in crate::render) struct GpuOutputPlan {
     sample_count: u32,
     post_enabled: bool,
     depth_color_enabled: bool,
+    scene_linear_capture: bool,
 }
 
 impl GpuOutputPlan {
@@ -23,6 +24,7 @@ impl GpuOutputPlan {
         reflections: bool,
         depth_of_field: bool,
         automatic_exposure: bool,
+        scene_linear_capture: bool,
     ) -> Self {
         Self {
             sample_count: anti_aliasing.gpu_sample_count(),
@@ -31,8 +33,10 @@ impl GpuOutputPlan {
                 || ambient_occlusion
                 || reflections
                 || depth_of_field
-                || automatic_exposure,
+                || automatic_exposure
+                || scene_linear_capture,
             depth_color_enabled: ambient_occlusion || depth_of_field,
+            scene_linear_capture,
         }
     }
 
@@ -46,6 +50,10 @@ impl GpuOutputPlan {
 
     pub(in crate::render::gpu) const fn depth_color_enabled(self) -> bool {
         self.depth_color_enabled
+    }
+
+    pub(in crate::render::gpu) const fn scene_linear_capture_enabled(self) -> bool {
+        self.scene_linear_capture
     }
 }
 
@@ -66,6 +74,7 @@ pub(in crate::render) struct GpuPostSettings {
     pub(super) reflections: Option<ScreenSpaceReflectionConfig>,
     pub(super) depth_of_field: Option<DepthOfFieldPostConfig>,
     pub(super) automatic_exposure: bool,
+    pub(super) scene_linear_capture: bool,
 }
 
 impl GpuPostSettings {
@@ -76,6 +85,7 @@ impl GpuPostSettings {
         reflections: Option<ScreenSpaceReflectionConfig>,
         depth_of_field: Option<DepthOfFieldPostConfig>,
         automatic_exposure: bool,
+        scene_linear_capture: bool,
     ) -> Self {
         Self {
             anti_aliasing,
@@ -84,6 +94,7 @@ impl GpuPostSettings {
             reflections,
             depth_of_field,
             automatic_exposure,
+            scene_linear_capture,
         }
     }
 
@@ -94,6 +105,7 @@ impl GpuPostSettings {
             || self.reflections.is_some()
             || self.depth_of_field.is_some()
             || self.automatic_exposure
+            || self.scene_linear_capture
     }
 
     pub(in crate::render::gpu) const fn needs_depth_color(self) -> bool {
@@ -132,6 +144,7 @@ impl GpuPostSettings {
             reflections: self.reflections,
             depth_of_field: self.depth_of_field,
             automatic_exposure: self.automatic_exposure,
+            scene_linear_capture: self.scene_linear_capture,
         }
     }
 
@@ -144,8 +157,21 @@ impl GpuPostSettings {
             reflections: self.reflections,
             depth_of_field: self.depth_of_field,
             automatic_exposure: self.automatic_exposure,
+            scene_linear_capture: self.scene_linear_capture,
         }
     }
+}
+
+#[derive(Debug)]
+pub(in crate::render::gpu) struct LinearSceneReadbackResources {
+    // On wasm the buffer is allocated but never read: a synchronous readback
+    // cannot complete inside one browser task, so only native code maps it.
+    #[cfg_attr(
+        any(target_arch = "wasm32", not(any(feature = "scene-host", test))),
+        allow(dead_code)
+    )]
+    pub(in crate::render::gpu) buffer: wgpu::Buffer,
+    pub(in crate::render::gpu) padded_bytes_per_row: u32,
 }
 
 #[derive(Debug)]
@@ -154,6 +180,7 @@ pub(in crate::render::gpu) struct PostResources {
     #[allow(dead_code)]
     pub(in crate::render::gpu) scene_texture: wgpu::Texture,
     pub(in crate::render::gpu) scene_view: wgpu::TextureView,
+    pub(in crate::render::gpu) linear_scene_readback: Option<LinearSceneReadbackResources>,
     #[allow(dead_code)]
     pub(in crate::render::gpu) ping_texture: wgpu::Texture,
     pub(in crate::render::gpu) ping_view: wgpu::TextureView,

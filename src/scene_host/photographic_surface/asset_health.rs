@@ -15,6 +15,9 @@ pub(super) fn material_values_are_physical(material: &MaterialDesc) -> bool {
         && material.normal_scale().is_finite()
         && material.occlusion_strength().is_finite()
         && (0.0..=1.0).contains(&material.occlusion_strength())
+        && material
+            .photographic_surface_tile_size_m()
+            .is_none_or(|tile_size_m| tile_size_m.is_finite() && tile_size_m > 0.0)
         && material.photographic_micro_surface().is_none_or(|surface| {
             surface.strength().is_finite()
                 && surface.strength() >= 0.0

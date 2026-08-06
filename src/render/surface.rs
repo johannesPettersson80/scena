@@ -117,7 +117,7 @@ impl Renderer {
             .gpu
             .as_ref()
             .map_or("Rgba8UnormSrgb", |gpu| gpu.color_target_format_name());
-        self.capabilities = if attached {
+        let capabilities = if attached {
             Capabilities::for_attached_gpu_backend(backend)
         } else if self.gpu.is_some() {
             Capabilities::for_gpu_backend(backend)
@@ -126,6 +126,15 @@ impl Renderer {
         }
         .with_color_target_format(color_target_format)
         .with_display_p3_output(false);
+        #[cfg(not(target_arch = "wasm32"))]
+        let capabilities = match self.gpu.as_ref() {
+            Some(gpu) => {
+                let (render_maximum, depth_maximum) = gpu.measured_sample_count_maxima();
+                capabilities.with_measured_sample_count_maxima(render_maximum, depth_maximum)
+            }
+            None => capabilities,
+        };
+        self.capabilities = capabilities;
         self.stats.target_width = size.width;
         self.stats.target_height = size.height;
         self.surface_lost = None;

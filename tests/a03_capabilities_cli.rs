@@ -12,6 +12,7 @@ const COMPILED_FEATURES: &[&str] = &[
     "inspection",
     "khronos_samples",
     "ktx2",
+    "material_library",
     "meshopt",
     "obj",
     "production_assets",
@@ -46,6 +47,10 @@ fn static_capabilities_are_explicitly_no_device_and_json_alias_matches() {
     assert_eq!(value["probe"]["presentation"]["status"], "not_applicable");
     assert!(value["probe"]["probed_at_unix_ms"].is_null());
     assert!(value["probe"]["unavailable"].is_null());
+    assert_eq!(
+        value["capabilities"]["final_photo"], "error_if_required",
+        "the static CPU table must not claim the GPU-only final-photo contract"
+    );
 
     let explicit_json = run_json(&["capabilities", "--json"]);
     assert_eq!(
@@ -88,6 +93,10 @@ fn live_capabilities_are_measured_or_fail_closed_with_a_structured_reason() {
         assert_eq!(value["probe"]["readback"]["status"], "supported");
         assert_eq!(value["probe"]["presentation"]["status"], "not_probed");
         assert!(value["probe"]["unavailable"].is_null());
+        assert_eq!(
+            value["capabilities"]["final_photo"], "supported",
+            "a live HeadlessGpu device is the native final-photo execution backend"
+        );
     } else {
         assert_eq!(report.status.code(), Some(1), "stderr={}", stderr(&report));
         assert_eq!(value["probe"]["status"], "unavailable");

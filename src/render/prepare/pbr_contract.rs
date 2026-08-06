@@ -76,6 +76,29 @@ pub(super) fn punctual_light_contribution(
     )
 }
 
+pub(super) fn pbr_area_light_diffuse_contribution(
+    material: PbrMaterial,
+    normal: Vec3,
+    view: Vec3,
+    incoming: Vec3,
+    radiance: Vec3,
+) -> Vec3 {
+    let incoming = normalize_or(incoming, Vec3::ZERO);
+    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
+    if n_dot_l <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let half_vector = normalize_or(add_vec3(view, incoming), normal);
+    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
+    let fresnel = fresnel_schlick(v_dot_h, material.f0());
+    let diffuse_energy = scale_vec3(
+        subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
+        1.0 - material.metallic,
+    );
+    let diffuse = scale_vec3(multiply_vec3(diffuse_energy, material.base), PI.recip());
+    scale_vec3(multiply_vec3(diffuse, radiance), n_dot_l)
+}
+
 pub(super) fn clearcoat_light_contribution(
     normal: Vec3,
     view: Vec3,
@@ -522,6 +545,38 @@ mod tests {
             Vec3::new(724.38367, 727.89966, 733.1737),
             0.25,
             "core metallic GGX grazing probe",
+        );
+    }
+
+    #[test]
+    fn sampled_area_light_base_lobe_contains_diffuse_but_not_metal_specular() {
+        let normal = Vec3::new(0.0, 0.0, 1.0);
+        let view = normal;
+        let incoming = normal;
+        let radiance = Vec3::new(2.0, 2.0, 2.0);
+        let dielectric = pbr_area_light_diffuse_contribution(
+            PbrMaterial::new(Vec3::new(0.7, 0.3, 0.1), 0.0, 0.05),
+            normal,
+            view,
+            incoming,
+            radiance,
+        );
+        let metal = pbr_area_light_diffuse_contribution(
+            PbrMaterial::new(Vec3::new(0.7, 0.3, 0.1), 1.0, 0.05),
+            normal,
+            view,
+            incoming,
+            radiance,
+        );
+
+        assert!(
+            dielectric.x > 0.0 && dielectric.y > 0.0 && dielectric.z > 0.0,
+            "sampled finite-emitter points must retain dielectric diffuse energy"
+        );
+        assert_eq!(
+            metal,
+            Vec3::ZERO,
+            "continuous LTC already owns the finite-emitter metal specular lobe"
         );
     }
 

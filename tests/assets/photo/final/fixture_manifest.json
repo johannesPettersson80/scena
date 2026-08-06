@@ -1,0 +1,59 @@
+{
+  "schema": "scena.photo_final_fixture_set.v1",
+  "subjects": [
+    {
+      "id": "dark_metal_speaker",
+      "asset_uri": "tests/assets/photo/final/subjects/dark_metal_speaker.glb",
+      "asset_sha256": "cd1343a18c73c908c2eb535775dc31545497c3c8fd6e9d1db57ede8b085c2ccf",
+      "material_intents": [
+        { "source_index": 0, "source_name": "chrome_accent_ring", "catalog_id": "Metal049A" },
+        { "source_index": 1, "source_name": "anodized_black_aluminium", "catalog_id": "Metal009", "base_color": "#707A84", "roughness": 0.47 },
+        { "source_index": 2, "source_name": "rubber_foot", "preset": "rubber" },
+        { "source_index": 3, "source_name": "speaker_grille", "catalog_id": "Metal027" },
+        { "source_index": 4, "source_name": "machined_knob", "catalog_id": "Metal009" }
+      ]
+    },
+    {
+      "id": "colored_travel_mug",
+      "asset_uri": "tests/assets/photo/final/subjects/colored_travel_mug.glb",
+      "asset_sha256": "ee7e8037a120bdd61000f5560b1675e10ebdcb8185d4375a322e1022cd13be14",
+      "material_intents": [
+        { "source_index": 0, "source_name": "smoke_sip_cap", "catalog_id": "Plastic012A" },
+        { "source_index": 1, "source_name": "harbor_teal_plastic", "catalog_id": "Plastic013A", "base_color": "#148E9A" },
+        { "source_index": 2, "source_name": "silicone_grip", "catalog_id": "Plastic013A", "base_color": "#B9AD8D" },
+        { "source_index": 3, "source_name": "signal_orange_lid", "catalog_id": "Plastic013A", "base_color": "#E04C17" },
+        { "source_index": 4, "source_name": "steel_ring", "catalog_id": "Metal009" }
+      ]
+    },
+    {
+      "id": "valve_manifold",
+      "asset_uri": "tests/assets/photo/final/subjects/valve_manifold.glb",
+      "asset_sha256": "d122b430396e39344b12ff3c923df62764f380b1baa4b68a17fef85ac3e0da61",
+      "material_intents": [
+        { "source_index": 0, "source_name": "machined_steel", "catalog_id": "Metal009" },
+        { "source_index": 1, "source_name": "painted_red_handwheel", "catalog_id": "Plastic013A", "base_color": "#B62618" },
+        { "source_index": 2, "source_name": "chrome_pipe", "catalog_id": "Metal049A" },
+        { "source_index": 3, "source_name": "brass_fitting", "catalog_id": "Metal048A" },
+        { "source_index": 4, "source_name": "cast_iron_body", "catalog_id": "Metal052B" }
+      ]
+    },
+    {
+      "id": "demo_hero",
+      "asset_uri": "demo/samples/connector-snap/connector_snap_assembly.glb",
+      "asset_sha256": "409fe353579af47b67d3a1f22b87a99bb38e1c24b5fd897909866b0eea4956d8",
+      "material_intents": [
+        { "source_index": 0, "source_name": "stainless bolt.002", "catalog_id": "Metal009" },
+        { "source_index": 3, "source_name": "machined aluminium.002", "catalog_id": "Metal009" },
+        { "source_index": 4, "source_name": "recessed bore.002", "catalog_id": "Metal052B" },
+        { "source_index": 5, "source_name": "baseplate steel.002", "catalog_id": "Metal009" },
+        { "source_index": 6, "source_name": "isolator pad.002", "preset": "rubber" },
+        { "source_index": 7, "source_name": "navy powder coat.002", "catalog_id": "Plastic013A", "base_color": "#183764" },
+        { "source_index": 8, "source_name": "data plate.002", "catalog_id": "Metal009" },
+        { "source_index": 9, "source_name": "dark flywheel disc", "catalog_id": "Metal052B" },
+        { "source_index": 10, "source_name": "turned steel shaft", "catalog_id": "Metal009" },
+        { "source_index": 11, "source_name": "satin gearbox aluminium", "catalog_id": "Metal009" },
+        { "source_index": 12, "source_name": "ribbed black rubber", "preset": "rubber" }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use slotmap::Key;
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::diagnostics::Backend;
@@ -6,11 +7,27 @@ use crate::{AssetFetcher, RawSemanticAovCapture, RawSemanticAovError, RawSemanti
 
 pub const SCENE_HOST_SEMANTIC_AOV_SCHEMA_V1: &str = "scena.semantic_aov_capture.v1";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneHostSemanticAovLegendEntryV1 {
     pub palette_index: u32,
     pub rgba8: [u8; 4],
     pub node_handle: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material_handle: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metallic_factor: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness_factor: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_metallic_mean: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_roughness_mean: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_texture_min_dimension_px: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_tile_size_m: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_handle: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -52,6 +69,9 @@ pub struct SceneHostSemanticAovCaptureV1 {
     pub near: f32,
     pub far: f32,
     pub id_indices: Vec<u32>,
+    /// Same-pass semantic IDs emitted by the beauty fragment pipeline. `None`
+    /// on CPU or when the backend cannot provide an MRT witness.
+    pub beauty_id_indices: Option<Vec<u32>>,
     pub depth_meters: Vec<f32>,
     pub world_normals: Vec<[f32; 3]>,
     pub legend: Vec<SceneHostSemanticAovLegendEntryV1>,
@@ -210,10 +230,36 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                     .get(&(entry.identity.node, instance))
                     .copied()
             });
+            let material = entry
+                .identity
+                .material
+                .and_then(|material| self.assets.material(material));
+            let photo_metadata = material
+                .as_ref()
+                .map(|material| material_photo_metadata(&self.assets, material));
             legend.push(SceneHostSemanticAovLegendEntryV1 {
                 palette_index: entry.palette_index,
                 rgba8: palette_rgba8(entry.palette_index),
                 node_handle,
+                material_handle: entry
+                    .identity
+                    .material
+                    .map(|material| material.data().as_ffi()),
+                material_kind: material
+                    .as_ref()
+                    .map(|material| material_kind_name(material.kind()).to_owned()),
+                metallic_factor: material.as_ref().map(|material| material.metallic_factor()),
+                roughness_factor: material
+                    .as_ref()
+                    .map(|material| material.roughness_factor()),
+                effective_metallic_mean: photo_metadata
+                    .map(|metadata| metadata.effective_metallic_mean),
+                effective_roughness_mean: photo_metadata
+                    .map(|metadata| metadata.effective_roughness_mean),
+                surface_texture_min_dimension_px: photo_metadata
+                    .and_then(|metadata| metadata.surface_texture_min_dimension_px),
+                surface_tile_size_m: photo_metadata
+                    .and_then(|metadata| metadata.surface_tile_size_m),
                 instance_handle,
                 instance_id: entry.identity.instance.map(|instance| instance.as_u64()),
             });
@@ -229,11 +275,66 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             near: raw.near,
             far: raw.far,
             id_indices: raw.id_indices,
+            beauty_id_indices: raw.beauty_id_indices,
             depth_meters: raw.depth_meters,
             world_normals: raw.world_normals,
             legend,
             exclusions: raw.exclusions.into(),
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MaterialPhotoMetadata {
+    effective_metallic_mean: f32,
+    effective_roughness_mean: f32,
+    surface_texture_min_dimension_px: Option<u32>,
+    surface_tile_size_m: Option<f32>,
+}
+
+fn material_photo_metadata<F: AssetFetcher>(
+    assets: &crate::Assets<F>,
+    material: &crate::MaterialDesc,
+) -> MaterialPhotoMetadata {
+    let effective = assets.effective_material_pbr(material);
+    MaterialPhotoMetadata {
+        effective_metallic_mean: effective.metallic_mean,
+        effective_roughness_mean: effective.roughness_mean,
+        surface_texture_min_dimension_px: surface_texture_min_dimension_px(assets, material),
+        surface_tile_size_m: material.photographic_surface_tile_size_m(),
+    }
+}
+
+fn surface_texture_min_dimension_px<F: AssetFetcher>(
+    assets: &crate::Assets<F>,
+    material: &crate::MaterialDesc,
+) -> Option<u32> {
+    let mut minimum = None;
+    let mut has_surface_texture = false;
+    for handle in [
+        material.base_color_texture(),
+        material.normal_texture(),
+        material.metallic_roughness_texture(),
+        material.occlusion_texture(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        has_surface_texture = true;
+        let (width, height) = assets.texture(handle)?.decoded_dimensions()?;
+        let dimension = width.min(height);
+        minimum = Some(minimum.map_or(dimension, |current: u32| current.min(dimension)));
+    }
+    has_surface_texture.then_some(minimum).flatten()
+}
+
+const fn material_kind_name(kind: crate::MaterialKind) -> &'static str {
+    match kind {
+        crate::MaterialKind::Unlit => "unlit",
+        crate::MaterialKind::PbrMetallicRoughness => "pbr_metallic_roughness",
+        crate::MaterialKind::Line => "line",
+        crate::MaterialKind::Wireframe => "wireframe",
+        crate::MaterialKind::Edge => "edge",
     }
 }
 
@@ -271,5 +372,39 @@ fn semantic_error(error: RawSemanticAovError) -> SceneHostError {
                 "semantic AOV requires {entries} palette entries, exceeding the 24-bit limit of 16777215"
             ),
         ),
+    }
+}
+
+#[cfg(test)]
+mod photo_metadata_tests {
+    use super::*;
+    use crate::{Assets, Color, MaterialDesc, TextureMemoryDesc, TextureMemoryId, TextureSlot};
+
+    #[test]
+    fn material_photo_metadata_uses_orm_means_resolution_and_physical_tile() {
+        let assets = Assets::new();
+        let rgba8 = [255, 64, 192, 255].repeat(8 * 4);
+        let orm = assets
+            .create_texture_for_slot(
+                TextureMemoryDesc::rgba8_for_slot(
+                    TextureMemoryId::new("tests/photo-quality/orm").unwrap(),
+                    8,
+                    4,
+                    rgba8,
+                    TextureSlot::MetallicRoughness,
+                ),
+                TextureSlot::MetallicRoughness,
+            )
+            .unwrap();
+        let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.5, 0.5)
+            .with_metallic_roughness_texture(orm)
+            .with_photographic_surface_tile_size_m(0.25);
+
+        let metadata = material_photo_metadata(&assets, &material);
+
+        assert!((metadata.effective_metallic_mean - 0.5 * 192.0 / 255.0).abs() <= 1.0e-6);
+        assert!((metadata.effective_roughness_mean - 0.5 * 64.0 / 255.0).abs() <= 1.0e-6);
+        assert_eq!(metadata.surface_texture_min_dimension_px, Some(4));
+        assert_eq!(metadata.surface_tile_size_m, Some(0.25));
     }
 }

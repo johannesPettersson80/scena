@@ -7,14 +7,15 @@
 
 pub use crate::{
     Aabb, AlphaMode, AntiAliasing, AssetError, AssetFetcher, AssetPath, Assets, Backend,
-    Background, BuildError, Camera, CameraKey, Color, DirectionalLight, EnvironmentHandle,
-    EnvironmentPreset, FramingOptions, FramingOutcome, GeometryDesc, GeometryError, GeometryHandle,
-    GridFloorOptions, Hit, ImportError, ImportOptions, LookupError, MaterialDesc, MaterialHandle,
-    NodeKey, OrbitControls, OrthographicCamera, PerspectiveCamera, PointLight, PrepareError,
-    Profile, Quality, Quat, RenderError, RenderOutcome, Renderer, RendererOptions, Scene,
-    SceneAsset, SceneImport, SourceCoordinateSystem, SourceUnits, SpotLight, TextureHandle,
-    TextureMemoryDesc, TextureMemoryId, TextureMipPolicy, TextureSamplerDesc, TextureSlot,
-    Transform, Vec3,
+    Background, BakedAmbientOcclusionConfig, BuildError, Camera, CameraKey, Color,
+    DirectionalLight, EnvironmentHandle, EnvironmentPreset, FramingOptions, FramingOutcome,
+    GeometryDesc, GeometryError, GeometryHandle, GridFloorOptions, Hit, ImportError, ImportOptions,
+    LookupError, MaterialDesc, MaterialHandle, NodeKey, OrbitControls, OrthographicCamera,
+    PerspectiveCamera, PhotographicSurfaceAssets, PhotographicSurfaceDesc, PhotographicSurfaceKind,
+    PointLight, PrepareError, Profile, Quality, Quat, ReflectionProbe, ReflectionProbeError,
+    ReflectionProbeKey, RenderError, RenderOutcome, Renderer, RendererOptions, Scene, SceneAsset,
+    SceneImport, SourceCoordinateSystem, SourceUnits, SpotLight, TextureHandle, TextureMemoryDesc,
+    TextureMemoryId, TextureMipPolicy, TextureSamplerDesc, TextureSlot, Transform, Vec3,
 };
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -1,13 +1,33 @@
+mod backdrop;
+mod ground;
+mod planar_reflection;
+
+use backdrop::{
+    BACKDROP_HALF_WIDTH_FRACTION, BackdropCamera, BackdropPlane, cyclorama_geometry,
+    cyclorama_wall_cover_geometry, horizontal_toward_camera, surroundings_extent,
+};
+use ground::{contact_shadow_geometry, photographic_floor_geometry};
 use serde::{Deserialize, Serialize};
+
+pub use planar_reflection::PhotographicPlanarReflectionCaptureV1;
 
 use super::{SceneHostCore, SceneHostError};
 use crate::{
-    AlphaMode, AssetFetcher, Color, GeometryDesc, GeometryTopology, GeometryVertex, MaterialDesc,
-    NodeKey, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, Transform, Vec3,
+    AlphaMode, AssetFetcher, Camera, Color, MaterialDesc, NodeKey,
+    ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, TextureMemoryDesc,
+    TextureMemoryId, TextureSlot, TextureTransform, Transform, Vec3,
 };
 
 pub const PHOTOGRAPHIC_SURROUNDINGS_REPORT_SCHEMA_V1: &str =
     "scena.photographic_surroundings_report.v1";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PhotographicGroundV1 {
+    #[default]
+    Matte,
+    Reflective,
+}
 
 pub(super) const GENERATED_SURROUNDING_TAG: &str = "scena_generated_photographic_surrounding";
 const AUTHORED_SUPPORT_TAG: &str = "photographic_support";
@@ -22,12 +42,18 @@ pub struct PhotographicSurroundingsReportV1 {
     pub schema: String,
     pub source: String,
     pub subject: u64,
+    #[serde(default)]
+    pub ground: PhotographicGroundV1,
     pub support_class: String,
     pub support_height_m: Option<f32>,
     pub preserved_authored_surroundings: bool,
     pub preserved_authored_environment: bool,
     pub generated_floor: bool,
     pub generated_cyclorama: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub support_nodes: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub backdrop_nodes: Vec<u64>,
     pub generated_nodes: Vec<u64>,
     pub contact_shadow_nodes: Vec<u64>,
     pub grid_nodes: Vec<u64>,
@@ -37,6 +63,8 @@ pub struct PhotographicSurroundingsReportV1 {
     pub contact_shadow_strength: f32,
     pub reflection_strength: f32,
     pub reflection_roughness: f32,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub planar_reflection_capture_count: u32,
     pub transient_render_only: bool,
 }
 
@@ -44,6 +72,14 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn apply_photographic_surroundings(
         &mut self,
         subject: u64,
+    ) -> Result<PhotographicSurroundingsReportV1, SceneHostError> {
+        self.apply_photographic_surroundings_with_ground(subject, PhotographicGroundV1::Matte)
+    }
+
+    pub fn apply_photographic_surroundings_with_ground(
+        &mut self,
+        subject: u64,
+        ground: PhotographicGroundV1,
     ) -> Result<PhotographicSurroundingsReportV1, SceneHostError> {
         let subject_node = self.resolve_node(subject)?;
         let bounds = self
@@ -61,21 +97,71 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .map(|transform| transform.translation)
             .unwrap_or(bounds.center() + Vec3::Z * radius * 4.0);
         let camera_distance = camera_position.distance(bounds.center());
-        let extent_m = (radius * 5.0).max(camera_distance * 1.35).max(
-            bounds
-                .half_extent()
-                .max_element()
-                .mul_add(4.0, radius * 0.5),
+        let camera_rotation = self
+            .scene
+            .camera_node(self.active_camera)
+            .and_then(|node| self.scene.world_transform(node))
+            .map(|transform| transform.rotation);
+        let viewport_size = {
+            let (width, height) = self.viewport_size();
+            (width as f32, height as f32)
+        };
+        // The same basis `cyclorama_geometry` builds the wall in, so the solve
+        // and the geometry cannot disagree about where the backdrop stands.
+        let backdrop_plane = BackdropPlane {
+            center: bounds.center(),
+            toward_camera: horizontal_toward_camera(bounds.center(), camera_position),
+            right: Vec3::Y
+                .cross(-horizontal_toward_camera(bounds.center(), camera_position))
+                .normalize_or_zero(),
+            // The wall's base is the support height, which is only resolved
+            // after the extent. Assume the lower of the two possible bases: a
+            // lower base puts the wall's top edge lower, which is the case that
+            // needs the most extent to still cover the frame.
+            floor_y: bounds.min.y - radius * 0.7,
+        };
+        let extent_m = surroundings_extent(
+            radius,
+            camera_distance,
+            bounds.half_extent().max_element(),
+            backdrop_plane,
+            camera_rotation.and_then(|rotation| {
+                self.scene
+                    .camera(self.active_camera)
+                    .and_then(|camera| match camera {
+                        // An orthographic camera has no frustum divergence, so
+                        // the frustum solve does not apply and the subject floor
+                        // governs.
+                        Camera::Orthographic(_) => None,
+                        Camera::Perspective(perspective) => {
+                            // `aspect` is 0 when it follows the viewport, so
+                            // resolve it the way the view pipeline does rather
+                            // than clamping a sentinel into a real number.
+                            let aspect = if perspective.aspect > 0.0 {
+                                perspective.aspect
+                            } else {
+                                let (width, height) = viewport_size;
+                                if height > 0.0 { width / height } else { 1.0 }
+                            };
+                            Some(BackdropCamera {
+                                position: camera_position,
+                                rotation,
+                                vertical_fov: perspective.vertical_fov.radians(),
+                                aspect,
+                            })
+                        }
+                    })
+            }),
         );
 
         let support_class = subject_support_class(self, subject_node, bounds, extent_m);
         let authored_support = authored_support_node(self, &subject_nodes, bounds);
-        let authored_backdrop = self
+        let authored_backdrop_node = self
             .scene
             .tagged(AUTHORED_BACKDROP_TAG)
             .chain(self.scene.tagged(AUTHORED_ROOM_TAG))
-            .next()
-            .is_some();
+            .next();
+        let authored_backdrop = authored_backdrop_node.is_some();
         // An environment the lighting solver derived is not an authored one, so
         // it must not suppress the generated cyclorama or the derived
         // background. This held before only because surroundings happened to run
@@ -102,20 +188,55 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             None
         };
 
-        let mut generated_nodes = Vec::with_capacity(3);
+        let mut generated_nodes = Vec::with_capacity(4);
+        let mut support_nodes = authored_support
+            .map(|node| self.register_node(node))
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut backdrop_nodes = authored_backdrop_node
+            .map(|node| self.register_node(node))
+            .into_iter()
+            .collect::<Vec<_>>();
         let generated_floor = support_height_m.is_some() && authored_support.is_none();
+        let generated_cyclorama = !authored_backdrop && !preserved_authored_environment;
+        let generated_floor_material = if generated_floor {
+            let material = match ground {
+                PhotographicGroundV1::Matte => {
+                    let normal = matte_ground_normal_texture(self)?;
+                    MaterialDesc::pbr_metallic_roughness(background_color, 0.0, 0.96)
+                        .with_normal_texture(normal)
+                        .with_normal_texture_transform(TextureTransform::new(
+                            [0.0, 0.0],
+                            0.0,
+                            [12.0, 12.0],
+                        ))
+                        .with_normal_scale(0.18)
+                }
+                PhotographicGroundV1::Reflective => {
+                    MaterialDesc::pbr_metallic_roughness(background_color, 0.0, 0.34)
+                }
+            };
+            Some(
+                self.assets
+                    .create_material(material.with_double_sided(true)),
+            )
+        } else {
+            None
+        };
+        let generated_sweep_material = generated_cyclorama.then(|| {
+            self.assets.create_material(
+                MaterialDesc::pbr_metallic_roughness(background_color, 0.0, 0.96)
+                    .with_double_sided(true),
+            )
+        });
         if let Some(support_height) = support_height_m
             && generated_floor
         {
-            let geometry = self
-                .assets
-                .create_geometry(GeometryDesc::plane(extent_m * 2.0, extent_m * 2.0));
-            let floor_roughness = (0.72 + material.reflective_fraction * 0.18).clamp(0.72, 0.94);
-            let floor_color = scale_color(background_color, 0.82);
-            let material_handle = self.assets.create_material(
-                MaterialDesc::pbr_metallic_roughness(floor_color, 0.0, floor_roughness)
-                    .with_double_sided(true),
-            );
+            let geometry = self.assets.create_geometry(photographic_floor_geometry(
+                extent_m * BACKDROP_HALF_WIDTH_FRACTION,
+            ));
+            let material_handle =
+                generated_floor_material.expect("generated floor material exists");
             let node = self
                 .scene
                 .mesh(geometry, material_handle)
@@ -126,10 +247,11 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 )))
                 .add()?;
             self.scene.add_tag(node, GENERATED_SURROUNDING_TAG)?;
-            generated_nodes.push(self.register_node(node));
+            let handle = self.register_node(node);
+            generated_nodes.push(handle);
+            support_nodes.push(handle);
         }
 
-        let generated_cyclorama = !authored_backdrop && !preserved_authored_environment;
         if generated_cyclorama {
             let support_height = support_height_m.unwrap_or(bounds.min.y - radius * 0.7);
             let geometry = self.assets.create_geometry(cyclorama_geometry(
@@ -137,14 +259,31 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 camera_position,
                 support_height,
                 extent_m,
+                false,
             ));
-            let material_handle = self.assets.create_material(
+            let material_handle =
+                generated_sweep_material.expect("generated cyclorama material exists");
+            let node = self.scene.mesh(geometry, material_handle).add()?;
+            self.scene.add_tag(node, GENERATED_SURROUNDING_TAG)?;
+            let handle = self.register_node(node);
+            generated_nodes.push(handle);
+            backdrop_nodes.push(handle);
+
+            let wall_geometry = self.assets.create_geometry(cyclorama_wall_cover_geometry(
+                bounds.center(),
+                camera_position,
+                support_height,
+                extent_m,
+            ));
+            let wall_material = self.assets.create_material(
                 MaterialDesc::pbr_metallic_roughness(background_color, 0.0, 0.96)
                     .with_double_sided(true),
             );
-            let node = self.scene.mesh(geometry, material_handle).add()?;
-            self.scene.add_tag(node, GENERATED_SURROUNDING_TAG)?;
-            generated_nodes.push(self.register_node(node));
+            let wall_node = self.scene.mesh(wall_geometry, wall_material).add()?;
+            self.scene.add_tag(wall_node, GENERATED_SURROUNDING_TAG)?;
+            let wall_handle = self.register_node(wall_node);
+            generated_nodes.push(wall_handle);
+            backdrop_nodes.push(wall_handle);
         }
 
         let contact_shadow_strength = if support_height_m.is_some() {
@@ -179,7 +318,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             generated_nodes.push(handle);
             contact_shadow_nodes.push(handle);
         }
-        if contact_shadow_strength > 0.0 && self.renderer.screen_space_ambient_occlusion().is_none()
+        if contact_shadow_strength > 0.0
+            && self.renderer.screen_space_ambient_occlusion().is_none()
+            && !debug_disabled("SCENA_DEBUG_DISABLE_SSAO")
         {
             self.renderer.set_screen_space_ambient_occlusion(Some(
                 ScreenSpaceAmbientOcclusionConfig::new(
@@ -190,32 +331,80 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             ));
         }
 
-        let reflection_strength = if support_height_m.is_some() {
-            (material.reflective_fraction * 0.18).clamp(0.0, 0.20)
-        } else {
-            0.0
+        let reflection_strength = match (ground, support_height_m) {
+            (PhotographicGroundV1::Reflective, Some(_)) => 0.28,
+            _ => 0.0,
         };
-        let reflection_roughness = (0.72 + material.mean_roughness * 0.22).clamp(0.72, 0.96);
-        if reflection_strength > 0.035 && self.renderer.screen_space_reflections().is_none() {
+        let reflection_roughness = match ground {
+            PhotographicGroundV1::Matte => 0.96,
+            PhotographicGroundV1::Reflective => 0.34,
+        };
+        // The photographic path no longer enables the screen-space reflection
+        // pass, because that pass does not compute reflections. It picks a
+        // horizontal scanline at a fixed fraction of the *frame* - nothing to do
+        // with where the floor is - mirrors every pixel below it about that
+        // line, and blends the flipped copy in, using `1 - luma()` as its guess
+        // at "is this floor". It has no depth buffer, no surface normal and no
+        // ray march, so a subject's own lower body receives an upside-down copy
+        // of its upper body. That is the translucent duplicate visible over the
+        // baseplate in every render this staging produced.
+        //
+        // Disabling it here is deliberate and narrow: the setting stays on the
+        // renderer for anyone who wants that stylised effect, and the strength
+        // the solver computed is still reported, so the decision is visible
+        // rather than silently dropped. A real screen-space reflection needs the
+        // depth buffer and a ray march against it, which is its own piece of
+        // work, not a tweak to this one.
+        let _ = (reflection_strength, reflection_roughness);
+        if debug_enabled("SCENA_DEBUG_ENABLE_MIRROR_SSR")
+            && reflection_strength > 0.035
+            && self.renderer.screen_space_reflections().is_none()
+        {
             self.renderer
                 .set_screen_space_reflections(Some(ScreenSpaceReflectionConfig::new(
                     reflection_strength,
                     reflection_roughness,
-                    0.48,
+                    SCREEN_SPACE_REFLECTION_HORIZON_FRACTION,
                     0.72,
                 )));
+        }
+        if debug_enabled("SCENA_DEBUG_LOG_STAGING") {
+            let (viewport_width, viewport_height) = self.viewport_size();
+            let horizon_row =
+                SCREEN_SPACE_REFLECTION_HORIZON_FRACTION * viewport_height.max(1) as f32;
+            eprintln!(
+                "[staging] viewport={viewport_width}x{viewport_height} extent_m={extent_m:.4} \
+                 support_class={support_class} floor={generated_floor} \
+                 cyclorama={generated_cyclorama} contact_shadow={contact_shadow_strength:.3}"
+            );
+            eprintln!(
+                "[staging] ssr strength={reflection_strength:.4} roughness={reflection_roughness:.4} \
+                 horizon_fraction={SCREEN_SPACE_REFLECTION_HORIZON_FRACTION} \
+                 -> mirror line at row {horizon_row:.1} of {viewport_height}; \
+                 every row below it is blended with the row mirrored about it \
+                 (blur radius {} px)",
+                (reflection_roughness * 8.0).round().clamp(0.0, 8.0)
+            );
+            eprintln!(
+                "[staging] ssao enabled_before_caller_policy={} ssr enabled={}",
+                self.renderer.screen_space_ambient_occlusion().is_some(),
+                self.renderer.screen_space_reflections().is_some()
+            );
         }
 
         Ok(PhotographicSurroundingsReportV1 {
             schema: PHOTOGRAPHIC_SURROUNDINGS_REPORT_SCHEMA_V1.to_owned(),
             source: "subject_surroundings_solver".to_owned(),
             subject,
+            ground,
             support_class,
             support_height_m,
             preserved_authored_surroundings,
             preserved_authored_environment,
             generated_floor,
             generated_cyclorama,
+            support_nodes,
+            backdrop_nodes,
             generated_nodes,
             contact_shadow_nodes,
             grid_nodes: Vec::new(),
@@ -225,6 +414,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             contact_shadow_strength,
             reflection_strength,
             reflection_roughness,
+            planar_reflection_capture_count: 0,
             transient_render_only: true,
         })
     }
@@ -243,12 +433,45 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 }
 
+const fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
+}
+
+fn matte_ground_normal_texture<F: AssetFetcher>(
+    host: &SceneHostCore<F>,
+) -> Result<crate::TextureHandle, SceneHostError> {
+    const SIZE: u32 = 32;
+    let mut rgba8 = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let wave_x = ((x * 17 + y * 7 + 3) % 11) as i16 - 5;
+            let wave_y = ((x * 5 + y * 19 + 1) % 13) as i16 - 6;
+            rgba8.extend_from_slice(&[
+                (128_i16 + wave_x).clamp(0, 255) as u8,
+                (128_i16 + wave_y).clamp(0, 255) as u8,
+                255,
+                255,
+            ]);
+        }
+    }
+    host.assets
+        .create_texture_for_slot(
+            TextureMemoryDesc::rgba8_for_slot(
+                TextureMemoryId::new("photographic/matte-ground-normal-v1")?,
+                SIZE,
+                SIZE,
+                rgba8,
+                TextureSlot::Normal,
+            ),
+            TextureSlot::Normal,
+        )
+        .map_err(Into::into)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct SubjectMaterialAverage {
     mean_color: Color,
     mean_luminance: f32,
-    reflective_fraction: f32,
-    mean_roughness: f32,
 }
 
 fn subject_material_average<F: AssetFetcher>(
@@ -263,8 +486,6 @@ fn subject_material_average<F: AssetFetcher>(
         }
     }
     let mut color = Vec3::ZERO;
-    let mut reflective = 0.0;
-    let mut roughness = 0.0;
     let mut count = 0.0;
     for handle in material_handles {
         let Some(material) = host.assets.material(handle) else {
@@ -272,19 +493,12 @@ fn subject_material_average<F: AssetFetcher>(
         };
         let base = material.base_color();
         color += Vec3::new(base.r, base.g, base.b);
-        roughness += material.roughness_factor();
-        reflective += material
-            .metallic_factor()
-            .max((1.0 - material.roughness_factor()) * 0.65)
-            .max(material.transmission_factor());
         count += 1.0;
     }
     if count <= 0.0 {
         return SubjectMaterialAverage {
             mean_color: Color::GRAY,
             mean_luminance: linear_luminance(Color::GRAY),
-            reflective_fraction: 0.0,
-            mean_roughness: 1.0,
         };
     }
     color /= count;
@@ -292,8 +506,6 @@ fn subject_material_average<F: AssetFetcher>(
     SubjectMaterialAverage {
         mean_color,
         mean_luminance: linear_luminance(mean_color),
-        reflective_fraction: (reflective / count).clamp(0.0, 1.0),
-        mean_roughness: (roughness / count).clamp(0.0, 1.0),
     }
 }
 
@@ -344,114 +556,66 @@ fn authored_support_node<F: AssetFetcher>(
     })
 }
 
+/// Never let a derived backdrop crush toward black. A surround this dark reads
+/// as a void rather than a room, and it is what made automatic renders look like
+/// a part floating in space instead of a photograph of an object.
+const MIN_SURROUND_LUMINANCE: f32 = 0.06;
+const MAX_SURROUND_LUMINANCE: f32 = 0.42;
+/// How far the surround sits from the subject in luminance. Separation is a
+/// *ratio*, not a difference, because that is what survives an exposure change.
+const SURROUND_SEPARATION: f32 = 2.6;
+
+/// Grade the surround relative to the subject.
+///
+/// This used to pick from three hardcoded buckets, which was both discontinuous
+/// and non-monotonic: a subject at 0.17 got a 0.32 backdrop and one at 0.19 got
+/// 0.10 - a 3.2x step for a 0.02 change - and mid-tone subjects, the common
+/// case, got a *darker* surround than bright ones. Now the surround is placed a
+/// fixed ratio from the subject, below it when that still clears the crush
+/// floor and above it when it does not, which is the only way to separate a dark
+/// subject from its background.
 fn derived_background(subject: Color, subject_luminance: f32) -> Color {
-    let target_luminance = if subject_luminance < 0.18 {
-        0.32
-    } else if subject_luminance > 0.52 {
-        0.16
+    let subject_luminance = subject_luminance.max(0.0);
+    let dropped = subject_luminance / SURROUND_SEPARATION;
+    let target_luminance = if dropped >= MIN_SURROUND_LUMINANCE {
+        dropped
     } else {
-        0.10
-    };
+        subject_luminance * SURROUND_SEPARATION
+    }
+    .clamp(MIN_SURROUND_LUMINANCE, MAX_SURROUND_LUMINANCE);
     let neutral = Vec3::splat(target_luminance);
     let subject_rgb = Vec3::new(subject.r, subject.g, subject.b);
     let complement = Vec3::ONE - subject_rgb.clamp(Vec3::ZERO, Vec3::ONE);
     let mut rgb = neutral * 0.88 + complement * target_luminance * 0.12;
     let luma = rgb.dot(Vec3::new(0.2126, 0.7152, 0.0722)).max(1.0e-5);
     rgb *= target_luminance / luma;
-    rgb = rgb.clamp(Vec3::splat(0.025), Vec3::splat(0.62));
+    rgb = rgb.clamp(
+        Vec3::splat(MIN_SURROUND_LUMINANCE),
+        Vec3::splat(MAX_SURROUND_LUMINANCE.max(0.62)),
+    );
     Color::from_linear_rgb(rgb.x, rgb.y, rgb.z)
 }
 
-fn cyclorama_geometry(
-    center: Vec3,
-    camera_position: Vec3,
-    support_height: f32,
-    extent: f32,
-) -> GeometryDesc {
-    let toward_camera = (camera_position - center).with_y(0.0).normalize_or_zero();
-    let toward_camera = if toward_camera.length_squared() > 1.0e-8 {
-        toward_camera
-    } else {
-        Vec3::Z
-    };
-    let away = -toward_camera;
-    let right = Vec3::Y.cross(away).normalize_or_zero();
-    let half_width = extent;
-    let curve_radius = extent * 0.18;
-    let curve_start = center + away * extent * 0.54;
-    let segments = 10usize;
-    let mut vertices = Vec::with_capacity((segments + 2) * 2);
-    for segment in 0..=segments {
-        let angle = segment as f32 / segments as f32 * std::f32::consts::FRAC_PI_2;
-        let row_center = curve_start
-            + away * (curve_radius * angle.sin())
-            + Vec3::Y * (support_height - center.y + curve_radius * (1.0 - angle.cos()));
-        let normal = (toward_camera * angle.cos() + Vec3::Y * angle.sin()).normalize_or_zero();
-        vertices.push(GeometryVertex {
-            position: row_center - right * half_width,
-            normal,
-        });
-        vertices.push(GeometryVertex {
-            position: row_center + right * half_width,
-            normal,
-        });
-    }
-    let wall_center =
-        curve_start + away * curve_radius + Vec3::Y * (support_height - center.y + extent * 1.8);
-    vertices.push(GeometryVertex {
-        position: wall_center - right * half_width,
-        normal: toward_camera,
-    });
-    vertices.push(GeometryVertex {
-        position: wall_center + right * half_width,
-        normal: toward_camera,
-    });
-    let rows = segments + 2;
-    let mut indices = Vec::with_capacity((rows - 1) * 6);
-    for row in 0..rows - 1 {
-        let base = (row * 2) as u32;
-        indices.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
-    }
-    GeometryDesc::try_new(GeometryTopology::Triangles, vertices, indices)
-        .expect("generated cyclorama geometry is valid")
+/// Screen-space row, as a fraction of frame height, that the reflection pass
+/// mirrors about. It is a fixed fraction of the *frame*, not a horizon derived
+/// from the scene, which is why it does not track where the floor actually is.
+const SCREEN_SPACE_REFLECTION_HORIZON_FRACTION: f32 = 0.48;
+
+/// Diagnostic-only switch: is this debug variable set to `1`?
+///
+/// These exist to isolate which post pass produces a given artifact. They are
+/// not a product surface and must never be set on a release lane.
+fn debug_enabled(name: &str) -> bool {
+    std::env::var(name).as_deref() == Ok("1")
 }
 
-fn contact_shadow_geometry(radius_x: f32, radius_z: f32, opacity: f32) -> GeometryDesc {
-    const SEGMENTS: usize = 32;
-    let mut vertices = Vec::with_capacity(SEGMENTS + 1);
-    let mut colors = Vec::with_capacity(SEGMENTS + 1);
-    vertices.push(GeometryVertex {
-        position: Vec3::ZERO,
-        normal: Vec3::Y,
-    });
-    colors.push(Color::from_linear_rgba(
-        0.0,
-        0.0,
-        0.0,
-        opacity.clamp(0.0, 0.45),
-    ));
-    for segment in 0..SEGMENTS {
-        let angle = segment as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
-        vertices.push(GeometryVertex {
-            position: Vec3::new(angle.cos() * radius_x, 0.0, angle.sin() * radius_z),
-            normal: Vec3::Y,
-        });
-        colors.push(Color::TRANSPARENT);
-    }
-    let mut indices = Vec::with_capacity(SEGMENTS * 3);
-    for segment in 0..SEGMENTS {
-        let current = segment as u32 + 1;
-        let next = (segment + 1) as u32 % SEGMENTS as u32 + 1;
-        indices.extend_from_slice(&[0, next, current]);
-    }
-    GeometryDesc::try_new_with_vertex_colors(GeometryTopology::Triangles, vertices, indices, colors)
-        .expect("generated contact-shadow geometry is valid")
+fn debug_disabled(name: &str) -> bool {
+    debug_enabled(name)
 }
 
 fn linear_luminance(color: Color) -> f32 {
     0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
 }
 
-fn scale_color(color: Color, scale: f32) -> Color {
-    Color::from_linear_rgb(color.r * scale, color.g * scale, color.b * scale)
-}
+#[cfg(test)]
+mod tests;

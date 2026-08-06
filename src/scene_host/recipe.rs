@@ -252,15 +252,19 @@ impl SceneHostCore<DefaultAssetFetcher> {
                 &import_path,
                 &mut diagnostics,
             );
-            apply_import_presentation(
+            let edge_rounding = apply_import_presentation(
+                &policy,
                 &mut host,
+                recipe_path,
                 &recipe.colors,
                 import,
                 &root_handles,
                 &import_path,
+                &mut texture_budget,
                 &mut nodes,
                 &mut diagnostics,
-            );
+            )
+            .await;
             if has_errors(&diagnostics[diagnostic_start..]) {
                 continue;
             }
@@ -292,6 +296,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
                 primary_root: root_handles.first().copied(),
                 root_handles,
                 nodes_by_path,
+                edge_rounding,
             });
         }
 

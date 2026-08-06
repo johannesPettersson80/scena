@@ -423,6 +423,16 @@
       "summary": "SceneHost event batch for pick, hover, load, diagnostic, capture, and surface events."
     },
     {
+      "owner_module": "assets/material_library",
+      "schema": "scena.material_library_catalog.v1",
+      "summary": "Curated source-licensed photographic product-material catalog."
+    },
+    {
+      "owner_module": "assets/material_library",
+      "schema": "scena.photographic_material_pack.v1",
+      "summary": "Source-locked canonical base-color, normal, and ORM photographic material pack."
+    },
+    {
       "fixture_path": "tests/assets/stable-contracts/agent_guide.v1.json",
       "owner_module": "schema_catalog/agent_guide",
       "schema": "scena.agent_guide.v1",

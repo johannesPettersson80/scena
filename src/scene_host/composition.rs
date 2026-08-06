@@ -46,7 +46,7 @@ pub use regions::CompositionOverlaySegmentV1;
 
 impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn composition_report(
-        &self,
+        &mut self,
         recipe: &SceneRecipeV1,
         manifest: &SceneRecipeBuildV1,
         capture: &CaptureRgba8,
@@ -102,14 +102,28 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         let backend = self.backend();
         let mut subject_aov_capture = None;
         let mut subject_aov_error = None;
-        if has_declared_subjects(recipe) && backend == Backend::Headless {
-            match self.capture_semantic_aovs() {
-                Ok(capture) => {
-                    subject_aov_capture = Some(capture);
+        if has_declared_subjects(recipe) {
+            // The exact subject mask is not a CPU-only capability: the GPU
+            // backends emit the same AOVs through their own readback path. Only
+            // the CPU entry point was wired here, so every GPU verification ran
+            // with its most precise check skipped.
+            #[cfg(not(target_arch = "wasm32"))]
+            let captured = match backend {
+                Backend::Headless => Some(self.capture_semantic_aovs()),
+                Backend::HeadlessGpu | Backend::NativeSurface => {
+                    Some(self.capture_semantic_aovs_gpu())
                 }
-                Err(error) => {
-                    subject_aov_error = Some(error.to_string());
-                }
+                _ => None,
+            };
+            #[cfg(target_arch = "wasm32")]
+            let captured = match backend {
+                Backend::Headless => Some(self.capture_semantic_aovs()),
+                _ => None,
+            };
+            match captured {
+                Some(Ok(capture)) => subject_aov_capture = Some(capture),
+                Some(Err(error)) => subject_aov_error = Some(error.to_string()),
+                None => {}
             }
         }
         checks.extend(composition_subject_projection_checks(
@@ -118,7 +132,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             capture,
             inspection,
             SubjectMaskInput {
-                backend,
                 capture: subject_aov_capture.as_ref(),
                 capture_error: subject_aov_error.as_deref(),
             },
@@ -132,6 +145,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             label_regions: &label_regions,
             line_regions: &line_regions,
             background: self.renderer.background_color(),
+            subject_aov: subject_aov_capture.as_ref(),
         }));
         let mut owned_handles = owned_draw_handles(
             manifest,

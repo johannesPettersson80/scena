@@ -1,5 +1,4 @@
 use std::process::Command;
-
 #[test]
 fn manifest_keeps_defaults_empty_and_declares_one_step_agent_composition() {
     let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
@@ -7,10 +6,11 @@ fn manifest_keeps_defaults_empty_and_declares_one_step_agent_composition() {
     assert!(manifest.contains("default = []"));
     assert!(manifest.contains("scene-host = [\"inspection\"]"));
     assert!(
-        manifest.contains("agent = [\"scene-host\"]"),
-        "agent must be a composition alias over scene-host, which already enables inspection"
+        manifest.contains("agent = [\"scene-host\", \"material-library\"]"),
+        "agent must compose the scene-host workflow with the native material-pack compiler"
     );
     assert!(!manifest.contains("agent = [\"scene-host\", \"inspection\"]"));
+    assert!(manifest.contains("material-library = [\"dep:ureq\", \"dep:zip\"]"));
 }
 
 #[cfg(feature = "agent")]
@@ -29,6 +29,7 @@ fn agent_feature_enables_the_complete_self_verification_surface() {
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("version output is JSON");
     assert_eq!(report["features"]["agent"], true);
+    assert_eq!(report["features"]["material_library"], true);
     assert_eq!(report["features"]["scene_host"], true);
     assert_eq!(report["features"]["inspection"], true);
 }

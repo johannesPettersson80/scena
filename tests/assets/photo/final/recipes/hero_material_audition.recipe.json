@@ -1,0 +1,343 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "geometries": [
+    {
+      "id": "sample_slab",
+      "primitive": {
+        "kind": "box",
+        "size": [0.84, 0.50, 0.14],
+        "bevel": 0.04
+      }
+    },
+    {
+      "id": "sample_sphere",
+      "primitive": {
+        "kind": "sphere",
+        "radius": 0.22,
+        "segments": 96,
+        "rings": 64
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "flywheel_current",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+        "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+        "tile_size_m": 0.32
+      },
+      "imperfection": {
+        "profile": "oil_film",
+        "strength": 0.10,
+        "physical_scale_m": 0.018,
+        "seed": 1193
+      }
+    },
+    {
+      "id": "flywheel_clean",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+        "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+        "tile_size_m": 0.32
+      }
+    },
+    {
+      "id": "flywheel_lived",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+        "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+        "tile_size_m": 0.32
+      },
+      "imperfection": {
+        "profile": "oil_film",
+        "strength": 0.10,
+        "physical_scale_m": 0.018,
+        "seed": 1193
+      }
+    },
+    {
+      "id": "gearbox_current",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal050a/1k/scena-material-pack.json",
+        "expected_archive_sha256": "c2785502e4e2c14869f728f819548e1eaeef92df9bd9d4ec8e4904daaed24805",
+        "tile_size_m": 0.28
+      }
+    },
+    {
+      "id": "gearbox_clean",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.20
+      }
+    },
+    {
+      "id": "gearbox_lived",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.20
+      },
+      "imperfection": {
+        "profile": "oil_film",
+        "strength": 0.65,
+        "physical_scale_m": 0.028,
+        "seed": 411
+      }
+    },
+    {
+      "id": "baseplate_current",
+      "preset": "brushed_steel",
+      "base_color": "#8A9299",
+      "roughness": 0.50
+    },
+    {
+      "id": "baseplate_clean",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.25
+      }
+    },
+    {
+      "id": "baseplate_lived",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.25
+      },
+      "imperfection": {
+        "profile": "smudge",
+        "strength": 0.40,
+        "physical_scale_m": 0.040,
+        "seed": 523
+      }
+    },
+    {
+      "id": "powder_current",
+      "preset": "satin",
+      "base_color": "#244F7F",
+      "roughness": 0.54
+    },
+    {
+      "id": "powder_clean",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
+        "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+        "tile_size_m": 0.20
+      },
+      "base_color": "#183764"
+    },
+    {
+      "id": "powder_lived",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
+        "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
+        "tile_size_m": 0.20
+      },
+      "base_color": "#183764",
+      "imperfection": {
+        "profile": "dust",
+        "strength": 0.30,
+        "physical_scale_m": 0.012,
+        "seed": 617
+      }
+    },
+    {
+      "id": "bore_current",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal027/1k/scena-material-pack.json",
+        "expected_archive_sha256": "12b2d9996d532cf8a31820d24f2ea83e3217b89da060c4fb29c3c5177535ac72",
+        "tile_size_m": 0.22
+      },
+      "base_color": "#171B1F"
+    },
+    {
+      "id": "bore_clean",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+        "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+        "tile_size_m": 0.22
+      }
+    },
+    {
+      "id": "bore_lived",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal052b/1k/scena-material-pack.json",
+        "expected_archive_sha256": "b41d41c6fcb5a2126803377b3489c994dc01a9acb5209dc31834032709acfa21",
+        "tile_size_m": 0.22
+      },
+      "imperfection": {
+        "profile": "oil_film",
+        "strength": 0.30,
+        "physical_scale_m": 0.007,
+        "seed": 701
+      }
+    },
+    {
+      "id": "rubber_current",
+      "preset": "rubber",
+      "base_color": "#1A1D28",
+      "metallic": 0.0,
+      "roughness": 0.86
+    },
+    {
+      "id": "rubber_clean",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/rubber001/1k/scena-material-pack.json",
+        "expected_archive_sha256": "9723fabed24f7befcdad24e953f44347a7b91e1d0c37a4fb5e31835e61c0902b",
+        "tile_size_m": 0.75
+      },
+      "base_color": "#1A1D28"
+    },
+    {
+      "id": "rubber_lived",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/rubber001/1k/scena-material-pack.json",
+        "expected_archive_sha256": "9723fabed24f7befcdad24e953f44347a7b91e1d0c37a4fb5e31835e61c0902b",
+        "tile_size_m": 0.75
+      },
+      "base_color": "#1A1D28",
+      "imperfection": {
+        "profile": "dust",
+        "strength": 0.30,
+        "physical_scale_m": 0.010,
+        "seed": 811
+      }
+    },
+    {
+      "id": "small_steel_current",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.12
+      }
+    },
+    {
+      "id": "small_steel_clean",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.12
+      }
+    },
+    {
+      "id": "small_steel_lived",
+      "material_pack": {
+        "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
+        "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
+        "tile_size_m": 0.12
+      },
+      "imperfection": {
+        "profile": "oil_film",
+        "strength": 0.65,
+        "physical_scale_m": 0.006,
+        "seed": 907
+      }
+    }
+  ],
+  "nodes": [
+    { "id": "flywheel_current_slab", "geometry": "sample_slab", "material": "flywheel_current", "transform": { "kind": "trs", "translation": [-2.75, 2.70, 0.0] } },
+    { "id": "flywheel_current_sphere", "geometry": "sample_sphere", "material": "flywheel_current", "transform": { "kind": "trs", "translation": [-2.15, 2.70, 0.18] } },
+    { "id": "flywheel_clean_slab", "geometry": "sample_slab", "material": "flywheel_clean", "transform": { "kind": "trs", "translation": [-0.35, 2.70, 0.0] } },
+    { "id": "flywheel_clean_sphere", "geometry": "sample_sphere", "material": "flywheel_clean", "transform": { "kind": "trs", "translation": [0.25, 2.70, 0.18] } },
+    { "id": "flywheel_lived_slab", "geometry": "sample_slab", "material": "flywheel_lived", "transform": { "kind": "trs", "translation": [2.05, 2.70, 0.0] } },
+    { "id": "flywheel_lived_sphere", "geometry": "sample_sphere", "material": "flywheel_lived", "transform": { "kind": "trs", "translation": [2.65, 2.70, 0.18] } },
+
+    { "id": "gearbox_current_slab", "geometry": "sample_slab", "material": "gearbox_current", "transform": { "kind": "trs", "translation": [-2.75, 1.80, 0.0] } },
+    { "id": "gearbox_current_sphere", "geometry": "sample_sphere", "material": "gearbox_current", "transform": { "kind": "trs", "translation": [-2.15, 1.80, 0.18] } },
+    { "id": "gearbox_clean_slab", "geometry": "sample_slab", "material": "gearbox_clean", "transform": { "kind": "trs", "translation": [-0.35, 1.80, 0.0] } },
+    { "id": "gearbox_clean_sphere", "geometry": "sample_sphere", "material": "gearbox_clean", "transform": { "kind": "trs", "translation": [0.25, 1.80, 0.18] } },
+    { "id": "gearbox_lived_slab", "geometry": "sample_slab", "material": "gearbox_lived", "transform": { "kind": "trs", "translation": [2.05, 1.80, 0.0] } },
+    { "id": "gearbox_lived_sphere", "geometry": "sample_sphere", "material": "gearbox_lived", "transform": { "kind": "trs", "translation": [2.65, 1.80, 0.18] } },
+
+    { "id": "baseplate_current_slab", "geometry": "sample_slab", "material": "baseplate_current", "transform": { "kind": "trs", "translation": [-2.75, 0.90, 0.0] } },
+    { "id": "baseplate_current_sphere", "geometry": "sample_sphere", "material": "baseplate_current", "transform": { "kind": "trs", "translation": [-2.15, 0.90, 0.18] } },
+    { "id": "baseplate_clean_slab", "geometry": "sample_slab", "material": "baseplate_clean", "transform": { "kind": "trs", "translation": [-0.35, 0.90, 0.0] } },
+    { "id": "baseplate_clean_sphere", "geometry": "sample_sphere", "material": "baseplate_clean", "transform": { "kind": "trs", "translation": [0.25, 0.90, 0.18] } },
+    { "id": "baseplate_lived_slab", "geometry": "sample_slab", "material": "baseplate_lived", "transform": { "kind": "trs", "translation": [2.05, 0.90, 0.0] } },
+    { "id": "baseplate_lived_sphere", "geometry": "sample_sphere", "material": "baseplate_lived", "transform": { "kind": "trs", "translation": [2.65, 0.90, 0.18] } },
+
+    { "id": "powder_current_slab", "geometry": "sample_slab", "material": "powder_current", "transform": { "kind": "trs", "translation": [-2.75, 0.0, 0.0] } },
+    { "id": "powder_current_sphere", "geometry": "sample_sphere", "material": "powder_current", "transform": { "kind": "trs", "translation": [-2.15, 0.0, 0.18] } },
+    { "id": "powder_clean_slab", "geometry": "sample_slab", "material": "powder_clean", "transform": { "kind": "trs", "translation": [-0.35, 0.0, 0.0] } },
+    { "id": "powder_clean_sphere", "geometry": "sample_sphere", "material": "powder_clean", "transform": { "kind": "trs", "translation": [0.25, 0.0, 0.18] } },
+    { "id": "powder_lived_slab", "geometry": "sample_slab", "material": "powder_lived", "transform": { "kind": "trs", "translation": [2.05, 0.0, 0.0] } },
+    { "id": "powder_lived_sphere", "geometry": "sample_sphere", "material": "powder_lived", "transform": { "kind": "trs", "translation": [2.65, 0.0, 0.18] } },
+
+    { "id": "bore_current_slab", "geometry": "sample_slab", "material": "bore_current", "transform": { "kind": "trs", "translation": [-2.75, -0.90, 0.0] } },
+    { "id": "bore_current_sphere", "geometry": "sample_sphere", "material": "bore_current", "transform": { "kind": "trs", "translation": [-2.15, -0.90, 0.18] } },
+    { "id": "bore_clean_slab", "geometry": "sample_slab", "material": "bore_clean", "transform": { "kind": "trs", "translation": [-0.35, -0.90, 0.0] } },
+    { "id": "bore_clean_sphere", "geometry": "sample_sphere", "material": "bore_clean", "transform": { "kind": "trs", "translation": [0.25, -0.90, 0.18] } },
+    { "id": "bore_lived_slab", "geometry": "sample_slab", "material": "bore_lived", "transform": { "kind": "trs", "translation": [2.05, -0.90, 0.0] } },
+    { "id": "bore_lived_sphere", "geometry": "sample_sphere", "material": "bore_lived", "transform": { "kind": "trs", "translation": [2.65, -0.90, 0.18] } },
+
+    { "id": "rubber_current_slab", "geometry": "sample_slab", "material": "rubber_current", "transform": { "kind": "trs", "translation": [-2.75, -1.80, 0.0] } },
+    { "id": "rubber_current_sphere", "geometry": "sample_sphere", "material": "rubber_current", "transform": { "kind": "trs", "translation": [-2.15, -1.80, 0.18] } },
+    { "id": "rubber_clean_slab", "geometry": "sample_slab", "material": "rubber_clean", "transform": { "kind": "trs", "translation": [-0.35, -1.80, 0.0] } },
+    { "id": "rubber_clean_sphere", "geometry": "sample_sphere", "material": "rubber_clean", "transform": { "kind": "trs", "translation": [0.25, -1.80, 0.18] } },
+    { "id": "rubber_lived_slab", "geometry": "sample_slab", "material": "rubber_lived", "transform": { "kind": "trs", "translation": [2.05, -1.80, 0.0] } },
+    { "id": "rubber_lived_sphere", "geometry": "sample_sphere", "material": "rubber_lived", "transform": { "kind": "trs", "translation": [2.65, -1.80, 0.18] } },
+
+    { "id": "small_steel_current_slab", "geometry": "sample_slab", "material": "small_steel_current", "transform": { "kind": "trs", "translation": [-2.75, -2.70, 0.0] } },
+    { "id": "small_steel_current_sphere", "geometry": "sample_sphere", "material": "small_steel_current", "transform": { "kind": "trs", "translation": [-2.15, -2.70, 0.18] } },
+    { "id": "small_steel_clean_slab", "geometry": "sample_slab", "material": "small_steel_clean", "transform": { "kind": "trs", "translation": [-0.35, -2.70, 0.0] } },
+    { "id": "small_steel_clean_sphere", "geometry": "sample_sphere", "material": "small_steel_clean", "transform": { "kind": "trs", "translation": [0.25, -2.70, 0.18] } },
+    { "id": "small_steel_lived_slab", "geometry": "sample_slab", "material": "small_steel_lived", "transform": { "kind": "trs", "translation": [2.05, -2.70, 0.0] } },
+    { "id": "small_steel_lived_sphere", "geometry": "sample_sphere", "material": "small_steel_lived", "transform": { "kind": "trs", "translation": [2.65, -2.70, 0.18] } }
+  ],
+  "labels": [
+    { "id": "header_current", "text": "CURRENT", "color": "#20252B", "background": "#E8E9E7", "size_px": 24.0, "transform": { "kind": "trs", "translation": [-2.45, 3.30, 0.35] } },
+    { "id": "header_clean", "text": "MANIFEST CLEAN", "color": "#20252B", "background": "#E8E9E7", "size_px": 24.0, "transform": { "kind": "trs", "translation": [-0.05, 3.30, 0.35] } },
+    { "id": "header_lived", "text": "MANIFEST + HISTORY", "color": "#20252B", "background": "#E8E9E7", "size_px": 24.0, "transform": { "kind": "trs", "translation": [2.35, 3.30, 0.35] } },
+    { "id": "row_flywheel", "text": "FLYWHEEL", "color": "#20252B", "background": "#E8E9E7", "size_px": 18.0, "transform": { "kind": "trs", "translation": [-3.55, 2.70, 0.35] } },
+    { "id": "row_gearbox", "text": "GEARBOX", "color": "#20252B", "background": "#E8E9E7", "size_px": 18.0, "transform": { "kind": "trs", "translation": [-3.55, 1.80, 0.35] } },
+    { "id": "row_baseplate", "text": "BASEPLATE", "color": "#20252B", "background": "#E8E9E7", "size_px": 18.0, "transform": { "kind": "trs", "translation": [-3.55, 0.90, 0.35] } },
+    { "id": "row_powder", "text": "POWDER COAT", "color": "#20252B", "background": "#E8E9E7", "size_px": 18.0, "transform": { "kind": "trs", "translation": [-3.55, 0.0, 0.35] } },
+    { "id": "row_bore", "text": "BORES", "color": "#20252B", "background": "#E8E9E7", "size_px": 18.0, "transform": { "kind": "trs", "translation": [-3.55, -0.90, 0.35] } },
+    { "id": "row_rubber", "text": "RUBBER", "color": "#20252B", "background": "#E8E9E7", "size_px": 18.0, "transform": { "kind": "trs", "translation": [-3.55, -1.80, 0.35] } },
+    { "id": "row_small_steel", "text": "SMALL STEEL", "color": "#20252B", "background": "#E8E9E7", "size_px": 18.0, "transform": { "kind": "trs", "translation": [-3.55, -2.70, 0.35] } }
+  ],
+  "cameras": [
+    {
+      "id": "material_board_camera",
+      "kind": "perspective",
+      "fov_degrees": 32.0,
+      "active": true,
+      "transform": {
+        "kind": "look_at",
+        "eye": [0.0, 0.0, 13.0],
+        "target": "powder_clean_slab"
+      }
+    }
+  ],
+  "lights": [
+    { "id": "key", "kind": "directional", "preset": "key" },
+    { "id": "fill", "kind": "directional", "preset": "fill" },
+    { "id": "rim", "kind": "directional", "preset": "rim" }
+  ],
+  "scene": {
+    "background": { "kind": "studio" },
+    "environment": {
+      "kind": "uri",
+      "uri": "../../../environment/polyhaven/studio_small_08_2k.hdr"
+    }
+  },
+  "render": {
+    "profile": "quality",
+    "quality": "high",
+    "anti_aliasing": "msaa4",
+    "supersample": 1,
+    "reconstruction": "box",
+    "exposure_ev": -0.21909584,
+    "tonemapper": "pbr_neutral"
+  },
+  "capture": {
+    "width": 1920,
+    "height": 1260
+  },
+  "metadata": {
+    "purpose": "controlled hero material audition; clean samples are diagnostics only"
+  }
+}

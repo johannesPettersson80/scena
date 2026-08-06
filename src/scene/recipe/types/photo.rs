@@ -2,10 +2,32 @@ use serde::{Deserialize, Serialize};
 
 use super::subject::SceneRecipeSubjectV1;
 
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneRecipePhotoQualityV1 {
+    #[default]
+    Preview,
+    Final,
+}
+
+impl SceneRecipePhotoQualityV1 {
+    pub const fn is_preview(&self) -> bool {
+        matches!(self, Self::Preview)
+    }
+
+    pub const fn is_final(&self) -> bool {
+        matches!(self, Self::Final)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipePhotoV1 {
     pub intent: String,
+    #[serde(default, skip_serializing_if = "SceneRecipePhotoQualityV1::is_preview")]
+    pub quality: SceneRecipePhotoQualityV1,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject: Option<SceneRecipePhotoSubjectV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

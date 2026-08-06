@@ -17,11 +17,14 @@ pub use authoring::{
     SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
     SceneRecipeCameraFramingV1, SceneRecipeCameraV1, SceneRecipeClippingPlaneV1,
     SceneRecipeColorV1, SceneRecipeExpectedExtentV1, SceneRecipeFontV1, SceneRecipeGeometryV1,
-    SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportMaterialV1, SceneRecipeImportV1,
+    SceneRecipeImportEdgeEmphasisV1, SceneRecipeImportEdgeRoundingV1,
+    SceneRecipeImportMaterialBindingV1, SceneRecipeImportMaterialV1, SceneRecipeImportV1,
     SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
-    SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1,
-    SceneRecipeMorphV1, SceneRecipeNodeLodV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
-    SceneRecipeParticleSetV1, SceneRecipeParticleV1, SceneRecipePrimitiveV1, SceneRecipeSkinV1,
+    SceneRecipeLookAtTargetV1, SceneRecipeMaterialImperfectionV1, SceneRecipeMaterialPackV1,
+    SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1, SceneRecipeMorphV1,
+    SceneRecipeNodeLodV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
+    SceneRecipeParticleSetV1, SceneRecipeParticleV1, SceneRecipePhotographicSurfaceV1,
+    SceneRecipePrimitiveV1, SceneRecipeSkinV1, SceneRecipeSourceMaterialSelectorV1,
     SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformConversionError,
     SceneRecipeTransformV1,
 };
@@ -32,7 +35,8 @@ pub use build_manifest::{
     SceneRecipeBuildImportV1, SceneRecipeBuildInstanceV1, SceneRecipeBuildNamedStateV1,
     SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1,
     SceneRecipeBuildV1, SceneRecipeDiagnosticResourceV1, SceneRecipeDiagnosticV1,
-    SceneRecipeResourceResolutionV1, SceneRecipeResourceStatusV1, SceneRecipeValidationReportV1,
+    SceneRecipeImportEdgeRoundingReportV1, SceneRecipeResourceResolutionV1,
+    SceneRecipeResourceStatusV1, SceneRecipeValidationReportV1,
 };
 pub use expectations::{
     SceneRecipeBackendExpectationV1, SceneRecipeBboxFitExpectationV1,
@@ -54,8 +58,8 @@ pub use overlays::{
 };
 pub use photo::{
     SceneRecipePhotoCompositionV1, SceneRecipePhotoExposureV1, SceneRecipePhotoFocusV1,
-    SceneRecipePhotoRangeV1, SceneRecipePhotoStagingV1, SceneRecipePhotoSubjectV1,
-    SceneRecipePhotoV1,
+    SceneRecipePhotoQualityV1, SceneRecipePhotoRangeV1, SceneRecipePhotoStagingV1,
+    SceneRecipePhotoSubjectV1, SceneRecipePhotoV1,
 };
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub use render_result::{

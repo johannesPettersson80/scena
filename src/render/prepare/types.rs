@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::assets::{MaterialHandle, TextureHandle};
-use crate::geometry::{GeometryDesc, Primitive, PrimitiveVertexAttributes, SkinningMatrix};
+use crate::geometry::{Aabb, GeometryDesc, Primitive, PrimitiveVertexAttributes, SkinningMatrix};
 use crate::material::{Color, MaterialDesc};
-use crate::scene::{InstanceId, InstanceSetKey, NodeKey, Transform, Vec3};
+use crate::scene::{InstanceId, InstanceSetKey, NodeKey, ReflectionProbeKey, Transform, Vec3};
 
 use super::super::physical_transmission::PreparedPhysicalTransmission as PhysicalTransmission;
 use super::super::{PrepareWorkCounter, RasterTarget, camera::CameraProjection};
@@ -54,6 +54,62 @@ pub(in crate::render) struct PreparedScene {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(in crate::render) struct PreparedReflectionProbe {
+    key: ReflectionProbeKey,
+    slot: u32,
+    bounds: Aabb,
+    capture_position: Vec3,
+    lighting: PreparedEnvironmentLighting,
+}
+
+impl PreparedReflectionProbe {
+    pub(in crate::render) const fn new(
+        key: ReflectionProbeKey,
+        slot: u32,
+        bounds: Aabb,
+        capture_position: Vec3,
+        lighting: PreparedEnvironmentLighting,
+    ) -> Self {
+        Self {
+            key,
+            slot,
+            bounds,
+            capture_position,
+            lighting,
+        }
+    }
+
+    pub(in crate::render) const fn key(&self) -> ReflectionProbeKey {
+        self.key
+    }
+
+    pub(in crate::render) const fn slot(&self) -> u32 {
+        self.slot
+    }
+
+    pub(in crate::render) const fn bounds(&self) -> Aabb {
+        self.bounds
+    }
+
+    pub(in crate::render) const fn capture_position(&self) -> Vec3 {
+        self.capture_position
+    }
+
+    pub(in crate::render) const fn lighting(&self) -> &PreparedEnvironmentLighting {
+        &self.lighting
+    }
+
+    pub(in crate::render) fn with_origin_shift(mut self, origin_shift: Vec3) -> Self {
+        self.bounds = Aabb::new(
+            self.bounds.min - origin_shift,
+            self.bounds.max - origin_shift,
+        );
+        self.capture_position -= origin_shift;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedPrimitive {
     primitive: Primitive,
     draw_transform: Arc<PreparedDrawTransform>,
@@ -61,6 +117,7 @@ pub(in crate::render) struct PreparedPrimitive {
     model_vertex_offset: usize,
     source_node: Option<NodeKey>,
     source_instance: Option<InstanceId>,
+    semantic_material: Option<MaterialHandle>,
     semantic_opaque: bool,
     semantic_overlay: bool,
     clip_with_scene: bool,
@@ -71,6 +128,7 @@ pub(in crate::render) struct PreparedPrimitive {
     double_sided: bool,
     material_reflection: Option<PreparedMaterialReflection>,
     material_transmission: Option<PhysicalTransmission>,
+    reflection_probe: Option<PreparedReflectionProbe>,
 }
 
 impl PreparedPrimitive {
@@ -100,6 +158,7 @@ impl PreparedPrimitive {
             model_vertex_offset: 0,
             source_node,
             source_instance: None,
+            semantic_material: None,
             semantic_opaque: true,
             semantic_overlay: false,
             clip_with_scene: true,
@@ -110,6 +169,7 @@ impl PreparedPrimitive {
             double_sided: false,
             material_reflection: None,
             material_transmission: None,
+            reflection_probe: None,
         }
     }
 
@@ -155,9 +215,11 @@ impl PreparedPrimitive {
 
     pub(in crate::render) const fn with_semantic_material(
         mut self,
+        material: MaterialHandle,
         opaque: bool,
         alpha_cutoff: Option<f32>,
     ) -> Self {
+        self.semantic_material = Some(material);
         self.semantic_opaque = opaque;
         self.semantic_overlay = false;
         self.semantic_alpha_cutoff = alpha_cutoff;
@@ -186,6 +248,14 @@ impl PreparedPrimitive {
         self
     }
 
+    pub(in crate::render) fn with_reflection_probe(
+        mut self,
+        reflection_probe: Option<PreparedReflectionProbe>,
+    ) -> Self {
+        self.reflection_probe = reflection_probe;
+        self
+    }
+
     pub(in crate::render) const fn primitive(&self) -> &Primitive {
         &self.primitive
     }
@@ -196,6 +266,10 @@ impl PreparedPrimitive {
 
     pub(in crate::render) const fn source_instance(&self) -> Option<InstanceId> {
         self.source_instance
+    }
+
+    pub(in crate::render) const fn semantic_material(&self) -> Option<MaterialHandle> {
+        self.semantic_material
     }
 
     pub(in crate::render) const fn semantic_opaque(&self) -> bool {
@@ -282,6 +356,10 @@ impl PreparedPrimitive {
 
     pub(in crate::render) const fn material_transmission(&self) -> Option<PhysicalTransmission> {
         self.material_transmission
+    }
+
+    pub(in crate::render) const fn reflection_probe(&self) -> Option<&PreparedReflectionProbe> {
+        self.reflection_probe.as_ref()
     }
 
     pub(in crate::render) fn world_from_model(&self) -> [f32; 16] {
@@ -550,6 +628,7 @@ pub(super) struct PrimitiveBakeParams<'lights> {
     pub(super) lights: &'lights PreparedLights,
     pub(super) shadow_occluders: &'lights ShadowOccluderSet,
     pub(super) shadow_visibility_cache: &'lights ShadowVisibilityCache,
+    pub(super) baked_ambient_occlusion: Option<crate::BakedAmbientOcclusionConfig>,
     pub(super) camera_projection: Option<&'lights CameraProjection>,
     pub(super) backend_sampled_base_color_textures: &'lights [TextureHandle],
     pub(super) backend_material_slots: &'lights [MaterialHandle],
@@ -557,6 +636,7 @@ pub(super) struct PrimitiveBakeParams<'lights> {
     /// so cloning the params per-primitive in the bake loop stays
     /// allocation-free.
     pub(super) environment_lighting: PreparedEnvironmentLighting,
+    pub(super) reflection_probe: Option<PreparedReflectionProbe>,
     pub(super) work: Option<&'lights PrepareWorkCounter>,
 }
 

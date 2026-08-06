@@ -64,14 +64,81 @@ _Remediation of the full-repository review of 1.9.0. See
   fixed exposure, focus-distance, floor, grid, or background constants. New
   `scena.photo_*`, `scena.exposure_report.v1`, `scena.focus_report.v1`, and
   `scena.subject_observation.v1` contracts carry the evidence.
+- Add a scena-owned photographic material workflow. `scena materials list`
+  exposes 301 audited CC0 product finishes offline, while explicit `fetch` and
+  `import` commands compile source archives into hash-locked color, normal, and
+  occlusion/roughness/metallic packs. Authored materials and imported GLB
+  subtrees can reference those packs with physically scaled tiling; render
+  execution never performs a network request. Imported GLBs may also bind packs
+  per source material through an index plus optional exact name; stale
+  identities fail before any partial material assignment.
 - Migrate the public demo hero to the recipe `photo.intent` path. The checked
   proof image is generated from `evidence/demo-hero/hero.recipe.json` and the
   demo now points at the matching cache-busted still asset instead of a
   hand-tuned Rust/recipe hero.
+- Frame a subject by its limiting axis. Camera-behavior composition required
+  width and height to each reach the fill target independently, which is only
+  satisfiable when the subject's aspect matches the frame's; a wide subject
+  could not reach the width target without its height leaving the frame. The
+  gate now scores the dominant axis and leaves clipping as the guard against
+  over-filling, so assemblies that are not frame-shaped can pass.
+- Measure subject coverage with the renderer's own semantic mask. Coverage
+  classified any pixel differing from the clear colour as subject, so generated
+  surroundings - a lit floor and cyclorama - saturated `foreground_fraction` at
+  `1.0`. Composition checks now report `coverage_source`, making the colour
+  heuristic an explicitly disclosed fallback rather than a silent one.
+- Run the exact subject-mask composition check on GPU backends. It was keyed on
+  `Backend::Headless`, so the strictest verification silently skipped itself on
+  the path the product ships; it is now keyed on whether a mask was captured.
+- Fix the cyclorama shading seam. The sweep emitted its surface normal's two
+  terms transposed, so the end that meets the floor faced sideways and the end
+  that meets the wall faced straight up - a maximal normal discontinuity at both
+  joins. Backdrops are now continuous with the floor and wall they meet.
+- Grade the derived backdrop relative to the subject. The surround was chosen
+  from three hardcoded luminance buckets, which was discontinuous and
+  non-monotonic - a subject at 0.17 got a 0.32 backdrop and one at 0.19 got 0.10,
+  and mid-tone subjects got a darker surround than bright ones. The surround now
+  sits a fixed luminance ratio from the subject and no longer crushes to black.
+- Report an unresolved focus result instead of a fabricated one. The degraded
+  path returned a `resolved` focus report carrying a hardcoded pixel count and
+  confidence, which could pass the acceptance gate on a value nothing measured.
+- Honour an authored capture size in `photo render`. An authored recipe
+  `capture` block was silently overwritten; precedence is now explicit
+  `--width`/`--height`, then the recipe's `capture`, then the photo default,
+  and the chosen source is reported.
+
 - Fix the correction to the 1.9.0 changelog heading: shipped 1.9.0 work was
   still filed under `[Unreleased]` and the section carried the wrong date.
 
 #### Internal — no user-visible behavior change
+
+- Correct `ibl_brdf_lut_default_size` in the capability report. It returned the
+  *cubemap* default size (256, or 128 on WebGL2) for a BRDF lookup table that
+  has always been baked at 64, and the table's size does not depend on the
+  backend. Affects `scena.capability_report.v1` and the capture contracts that
+  embed it.
+- Bind the baked split-sum BRDF table through a uniform block. It was computed
+  on every prepare, uploaded to a texture and never sampled, because the
+  fragment stage already used all 16 sampled textures and all 16 samplers that
+  `downlevel_defaults()` allows on every backend. The shader read an analytic
+  fit instead, which diverges by 0.361 at grazing incidence on rough metal; the
+  bound table measures 0.019 against the same reference. The unused
+  `brdf_lut_texture` upload is removed.
+- Size the generated photographic backdrop from the camera frustum rather than
+  from a multiple of the subject radius, so it stays within the light rig
+  instead of retreating behind it and rendering black.
+- Screen-space reflections no longer force the CPU rasterizer onto a single
+  thread. Recording reflections is row-separable and only the resolve needs the
+  finished frame, so each worker now records into its own band and the resolve
+  runs once after the join. Serial and parallel output is asserted byte-identical.
+- Upload the LTC area-light tables as a uniform block instead of baking them
+  into WGSL as constant arrays indexed at runtime. Adds a shader budget gate
+  that fails any production shader dynamically indexing a large constant array,
+  bounds per-entry-point SPIR-V size, and proves every WebGL2 variant lowers to
+  GLSL ES 3.00 offline.
+- Add a behavioural doctor rule that judges rendered output against the
+  camera-behavior fixture's own quality bands, rather than pinning the source
+  text that produced it.
 
 Grouped here rather than omitted, so the batch's coverage and evidence work is
 visible without one changelog line per test:
