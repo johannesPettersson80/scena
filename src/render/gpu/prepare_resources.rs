@@ -9,6 +9,7 @@ use super::super::prepare::{
 #[cfg(target_arch = "wasm32")]
 use super::browser_readback::create_browser_readback_resources;
 use super::material_support::reject_unsupported_volume_texture_slots;
+use super::material_uniform::MaterialShaderFeatures;
 use super::materials::{create_material_bind_group_layout, create_material_resources};
 use super::output::{create_output_bind_group_layout, create_output_uniform_buffer};
 use super::pipeline::GPU_COLOR_FORMAT;
@@ -179,6 +180,7 @@ impl GpuDeviceState {
         let depth_compare = depth_prepass
             .as_ref()
             .map(|depth_prepass| depth_prepass.color_compare);
+        let material_features = MaterialShaderFeatures::from_material_slots(material_slots);
         let transmission = transmission::create_transmission_resources(
             &self.device,
             &triangle_shader,
@@ -188,6 +190,7 @@ impl GpuDeviceState {
             &material_bind_group_layout,
             &draw_bind_group_layout,
             depth_compare,
+            material_features,
         );
         let environment::OutputResources {
             shadow_caster,
@@ -238,6 +241,7 @@ impl GpuDeviceState {
             &ltc_tables,
             &brdf_table,
             &light_assignment,
+            material_features,
         );
         let surface_output_uniform = pipeline_resources.surface_output_uniform;
         let surface_output_bind_group = pipeline_resources.surface_output_bind_group;
@@ -309,6 +313,7 @@ impl GpuDeviceState {
                     .and_then(depth::DepthPrepassResources::color_view),
                 semantic_aov_capture_enabled,
                 output_plan.scene_linear_capture_enabled(),
+                material_features,
             )
         });
         if sample_count == 8
@@ -325,6 +330,7 @@ impl GpuDeviceState {
                 &draw_bind_group_layout,
                 depth_compare,
                 semantic_aov_capture_enabled,
+                material_features,
             )
             .map_err(|error| match error {
                 crate::RenderError::UnsupportedSampleCount {

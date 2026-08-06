@@ -5,6 +5,20 @@ const AREA_LIGHT_SAMPLE_COUNT: u32 = 16u;
 const MAX_TILED_GPU_LIGHTS_PER_TILE: u32 = 32u;
 const ENVIRONMENT_PREFILTER_MAX_MIP: f32 = 4.0;
 
+// Scene-union material feature specialization. Each flag folds one optional
+// material system out of the compiled fragment shader when no material in the
+// prepared scene can produce a nonzero factor for it. The full shader fails
+// Mesa v3d's 4-thread register allocation and walks a fallback ladder whose
+// cost exceeds Chromium's 30-second GPU watchdog on Raspberry Pi 5 WebGL2,
+// killing the GPU process; with unused features folded off it allocates on
+// the first attempt. Defaults keep the full shader so callers that pass no
+// pipeline constants are unchanged.
+override scena_material_clearcoat: bool = true;
+override scena_material_sheen: bool = true;
+override scena_material_anisotropy: bool = true;
+override scena_material_iridescence: bool = true;
+override scena_material_dispersion: bool = true;
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,
@@ -372,14 +386,37 @@ fn shade_fragment(in: VertexOut) -> vec4<f32> {
     let metallic_roughness_sample = textureSample(metallic_roughness_texture, metallic_roughness_sampler, in.tex_coord0);
     let occlusion_sample = textureSample(occlusion_texture, occlusion_sampler, in.tex_coord0).r;
     let emissive_sample = textureSample(emissive_texture, emissive_sampler, in.tex_coord0).rgb;
-    let clearcoat_sample = textureSample(clearcoat_texture, clearcoat_sampler, in.tex_coord0);
-    let clearcoat_roughness_sample = textureSample(clearcoat_roughness_texture, clearcoat_roughness_sampler, in.tex_coord0);
-    let clearcoat_normal_sample = textureSample(clearcoat_normal_texture, clearcoat_normal_sampler, in.tex_coord0).rgb;
-    let sheen_color_sample = textureSample(sheen_color_texture, sheen_color_sampler, in.tex_coord0);
-    let sheen_roughness_sample = textureSample(sheen_roughness_texture, sheen_roughness_sampler, in.tex_coord0);
-    let anisotropy_sample = textureSample(anisotropy_texture, anisotropy_sampler, in.tex_coord0);
-    let iridescence_sample = textureSample(iridescence_texture, iridescence_sampler, in.tex_coord0);
-    let iridescence_thickness_sample = textureSample(iridescence_thickness_texture, iridescence_thickness_sampler, in.tex_coord0);
+    // A folded-off feature must not sample its textures at all. An
+    // unconditional sample whose result feeds only disabled code stays in
+    // ANGLE's active-sampler list while Mesa v3d dead-codes its uniform
+    // location; wgpu can only assign units to locatable samplers, so the
+    // leftovers sit on default unit 0 and type-conflict with the shadow
+    // sampler bound there — GL then rejects every draw with
+    // INVALID_OPERATION and the geometry silently vanishes.
+    var clearcoat_sample = vec4<f32>(0.0);
+    var clearcoat_roughness_sample = vec4<f32>(0.0);
+    var clearcoat_normal_sample = vec3<f32>(0.0, 0.0, 1.0);
+    if scena_material_clearcoat {
+        clearcoat_sample = textureSample(clearcoat_texture, clearcoat_sampler, in.tex_coord0);
+        clearcoat_roughness_sample = textureSample(clearcoat_roughness_texture, clearcoat_roughness_sampler, in.tex_coord0);
+        clearcoat_normal_sample = textureSample(clearcoat_normal_texture, clearcoat_normal_sampler, in.tex_coord0).rgb;
+    }
+    var sheen_color_sample = vec4<f32>(0.0);
+    var sheen_roughness_sample = vec4<f32>(0.0);
+    if scena_material_sheen {
+        sheen_color_sample = textureSample(sheen_color_texture, sheen_color_sampler, in.tex_coord0);
+        sheen_roughness_sample = textureSample(sheen_roughness_texture, sheen_roughness_sampler, in.tex_coord0);
+    }
+    var anisotropy_sample = vec4<f32>(0.5, 0.5, 0.0, 0.0);
+    if scena_material_anisotropy {
+        anisotropy_sample = textureSample(anisotropy_texture, anisotropy_sampler, in.tex_coord0);
+    }
+    var iridescence_sample = vec4<f32>(0.0);
+    var iridescence_thickness_sample = vec4<f32>(0.0);
+    if scena_material_iridescence {
+        iridescence_sample = textureSample(iridescence_texture, iridescence_sampler, in.tex_coord0);
+        iridescence_thickness_sample = textureSample(iridescence_thickness_texture, iridescence_thickness_sampler, in.tex_coord0);
+    }
     // Phase 5.1: apply normalTexture.scale to the tangent-space X/Y
     // components before TBN reconstruction. Z stays unscaled so the
     // unit-length invariant holds after normalize().
@@ -399,7 +436,10 @@ fn shade_fragment(in: VertexOut) -> vec4<f32> {
     // Fold its variance into roughness instead of resolving world-space waves
     // that alias into coherent contour bands under perspective.
     let unresolved_micro_roughness = material.texture_strengths.z * 0.175;
-    let clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);
+    var clearcoat_factor = 0.0;
+    if scena_material_clearcoat {
+        clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);
+    }
     let clearcoat_roughness = clamp(material.clearcoat_factors.y * clearcoat_roughness_sample.g, 0.04, 1.0);
     let clearcoat_normal_scale = material.clearcoat_factors.z;
     let raw_clearcoat_normal = clearcoat_normal_sample * 2.0 - vec3<f32>(1.0);
@@ -410,13 +450,25 @@ fn shade_fragment(in: VertexOut) -> vec4<f32> {
     );
     let clearcoat_tangent_normal = normalize(scaled_clearcoat_normal);
     let clearcoat_normal = normalize(clearcoat_tangent_normal.x * world_tangent + clearcoat_tangent_normal.y * bitangent + clearcoat_tangent_normal.z * world_normal);
-    let sheen_color = material.sheen_factors.rgb * sheen_color_sample.rgb;
+    var sheen_color = vec3<f32>(0.0);
+    if scena_material_sheen {
+        sheen_color = material.sheen_factors.rgb * sheen_color_sample.rgb;
+    }
     let sheen_roughness = clamp(material.sheen_factors.a * sheen_roughness_sample.a, 0.04, 1.0);
     let anisotropy_direction = anisotropy_sample.rg * 2.0 - vec2<f32>(1.0, 1.0);
-    let anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);
-    let iridescence_factor = clamp(material.iridescence_factors.x * iridescence_sample.r, 0.0, 1.0);
+    var anisotropy_strength = 0.0;
+    if scena_material_anisotropy {
+        anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);
+    }
+    var iridescence_factor = 0.0;
+    if scena_material_iridescence {
+        iridescence_factor = clamp(material.iridescence_factors.x * iridescence_sample.r, 0.0, 1.0);
+    }
     let iridescence_thickness = mix(material.iridescence_factors.z, material.iridescence_factors.w, clamp(iridescence_thickness_sample.g, 0.0, 1.0));
-    let dispersion_factor = max(material.dispersion_factors.x, 0.0);
+    var dispersion_factor = 0.0;
+    if scena_material_dispersion {
+        dispersion_factor = max(material.dispersion_factors.x, 0.0);
+    }
     let dispersion_ior = max(material.dispersion_factors.y, 1.0);
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(

@@ -22,6 +22,7 @@ pub(in crate::render::gpu) fn create_resources(
     depth_color_view: Option<&wgpu::TextureView>,
     semantic_aov_capture_enabled: bool,
     scene_linear_capture_enabled: bool,
+    material_features: super::super::material_uniform::MaterialShaderFeatures,
 ) -> PostResources {
     let scene = create_post_texture(device, target, "scena.gpu_post.scene_linear_sampling");
     let ping = create_post_texture(device, target, "scena.gpu_post.ping");
@@ -186,6 +187,7 @@ pub(in crate::render::gpu) fn create_resources(
         depth_compare,
         1,
         semantic_aov_capture_enabled.then_some(super::super::semantic_aov::FORMAT),
+        material_features,
     );
     let scene_msaa4_pipelines = create_unlit_pipeline_set(
         device,
@@ -197,6 +199,7 @@ pub(in crate::render::gpu) fn create_resources(
         depth_compare,
         4,
         semantic_aov_capture_enabled.then_some(super::super::semantic_aov::FORMAT),
+        material_features,
     );
     let output_blit_pipeline =
         blit::create_target_pipeline(device, &texture_pipeline_layout, GPU_COLOR_FORMAT);

@@ -706,7 +706,8 @@ mod tests {
         ] {
             assert!(
                 shader.contains("clearcoat_light_contribution")
-                    && shader.contains("let clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);")
+                    && shader.contains("if scena_material_clearcoat {")
+                    && shader.contains("clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);")
                     && shader.contains("let clearcoat_roughness = clamp(material.clearcoat_factors.y * clearcoat_roughness_sample.g, 0.04, 1.0);")
                     && shader.contains("let clearcoat_normal_scale = material.clearcoat_factors.z;")
                     && shader.contains("shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);"),
@@ -723,7 +724,8 @@ mod tests {
         ] {
             assert!(
                 shader.contains("sheen_light_contribution")
-                    && shader.contains("let sheen_color = material.sheen_factors.rgb * sheen_color_sample.rgb;")
+                    && shader.contains("if scena_material_sheen {")
+                    && shader.contains("sheen_color = material.sheen_factors.rgb * sheen_color_sample.rgb;")
                     && shader.contains("let sheen_roughness = clamp(material.sheen_factors.a * sheen_roughness_sample.a, 0.04, 1.0);")
                     && shader.contains("shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);"),
                 "{name} shader must apply KHR_materials_sheen color and roughness texture channels instead of silently dropping them"
@@ -813,7 +815,8 @@ mod tests {
             assert!(
                 shader.contains("anisotropy_light_contribution")
                     && shader.contains("let anisotropy_direction = anisotropy_sample.rg * 2.0 - vec2<f32>(1.0, 1.0);")
-                    && shader.contains("let anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);")
+                    && shader.contains("if scena_material_anisotropy {")
+                    && shader.contains("anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);")
                     && shader.contains("material.anisotropy_factors.y")
                     && shader.contains("world_tangent")
                     && shader.contains("tangent_handedness")
@@ -831,7 +834,8 @@ mod tests {
         ] {
             assert!(
                 shader.contains("iridescence_light_contribution")
-                    && shader.contains("let iridescence_factor = clamp(material.iridescence_factors.x * iridescence_sample.r, 0.0, 1.0);")
+                    && shader.contains("if scena_material_iridescence {")
+                    && shader.contains("iridescence_factor = clamp(material.iridescence_factors.x * iridescence_sample.r, 0.0, 1.0);")
                     && shader.contains("let iridescence_thickness = mix(material.iridescence_factors.z, material.iridescence_factors.w, clamp(iridescence_thickness_sample.g, 0.0, 1.0));")
                     && shader.contains("material.iridescence_factors.y")
                     && shader.contains("shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);"),
@@ -849,7 +853,8 @@ mod tests {
             assert!(
                 shader.contains("dispersion_light_contribution")
                     && shader.contains("dispersion_factors: vec4<f32>")
-                    && shader.contains("let dispersion_factor = max(material.dispersion_factors.x, 0.0);")
+                    && shader.contains("if scena_material_dispersion {")
+                    && shader.contains("dispersion_factor = max(material.dispersion_factors.x, 0.0);")
                     && shader.contains("material.dispersion_factors.y")
                     && shader.contains("shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);"),
                 "{name} shader must apply KHR_materials_dispersion factor and IOR spread instead of silently dropping them"

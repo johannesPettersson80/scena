@@ -76,7 +76,7 @@ pub(super) fn check_dispersion_material_contracts(root: &Path, findings: &mut Ve
         "src/render/gpu/output_shader.wgsl",
         &[
             "dispersion_factors: vec4<f32>",
-            "let dispersion_factor = max(material.dispersion_factors.x, 0.0);",
+            "dispersion_factor = max(material.dispersion_factors.x, 0.0);",
             "dispersion_light_contribution",
             "dispersion_f0_from_ior",
         ],
@@ -88,7 +88,7 @@ pub(super) fn check_dispersion_material_contracts(root: &Path, findings: &mut Ve
         "src/render/gpu/output_shader_texture_2d.wgsl",
         &[
             "dispersion_factors: vec4<f32>",
-            "let dispersion_factor = max(material.dispersion_factors.x, 0.0);",
+            "dispersion_factor = max(material.dispersion_factors.x, 0.0);",
             "dispersion_light_contribution",
             "dispersion_f0_from_ior",
         ],

@@ -1,4 +1,5 @@
 use super::super::light_assignment::LightAssignmentResources;
+use super::super::material_uniform::MaterialShaderFeatures;
 use super::super::pipeline::{GPU_COLOR_FORMAT, MeshPipelineSet, create_unlit_pipeline_set};
 use super::super::{GpuOutputPlan, output};
 
@@ -37,6 +38,7 @@ pub(super) fn create_pipeline_resources(
     ltc_tables: &wgpu::Buffer,
     brdf_table: &wgpu::Buffer,
     light_assignment: &LightAssignmentResources,
+    material_features: MaterialShaderFeatures,
 ) -> PipelineResources {
     let surface_output_resources = surface_format.map(|_| {
         let uniform = super::super::output::create_output_uniform_buffer(device);
@@ -146,6 +148,7 @@ pub(super) fn create_pipeline_resources(
             depth_compare,
             samples,
             semantic_target_format,
+            material_features,
         )
     };
     let semantic_target_format =

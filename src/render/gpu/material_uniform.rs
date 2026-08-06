@@ -268,6 +268,52 @@ impl MaterialUniformUpload {
     }
 }
 
+/// Scene-union material feature mask, resolved into the triangle shader's
+/// `scena_material_*` pipeline override constants. Folding feature systems no
+/// prepared material can drive keeps Mesa v3d register allocation on its
+/// first-attempt path; the full shader's allocation-fallback ladder exceeds
+/// Chromium's 30-second GPU watchdog on Raspberry Pi 5 WebGL2 and takes the
+/// whole GPU process down. A feature stays compiled in exactly when some
+/// material's uniform lane above can be nonzero, so folded and unfolded
+/// shaders produce identical output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) struct MaterialShaderFeatures {
+    clearcoat: bool,
+    sheen: bool,
+    anisotropy: bool,
+    iridescence: bool,
+    dispersion: bool,
+}
+
+impl MaterialShaderFeatures {
+    pub(super) fn from_material_slots(
+        slots: &[crate::render::prepare::PreparedMaterialSlot],
+    ) -> Self {
+        let mut features = Self::default();
+        for slot in slots {
+            let material = &slot.material;
+            let sheen = material.sheen_color_factor();
+            features.clearcoat |= material.clearcoat_factor() > 0.0;
+            features.sheen |= sheen.r > 0.0 || sheen.g > 0.0 || sheen.b > 0.0;
+            features.anisotropy |= material.anisotropy_strength_factor() > 0.0;
+            features.iridescence |= material.iridescence_factor() > 0.0;
+            features.dispersion |= material.dispersion_factor() > 0.0;
+        }
+        features
+    }
+
+    pub(super) fn pipeline_constants(self) -> [(&'static str, f64); 5] {
+        let flag = |enabled: bool| if enabled { 1.0 } else { 0.0 };
+        [
+            ("scena_material_clearcoat", flag(self.clearcoat)),
+            ("scena_material_sheen", flag(self.sheen)),
+            ("scena_material_anisotropy", flag(self.anisotropy)),
+            ("scena_material_iridescence", flag(self.iridescence)),
+            ("scena_material_dispersion", flag(self.dispersion)),
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

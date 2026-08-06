@@ -197,6 +197,8 @@ impl GpuDeviceState {
         let depth_compare = depth_prepass
             .as_ref()
             .map(|depth_prepass| depth_prepass.color_compare);
+        let material_features =
+            super::material_uniform::MaterialShaderFeatures::from_material_slots(material_slots);
         let transmission = transmission::create_transmission_resources(
             &self.device,
             &triangle_shader,
@@ -206,6 +208,7 @@ impl GpuDeviceState {
             &material_bind_group_layout,
             &draw_bind_group_layout,
             depth_compare,
+            material_features,
         );
         let environment::OutputResources {
             shadow_caster,
@@ -244,6 +247,7 @@ impl GpuDeviceState {
             depth_compare,
             1,
             semantic_aov_capture_enabled.then_some(super::semantic_aov::FORMAT),
+            material_features,
         );
         let strokes = (!retained_strokes.is_empty()).then(|| {
             super::strokes::create_resources(
@@ -302,11 +306,12 @@ impl GpuDeviceState {
                     draw_bind_group_layout: &draw_bind_group_layout,
                     triangle_shader: &triangle_shader,
                     depth_compare,
+                    material_features,
                 },
             )
         });
         #[cfg(not(any(feature = "browser-probe", feature = "scene-host")))]
-        let readback = None;
+        let readback: Option<super::browser_readback::BrowserReadbackResources> = None;
         let post = output_plan.post_enabled().then(|| {
             super::post::create_resources(
                 &self.device,
@@ -323,6 +328,7 @@ impl GpuDeviceState {
                     .and_then(depth::DepthPrepassResources::color_view),
                 semantic_aov_capture_enabled,
                 output_plan.scene_linear_capture_enabled(),
+                material_features,
             )
         });
         let vertex_count = (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32;

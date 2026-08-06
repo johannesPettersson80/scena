@@ -75,6 +75,7 @@ pub(super) fn ensure_scene_msaa8_pipelines(
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
     semantic_aov_capture_enabled: bool,
+    material_features: super::material_uniform::MaterialShaderFeatures,
 ) -> Result<(), RenderError> {
     if resources.scene_msaa8_pipelines.is_some() {
         return Ok(());
@@ -101,6 +102,7 @@ pub(super) fn ensure_scene_msaa8_pipelines(
         depth_compare,
         8,
         semantic_aov_capture_enabled.then_some(super::semantic_aov::FORMAT),
+        material_features,
     ));
     Ok(())
 }

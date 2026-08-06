@@ -112,6 +112,7 @@ pub(super) struct BrowserReadbackResourceDescriptor<'a> {
     pub(super) draw_bind_group_layout: &'a wgpu::BindGroupLayout,
     pub(super) triangle_shader: &'a wgpu::ShaderModule,
     pub(super) depth_compare: Option<wgpu::CompareFunction>,
+    pub(super) material_features: super::material_uniform::MaterialShaderFeatures,
 }
 
 #[cfg(any(
@@ -158,6 +159,7 @@ pub(super) fn create_browser_readback_resources(
         descriptor.depth_compare,
         1,
         None,
+        descriptor.material_features,
     );
     BrowserReadbackResources {
         texture,

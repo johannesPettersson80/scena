@@ -1,6 +1,6 @@
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::material_bindings::MaterialTextureBindingMode;
-use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
+use super::material_uniform::{MATERIAL_UNIFORM_ENTRY_STRIDE, MaterialShaderFeatures};
 use super::materials::MaterialResources;
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::shader_manifest::{ShaderVariantId, create_shader_module};
@@ -345,6 +345,7 @@ pub(super) fn create_unlit_pipeline_set(
     depth_compare: Option<wgpu::CompareFunction>,
     sample_count: u32,
     semantic_target_format: Option<wgpu::TextureFormat>,
+    material_features: MaterialShaderFeatures,
 ) -> MeshPipelineSet {
     MeshPipelineSet {
         single_sided: create_unlit_pipeline(
@@ -358,6 +359,7 @@ pub(super) fn create_unlit_pipeline_set(
             false,
             sample_count,
             semantic_target_format,
+            material_features,
         ),
         double_sided: create_unlit_pipeline(
             device,
@@ -370,6 +372,7 @@ pub(super) fn create_unlit_pipeline_set(
             true,
             sample_count,
             semantic_target_format,
+            material_features,
         ),
     }
 }
@@ -386,7 +389,9 @@ fn create_unlit_pipeline(
     double_sided: bool,
     sample_count: u32,
     semantic_target_format: Option<wgpu::TextureFormat>,
+    material_features: MaterialShaderFeatures,
 ) -> wgpu::RenderPipeline {
+    let feature_constants = material_features.pipeline_constants();
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m0.pipeline_layout"),
         bind_group_layouts: &[
@@ -460,7 +465,10 @@ fn create_unlit_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: shader,
             entry_point: Some(fragment_entry_point),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &feature_constants,
+                ..Default::default()
+            },
             targets: &color_targets,
         }),
         multiview_mask: None,

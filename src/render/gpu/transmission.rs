@@ -34,6 +34,7 @@ pub(super) fn create_transmission_resources(
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     _depth_compare: Option<wgpu::CompareFunction>,
+    material_features: super::material_uniform::MaterialShaderFeatures,
 ) -> TransmissionResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.round_e.transmission_scene_color"),
@@ -91,6 +92,7 @@ pub(super) fn create_transmission_resources(
         None,
         1,
         None,
+        material_features,
     );
     TransmissionResources {
         texture,

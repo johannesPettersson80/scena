@@ -457,6 +457,17 @@ mod tests {
         )
         .validate(&module)
         .unwrap_or_else(|error| panic!("{} validates: {error}", variant.id));
+        // Backend writers reject modules with unresolved `override` constants.
+        // Resolving with the defaults keeps every budget measured against the
+        // full shader, which is what an unspecialized pipeline compiles.
+        let (module, info) = wgpu::naga::back::pipeline_constants::process_overrides(
+            &module,
+            &info,
+            None,
+            &wgpu::naga::back::PipelineConstants::default(),
+        )
+        .map(|(module, info)| (module.into_owned(), info.into_owned()))
+        .unwrap_or_else(|error| panic!("{} resolves overrides: {error}", variant.id));
         (module, info)
     }
 
