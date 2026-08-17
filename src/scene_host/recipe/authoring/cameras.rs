@@ -278,7 +278,8 @@ fn framing_options_from_recipe(
         .as_deref()
         .and_then(FramingOptions::from_preset_name)
         .unwrap_or_default()
-        .viewport(width, height);
+        .viewport(width, height)
+        .tighten_depth_range(true);
     if framing.mode.as_deref() == Some("principal_face") {
         options = options.look_from(principal_face_view_direction(bounds));
     }
@@ -365,5 +366,42 @@ fn scene_bounds_for_camera(
             ));
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Scene, Transform};
+
+    #[test]
+    fn recipe_framing_tightens_depth_for_small_models() {
+        let framing = SceneRecipeCameraFramingV1 {
+            mode: None,
+            preset: Some("isometric".to_owned()),
+            fill: Some(0.72),
+            margin_px: Some(48.0),
+            target_region: None,
+        };
+        let bounds = Aabb::new(
+            Vec3::new(-0.0016, -0.0012, -0.0008),
+            Vec3::new(0.0016, 0.0012, 0.0008),
+        );
+        let mut scene = Scene::new();
+        let camera = scene
+            .add_perspective_camera(
+                scene.root(),
+                PerspectiveCamera::default().with_aspect(1.0),
+                Transform::default(),
+            )
+            .expect("camera inserts");
+
+        scene
+            .frame_bounds(
+                camera,
+                bounds,
+                framing_options_from_recipe(&framing, 512, 512, bounds),
+            )
+            .expect("small-model recipe framing must fit the camera depth range");
     }
 }
