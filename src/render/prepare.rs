@@ -61,6 +61,7 @@ mod particles;
 mod pbr_contract;
 mod primitives;
 mod resources;
+mod section_caps;
 pub(in crate::render) mod shadows;
 mod stats;
 mod strokes;
@@ -179,12 +180,13 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
     particles::append_particle_primitives(scene, camera_projection, origin_shift, &mut primitives);
     let mut strokes = Vec::new();
     let mut instances = Vec::new();
-    let gpu_instance_path = matches!(
-        target.backend,
-        crate::diagnostics::Backend::HeadlessGpu
-            | crate::diagnostics::Backend::WebGpu
-            | crate::diagnostics::Backend::WebGl2
-    );
+    let gpu_instance_path = scene.section_box().is_none()
+        && matches!(
+            target.backend,
+            crate::diagnostics::Backend::HeadlessGpu
+                | crate::diagnostics::Backend::WebGpu
+                | crate::diagnostics::Backend::WebGl2
+        );
     let auto_instanced_nodes = if gpu_instance_path {
         append_auto_instanced_mesh_groups(
             target,
@@ -283,7 +285,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 backend_sampled_base_color_textures,
                 backend_material_slots,
                 environment_lighting: environment_lighting.clone(),
-                reflection_probe,
+                reflection_probe: reflection_probe.clone(),
                 work,
             },
             PrimitiveSinks {
@@ -292,6 +294,53 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 transparent_primitives: &mut transparent_primitives,
             },
         )?;
+        if let Some(cap_geometry) = (!scene.is_overlay_owned_node(node))
+            .then(|| scene.section_box())
+            .flatten()
+            .and_then(|section| {
+                section_caps::build_section_cap_geometry(
+                    &geometry,
+                    transform,
+                    origin_shift,
+                    section,
+                )
+            })
+        {
+            append_geometry_primitives(
+                GeometryPrimitiveSource {
+                    node,
+                    clip_with_scene: !scene.is_overlay_owned_node(node),
+                    instance: None,
+                    material_handle: mesh.material(),
+                    geometry: &cap_geometry,
+                    material: &material,
+                    textures: &material_textures,
+                    tint: scene.node_tint(node).unwrap_or(None),
+                },
+                DeformationInputs::default(),
+                PrimitiveBakeParams {
+                    target,
+                    screen_space_scale,
+                    transform,
+                    origin_shift,
+                    lights: &lights,
+                    shadow_occluders: &shadow_occluders,
+                    shadow_visibility_cache: &shadow_visibility_cache,
+                    baked_ambient_occlusion,
+                    camera_projection,
+                    backend_sampled_base_color_textures,
+                    backend_material_slots,
+                    environment_lighting: environment_lighting.clone(),
+                    reflection_probe,
+                    work,
+                },
+                PrimitiveSinks {
+                    primitives: &mut primitives,
+                    strokes: &mut strokes,
+                    transparent_primitives: &mut transparent_primitives,
+                },
+            )?;
+        }
     }
 
     for (node, instance_set, node_transform) in scene.instance_set_nodes() {
@@ -416,7 +465,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                         backend_sampled_base_color_textures,
                         backend_material_slots,
                         environment_lighting: environment_lighting.clone(),
-                        reflection_probe,
+                        reflection_probe: reflection_probe.clone(),
                         work,
                     },
                     PrimitiveSinks {
@@ -425,6 +474,56 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                         transparent_primitives: &mut transparent_primitives,
                     },
                 )?;
+                if let Some(cap_geometry) = (!scene.is_overlay_owned_node(node))
+                    .then(|| scene.section_box())
+                    .flatten()
+                    .and_then(|section| {
+                        section_caps::build_section_cap_geometry(
+                            &geometry,
+                            instance_transform,
+                            origin_shift,
+                            section,
+                        )
+                    })
+                {
+                    append_geometry_primitives(
+                        GeometryPrimitiveSource {
+                            node,
+                            clip_with_scene: true,
+                            instance: Some(instance.id()),
+                            material_handle: instance_set.material(),
+                            geometry: &cap_geometry,
+                            material: &material,
+                            textures: &material_textures,
+                            tint: multiply_tint(
+                                scene.node_tint(node).unwrap_or(None),
+                                instance.tint(),
+                            ),
+                        },
+                        DeformationInputs::default(),
+                        PrimitiveBakeParams {
+                            target,
+                            screen_space_scale,
+                            transform: instance_transform,
+                            origin_shift,
+                            lights: &lights,
+                            shadow_occluders: &shadow_occluders,
+                            shadow_visibility_cache: &shadow_visibility_cache,
+                            baked_ambient_occlusion,
+                            camera_projection,
+                            backend_sampled_base_color_textures,
+                            backend_material_slots,
+                            environment_lighting: environment_lighting.clone(),
+                            reflection_probe,
+                            work,
+                        },
+                        PrimitiveSinks {
+                            primitives: &mut primitives,
+                            strokes: &mut strokes,
+                            transparent_primitives: &mut transparent_primitives,
+                        },
+                    )?;
+                }
             }
         }
     }

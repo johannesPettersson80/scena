@@ -27,6 +27,9 @@ _Remediation of the full-repository review of 1.9.0. See
 - Stop clipping annotation overlays with the scene. A section box or clipping
   plane sections model geometry; labels, leader lines, and dimension lines
   stay visible by default. Overlays can opt back in with `LabelDesc::with_scene_clipping(true)`.
+- Fill section-box cuts through closed triangle meshes. Generated cap faces use
+  the source material, are shared by CPU and GPU render paths, and remain
+  correct for expanded instances instead of exposing a hollow background.
 - Report why a visible node contributes no pixels. `diagnose` now emits
   per-node reason codes (`clipped_by_section_box`,
   `clipped_by_active_clipping_plane`, `behind_camera`, and related) for nodes

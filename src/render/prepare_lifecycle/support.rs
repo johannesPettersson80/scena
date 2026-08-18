@@ -61,6 +61,9 @@ impl Renderer {
         if prepared.transform_revision == scene.transform_revision() {
             return None;
         }
+        if scene.section_box().is_some() {
+            return Some("section caps require a full prepare after transforms change");
+        }
         if scene.reflection_probes().next().is_some() {
             return Some("reflection probe selection requires full prepare");
         }

@@ -83,6 +83,7 @@ path = "examples/native_surface_hardware_proof.rs"
 [dependencies]
 base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }
+earcut = "0.4.11"
 fontdue = "0.9"
 half = { version = "2.7", features = ["bytemuck"] }
 glam = { version = "0.32", default-features = false, features = ["std", "scalar-math", "serde"] }

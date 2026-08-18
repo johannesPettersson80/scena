@@ -1590,6 +1590,90 @@ fn section_box_clips_rendered_output_and_inverts_inside_region() {
 }
 
 #[test]
+fn section_box_caps_the_cut_face_of_a_closed_solid() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let box_scene = |sectioned| {
+        let mut scene = Scene::new();
+        let camera = scene
+            .add_perspective_camera(
+                scene.root(),
+                PerspectiveCamera::default(),
+                ndc_fixture_camera_transform(),
+            )
+            .expect("camera inserts");
+        scene
+            .set_active_camera(camera)
+            .expect("camera becomes active");
+        scene
+            .mesh(geometry, material)
+            .add()
+            .expect("closed box inserts");
+        if sectioned {
+            scene
+                .set_section_box(scena::SectionBox::from_bounds(scena::Aabb::new(
+                    Vec3::new(-2.0, -2.0, -2.0),
+                    Vec3::new(2.0, 2.0, 0.0),
+                )))
+                .expect("section box cuts away the front half of the box");
+        }
+        scene
+    };
+
+    let mut scene = box_scene(true);
+
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+    renderer.set_background_color(Color::BLACK);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("sectioned closed solid prepares");
+    renderer
+        .render_active(&scene)
+        .expect("sectioned closed solid renders");
+
+    let center = pixel_at(renderer.frame_rgba8(), 64, 32, 32);
+    assert!(
+        center[0] >= 230 && center[1] >= 230 && center[2] >= 230,
+        "the CPU section plane must be filled by a visible cut face, got {center:?}"
+    );
+
+    let mut baseline_gpu_scene = box_scene(false);
+    let mut baseline_gpu_renderer =
+        Renderer::headless_gpu(64, 64).expect("baseline HeadlessGpu renderer builds");
+    baseline_gpu_renderer.set_background_color(Color::BLACK);
+    baseline_gpu_renderer
+        .prepare_with_assets(&mut baseline_gpu_scene, &assets)
+        .expect("uncut closed solid prepares on HeadlessGpu");
+    baseline_gpu_renderer
+        .render_active(&baseline_gpu_scene)
+        .expect("uncut closed solid renders on HeadlessGpu");
+    assert_pixel_white(baseline_gpu_renderer.frame_rgba8(), 64, 32, 32);
+
+    let mut gpu_scene = box_scene(true);
+    let mut gpu_renderer = Renderer::headless_gpu(64, 64).expect("HeadlessGpu renderer builds");
+    gpu_renderer.set_background_color(Color::BLACK);
+    gpu_renderer
+        .prepare_with_assets(&mut gpu_scene, &assets)
+        .expect("sectioned closed solid prepares on HeadlessGpu");
+    gpu_renderer
+        .render_active(&gpu_scene)
+        .expect("sectioned closed solid renders on HeadlessGpu");
+
+    let gpu_center = pixel_at(gpu_renderer.frame_rgba8(), 64, 32, 32);
+    let gpu_nonblack = gpu_renderer
+        .frame_rgba8()
+        .chunks_exact(4)
+        .filter(|pixel| pixel[0] > 0 || pixel[1] > 0 || pixel[2] > 0)
+        .count();
+    assert!(
+        gpu_center[0] >= 230 && gpu_center[1] >= 230 && gpu_center[2] >= 230,
+        "the GPU section plane must be filled by a visible cut face, got {gpu_center:?}; nonblack={gpu_nonblack}; stats={:?}",
+        gpu_renderer.stats(),
+    );
+}
+
+#[test]
 fn origin_shift_keeps_large_offset_renderable_visible_without_precision_warning() {
     let mut scene = Scene::new();
     scene.set_origin_shift(Vec3::new(10_000.0, 0.0, 0.0));

@@ -20,6 +20,7 @@ pub(super) enum ShaderProfile {
 }
 
 const VF: &[&str] = &["vs_main", "fs_main"];
+const DEPTH: &[&str] = &["vs_main", "fs_main", "fs_depth_only"];
 const VS: &[&str] = &["vs_main"];
 const TRIANGLE: &[&str] = &["vs_main", "fs_main", "fs_semantic"];
 
@@ -60,7 +61,7 @@ define_shader_variants! {
         WebGl2Compatible, ["binding:texture_2d", "materials", "shadows", "picking", "semantic_aov", "instancing", "skinning", "morphing"]
     ),
     DepthPrepass => (
-        "depth.prepass", super::depth::DEPTH_PREPASS_SHADER, VF,
+        "depth.prepass", super::depth::DEPTH_PREPASS_SHADER, DEPTH,
         NativeWebGpu, ["depth", "instancing"]
     ),
     LabelsFinal => (

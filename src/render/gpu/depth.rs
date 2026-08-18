@@ -134,6 +134,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     }
     return pack_depth(in.position.z);
 }
+
+@fragment
+fn fs_depth_only(in: VertexOut) {
+    if clipped_by_scene(in.world_position) {
+        discard;
+    }
+}
 "#;
 
 const DEPTH_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -300,6 +307,14 @@ fn create_pipeline(
     } else {
         "scena.m2.depth_prepass_pipeline.single_sided"
     };
+    let color_targets = depth_color_enabled
+        .then_some(Some(wgpu::ColorTargetState {
+            format: DEPTH_COLOR_FORMAT,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        }))
+        .into_iter()
+        .collect::<Vec<_>>();
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(pipeline_layout),
@@ -332,15 +347,15 @@ fn create_pipeline(
             count: sample_count,
             ..Default::default()
         },
-        fragment: depth_color_enabled.then_some(wgpu::FragmentState {
+        fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(if depth_color_enabled {
+                "fs_main"
+            } else {
+                "fs_depth_only"
+            }),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: DEPTH_COLOR_FORMAT,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
+            targets: &color_targets,
         }),
         multiview_mask: None,
         cache: None,
