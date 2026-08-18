@@ -137,9 +137,6 @@ pub(in crate::render) async fn request_browser_surface_gpu(
     canvas: web_sys::HtmlCanvasElement,
     output_color_space: OutputColorSpace,
 ) -> Result<GpuDeviceState, BuildError> {
-    if backend == Backend::WebGl2 {
-        prepare_webgl2_opaque_canvas_context(&canvas);
-    }
     if backend == Backend::WebGpu && output_color_space == OutputColorSpace::DisplayP3 {
         super::browser_color_space::prepare_browser_canvas_output_color_space(
             backend,
@@ -169,9 +166,6 @@ impl GpuDeviceState {
         size: crate::platform::SurfaceSize,
         canvas: web_sys::HtmlCanvasElement,
     ) -> Result<crate::platform::SurfaceSize, BuildError> {
-        if backend == Backend::WebGl2 {
-            prepare_webgl2_opaque_canvas_context(&canvas);
-        }
         if backend == Backend::WebGpu && self.output_color_space == OutputColorSpace::DisplayP3 {
             super::browser_color_space::prepare_browser_canvas_output_color_space(
                 backend,
@@ -371,27 +365,6 @@ fn create_browser_canvas_surface(
     .map_err(|_| BuildError::CreateSurface { backend })
 }
 
-#[cfg(target_arch = "wasm32")]
-fn prepare_webgl2_opaque_canvas_context(canvas: &web_sys::HtmlCanvasElement) {
-    let attributes = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(
-        &attributes,
-        &wasm_bindgen::JsValue::from_str("alpha"),
-        &wasm_bindgen::JsValue::FALSE,
-    );
-    let _ = js_sys::Reflect::set(
-        &attributes,
-        &wasm_bindgen::JsValue::from_str("premultipliedAlpha"),
-        &wasm_bindgen::JsValue::FALSE,
-    );
-    let _ = js_sys::Reflect::set(
-        &attributes,
-        &wasm_bindgen::JsValue::from_str("preserveDrawingBuffer"),
-        &wasm_bindgen::JsValue::TRUE,
-    );
-    let _ = canvas.get_context_with_context_options("webgl2", attributes.as_ref());
-}
-
 #[cfg(any(target_arch = "wasm32", test))]
 fn browser_instance_descriptor(backend: Backend) -> wgpu::InstanceDescriptor {
     let backends = match backend {
@@ -443,16 +416,12 @@ mod tests {
     use crate::platform::SurfaceSize;
 
     #[test]
-    fn browser_surface_config_prefers_opaque_alpha() {
+    fn browser_surface_config_prefers_opaque_compositing() {
         let source = include_str!("build.rs");
         assert!(
             source.contains("CompositeAlphaMode::Opaque")
-                && source.contains("config.alpha_mode = wgpu::CompositeAlphaMode::Opaque")
-                && source.contains("prepare_webgl2_opaque_canvas_context")
-                && source.contains("\"alpha\"")
-                && source.contains("JsValue::FALSE"),
-            "browser material proof must configure an opaque surface when supported; otherwise \
-             the WebGL canvas clears to alpha 0 and screenshots composite over page/chrome backgrounds"
+                && source.contains("config.alpha_mode = wgpu::CompositeAlphaMode::Opaque"),
+            "browser surfaces must request opaque compositing through wgpu"
         );
     }
 
