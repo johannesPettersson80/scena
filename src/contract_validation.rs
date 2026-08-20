@@ -17,7 +17,7 @@ pub struct ContractValidationReportV1 {
     pub ok: bool,
     /// Whether the payload itself was validated, not just its envelope.
     ///
-    /// Added in 1.9.1; defaults to `false` when deserializing an older
+    /// Added in 1.10.0; defaults to `false` when deserializing an older
     /// fixture, which is the fail-closed reading.
     #[serde(default)]
     pub fully_validated: bool,

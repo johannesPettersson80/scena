@@ -594,7 +594,7 @@ values. Treat `clipping_plane_count_mismatch`, `section_box_missing`, and
 `section_box_inversion_mismatch` as real composition failures.
 
 A section box and a clipping plane section **model geometry only**. Since
-1.9.1 they do not remove annotations: labels, leader lines, and dimension lines
+1.10.0 they do not remove annotations: labels, leader lines, and dimension lines
 stay visible so a cutaway still explains itself. This is the behavior a
 sectioned technical view needs — the whole point of the cutaway is usually to
 annotate what it exposes.
@@ -605,7 +605,7 @@ measurement overlays are always exempt. There is no global switch
 back to the old behavior; the opt-in is per-overlay so one dimension line can
 clip while its neighbours do not.
 
-Before 1.9.1 every annotation clipped against the section box, so a cutaway
+Before 1.10.0 every annotation clipped against the section box, so a cutaway
 silently lost its labels. If a stored render relied on that, opt the affected
 labels back in.
 

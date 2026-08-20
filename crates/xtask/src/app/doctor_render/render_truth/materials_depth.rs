@@ -63,7 +63,7 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
             "PrimitiveDrawBatch",
             "encode_draw_batches",
             "primitive.render_material_slot()",
-            "VERTEX_BYTE_LEN: usize = 17",
+            "VERTEX_BYTE_LEN: usize = 18",
             "shader_location: 2",
             "shader_location: 3",
             "shader_location: 4",

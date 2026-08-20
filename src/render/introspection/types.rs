@@ -166,7 +166,7 @@ pub struct RenderIntrospectionNodesSummaryV1 {
     pub hidden: usize,
     /// Visible nodes that can rasterize — the population `drawn` comes from.
     ///
-    /// Added in 1.9.1; defaults to `0` when deserializing an older fixture.
+    /// Added in 1.10.0; defaults to `0` when deserializing an older fixture.
     #[serde(default)]
     pub visible_drawable: usize,
     /// Length of the renderer's draw list. Excludes overlay and label draws.

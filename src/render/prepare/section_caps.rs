@@ -325,11 +325,11 @@ fn append_triangulated_loops(
         let mut group_points = loops[outer].points.clone();
         let mut group_projected = loops[outer].projected.clone();
         let mut hole_indices = Vec::new();
-        for hole in 0..loops.len() {
-            if loops[hole].parent == Some(outer) {
+        for hole in loops {
+            if hole.parent == Some(outer) {
                 hole_indices.push(group_points.len() as u32);
-                group_points.extend_from_slice(&loops[hole].points);
-                group_projected.extend_from_slice(&loops[hole].projected);
+                group_points.extend_from_slice(&hole.points);
+                group_projected.extend_from_slice(&hole.projected);
             }
         }
         let mut triangles = Vec::new();

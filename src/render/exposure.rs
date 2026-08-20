@@ -453,7 +453,7 @@ impl AutoExposureMeteringDomain {
     }
 
     #[deprecated(
-        since = "1.9.1",
+        since = "1.10.0",
         note = "use strict_camera_behavior_rejection_code; product_hero is a legacy intent alias"
     )]
     pub const fn strict_product_hero_rejection_code(self) -> Option<&'static str> {

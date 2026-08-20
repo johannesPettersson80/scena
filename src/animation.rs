@@ -185,7 +185,7 @@ impl AnimationClip {
 
 impl AnimationSourceClip {
     #[deprecated(
-        since = "1.9.1",
+        since = "1.10.0",
         note = "use AnimationSourceClip::try_new so invalid authored keyframes return AnimationError"
     )]
     pub fn new(
@@ -248,13 +248,13 @@ impl AnimationSourceClip {
     /// [`AnimationError`] — that is, on any input a host could supply at
     /// runtime.
     ///
-    /// This is a retained pre-1.9.1 compatibility wrapper. It is kept rather
+    /// This is a retained pre-1.10.0 compatibility wrapper. It is kept rather
     /// than removed because deleting it would be a breaking change, and it
     /// cannot be made non-panicking without changing its return type. Use
     /// [`Self::try_rebind`], which returns the error instead; this wrapper is
     /// scheduled for removal in the next major release.
     #[deprecated(
-        since = "1.9.1",
+        since = "1.10.0",
         note = "use AnimationSourceClip::try_rebind so invalid rebound values return AnimationError"
     )]
     pub fn rebind<F, G>(&self, key: AnimationClipKey, map_node: F, map_vec3: G) -> AnimationClip

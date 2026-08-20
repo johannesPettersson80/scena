@@ -71,7 +71,7 @@ listed work closes:
 
 | Gap | Status |
 |---|---|
-| Feature-gated integration binaries executed by some workflow | Closed in 1.9.1 by the `linux-feature-contract` lane and the `TESTS-FEATURE-GATED-WORKFLOW-BIJECTION` doctor rule, which found 29 orphaned binaries. |
+| Feature-gated integration binaries executed by some workflow | Closed in 1.10.0 by the `linux-feature-contract` lane and the `TESTS-FEATURE-GATED-WORKFLOW-BIJECTION` doctor rule, which found 29 orphaned binaries. |
 | Q07 mutation results computed rather than recorded as literals | Open. |
 | Windows Q07 metrics bound to image bytes rather than to recorded JSON | Open. |
 | Failed Q08 lanes unable to leave a passing artifact on disk | Open. |

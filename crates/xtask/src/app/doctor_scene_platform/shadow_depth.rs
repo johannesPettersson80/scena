@@ -89,11 +89,11 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
         "ARCH-DIRECTIONAL-SHADOW",
         "src/render/gpu/output.rs",
         &[
-            // Vertex layout still carries the CPU-baked shadow_visibility
-            // attribute for CPU fallback/debug visibility, but the WGSL
+            // Vertex layout carries the CPU-baked area-light visibility pair,
+            // while the WGSL
             // fragment now sources directional attenuation from a
             // hardware-comparison sample of the shadow map (Phase 1B step 2).
-            "@location(5) shadow_visibility: f32",
+            "@location(5) baked_visibility: vec2<f32>",
             "var shadow_map: texture_depth_2d",
             "var shadow_sampler: sampler_comparison",
             "fn directional_shadow_factor",

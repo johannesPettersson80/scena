@@ -148,7 +148,7 @@ fn rust_code_before_comment<'a>(line: &'a str, in_block_comment: &mut bool) -> &
 /// newly added text must remain present in the Rust owner itself.
 fn explicit_shader_companion_contains(root: &Path, rel: &str, needle: &str) -> bool {
     const OUTPUT_SHADER_MARKERS: &[&str] = &[
-        "@location(5) shadow_visibility: f32",
+        "@location(5) baked_visibility: vec2<f32>",
         "var shadow_map: texture_depth_2d",
         "var shadow_sampler: sampler_comparison",
         "fn directional_shadow_factor",

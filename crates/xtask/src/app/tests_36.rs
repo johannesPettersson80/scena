@@ -117,7 +117,7 @@ fn c01_doctor_rejects_short_circuit_parallel_band_consumption() {
     let raster = fixture_root.join("src/render/cpu_render/parallel_pass.rs");
     let source = fs::read_to_string(&raster).expect("CPU raster fixture reads");
     let mutated = source.replace(
-        ".reduce(CpuGeometryPassResult::default, |mut aggregate, result| {\n            aggregate.oit_passes = aggregate.oit_passes.max(result.oit_passes);\n            aggregate",
+        ".reduce(CpuGeometryPassResult::default, combine)",
         ".any(|result| result.oit_passes > 0) as u64\n            .then(CpuGeometryPassResult::default)\n            .unwrap_or_default()",
     );
     assert_ne!(source, mutated, "C01 mutation must alter the fixture");

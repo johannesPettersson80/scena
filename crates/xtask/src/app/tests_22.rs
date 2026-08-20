@@ -51,7 +51,7 @@ pub(crate) fn c11_onboarding_doctor_rejects_stale_dependency_and_missing_compile
         findings.iter().any(|finding| {
             finding.rule == "DOCS-C11-ONBOARDING"
                 && finding.message.contains("README.md")
-                && finding.message.contains("workspace version is 1.9.0")
+                && finding.message.contains("workspace version is 1.10.0")
         }),
         "doctor must reject a stale numeric public dependency: {findings:?}",
     );

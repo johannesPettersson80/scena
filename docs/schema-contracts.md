@@ -1032,7 +1032,7 @@ non-opaque prepared draw materials.
 
 `nodes_summary.visible` counts **every** visible node, including cameras,
 lights, and empties, so it is never comparable to `nodes_summary.drawn`.
-`nodes_summary.visible_drawable` (added in 1.9.1, `#[serde(default)]`) counts
+`nodes_summary.visible_drawable` (added in 1.10.0, `#[serde(default)]`) counts
 visible nodes that can rasterize — the population `drawn` is drawn from. Compare
 `drawn` against `visible_drawable`, never against `visible`. Failure reasons include stable
 `affected_handles` whenever the renderer can identify the node, and fixes that

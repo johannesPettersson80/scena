@@ -478,7 +478,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         "ASSETS-M8",
         "src/render/gpu/vertices.rs",
         &[
-            "VERTEX_BYTE_LEN: usize = 17",
+            "VERTEX_BYTE_LEN: usize = 18",
             "primitive.vertex_attributes()",
             "attributes.normal.x",
             "attributes.tex_coord0[0]",

@@ -182,7 +182,7 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         "src/render/environment_cache.rs",
         &[
             "EnvironmentLightingCache",
-            "prepare::collect_environment_lighting(environment_desc, self.target.backend)",
+            "PreparedEnvironmentLighting::from_environment_with_profile(",
             "EnvironmentLightingProfile::for_backend(self.target.backend)",
         ],
     );

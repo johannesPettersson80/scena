@@ -4,10 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
-### 1.9.1 (in progress)
+## [1.10.0] - 2026-08-20
 
-_Remediation of the full-repository review of 1.9.0. See
-`docs/checklists/full-repo-review-v1.9.1-remediation.md`._
+_Includes the completed 1.9.1 remediation batch and the subject-driven
+photographic-rendering work. See `docs/checklists/release-v1.10.0.md`._
 
 - Converge attached-surface auto exposure. The surface feedback loop applied
   each meter sample as an absolute correction, so the loop derivative was `-1`
