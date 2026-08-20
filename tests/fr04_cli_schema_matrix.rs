@@ -99,7 +99,7 @@ fn fr04_command_contracts_match_observed_top_level_output_families() {
     );
     assert_contract(
         &help,
-        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>]",
         &["scena.photo_render_result.v1", "scena.photo_report.v1"],
         &["scena.photo_render_result.v1", "scena.cli_error.v1"],
     );
@@ -745,21 +745,21 @@ const EVIDENCE: &[Evidence] = &[
         "photo_plan_camera_behavior_emits_render_free_public_plan_for_imported_asset"
     ),
     evidence!(
-        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>]",
         "success",
         "scena.photo_render_result.v1",
         "tests/photo_render_cli.rs",
         "photo_render_camera_behavior_is_easy_path_for_imported_asset"
     ),
     evidence!(
-        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>]",
         "success",
         "scena.photo_report.v1",
         "tests/photo_render_cli.rs",
         "photo_render_camera_behavior_is_easy_path_for_imported_asset"
     ),
     evidence!(
-        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--max-imports <n>]",
+        "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>]",
         "error",
         "scena.photo_render_result.v1",
         "tests/photo_render_cli.rs",

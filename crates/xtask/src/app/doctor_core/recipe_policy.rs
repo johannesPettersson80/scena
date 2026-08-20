@@ -429,7 +429,7 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "\"preset\": \"key\"",
             "\"preset\": \"fill\"",
             "\"preset\": \"rim\"",
-            "studio_small_03_1k.hdr",
+            "studio_small_08_2k.hdr",
             "\"screen_space_reflections\"",
             "\"width\": 640",
             "\"height\": 480",

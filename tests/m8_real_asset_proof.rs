@@ -34,14 +34,14 @@ const WATERBOTTLE_CPU_SUPERSAMPLE: u32 = 1;
 const WATERBOTTLE_CPU_RENDER_SIZE: u32 = WATERBOTTLE_ARTIFACT_SIZE * WATERBOTTLE_CPU_SUPERSAMPLE;
 const WATERBOTTLE_GPU_SUPERSAMPLE: u32 = 4;
 const WATERBOTTLE_GPU_RENDER_SIZE: u32 = WATERBOTTLE_ARTIFACT_SIZE * WATERBOTTLE_GPU_SUPERSAMPLE;
-/// Polyhaven `studio_small_03_1k.hdr` — CC0, real-world studio HDR with
+/// Polyhaven `studio_small_08_2k.hdr` — CC0, real-world studio HDR with
 /// smooth radiance falloff. Bundled at
-/// `tests/assets/environment/polyhaven/studio_small_03_1k.hdr` and pinned
+/// `tests/assets/environment/polyhaven/studio_small_08_2k.hdr` and pinned
 /// by SHA-256 below. A real HDR's smooth gradients produce clean specular
 /// reflections on metallic surfaces; the synthetic 3-point HDR's hard
 /// pixel boundaries produced visible speckle/grain in earlier renders.
-const STUDIO_HDR_PATH: &str = "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
-const STUDIO_HDR_SHA256: &str = "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817";
+const STUDIO_HDR_PATH: &str = "tests/assets/environment/polyhaven/studio_small_08_2k.hdr";
+const STUDIO_HDR_SHA256: &str = "6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746";
 /// Preferred public demo HDRI: Poly Haven `white_studio_03`, CC0, selected
 /// because it is a neutral white studio environment rather than the cooler
 /// control HDR above. This is the root-cause guard for the demo's blue-cast

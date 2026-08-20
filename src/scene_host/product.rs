@@ -1094,8 +1094,9 @@ mod photographic_surroundings_tests {
         );
         assert_eq!(
             report.generated_nodes.len(),
-            2,
-            "the generated cyclorama owns its floor in one mesh, plus one contact-shadow node"
+            4,
+            "the generated floor, curved cyclorama receiver, rear wall cover, and contact shadow \
+             are each transient render-only nodes"
         );
         assert_eq!(report.contact_shadow_nodes.len(), 1);
         assert!(report.grid_nodes.is_empty());

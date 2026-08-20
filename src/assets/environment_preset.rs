@@ -32,19 +32,17 @@ const NEUTRAL_STUDIO_FILES: &[&str] = &[
 const NEUTRAL_STUDIO_SOURCE_BYTES: &[u8] =
     include_bytes!("../../tests/assets/environment/neutral-studio.fixture.txt");
 
-const STUDIO_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
+const STUDIO_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_08_2k.hdr";
 const STUDIO_RUNTIME_PATH: &str = "tests/assets/environment/generated/studio_small_03_128x64.hdr";
 const STUDIO_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_03_128x64.hdr";
-const STUDIO_FINAL_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_08_2k.hdr";
 const STUDIO_FINAL_PROVENANCE_PATH: &str =
     "tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json";
 const STUDIO_FINAL_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_08_2048x1024.hdr";
 const STUDIO_SOURCE_SHA256: &str =
-    "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817";
+    "6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746";
 const STUDIO_FILES: &[&str] = &[
     STUDIO_SOURCE_PATH,
     STUDIO_RUNTIME_PATH,
-    STUDIO_FINAL_SOURCE_PATH,
     STUDIO_FINAL_PROVENANCE_PATH,
 ];
 pub(crate) const BUNDLED_STUDIO_URI: &str = STUDIO_RUNTIME_URI;
@@ -134,7 +132,7 @@ impl EnvironmentPreset {
                 runtime_uri: STUDIO_RUNTIME_URI,
                 source_size_bytes: STUDIO_RUNTIME_BYTES.len(),
                 source_sha256: STUDIO_SOURCE_SHA256,
-                source_url: "https://polyhaven.com/a/studio_small_03",
+                source_url: "https://polyhaven.com/a/studio_small_08",
                 license: "CC0-1.0",
                 contract: "real Poly Haven studio HDR with smooth radiance for product-material environment reflections",
                 files: STUDIO_FILES,

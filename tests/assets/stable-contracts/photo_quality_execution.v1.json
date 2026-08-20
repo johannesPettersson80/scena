@@ -1,0 +1,23 @@
+{
+  "schema": "scena.photo_quality_execution.v1",
+  "requested": "preview",
+  "effective": "preview",
+  "backend": "headless",
+  "evidence_class": "cpu_preview",
+  "capture": { "width": 256, "height": 168, "pixel_count": 43008 },
+  "sampling": {
+    "supersample_factor": 1,
+    "reconstruction": "box",
+    "anti_aliasing": "msaa4"
+  },
+  "environment": { "source_dimensions": [128, 64], "cubemap_resolution": 64 },
+  "reflections": { "local_probe_count": 0 },
+  "shadows": { "mode": "baked" },
+  "color": {
+    "linear_scene_format": "rgba16_float",
+    "tonemapper": "aces",
+    "output_encoding": "srgb8_png"
+  },
+  "geometry": { "edge_rounding": [] },
+  "materials": { "resolution_selection": null }
+}

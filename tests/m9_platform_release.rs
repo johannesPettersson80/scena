@@ -4498,7 +4498,7 @@ fn many_unique_transform_scene(node_count: usize) -> (Scene, scena::CameraKey) {
 
 fn benchmark_profiled_environment_bake_workload(sample_count: usize) -> serde_json::Value {
     assert!(sample_count > 0);
-    let source_path = root().join("tests/assets/environment/polyhaven/studio_small_03_1k.hdr");
+    let source_path = root().join("tests/assets/environment/polyhaven/studio_small_08_2k.hdr");
     let source_bytes = fs::read(&source_path).expect("PF00 HDR fixture reads");
     let cold = EnvironmentDesc::from_equirectangular_hdr_bytes(
         source_path.to_string_lossy().into_owned(),

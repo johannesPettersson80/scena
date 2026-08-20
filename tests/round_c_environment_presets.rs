@@ -15,7 +15,7 @@ fn environment_preset_catalog_exposes_metadata_and_package_budget() {
     assert_eq!(studio.name(), "Studio");
     assert_eq!(
         studio.source_path(),
-        "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+        "tests/assets/environment/polyhaven/studio_small_08_2k.hdr"
     );
     assert_eq!(
         studio.runtime_uri(),
@@ -23,13 +23,13 @@ fn environment_preset_catalog_exposes_metadata_and_package_budget() {
     );
     assert_eq!(
         studio.source_sha256(),
-        "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817"
+        "6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746"
     );
     assert_eq!(studio.license(), "CC0-1.0");
     assert!(
         studio
             .source_url()
-            .contains("polyhaven.com/a/studio_small_03")
+            .contains("polyhaven.com/a/studio_small_08")
     );
     assert!(studio.contract().contains("studio HDR"));
     assert_eq!(
@@ -37,7 +37,6 @@ fn environment_preset_catalog_exposes_metadata_and_package_budget() {
         &[
             studio.source_path(),
             "tests/assets/environment/generated/studio_small_03_128x64.hdr",
-            "tests/assets/environment/polyhaven/studio_small_08_2k.hdr",
             "tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json",
         ]
     );

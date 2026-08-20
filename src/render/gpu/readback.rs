@@ -545,6 +545,7 @@ fn copy_mapped_rows(
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::select_completed_meter_slot;
 

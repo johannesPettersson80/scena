@@ -159,7 +159,7 @@ pub(crate) fn check_c02_portable_agent_asset_contracts(root: &Path, findings: &m
         "tests/assets/environment/PRESET-LICENSES.md",
         &[
             "CC0-1.0",
-            "polyhaven.com/a/studio_small_03",
+            "polyhaven.com/a/studio_small_08",
             "30933d55",
             "studio_small_03_128x64.hdr",
             "0d1acad0",

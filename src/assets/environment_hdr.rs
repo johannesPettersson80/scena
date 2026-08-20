@@ -46,7 +46,7 @@ pub(super) fn radiance_hdr_dimensions(source_bytes: &[u8]) -> Option<(u32, u32)>
 /// Decoded equirectangular HDR pixel grid. Stored as row-major linear RGB
 /// floats so the cubemap projection pass can sample by longitude and latitude.
 /// Built by the `radiant` crate, which handles both uncompressed RGBE and the
-/// RLE-compressed scanline format used by real-world HDRI sources.
+/// RLE-compressed scanline format used by the bundled HDRI sources.
 #[derive(Debug, Clone)]
 pub struct DecodedEquirectangular {
     pub width: u32,
@@ -90,4 +90,4 @@ pub(super) fn decode_radiance_hdr(
 // `find_bytes`, `parse_radiance_resolution`, and `decode_rgbe` previously lived
 // in the environment module as a hand-rolled Radiance HDR decoder. They were
 // removed when scena adopted `radiant`, which properly handles RLE-compressed
-// scanlines and the header variants real exporters emit.
+// scanlines and the header variants the bundled sources emit.

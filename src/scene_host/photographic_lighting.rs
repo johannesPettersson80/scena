@@ -196,7 +196,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 .and_then(|handle| self.assets.environment(handle))
                 .is_some_and(|environment| {
                     !final_quality
-                        || (environment.source_dimensions() == Some((1024, 512))
+                        || (environment
+                            .source_dimensions()
+                            .is_some_and(|(width, height)| width >= 1024 && height >= 512)
                             && environment.cubemap_resolution() >= 512)
                 });
             if !active_meets_quality {

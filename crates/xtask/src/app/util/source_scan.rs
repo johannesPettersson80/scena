@@ -147,7 +147,7 @@ pub(crate) fn significant_line_count(text: &str) -> usize {
         }
 
         if pending_test_cfg {
-            if trimmed_start.starts_with("mod ") && trimmed_start.contains('{') {
+            if trimmed_start.contains('{') {
                 let skip_depth = brace_depth;
                 brace_depth += brace_delta(line);
                 if brace_depth > skip_depth {

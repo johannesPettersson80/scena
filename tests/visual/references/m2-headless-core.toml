@@ -31,15 +31,15 @@ top_left_mean_rgba = [1, 1, 1, 255]
 top_right_mean_rgba = [0, 0, 0, 255]
 bottom_left_mean_rgba = [1, 1, 1, 255]
 bottom_right_mean_rgba = [0, 0, 0, 255]
-quadrant_nonblack = [35, 25, 28, 20]
+quadrant_nonblack = [35, 0, 28, 0]
 
 [[reference]]
 name = "ibl-environment"
 max_abs_diff = 3
 top_left_mean_rgba = [240, 240, 240, 255]
-top_right_mean_rgba = [226, 239, 251, 255]
+top_right_mean_rgba = [203, 206, 215, 255]
 bottom_left_mean_rgba = [210, 210, 210, 255]
-bottom_right_mean_rgba = [198, 209, 220, 255]
+bottom_right_mean_rgba = [179, 181, 189, 255]
 quadrant_nonblack = [128, 128, 112, 112]
 
 [[reference]]

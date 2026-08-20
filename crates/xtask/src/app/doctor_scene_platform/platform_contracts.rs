@@ -387,7 +387,7 @@ fn check_phase1_appearance_dirty_contracts(root: &Path, findings: &mut Vec<Findi
         "ARCH-APPEARANCE-DIRTY",
         "src/render/gpu/draw_uniform.rs",
         &[
-            "DRAW_UNIFORM_ENTRY_SIZE: u64 = 160",
+            "DRAW_UNIFORM_ENTRY_SIZE: u64 = 208",
             "value.tint",
             "value.semantic_id",
         ],

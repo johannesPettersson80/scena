@@ -2469,7 +2469,7 @@ fn scene_recipe_build_policy_rejects_authored_texture_and_environment_bypasses()
         "scene": {
             "environment": {
                 "kind": "uri",
-                "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+                "uri": "tests/assets/environment/polyhaven/studio_small_08_2k.hdr"
             }
         }
     }))

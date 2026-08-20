@@ -6,6 +6,11 @@ pub(super) struct DiagnosticEarlyReturn {
 
 pub(super) const DIAGNOSTIC_EARLY_RETURNS: &[DiagnosticEarlyReturn] = &[
     DiagnosticEarlyReturn {
+        path: "tests/reflection_probe_gpu.rs",
+        owner: "renderer-quality/reflection-probes",
+        rationale: "optional native GPU smoke returns only when no adapter is available; strict browser and release lanes independently exercise reflection-probe rendering",
+    },
+    DiagnosticEarlyReturn {
         path: "tests/c09_gpu_resource_lifecycle.rs",
         owner: "renderer-quality/Q04",
         rationale: "clearly named optional GPU smoke tests write typed skip artifacts; the separate SCENA_REQUIRE_GPU_RESOURCE_LIFECYCLE hardware test and release consumer fail closed",

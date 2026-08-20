@@ -171,7 +171,7 @@ fn full_validation_success_uses_the_same_plan_as_recipe_build() {
             "scene": {
                 "environment": {
                     "kind": "uri",
-                    "uri": repository.join("tests/assets/environment/polyhaven/studio_small_03_1k.hdr")
+                    "uri": repository.join("tests/assets/environment/polyhaven/studio_small_08_2k.hdr")
                 }
             }
         }))

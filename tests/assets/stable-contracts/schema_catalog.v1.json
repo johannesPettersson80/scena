@@ -251,6 +251,13 @@
       "fixture_path": "tests/assets/stable-contracts/photo_render_result.v1.json"
     },
     {
+      "schema": "scena.photo_quality_execution.v1",
+      "owner_module": "bin/scena/photo",
+      "summary": "Requested and effective photo-quality execution profile, backend, capture, and diagnostic settings.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/photo_quality_execution.v1.json"
+    },
+    {
       "schema": "scena.photo_plan.v1",
       "owner_module": "scene_host::photo",
       "summary": "Camera-behavior photo planning envelope with resolved subject, candidates, staging choices, scoring, and selected candidate.",

@@ -433,7 +433,7 @@
     },
     "environment": {
       "kind": "uri",
-      "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+      "uri": "tests/assets/environment/polyhaven/studio_small_08_2k.hdr"
     },
     "grid": {
       "padding": 0.05,

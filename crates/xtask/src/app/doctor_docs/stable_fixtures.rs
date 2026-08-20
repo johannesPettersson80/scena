@@ -200,6 +200,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
         "scena.photo_report.v1",
     ),
     (
+        "tests/assets/stable-contracts/photo_quality_execution.v1.json",
+        "scena.photo_quality_execution.v1",
+    ),
+    (
         "tests/assets/stable-contracts/placement_result.v1.json",
         "scena.placement_result.v1",
     ),

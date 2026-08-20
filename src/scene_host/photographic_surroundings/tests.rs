@@ -695,11 +695,13 @@ fn final_cyclorama_keeps_the_sweep_broad_and_the_wall_edge_out_of_frame() {
 
 #[test]
 fn final_cyclorama_receiver_is_dense_enough_for_a_smooth_visibility_field() {
-    assert!(
-        CYC_FLOOR_SUBDIVISIONS >= 192,
-        "a {CYC_FLOOR_SUBDIVISIONS}x{CYC_FLOOR_SUBDIVISIONS} receiver leaves prepared area-light \
-         visibility as visible triangular patches under the valve plate at 4K"
-    );
+    const {
+        assert!(
+            CYC_FLOOR_SUBDIVISIONS >= 192,
+            "a 192x192-or-denser receiver leaves prepared area-light visibility as visible \
+             triangular patches under the valve plate at 4K"
+        );
+    }
     let geometry = cyclorama_geometry(Vec3::ZERO, Vec3::new(0.0, 1.4, 6.0), 0.0, 2.0, true);
     assert!(
         geometry.vertices().len() >= 50_000,

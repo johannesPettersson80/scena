@@ -205,6 +205,12 @@ pub(crate) fn significant_line_count_counts_product_code_after_test_modules() {
 }
 
 #[test]
+pub(crate) fn significant_line_count_excludes_individual_cfg_test_functions() {
+    let source = "#[cfg(test)]\nfn helper() {\n    assert!(true);\n}\npub fn production() {}\n";
+    assert_eq!(significant_line_count(source), 1);
+}
+
+#[test]
 pub(crate) fn external_cfg_test_module_is_excluded_from_production_size_gate() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/external-cfg-test-module");

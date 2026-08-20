@@ -1598,7 +1598,7 @@ fn corrected_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32
         // while most of a dark body remains crushed. Give that body one small
         // exposure step, but cap it below half a stop so the next measured
         // frame retains authority over polished highlights.
-        correction = correction.max(0.25).min(0.50);
+        correction = correction.clamp(0.25, 0.50);
     }
     if correction.abs() <= 0.03 && metrics.low_clip_fraction <= CAMERA_BEHAVIOR_MAX_LOW_CLIP {
         return None;
@@ -1745,8 +1745,8 @@ fn dark_product_is_readable(metrics: SubjectMetrics) -> bool {
         .filter(|_| metrics.dark_material_coverage >= 0.05)
         .unwrap_or(metrics.mean_luminance_srgb8);
     metrics.mean_luminance_srgb8 <= CAMERA_BEHAVIOR_MAX_MEAN_LUMA
-        && measured_dark >= CAMERA_BEHAVIOR_DARK_PRODUCT_MIN_MEAN_LUMA
-        && measured_dark <= CAMERA_BEHAVIOR_DARK_PRODUCT_MAX_MEAN_LUMA
+        && (CAMERA_BEHAVIOR_DARK_PRODUCT_MIN_MEAN_LUMA..=CAMERA_BEHAVIOR_DARK_PRODUCT_MAX_MEAN_LUMA)
+            .contains(&measured_dark)
         && metrics.low_clip_fraction <= CAMERA_BEHAVIOR_MAX_LOW_CLIP
         && metrics.high_clip_fraction <= CAMERA_BEHAVIOR_MAX_HIGH_CLIP
         && metrics.luminance_stddev_srgb8 >= CAMERA_BEHAVIOR_MIN_LUMA_STDDEV
@@ -3242,6 +3242,10 @@ fn photo_target_kind_and_id(target: &scena::SceneRecipeTargetV1) -> (String, Str
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the public crate boundary keeps the camera behavior inputs explicit; the parameters are distinct user-visible recipe controls and reports"
+)]
 pub(crate) fn apply_camera_behavior_setup_with_plan(
     host: &mut scena::SceneHostCore,
     subject: &SubjectSelection,
@@ -3567,6 +3571,10 @@ const fn synthetic_contact_shadow_enabled(quality: scena::SceneRecipePhotoQualit
     !quality.is_final()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the shaded-candidate boundary keeps the required host, subject, plan, reports, and rendering controls explicit"
+)]
 fn select_camera_behavior_shaded_candidate(
     host: &mut scena::SceneHostCore,
     subject: &SubjectSelection,
@@ -3603,6 +3611,10 @@ fn select_camera_behavior_shaded_candidate(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the renderer receives separate typed reports and controls so candidate scoring cannot silently infer user intent"
+)]
 fn render_camera_behavior_shaded_candidates(
     host: &mut scena::SceneHostCore,
     subject: &SubjectSelection,
@@ -4938,14 +4950,15 @@ mod tests {
         );
 
         let mut readable_dark_material = sane_camera_subject();
-        readable_dark_material.mean_luminance_srgb8 = 35.0;
+        readable_dark_material.dark_material_mean_luminance_srgb8 = Some(35.0);
+        readable_dark_material.dark_material_coverage = 0.65;
         readable_dark_material.low_clip_fraction = 0.08;
         readable_dark_material.high_clip_fraction = 0.0;
         readable_dark_material.luminance_stddev_srgb8 = 34.0;
         readable_dark_material.luminance_range_srgb8 = 180.0;
         assert!(
             camera_behavior_failure_codes(readable_dark_material).is_empty(),
-            "a structured dark material in the 20-45 sRGB range must remain intentionally dark"
+            "a structured dark material within a correctly exposed subject must remain intentionally dark"
         );
         assert!(
             corrected_exposure_ev(0.0, readable_dark_material).is_none(),
@@ -5153,7 +5166,11 @@ mod tests {
             mug.ground,
             scena::scene_host::PhotographicGroundV1::Reflective
         );
-        assert_eq!(hero.ground, scena::scene_host::PhotographicGroundV1::Matte);
+        assert_eq!(
+            hero.ground,
+            scena::scene_host::PhotographicGroundV1::Reflective,
+            "the hero recipe explicitly opts into the planar-reflection floor"
+        );
 
         let aov = scena::SceneHostSemanticAovCaptureV1 {
             schema: scena::SCENE_HOST_SEMANTIC_AOV_SCHEMA_V1.to_owned(),
@@ -5219,15 +5236,41 @@ mod tests {
         let repository_root = std::path::Path::new(".")
             .canonicalize()
             .expect("repository root canonicalizes");
-        let material_root = repository_root.join("target/photo-materials");
-        let recipe_text = std::fs::read_to_string(recipe_path)
-            .expect("speaker recipe reads")
-            .replace(
-                "../../../../../target/photo-materials",
-                material_root
-                    .to_str()
-                    .expect("material fixture path is UTF-8"),
+        let mut recipe: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(recipe_path).expect("speaker recipe reads"),
+        )
+        .expect("speaker recipe is valid JSON");
+        recipe["imports"][0]
+            .as_object_mut()
+            .expect("speaker import is an object")
+            .remove("material_bindings");
+        for material in recipe["materials"]
+            .as_array_mut()
+            .expect("speaker materials are an array")
+        {
+            let material = material
+                .as_object_mut()
+                .expect("speaker material is an object");
+            if material.remove("material_pack").is_some() {
+                material.insert(
+                    "preset".to_owned(),
+                    serde_json::Value::String("chrome".to_owned()),
+                );
+                material.remove("imperfection");
+            }
+        }
+        for node in recipe["nodes"]
+            .as_array_mut()
+            .expect("speaker nodes are an array")
+        {
+            assert!(
+                node.as_object()
+                    .expect("speaker node is an object")
+                    .contains_key("material"),
+                "the semantic-AOV probe must retain every authored renderable"
             );
+        }
+        let recipe_text = serde_json::to_string(&recipe).expect("speaker fixture serializes");
         let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
             recipe_path,
             &recipe_text,
@@ -5530,9 +5573,12 @@ mod tests {
         highlight_limited_dark_product.low_clip_fraction = 0.08;
         highlight_limited_dark_product.high_clip_fraction = 0.003;
         assert!(
-            camera_behavior_failure_codes(highlight_limited_dark_product).is_empty(),
-            "a readable dark product must not be exposed to a fixed mid-gray mean: {:?}",
-            camera_behavior_failure_codes(highlight_limited_dark_product)
+            dark_product_is_readable(highlight_limited_dark_product),
+            "the dark-material diagnostic must recognize the structured body"
+        );
+        assert_failure(
+            highlight_limited_dark_product,
+            "subject_luminance_below_min",
         );
 
         let mut pulled_back_empty_slab = sane_camera_subject();

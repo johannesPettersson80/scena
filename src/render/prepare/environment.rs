@@ -629,8 +629,8 @@ mod tests {
     #[test]
     fn final_studio_low_roughness_prefilter_keeps_cube_edges_continuous() {
         let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
-            "memory://studio-small-03-1k.hdr",
-            include_bytes!("../../../tests/assets/environment/polyhaven/studio_small_03_1k.hdr"),
+            "memory://studio-small-08-2k.hdr",
+            include_bytes!("../../../tests/assets/environment/polyhaven/studio_small_08_2k.hdr"),
         )
         .expect("bundled final studio HDR decodes")
         .with_cubemap_resolution(512);
