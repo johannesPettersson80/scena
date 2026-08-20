@@ -2482,6 +2482,7 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
 }
 
 #[test]
+#[ignore = "requires the serial M9 allocation measurement lane"]
 fn m9_parallel_cpu_render_has_low_steady_state_allocations() {
     let (mut scene, camera, assets) = feature_matrix_scene(FeatureMatrixFeature::AaOff);
     let mut renderer = Renderer::headless(1024, 768).expect("renderer builds");
@@ -2505,6 +2506,7 @@ fn m9_parallel_cpu_render_has_low_steady_state_allocations() {
 }
 
 #[test]
+#[ignore = "requires the serial M9 allocation measurement lane"]
 fn m9_parallel_cpu_ssr_render_reuses_steady_state_row_band_scratch() {
     let (mut scene, camera, assets) = feature_matrix_scene(FeatureMatrixFeature::Ssr);
     let mut renderer = Renderer::headless(1024, 768).expect("renderer builds");
@@ -2529,6 +2531,7 @@ fn m9_parallel_cpu_ssr_render_reuses_steady_state_row_band_scratch() {
 }
 
 #[test]
+#[ignore = "requires the serial M9 allocation measurement lane"]
 fn m9_cpu_supersample_render_reuses_steady_state_scratch_buffers() {
     let (mut scene, camera, assets) = feature_matrix_scene(FeatureMatrixFeature::Msaa4);
     let mut renderer = Renderer::headless(1024, 768).expect("renderer builds");

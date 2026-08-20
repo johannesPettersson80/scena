@@ -59,6 +59,7 @@ jobs:
           bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release
           SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release -- --ignored --test-threads=1
           bash scripts/release_lane_command.sh headless-cpu cargo test --test q01_waterbottle_cpu_reference q01_default_cpu_waterbottle_matches_reference_and_rejects_known_bad_renders -- --exact
           bash scripts/release_lane_command.sh headless-cpu cargo test --test q01_waterbottle_cpu_reference q11_waterbottle_cpu_is_byte_deterministic_before_reference_comparison -- --exact
           bash scripts/release_lane_command.sh headless-cpu cargo test --test examples_visual_proof q02_live_cpu_round_e_showcase_emits_shared_evaluator_frame -- --exact
