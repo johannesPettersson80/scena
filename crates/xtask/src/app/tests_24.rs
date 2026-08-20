@@ -392,7 +392,7 @@ test result: ok. 1 passed; 0 failed\n",
         "live_png_path": "q01-waterbottle-cpu/live.png",
         "live_png_sha256": live_sha,
         "reference_path": "tests/assets/gltf/khronos/WaterBottle/reference_cpu_256.png",
-        "reference_sha256": "922cc35e0c6420d2b3f8e533891291a9d4f9396697ae366f0b93de3c15973da4",
+        "reference_sha256": "8bbaa66e23a3dea4a9efcb53f9157226b666cd77bd020dea30cd89277d3037b5",
         "determinism": {
             "comparison_order": "independent-render-before-committed-reference",
             "repeat_count": 2,

@@ -752,7 +752,7 @@ function validateQ11ReferenceStability(report, expectedCommit) {
   );
   invariant(
     report.reference
-      && report.reference.sha256 === "922cc35e0c6420d2b3f8e533891291a9d4f9396697ae366f0b93de3c15973da4"
+      && report.reference.sha256 === "8bbaa66e23a3dea4a9efcb53f9157226b666cd77bd020dea30cd89277d3037b5"
       && report.reference.rgb_chebyshev_tolerance === 4
       && report.reference.min_within_tolerance_fraction === 0.995
       && report.reference.max_rgb_rmse === 2,

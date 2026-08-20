@@ -15,7 +15,7 @@ use scena::{
 const SIZE: u32 = 256;
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
 const REFERENCE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/reference_cpu_256.png";
-const REFERENCE_SHA256: &str = "922cc35e0c6420d2b3f8e533891291a9d4f9396697ae366f0b93de3c15973da4";
+const REFERENCE_SHA256: &str = "8bbaa66e23a3dea4a9efcb53f9157226b666cd77bd020dea30cd89277d3037b5";
 const ARTIFACT_DIR: &str = "target/gate-artifacts/q01-waterbottle-cpu";
 const LIVE_PNG: &str = "target/gate-artifacts/q01-waterbottle-cpu/live.png";
 const FLAT_CHROME_PNG: &str =

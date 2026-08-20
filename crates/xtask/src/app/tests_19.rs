@@ -413,7 +413,7 @@ pub(crate) fn write_q11_reference_stability_fixture(
             {"passed":true,"within_tolerance_fraction":1.0,"rgb_rmse":0.0,"alpha_mismatch_pixels":0}
         ],
         "reference": {
-            "sha256":"922cc35e0c6420d2b3f8e533891291a9d4f9396697ae366f0b93de3c15973da4"
+            "sha256":"8bbaa66e23a3dea4a9efcb53f9157226b666cd77bd020dea30cd89277d3037b5"
         },
         "source_asset": {
             "sha256":"0596f4e61dc781439d254fdfb5e3462daf1762c18715e3e3ac13001aa8f3f547"

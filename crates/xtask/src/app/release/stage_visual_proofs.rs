@@ -164,7 +164,7 @@ fn validate_waterbottle_cpu_result(
         );
     }
     if result.get("reference_sha256").and_then(Value::as_str)
-        != Some("922cc35e0c6420d2b3f8e533891291a9d4f9396697ae366f0b93de3c15973da4")
+        != Some("8bbaa66e23a3dea4a9efcb53f9157226b666cd77bd020dea30cd89277d3037b5")
     {
         return Err(
             "WaterBottle CPU result does not bind the approved committed reference".to_string(),
