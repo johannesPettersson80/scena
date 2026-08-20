@@ -12,6 +12,14 @@ const artifactDir = path.join(root, "target", "gate-artifacts");
 const optimized = path.join(artifactDir, "scena_bg.opt.wasm");
 const compressed = `${optimized}.br`;
 const limitBytes = 2 * 1024 * 1024;
+const finalStudioHdr = path.join(
+  root,
+  "tests",
+  "assets",
+  "environment",
+  "polyhaven",
+  "studio_small_08_2k.hdr",
+);
 
 function bin(name) {
   const suffix = process.platform === "win32" ? ".cmd" : "";
@@ -29,6 +37,17 @@ if (!fs.existsSync(input)) {
 }
 if (!fs.existsSync(jsGlue)) {
   throw new Error(`missing WASM JS glue: ${jsGlue}`);
+}
+if (!fs.existsSync(finalStudioHdr)) {
+  throw new Error(`missing checked final studio HDR: ${finalStudioHdr}`);
+}
+
+const wasmSource = fs.readFileSync(input);
+const finalStudioHdrBytes = fs.readFileSync(finalStudioHdr);
+if (wasmSource.includes(finalStudioHdrBytes)) {
+  throw new Error(
+    "browser-probe WASM must not embed the 2K final-studio HDR; fetch final-quality HDR assets explicitly instead",
+  );
 }
 
 const jsGlueSource = fs.readFileSync(jsGlue, "utf8");

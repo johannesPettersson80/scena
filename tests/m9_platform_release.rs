@@ -2505,6 +2505,30 @@ fn m9_parallel_cpu_render_has_low_steady_state_allocations() {
 }
 
 #[test]
+fn m9_parallel_cpu_ssr_render_reuses_steady_state_row_band_scratch() {
+    let (mut scene, camera, assets) = feature_matrix_scene(FeatureMatrixFeature::Ssr);
+    let mut renderer = Renderer::headless(1024, 768).expect("renderer builds");
+    FeatureMatrixFeature::Ssr.configure_renderer(&mut renderer);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("warm render initializes SSR row-band scratch");
+
+    start_allocation_counting();
+    let outcome = renderer.render(&scene, camera);
+    stop_allocation_counting();
+    let allocations = allocation_count();
+
+    outcome.expect("steady SSR render succeeds");
+    assert!(
+        allocations <= 16,
+        "warm parallel CPU SSR render should reuse row-band scratch; observed {allocations} allocations"
+    );
+}
+
+#[test]
 fn m9_cpu_supersample_render_reuses_steady_state_scratch_buffers() {
     let (mut scene, camera, assets) = feature_matrix_scene(FeatureMatrixFeature::Msaa4);
     let mut renderer = Renderer::headless(1024, 768).expect("renderer builds");

@@ -5,8 +5,7 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use image::{GrayImage, Rgba, RgbaImage};
-use sha2::{Digest, Sha256};
+use image::{Rgba, RgbaImage};
 
 use super::{
     PHOTOGRAPHIC_MATERIAL_ARCHIVE_MAX_BYTES, PHOTOGRAPHIC_MATERIAL_PACK_SCHEMA_V1,
@@ -20,6 +19,12 @@ const MAX_ARCHIVE_ENTRIES: usize = 256;
 const MAX_MAP_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_TOTAL_MAP_BYTES: u64 = 256 * 1024 * 1024;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+mod codec;
+use codec::{
+    decode_luma, decode_rgba, image_write_error, io_error, output_map, require_dimensions,
+    sha256_hex,
+};
 
 #[derive(Debug)]
 pub enum PhotographicMaterialPackError {
@@ -474,87 +479,4 @@ fn required_map(
         .ok_or(PhotographicMaterialPackError::MissingMap {
             role: role.as_str(),
         })
-}
-
-fn decode_rgba(
-    bytes: &[u8],
-    role: &'static str,
-) -> Result<RgbaImage, PhotographicMaterialPackError> {
-    image::load_from_memory(bytes)
-        .map(|image| image.to_rgba8())
-        .map_err(|error| PhotographicMaterialPackError::ImageDecode {
-            role,
-            reason: error.to_string(),
-        })
-}
-
-fn decode_luma(
-    bytes: &[u8],
-    role: &'static str,
-) -> Result<GrayImage, PhotographicMaterialPackError> {
-    image::load_from_memory(bytes)
-        .map(|image| image.to_luma8())
-        .map_err(|error| PhotographicMaterialPackError::ImageDecode {
-            role,
-            reason: error.to_string(),
-        })
-}
-
-fn require_dimensions(
-    role: &'static str,
-    expected: (u32, u32),
-    actual: (u32, u32),
-) -> Result<(), PhotographicMaterialPackError> {
-    if expected == actual {
-        Ok(())
-    } else {
-        Err(PhotographicMaterialPackError::DimensionMismatch {
-            role,
-            expected: [expected.0, expected.1],
-            actual: [actual.0, actual.1],
-        })
-    }
-}
-
-fn output_map(
-    output_dir: &Path,
-    role: PhotographicMaterialPackMapRoleV1,
-    path: &str,
-    color_space: &str,
-    dimensions: (u32, u32),
-) -> Result<PhotographicMaterialPackMapV1, PhotographicMaterialPackError> {
-    let bytes =
-        fs::read(output_dir.join(path)).map_err(|error| io_error(&output_dir.join(path), error))?;
-    Ok(PhotographicMaterialPackMapV1 {
-        role,
-        path: path.to_string(),
-        color_space: color_space.to_string(),
-        sha256: sha256_hex(&bytes),
-        width: dimensions.0,
-        height: dimensions.1,
-    })
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut encoded = String::with_capacity(64);
-    for byte in digest {
-        use std::fmt::Write as _;
-        let _ = write!(&mut encoded, "{byte:02x}");
-    }
-    encoded
-}
-
-fn io_error(path: &Path, error: std::io::Error) -> PhotographicMaterialPackError {
-    PhotographicMaterialPackError::Io {
-        path: path.to_path_buf(),
-        reason: error.to_string(),
-    }
-}
-
-fn image_write_error(path: &Path, error: image::ImageError) -> PhotographicMaterialPackError {
-    PhotographicMaterialPackError::Io {
-        path: path.to_path_buf(),
-        reason: error.to_string(),
-    }
 }

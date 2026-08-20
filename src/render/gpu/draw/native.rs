@@ -6,11 +6,9 @@ use crate::render::RasterTarget;
 use crate::render::camera::CameraProjection;
 
 use super::super::depth;
-use super::super::draw_common::{
-    camera_position_uniform, identity_matrix, wgpu_clear_color_for_target,
-};
+use super::super::draw_common::wgpu_clear_color_for_target;
 use super::super::draw_overlays::{encode_offscreen_overlay_pass, encode_surface_overlay_pass};
-use super::super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
+use super::super::output::{encode_clipping_uniform, encode_output_uniform};
 use super::super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::super::shadow::{self, encode_shadow_caster_pass};
 use super::super::{
@@ -19,8 +17,8 @@ use super::super::{
 };
 use super::plans::{
     NativeFrameResultInputs, NativeSceneTargetPlan, native_color_management, native_depth_view,
-    native_scene_color_format, native_scene_target_plan, native_surface_depth_plan,
-    validate_native_sample_count,
+    native_output_uniform_upload, native_scene_color_format, native_scene_target_plan,
+    native_surface_depth_plan, validate_native_sample_count,
 };
 
 impl GpuDeviceState {
@@ -84,27 +82,17 @@ impl GpuDeviceState {
         let (clipping_planes, clipping_control) =
             encode_clipping_uniform(clipping_planes, section_box);
         let encode_uniform = |color_management| {
-            encode_output_uniform(OutputUniformUpload {
+            encode_output_uniform(native_output_uniform_upload(
+                target,
                 exposure_ev,
-                view_from_world: camera_projection
-                    .view_from_world_matrix()
-                    .unwrap_or_else(identity_matrix),
-                clip_from_view: camera_projection
-                    .clip_from_view_matrix()
-                    .unwrap_or_else(identity_matrix),
-                clip_from_world: camera_projection
-                    .clip_from_world_matrix()
-                    .unwrap_or_else(identity_matrix),
-                light_from_world: resources.light_from_world,
-                camera_position: camera_position_uniform(camera_projection),
-                viewport: [target.width as f32, target.height as f32],
-                near_far: camera_projection.near_far(),
                 color_management,
                 white_balance,
-                lighting: resources.light_uniform,
+                camera_projection,
+                resources.light_from_world,
+                resources.light_uniform,
                 clipping_planes,
                 clipping_control,
-            })
+            ))
         };
         self.queue.write_buffer(
             &resources.output_uniform,

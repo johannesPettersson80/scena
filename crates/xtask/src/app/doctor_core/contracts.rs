@@ -92,6 +92,8 @@ pub(crate) const ALLOWED_LARGE_SOURCE_MODULES: &[&str] = &[
     "src/bin/scena/recipe/verification.rs",
     "src/diagnostics/capabilities.rs",
     "src/render/exposure.rs",
+    "src/render/prepare.rs",
+    "src/render/prepare/primitives.rs",
     "src/scene/recipe/field_model.rs",
     "src/scene/recipe/validation/expectations/quality.rs",
     "src/scene/recipe/validation/photo.rs",

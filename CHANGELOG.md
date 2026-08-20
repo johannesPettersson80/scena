@@ -4,6 +4,15 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-08-20
+
+- Fix the release-path renderer regressions: reuse SSR row-band scratch on
+  steady CPU renders, keep the 2K final-studio HDR out of browser WASM, and
+  release stale browser WebGPU readback maps before another capture.
+- Restore cross-target shader-output validation, document the preparation
+  ownership boundary, and give the Windows DX12 and 4K performance jobs an
+  explicit one-hour timeout.
+
 ## [1.10.0] - 2026-08-20
 
 _Includes the completed 1.9.1 remediation batch and the subject-driven

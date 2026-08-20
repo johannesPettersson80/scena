@@ -19,7 +19,9 @@
 
 use crate::diagnostics::AssetError;
 
-use super::{AssetFetcher, AssetLoadOptions, AssetPath, Assets, EnvironmentHandle};
+use super::{
+    AssetFetcher, AssetLoadOptions, AssetPath, Assets, EnvironmentDesc, EnvironmentHandle,
+};
 
 const NEUTRAL_STUDIO_SOURCE_PATH: &str = "tests/assets/environment/neutral-studio.fixture.txt";
 const NEUTRAL_STUDIO_SOURCE_SHA256: &str =
@@ -37,6 +39,7 @@ const STUDIO_RUNTIME_PATH: &str = "tests/assets/environment/generated/studio_sma
 const STUDIO_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_03_128x64.hdr";
 const STUDIO_FINAL_PROVENANCE_PATH: &str =
     "tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json";
+#[cfg(not(target_arch = "wasm32"))]
 const STUDIO_FINAL_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_08_2048x1024.hdr";
 const STUDIO_SOURCE_SHA256: &str =
     "6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746";
@@ -47,11 +50,14 @@ const STUDIO_FILES: &[&str] = &[
 ];
 pub(crate) const BUNDLED_STUDIO_URI: &str = STUDIO_RUNTIME_URI;
 pub(crate) const BUNDLED_STUDIO_BYTES: &[u8] = STUDIO_RUNTIME_BYTES;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const BUNDLED_FINAL_STUDIO_URI: &str = STUDIO_FINAL_RUNTIME_URI;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const BUNDLED_FINAL_STUDIO_BYTES: &[u8] = STUDIO_SOURCE_BYTES;
 
 const STUDIO_RUNTIME_BYTES: &[u8] =
     include_bytes!("../../tests/assets/environment/generated/studio_small_03_128x64.hdr");
+#[cfg(not(target_arch = "wasm32"))]
 const STUDIO_SOURCE_BYTES: &[u8] =
     include_bytes!("../../tests/assets/environment/polyhaven/studio_small_08_2k.hdr");
 
@@ -190,6 +196,31 @@ impl EnvironmentPresetMetadata {
 }
 
 impl<F: AssetFetcher> Assets<F> {
+    /// Returns the full-resolution bundled studio HDRI for native final stills.
+    ///
+    /// Browser callers must fetch a final-quality HDR explicitly rather than
+    /// embedding the 2K source in the WASM download.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn bundled_final_studio_environment(&self) -> Result<EnvironmentHandle, AssetError> {
+        let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
+            BUNDLED_FINAL_STUDIO_URI,
+            BUNDLED_FINAL_STUDIO_BYTES,
+        )?
+        .with_cubemap_resolution(512);
+        Ok(self.insert_environment(desc))
+    }
+
+    /// Returns a structured error because the browser bundle deliberately does
+    /// not embed the 2K HDRI used by native final stills.
+    #[cfg(target_arch = "wasm32")]
+    pub fn bundled_final_studio_environment(&self) -> Result<EnvironmentHandle, AssetError> {
+        Err(AssetError::PolicyViolation {
+            path: "scena://bundled/environment/studio_small_08_2048x1024.hdr".to_owned(),
+            reason: "the 2K final-studio HDR is native-only to keep the browser renderer download bounded".to_owned(),
+            help: "load a final-quality HDR through Assets::load_environment instead",
+        })
+    }
+
     /// Loads a bundled [`EnvironmentPreset`] through the host's asset fetcher.
     ///
     /// The preset's primary source path is resolved through the standard
@@ -234,11 +265,17 @@ impl<F: AssetFetcher> Assets<F> {
 pub(super) fn bundled_environment_bytes(path: &AssetPath) -> Option<&'static [u8]> {
     match path.as_str() {
         STUDIO_RUNTIME_URI => Some(STUDIO_RUNTIME_BYTES),
+        #[cfg(not(target_arch = "wasm32"))]
         STUDIO_FINAL_RUNTIME_URI => Some(STUDIO_SOURCE_BYTES),
         _ => None,
     }
 }
 
 pub(super) fn is_bundled_environment_uri(path: &AssetPath) -> bool {
-    matches!(path.as_str(), STUDIO_RUNTIME_URI | STUDIO_FINAL_RUNTIME_URI)
+    match path.as_str() {
+        STUDIO_RUNTIME_URI => true,
+        #[cfg(not(target_arch = "wasm32"))]
+        STUDIO_FINAL_RUNTIME_URI => true,
+        _ => false,
+    }
 }

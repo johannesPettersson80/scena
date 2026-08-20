@@ -50,25 +50,6 @@ pub struct EnvironmentCubemapFaces {
     pub(crate) face_pixels: Option<[Vec<[f32; 3]>; 6]>,
 }
 
-fn cubemap_radiance_sha256(resolution: u32, faces: &[Vec<[f32; 3]>; 6]) -> String {
-    use sha2::{Digest, Sha256};
-
-    let mut digest = Sha256::new();
-    digest.update(resolution.to_le_bytes());
-    for face in faces {
-        for pixel in face {
-            for channel in pixel {
-                digest.update(channel.to_le_bytes());
-            }
-        }
-    }
-    digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 const DEFAULT_ENVIRONMENT_NAME: &str = "neutral-studio";
 pub(super) const DEFAULT_ENVIRONMENT_SOURCE_PATH: &str =
     "tests/assets/environment/neutral-studio.fixture.txt";
@@ -564,6 +545,7 @@ const BUNDLED_NEUTRAL_STUDIO_CUBEMAP: &str =
     include_str!("../../tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml");
 
 mod cubemap_faces;
+use cubemap_faces::cubemap_radiance_sha256;
 
 impl EnvironmentDerivative {
     pub fn new(path: impl Into<AssetPath>, sha256: impl Into<String>) -> Self {

@@ -58,6 +58,8 @@ integrated:
 - `src/bin/scena/recipe/verification.rs`
 - `src/diagnostics/capabilities.rs`
 - `src/render/exposure.rs`
+- `src/render/prepare.rs`
+- `src/render/prepare/primitives.rs`
 - `src/scene/recipe/field_model.rs`
 - `src/scene/recipe/validation/expectations/quality.rs`
 - `src/scene/recipe/validation/photo.rs`
@@ -70,3 +72,11 @@ entry remains bound to its current owner, and follow-up work should split these
 by contract boundary before adding more behavior. New catch-all owners or size
 exemptions require a documented architecture decision; file movement alone does
 not establish ownership.
+
+`render::prepare` and `render::prepare::primitives` are explicit exceptions for
+the v1.10 release branch. Each owns one synchronous preparation boundary:
+scene-to-prepared-scene orchestration and triangle primitive baking respectively.
+Their focused preparation suite is the regression boundary while their internal
+subsystems continue to be split by material, lighting, environment, stroke, and
+geometry contracts. No new public API or unrelated renderer ownership may be
+added to either exception.

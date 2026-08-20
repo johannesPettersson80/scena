@@ -36,27 +36,6 @@ pub(super) fn draw_cpu_geometry_pass_parallel(
     // frame-wide buffer and resolve once below, so enabling SSR no longer forces
     // the whole geometry pass onto one thread.
     let mut reflection_scratch = input.material_reflection_scratch;
-    let reflection_bands = screen_space_reflections.map(|_| {
-        let scratch = reflection_scratch
-            .as_mut()
-            .expect("parallel SSR pass receives prepared reflection scratch");
-        resize_reusable_scratch(
-            scratch,
-            target.pixel_len(),
-            screen_space_reflections::MaterialReflectionPixel::default(),
-        );
-        scratch.fill(screen_space_reflections::MaterialReflectionPixel::default());
-        scratch
-            .chunks_mut(chunk_pixels)
-            .map(Some)
-            .collect::<Vec<_>>()
-    });
-
-    // The band closure is shared, but the iterator chain is not: zipping a
-    // per-band reflection slice needs a `Vec` of borrows, and building one on a
-    // frame that has no reflections costs a heap allocation on the steady-state
-    // render path, which `m9_parallel_cpu_render_has_low_steady_state_allocations`
-    // budgets to the byte. The no-SSR chain therefore never builds it.
     let band = |chunk_index: usize,
                 linear_frame: &mut [Color],
                 depth_frame: &mut [f32],
@@ -107,37 +86,42 @@ pub(super) fn draw_cpu_geometry_pass_parallel(
         .zip(depth_frame.par_chunks_mut(chunk_pixels))
         .zip(frame.par_chunks_mut(chunk_bytes))
         .zip(oit_scratch.par_chunks_mut(chunk_pixels));
-    let aggregate = match reflection_bands {
-        Some(reflection_bands) => {
-            debug_assert_eq!(
-                reflection_bands.len(),
-                linear_frame_len.div_ceil(chunk_pixels.max(1)),
-                "every rasterized band must own exactly one reflection band"
-            );
-            bands
-                .zip(reflection_bands.into_par_iter())
-                .enumerate()
-                .map(
-                    |(
+    let aggregate = if screen_space_reflections.is_some() {
+        let scratch = reflection_scratch
+            .as_mut()
+            .expect("parallel SSR pass receives prepared reflection scratch");
+        resize_reusable_scratch(
+            scratch,
+            target.pixel_len(),
+            screen_space_reflections::MaterialReflectionPixel::default(),
+        );
+        scratch.fill(screen_space_reflections::MaterialReflectionPixel::default());
+        debug_assert_eq!(
+            scratch.len().div_ceil(chunk_pixels.max(1)),
+            linear_frame_len.div_ceil(chunk_pixels.max(1)),
+            "every rasterized band must own exactly one reflection band"
+        );
+        bands
+            .zip(scratch.par_chunks_mut(chunk_pixels))
+            .enumerate()
+            .map(
+                |(
+                    chunk_index,
+                    ((((linear_frame, depth_frame), frame), oit_scratch), material_reflection_rows),
+                )| {
+                    band(
                         chunk_index,
-                        (
-                            (((linear_frame, depth_frame), frame), oit_scratch),
-                            material_reflection_rows,
-                        ),
-                    )| {
-                        band(
-                            chunk_index,
-                            linear_frame,
-                            depth_frame,
-                            frame,
-                            oit_scratch,
-                            material_reflection_rows,
-                        )
-                    },
-                )
-                .reduce(CpuGeometryPassResult::default, combine)
-        }
-        None => bands
+                        linear_frame,
+                        depth_frame,
+                        frame,
+                        oit_scratch,
+                        Some(material_reflection_rows),
+                    )
+                },
+            )
+            .reduce(CpuGeometryPassResult::default, combine)
+    } else {
+        bands
             .enumerate()
             .map(
                 |(chunk_index, (((linear_frame, depth_frame), frame), oit_scratch))| {
@@ -151,7 +135,7 @@ pub(super) fn draw_cpu_geometry_pass_parallel(
                     )
                 },
             )
-            .reduce(CpuGeometryPassResult::default, combine),
+            .reduce(CpuGeometryPassResult::default, combine)
     };
     if let (Some(config), Some(scratch)) = (screen_space_reflections, reflection_scratch) {
         let linear_scratch = linear_scratch

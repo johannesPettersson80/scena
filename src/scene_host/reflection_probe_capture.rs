@@ -4,10 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{
-    Aabb, AlphaMode, AssetFetcher, Color, EnvironmentDesc, EnvironmentHandle, GeometryDesc,
-    MAX_REFLECTION_PROBES, MaterialDesc, MaterialHandle, MaterialKind, NodeKey, PerspectiveCamera,
-    ReflectionProbe, ReflectionProbeKey, SceneDirtyState, Transform, Vec3,
+    Aabb, AlphaMode, AssetFetcher, EnvironmentDesc, EnvironmentHandle, MAX_REFLECTION_PROBES,
+    MaterialHandle, MaterialKind, NodeKey, PerspectiveCamera, ReflectionProbe, ReflectionProbeKey,
+    SceneDirtyState, Transform, Vec3,
 };
+use cards::{install_photographic_reflection_cards, remove_photographic_reflection_cards};
+
+mod cards;
 
 pub const PHOTOGRAPHIC_REFLECTION_PROBE_REPORT_SCHEMA_V1: &str =
     "scena.photographic_reflection_probe_report.v1";
@@ -63,56 +66,6 @@ struct ReflectionProbeGroup {
 struct CapturedProbe {
     group: ReflectionProbeGroup,
     faces: [Vec<[f32; 3]>; 6],
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PhotographicReflectionCardSpec {
-    #[cfg(test)]
-    role: &'static str,
-    position: Vec3,
-    width_m: f32,
-    height_m: f32,
-    #[cfg(test)]
-    distance_from_subject_m: f32,
-    #[cfg(test)]
-    angle_from_camera_axis_degrees: f32,
-    linear_color: [f32; 3],
-    emissive_strength: f32,
-}
-
-#[derive(Debug)]
-struct PhotographicReflectionCards {
-    nodes: [NodeKey; 2],
-    #[cfg(test)]
-    specs: [PhotographicReflectionCardSpec; 2],
-    #[cfg(test)]
-    subject_extent_m: Vec3,
-    #[cfg(test)]
-    subject_radius_m: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ReflectionCardViewBasis {
-    right: Vec3,
-    front: Vec3,
-}
-
-impl ReflectionCardViewBasis {
-    fn from_camera(subject: Vec3, camera: Vec3) -> Self {
-        let front = (camera - subject).normalize_or_zero();
-        let front = if front.length_squared() > 1.0e-8 {
-            front
-        } else {
-            Vec3::Z
-        };
-        let right = Vec3::Y.cross(front).normalize_or_zero();
-        let right = if right.length_squared() > 1.0e-8 {
-            right
-        } else {
-            Vec3::X
-        };
-        Self { right, front }
-    }
 }
 
 type CapturedProbeFaces = ([Vec<[f32; 3]>; 6], f32);
@@ -246,114 +199,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         });
         Ok(report)
     }
-}
-
-fn install_photographic_reflection_cards<F: AssetFetcher>(
-    host: &mut SceneHostCore<F>,
-    subject: NodeKey,
-) -> Result<PhotographicReflectionCards, SceneHostError> {
-    let bounds = host
-        .scene
-        .node_world_bounds(subject, &host.assets)?
-        .ok_or(crate::LookupError::ImportHasNoBounds)?;
-    let center = bounds.center();
-    let extent = bounds.half_extent() * 2.0;
-    let radius = bounds.bounding_sphere_radius().max(0.05);
-    let camera_position = host
-        .scene
-        .camera_node(host.active_camera)
-        .and_then(|node| host.scene.world_transform(node))
-        .map(|transform| transform.translation)
-        .unwrap_or(center + Vec3::Z * radius * 4.0);
-    let view = ReflectionCardViewBasis::from_camera(center, camera_position);
-    let angle_degrees = 40.0_f32;
-    let angle = angle_degrees.to_radians();
-    let distance = radius * 2.0;
-    let height = extent.y * 2.0;
-    let width = extent.x.max(extent.z) * 2.0;
-    let forward = distance * angle.cos();
-    let lateral = distance * angle.sin();
-    let bright_color = [1.0, 1.0, 1.0];
-    let dark_color = [0.03, 0.03, 0.03];
-    let specs = [
-        PhotographicReflectionCardSpec {
-            #[cfg(test)]
-            role: "bright_strip",
-            position: center + view.front * forward - view.right * lateral,
-            width_m: width,
-            height_m: height,
-            #[cfg(test)]
-            distance_from_subject_m: distance,
-            #[cfg(test)]
-            angle_from_camera_axis_degrees: angle_degrees,
-            linear_color: bright_color,
-            emissive_strength: PHOTOGRAPHIC_BRIGHT_CARD_LINEAR_RADIANCE,
-        },
-        PhotographicReflectionCardSpec {
-            #[cfg(test)]
-            role: "dark_flag",
-            position: center + view.front * forward + view.right * lateral,
-            width_m: width,
-            height_m: height,
-            #[cfg(test)]
-            distance_from_subject_m: distance,
-            #[cfg(test)]
-            angle_from_camera_axis_degrees: angle_degrees,
-            linear_color: dark_color,
-            emissive_strength: 0.0,
-        },
-    ];
-    let geometry = host.assets.create_geometry(GeometryDesc::box_xyz(
-        specs[0].width_m,
-        specs[0].height_m,
-        radius * 0.01,
-    ));
-    let bright_material = host.assets.create_material(
-        MaterialDesc::unlit(Color::BLACK)
-            .with_emissive(Color::from_linear_rgb(
-                specs[0].linear_color[0],
-                specs[0].linear_color[1],
-                specs[0].linear_color[2],
-            ))
-            .with_emissive_strength(specs[0].emissive_strength),
-    );
-    let dark_material = host
-        .assets
-        .create_material(MaterialDesc::unlit(Color::from_linear_rgb(
-            specs[1].linear_color[0],
-            specs[1].linear_color[1],
-            specs[1].linear_color[2],
-        )));
-    let mut nodes = Vec::with_capacity(2);
-    for (spec, material) in specs.iter().zip([bright_material, dark_material]) {
-        let node = host
-            .scene
-            .mesh(geometry, material)
-            .transform(Transform::at(spec.position).looking_at(center, Vec3::Y))
-            .add()?;
-        nodes.push(node);
-    }
-    Ok(PhotographicReflectionCards {
-        nodes: [nodes[0], nodes[1]],
-        #[cfg(test)]
-        specs,
-        #[cfg(test)]
-        subject_extent_m: extent,
-        #[cfg(test)]
-        subject_radius_m: radius,
-    })
-}
-
-fn remove_photographic_reflection_cards<F: AssetFetcher>(
-    host: &mut SceneHostCore<F>,
-    cards: &PhotographicReflectionCards,
-) -> Result<(), SceneHostError> {
-    for node in cards.nodes {
-        if host.scene.visible(node).is_some() {
-            host.scene.remove_node(node)?;
-        }
-    }
-    Ok(())
 }
 
 fn reflection_probe_groups<F: AssetFetcher>(

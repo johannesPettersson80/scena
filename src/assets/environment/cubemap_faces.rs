@@ -3,6 +3,28 @@ use crate::scene::Vec3;
 
 use crate::assets::environment_projection::sample_equirectangular;
 
+/// Hashes the native cubemap representation, including its resolution, so a
+/// local reflection probe carries a stable source identity without an
+/// unnecessary equirectangular conversion.
+pub(super) fn cubemap_radiance_sha256(resolution: u32, faces: &[Vec<[f32; 3]>; 6]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut digest = Sha256::new();
+    digest.update(resolution.to_le_bytes());
+    for face in faces {
+        for pixel in face {
+            for channel in pixel {
+                digest.update(channel.to_le_bytes());
+            }
+        }
+    }
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 impl EnvironmentCubemapFaces {
     pub(super) fn from_radiance_pixels(resolution: u32, faces: [Vec<[f32; 3]>; 6]) -> Option<Self> {
         let pixel_count = (resolution as usize).checked_mul(resolution as usize)?;

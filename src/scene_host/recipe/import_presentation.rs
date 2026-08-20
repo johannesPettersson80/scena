@@ -6,12 +6,13 @@ use crate::scene::recipe::{
     RecipeBuildPolicy, SceneRecipeBuildTargetV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1,
     SceneRecipeImportEdgeRoundingReportV1, SceneRecipeImportMaterialV1, SceneRecipeImportV1,
 };
-use crate::scene_host::recipe::authoring::{DiagnosticPathExt, authored_color};
 use crate::scene_host::recipe::policy::RecipeTextureBudget;
-use crate::{
-    Color, MaterialDesc, MaterialHandle, NodeKey,
-    geometry::edge_rounding::{EdgeRoundingError, EdgeRoundingOptions, round_hard_edges},
-};
+use crate::{MaterialDesc, MaterialHandle, NodeKey};
+use edge_rounding::apply_import_edge_rounding;
+use edge_style::{import_edge_material_handle, presentation_color};
+
+mod edge_rounding;
+mod edge_style;
 
 struct ResolvedImportMaterialBinding {
     source_index: usize,
@@ -126,231 +127,6 @@ pub(super) async fn apply_import_presentation(
     edge_rounding_report
 }
 
-fn apply_import_edge_rounding(
-    host: &mut SceneHostCore<DefaultAssetFetcher>,
-    import: &SceneRecipeImportV1,
-    root_handles: &[u64],
-    import_path: &str,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) -> Option<SceneRecipeImportEdgeRoundingReportV1> {
-    let edge_rounding = import.edge_rounding.as_ref()?;
-    let mut report = SceneRecipeImportEdgeRoundingReportV1 {
-        enabled: edge_rounding.enabled,
-        inspected_meshes: 0,
-        rounded_meshes: 0,
-        skipped_meshes: 0,
-        eligible_edges: 0,
-        rounded_edges: 0,
-        skipped_edges: 0,
-        rejected_edges: 0,
-        removed_degenerate_triangles: 0,
-        source_triangles: 0,
-        derived_triangles: 0,
-    };
-    if !edge_rounding.enabled {
-        return Some(report);
-    }
-
-    let mut roots = Vec::with_capacity(root_handles.len());
-    for root_handle in root_handles {
-        match host.resolve_node(*root_handle) {
-            Ok(root) => roots.push(root),
-            Err(error) => {
-                diagnostics.push(scene_host_error_diagnostic(
-                    format!("{import_path}.edge_rounding"),
-                    "import_edge_rounding_failed",
-                    error,
-                ));
-                return Some(report);
-            }
-        }
-    }
-    let mut subject_bounds = None;
-    for root in &roots {
-        match host.scene.node_world_bounds(*root, &host.assets) {
-            Ok(Some(bounds)) => {
-                subject_bounds = Some(
-                    subject_bounds.map_or(bounds, |current: crate::Aabb| current.union(bounds)),
-                );
-            }
-            Ok(None) => {}
-            Err(error) => {
-                diagnostics.push(error_diagnostic(
-                    format!("{import_path}.edge_rounding"),
-                    "import_edge_rounding_bounds_failed",
-                    format!("failed to resolve imported subject bounds: {error}"),
-                    "ensure the imported mesh has finite geometry and transforms",
-                ));
-                return Some(report);
-            }
-        }
-    }
-    let Some(subject_bounds) = subject_bounds else {
-        diagnostics.push(error_diagnostic(
-            format!("{import_path}.edge_rounding"),
-            "import_edge_rounding_bounds_missing",
-            "edge rounding requires a bounded imported mesh",
-            "supply finite static triangle geometry",
-        ));
-        return Some(report);
-    };
-    let subject_dominant_extent = (subject_bounds.half_extent() * 2.0)
-        .max_element()
-        .max(1.0e-6);
-
-    let mut subtree = Vec::new();
-    for root in roots {
-        match host.scene.subtree_nodes(root) {
-            Ok(nodes) => {
-                for node in nodes {
-                    if !subtree.contains(&node) {
-                        subtree.push(node);
-                    }
-                }
-            }
-            Err(error) => {
-                diagnostics.push(error_diagnostic(
-                    format!("{import_path}.edge_rounding"),
-                    "import_edge_rounding_failed",
-                    format!("failed to inspect imported subtree: {error}"),
-                    "ensure the import roots remain present during recipe construction",
-                ));
-                return Some(report);
-            }
-        }
-    }
-    let inspection = host.scene.inspect_with_assets(&host.assets);
-    let meshes = inspection
-        .nodes()
-        .iter()
-        .filter(|node| subtree.contains(&node.node()))
-        .filter_map(|node| Some((node.node(), node.mesh_geometry()?, node.world_transform())))
-        .collect::<Vec<_>>();
-
-    let mut remaining_triangles = edge_rounding.max_derived_triangles;
-    for (node, geometry_handle, world_transform) in meshes {
-        report.inspected_meshes += 1;
-        let geometry = match host.assets.try_geometry(geometry_handle) {
-            Ok(geometry) => geometry,
-            Err(error) => {
-                diagnostics.push(error_diagnostic(
-                    format!("{import_path}.edge_rounding"),
-                    "import_edge_rounding_geometry_missing",
-                    format!("imported mesh geometry could not be resolved: {error}"),
-                    "reload the source asset and retry recipe construction",
-                ));
-                report.rejected_edges += 1;
-                continue;
-            }
-        };
-        let local_scale = world_transform.scale.abs().max_element().max(1.0e-6);
-        let radius = subject_dominant_extent * edge_rounding.radius_fraction as f32 / local_scale;
-        let options = EdgeRoundingOptions::new(radius)
-            .with_segments(edge_rounding.segments)
-            .with_edge_angle_degrees(edge_rounding.edge_angle_threshold_degrees as f32)
-            .with_curve_target_error(subject_dominant_extent / local_scale / 4096.0)
-            .with_max_derived_triangles(remaining_triangles);
-        match round_hard_edges(&geometry, options) {
-            Ok((rounded, mesh_report)) => {
-                let geometry_changed = rounded != geometry;
-                report.eligible_edges += mesh_report.eligible_edges;
-                report.rounded_edges += mesh_report.rounded_edges;
-                report.skipped_edges += mesh_report.skipped_edges;
-                report.rejected_edges += mesh_report.rejected_edges;
-                report.removed_degenerate_triangles += mesh_report.removed_degenerate_triangles;
-                report.source_triangles += mesh_report.source_triangles;
-                report.derived_triangles += mesh_report.derived_triangles;
-                remaining_triangles =
-                    remaining_triangles.saturating_sub(mesh_report.derived_triangles);
-                if !geometry_changed {
-                    report.skipped_meshes += 1;
-                    continue;
-                }
-                let rounded = host.assets.create_geometry(rounded);
-                if let Err(error) = host.scene.set_mesh_geometry(node, rounded) {
-                    diagnostics.push(error_diagnostic(
-                        format!("{import_path}.edge_rounding"),
-                        "import_edge_rounding_assignment_failed",
-                        format!("failed to bind derived render geometry: {error}"),
-                        "ensure the imported mesh node remains present during recipe construction",
-                    ));
-                    report.rejected_edges += mesh_report.rounded_edges;
-                    report.rounded_edges = report
-                        .rounded_edges
-                        .saturating_sub(mesh_report.rounded_edges);
-                } else {
-                    report.rounded_meshes += 1;
-                }
-            }
-            Err(error) => {
-                let (code, message, help) = edge_rounding_diagnostic(error);
-                diagnostics.push(error_diagnostic(
-                    format!("{import_path}.edge_rounding"),
-                    code,
-                    message,
-                    help,
-                ));
-                report.rejected_edges += 1;
-            }
-        }
-    }
-    Some(report)
-}
-
-fn edge_rounding_diagnostic(error: EdgeRoundingError) -> (&'static str, String, &'static str) {
-    match error {
-        EdgeRoundingError::UnsupportedTopology => (
-            "import_edge_rounding_unsupported_topology",
-            "edge rounding supports triangle meshes only".to_owned(),
-            "disable edge_rounding for line geometry",
-        ),
-        EdgeRoundingError::DeformingMesh => (
-            "import_edge_rounding_deforming_mesh",
-            "edge rounding does not support skinned or morphed meshes".to_owned(),
-            "disable edge_rounding for deforming meshes or provide a static product mesh",
-        ),
-        EdgeRoundingError::InvalidOptions => (
-            "import_edge_rounding_invalid_options",
-            "edge rounding controls are invalid".to_owned(),
-            "validate the recipe and use finite positive radius and budget controls",
-        ),
-        EdgeRoundingError::NonFiniteGeometry => (
-            "import_edge_rounding_non_finite_geometry",
-            "edge rounding found non-finite vertex positions".to_owned(),
-            "repair the source mesh positions before requesting edge rounding",
-        ),
-        EdgeRoundingError::DegenerateTriangles { count } => (
-            "import_edge_rounding_degenerate_geometry",
-            format!("edge rounding found {count} degenerate triangles"),
-            "repair zero-area triangles in the source mesh",
-        ),
-        EdgeRoundingError::OpenMesh { boundary_edges } => (
-            "import_edge_rounding_open_mesh",
-            format!("edge rounding requires a closed mesh; found {boundary_edges} boundary edges"),
-            "close the mesh or disable edge_rounding for this import",
-        ),
-        EdgeRoundingError::NonManifoldMesh { nonmanifold_edges } => (
-            "import_edge_rounding_nonmanifold_mesh",
-            format!(
-                "edge rounding requires a two-manifold mesh; found {nonmanifold_edges} nonmanifold edges"
-            ),
-            "repair nonmanifold topology or disable edge_rounding for this import",
-        ),
-        EdgeRoundingError::InconsistentWinding { edges } => (
-            "import_edge_rounding_inconsistent_winding",
-            format!("edge rounding found {edges} edges with inconsistent face winding"),
-            "repair source face orientation before requesting edge rounding",
-        ),
-        EdgeRoundingError::DerivedTriangleBudgetExceeded { required, limit } => (
-            "import_edge_rounding_budget_exceeded",
-            format!(
-                "edge rounding requires {required} derived triangles, exceeding the explicit limit {limit}"
-            ),
-            "raise max_derived_triangles intentionally or reduce rounding segments",
-        ),
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn import_material_handle(
     policy: &RecipeBuildPolicy,
@@ -363,7 +139,7 @@ async fn import_material_handle(
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> Option<MaterialHandle> {
     let base_color = recipe_material.base_color.as_ref().and_then(|base_color| {
-        import_presentation_color(
+        presentation_color(
             colors,
             base_color,
             format!("{material_path}.base_color"),
@@ -707,48 +483,6 @@ fn apply_import_material_bindings(
                 format!("failed to apply source material binding: {error}"),
                 "check that the imported mesh nodes remain addressable",
             ));
-        }
-    }
-}
-
-fn import_edge_material_handle(
-    host: &mut SceneHostCore<DefaultAssetFetcher>,
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
-    import: &SceneRecipeImportV1,
-    import_path: &str,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) -> Option<MaterialHandle> {
-    let edge = import.edge_emphasis.as_ref()?;
-    if !edge.enabled {
-        return None;
-    }
-    let base_color = match &edge.base_color {
-        Some(color) => import_presentation_color(
-            colors,
-            color,
-            format!("{import_path}.edge_emphasis.base_color"),
-            diagnostics,
-        )?,
-        None => Color::from_srgb_u8(255, 176, 0),
-    };
-    let mut material = MaterialDesc::edge(base_color, edge.stroke_width_px.unwrap_or(1.75) as f32);
-    if let Some(threshold) = edge.edge_angle_threshold_degrees {
-        material = material.with_edge_angle_threshold_degrees(threshold as f32);
-    }
-    Some(host.assets.create_material(material))
-}
-
-fn import_presentation_color(
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
-    value: &str,
-    path: String,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) -> Option<Color> {
-    match authored_color(colors, value) {
-        Ok(color) => Some(color),
-        Err(diagnostic) => {
-            diagnostics.push((*diagnostic).with_path(path));
-            None
         }
     }
 }

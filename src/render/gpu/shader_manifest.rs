@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn every_webgl2_shader_variant_lowers_to_glsl_es_300() {
-        use wgpu::naga::back::glsl;
+        use naga::back::glsl;
         let mut measured: Vec<(String, usize)> = Vec::new();
         for variant in production_shader_variants() {
             if variant.profile != ShaderProfile::WebGl2Compatible {
@@ -548,11 +548,11 @@ mod tests {
         for variant in production_shader_variants() {
             let (module, info) = parse_and_validate(&variant);
             for entry in module.entry_points.iter() {
-                let words = wgpu::naga::back::spv::write_vec(
+                let words = naga::back::spv::write_vec(
                     &module,
                     &info,
-                    &wgpu::naga::back::spv::Options::default(),
-                    Some(&wgpu::naga::back::spv::PipelineOptions {
+                    &naga::back::spv::Options::default(),
+                    Some(&naga::back::spv::PipelineOptions {
                         shader_stage: entry.stage,
                         entry_point: entry.name.clone(),
                     }),

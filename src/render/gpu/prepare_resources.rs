@@ -18,10 +18,10 @@ use super::prepare_resources_support::{
     validate_sample_count,
 };
 mod pipelines;
+mod stats;
 use super::resource_encoding::{
     encode_draw_resources, encode_retained_vertices, retained_draw_uniform_capacity,
 };
-use super::stats::GpuResourceStats;
 use super::vertices::VERTEX_BYTE_LEN;
 use super::{
     GpuDeviceState, GpuOutputPlan, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
@@ -33,6 +33,7 @@ use crate::render::prepare::{
     TiledLightAssignment,
 };
 use pipelines::create_pipeline_resources;
+use stats::{add_msaa_resource_stats, base_resource_stats};
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
@@ -381,36 +382,17 @@ impl GpuDeviceState {
                 )
             })
         });
-        let texture_bytes = GpuResourceStats::target_bytes(target, 4, 1);
-        let mut stats = GpuResourceStats {
-            buffers: 6 + u64::from(surface_output_uniform.is_some()),
-            textures: 1,
-            render_targets: 1,
-            pipelines: 4
-                + u64::from(offscreen_msaa8_pipelines.is_some()) * 2
-                + u64::from(surface_pipeline.is_some()) * 2,
-            bind_groups: 1 + u64::from(surface_output_uniform.is_some()) * 2,
-            shader_modules: 1,
-            shader_module_creations: u64::from(!triangle_shader_cache_hit),
-            approximate_gpu_memory_bytes: vertex_buffer_size
-                .saturating_add(instance_buffer_size)
-                .saturating_add(
-                    u64::from(padded_bytes_per_row)
-                        .saturating_mul(u64::from(target.height))
-                        .saturating_mul(2),
-                )
-                .saturating_add(output::OUTPUT_UNIFORM_BYTE_LEN)
-                .saturating_add(
-                    u64::from(surface_output_uniform.is_some())
-                        .saturating_mul(output::OUTPUT_UNIFORM_BYTE_LEN),
-                )
-                .saturating_add(
-                    output::DRAW_UNIFORM_ENTRY_STRIDE
-                        .saturating_mul((draw_uniform_capacity as u64).max(1)),
-                )
-                .saturating_add(texture_bytes),
-            ..GpuResourceStats::default()
-        };
+        let mut stats = base_resource_stats(
+            target,
+            vertex_buffer_size,
+            instance_buffer_size,
+            padded_bytes_per_row,
+            surface_output_uniform.is_some(),
+            offscreen_msaa8_pipelines.is_some(),
+            surface_pipeline.is_some(),
+            triangle_shader_cache_hit,
+            draw_uniform_capacity,
+        );
         stats.add_assign(light_assignment::resource_stats(&light_assignment));
         stats.add_assign(super::materials::resource_stats(&material_resources));
         stats.add_assign(environment::resource_stats(
@@ -438,28 +420,10 @@ impl GpuDeviceState {
             stats.add_assign(super::post::resource_stats(resources));
         }
         if let Some(resources) = &msaa_color {
-            stats.add_assign(GpuResourceStats {
-                textures: 1,
-                render_targets: 1,
-                approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(
-                    resources.target,
-                    4,
-                    resources.sample_count,
-                ),
-                ..GpuResourceStats::default()
-            });
+            add_msaa_resource_stats(&mut stats, resources);
         }
         if let Some(resources) = &surface_msaa_color {
-            stats.add_assign(GpuResourceStats {
-                textures: 1,
-                render_targets: 1,
-                approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(
-                    resources.target,
-                    4,
-                    resources.sample_count,
-                ),
-                ..GpuResourceStats::default()
-            });
+            add_msaa_resource_stats(&mut stats, resources);
         }
 
         self.complete_headless_prepare_uploads().map_err(|error| {

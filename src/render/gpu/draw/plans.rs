@@ -1,7 +1,12 @@
 use crate::diagnostics::RenderError;
 use crate::render::RasterTarget;
+use crate::render::camera::CameraProjection;
+use crate::render::prepare::PreparedGpuLightUniform;
 
-use super::super::draw_common::target_color_management_uniform;
+use super::super::draw_common::{
+    camera_position_uniform, identity_matrix, target_color_management_uniform,
+};
+use super::super::output::OutputUniformUpload;
 use super::super::{
     GpuDeviceState, GpuPostPassCounts, GpuPreparedResources, GpuRenderResult, post, readback,
     surface_frame,
@@ -155,6 +160,43 @@ pub(super) fn native_color_management(
         }
     }
     (scene, surface)
+}
+
+/// Builds the per-target output uniform while keeping native draw submission
+/// focused on pass scheduling rather than camera/output serialization.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn native_output_uniform_upload(
+    target: RasterTarget,
+    exposure_ev: f32,
+    color_management: [f32; 4],
+    white_balance: [f32; 4],
+    camera_projection: &CameraProjection,
+    light_from_world: [f32; 16],
+    lighting: PreparedGpuLightUniform,
+    clipping_planes: [[f32; 4]; super::super::output::MAX_OUTPUT_CLIPPING_PLANES],
+    clipping_control: [f32; 4],
+) -> OutputUniformUpload {
+    OutputUniformUpload {
+        exposure_ev,
+        view_from_world: camera_projection
+            .view_from_world_matrix()
+            .unwrap_or_else(identity_matrix),
+        clip_from_view: camera_projection
+            .clip_from_view_matrix()
+            .unwrap_or_else(identity_matrix),
+        clip_from_world: camera_projection
+            .clip_from_world_matrix()
+            .unwrap_or_else(identity_matrix),
+        light_from_world,
+        camera_position: camera_position_uniform(camera_projection),
+        viewport: [target.width as f32, target.height as f32],
+        near_far: camera_projection.near_far(),
+        color_management,
+        white_balance,
+        lighting,
+        clipping_planes,
+        clipping_control,
+    }
 }
 
 pub(super) fn validate_native_sample_count(
