@@ -295,7 +295,7 @@ impl GpuDeviceState {
             )
         });
         #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
-        let readback = (target.backend == Backend::WebGpu).then(|| {
+        let readback = matches!(target.backend, Backend::WebGpu | Backend::WebGl2).then(|| {
             create_browser_readback_resources(
                 &self.device,
                 BrowserReadbackResourceDescriptor {
