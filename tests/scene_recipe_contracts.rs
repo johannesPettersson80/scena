@@ -537,7 +537,7 @@ fn scene_recipe_validation_accepts_camera_behavior_policy_subobjects_and_rejects
         ("colored_travel_mug.recipe.json", "reflective"),
         ("valve_manifold.recipe.json", "reflective"),
         ("dark_metal_speaker.recipe.json", "matte"),
-        ("demo_hero.recipe.json", "matte"),
+        ("demo_hero.recipe.json", "reflective"),
     ] {
         let path = Path::new("tests/assets/photo/final/recipes").join(recipe);
         let value: serde_json::Value =
