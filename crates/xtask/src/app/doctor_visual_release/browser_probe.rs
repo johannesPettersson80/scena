@@ -519,7 +519,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         findings,
         "VISUAL-BROWSER-M6",
         "src/render/gpu/prepare_resources_wasm.rs",
-        &["target.backend == Backend::WebGpu"],
+        &["matches!(target.backend, Backend::WebGpu | Backend::WebGl2)"],
     );
     require_contains(
         root,
