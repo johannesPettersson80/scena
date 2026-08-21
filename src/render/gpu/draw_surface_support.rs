@@ -20,6 +20,7 @@ impl GpuDeviceState {
         if let Some(error) = self.runtime_fault.render_error(target.backend) {
             return Err(error);
         }
+        let browser_canvas = self.browser_canvas.clone();
         if self.surface.is_none() {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: target.backend,
@@ -83,6 +84,10 @@ impl GpuDeviceState {
             });
         }
         self.queue.submit(Some(encoder.finish()));
+        self.webgl_presented_readback = super::browser_readback::capture_webgl2_presented_frame(
+            browser_canvas.as_ref(),
+            target,
+        )?;
         surface_output.present();
         if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
             let change = surface_frame::refresh_surface_configuration(
@@ -113,10 +118,15 @@ impl GpuDeviceState {
         target: RasterTarget,
     ) -> Result<Option<Vec<u8>>, JsValue> {
         if target.backend == crate::Backend::WebGl2 {
-            let canvas = self.browser_canvas.as_ref().ok_or_else(|| {
-                JsValue::from_str("renderer-owned WebGL2 readback requires its attached canvas")
-            })?;
-            return super::browser_readback::read_webgl2_canvas_rgba8(canvas, target).map(Some);
+            return self
+                .webgl_presented_readback
+                .clone()
+                .map(Some)
+                .ok_or_else(|| {
+                    JsValue::from_str(
+                        "renderer-owned WebGL2 readback requires a completed renderer frame",
+                    )
+                });
         }
         let Some(resources) = self.resources.as_ref() else {
             return Ok(None);
@@ -183,6 +193,7 @@ impl GpuDeviceState {
     }
 
     #[cfg(any(feature = "scene-host", test))]
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(in crate::render) fn read_scene_linear_rgba32f(
         &mut self,
         backend: crate::diagnostics::Backend,

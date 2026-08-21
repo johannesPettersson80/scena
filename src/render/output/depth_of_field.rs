@@ -149,7 +149,7 @@ impl DepthOfFieldPostConfig {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 pub(in crate::render) fn apply_depth_of_field_rgba8(
     target: RasterTarget,
     frame: &mut [u8],

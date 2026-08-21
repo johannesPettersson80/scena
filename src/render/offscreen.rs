@@ -23,6 +23,7 @@ pub struct PixelReadback {
 }
 
 #[cfg(any(feature = "scene-host", test))]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SceneLinearCapture {
     width: u32,
@@ -31,6 +32,7 @@ pub(crate) struct SceneLinearCapture {
 }
 
 #[cfg(any(feature = "scene-host", test))]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 impl SceneLinearCapture {
     pub(crate) const fn width(&self) -> u32 {
         self.width
@@ -118,6 +120,7 @@ impl Renderer {
     }
 
     #[cfg(any(feature = "scene-host", test))]
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) fn scene_linear_capture(&mut self) -> Result<SceneLinearCapture, RenderError> {
         if let Some(gpu) = &mut self.gpu {
             let (target, rgba32f) = gpu.read_scene_linear_rgba32f(self.target.backend)?;

@@ -188,6 +188,7 @@ impl Renderer {
     }
 
     #[cfg(any(feature = "scene-host", test))]
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) fn set_scene_linear_capture_enabled(&mut self, enabled: bool) {
         if self.scene_linear_capture_enabled != enabled {
             self.scene_linear_capture_enabled = enabled;

@@ -9,7 +9,7 @@ mod depth_of_field;
 mod legacy_ldr;
 
 pub use depth_of_field::DepthOfFieldConfig;
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 pub(in crate::render) use depth_of_field::apply_depth_of_field_rgba8;
 pub(in crate::render) use depth_of_field::{DepthOfFieldPostConfig, apply_depth_of_field_linear};
 pub(super) use legacy_ldr::apply_fxaa_rgba8;
