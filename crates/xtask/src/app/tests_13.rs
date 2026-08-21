@@ -310,12 +310,40 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         fs::copy(source, destination).expect("copy C09 doctor fixture file");
     }
 
+    let readback = fixture_root.join("src/render/gpu/draw_surface_support.rs");
+    let source = fs::read_to_string(&readback).expect("read C09 browser readback fixture");
+    let mutated = source.replacen(
+        "let slice = readback.buffer.slice(..);",
+        "readback.buffer.unmap();\n        let slice = readback.buffer.slice(..);",
+        1,
+    );
+    assert_ne!(
+        source, mutated,
+        "browser readback mutation must add an invalid pre-map unmap"
+    );
+    fs::write(&readback, mutated).expect("inject invalid browser readback unmap");
+    let mut findings = Vec::new();
+    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "RENDER-C09"
+                && finding.message.contains("must not unmap before map_async")
+        }),
+        "doctor must reject an unmapped browser buffer unmap: {findings:?}",
+    );
+
+    fs::copy(
+        root.join("src/render/gpu/draw_surface_support.rs"),
+        &readback,
+    )
+    .expect("restore C09 browser readback fixture");
+
     let draw = fixture_root.join("src/render/gpu/draw.rs");
     let source = fs::read_to_string(&draw).expect("read C09 draw fixture");
     let mutated =
         format!("{source}\nfn c09_regression() {{ let _ = post::create_resources(); }}\n");
     fs::write(&draw, mutated).expect("inject render-time post allocation");
-    let mut findings = Vec::new();
+    findings.clear();
 
     check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
 

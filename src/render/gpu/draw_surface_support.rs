@@ -124,10 +124,6 @@ impl GpuDeviceState {
                 resources.target, target
             )));
         }
-        // A rejected browser map leaves the buffer unavailable until it is
-        // explicitly unmapped. Release any stale map before starting the next
-        // capture so a transient proof failure cannot poison later captures.
-        readback.buffer.unmap();
         let slice = readback.buffer.slice(..);
         let promise = js_sys::Promise::new(&mut |resolve, reject| {
             let resolve = resolve.clone();

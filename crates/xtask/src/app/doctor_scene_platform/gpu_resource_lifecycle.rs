@@ -426,6 +426,22 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         require_contains(root, findings, RULE, relative, needles);
     }
 
+    if let Ok(source) = fs::read_to_string(root.join("src/render/gpu/draw_surface_support.rs")) {
+        let readback_start = source.find("async fn browser_readback_rgba8");
+        let map_async = readback_start.and_then(|start| {
+            source[start..]
+                .find("slice.map_async")
+                .map(|offset| start + offset)
+        });
+        if matches!((readback_start, map_async), (Some(start), Some(map)) if source[start..map].contains("readback.buffer.unmap()"))
+        {
+            findings.push(Finding::new(
+                RULE,
+                "browser readback must not unmap before map_async; an unmapped buffer is a WebGPU validation error",
+            ));
+        }
+    }
+
     if fs::read_to_string(root.join("src/render/gpu/lifecycle.rs"))
         .is_ok_and(|source| source.contains("on_submitted_work_done"))
     {

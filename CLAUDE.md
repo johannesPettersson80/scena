@@ -51,6 +51,7 @@ does not turn diagnostic output into release evidence.
 | `SCENA_WEBGPU_BROWSER` | Test-only browser-engine selector for WebGPU hardware proofs. Supported values are `chromium` and `firefox`; required workflows normally use the default. | `chromium` |
 | `SCENA_WEBGL2_BROWSER` | Test-only browser-engine selector for WebGL2 hardware proofs. Supported values are `chromium` and `firefox`; required workflows normally use the default. | `chromium` |
 | `SCENA_BROWSER_WORKFLOWS` | Comma-separated subset of M6 browser workflows; unknown entries fail. | all registered workflows |
+| `SCENA_BROWSER_OPERATION_TIMEOUT_MS` | Per-operation timeout for the M6 browser probe. Emits the timed-out operation label so a stalled browser task is diagnosable. | `60000` ms |
 | `SCENA_BROWSER_EXECUTABLE` | M6/scene-host browser executable override; takes precedence over `CHROMIUM`. | Playwright-managed browser |
 | `SCENA_BROWSER_ALLOW_UNAVAILABLE` | Diagnostic-only M6 switch allowing a specifically classified unavailable WebGPU result. It is forbidden in required CI/release jobs. | strict failure |
 | `SCENA_REQUIRE_PARITY` | Required GPU-lane mode. WebGPU adapter absence, software adapters, missing renderer-owned readback, zero GPU work, and native CPU fallback fail the lane directly; only explicitly named diagnostic/headless lanes omit it. | unset -> diagnostic fallback policy |

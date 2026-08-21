@@ -26,6 +26,10 @@ const MODEL_VIEWER_FIXTURE = "/fixtures/gltf/non_ndc_camera_scene.gltf";
 const ASSET_CATALOG_PREVIEW_FIXTURE = "/fixtures/gltf/material_variants_scene.gltf";
 const MODEL_VIEWER_BUNDLE = "model-viewer.min.js";
 const OVERSIZED_TEXTURE_DIMENSION = 2049;
+const BROWSER_OPERATION_TIMEOUT_MS = Number.parseInt(
+  process.env.SCENA_BROWSER_OPERATION_TIMEOUT_MS || "60000",
+  10,
+);
 
 function loadPlaywright() {
   return require("playwright");
@@ -1874,6 +1878,30 @@ async function waitForProbeFunction(page, name) {
   );
 }
 
+async function runTimedBrowserOperation(label, operation) {
+  const startedAt = Date.now();
+  console.log(`[scena-browser-m6] start ${label}`);
+  let timer;
+  try {
+    const result = await Promise.race([
+      operation(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `[scena-browser-m6] ${label} timed out after ${BROWSER_OPERATION_TIMEOUT_MS}ms`,
+            ),
+          );
+        }, BROWSER_OPERATION_TIMEOUT_MS);
+      }),
+    ]);
+    console.log(`[scena-browser-m6] complete ${label} in ${Date.now() - startedAt}ms`);
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function runCameraControlKitProof(page, artifactDir) {
   await waitForProbeFunction(page, "scenaCameraControlKitProbe");
   const result = await page.evaluate(() => window.scenaCameraControlKitProbe());
@@ -2194,9 +2222,18 @@ async function main() {
       });
       try {
         await viewerElementPage.goto(url);
-        results.push(await runScenaViewerElementProof(viewerElementPage, artifactDir));
-        results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
-        results.push(await runAssetDoctorBrowserProof(viewerElementPage, artifactDir));
+        results.push(await runTimedBrowserOperation(
+          "viewer-element",
+          () => runScenaViewerElementProof(viewerElementPage, artifactDir),
+        ));
+        results.push(await runTimedBrowserOperation(
+          "camera-control-kit",
+          () => runCameraControlKitProof(viewerElementPage, artifactDir),
+        ));
+        results.push(await runTimedBrowserOperation(
+          "asset-doctor",
+          () => runAssetDoctorBrowserProof(viewerElementPage, artifactDir),
+        ));
       } catch (error) {
         if (viewerElementConsoleMessages.length > 0) {
           error.message += `\nconsole:\n${viewerElementConsoleMessages.join("\n")}`;
@@ -2208,14 +2245,20 @@ async function main() {
       const viewerParityPage = await browser.newPage({ viewport: { width: 960, height: 760 } });
       try {
         await viewerParityPage.goto(url);
-        results.push(await runScenaViewerParityProof(viewerParityPage, artifactDir));
+        results.push(await runTimedBrowserOperation(
+          "scena-viewer-parity",
+          () => runScenaViewerParityProof(viewerParityPage, artifactDir),
+        ));
       } finally {
         await viewerParityPage.close();
       }
       const mobileA11yPage = await browser.newPage({ viewport: { width: 390, height: 640 }, isMobile: true, hasTouch: true });
       try {
         await mobileA11yPage.goto(url);
-        results.push(await runScenaViewerMobileA11yProof(mobileA11yPage, artifactDir));
+        results.push(await runTimedBrowserOperation(
+          "scena-viewer-mobile-a11y",
+          () => runScenaViewerMobileA11yProof(mobileA11yPage, artifactDir),
+        ));
       } finally {
         await mobileA11yPage.close();
       }
@@ -2248,9 +2291,12 @@ async function main() {
         }
         let result;
         try {
-          result = await page.evaluate(
-            (name) => window.scenaM6RustWasmRendererProbe(name),
-            backend,
+          result = await runTimedBrowserOperation(
+            `${backend}:triangle`,
+            () => page.evaluate(
+              (name) => window.scenaM6RustWasmRendererProbe(name),
+              backend,
+            ),
           );
         } catch (error) {
           if (consoleMessages.length > 0) {
@@ -2288,9 +2334,12 @@ async function main() {
           assertCpuWebGl2Parity(result);
         }
         if (!materialOnly && !lifecycleOnly) {
-          const displayP3Result = await page.evaluate(
-            (name) => window.scenaM6DisplayP3OutputProbe(name),
-            backend,
+          const displayP3Result = await runTimedBrowserOperation(
+            `${backend}:display-p3`,
+            () => page.evaluate(
+              (name) => window.scenaM6DisplayP3OutputProbe(name),
+              backend,
+            ),
           );
           results.push(displayP3Result);
           assertDisplayP3OutputProof(backend, displayP3Result);
@@ -2299,9 +2348,12 @@ async function main() {
         for (const workflow of workflows) {
           let workflowResult;
           try {
-            workflowResult = await page.evaluate(
-              ({ backend, workflow }) => window.scenaM6RustWasmWorkflowProbe(backend, workflow),
-              { backend, workflow },
+            workflowResult = await runTimedBrowserOperation(
+              `${backend}:${workflow}`,
+              () => page.evaluate(
+                ({ backend, workflow }) => window.scenaM6RustWasmWorkflowProbe(backend, workflow),
+                { backend, workflow },
+              ),
             );
           } catch (error) {
             throw new Error(`${backend} ${workflow}: ${error.message}`);
@@ -2446,9 +2498,12 @@ async function main() {
           assertNoScenaGpuValidationErrors(backend, consoleMessages);
           continue;
         }
-        const lifecycleResult = await page.evaluate(
-          (name) => window.scenaM6RustWasmLifecycleProbe(name),
-          backend,
+        const lifecycleResult = await runTimedBrowserOperation(
+          `${backend}:surface-lifecycle`,
+          () => page.evaluate(
+            (name) => window.scenaM6RustWasmLifecycleProbe(name),
+            backend,
+          ),
         );
         results.push(lifecycleResult);
         if (lifecycleResult.status !== "passed") {
@@ -2461,9 +2516,12 @@ async function main() {
           assertNoScenaGpuValidationErrors(backend, consoleMessages);
           continue;
         }
-        const benchmarkResult = await page.evaluate(
-          (name) => window.scenaM6RustWasmBenchmarkProbe(name),
-          backend,
+        const benchmarkResult = await runTimedBrowserOperation(
+          `${backend}:benchmark`,
+          () => page.evaluate(
+            (name) => window.scenaM6RustWasmBenchmarkProbe(name),
+            backend,
+          ),
         );
         results.push(benchmarkResult);
         if (benchmarkResult.status !== "passed") {
@@ -2471,9 +2529,12 @@ async function main() {
             `${backend} browser benchmark probe failed: ${JSON.stringify(benchmarkResult)}`,
           );
         }
-        const stateLifecycleResult = await page.evaluate(
-          (name) => window.scenaM6RustWasmStateLifecycleProbe(name),
-          backend,
+        const stateLifecycleResult = await runTimedBrowserOperation(
+          `${backend}:state-lifecycle`,
+          () => page.evaluate(
+            (name) => window.scenaM6RustWasmStateLifecycleProbe(name),
+            backend,
+          ),
         );
         results.push(stateLifecycleResult);
         if (stateLifecycleResult.status !== "passed") {
