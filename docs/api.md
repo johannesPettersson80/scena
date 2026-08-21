@@ -114,6 +114,21 @@ Additive public API changes in Unreleased:
   `VisualPatchRevisionDeltaV1` (gated behind `scene-host`)
 - `SceneHostCore::apply_patch` and `SceneHostCore::apply_patch_json`
   (gated behind `scene-host`)
+- `SCENE_HOST_CLIPPING_PLANES_SCHEMA_V1`, `SceneHostClippingPlanesV1`, and
+  `SceneHostCore::set_clipping_planes_json` for replacing the host-owned active
+  clipping-plane set (gated behind `scene-host`). Browser hosts expose the same
+  contract as `SceneHost.setClippingPlanesJson`:
+
+  ```json
+  {
+    "schema": "scena.scene_host_clipping_planes.v1",
+    "planes": [{ "normal": [0, 1, 0], "distance": 0.125 }]
+  }
+  ```
+
+  Sending an empty `planes` array clears that set. Normals and distances must
+  be finite, normals must be non-zero, and the renderer capability limit is
+  enforced before the current set is changed.
 - `HOST_EVENT_SCHEMA_V1`, `HostEventBatchV1`, `HostEventV1`,
   `HostEventHitV1`, `HostEventTargetKindV1`, and
   `HostEventHoverPhaseV1` (gated behind `scene-host`)

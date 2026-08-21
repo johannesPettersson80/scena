@@ -37,6 +37,17 @@ impl Scene {
         self.clipping_planes.get(plane).copied()
     }
 
+    pub fn remove_clipping_plane(&mut self, plane: ClippingPlaneKey) -> bool {
+        if self.clipping_planes.remove(plane).is_none() {
+            return false;
+        }
+        self.active_clipping_planes
+            .planes
+            .retain(|key| *key != plane);
+        self.structure_revision = self.structure_revision.saturating_add(1);
+        true
+    }
+
     pub fn set_clipping_planes(&mut self, set: ClippingPlaneSet) -> Result<(), LookupError> {
         for plane in set.planes() {
             if !self.clipping_planes.contains_key(*plane) {

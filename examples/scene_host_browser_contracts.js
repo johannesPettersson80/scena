@@ -134,6 +134,13 @@ export function drainHostEvents(state) {
   return JSON.parse(state.host.drainEventsJson());
 }
 
+export function replaceClippingPlanes(state, planes) {
+  return JSON.parse(state.host.setClippingPlanesJson(JSON.stringify({
+    schema: "scena.scene_host_clipping_planes.v1",
+    planes,
+  })));
+}
+
 export function wireSceneHostCamera(canvas, state, requestFrame) {
   let lastPointer = null;
   const request = (action) => {

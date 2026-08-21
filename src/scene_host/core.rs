@@ -67,6 +67,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) node_handle_map: BTreeMap<NodeKey, u64>,
     pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
     pub(super) section_box_helper: Option<u64>,
+    pub(super) host_clipping_planes: Vec<crate::ClippingPlaneKey>,
     pub(super) visual_states: BTreeMap<String, SceneHostVisualStateV1>,
     pub(super) product_options: ProductOptionsV1,
     /// The environment the photographic lighting solver installed, if any.
@@ -115,6 +116,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
             section_box_helper: None,
+            host_clipping_planes: Vec::new(),
             visual_states: BTreeMap::new(),
             product_options: ProductOptionsV1::empty(),
             generated_environment: None,
@@ -155,6 +157,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
             section_box_helper: None,
+            host_clipping_planes: Vec::new(),
             visual_states: BTreeMap::new(),
             product_options: ProductOptionsV1::empty(),
             generated_environment: None,

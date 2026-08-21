@@ -59,6 +59,7 @@ Rules:
   - `scena.subtree.v1`
   - `scena.scene_host_visual_state.v1`
   - `scena.scene_host_visual_states.v1`
+  - `scena.scene_host_clipping_planes.v1`
   - `scena.animation_inventory.v1`
   - `scena.visual_patch.v1`
   - `scena.host_event.v1`

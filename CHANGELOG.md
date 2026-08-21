@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+- Add a versioned `SceneHostCore::set_clipping_planes_json` contract and
+  `SceneHost.setClippingPlanesJson` browser binding for replacing a host-owned
+  set of arbitrary clipping planes without exposing renderer handles.
+
 ## [1.10.4] - 2026-08-22
 
 - Support orthographic cameras in authored scene recipes and fit their extents

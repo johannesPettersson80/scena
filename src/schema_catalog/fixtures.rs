@@ -295,6 +295,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/scene_host_section_box.v1.json"),
         ),
         (
+            "scena.scene_host_clipping_planes.v1",
+            include_str!("../../tests/assets/stable-contracts/scene_host_clipping_planes.v1.json"),
+        ),
+        (
             "scena.scene_host_visual_state.v1",
             include_str!("../../tests/assets/stable-contracts/scene_host_visual_state.v1.json"),
         ),

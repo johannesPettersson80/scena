@@ -6,6 +6,7 @@ mod assets;
 mod callouts;
 mod camera;
 mod capture;
+mod clipping_planes;
 mod composition;
 mod connectors;
 mod construction;
@@ -58,6 +59,8 @@ mod wasm_camera;
 #[cfg(target_arch = "wasm32")]
 mod wasm_capture;
 #[cfg(target_arch = "wasm32")]
+mod wasm_clipping_planes;
+#[cfg(target_arch = "wasm32")]
 mod wasm_gizmo;
 #[cfg(target_arch = "wasm32")]
 mod wasm_introspection;
@@ -89,6 +92,7 @@ pub use camera::SceneHostCameraProjection;
 pub type SceneHostEasing = crate::controls::TransitionEasing;
 pub use animation::{SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions};
 pub use callouts::SceneHostCalloutReportV1;
+pub use clipping_planes::{SCENE_HOST_CLIPPING_PLANES_SCHEMA_V1, SceneHostClippingPlanesV1};
 pub use composition::CompositionOverlaySegmentV1;
 pub use connectors::{
     CONNECTOR_BROWSER_SCHEMA_V1, ConnectorBrowserCandidateV1, ConnectorBrowserConnectorV1,

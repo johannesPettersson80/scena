@@ -445,6 +445,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/scene_host_section_box.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.scene_host_clipping_planes.v1",
+            owner_module: "scene_host",
+            summary: "SceneHost host-owned arbitrary clipping-plane replacement contract.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/scene_host_clipping_planes.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_host_visual_state.v1",
             owner_module: "scene_host",
             summary: "SceneHost named visual state storing a visual patch plus metadata.",

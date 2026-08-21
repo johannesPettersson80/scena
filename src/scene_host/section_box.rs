@@ -24,6 +24,7 @@ pub struct SceneHostSectionBoxReportV1 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SceneHostClippingPlaneV1 {
     #[serde(serialize_with = "serialize_round3_array")]
     pub normal: [f32; 3],
@@ -211,4 +212,56 @@ fn stable_round3(value: f32) -> f64 {
     }
     let rounded = (f64::from(value) * 1000.0).round() / 1000.0;
     if rounded == 0.0 { 0.0 } else { rounded }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        SCENE_HOST_CLIPPING_PLANES_SCHEMA_V1, SceneHostClippingPlanesV1, SceneHostCore,
+        SceneHostErrorCode,
+    };
+
+    #[test]
+    fn clipping_plane_json_replaces_the_active_generic_plane_set() {
+        let mut host = SceneHostCore::headless(32, 32).expect("headless host builds");
+
+        let report = host
+            .set_clipping_planes_json(
+                r#"{"schema":"scena.scene_host_clipping_planes.v1","planes":[{"normal":[0.0,1.0,0.0],"distance":2.0}]}"#,
+            )
+            .expect("finite non-zero plane is accepted");
+
+        let report: SceneHostClippingPlanesV1 =
+            serde_json::from_str(&report).expect("report follows the public schema");
+        assert_eq!(report.schema, SCENE_HOST_CLIPPING_PLANES_SCHEMA_V1);
+        assert_eq!(report.planes.len(), 1);
+        assert_eq!(report.planes[0].normal, [0.0, 1.0, 0.0]);
+        assert_eq!(report.planes[0].distance, 2.0);
+        assert_eq!(host.scene().clipping_planes().planes().len(), 1);
+
+        host.set_clipping_planes_json(
+            r#"{"schema":"scena.scene_host_clipping_planes.v1","planes":[{"normal":[1.0,0.0,0.0],"distance":1.0}]}"#,
+        )
+        .expect("the replacement plane is accepted");
+
+        assert_eq!(host.scene().clipping_planes().planes().len(), 1);
+
+        let error = host
+            .set_clipping_planes_json(
+                r#"{"schema":"scena.scene_host_clipping_planes.v1","planes":[{"normal":[0.0,0.0,0.0],"distance":0.0}]}"#,
+            )
+            .expect_err("a zero normal is rejected");
+        assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+        assert_eq!(host.scene().clipping_planes().planes().len(), 1);
+
+        let cleared = host
+            .set_clipping_planes_json(
+                r#"{"schema":"scena.scene_host_clipping_planes.v1","planes":[]}"#,
+            )
+            .expect("an empty request clears the host-owned plane set");
+        let cleared: SceneHostClippingPlanesV1 =
+            serde_json::from_str(&cleared).expect("clear report follows the public schema");
+        assert!(cleared.planes.is_empty());
+        assert!(host.scene().clipping_planes().planes().is_empty());
+    }
 }

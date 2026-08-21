@@ -362,6 +362,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.scene_host_section_box.v1",
         ),
         (
+            "tests/assets/stable-contracts/scene_host_clipping_planes.v1.json",
+            "scena.scene_host_clipping_planes.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_host_visual_state.v1.json",
             "scena.scene_host_visual_state.v1",
         ),
@@ -1093,6 +1097,14 @@ fn visual_patch_result_golden_matches_live_schema_serialization() {
 fn scene_host_section_box_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneHostSectionBoxReportV1>(
         "tests/assets/stable-contracts/scene_host_section_box.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_clipping_planes_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostClippingPlanesV1>(
+        "tests/assets/stable-contracts/scene_host_clipping_planes.v1.json",
     );
 }
 

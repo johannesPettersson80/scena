@@ -272,6 +272,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
         "scena.scene_host_section_box.v1",
     ),
     (
+        "tests/assets/stable-contracts/scene_host_clipping_planes.v1.json",
+        "scena.scene_host_clipping_planes.v1",
+    ),
+    (
         "tests/assets/stable-contracts/scene_host_visual_state.v1.json",
         "scena.scene_host_visual_state.v1",
     ),
