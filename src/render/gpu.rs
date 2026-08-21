@@ -110,8 +110,6 @@ pub(super) struct GpuDeviceState {
     display_p3_canvas_configured: bool,
     #[cfg(target_arch = "wasm32")]
     browser_canvas: Option<web_sys::HtmlCanvasElement>,
-    #[cfg(target_arch = "wasm32")]
-    webgl_presented_readback: Option<Vec<u8>>,
 }
 
 #[cfg(target_arch = "wasm32")]

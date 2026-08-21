@@ -103,16 +103,17 @@ fn public_double_sided_material_knob_changes_pixels() {
         "double-sided back-facing mesh should render visible pixels on the CPU path"
     );
 
+    let gpu_background = render_empty_gpu();
     let single_sided_gpu = render_backface_gpu(false);
     let double_sided_gpu = render_backface_gpu(true);
     assert_eq!(
-        nonblack_pixel_count(&single_sided_gpu),
-        0,
-        "single-sided back-facing mesh should be culled on the HeadlessGpu path"
+        rgb_bytes(&single_sided_gpu),
+        rgb_bytes(&gpu_background),
+        "single-sided back-facing mesh must not change the HeadlessGpu RGB frame"
     );
     assert!(
-        nonblack_pixel_count(&double_sided_gpu) > 0,
-        "double-sided back-facing mesh should render visible pixels on the HeadlessGpu path"
+        nonblack_pixel_count(&double_sided_gpu) > nonblack_pixel_count(&gpu_background),
+        "double-sided back-facing mesh should add visible pixels on the HeadlessGpu path"
     );
 }
 
@@ -190,6 +191,27 @@ fn render_backface_cpu(double_sided: bool) -> Vec<u8> {
 
 fn render_backface_gpu(double_sided: bool) -> Vec<u8> {
     let (assets, mut scene) = backface_scene(double_sided);
+    let mut renderer = Renderer::headless_gpu(32, 32).expect("HeadlessGpu renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("HeadlessGpu scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("HeadlessGpu scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+fn render_empty_gpu() -> Vec<u8> {
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("camera activates");
     let mut renderer = Renderer::headless_gpu(32, 32).expect("HeadlessGpu renderer builds");
     renderer
         .prepare_with_assets(&mut scene, &assets)
@@ -327,6 +349,12 @@ fn nonblack_pixel_count(rgba: &[u8]) -> usize {
     rgba.chunks_exact(4)
         .filter(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
         .count()
+}
+
+fn rgb_bytes(rgba: &[u8]) -> Vec<u8> {
+    rgba.chunks_exact(4)
+        .flat_map(|pixel| pixel[..3].iter().copied())
+        .collect()
 }
 
 fn visible_gray_pixel_count(rgba: &[u8]) -> usize {

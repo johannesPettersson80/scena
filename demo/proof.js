@@ -18,7 +18,7 @@ import init, {
   set_bloom_enabled,
   set_fixed_exposure_ev,
   tick,
-} from "./proof/pkg/scena.js?v=1.10.1-proof-32f537b89832";
+} from "./proof/pkg/scena.js?v=1.10.2-proof-19d17fc36c12";
 
 const SAMPLE_GROUPS = [
   {
@@ -326,7 +326,7 @@ window.__scenaDemoProbe = {
 function updateCodePanel() {
   if (activeAsset.code === "v14-presets") {
     codeTitle.textContent = "v1.5 named presets";
-    codeSubtitle.textContent = "scena 1.10.1 — pick a name, not a number";
+    codeSubtitle.textContent = "scena 1.10.2 — pick a name, not a number";
     codeSnippet.textContent = `use scena::{
     Assets, AutoExposureConfig, Background, Color, DirectionalLight,
     EnvironmentPreset, MaterialDesc, OrbitControls, PerspectiveCamera,
@@ -508,7 +508,7 @@ async function start() {
   beginPhase("initialising WASM");
   await init({
     module_or_path: new URL(
-      "./proof/pkg/scena_bg.wasm?v=1.10.1-proof-32f537b89832",
+      "./proof/pkg/scena_bg.wasm?v=1.10.2-proof-19d17fc36c12",
       import.meta.url,
     ),
   });

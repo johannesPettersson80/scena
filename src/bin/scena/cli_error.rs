@@ -88,9 +88,9 @@ impl CliFailure {
     }
 
     /// This build was compiled without the Cargo feature the command needs.
-    #[cfg_attr(
-        all(feature = "inspection", feature = "scene-host"),
-        expect(dead_code, reason = "only feature-gated stubs construct this")
+    #[allow(
+        dead_code,
+        reason = "only feature-gated command stubs construct this helper"
     )]
     pub(crate) fn feature_unavailable(message: impl Into<String>) -> Self {
         Self::new(CliErrorKind::FeatureUnavailable, message)

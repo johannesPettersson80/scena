@@ -47,6 +47,7 @@ does not turn diagnostic output into release evidence.
 | `SCENA_SHOWCASE_CONNECTOR_ONLY` | Restricts the local showcase probe to connector behavior when set to `1`. | full showcase probe |
 | `SCENA_SHOWCASE_SECTION_BUDGET_MS` | Overrides the showcase section-activation latency budget in milliseconds. | script-defined budget |
 | `SCENA_BROWSER_BACKENDS` | Comma-separated browser backends selected by browser proof scripts. Required workflows set one explicit backend. | script-defined backend set |
+| `SCENA_BROWSER_HEADLESS` | Set to `0` to launch a browser proof with a visible window on a real local GPU; required CI keeps the headless default. | headless |
 | `SCENA_WEBGPU_BROWSER` | Test-only browser-engine selector for WebGPU hardware proofs. Supported values are `chromium` and `firefox`; required workflows normally use the default. | `chromium` |
 | `SCENA_WEBGL2_BROWSER` | Test-only browser-engine selector for WebGL2 hardware proofs. Supported values are `chromium` and `firefox`; required workflows normally use the default. | `chromium` |
 | `SCENA_BROWSER_WORKFLOWS` | Comma-separated subset of M6 browser workflows; unknown entries fail. | all registered workflows |

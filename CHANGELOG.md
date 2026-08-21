@@ -4,6 +4,15 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-08-21
+
+- Repair the release candidate validation contracts: restore renderer-owned WebGL2
+  canvas readback after presentation, document browser headless control, and keep
+  the final hero floor intent aligned with its photographic contract.
+- Make the cross-backend double-sided regression compare RGB output against an
+  empty GPU frame, avoiding alpha-clear differences without relaxing the visible
+  double-sided rendering requirement.
+
 ## [1.10.1] - 2026-08-20
 
 - Fix the release-path renderer regressions: reuse SSR row-band scratch on

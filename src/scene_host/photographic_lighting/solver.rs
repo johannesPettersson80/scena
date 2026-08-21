@@ -81,10 +81,11 @@ pub(super) fn automatic_white_balance(
                 .all(|channel| channel.is_finite() && *channel >= 0.0)
         })
         .map(normalize_illuminant_rgb);
-    let environment_weight = environment_chroma
-        .is_some()
-        .then_some(environment_intensity.clamp(0.0, 1.0))
-        .unwrap_or(0.0);
+    let environment_weight = if environment_chroma.is_some() {
+        environment_intensity.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     let light_weight = f32::from(light_chroma.is_some());
     let illuminant_rgb = match (light_chroma, environment_chroma) {
         (Some(light), Some(environment)) => {

@@ -402,22 +402,22 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
         "photo report must expose a physical camera solution: {report_json:#}"
     );
     assert_eq!(
-        report_json["retry"]["policy"]["max_attempts"], 6,
-        "camera-behavior camera loop must be bounded: {report_json:#}"
+        report_json["retry"]["policy"]["max_attempts"], 2,
+        "the default camera-behavior correction is bounded to one retry: {report_json:#}"
     );
     assert_eq!(
-        report_json["retry"]["policy"]["max_retries"], 5,
-        "camera-behavior camera loop must not become unbounded: {report_json:#}"
+        report_json["retry"]["policy"]["max_retries"], 1,
+        "the default camera-behavior correction must not enter the optimizer: {report_json:#}"
     );
     assert_eq!(
         report_json["retry"]["policy"]["allowed_adjustments"],
-        serde_json::json!(["camera_composition", "exposure_compensation_ev"]),
-        "retry policy should expose the deterministic camera and exposure corrections: {report_json:#}"
+        serde_json::json!(["exposure_compensation_ev"]),
+        "the default policy should expose only its one bounded exposure correction: {report_json:#}"
     );
     assert!(
         report_json["retry"]["attempts"]
             .as_u64()
-            .is_some_and(|attempts| (1..=6).contains(&attempts)),
+            .is_some_and(|attempts| (1..=2).contains(&attempts)),
         "retry report must expose a bounded attempt count: {report_json:#}"
     );
     let work_metrics = &report_json["work_metrics"];
@@ -475,7 +475,7 @@ fn photo_render_camera_behavior_is_easy_path_for_imported_asset() {
     let focus_delivery_budget = report_json["work_metrics"]["focus_delivery_render_budget"]
         .as_u64()
         .expect("work metrics report focus delivery budget");
-    assert_eq!(focus_delivery_budget, 6, "{report_json:#}");
+    assert_eq!(focus_delivery_budget, 1, "{report_json:#}");
     assert!(
         focus_delivery_renders <= focus_delivery_budget,
         "focus delivery exposure correction must stay bounded: {report_json:#}"
@@ -1186,9 +1186,9 @@ fn photo_render_reports_recipe_build_failure_in_photo_envelope() {
 }
 
 #[test]
-fn photo_render_camera_behavior_recovers_dark_subject_with_bounded_camera_loop() {
-    let dir = artifact_dir("dark-subject-recovers");
-    let recipe = dir.join("black-subject.recipe.json");
+fn photo_render_camera_behavior_recovers_dim_subject_with_bounded_default_correction() {
+    let dir = artifact_dir("dim-subject-recovers");
+    let recipe = dir.join("dim-subject.recipe.json");
     let png = dir.join("hero.png");
     let report = dir.join("hero.report.json");
     fs::write(
@@ -1199,16 +1199,11 @@ fn photo_render_camera_behavior_recovers_dark_subject_with_bounded_camera_loop()
                 "id": "subject",
                 "uri": "tests/assets/gltf/cad_terminal_block.gltf",
                 "material": {
-                    "base_color": "#000000",
+                    "base_color": "#C0C0C0",
                     "roughness": 1.0,
                     "metallic": 0.0,
                     "double_sided": true
                 }
-            }],
-            "lights": [{
-                "id": "blackout",
-                "kind": "directional",
-                "illuminance_lux": 0.0
             }],
             "photo": {
                 "intent": "camera_behavior",
@@ -1218,7 +1213,7 @@ fn photo_render_camera_behavior_recovers_dark_subject_with_bounded_camera_loop()
         })
         .to_string(),
     )
-    .expect("black-subject photo recipe writes");
+    .expect("dim-subject photo recipe writes");
 
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args([
@@ -1241,7 +1236,7 @@ fn photo_render_camera_behavior_recovers_dark_subject_with_bounded_camera_loop()
 
     assert!(
         output.status.success(),
-        "dark camera behavior should recover through subject metering, stdout={}, stderr={}",
+        "dim subject should recover through the bounded default correction, stdout={}, stderr={}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1279,19 +1274,19 @@ fn photo_render_camera_behavior_recovers_dark_subject_with_bounded_camera_loop()
     assert_eq!(report_json["schema"], "scena.photo_report.v1");
     assert_eq!(report_json["status"], "passed", "{report_json:#}");
     assert_eq!(report_json["ok"], true, "{report_json:#}");
-    assert_eq!(report_json["retry"]["policy"]["max_attempts"], 6);
-    assert_eq!(report_json["retry"]["policy"]["max_retries"], 5);
+    assert_eq!(report_json["retry"]["policy"]["max_attempts"], 2);
+    assert_eq!(report_json["retry"]["policy"]["max_retries"], 1);
     assert_eq!(
         report_json["retry"]["policy"]["allowed_adjustments"],
-        serde_json::json!(["camera_composition", "exposure_compensation_ev"]),
+        serde_json::json!(["exposure_compensation_ev"]),
         "{report_json:#}"
     );
     assert_eq!(report_json["retry"]["retry_used"], true);
     assert!(
         report_json["retry"]["attempts"]
             .as_u64()
-            .is_some_and(|attempts| (2..=6).contains(&attempts)),
-        "dark subject should require a bounded correction loop: {report_json:#}"
+            .is_some_and(|attempts| (1..=2).contains(&attempts)),
+        "dim subject should stay within the bounded default correction: {report_json:#}"
     );
     assert_eq!(
         report_json["retry"]["suggestion"]["kind"],
@@ -1324,13 +1319,13 @@ fn photo_render_camera_behavior_recovers_dark_subject_with_bounded_camera_loop()
         .expect("mean luminance is numeric");
     assert!(
         (80.0..=100.0).contains(&mean_luma),
-        "dark subject should be lifted into the photo band, mean={mean_luma}; report={report_json:#}"
+        "dim subject should be lifted into the photo band, mean={mean_luma}; report={report_json:#}"
     );
     assert!(
         subject["low_clip_fraction"]
             .as_f64()
             .is_some_and(|value| value <= 0.20),
-        "dark subject should not remain a silhouette: {report_json:#}"
+        "dim subject should not remain a silhouette: {report_json:#}"
     );
 }
 
@@ -1423,7 +1418,7 @@ fn photo_render_failed_loop_reports_measured_candidate_history() {
             .is_some_and(|codes| !codes.is_empty()),
         "failed loop report must expose final failure codes: {report_json:#}"
     );
-    assert_eq!(report_json["retry"]["policy"]["max_attempts"], 6);
+    assert_eq!(report_json["retry"]["policy"]["max_attempts"], 2);
     assert_eq!(
         report_json["retry"]["budget_exhausted"], false,
         "fail-fast subject removal should report failure without pretending the retry budget was exhausted: {report_json:#}"

@@ -12,8 +12,7 @@ use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 )]
 pub(super) const BYTES_PER_PIXEL: u32 = 4;
 pub(super) const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-/// WGPU evaluates front-face winding before viewport conversion; prepared
-/// triangle order that is front-facing in the CPU rasterizer maps to CCW here.
+/// Match scena's CPU screen-space culling convention for prepared triangles.
 pub(super) const SCENA_FRONT_FACE: wgpu::FrontFace = wgpu::FrontFace::Ccw;
 
 /// Device-owned cache for the large triangle shader source. Pipeline layouts,

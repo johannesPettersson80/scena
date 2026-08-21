@@ -207,7 +207,7 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, C
             false,
         )?;
         let duration = photo_started.elapsed();
-        let reasons = photo_acceptance_reasons(&selected);
+        let reasons = photo_acceptance_reasons(&selected, photo_quality);
         (
             selected.capture,
             Duration::ZERO,
@@ -404,6 +404,7 @@ fn recipe_photo_subject(
 
 fn photo_acceptance_reasons(
     selected: &scena_photo::SelectedCapture,
+    quality: scena::SceneRecipePhotoQualityV1,
 ) -> Vec<scena::SceneRecipeVerificationReasonV1> {
     if selected.final_candidate.status == "passed" {
         return Vec::new();
@@ -412,6 +413,9 @@ fn photo_acceptance_reasons(
         .final_candidate
         .failure_codes
         .iter()
+        .filter(|code| {
+            quality.is_final() || !matches!(**code, "contact_shadow_missing" | "shadow_too_hard")
+        })
         .map(|code| scena::SceneRecipeVerificationReasonV1 {
             code: (*code).to_owned(),
             severity: "error".to_owned(),

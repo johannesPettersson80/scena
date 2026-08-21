@@ -15,6 +15,7 @@ and deterministic headless rendering.
 - [Renderer charter](RFC-rust-3d-renderer.md): canonical scope, non-goals, and architecture vocabulary.
 - [Stable JSON contracts](schema-contracts.md): schema names, compatibility, handle, and fixture policy.
 - [v1.9.0 release notes](release-notes/v1.9.0.md): correctness, portability, agent workflows, proof quality, and interactive performance.
+- [v1.10.2 release notes](release-notes/v1.10.2.md): release-candidate repair and validation follow-up.
 - [v1.10.1 release notes](release-notes/v1.10.1.md): release-validation and photographic-rendering follow-up.
 - [v1.10.0 release notes](release-notes/v1.10.0.md): subject-driven photographic rendering, material workflows, section cuts, and compatibility notes.
 - [v1.8.0 release notes](release-notes/v1.8.0.md): deterministic authoring workflows, renderer correctness, cross-backend GPU proof, and enforceable release evidence.

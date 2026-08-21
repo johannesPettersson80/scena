@@ -773,14 +773,14 @@ fn apply_final_photo_quality_policy(
     quality_analysis: &mut Value,
     failure_codes: &mut Vec<&'static str>,
 ) -> Result<(), CliFailure> {
-    let same_pass_grounding_confirmed = quality_analysis
-        .pointer("/grounding/contact_shadow_confirmed")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
     if !quality.is_final() {
-        if same_pass_grounding_confirmed {
-            failure_codes.retain(|code| *code != "contact_shadow_missing");
-        }
+        // Preview retains the measured grounding observations, but synthetic
+        // contact shadows and SSAO are presentation aids rather than final
+        // photo evidence. Do not reject an otherwise valid preview because
+        // the local support-strip heuristic cannot confirm them.
+        failure_codes.retain(|code| {
+            !matches!(*code, "contact_shadow_missing" | "shadow_too_hard")
+        });
         return Ok(());
     }
 
@@ -5384,14 +5384,17 @@ mod tests {
             .as_object_mut()
             .expect("analysis is an object")
             .remove("policy");
-        let mut preview_failures = Vec::new();
+        let mut preview_failures = vec!["contact_shadow_missing", "shadow_too_hard"];
         apply_final_photo_quality_policy(
             scena::SceneRecipePhotoQualityV1::Preview,
             &mut preview,
             &mut preview_failures,
         )
         .expect("preview remains report-only");
-        assert!(preview_failures.is_empty());
+        assert!(
+            preview_failures.is_empty(),
+            "preview contact-shadow heuristics must remain nonblocking: {preview_failures:?}"
+        );
         assert_eq!(preview["mode"], "report_only");
         assert!(preview.get("policy").is_none());
     }

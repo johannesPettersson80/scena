@@ -51,12 +51,11 @@
         {
           "source_material": { "index": 5, "name": "baseplate steel.002" },
           "material": {
-            "material_pack": {
-              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
-              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
-              "tile_size_m": 0.45
-            },
-            "normal_scale": 0.10
+            "preset": "brushed_steel",
+            "base_color": "#8A9299",
+            "roughness": 0.50,
+            "normal_scale": 0.10,
+            "occlusion_strength": 0.50
           }
         },
         {
@@ -72,12 +71,11 @@
         {
           "source_material": { "index": 7, "name": "navy powder coat.002" },
           "material": {
-            "material_pack": {
-              "uri": "../../../../../target/photo-materials/plastic013a/1k/scena-material-pack.json",
-              "expected_archive_sha256": "2bf612fa6fe5556930196865beb55cefb833b83bd0bc3db1db7188074fb41260",
-              "tile_size_m": 0.20
-            },
-            "base_color": "#183764"
+            "preset": "satin",
+            "base_color": "#244F7F",
+            "roughness": 0.54,
+            "normal_scale": 0.10,
+            "occlusion_strength": 0.50
           }
         },
         {
@@ -120,9 +118,9 @@
           "source_material": { "index": 11, "name": "satin gearbox aluminium" },
           "material": {
             "material_pack": {
-              "uri": "../../../../../target/photo-materials/metal009/1k/scena-material-pack.json",
-              "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
-              "tile_size_m": 0.32
+              "uri": "../../../../../target/photo-materials/metal050a/1k/scena-material-pack.json",
+              "expected_archive_sha256": "c2785502e4e2c14869f728f819548e1eaeef92df9bd9d4ec8e4904daaed24805",
+              "tile_size_m": 0.28
             },
             "normal_scale": 0.10,
             "occlusion_strength": 0.45,
@@ -150,7 +148,7 @@
   "photo": {
     "intent": "camera_behavior",
     "quality": "final",
-    "staging": { "ground": "matte" },
+    "staging": { "ground": "reflective" },
     "subject": { "kind": "import", "id": "machine" }
   }
 }
