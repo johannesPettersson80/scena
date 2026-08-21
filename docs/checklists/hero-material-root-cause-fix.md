@@ -55,7 +55,7 @@
     evidence. No individual light parameter had changed, but the execution tier
     had; the earlier conclusion is withdrawn.
   - visual: the corrected `final` recipe passed at native `3840x2520`, SSAA2,
-    with the 2048x1024 studio environment, 512-pixel cubemap, four local probes,
+    with the final Studio Small 08 environment, 512-pixel cubemap, four local probes,
     subject mean `98.6`, highlight fraction `0.2323`, and no failure codes.
     Named 1:1 crops retain the accepted flywheel while showing the promoted
     gearbox, baseplate, and powder surfaces under the correct studio response.

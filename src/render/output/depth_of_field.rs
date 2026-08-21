@@ -1,7 +1,7 @@
 use crate::material::Color;
 use crate::render::target::RasterTarget;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 use super::pixel_offset;
 use super::quantize_screen_space_depth;
 

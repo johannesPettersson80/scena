@@ -34,15 +34,15 @@ const NEUTRAL_STUDIO_FILES: &[&str] = &[
 const NEUTRAL_STUDIO_SOURCE_BYTES: &[u8] =
     include_bytes!("../../tests/assets/environment/neutral-studio.fixture.txt");
 
-const STUDIO_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_08_2k.hdr";
+const STUDIO_SOURCE_PATH: &str = "tests/assets/environment/polyhaven/studio_small_08_1k.hdr";
 const STUDIO_RUNTIME_PATH: &str = "tests/assets/environment/generated/studio_small_03_128x64.hdr";
 const STUDIO_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_03_128x64.hdr";
 const STUDIO_FINAL_PROVENANCE_PATH: &str =
-    "tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json";
+    "tests/assets/environment/polyhaven/studio_small_08_1k.provenance.json";
 #[cfg(not(target_arch = "wasm32"))]
-const STUDIO_FINAL_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_08_2048x1024.hdr";
+const STUDIO_FINAL_RUNTIME_URI: &str = "scena://bundled/environment/studio_small_08_1024x512.hdr";
 const STUDIO_SOURCE_SHA256: &str =
-    "6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746";
+    "f6a989f89432eb4eee3191364a9c1ceed195c4ec3544173a3c04fd96cb91d0ba";
 const STUDIO_FILES: &[&str] = &[
     STUDIO_SOURCE_PATH,
     STUDIO_RUNTIME_PATH,
@@ -59,7 +59,7 @@ const STUDIO_RUNTIME_BYTES: &[u8] =
     include_bytes!("../../tests/assets/environment/generated/studio_small_03_128x64.hdr");
 #[cfg(not(target_arch = "wasm32"))]
 const STUDIO_SOURCE_BYTES: &[u8] =
-    include_bytes!("../../tests/assets/environment/polyhaven/studio_small_08_2k.hdr");
+    include_bytes!("../../tests/assets/environment/polyhaven/studio_small_08_1k.hdr");
 
 /// One bundled, checked environment preset.
 ///
@@ -199,7 +199,7 @@ impl<F: AssetFetcher> Assets<F> {
     /// Returns the full-resolution bundled studio HDRI for native final stills.
     ///
     /// Browser callers must fetch a final-quality HDR explicitly rather than
-    /// embedding the 2K source in the WASM download.
+    /// embedding the final-quality source in the WASM download.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn bundled_final_studio_environment(&self) -> Result<EnvironmentHandle, AssetError> {
         let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
@@ -211,12 +211,14 @@ impl<F: AssetFetcher> Assets<F> {
     }
 
     /// Returns a structured error because the browser bundle deliberately does
-    /// not embed the 2K HDRI used by native final stills.
+    /// not embed the final-quality HDRI used by native stills.
     #[cfg(target_arch = "wasm32")]
     pub fn bundled_final_studio_environment(&self) -> Result<EnvironmentHandle, AssetError> {
         Err(AssetError::PolicyViolation {
-            path: "scena://bundled/environment/studio_small_08_2048x1024.hdr".to_owned(),
-            reason: "the 2K final-studio HDR is native-only to keep the browser renderer download bounded".to_owned(),
+            path: "scena://bundled/environment/studio_small_08_1024x512.hdr".to_owned(),
+            reason:
+                "the final-studio HDR is native-only to keep the browser renderer download bounded"
+                    .to_owned(),
             help: "load a final-quality HDR through Assets::load_environment instead",
         })
     }

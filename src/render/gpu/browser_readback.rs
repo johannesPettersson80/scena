@@ -17,9 +17,6 @@ use super::strokes::{self, StrokeResources};
 use super::transmission::TransmissionResources;
 use super::vertices::PrimitiveDrawBatch;
 #[cfg(target_arch = "wasm32")]
-use crate::diagnostics::RenderError;
-
-#[cfg(target_arch = "wasm32")]
 pub(super) fn read_webgl2_canvas_rgba8(
     canvas: &web_sys::HtmlCanvasElement,
     target: RasterTarget,
@@ -61,24 +58,6 @@ pub(super) fn read_webgl2_canvas_rgba8(
         target.width,
         target.height,
     ))
-}
-
-#[cfg(target_arch = "wasm32")]
-pub(super) fn capture_webgl2_presented_frame(
-    canvas: Option<&web_sys::HtmlCanvasElement>,
-    target: RasterTarget,
-) -> Result<Option<Vec<u8>>, RenderError> {
-    if target.backend != crate::Backend::WebGl2 {
-        return Ok(None);
-    }
-    let canvas = canvas.ok_or(RenderError::GpuResourcesNotPrepared {
-        backend: target.backend,
-    })?;
-    read_webgl2_canvas_rgba8(canvas, target)
-        .map(Some)
-        .map_err(|_| RenderError::GpuReadback {
-            backend: target.backend,
-        })
 }
 
 #[cfg(target_arch = "wasm32")]

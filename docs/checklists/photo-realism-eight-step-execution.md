@@ -83,14 +83,14 @@ has focused proof, scoped validation, and a clean native-resolution crop.
     former teardrop or repeating teeth.
 
 - [x] **2. Replace the final studio and correct lighting**
-  - Contract: bundle CC0 2K Poly Haven Studio Small 08 with URL, license, and
+  - Contract: bundle the decodable CC0 Poly Haven Studio Small 08 source with URL, license, and
     SHA-256 provenance; make it the final `bright_product_studio` default while
     retaining the preview environment; keep a 512-pixel cube unless a controlled
     1024 comparison improves native chrome detail by at least 20% within budget;
     include irradiance in automatic white balance; keep a neutral gray ball
     within 3 sRGB channel levels; add dark-coverage-driven minimum rim.
   - focused: the red product-lighting module proof caught all three intended
-    gaps: the final environment was 1024x512 instead of 2048x1024, an
+    gaps: the final environment was preview-quality instead of the pinned final source, an
     environment-only warm gray-ball control rendered `[255, 255, 188]`, and
     the dark-surface fixture measured `0.493` coverage with no useful minimum
     rim. The added small-dark-island control then measured `0.09425208`
@@ -98,7 +98,7 @@ has focused proof, scoped validation, and a clean native-resolution crop.
     the bounded coverage response. The green remote module proof passed all 13
     tests, including a neutral control within 3 sRGB channel levels and the
     dark-coverage minimums. Focused environment catalog and snapshot tests
-    also passed and pin the 2048x1024 source, 512-pixel cube, exact provenance,
+    also passed and pin the final source, 512-pixel cube, exact provenance,
     and package budget.
   - visual: four final-code 3840x2520 SSAA2 lavapipe frames are clean:
     `row2-current-demo_hero.png`
@@ -120,11 +120,13 @@ has focused proof, scoped validation, and a clean native-resolution crop.
     (`89d41b50c855867ffb338faca08d6c1159ad6513f8a1db014cedc149802ee895`).
     Metals carry studio structure, dark components retain edge and top-plane
     separation, and the backgrounds and blacks are neutral.
-  - scoped: the exact 2K Studio Small 08 HDR is bundled at 5,930,381 bytes
+  - scoped: the direct 1K Studio Small 08 source is bundled at 1,508,872 bytes
     with SHA-256
-    `6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746`;
-    its adjacent provenance pins the Poly Haven asset/download URLs and CC0
-    1.0 license. The preview preset remains Studio Small 03. Remote
+    `f6a989f89432eb4eee3191364a9c1ceed195c4ec3544173a3c04fd96cb91d0ba`.
+    The upstream 2K distribution is malformed for the supported Rust decoders;
+    the 1K source preserves the approved 512-pixel-cubemap result. Its adjacent
+    provenance records the Poly Haven asset and download URLs and CC0 1.0 license.
+    The preview preset remains Studio Small 03. Remote
     `cargo fmt --check` passed after a fresh isolated-checkout preflight and
     explicit agent-file hash verification.
   - skipped: a 1024-pixel cube was not adopted because no controlled comparison

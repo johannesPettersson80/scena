@@ -820,11 +820,11 @@ fn headless_gpu_directional_shadow_visibility_darkens_receiver_when_available() 
 fn equirectangular_hdr_environment_loading_records_source_contract() {
     let assets = Assets::new();
     let environment = pollster::block_on(
-        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_2k.hdr"),
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_1k.hdr"),
     )
     .expect("equirectangular HDR environment loads");
     let duplicate = pollster::block_on(
-        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_2k.hdr"),
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_1k.hdr"),
     )
     .expect("duplicate equirectangular HDR environment loads");
     assert_eq!(environment, duplicate);
@@ -837,7 +837,7 @@ fn equirectangular_hdr_environment_loading_records_source_contract() {
         EnvironmentSourceKind::EquirectangularHdr
     );
     assert!(desc.is_equirectangular_hdr());
-    assert_eq!(desc.source_dimensions(), Some((2048, 1024)));
+    assert_eq!(desc.source_dimensions(), Some((1024, 512)));
     assert_eq!(desc.cubemap_resolution(), 256);
     assert_eq!(desc.brdf_lut_size(), 64);
     assert!(desc.derivatives().is_empty());
@@ -857,7 +857,7 @@ fn equirectangular_hdr_environment_loading_records_source_contract() {
 fn equirectangular_environment_prepare_generates_ibl_resources() {
     let assets = Assets::new();
     let environment = pollster::block_on(
-        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_2k.hdr"),
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_1k.hdr"),
     )
     .expect("equirectangular HDR environment loads");
     let mut scene = Scene::new();
@@ -1733,7 +1733,7 @@ fn origin_shift_keeps_large_offset_renderable_visible_without_precision_warning(
 fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
     let assets = Assets::new();
     let environment = pollster::block_on(
-        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_2k.hdr"),
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_1k.hdr"),
     )
     .expect("equirectangular HDR environment loads");
     let mut scene = Scene::new();

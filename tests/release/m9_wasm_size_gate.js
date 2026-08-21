@@ -18,7 +18,7 @@ const finalStudioHdr = path.join(
   "assets",
   "environment",
   "polyhaven",
-  "studio_small_08_2k.hdr",
+  "studio_small_08_1k.hdr",
 );
 
 function bin(name) {
@@ -46,7 +46,7 @@ const wasmSource = fs.readFileSync(input);
 const finalStudioHdrBytes = fs.readFileSync(finalStudioHdr);
 if (wasmSource.includes(finalStudioHdrBytes)) {
   throw new Error(
-    "browser-probe WASM must not embed the 2K final-studio HDR; fetch final-quality HDR assets explicitly instead",
+    "browser-probe WASM must not embed the final-studio HDR; fetch final-quality HDR assets explicitly instead",
   );
 }
 

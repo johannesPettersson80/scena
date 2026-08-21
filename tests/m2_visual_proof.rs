@@ -487,7 +487,7 @@ fn render_shadow_receiver_frame(with_caster: bool) -> (Vec<u8>, scena::RendererS
 fn render_ibl_environment() -> VisualProof {
     let assets = Assets::new();
     let environment = pollster::block_on(
-        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_2k.hdr"),
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_08_1k.hdr"),
     )
     .expect("equirectangular HDR environment loads");
     let geometry = assets.create_geometry(fullscreen_triangle_geometry());

@@ -560,12 +560,12 @@ mod photographic_lighting_tests {
         assert_eq!(preview.environment.cubemap_resolution, Some(64));
         assert_eq!(
             final_report.environment.source_dimensions,
-            Some([2048, 1024])
+            Some([1024, 512])
         );
         assert_eq!(final_report.environment.cubemap_resolution, Some(512));
         assert_eq!(
             final_report.environment.name.as_deref(),
-            Some("studio_small_08_2048x1024.hdr")
+            Some("studio_small_08_1024x512.hdr")
         );
         assert!(preview.environment.equirectangular_hdr);
         assert!(final_report.environment.equirectangular_hdr);

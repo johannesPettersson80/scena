@@ -30,9 +30,10 @@ async fn m6_cpu_webgl2_parity_requires_cpu_and_gpu_renderer_owned_frames() {
     assert_eq!(
         parity.get("status").and_then(serde_json::Value::as_str),
         Some("passed"),
-        "CPU/WebGL2 parity report failed: codes={:?}, metrics={:#}",
+        "CPU/WebGL2 parity report failed: codes={:?}, metrics={:#}, full_parity={:#}",
         parity.get("failure_codes"),
         parity.get("metrics").unwrap_or(&serde_json::Value::Null),
+        parity,
     );
     let cpu_frame = parity.get("cpu_frame").expect("parity has a CPU frame");
     let gpu_frame = parity.get("gpu_frame").expect("parity has a GPU frame");

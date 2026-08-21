@@ -20,7 +20,6 @@ impl GpuDeviceState {
         if let Some(error) = self.runtime_fault.render_error(target.backend) {
             return Err(error);
         }
-        let browser_canvas = self.browser_canvas.clone();
         if self.surface.is_none() {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: target.backend,
@@ -84,10 +83,6 @@ impl GpuDeviceState {
             });
         }
         self.queue.submit(Some(encoder.finish()));
-        self.webgl_presented_readback = super::browser_readback::capture_webgl2_presented_frame(
-            browser_canvas.as_ref(),
-            target,
-        )?;
         surface_output.present();
         if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
             let change = surface_frame::refresh_surface_configuration(
@@ -117,17 +112,6 @@ impl GpuDeviceState {
         &mut self,
         target: RasterTarget,
     ) -> Result<Option<Vec<u8>>, JsValue> {
-        if target.backend == crate::Backend::WebGl2 {
-            return self
-                .webgl_presented_readback
-                .clone()
-                .map(Some)
-                .ok_or_else(|| {
-                    JsValue::from_str(
-                        "renderer-owned WebGL2 readback requires a completed renderer frame",
-                    )
-                });
-        }
         let Some(resources) = self.resources.as_ref() else {
             return Ok(None);
         };

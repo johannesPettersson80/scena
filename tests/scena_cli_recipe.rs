@@ -3420,7 +3420,7 @@ fn write_chrome_ibl_recipe(dir: &Path, name: &str, roughness: f64) -> (PathBuf, 
                 "background": { "kind": "white" },
                 "environment": {
                     "kind": "uri",
-                    "uri": "tests/assets/environment/polyhaven/studio_small_08_2k.hdr"
+                    "uri": "tests/assets/environment/polyhaven/studio_small_08_1k.hdr"
                 }
             },
             "render": {
@@ -3502,7 +3502,7 @@ fn write_chrome_ibl_panel_recipe(dir: &Path, name: &str, roughness: f64) -> (Pat
                 "background": { "kind": "white" },
                 "environment": {
                     "kind": "uri",
-                    "uri": "tests/assets/environment/polyhaven/studio_small_08_2k.hdr"
+                    "uri": "tests/assets/environment/polyhaven/studio_small_08_1k.hdr"
                 }
             },
             "render": {

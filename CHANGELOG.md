@@ -12,11 +12,14 @@ All notable user-facing changes are recorded here.
 - Make the cross-backend double-sided regression compare RGB output against an
   empty GPU frame, avoiding alpha-clear differences without relaxing the visible
   double-sided rendering requirement.
+- Use the direct, standards-compliant 1K Studio Small 08 HDR for final native
+  lighting. It preserves the approved 512-face cubemap output while replacing
+  the malformed 2K upstream RLE stream that Rust decoders reject.
 
 ## [1.10.1] - 2026-08-20
 
 - Fix the release-path renderer regressions: reuse SSR row-band scratch on
-  steady CPU renders, keep the 2K final-studio HDR out of browser WASM, and
+  steady CPU renders, keep the final-studio HDR out of browser WASM, and
   release stale browser WebGPU readback maps before another capture.
 - Restore cross-target shader-output validation, document the preparation
   ownership boundary, and give the Windows DX12 and 4K performance jobs an

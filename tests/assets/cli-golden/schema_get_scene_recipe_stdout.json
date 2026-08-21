@@ -650,7 +650,7 @@
       },
       "environment": {
         "kind": "uri",
-        "uri": "tests/assets/environment/polyhaven/studio_small_08_2k.hdr"
+        "uri": "tests/assets/environment/polyhaven/studio_small_08_1k.hdr"
       },
       "grid": {
         "line_spacing": 0.04,

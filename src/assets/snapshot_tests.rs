@@ -19,7 +19,7 @@ fn bundled_studio_environment_does_not_overbake_its_128x64_source() {
 }
 
 #[test]
-fn bundled_final_studio_environment_uses_checked_2k_source_and_512_faces() {
+fn bundled_final_studio_environment_uses_checked_1k_source_and_512_faces() {
     let assets = Assets::new();
     let handle = assets
         .bundled_final_studio_environment()
@@ -28,21 +28,21 @@ fn bundled_final_studio_environment_uses_checked_2k_source_and_512_faces() {
         .try_environment(handle)
         .expect("bundled final studio environment remains available");
 
-    assert_eq!(environment.source_dimensions(), Some((2048, 1024)));
+    assert_eq!(environment.source_dimensions(), Some((1024, 512)));
     assert_eq!(
         environment.source_sha256(),
-        Some("6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746")
+        Some("f6a989f89432eb4eee3191364a9c1ceed195c4ec3544173a3c04fd96cb91d0ba")
     );
     assert_eq!(
-        include_str!("../../tests/assets/environment/polyhaven/studio_small_08_2k.provenance.json"),
+        include_str!("../../tests/assets/environment/polyhaven/studio_small_08_1k.provenance.json"),
         concat!(
             "{\n",
             "  \"asset\": \"Studio Small 08\",\n",
             "  \"source_url\": \"https://polyhaven.com/a/studio_small_08\",\n",
-            "  \"download_url\": \"https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/studio_small_08_2k.hdr\",\n",
+            "  \"download_url\": \"https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_08_1k.hdr\",\n",
             "  \"license\": \"CC0-1.0\",\n",
-            "  \"sha256\": \"6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746\",\n",
-            "  \"size_bytes\": 5930381\n",
+            "  \"sha256\": \"f6a989f89432eb4eee3191364a9c1ceed195c4ec3544173a3c04fd96cb91d0ba\",\n",
+            "  \"size_bytes\": 1508872\n",
             "}\n"
         )
     );

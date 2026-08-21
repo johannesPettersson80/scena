@@ -2,10 +2,13 @@
 
 - `neutral-studio.fixture.txt` and its generated derivatives are scena-owned
   deterministic fixtures distributed under CC0-1.0.
-- `polyhaven/studio_small_08_2k.hdr` is the `studio_small_08` environment from
-  Poly Haven, distributed under CC0-1.0. Source:
-  <https://polyhaven.com/a/studio_small_08>. The packaged source SHA-256 is
-  `6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746`.
+- `polyhaven/studio_small_08_1k.hdr` is the direct 1K `studio_small_08`
+  environment from Poly Haven, distributed under CC0-1.0. Source:
+  <https://polyhaven.com/a/studio_small_08>. Its SHA-256 is
+  `f6a989f89432eb4eee3191364a9c1ceed195c4ec3544173a3c04fd96cb91d0ba`.
+  The 2K upstream distribution is not bundled because its malformed RLE stream
+  is rejected by the supported Rust decoders; the 1K source preserves the
+  approved 512-pixel-cubemap lighting result.
   `generated/studio_small_03_128x64.hdr` is the package-embedded runtime
   derivative, retained for the interactive preset profile.
   source. Its SHA-256 is

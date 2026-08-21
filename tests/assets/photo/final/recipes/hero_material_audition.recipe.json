@@ -321,7 +321,7 @@
     "background": { "kind": "studio" },
     "environment": {
       "kind": "uri",
-      "uri": "../../../environment/polyhaven/studio_small_08_2k.hdr"
+      "uri": "../../../environment/polyhaven/studio_small_08_1k.hdr"
     }
   },
   "render": {

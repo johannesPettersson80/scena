@@ -160,7 +160,7 @@ pub(crate) fn check_c02_portable_agent_asset_contracts(root: &Path, findings: &m
         &[
             "CC0-1.0",
             "polyhaven.com/a/studio_small_08",
-            "6e677b7421f4a14f0844dece04243c4ab3f4bf1a05bf4bb79e29368b3ecc7746",
+            "f6a989f89432eb4eee3191364a9c1ceed195c4ec3544173a3c04fd96cb91d0ba",
             "studio_small_03_128x64.hdr",
             "0d1acad0",
         ],
