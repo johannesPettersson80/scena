@@ -778,9 +778,7 @@ fn apply_final_photo_quality_policy(
         // contact shadows and SSAO are presentation aids rather than final
         // photo evidence. Do not reject an otherwise valid preview because
         // the local support-strip heuristic cannot confirm them.
-        failure_codes.retain(|code| {
-            !matches!(*code, "contact_shadow_missing" | "shadow_too_hard")
-        });
+        failure_codes.retain(|code| !matches!(*code, "contact_shadow_missing" | "shadow_too_hard"));
         return Ok(());
     }
 
