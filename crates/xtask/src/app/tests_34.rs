@@ -237,6 +237,8 @@ fn pf03_pf05_hot_path_doctor_rejects_prepared_list_cloning() {
         "src/geometry.rs",
         "tests/m9_platform_release.rs",
         "src/assets.rs",
+        "src/assets/store.rs",
+        "src/assets/snapshot_tests.rs",
         "src/render/prepare/materials.rs",
         "src/render/prepare/primitives.rs",
         "src/render/phase5_tests.rs",

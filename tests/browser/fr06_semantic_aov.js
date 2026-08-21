@@ -369,6 +369,7 @@ async function main() {
       const { browser, engine } = await launchHardwareBrowser(backend);
       try {
         const browserGpu = await collectBrowserGpuEvidence(browser, engine);
+        process.stderr.write(`FR06 ${backend}: browser GPU ${JSON.stringify(browserGpu)}\n`);
         const page = await browser.newPage();
         const httpFailures = [];
         page.on("console", (message) => process.stderr.write(`${message.text()}\n`));

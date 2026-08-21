@@ -1,10 +1,38 @@
 use crate::scene::recipe::{SchemaFieldModelV1, scene_recipe_field_model_v1};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::{
-    SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1, SchemaCatalogEntryV1, SchemaCatalogV1,
-    SchemaEntryReportV1, entries, fixtures, schema_entry_rows,
+    SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1, entries, fixtures, schema_entry_rows,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SchemaCatalogV1 {
+    pub schema: String,
+    pub entries: Vec<SchemaCatalogEntryV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SchemaCatalogEntryV1 {
+    pub schema: String,
+    pub owner_module: String,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_flag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixture_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SchemaEntryReportV1 {
+    pub schema: String,
+    pub entry: SchemaCatalogEntryV1,
+    pub example: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invalid_example: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_model: Option<SchemaFieldModelV1>,
+}
 
 fn schema_catalog_entries() -> Vec<SchemaCatalogEntryV1> {
     schema_entry_rows()

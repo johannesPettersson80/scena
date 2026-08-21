@@ -254,14 +254,17 @@ function chromiumExecutablePath() {
 }
 
 function chromiumLaunchArgs() {
-  return [
-    "--headless=new",
+  const args = [
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--ignore-gpu-blocklist",
     "--enable-gpu",
     "--use-angle=gles",
   ];
+  if (process.env.SCENA_BROWSER_HEADLESS !== "0") {
+    args.unshift("--headless=new");
+  }
+  return args;
 }
 
 function assertHardwareRenderer(renderer) {
@@ -3117,7 +3120,7 @@ async function main() {
   const { server, url } = await serve(PKG_DIR, path.join(process.cwd(), "tests", "assets", "gltf"));
   const executablePath = chromiumExecutablePath();
   const browser = await chromium.launch({
-    headless: true,
+    headless: process.env.SCENA_BROWSER_HEADLESS !== "0",
     executablePath,
     args: chromiumLaunchArgs(),
   });

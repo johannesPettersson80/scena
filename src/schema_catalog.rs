@@ -1,6 +1,3 @@
-use crate::scene::recipe::SchemaFieldModelV1;
-use serde::{Deserialize, Serialize};
-
 mod agent_guide;
 mod agent_smoke;
 mod entries;
@@ -16,38 +13,13 @@ pub use agent_smoke::{
     AgentTemplateCatalogV1,
 };
 pub use fixtures::nearest_schema_name;
-pub use reports::{schema_catalog_entry, schema_catalog_v1, schema_entry_report_v1};
+pub use reports::{
+    SchemaCatalogEntryV1, SchemaCatalogV1, SchemaEntryReportV1, schema_catalog_entry,
+    schema_catalog_v1, schema_entry_report_v1,
+};
 
 pub const SCHEMA_CATALOG_SCHEMA_V1: &str = "scena.schema_catalog.v1";
 pub const SCHEMA_ENTRY_SCHEMA_V1: &str = "scena.schema_entry.v1";
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SchemaCatalogV1 {
-    pub schema: String,
-    pub entries: Vec<SchemaCatalogEntryV1>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SchemaCatalogEntryV1 {
-    pub schema: String,
-    pub owner_module: String,
-    pub summary: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub feature_flag: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fixture_path: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SchemaEntryReportV1 {
-    pub schema: String,
-    pub entry: SchemaCatalogEntryV1,
-    pub example: serde_json::Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub invalid_example: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field_model: Option<SchemaFieldModelV1>,
-}
 
 fn schema_entry_rows() -> &'static [SchemaEntryRow] {
     &[
@@ -313,6 +285,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             summary: "Camera-behavior photo render command result with selected candidate, quality verdict, and artifact paths.",
             feature_flag: Some("scene-host"),
             fixture_path: Some("tests/assets/stable-contracts/photo_render_result.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.photo_quality_execution.v1",
+            owner_module: "bin/scena/photo",
+            summary: "Requested and effective photo-quality execution profile, backend, capture, and diagnostic settings.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/photo_quality_execution.v1.json"),
         },
         SchemaEntryRow {
             schema: "scena.photo_plan.v1",

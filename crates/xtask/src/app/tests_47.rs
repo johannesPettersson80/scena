@@ -7,6 +7,7 @@ fn c10_doctor_rejects_cache_lookup_that_discards_the_active_policy() {
     let _ = fs::remove_dir_all(&fixture_root);
     for relative in [
         "src/assets.rs",
+        "src/assets/store.rs",
         "src/assets/load.rs",
         "src/assets/load/options.rs",
         "src/assets/scene_cache.rs",

@@ -203,6 +203,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/photo_render_result.v1.json"),
         ),
         (
+            "scena.photo_quality_execution.v1",
+            include_str!("../../tests/assets/stable-contracts/photo_quality_execution.v1.json"),
+        ),
+        (
             "scena.photo_plan.v1",
             include_str!("../../tests/assets/stable-contracts/photo_plan.v1.json"),
         ),

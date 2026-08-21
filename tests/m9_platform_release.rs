@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -108,6 +108,7 @@ thread_local! {
     static COUNT_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
     static ALLOCATION_COUNT: Cell<usize> = const { Cell::new(0) };
     static ALLOCATION_BYTES: Cell<usize> = const { Cell::new(0) };
+    static ALLOCATION_SIZES: RefCell<[usize; 64]> = const { RefCell::new([0; 64]) };
 }
 
 struct CountingAllocator;
@@ -119,6 +120,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if !pointer.is_null() && COUNT_ALLOCATIONS.with(Cell::get) {
             ALLOCATION_COUNT.set(ALLOCATION_COUNT.get().saturating_add(1));
             ALLOCATION_BYTES.set(ALLOCATION_BYTES.get().saturating_add(layout.size()));
+            record_allocation_size(layout.size());
         }
         pointer
     }
@@ -135,6 +137,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if !pointer.is_null() && COUNT_ALLOCATIONS.with(Cell::get) {
             ALLOCATION_COUNT.set(ALLOCATION_COUNT.get().saturating_add(1));
             ALLOCATION_BYTES.set(ALLOCATION_BYTES.get().saturating_add(layout.size()));
+            record_allocation_size(layout.size());
         }
         pointer
     }
@@ -145,6 +148,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if !resized.is_null() && COUNT_ALLOCATIONS.with(Cell::get) {
             ALLOCATION_COUNT.set(ALLOCATION_COUNT.get().saturating_add(1));
             ALLOCATION_BYTES.set(ALLOCATION_BYTES.get().saturating_add(new_size));
+            record_allocation_size(new_size);
         }
         resized
     }
@@ -2501,7 +2505,8 @@ fn m9_parallel_cpu_render_has_low_steady_state_allocations() {
     outcome.expect("steady render succeeds");
     assert!(
         allocations <= 16,
-        "warm parallel CPU render should reuse worker resources; observed {allocations} allocations"
+        "warm parallel CPU render should reuse worker resources; observed {allocations} allocations of sizes {:?}",
+        allocation_size_trace()
     );
 }
 
@@ -2526,7 +2531,8 @@ fn m9_parallel_cpu_ssr_render_reuses_steady_state_row_band_scratch() {
     outcome.expect("steady SSR render succeeds");
     assert!(
         allocations <= 16,
-        "warm parallel CPU SSR render should reuse row-band scratch; observed {allocations} allocations"
+        "warm parallel CPU SSR render should reuse row-band scratch; observed {allocations} allocations of sizes {:?}",
+        allocation_size_trace()
     );
 }
 
@@ -2551,7 +2557,8 @@ fn m9_cpu_supersample_render_reuses_steady_state_scratch_buffers() {
     outcome.expect("steady supersample render succeeds");
     assert!(
         allocations <= 16,
-        "warm CPU supersample render should reuse supersample scratch buffers; observed {allocations} allocations"
+        "warm CPU supersample render should reuse supersample scratch buffers; observed {allocations} allocations of sizes {:?}",
+        allocation_size_trace()
     );
 }
 
@@ -5412,6 +5419,7 @@ fn percentile_nearest_rank_u64(sorted_samples: &[u64], percentile: f64) -> u64 {
 fn start_allocation_counting() {
     ALLOCATION_COUNT.set(0);
     ALLOCATION_BYTES.set(0);
+    ALLOCATION_SIZES.with(|sizes| *sizes.borrow_mut() = [0; 64]);
     COUNT_ALLOCATIONS.with(|counting| counting.set(true));
 }
 
@@ -5425,6 +5433,16 @@ fn allocation_count() -> u64 {
 
 fn allocation_bytes() -> u64 {
     ALLOCATION_BYTES.get() as u64
+}
+
+fn record_allocation_size(size: usize) {
+    let index = ALLOCATION_COUNT.get().saturating_sub(1).min(63);
+    ALLOCATION_SIZES.with(|sizes| sizes.borrow_mut()[index] = size);
+}
+
+fn allocation_size_trace() -> Vec<usize> {
+    let count = ALLOCATION_COUNT.get().min(64);
+    ALLOCATION_SIZES.with(|sizes| sizes.borrow()[..count].to_vec())
 }
 
 fn capability_matrix_row(

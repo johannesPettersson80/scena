@@ -13,10 +13,7 @@ pub(super) fn worker_count(task_count: usize) -> usize {
     if task_count <= 1 || rayon::current_thread_index().is_some() {
         return 1;
     }
-    std::thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(rayon::current_num_threads())
+    rayon::current_num_threads()
         .min(MAX_RENDER_WORKERS)
         .min(task_count)
         .max(1)

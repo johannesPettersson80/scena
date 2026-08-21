@@ -68,7 +68,9 @@ pub(crate) use release_contracts::{
 };
 pub(crate) use remote_builder::check_remote_builder_bootstrap_contracts;
 pub(crate) use scene_import::check_m3a_scene_import_contracts;
-pub(crate) use semantic_aov::check_fr06_semantic_aov_contracts;
+pub(crate) use semantic_aov::{
+    check_fr06_semantic_aov_contracts, check_fr06_software_lane_routing,
+};
 pub(crate) use shadow_depth::{
     check_depth_prepass_contracts, check_directional_shadow_contracts, check_shadow_map_contracts,
     directional_shadow_shader_has_pcf3x3,

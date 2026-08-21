@@ -284,6 +284,8 @@ async fn request_gpu_for_surface(
         display_p3_canvas_configured: false,
         #[cfg(target_arch = "wasm32")]
         browser_canvas: None,
+        #[cfg(target_arch = "wasm32")]
+        webgl_presented_readback: None,
     })
 }
 

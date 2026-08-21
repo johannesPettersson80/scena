@@ -251,6 +251,13 @@
     },
     {
       "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/photo_quality_execution.v1.json",
+      "owner_module": "bin/scena/photo",
+      "schema": "scena.photo_quality_execution.v1",
+      "summary": "Requested and effective photo-quality execution profile, backend, capture, and diagnostic settings."
+    },
+    {
+      "feature_flag": "scene-host",
       "fixture_path": "tests/assets/stable-contracts/photo_plan.v1.json",
       "owner_module": "scene_host::photo",
       "schema": "scena.photo_plan.v1",

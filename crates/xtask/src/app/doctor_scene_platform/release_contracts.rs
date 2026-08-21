@@ -9,7 +9,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "Cargo.toml",
         &[
-            "version = \"1.10.0\"",
+            "version = \"1.10.1\"",
             "rust-version = ",
             "documentation = \"https://docs.rs/scena\"",
             "keywords = [",

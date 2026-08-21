@@ -19,9 +19,9 @@
 
 use crate::diagnostics::AssetError;
 
-use super::{
-    AssetFetcher, AssetLoadOptions, AssetPath, Assets, EnvironmentDesc, EnvironmentHandle,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use super::EnvironmentDesc;
+use super::{AssetFetcher, AssetLoadOptions, AssetPath, Assets, EnvironmentHandle};
 
 const NEUTRAL_STUDIO_SOURCE_PATH: &str = "tests/assets/environment/neutral-studio.fixture.txt";
 const NEUTRAL_STUDIO_SOURCE_SHA256: &str =

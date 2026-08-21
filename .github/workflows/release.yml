@@ -149,7 +149,6 @@ jobs:
           bash scripts/release_lane_command.sh linux-webgpu-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
           bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:q02-materials
           bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:m6
-          bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:fr06-semantic-aov
           cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

@@ -56,13 +56,7 @@
               "expected_archive_sha256": "1b1970219b40fe707e7194b28702f1a65b0d227bbea56da69dfbc8d8b5cfcb5e",
               "tile_size_m": 0.45
             },
-            "normal_scale": 0.10,
-            "imperfection": {
-              "profile": "smudge",
-              "strength": 0.40,
-              "physical_scale_m": 0.040,
-              "seed": 523
-            }
+            "normal_scale": 0.10
           }
         },
         {
@@ -107,13 +101,7 @@
               "tile_size_m": 0.32
             },
             "normal_scale": 0.22,
-            "occlusion_strength": 0.65,
-            "imperfection": {
-              "profile": "oil_film",
-              "strength": 0.10,
-              "physical_scale_m": 0.018,
-              "seed": 1193
-            }
+            "occlusion_strength": 0.65
           }
         },
         {
@@ -162,7 +150,7 @@
   "photo": {
     "intent": "camera_behavior",
     "quality": "final",
-    "staging": { "ground": "reflective" },
+    "staging": { "ground": "matte" },
     "subject": { "kind": "import", "id": "machine" }
   }
 }

@@ -65,6 +65,7 @@
         0
       ],
       "explicit_msaa": "feature_disabled",
+      "final_photo": "error_if_required",
       "compute_shaders": "feature_disabled",
       "default_clipping_planes": 8,
       "directional_shadow_map_default_size": 2048,
@@ -193,6 +194,7 @@
         0
       ],
       "explicit_msaa": "feature_disabled",
+      "final_photo": "error_if_required",
       "compute_shaders": "feature_disabled",
       "default_clipping_planes": 8,
       "directional_shadow_map_default_size": 2048,

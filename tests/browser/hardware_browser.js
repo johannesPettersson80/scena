@@ -23,10 +23,11 @@ function chromiumArgsForPlatform(platform = process.platform) {
 
 async function launchHardwareBrowser(backend) {
   const engine = browserEngineForBackend(backend);
+  const headless = process.env.SCENA_BROWSER_HEADLESS !== "0";
   const playwright = require("playwright");
   if (engine === "firefox") {
     const browser = await playwright.firefox.launch({
-      headless: true,
+      headless,
       firefoxUserPrefs: {
         "dom.webgpu.enabled": true,
         "gfx.webgpu.force-enabled": true,
@@ -36,7 +37,7 @@ async function launchHardwareBrowser(backend) {
   }
   const browser = await playwright.chromium.launch({
     executablePath: process.env.SCENA_BROWSER_EXECUTABLE || process.env.CHROMIUM || undefined,
-    headless: true,
+    headless,
     args: chromiumArgsForPlatform(),
   });
   return { browser, engine };

@@ -307,6 +307,7 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
     for (relative, needles) in required {
         require_contains(root, findings, RULE, relative, needles);
     }
+    check_fr06_software_lane_routing(root, findings);
     const FR06_TEXTURE: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle_baseColor.png";
     if !root.join(FR06_TEXTURE).is_file() {
         findings.push(Finding::new(
@@ -345,4 +346,30 @@ pub(crate) fn check_fr06_semantic_aov_contracts(root: &Path, findings: &mut Vec<
             "same-pass beauty semantic witness",
         ],
     );
+}
+
+pub(crate) fn check_fr06_software_lane_routing(root: &Path, findings: &mut Vec<Finding>) {
+    const RULE: &str = "FR06-SEMANTIC-AOV";
+    for workflow in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let Ok(source) = read_source_to_string(root, workflow) else {
+            continue;
+        };
+        let Some(lane_start) = source.find("  linux-browser-webgpu:\n") else {
+            continue;
+        };
+        let mut lines = source[lane_start..].lines();
+        let _ = lines.next();
+        let lane = lines
+            .take_while(|line| !line.starts_with("  ") || line.starts_with("    "))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if lane.contains("npm run browser:fr06-semantic-aov") {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "{workflow} runs attached-surface FR06 in the Linux WebGPU software-conformance lane; defer it to .github/workflows/hardware-gpu.yml"
+                ),
+            ));
+        }
+    }
 }

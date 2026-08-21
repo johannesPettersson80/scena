@@ -33,7 +33,7 @@ fn q12_doctor_rejects_stale_release_version_and_missing_current_doc() {
 
     let manifest = fixture.join("Cargo.toml");
     let source = fs::read_to_string(&manifest).expect("Q12 manifest reads");
-    let mutated = source.replacen("version = \"1.10.0\"", "version = \"1.10.1\"", 1);
+    let mutated = source.replacen("version = \"1.10.1\"", "version = \"1.10.0\"", 1);
     assert_ne!(
         source, mutated,
         "stale-version mutation must change package version"

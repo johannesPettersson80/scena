@@ -40,6 +40,7 @@ impl GpuDeviceState {
         if let Some(error) = self.runtime_fault.render_error(target.backend) {
             return Err(error);
         }
+        let browser_canvas = self.browser_canvas.clone();
         let Some(resources) = self.resources.as_mut() else {
             return self.render_empty_surface(target, background_color);
         };
@@ -428,6 +429,11 @@ impl GpuDeviceState {
             if let Some(submission) = meter_submission {
                 self.browser_auto_exposure_meter.begin_mapping(submission);
             }
+            self.webgl_presented_readback =
+                super::browser_readback::capture_webgl2_presented_frame(
+                    browser_canvas.as_ref(),
+                    target,
+                )?;
             surface_output.present();
             if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
                 let change = surface_frame::refresh_surface_configuration(
@@ -464,6 +470,10 @@ impl GpuDeviceState {
         if beauty_witness_encoded && let Some(semantic) = resources.semantic_aov.as_mut() {
             semantic_aov::mark_beauty_witness_written(semantic);
         }
+        self.webgl_presented_readback = super::browser_readback::capture_webgl2_presented_frame(
+            browser_canvas.as_ref(),
+            target,
+        )?;
         surface_output.present();
         if reconfigure_after_present && let Some(surface) = self.surface.as_mut() {
             let change = surface_frame::refresh_surface_configuration(
