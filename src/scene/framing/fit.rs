@@ -2,7 +2,7 @@ use crate::diagnostics::LookupError;
 
 use super::{FramingOptions, aabb_corners, validate_bounds};
 use crate::scene::view_math::look_rotation;
-use crate::scene::{PerspectiveCamera, Quat, Transform, Vec3};
+use crate::scene::{OrthographicCamera, PerspectiveCamera, Quat, Transform, Vec3};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct ValidFramingOptions {
@@ -17,12 +17,17 @@ pub(super) struct ValidFramingOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct PerspectiveFit {
+    pub(super) framing: CameraFit,
+    pub(super) depth_radius: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct CameraFit {
     pub(super) camera_transform: Transform,
     pub(super) target: Vec3,
     pub(super) distance: f32,
     pub(super) yaw_radians: f32,
     pub(super) pitch_radians: f32,
-    pub(super) depth_radius: f32,
 }
 
 impl ValidFramingOptions {
@@ -141,12 +146,66 @@ pub(super) fn perspective_fit(
         .max(0.01);
 
     Ok(PerspectiveFit {
-        camera_transform,
+        framing: CameraFit {
+            camera_transform,
+            target,
+            distance,
+            yaw_radians,
+            pitch_radians,
+        },
+        depth_radius,
+    })
+}
+
+pub(super) fn orthographic_fit(
+    bounds: crate::Aabb,
+    camera: &mut OrthographicCamera,
+    options: ValidFramingOptions,
+) -> Result<CameraFit, LookupError> {
+    validate_bounds(bounds)?;
+    let base_target = bounds.center();
+    let rotation = look_rotation(-options.view_direction, options.up);
+    let inverse_rotation = rotation.inverse();
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    for corner in aabb_corners(bounds) {
+        let view = inverse_rotation * (corner - base_target);
+        min = min.min(view);
+        max = max.max(view);
+    }
+
+    let center = (min + max) * 0.5;
+    let target = base_target + rotation * Vec3::new(center.x, center.y, 0.0);
+    let height = ((max.y - min.y) / options.allowed_ndc_y())
+        .max((max.x - min.x) / (options.aspect() * options.allowed_ndc_x()))
+        .max(0.01);
+    let width = height * options.aspect();
+    camera.left = -width * 0.5;
+    camera.right = width * 0.5;
+    camera.bottom = -height * 0.5;
+    camera.top = height * 0.5;
+
+    let distance = (max.z - min.z).abs().max(0.01) * 2.0;
+    let near = 0.001;
+    let far = (distance + min.z.abs().max(max.z.abs()) * 2.0 + near).max(1.0);
+    if options.tighten_depth_range {
+        camera.near = near;
+        camera.far = far;
+    } else {
+        camera.near = camera.near.min(near);
+        camera.far = camera.far.max(far);
+    }
+    let (yaw_radians, pitch_radians) = orbit_angles_from_direction(options.view_direction);
+    Ok(CameraFit {
+        camera_transform: Transform {
+            translation: target + options.view_direction * distance,
+            rotation,
+            scale: Vec3::ONE,
+        },
         target,
         distance,
         yaw_radians,
         pitch_radians,
-        depth_radius,
     })
 }
 

@@ -4,6 +4,9 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+- Support orthographic cameras in authored scene recipes and fit their extents
+  and depth range to requested CAD or technical-view bounds.
+
 ## [1.10.3] - 2026-08-22
 
 - Reduce browser renderer startup work by compiling only the material pipelines

@@ -11,7 +11,7 @@ use super::{
 mod fit;
 mod grid;
 
-use fit::{ValidFramingOptions, perspective_fit};
+use fit::{ValidFramingOptions, orthographic_fit, perspective_fit};
 pub use grid::{GridFloorHandles, GridFloorOptions};
 
 /// Options for fitting a camera to world-space bounds.
@@ -470,16 +470,18 @@ impl Scene {
         Ok(camera)
     }
 
-    /// Fits a perspective camera to world-space bounds without preparing or rendering.
+    /// Fits a perspective or orthographic camera to world-space bounds without preparing or rendering.
     ///
     /// The camera is moved so the projected AABB fits the requested viewport
     /// fill and margin. This mutates scene camera state and marks the camera
     /// transform dirty; it does not prepare renderer resources, upload GPU
     /// data, fetch assets, or render a frame.
     ///
-    /// This writes [`crate::PerspectiveCamera::aspect`] from
-    /// [`FramingOptions::viewport`]. Any pre-existing aspect on the camera is
-    /// ignored so the solved camera pose matches the actual target viewport.
+    /// For perspective cameras, this writes [`crate::PerspectiveCamera::aspect`]
+    /// from [`FramingOptions::viewport`], ignoring any pre-existing aspect. For
+    /// orthographic cameras, it writes the horizontal and vertical extents. The
+    /// solved camera therefore matches the actual target viewport for either
+    /// projection.
     ///
     /// # Examples
     ///
@@ -510,7 +512,7 @@ impl Scene {
     /// # Errors
     ///
     /// Returns [`LookupError::CameraNotFound`] when `camera` is missing,
-    /// [`LookupError::UnsupportedCameraType`] for non-perspective cameras,
+    /// [`LookupError::UnsupportedCameraType`] for unsupported camera kinds,
     /// [`LookupError::InvalidBounds`] for empty or non-projectable bounds, and
     /// [`LookupError::InvalidFramingOption`] for invalid viewport, fill, margin,
     /// or direction options.
@@ -534,22 +536,19 @@ impl Scene {
             .get_mut(camera)
             .ok_or(LookupError::CameraNotFound(camera))?;
 
-        let Camera::Perspective(perspective) = camera_desc else {
-            return Err(LookupError::UnsupportedCameraType {
-                camera,
-                operation: "frame_bounds",
-                supported: "perspective",
-            });
+        let fit = match camera_desc {
+            Camera::Perspective(perspective) => {
+                perspective.aspect = options.aspect();
+                let fit = perspective_fit(bounds, *perspective, options)?;
+                if options.tighten_depth_range {
+                    let depth = DepthRange::fit_sphere(fit.framing.distance, fit.depth_radius);
+                    perspective.near = depth.near();
+                    perspective.far = depth.far();
+                }
+                fit.framing
+            }
+            Camera::Orthographic(orthographic) => orthographic_fit(bounds, orthographic, options)?,
         };
-
-        perspective.aspect = options.aspect();
-
-        let fit = perspective_fit(bounds, *perspective, options)?;
-        if options.tighten_depth_range {
-            let depth = DepthRange::fit_sphere(fit.distance, fit.depth_radius);
-            perspective.near = depth.near();
-            perspective.far = depth.far();
-        }
 
         if self.cameras.get(camera) != Some(&camera_before) {
             self.camera_revision = self.camera_revision.saturating_add(1);

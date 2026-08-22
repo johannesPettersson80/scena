@@ -60,13 +60,13 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
         validate_known_fields(&path, object, CAMERA_FIELDS, diagnostics);
         validate_required_id(&path, object.get("id"), diagnostics);
         match object.get("kind").and_then(Value::as_str) {
-            Some("perspective") => {}
+            Some("perspective" | "orthographic") => {}
             Some(kind) => diagnostics.push(diagnostic(
                 "unsupported_feature",
                 "error",
                 format!("{path}.kind"),
-                format!("camera kind '{kind}' is not implemented in this slice"),
-                "use kind:\"perspective\"",
+                format!("camera kind '{kind}' is not supported"),
+                "use kind:\"perspective\" or kind:\"orthographic\"",
                 None,
                 false,
             )),

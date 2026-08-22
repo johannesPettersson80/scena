@@ -1571,6 +1571,36 @@ fn scene_recipe_build_routes_ergonomic_fields_through_rust_helpers() {
     } = build;
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_builds_framed_orthographic_camera() {
+    let text = serde_json::to_string(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [{ "id": "body", "primitive": { "kind": "box", "size": [6.0, 1.0, 0.5] } }],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "#808080" }],
+        "nodes": [{ "id": "part", "geometry": "body", "material": "mat" }],
+        "cameras": [{
+            "id": "cad_review", "kind": "orthographic", "active": true,
+            "framing": { "mode": "frame_bounds", "preset": "three_quarter_front_left", "fill": 0.82, "margin_px": 18.0 }
+        }]
+    }))
+    .expect("recipe serializes");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "orthographic.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("orthographic CAD review recipe builds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert!(
+        build
+            .manifest
+            .cameras
+            .iter()
+            .any(|camera| camera.id == "cad_review")
+    );
+}
+
 #[test]
 fn scene_recipe_validation_accepts_authored_animation_and_rejects_bad_channels() {
     let valid = scena::validate_scene_recipe_value(json!({

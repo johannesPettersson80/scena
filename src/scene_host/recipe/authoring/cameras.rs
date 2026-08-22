@@ -9,7 +9,9 @@ use crate::scene::recipe::{
 };
 use crate::scene_host::SceneHostCore;
 use crate::scene_host::camera::controls_from_scene_camera;
-use crate::{Aabb, FramingOptions, NodeKey, OrbitControls, PerspectiveCamera, Vec3};
+use crate::{
+    Aabb, FramingOptions, NodeKey, OrbitControls, OrthographicCamera, PerspectiveCamera, Vec3,
+};
 
 use super::super::{error_diagnostic, scene_host_error_diagnostic};
 
@@ -24,15 +26,12 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
     let root_handle = host.root_handle();
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.cameras[{index}]");
-        if recipe.kind != "perspective" {
+        if recipe.kind != "perspective" && recipe.kind != "orthographic" {
             diagnostics.push(error_diagnostic(
                 &path,
                 "unsupported_feature",
-                format!(
-                    "camera kind '{}' is not implemented in this slice",
-                    recipe.kind
-                ),
-                "use kind:\"perspective\"",
+                format!("camera kind '{}' is not supported", recipe.kind),
+                "use kind:\"perspective\" or kind:\"orthographic\"",
             ));
             continue;
         }
@@ -95,12 +94,6 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
             }
             continue;
         }
-        let camera = match camera_from_recipe(recipe, &path, diagnostics) {
-            Some(camera) => {
-                camera.with_aspect(host.viewport.logical_width() / host.viewport.logical_height())
-            }
-            None => continue,
-        };
         let empty_imports = BTreeMap::new();
         let transform = match transform_from_recipe(
             recipe.transform.as_ref(),
@@ -118,7 +111,19 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
                 continue;
             }
         };
-        let camera_key = match host.scene.add_perspective_camera(root, camera, transform) {
+        let camera_key = match if recipe.kind == "orthographic" {
+            host.scene
+                .add_orthographic_camera(root, OrthographicCamera::default(), transform)
+        } else {
+            let Some(camera) = camera_from_recipe(recipe, &path, diagnostics) else {
+                continue;
+            };
+            host.scene.add_perspective_camera(
+                root,
+                camera.with_aspect(host.viewport.logical_width() / host.viewport.logical_height()),
+                transform,
+            )
+        } {
             Ok(camera) => camera,
             Err(error) => {
                 diagnostics.push(error_diagnostic(

@@ -292,7 +292,7 @@ fn frame_bounds_rejects_empty_bounds_without_silent_fallback() {
 }
 
 #[test]
-fn frame_bounds_rejects_orthographic_until_supported() {
+fn frame_bounds_fits_orthographic_camera_to_bounds() {
     let (width, height) = viewport();
     let mut scene = Scene::new();
     let camera = scene
@@ -303,21 +303,27 @@ fn frame_bounds_rejects_orthographic_until_supported() {
         )
         .expect("orthographic camera inserts");
 
-    let err = scene
+    let outcome = scene
         .frame_bounds(
             camera,
             wide_bounds(),
             FramingOptions::new().viewport(width, height),
         )
-        .expect_err("orthographic frame_bounds is explicitly unsupported for this patch");
+        .expect("orthographic frame_bounds fits the requested CAD bounds");
 
-    assert!(matches!(
-        err,
-        LookupError::UnsupportedCameraType {
-            operation: "frame_bounds",
-            ..
-        }
-    ));
+    let Camera::Orthographic(orthographic) = scene.camera(camera).expect("camera exists") else {
+        panic!("orthographic camera remains orthographic");
+    };
+    assert!(
+        orthographic.left < -3.0 && orthographic.right > 3.0,
+        "{orthographic:?}"
+    );
+    assert!(
+        orthographic.bottom < -0.45 && orthographic.top > 0.45,
+        "{orthographic:?}"
+    );
+    assert!(outcome.projected_rect.min_x >= 0.0, "{outcome:?}");
+    assert!(outcome.projected_rect.max_x <= width as f32, "{outcome:?}");
 }
 
 #[test]
