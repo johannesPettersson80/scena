@@ -84,13 +84,17 @@ pub(super) async fn render_surface_lifecycle_probe(
         RenderReadbackMode::Automatic,
         &mut events,
     )?;
-    renderer
-        .wait_for_submitted_browser_work()
-        .await
-        .map_err(|error| {
-            JsValue::from_str(&format!("pre-loss submission drain failed: {error:?}"))
-        })?;
-    events.push("submitted-work-drained");
+    if backend == Backend::WebGpu {
+        renderer
+            .wait_for_submitted_browser_work()
+            .await
+            .map_err(|error| {
+                JsValue::from_str(&format!("pre-loss submission drain failed: {error:?}"))
+            })?;
+        events.push("submitted-work-drained");
+    } else {
+        events.push("submitted-work-drain-not-required");
+    }
     renderer
         .handle_surface_event(SurfaceEvent::Lost)
         .map_err(|error| JsValue::from_str(&format!("surface lost event failed: {error:?}")))?;

@@ -1,6 +1,8 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use super::super::RasterTarget;
+#[cfg(target_arch = "wasm32")]
+use super::browser_readback_trace::trace_browser_readback;
 use super::instancing::InstanceDrawBatch;
 use super::labels::{self, LabelResources};
 use super::materials::MaterialResources;
@@ -270,6 +272,23 @@ pub(super) fn encode_browser_readback_pass(
     encoder: &mut wgpu::CommandEncoder,
     pass: BrowserReadbackPass<'_>,
 ) {
+    #[cfg(target_arch = "wasm32")]
+    let initial_draw_submissions = *pass.draw_submissions;
+    #[cfg(target_arch = "wasm32")]
+    trace_browser_readback(
+        "capture-pass-start",
+        serde_json::json!({
+            "backend": format!("{:?}", pass.target.backend),
+            "draw_batches": pass.draw_batches.len(),
+            "instance_batches": pass.instance_batches.len(),
+            "transparent_batches": has_transparent_batches(
+                pass.draw_batches,
+                pass.instance_batches,
+            ),
+            "depth_view": pass.depth_view.is_some(),
+            "initial_draw_submissions": initial_draw_submissions,
+        }),
+    );
     let draw_submissions = pass.draw_submissions;
     let readback_pipelines = pass.readback_pipelines;
     if let Some(transmission_pipelines) = pass.transmission.pipelines.as_ref() {
@@ -404,6 +423,14 @@ pub(super) fn encode_browser_readback_pass(
         );
     }
     encode_texture_readback_copy(encoder, &pass.readback.texture, pass.readback, pass.target);
+    #[cfg(target_arch = "wasm32")]
+    trace_browser_readback(
+        "capture-pass-complete",
+        serde_json::json!({
+            "backend": format!("{:?}", pass.target.backend),
+            "draw_submissions_added": draw_submissions.saturating_sub(initial_draw_submissions),
+        }),
+    );
 }
 
 pub(super) fn encode_texture_readback_copy(

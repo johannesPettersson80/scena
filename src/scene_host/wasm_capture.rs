@@ -22,6 +22,7 @@ impl SceneHost {
     pub(super) async fn capture_rgba8_for_wasm_async(
         &mut self,
     ) -> Result<CaptureRgba8, SceneHostError> {
+        self.core.render_for_browser_capture()?;
         let readback = self
             .core
             .renderer

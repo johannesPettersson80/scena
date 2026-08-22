@@ -3130,6 +3130,9 @@ async function main() {
       viewport: { width: VIEWPORT.width, height: VIEWPORT.height },
       deviceScaleFactor: VIEWPORT.devicePixelRatio,
     });
+    await page.addInitScript((gpuDiagnostics) => {
+      window.__SCENA_BROWSER_GPU_DIAGNOSTICS__ = gpuDiagnostics;
+    }, process.env.SCENA_BROWSER_GPU_DIAGNOSTICS === "1");
     page.on("console", (message) => {
       consoleMessages.push(`${message.type()}: ${message.text()}`);
     });
@@ -3183,13 +3186,20 @@ async function main() {
     await new Promise((resolve) => server.close(resolve));
   }
 
-  console.error(`[scene-host-browser-proof] capture diagnostic: ${JSON.stringify({
-    synchronous: pageProof.capture,
-    asynchronous: pageProof.phase0_visual_patch.after_capture,
-    screenshot: screenshot.pixels,
-  })}`);
   const assertions = assertProof(pageProof, screenshot);
   const passed = Object.values(assertions).every((assertion) => assertion.passed === true);
+  if (!passed || process.env.SCENA_BROWSER_GPU_DIAGNOSTICS === "1") {
+    const readbackTrace = pageProof.console_messages.filter((message) =>
+      message.includes('"schema":"scena.browser_readback_trace.v1"'),
+    );
+    console.error(`[scene-host-browser-proof] capture diagnostic: ${JSON.stringify({
+      synchronous: pageProof.capture,
+      asynchronous: pageProof.phase0_visual_patch.after_capture,
+      screenshot: screenshot.pixels,
+      readback_trace_count: readbackTrace.length,
+      readback_trace_tail: readbackTrace.slice(-24),
+    })}`);
+  }
   const artifact = {
     schema: SCHEMA,
     status: passed ? "passed" : "failed",

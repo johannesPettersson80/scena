@@ -1,13 +1,24 @@
 use super::events::HostEventV1;
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
-#[cfg(target_arch = "wasm32")]
-use crate::capture_rgba8_from_pixels;
 use crate::{
     AssetFetcher, CaptureOptions, CapturePngError, CaptureRgba8, capture_rgba8,
     capture_unverified_rgba8_from_pixels,
 };
+#[cfg(target_arch = "wasm32")]
+use crate::{RenderReadbackMode, capture_rgba8_from_pixels};
 
 impl<F: AssetFetcher> SceneHostCore<F> {
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn render_for_browser_capture(&mut self) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
+        self.renderer.render_with_readback_mode(
+            &self.scene,
+            self.active_camera,
+            RenderReadbackMode::Synchronous,
+        )?;
+        Ok(())
+    }
+
     pub fn read_pixels(&self) -> Vec<u8> {
         self.renderer.read_pixels().into_rgba8()
     }

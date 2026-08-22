@@ -8,8 +8,14 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
 use super::super::RasterTarget;
+#[cfg(any(feature = "browser-probe", feature = "scene-host"))]
+use super::browser_readback_trace::trace_browser_readback;
 use super::draw_common::wgpu_clear_color_for_target;
-use super::{GpuDeviceState, GpuRenderResult, surface_frame};
+use super::{GpuDeviceState, GpuRenderResult, GpuSurfaceState, surface_frame};
+
+pub(super) fn surface_supports_copy_src(surface: Option<&GpuSurfaceState>) -> bool {
+    surface.is_some_and(|surface| surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC))
+}
 
 impl GpuDeviceState {
     pub(in crate::render) fn render_empty_surface(
@@ -124,6 +130,25 @@ impl GpuDeviceState {
                 resources.target, target
             )));
         }
+        let surface = self.surface.as_ref();
+        trace_browser_readback(
+            "map-start",
+            serde_json::json!({
+                "backend": format!("{:?}", target.backend),
+                "target": { "width": target.width, "height": target.height },
+                "surface_format": surface.map(|surface| format!("{:?}", surface.config.format)),
+                "surface_copy_src": surface.is_some_and(|surface| {
+                    surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)
+                }),
+                "readback_format": format!("{:?}", readback.format),
+                "readback_pipeline_created": readback.pipelines.is_some(),
+                "post_resources_created": resources.post.is_some(),
+                "depth_prepass_created": resources.depth_prepass.is_some(),
+                "padded_bytes_per_row": readback.padded_bytes_per_row,
+                "unpadded_bytes_per_row": readback.unpadded_bytes_per_row,
+                "last_poll_observation": self.last_poll_observation,
+            }),
+        );
         let slice = readback.buffer.slice(..);
         let promise = js_sys::Promise::new(&mut |resolve, reject| {
             let resolve = resolve.clone();
@@ -187,6 +212,17 @@ impl GpuDeviceState {
                 pixel.swap(0, 2);
             }
         }
+        trace_browser_readback(
+            "map-complete",
+            serde_json::json!({
+                "backend": format!("{:?}", target.backend),
+                "byte_length": frame.len(),
+                "nonzero_bytes": frame.iter().filter(|byte| **byte != 0).count(),
+                "fnv1a64": crate::fnv1a64_hex(&frame),
+                "surface_copy_format": surface_copy_format.map(|format| format!("{format:?}")),
+                "last_poll_observation": self.last_poll_observation,
+            }),
+        );
         Ok(Some(frame))
     }
 

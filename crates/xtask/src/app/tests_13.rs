@@ -264,7 +264,9 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "src/render/gpu/build.rs",
         "src/render/gpu/draw_surface_support.rs",
         "src/render/gpu/browser_readback.rs",
+        "src/render/gpu/browser_readback_trace.rs",
         "src/render/offscreen.rs",
+        "src/scene_host/capture.rs",
         "src/scene_host/wasm_capture.rs",
         "src/scene_host/wasm.rs",
         "src/scene_host/wasm_introspection.rs",
@@ -337,6 +339,8 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         &readback,
     )
     .expect("restore C09 browser readback fixture");
+
+    super::tests_77::assert_scene_host_capture_readback_is_enforced(&fixture_root, &mut findings);
 
     let draw = fixture_root.join("src/render/gpu/draw.rs");
     let source = fs::read_to_string(&draw).expect("read C09 draw fixture");
@@ -499,38 +503,7 @@ pub(crate) fn c09_gpu_lifecycle_doctor_rejects_render_time_output_allocation() {
         "doctor must reject assigning physical lifecycle evidence to the hosted software-Vulkan lane: {findings:?}",
     );
 
-    let browser_selector = fixture_root.join("tests/browser/hardware_browser.js");
-    let source = fs::read_to_string(&browser_selector).expect("read browser selector fixture");
-    let mutated = source.replacen("gfx.webgpu.force-enabled", "removed-webgpu-force-enable", 1);
-    assert_ne!(
-        source, mutated,
-        "browser selector mutation must remove the Firefox WebGPU preference"
-    );
-    fs::write(&browser_selector, mutated).expect("remove Firefox WebGPU selector preference");
-    findings.clear();
-    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
-    assert!(
-        findings.iter().any(|finding| {
-            finding.rule == "RENDER-C09" && finding.message.contains("gfx.webgpu.force-enabled")
-        }),
-        "doctor must reject loss of the per-backend Firefox WebGPU route: {findings:?}",
-    );
-
-    let source = fs::read_to_string(&browser_selector).expect("read mutated browser selector");
-    let mutated = source.replacen("platform === \"linux\"", "platform === \"win32\"", 1);
-    assert_ne!(
-        source, mutated,
-        "Windows Chromium backend mutation must alter the platform selector"
-    );
-    fs::write(&browser_selector, mutated).expect("force Vulkan flags onto Windows Chromium");
-    findings.clear();
-    check_c09_gpu_resource_lifecycle_contracts(&fixture_root, &mut findings);
-    assert!(
-        findings.iter().any(|finding| {
-            finding.rule == "RENDER-C09" && finding.message.contains("platform === \"linux\"")
-        }),
-        "doctor must reject routing Windows Chromium hardware proof through Vulkan flags: {findings:?}",
-    );
+    super::tests_77::assert_browser_backend_selectors_are_enforced(&fixture_root, &mut findings);
 
     let lifecycle = fixture_root.join("src/render/gpu/lifecycle.rs");
     let source = fs::read_to_string(&lifecycle).expect("read lifecycle completion fixture");

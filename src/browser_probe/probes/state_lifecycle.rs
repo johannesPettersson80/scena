@@ -199,15 +199,19 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
         }),
     );
     events.push("context-recovery");
-    renderer
-        .wait_for_submitted_browser_work()
-        .await
-        .map_err(|error| {
-            JsValue::from_str(&format!(
-                "state lifecycle submission drain failed: {error:?}"
-            ))
-        })?;
-    events.push("submitted-work-drained");
+    if backend == Backend::WebGpu {
+        renderer
+            .wait_for_submitted_browser_work()
+            .await
+            .map_err(|error| {
+                JsValue::from_str(&format!(
+                    "state lifecycle submission drain failed: {error:?}"
+                ))
+            })?;
+        events.push("submitted-work-drained");
+    } else {
+        events.push("submitted-work-drain-not-required");
+    }
     let renderer_readback = renderer
         .browser_readback_rgba8()
         .await?

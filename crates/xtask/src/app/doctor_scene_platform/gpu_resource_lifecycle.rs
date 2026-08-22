@@ -103,6 +103,8 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
         (
             "src/render/gpu/draw_surface_support.rs",
             &[
+                "surface_supports_copy_src",
+                "surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)",
                 "pub(in crate::render) async fn browser_readback_rgba8",
                 "renderer-owned WebGPU readback failed",
                 "Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb",
@@ -118,7 +120,6 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
                 ".then_some(resources.readback.as_ref())",
                 "scena.browser.capture_overlay_final_pass",
                 "post::readback_blit_pipeline(",
-                "surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)",
                 "encode_texture_readback_copy(",
             ],
         ),
@@ -140,6 +141,13 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             ],
         ),
         (
+            "src/render/gpu/browser_readback_trace.rs",
+            &[
+                "__SCENA_BROWSER_GPU_DIAGNOSTICS__",
+                "scena.browser_readback_trace.v1",
+            ],
+        ),
+        (
             "src/render/gpu/build.rs",
             &[
                 "enable_scene_host_surface_readback",
@@ -154,9 +162,18 @@ pub(crate) fn check_c09_gpu_resource_lifecycle_contracts(root: &Path, findings: 
             &["pub(crate) async fn browser_readback_rgba8"],
         ),
         (
+            "src/scene_host/capture.rs",
+            &[
+                "render_for_browser_capture",
+                "render_with_readback_mode",
+                "RenderReadbackMode::Synchronous",
+            ],
+        ),
+        (
             "src/scene_host/wasm_capture.rs",
             &[
                 "capture_rgba8_for_wasm_async",
+                "self.core.render_for_browser_capture()?",
                 "browser GPU capture readback failed",
             ],
         ),

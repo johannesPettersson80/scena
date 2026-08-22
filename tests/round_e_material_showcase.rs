@@ -177,12 +177,24 @@ fn browser_device_rebuild_releases_the_lost_renderer_before_requesting_an_adapte
         "WebGPU replacement must drop the lost renderer and its Device/Queue before requesting a fresh adapter"
     );
 
+    let drain_policy = lifecycle
+        .find("if backend == Backend::WebGpu")
+        .expect("submission drain policy must distinguish WebGPU from WebGL2");
     let drain = lifecycle
-        .find("wait_for_submitted_browser_work().await")
-        .expect("simulated device loss must wait for real submitted browser work");
+        .find("wait_for_submitted_browser_work()")
+        .expect("simulated WebGPU device loss must wait for real submitted browser work");
+    let drain_complete = lifecycle
+        .find("submitted-work-drained")
+        .expect("the WebGPU lifecycle must report a completed submission drain");
+    let drain_not_required = lifecycle
+        .find("submitted-work-drain-not-required")
+        .expect("the WebGL2 lifecycle must report that a WebGPU queue drain is not required");
     assert!(
-        drain < rebuild,
-        "the browser probe must drain submitted GPU work before dropping and rebuilding its renderer"
+        drain_policy < drain
+            && drain < drain_complete
+            && drain_complete < drain_not_required
+            && drain_not_required < rebuild,
+        "the browser probe must drain WebGPU work, skip the unsupported drain on WebGL2, and record either outcome before rebuilding"
     );
     assert!(
         gpu.contains("on_submitted_work_done")

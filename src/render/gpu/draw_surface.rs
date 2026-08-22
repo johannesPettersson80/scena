@@ -14,6 +14,7 @@ use super::draw_common::{
     camera_position_uniform, identity_matrix, target_color_management_uniform,
     wgpu_clear_color_for_target,
 };
+use super::draw_surface_support::surface_supports_copy_src;
 use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
 use super::overlays::{OverlayPasses, encode_overlay_passes};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
@@ -197,11 +198,7 @@ impl GpuDeviceState {
         let surface_readback = (readback_mode == RenderReadbackMode::Synchronous)
             .then_some(resources.readback.as_ref())
             .flatten()
-            .filter(|_| {
-                self.surface.as_ref().is_some_and(|surface| {
-                    surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)
-                })
-            });
+            .filter(|_| surface_supports_copy_src(self.surface.as_ref()));
         if readback_mode == RenderReadbackMode::Synchronous
             && !post_enabled
             && surface_readback.is_none()

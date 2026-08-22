@@ -367,7 +367,6 @@ const STATE_LIFECYCLE_EVENTS = [
   "dirty-hover-selection",
   "dirty-animation-mixer",
   "context-recovery",
-  "submitted-work-drained",
 ];
 
 function configuredBackends() {
@@ -563,7 +562,10 @@ function assertNoScenaGpuValidationErrors(backend, consoleMessages) {
 
 function assertStateLifecycleProbe(backend, result) {
   const events = new Set(result.event_sequence || []);
-  for (const event of STATE_LIFECYCLE_EVENTS) {
+  const drainEvent = backend === "webgpu"
+    ? "submitted-work-drained"
+    : "submitted-work-drain-not-required";
+  for (const event of [...STATE_LIFECYCLE_EVENTS, drainEvent]) {
     if (!events.has(event)) {
       throw new Error(
         `${backend} state lifecycle probe did not record required event ${event}: ${JSON.stringify(result)}`,
@@ -599,12 +601,15 @@ function assertStateLifecycleProbe(backend, result) {
 
 function assertSurfaceLifecycleProbe(backend, result) {
   const events = new Set(result.event_sequence || []);
+  const drainEvent = backend === "webgpu"
+    ? "submitted-work-drained"
+    : "submitted-work-drain-not-required";
   for (const event of [
     "context-lost",
     "context-restored",
     "recover-context",
     "render-after-context-recovery",
-    "submitted-work-drained",
+    drainEvent,
     "surface-lost",
     "device-lost",
     "device-rebuild-required",

@@ -3,6 +3,8 @@ mod browser_color_space;
 #[cfg(target_arch = "wasm32")]
 mod browser_meter;
 mod browser_readback;
+#[cfg(target_arch = "wasm32")]
+mod browser_readback_trace;
 mod build;
 #[cfg(target_arch = "wasm32")]
 mod debug;
