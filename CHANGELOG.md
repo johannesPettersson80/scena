@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.10.5] - 2026-08-22
+
 - Add a versioned `SceneHostCore::set_clipping_planes_json` contract and
   `SceneHost.setClippingPlanesJson` browser binding for replacing a host-owned
   set of arbitrary clipping planes without exposing renderer handles.

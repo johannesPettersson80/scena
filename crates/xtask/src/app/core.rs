@@ -1,9 +1,9 @@
 use crate::app::prelude::*;
 
-pub(crate) const CURRENT_RELEASE_VERSION: &str = "1.10.4";
-pub(crate) const CURRENT_RELEASE_NOTES: &str = "docs/release-notes/v1.10.4.md";
-pub(crate) const CURRENT_REVIEW_REPORT: &str = "docs/reviews/release-v1.10.4.md";
-pub(crate) const CURRENT_REMEDIATION_CHECKLIST: &str = "docs/checklists/release-v1.10.4.md";
+pub(crate) const CURRENT_RELEASE_VERSION: &str = "1.10.5";
+pub(crate) const CURRENT_RELEASE_NOTES: &str = "docs/release-notes/v1.10.5.md";
+pub(crate) const CURRENT_REVIEW_REPORT: &str = "docs/reviews/release-v1.10.5.md";
+pub(crate) const CURRENT_REMEDIATION_CHECKLIST: &str = "docs/checklists/release-v1.10.5.md";
 
 pub(crate) fn run() {
     let outcome = match parse_command(env::args().skip(1).collect()) {
