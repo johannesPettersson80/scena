@@ -29,7 +29,7 @@ jobs:
   linux-native-vulkan:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
@@ -79,7 +79,7 @@ jobs:
   linux-browser-webgl2:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
@@ -162,7 +162,7 @@ jobs:
   wasm32-unknown-unknown:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
@@ -191,7 +191,7 @@ jobs:
   macos-metal:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
@@ -232,7 +232,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
@@ -256,7 +256,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
       - name: Dedicated 4K benchmark
         env:
@@ -290,7 +290,7 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@841e5d09118f0311af26ce5ba303c1f15b358772 # 1.93.1
         with:
           components: rustfmt, clippy
