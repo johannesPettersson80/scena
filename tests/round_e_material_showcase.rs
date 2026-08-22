@@ -121,6 +121,131 @@ fn round_e_material_proof_camera_matches_external_reference_fixture() {
 }
 
 #[test]
+fn browser_demo_timing_trace_reports_render_submission_and_scene_work() {
+    let source = include_str!("../src/demo_page.rs");
+    assert!(
+        source.contains("[scena-demo] renderer frame:")
+            && source.contains("gpu_draw_submissions")
+            && source.contains("gpu_queue_submissions")
+            && source.contains("readback_copies"),
+        "browser timing diagnostics must distinguish an empty draw plan, an unsubmitted frame, \
+         and a readback-only failure"
+    );
+}
+
+#[test]
+fn attached_browser_render_only_uses_probe_path_for_explicit_readback() {
+    let frame = include_str!("../src/render/frame.rs");
+    let surface = include_str!("../src/render/gpu/draw_surface.rs");
+    let probe = include_str!("../src/browser_probe.rs");
+    assert!(
+        !frame.contains("let _ = readback_mode;")
+            && frame.contains("readback_mode,")
+            && surface.contains("readback_mode: RenderReadbackMode")
+            && surface.contains("readback_mode == RenderReadbackMode::Synchronous")
+            && surface.contains(
+                "let surface_readback = (readback_mode == RenderReadbackMode::Synchronous)",
+            )
+            && surface.contains(
+                "if readback_mode == RenderReadbackMode::Synchronous\n            && !post_enabled",
+            )
+            && surface.contains(
+                "let renderer_readback = (readback_mode == RenderReadbackMode::Synchronous\n                && surface_readback.is_none())",
+            )
+            && surface.contains("render_browser_probe(")
+            && probe.contains("render_with_readback_mode(")
+            && probe.contains("RenderReadbackMode::Synchronous"),
+        "an attached demo frame must present to its canvas; only an explicit synchronous \
+         renderer-owned capture may divert into the browser probe path"
+    );
+}
+
+#[test]
+fn browser_device_rebuild_releases_the_lost_renderer_before_requesting_an_adapter() {
+    let lifecycle = include_str!("../src/browser_probe/probes.rs");
+    let gpu = include_str!("../src/render/gpu.rs");
+    let surface = include_str!("../src/render/surface.rs");
+    let release = lifecycle
+        .find("drop(renderer);")
+        .expect("the lost browser renderer must be released explicitly");
+    let rebuild = lifecycle
+        .find("rebuild_after_surface_loss(")
+        .expect("the browser lifecycle probe must rebuild its renderer");
+
+    assert!(
+        release < rebuild,
+        "WebGPU replacement must drop the lost renderer and its Device/Queue before requesting a fresh adapter"
+    );
+
+    let drain = lifecycle
+        .find("wait_for_submitted_browser_work().await")
+        .expect("simulated device loss must wait for real submitted browser work");
+    assert!(
+        drain < rebuild,
+        "the browser probe must drain submitted GPU work before dropping and rebuilding its renderer"
+    );
+    assert!(
+        gpu.contains("on_submitted_work_done")
+            && gpu.contains("Promise::race")
+            && gpu.contains("10_000")
+            && !gpu.contains("while !complete.load")
+            && surface.contains("wait_for_submitted_browser_work"),
+        "the lifecycle drain must use WebGPU queue completion with a bounded browser timeout"
+    );
+
+    let replacement = lifecycle
+        .split("async fn rebuild_after_surface_loss")
+        .nth(1)
+        .expect("browser lifecycle replacement helper is present");
+    let capture = replacement
+        .find("render_with_readback_mode")
+        .expect("replacement lifecycle proof must request an explicit capture");
+    let readback = replacement
+        .find("browser_readback_rgba8")
+        .expect("replacement lifecycle proof must consume its explicit capture");
+    let visible = replacement
+        .find(".render(scene, camera)")
+        .expect("replacement lifecycle proof must still present a visible surface frame");
+    assert!(
+        capture < readback
+            && readback < visible
+            && replacement.contains("RenderReadbackMode::Synchronous"),
+        "capture and await the renderer-owned buffer before submitting the replacement's visible surface frame"
+    );
+}
+
+#[test]
+fn browser_state_lifecycle_uses_explicit_capture_through_context_recovery() {
+    let lifecycle = include_str!("../src/browser_probe/probes/state_lifecycle.rs");
+    let probes = include_str!("../src/browser_probe/probes.rs");
+    let recovery = lifecycle
+        .find("verify_context_recovery(")
+        .expect("state lifecycle must exercise context recovery");
+    let capture_mode = lifecycle
+        .get(recovery..)
+        .and_then(|suffix| {
+            suffix
+                .find("RenderReadbackMode::Synchronous")
+                .map(|offset| recovery + offset)
+        })
+        .expect("state lifecycle context recovery must request explicit capture");
+    let drain = lifecycle
+        .find("wait_for_submitted_browser_work")
+        .expect("state lifecycle must drain its recovery capture submission");
+    let readback = lifecycle
+        .find("browser_readback_rgba8")
+        .expect("state lifecycle must consume its explicit capture");
+    assert!(
+        recovery < capture_mode
+            && capture_mode < drain
+            && drain < readback
+            && probes.contains("render_mode: RenderReadbackMode")
+            && probes.contains("render_with_readback_mode(scene, camera, render_mode)"),
+        "state recovery must capture explicitly before draining and reading the renderer-owned buffer"
+    );
+}
+
+#[test]
 fn round_e_material_demo_uses_fixed_fixture_exposure() {
     let wasm_exports = include_str!("../src/demo_page/controls.rs");
     let demo_page = include_str!("../src/demo_page.rs");

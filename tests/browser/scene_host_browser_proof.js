@@ -5,6 +5,11 @@ const http = require("http");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const {
+  collectBrowserGpuEvidence,
+  chromiumArgsForPlatform,
+  launchHardwareBrowser,
+} = require("./hardware_browser.js");
 
 const SCHEMA = "scena.scene_host_browser_proof.v1";
 const BACKEND = "webgl2";
@@ -111,10 +116,6 @@ const REQUIRED_BINDINGS = [
 
 function round3(value) {
   return Math.round(value * 1000) / 1000;
-}
-
-function loadPlaywright() {
-  return require("playwright");
 }
 
 function contentType(file) {
@@ -244,27 +245,6 @@ function buildWasmPackage() {
     stdio: "inherit",
   });
   return { command: command.join(" "), skipped: false };
-}
-
-function chromiumExecutablePath() {
-  if (process.env.SCENA_BROWSER_EXECUTABLE) {
-    return process.env.SCENA_BROWSER_EXECUTABLE;
-  }
-  return fs.existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined;
-}
-
-function chromiumLaunchArgs() {
-  const args = [
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--ignore-gpu-blocklist",
-    "--enable-gpu",
-    "--use-angle=gles",
-  ];
-  if (process.env.SCENA_BROWSER_HEADLESS !== "0") {
-    args.unshift("--headless=new");
-  }
-  return args;
 }
 
 function assertHardwareRenderer(renderer) {
@@ -713,7 +693,7 @@ async function runPageProof(page) {
         })();
         const render = JSON.parse(probeHost.render());
         await waitForCanvasPresent();
-        const report = JSON.parse(probeHost.renderIntrospectionJson(false));
+        const report = JSON.parse(await probeHost.renderIntrospectionJsonAsync(false));
         return { label, prepare, render, report };
       };
       const runRenderIntrospectionProof = async () => {
@@ -1007,7 +987,7 @@ async function runPageProof(page) {
       const phase0BeforeRender = JSON.parse(host.render());
       const phase0BeforeRenderTyped = host.renderTyped();
       await waitForCanvasPresent();
-      const phase0BeforeCapture = captureSummary(host.capture());
+      const phase0BeforeCapture = captureSummary(await host.captureAsync());
       const phase0TargetTransform = {
         translation: [
           phase0BeforeLeftMesh.local_transform.translation[0] - 0.12,
@@ -1159,7 +1139,7 @@ async function runPageProof(page) {
       const gizmoPrepare = timedPrepare("transform_gizmo_browser_drag");
       const gizmoRender = timedRender("transform_gizmo_browser_drag");
       await waitForCanvasPresent();
-      const gizmoCapture = captureSummary(host.capture());
+      const gizmoCapture = captureSummary(await host.captureAsync());
       const gizmoRestoreResult = JSON.parse(
         host.applyPatch(
           JSON.stringify({
@@ -1177,14 +1157,14 @@ async function runPageProof(page) {
       const measurementPrepare = timedPrepare("measurement_distance_overlay");
       const measurementRender = JSON.parse(host.render());
       await waitForCanvasPresent();
-      const measurementCapture = captureSummary(host.capture());
+      const measurementCapture = captureSummary(await host.captureAsync());
       host.removeNode(handleBigInt(measurementReport.line_node));
 
       host.frameAll();
       const sectionBaselinePrepare = timedPrepare("section_box_baseline_prepare");
       const sectionBaselineRender = timedRender("section_box_baseline_render");
       await waitForCanvasPresent();
-      const sectionBaselineCapture = captureSummary(host.capture());
+      const sectionBaselineCapture = captureSummary(await host.captureAsync());
       const leftBoundsForSection = JSON.parse(host.nodeWorldBoundsJson(leftMeshHandle));
       const sectionMidX =
         (leftBoundsForSection.min[0] + leftBoundsForSection.max[0]) * 0.5;
@@ -1205,17 +1185,17 @@ async function runPageProof(page) {
       const sectionPrepare = timedPrepare("section_box_cutaway_prepare");
       const sectionRender = timedRender("section_box_cutaway_render");
       await waitForCanvasPresent();
-      const sectionCapture = captureSummary(host.capture());
+      const sectionCapture = captureSummary(await host.captureAsync());
       const invertedSectionReport = JSON.parse(host.invertSectionBox(true));
       const invertedSectionPrepare = timedPrepare("section_box_inverted_prepare");
       const invertedSectionRender = timedRender("section_box_inverted_render");
       await waitForCanvasPresent();
-      const invertedSectionCapture = captureSummary(host.capture());
+      const invertedSectionCapture = captureSummary(await host.captureAsync());
       const clearedSectionReport = JSON.parse(host.clearSectionBox());
       const clearedSectionPrepare = timedPrepare("section_box_cleared_prepare");
       const clearedSectionRender = timedRender("section_box_cleared_render");
       await waitForCanvasPresent();
-      const clearedSectionCapture = captureSummary(host.capture());
+      const clearedSectionCapture = captureSummary(await host.captureAsync());
       host.setCamera(
         framedCamera.target,
         framedCamera.yaw_radians,
@@ -1249,13 +1229,13 @@ async function runPageProof(page) {
       const flyHalfRender = JSON.parse(host.render());
       await waitForCanvasPresent();
       const flyHalfCamera = JSON.parse(host.getCameraJson());
-      const flyHalfCapture = captureSummary(host.capture());
+      const flyHalfCapture = captureSummary(await host.captureAsync());
       host.advance(0.25);
       const flyFinalPrepare = timedPrepare("camera_fly_to_final");
       const flyFinalRender = JSON.parse(host.render());
       await waitForCanvasPresent();
       const flyFinalCamera = JSON.parse(host.getCameraJson());
-      const flyFinalCapture = captureSummary(host.capture());
+      const flyFinalCapture = captureSummary(await host.captureAsync());
       const bookmarkResult = JSON.parse(
         host.setCameraBookmarkJson(
           JSON.stringify({
@@ -1276,12 +1256,12 @@ async function runPageProof(page) {
       const phase1BeforeTintInspection = JSON.parse(host.inspectJson());
       const phase1BeforeTintPrepare = timedPrepare("before_opaque_tint");
       const phase1BeforeTintRenderOutcome = JSON.parse(host.render());
-      const phase1BeforeTintCapture = captureSummary(host.capture());
+      const phase1BeforeTintCapture = captureSummary(await host.captureAsync());
       host.setNodeTint(leftMeshHandle, 1.0, 0.16, 0.08, 1.0);
       const phase1AfterTintInspection = JSON.parse(host.inspectJson());
       const phase1AfterTintPrepare = timedPrepare("after_opaque_tint");
       const renderOutcome = JSON.parse(host.render());
-      const capture = captureSummary(host.capture());
+      const capture = captureSummary(await host.captureAsync());
       const inspectJson = JSON.parse(host.inspectJson());
       const annotationProjectionsJson = JSON.parse(host.annotationProjectionsJson());
 
@@ -1325,7 +1305,7 @@ async function runPageProof(page) {
         phase2OffSamples.push(samplePrepareRender(`phase2_post_off_${index}`));
         await waitForCanvasPresent();
       }
-      const phase2OffRawCapture = host.capture();
+      const phase2OffRawCapture = await host.captureAsync();
       const phase2OffCapture = captureSummary(phase2OffRawCapture);
       const phase2OffStats = JSON.parse(host.statsJson());
 
@@ -1339,7 +1319,7 @@ async function runPageProof(page) {
       host.setAmbientOcclusion(phase2SsaoConfig);
       const phase2SsaoOnlyWarmup = samplePrepareRender("phase2_ssao_only_warmup");
       await waitForCanvasPresent();
-      const phase2SsaoOnlyRawCapture = host.capture();
+      const phase2SsaoOnlyRawCapture = await host.captureAsync();
       const phase2SsaoOnlyCapture = captureSummary(phase2SsaoOnlyRawCapture);
       const phase2SsaoOnlyStats = JSON.parse(host.statsJson());
       const phase2SsaoOnlyDelta = captureDeltaSummary(
@@ -1357,7 +1337,7 @@ async function runPageProof(page) {
         phase2OnSamples.push(samplePrepareRender(`phase2_post_on_${index}`));
         await waitForCanvasPresent();
       }
-      const phase2OnCapture = captureSummary(host.capture());
+      const phase2OnCapture = captureSummary(await host.captureAsync());
       const phase2OnStats = JSON.parse(host.statsJson());
       const phase2CapabilityReport = JSON.parse(host.capabilitiesJson());
       host.setTransform(
@@ -1431,7 +1411,8 @@ async function runPageProof(page) {
         host.setWorldAnnotation(`phase3-grid-${index}`, point);
       });
       const phase3BaseCamera = renderedCamera;
-      const phase3GridViews = [0.0, 0.42, -0.42].map((yawOffset, index) => {
+      const phase3GridViews = [];
+      for (const [index, yawOffset] of [0.0, 0.42, -0.42].entries()) {
         host.setCamera(
           phase3BaseCamera.target,
           phase3BaseCamera.yaw_radians + yawOffset,
@@ -1440,7 +1421,7 @@ async function runPageProof(page) {
         );
         const prepare = timedPrepare(`phase3_grid_${index}_prepare`);
         const render = timedRender(`phase3_grid_${index}_render`);
-        const capture = host.capture();
+        const capture = await host.captureAsync();
         const projections = JSON.parse(host.annotationProjectionsJson());
         const samples = phase3GridWorldPoints.map((_point, pointIndex) => {
           const projection = projections.annotations.find(
@@ -1455,17 +1436,17 @@ async function runPageProof(page) {
                 : null,
           };
         });
-        return {
+        phase3GridViews.push({
           yaw_offset: yawOffset,
           prepare,
           render,
           capture: captureSummary(capture),
           projections,
           samples,
-        };
-      });
+        });
+      }
 
-      const phase4BeforeCapture = captureSummary(host.capture());
+      const phase4BeforeCapture = captureSummary(await host.captureAsync());
       host.setAntiAliasing("none");
       host.setBloom(null);
       host.setAmbientOcclusion(null);
@@ -1516,7 +1497,7 @@ async function runPageProof(page) {
       });
       const phase4Prepare = timedPrepare("phase4_instanced_prepare");
       const phase4Render = timedRender("phase4_instanced_render");
-      const phase4Capture = captureSummary(host.capture());
+      const phase4Capture = captureSummary(await host.captureAsync());
       const phase4Projections = JSON.parse(host.annotationProjectionsJson()).annotations.filter(
         (entry) => entry.id && entry.id.startsWith("phase4-center-"),
       );
@@ -1553,7 +1534,7 @@ async function runPageProof(page) {
       const phase5BeforeInspection = JSON.parse(host.inspectJson());
       const phase5BeforePrepare = timedPrepare("phase5_animation_before_prepare");
       const phase5BeforeRender = timedRender("phase5_animation_before_render");
-      const phase5BeforeCapture = captureSummary(host.capture());
+      const phase5BeforeCapture = captureSummary(await host.captureAsync());
       const phase5MixerHandle = host.playAnimation(phase5ImportHandleBig, "MoveTriangle", {
         loop_mode: "repeat",
         speed: 1.0,
@@ -1562,7 +1543,7 @@ async function runPageProof(page) {
       const phase5AfterAdvanceInspection = JSON.parse(host.inspectJson());
       const phase5AfterAdvancePrepare = timedPrepare("phase5_animation_after_advance_prepare");
       const phase5AfterAdvanceRender = timedRender("phase5_animation_after_advance_render");
-      const phase5AfterAdvanceCapture = captureSummary(host.capture());
+      const phase5AfterAdvanceCapture = captureSummary(await host.captureAsync());
       host.pauseAnimation(phase5MixerHandle);
       host.advance(0.25);
       const phase5AfterPauseInspection = JSON.parse(host.inspectJson());
@@ -1581,7 +1562,7 @@ async function runPageProof(page) {
       const phase5AfterEasedTransformInspection = JSON.parse(host.inspectJson());
       const phase5AfterEasedTransformPrepare = timedPrepare("phase5_eased_transform_prepare");
       const phase5AfterEasedTransformRender = timedRender("phase5_eased_transform_render");
-      const phase5AfterEasedTransformCapture = captureSummary(host.capture());
+      const phase5AfterEasedTransformCapture = captureSummary(await host.captureAsync());
       host.setTransformsEasedTyped(
         new BigUint64Array([handleBigInt(phase5FrameHandle)]),
         new Float32Array([
@@ -1598,7 +1579,7 @@ async function runPageProof(page) {
       const phase5AfterEasedTintInspection = JSON.parse(host.inspectJson());
       const phase5AfterEasedTintPrepare = timedPrepare("phase5_eased_tint_prepare");
       const phase5AfterEasedTintRender = timedRender("phase5_eased_tint_render");
-      const phase5AfterEasedTintCapture = captureSummary(host.capture());
+      const phase5AfterEasedTintCapture = captureSummary(await host.captureAsync());
       host.clearNodeTintEased(phase5TriangleHandle, 0.0, "linear");
       host.stopAnimation(phase5MixerHandle);
       const guidedTimelineBeforeInspection = JSON.parse(host.inspectJson());
@@ -1657,7 +1638,7 @@ async function runPageProof(page) {
       const guidedTimelinePrepare = timedPrepare("guided_tour_timeline_prepare");
       const guidedTimelineRender = timedRender("guided_tour_timeline_render");
       await waitForCanvasPresent();
-      const guidedTimelineCapture = captureSummary(host.capture());
+      const guidedTimelineCapture = captureSummary(await host.captureAsync());
       const contactGroundingReport = JSON.parse(
         host.applyProductGroundingPresetJson(
           leftFrameHandle,
@@ -1679,7 +1660,7 @@ async function runPageProof(page) {
       const contactGroundingPrepare = timedPrepare("contact_grounding_prepare");
       const contactGroundingRender = timedRender("contact_grounding_render");
       await waitForCanvasPresent();
-      const contactGroundingCapture = captureSummary(host.capture());
+      const contactGroundingCapture = captureSummary(await host.captureAsync());
       const contactGroundingStats = JSON.parse(host.statsJson());
       const externalResourceFrameHandle = host.addEmpty(
         rootHandle,
@@ -3116,15 +3097,15 @@ async function main() {
 
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
   const build = buildWasmPackage();
-  const { chromium } = loadPlaywright();
   const { server, url } = await serve(PKG_DIR, path.join(process.cwd(), "tests", "assets", "gltf"));
-  const executablePath = chromiumExecutablePath();
-  const browser = await chromium.launch({
-    headless: process.env.SCENA_BROWSER_HEADLESS !== "0",
-    executablePath,
-    args: chromiumLaunchArgs(),
-  });
+  const executablePath = process.env.SCENA_BROWSER_EXECUTABLE || process.env.CHROMIUM || undefined;
+  const { browser, engine } = await launchHardwareBrowser(BACKEND);
   const browserVersion = browser.version();
+  const browserGpu = await collectBrowserGpuEvidence(browser, engine).catch((error) => ({
+    source: "chromium-cdp-system-info-error",
+    error: error.message,
+  }));
+  console.error(`[scene-host-browser-proof] browser GPU: ${JSON.stringify(browserGpu)}`);
 
   const captureCanvasScreenshot = async (page, source) => {
     await page.locator("#scene").screenshot({ path: SCREENSHOT_PATH });
@@ -3155,6 +3136,9 @@ async function main() {
     page.on("pageerror", (error) => {
       consoleMessages.push(`pageerror: ${error.message}`);
     });
+    page.on("requestfailed", (request) => {
+      consoleMessages.push(`requestfailed: ${request.url()} ${request.failure()?.errorText || "unknown"}`);
+    });
     try {
       await page.goto(url);
       try {
@@ -3163,6 +3147,7 @@ async function main() {
         if (consoleMessages.length > 0) {
           error.message += `\nconsole:\n${consoleMessages.join("\n")}`;
         }
+        error.message += `\nbrowser_gpu:\n${JSON.stringify(browserGpu, null, 2)}`;
         throw error;
       }
       pageProof.console_messages = consoleMessages.slice();
@@ -3198,6 +3183,11 @@ async function main() {
     await new Promise((resolve) => server.close(resolve));
   }
 
+  console.error(`[scene-host-browser-proof] capture diagnostic: ${JSON.stringify({
+    synchronous: pageProof.capture,
+    asynchronous: pageProof.phase0_visual_patch.after_capture,
+    screenshot: screenshot.pixels,
+  })}`);
   const assertions = assertProof(pageProof, screenshot);
   const passed = Object.values(assertions).every((assertion) => assertion.passed === true);
   const artifact = {
@@ -3212,10 +3202,11 @@ async function main() {
       require_v3d_hardware: REQUIRE_V3D_HARDWARE,
     },
     browser: {
-      engine: "chromium",
+      engine,
       executable_path: executablePath || "playwright-bundled-chromium",
-      launch_args: chromiumLaunchArgs(),
+      launch_args: chromiumArgsForPlatform(os.platform(), BACKEND, executablePath),
       version: browserVersion,
+      gpu_evidence: browserGpu,
       os: {
         platform: os.platform(),
         release: os.release(),

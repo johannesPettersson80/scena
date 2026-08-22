@@ -15,6 +15,12 @@ All notable user-facing changes are recorded here.
 - Add staged browser preparation and frame diagnostics so allocation, shader
   compilation, upload, draw, readback, and lifecycle stalls have actionable
   timing evidence instead of presenting as an undifferentiated timeout.
+- Keep attached browser presentation separate from renderer-owned capture,
+  migrate lifecycle probes to explicit capture modes, and bound WebGPU queue
+  completion waits so device-loss validation cannot hang indefinitely.
+- Run deployed-demo proof through a backend-aware browser launcher, capture
+  compositor output instead of stale canvas backing stores, and require the
+  imported-photo camera-behavior regression in browser release lanes.
 - Keep camera-control handling out of the main browser-probe owner and extend
   resource-lifecycle tests for the reduced pipeline allocation contract.
 

@@ -495,4 +495,16 @@ assert(!windowsChromiumArgs.some((argument) => argument.includes("Vulkan")));
 const linuxChromiumArgs = chromiumArgsForPlatform("linux");
 assert(linuxChromiumArgs.includes("--enable-features=Vulkan,WebGPU"));
 
+const softwareWebGl2Args = chromiumArgsForPlatform("linux", "webgl2", null);
+assert(softwareWebGl2Args.includes("--use-angle=swiftshader"));
+assert(softwareWebGl2Args.includes("--enable-unsafe-swiftshader"));
+assert(!softwareWebGl2Args.some((argument) => argument.includes("WebGPU")));
+const physicalWebGl2Args = chromiumArgsForPlatform(
+  "linux",
+  "webgl2",
+  "/usr/bin/chromium",
+);
+assert(!physicalWebGl2Args.some((argument) => argument.includes("swiftshader")));
+assert(!physicalWebGl2Args.some((argument) => argument.includes("WebGPU")));
+
 console.log("required GPU parity evaluator: pass");

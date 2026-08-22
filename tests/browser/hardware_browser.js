@@ -7,16 +7,22 @@ function browserEngineForBackend(backend) {
   return engine;
 }
 
-function chromiumArgsForPlatform(platform = process.platform) {
-  const args = [
-    "--ignore-gpu-blocklist",
-    "--enable-unsafe-webgpu",
-  ];
-  if (platform === "linux") {
-    args.unshift("--no-sandbox");
-    args.push("--enable-features=Vulkan,WebGPU");
+function chromiumArgsForPlatform(
+  platform = process.platform,
+  backend = "webgpu",
+  executablePath = process.env.SCENA_BROWSER_EXECUTABLE || process.env.CHROMIUM || null,
+) {
+  const args = ["--ignore-gpu-blocklist"];
+  if (platform === "linux") args.unshift("--no-sandbox");
+  if (backend === "webgpu") {
+    args.push("--enable-unsafe-webgpu");
+    args.push(platform === "linux" ? "--enable-features=Vulkan,WebGPU" : "--enable-features=WebGPU");
+  } else if (backend === "webgl2") {
+    if (!executablePath) {
+      args.push("--use-angle=swiftshader", "--enable-unsafe-swiftshader");
+    }
   } else {
-    args.push("--enable-features=WebGPU");
+    throw new Error(`unsupported Chromium backend '${backend}'`);
   }
   return args;
 }
@@ -35,10 +41,11 @@ async function launchHardwareBrowser(backend) {
     });
     return { browser, engine };
   }
+  const executablePath = process.env.SCENA_BROWSER_EXECUTABLE || process.env.CHROMIUM || undefined;
   const browser = await playwright.chromium.launch({
-    executablePath: process.env.SCENA_BROWSER_EXECUTABLE || process.env.CHROMIUM || undefined,
+    executablePath,
     headless,
-    args: chromiumArgsForPlatform(),
+    args: chromiumArgsForPlatform(process.platform, backend, executablePath),
   });
   return { browser, engine };
 }

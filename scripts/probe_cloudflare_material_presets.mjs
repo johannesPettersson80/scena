@@ -2,10 +2,16 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { chromium } from "playwright";
 import roundEMaterialEvaluator from "./round_e_material_evaluator.cjs";
 import releaseProvenance from "../tests/release/release_artifact_provenance.js";
+
+const require = createRequire(import.meta.url);
+const {
+  collectBrowserGpuEvidence,
+  launchHardwareBrowser,
+} = require("../tests/browser/hardware_browser.js");
 
 const {
   PRESETS: presets,
@@ -319,17 +325,6 @@ async function cropMaterial(page, canvasBox, preset, outputPath) {
   return crop;
 }
 
-async function launchBrowser() {
-  const options = {
-    headless: true,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  };
-  if (process.env.CHROMIUM && fs.existsSync(process.env.CHROMIUM)) {
-    options.executablePath = process.env.CHROMIUM;
-  }
-  return chromium.launch(options);
-}
-
 async function cacheAndWasmProof(pageUrl) {
   const pageResponse = await fetch(pageUrl);
   const html = await pageResponse.text();
@@ -415,7 +410,12 @@ function findVersionedWasm(scriptText) {
 async function main() {
   const fixture = parseFixture(readText(fixturePath));
   const thresholds = parseThresholds(readText(thresholdsPath));
-  const browser = await launchBrowser();
+  const { browser, engine } = await launchHardwareBrowser("webgl2");
+  const browserGpu = await collectBrowserGpuEvidence(browser, engine).catch((error) => ({
+    source: "chromium-cdp-system-info-error",
+    error: error.message,
+  }));
+  console.error(`[cloudflare-materials] browser GPU: ${JSON.stringify(browserGpu)}`);
   const infrastructureErrors = [];
   let evaluation = {
     proof_class: "round-e-shared-material-threshold-evaluator",
@@ -449,6 +449,11 @@ async function main() {
     page.on("console", (message) => {
       if (message.type() === "error") infrastructureErrors.push(`console: ${message.text()}`);
     });
+    page.on("requestfailed", (request) => {
+      infrastructureErrors.push(
+        `requestfailed: ${request.url()} ${request.failure()?.errorText || "unknown"}`,
+      );
+    });
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
     // Playwright's signature is waitForFunction(pageFunction, arg, options).
     // Passing the options object second made it the `arg`, so the intended
@@ -459,6 +464,9 @@ async function main() {
         Number(document.getElementById("metric-frame")?.textContent || "0") >= 1,
       undefined,
       { timeout: 120000 },
+    );
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
     const canvasBox = await page.locator("#canvas").boundingBox();
     if (!canvasBox) {
@@ -548,6 +556,7 @@ async function main() {
         }
       : { bumped: false },
     wasm: cacheProof?.wasm || { checksum_matches_build: false },
+    browser_gpu: browserGpu,
     threshold_evaluator: {
       proof_class: evaluation.proof_class,
       evaluator_version: evaluation.evaluator_version,

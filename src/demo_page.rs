@@ -11,7 +11,7 @@ use web_sys::HtmlCanvasElement;
 use crate::{
     Assets, BuildError, CameraKey, Color, EnvironmentHandle, FramingOptions, GridFloorOptions,
     NodeKey, OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface, PointerEvent,
-    Renderer, Scene, SurfaceEvent, Transform, Vec3,
+    RenderOutcome, Renderer, Scene, SurfaceEvent, Transform, Vec3,
 };
 
 mod bounds;
@@ -441,13 +441,41 @@ pub fn tick(app: &mut DemoApp, dt_seconds: f64) -> Result<(), JsValue> {
         app.needs_prepare = false;
     }
     let step_start = log_timing("Renderer::prepare_with_assets", step_start);
-    renderer
+    let outcome = renderer
         .render(&app.scene, app.camera)
         .map_err(|err| JsValue::from_str(&format!("render failed: {err:?}")))?;
+    log_renderer_frame(renderer, outcome);
     log_renderer_auto_exposure(renderer);
     log_timing("Renderer::render", step_start);
     log_timing("tick total", total_start);
     Ok(())
+}
+
+fn log_renderer_frame(renderer: &Renderer, outcome: RenderOutcome) {
+    if !demo_timing_enabled() {
+        return;
+    }
+    let stats = renderer.stats();
+    let work = renderer.last_render_work_metrics();
+    web_sys::console::log_1(
+        &format!(
+            "[scena-demo] renderer frame: size={}x{} outcome_draw_calls={} outcome_primitives={} skipped={} triangles={} instances={} gpu_draw_submissions={} gpu_queue_submissions={} readback_copies={} readback_bytes={} map_requests={} blocking_waits={}",
+            outcome.width,
+            outcome.height,
+            outcome.draw_calls,
+            outcome.primitives,
+            outcome.skipped,
+            stats.triangles,
+            stats.instances,
+            stats.gpu_draw_submissions,
+            work.gpu_queue_submissions,
+            work.readback_copies,
+            work.readback_bytes_copied,
+            work.map_requests,
+            work.blocking_waits,
+        )
+        .into(),
+    );
 }
 
 fn log_renderer_auto_exposure(renderer: &Renderer) {

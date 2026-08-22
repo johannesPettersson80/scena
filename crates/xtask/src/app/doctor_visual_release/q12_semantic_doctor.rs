@@ -116,6 +116,7 @@ pub(crate) fn check_q12_semantic_doctor_contracts(root: &Path, findings: &mut Ve
             &[
                 "SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS=1 cargo run -p xtask -- doctor --full",
                 "cargo test --lib render::gpu::shader_manifest::tests",
+                "cargo test --features agent --test photo_render_cli photo_render_camera_behavior_is_easy_path_for_imported_asset -- --exact",
             ],
         );
     }

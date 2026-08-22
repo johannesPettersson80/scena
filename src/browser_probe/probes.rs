@@ -8,8 +8,8 @@ use super::workflows::{
     animation_scene, build_workflow_scene, instancing_scene_with_count, picking_selection_scene,
 };
 use crate::{
-    Assets, Backend, NotPreparedReason, PlatformSurface, RenderError, RenderMode, Renderer,
-    RendererOptions, RetainPolicy, SurfaceEvent,
+    Assets, Backend, NotPreparedReason, PlatformSurface, RenderError, RenderMode,
+    RenderReadbackMode, Renderer, RendererOptions, RetainPolicy, SurfaceEvent,
 };
 
 mod state_lifecycle;
@@ -76,8 +76,21 @@ pub(super) async fn render_surface_lifecycle_probe(
         .map_err(|error| JsValue::from_str(&format!("resize render failed: {error:?}")))?;
     events.extend(["reprepare-after-resize", "render-after-resize"]);
 
-    let context_recovered =
-        verify_context_recovery(&mut renderer, &assets, &mut scene, camera, &mut events)?;
+    let context_recovered = verify_context_recovery(
+        &mut renderer,
+        &assets,
+        &mut scene,
+        camera,
+        RenderReadbackMode::Automatic,
+        &mut events,
+    )?;
+    renderer
+        .wait_for_submitted_browser_work()
+        .await
+        .map_err(|error| {
+            JsValue::from_str(&format!("pre-loss submission drain failed: {error:?}"))
+        })?;
+    events.push("submitted-work-drained");
     renderer
         .handle_surface_event(SurfaceEvent::Lost)
         .map_err(|error| JsValue::from_str(&format!("surface lost event failed: {error:?}")))?;
@@ -98,6 +111,7 @@ pub(super) async fn render_surface_lifecycle_probe(
         "device-rebuild-required",
         "prepare-blocked-after-device-loss",
     ]);
+    drop(renderer);
     let final_outcome = rebuild_after_surface_loss(canvas, backend, &assets, &mut scene, camera)
         .await
         .map_err(|error| JsValue::from_str(&format!("surface rebuild failed: {error:?}")))?;
@@ -235,6 +249,7 @@ fn verify_context_recovery(
     assets: &Assets,
     scene: &mut crate::Scene,
     camera: crate::CameraKey,
+    render_mode: RenderReadbackMode,
     events: &mut Vec<&'static str>,
 ) -> Result<serde_json::Value, JsValue> {
     renderer
@@ -247,7 +262,7 @@ fn verify_context_recovery(
         .handle_surface_event(SurfaceEvent::Occluded { occluded: false })
         .map_err(|error| JsValue::from_str(&format!("occluded event failed: {error:?}")))?;
     events.extend(["hidden", "shown", "occluded"]);
-    let context = verify_context_loss_and_recovery(renderer, assets, scene, camera)?;
+    let context = verify_context_loss_and_recovery(renderer, assets, scene, camera, render_mode)?;
     events.extend([
         "context-lost",
         "context-restored",
@@ -262,6 +277,7 @@ fn verify_context_loss_and_recovery(
     assets: &Assets,
     scene: &mut crate::Scene,
     camera: crate::CameraKey,
+    render_mode: RenderReadbackMode,
 ) -> Result<serde_json::Value, JsValue> {
     renderer
         .handle_surface_event(SurfaceEvent::ContextLost { recoverable: true })
@@ -285,7 +301,7 @@ fn verify_context_loss_and_recovery(
         .prepare_with_assets(scene, assets)
         .map_err(|error| JsValue::from_str(&format!("context prepare failed: {error:?}")))?;
     let render = renderer
-        .render(scene, camera)
+        .render_with_readback_mode(scene, camera, render_mode)
         .map_err(|error| JsValue::from_str(&format!("context render failed: {error:?}")))?;
     Ok(json!({
         "width": render.width,
@@ -358,13 +374,16 @@ async fn rebuild_after_surface_loss(
     renderer
         .prepare_with_assets(scene, assets)
         .map_err(|error| JsValue::from_str(&format!("final prepare failed: {error:?}")))?;
-    let render = renderer
-        .render(scene, camera)
-        .map_err(|error| JsValue::from_str(&format!("final render failed: {error:?}")))?;
+    renderer
+        .render_with_readback_mode(scene, camera, RenderReadbackMode::Synchronous)
+        .map_err(|error| JsValue::from_str(&format!("final capture failed: {error:?}")))?;
     let renderer_readback = renderer
         .browser_readback_rgba8()
         .await?
         .map(|readback| renderer_readback_json(&readback));
+    let render = renderer
+        .render(scene, camera)
+        .map_err(|error| JsValue::from_str(&format!("final render failed: {error:?}")))?;
     Ok(LifecycleFinal {
         render,
         renderer_stats: renderer.stats(),

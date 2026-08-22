@@ -4,8 +4,8 @@ use crate::diagnostics::RenderError;
 use crate::material::Color;
 use crate::scene::{ClippingPlane, SectionBox};
 
-use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
+use super::super::{RasterTarget, RenderReadbackMode};
 use super::browser_readback::{
     BrowserReadbackPass, encode_browser_readback_pass, encode_texture_readback_copy,
 };
@@ -27,6 +27,7 @@ impl GpuDeviceState {
     pub(in crate::render) fn render_to_surface(
         &mut self,
         target: RasterTarget,
+        readback_mode: RenderReadbackMode,
         exposure_ev: f32,
         color_management: [f32; 4],
         white_balance: [f32; 4],
@@ -118,17 +119,19 @@ impl GpuDeviceState {
             });
         }
         #[cfg(feature = "browser-probe")]
-        if let Some(result) = super::draw_surface_probe::render_browser_probe(
-            &self.device,
-            &self.queue,
-            resources,
-            target,
-            background_color,
-            post_settings,
-            exposure_ev,
-            tonemapper_mode,
-            white_balance,
-        )? {
+        if readback_mode == RenderReadbackMode::Synchronous
+            && let Some(result) = super::draw_surface_probe::render_browser_probe(
+                &self.device,
+                &self.queue,
+                resources,
+                target,
+                background_color,
+                post_settings,
+                exposure_ev,
+                tonemapper_mode,
+                white_balance,
+            )?
+        {
             return Ok(result);
         }
         let surface_frame::SurfaceFrameAcquisition {
@@ -191,12 +194,16 @@ impl GpuDeviceState {
                 },
             );
         }
-        let surface_readback = resources.readback.as_ref().filter(|_| {
-            self.surface
-                .as_ref()
-                .is_some_and(|surface| surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC))
-        });
-        if !post_enabled
+        let surface_readback = (readback_mode == RenderReadbackMode::Synchronous)
+            .then_some(resources.readback.as_ref())
+            .flatten()
+            .filter(|_| {
+                self.surface.as_ref().is_some_and(|surface| {
+                    surface.config.usage.contains(wgpu::TextureUsages::COPY_SRC)
+                })
+            });
+        if readback_mode == RenderReadbackMode::Synchronous
+            && !post_enabled
             && surface_readback.is_none()
             && let Some(readback) = resources.readback.as_ref()
         {
@@ -311,10 +318,10 @@ impl GpuDeviceState {
         }
         let post_counts = if post_enabled {
             let post_resources = resources.post.as_ref().expect("post resources exist");
-            let renderer_readback = surface_readback
-                .is_none()
-                .then_some(resources.readback.as_ref())
-                .flatten();
+            let renderer_readback = (readback_mode == RenderReadbackMode::Synchronous
+                && surface_readback.is_none())
+            .then_some(resources.readback.as_ref())
+            .flatten();
             let (output, counts) = post::encode_chain(
                 &mut encoder,
                 &self.queue,

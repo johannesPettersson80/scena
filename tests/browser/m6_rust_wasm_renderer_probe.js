@@ -367,6 +367,7 @@ const STATE_LIFECYCLE_EVENTS = [
   "dirty-hover-selection",
   "dirty-animation-mixer",
   "context-recovery",
+  "submitted-work-drained",
 ];
 
 function configuredBackends() {
@@ -603,6 +604,7 @@ function assertSurfaceLifecycleProbe(backend, result) {
     "context-restored",
     "recover-context",
     "render-after-context-recovery",
+    "submitted-work-drained",
     "surface-lost",
     "device-lost",
     "device-rebuild-required",
@@ -2565,13 +2567,21 @@ async function main() {
             `${backend} browser benchmark probe failed: ${JSON.stringify(benchmarkResult)}`,
           );
         }
-        const stateLifecycleResult = await runTimedBrowserOperation(
-          `${backend}:state-lifecycle`,
-          () => page.evaluate(
-            (name) => window.scenaM6RustWasmStateLifecycleProbe(name),
-            backend,
-          ),
-        );
+        let stateLifecycleResult;
+        try {
+          stateLifecycleResult = await runTimedBrowserOperation(
+            `${backend}:state-lifecycle`,
+            () => page.evaluate(
+              (name) => window.scenaM6RustWasmStateLifecycleProbe(name),
+              backend,
+            ),
+          );
+        } catch (error) {
+          if (consoleMessages.length > 0) {
+            error.message += `\nconsole:\n${consoleMessages.join("\n")}`;
+          }
+          throw error;
+        }
         results.push(stateLifecycleResult);
         if (stateLifecycleResult.status !== "passed") {
           throw new Error(

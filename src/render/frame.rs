@@ -381,13 +381,13 @@ impl Renderer {
         #[cfg(target_arch = "wasm32")]
         {
             let _ = target;
-            let _ = readback_mode;
             let gpu = self
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
             let result = gpu.render_to_surface(
                 self.target,
+                readback_mode,
                 self.output.exposure_ev(),
                 self.output.color_management_uniform(),
                 self.output.white_balance_uniform(),

@@ -106,6 +106,7 @@ jobs:
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:fr06-semantic-aov
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run demo:build
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run proof:build
+          cargo test --features agent --test photo_render_cli photo_render_camera_behavior_is_easy_path_for_imported_asset -- --exact
           SCENA_DOCTOR_REQUIRE_GENERATED_ARTIFACTS=1 cargo run -p xtask -- doctor --full
           python3 -m http.server 18104 --directory demo > target/gate-artifacts/cloudflare-demo-server.log 2>&1 &
           demo_server_pid=$!

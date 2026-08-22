@@ -18,7 +18,7 @@ use workflows::{build_workflow_scene, scene_with_triangle};
 use crate::{
     ASSET_DOCTOR_REPORT_SCHEMA_V1, AntiAliasing, AssetFetcher, Assets, Backend, Background,
     EnvironmentHandle, OutputColorSpace, PixelReadback, PlatformSurface, Profile, Quality,
-    Renderer, RendererOptions, Scene, Tonemapper, fnv1a64_hex, sample_rgba8,
+    RenderReadbackMode, Renderer, RendererOptions, Scene, Tonemapper, fnv1a64_hex, sample_rgba8,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -337,7 +337,7 @@ async fn render_scene_with_options<F: AssetFetcher>(
         json!({}),
     );
     let outcome = renderer
-        .render(scene, camera)
+        .render_with_readback_mode(scene, camera, RenderReadbackMode::Synchronous)
         .map_err(|error| JsValue::from_str(&format!("render failed: {error:?}")))?;
     browser_probe_trace(
         trace_started_ms,

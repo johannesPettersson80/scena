@@ -4,7 +4,8 @@ use web_sys::HtmlCanvasElement;
 
 use crate::{
     Assets, Backend, Color, GeometryDesc, HitTarget, MaterialDesc, NotPreparedReason, RenderError,
-    RenderMode, Renderer, RendererOptions, Scene, SurfaceEvent, Transform, Vec3,
+    RenderMode, RenderReadbackMode, Renderer, RendererOptions, Scene, SurfaceEvent, Transform,
+    Vec3,
 };
 
 use super::super::renderer_readback_json;
@@ -43,7 +44,7 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
         .prepare_with_assets(&mut scene, &assets)
         .map_err(|error| JsValue::from_str(&format!("state prepare failed: {error:?}")))?;
     let first_render = renderer
-        .render(&scene, camera)
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
         .map_err(|error| JsValue::from_str(&format!("state render failed: {error:?}")))?;
     let idle_render = renderer
         .render(&scene, camera)
@@ -182,8 +183,14 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
         "animation_mixer".to_owned(),
         animation["dirty_reason"].clone(),
     );
-    let recovery =
-        super::verify_context_recovery(&mut renderer, &assets, &mut scene, camera, &mut events)?;
+    let recovery = super::verify_context_recovery(
+        &mut renderer,
+        &assets,
+        &mut scene,
+        camera,
+        RenderReadbackMode::Synchronous,
+        &mut events,
+    )?;
     dirty_state.insert(
         "context_recovery".to_owned(),
         json!({
@@ -192,6 +199,15 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
         }),
     );
     events.push("context-recovery");
+    renderer
+        .wait_for_submitted_browser_work()
+        .await
+        .map_err(|error| {
+            JsValue::from_str(&format!(
+                "state lifecycle submission drain failed: {error:?}"
+            ))
+        })?;
+    events.push("submitted-work-drained");
     let renderer_readback = renderer
         .browser_readback_rgba8()
         .await?
@@ -278,7 +294,7 @@ fn verify_resource_lifetime(
         .prepare_with_assets(&mut heavy_scene, &heavy_assets)
         .map_err(|error| JsValue::from_str(&format!("lifetime heavy prepare failed: {error:?}")))?;
     renderer
-        .render(&heavy_scene, heavy_camera)
+        .render_with_readback_mode(&heavy_scene, heavy_camera, RenderReadbackMode::Synchronous)
         .map_err(|error| JsValue::from_str(&format!("lifetime heavy render failed: {error:?}")))?;
     let heavy = renderer.stats();
     if heavy.live_logical_handles <= baseline.live_logical_handles {
@@ -364,7 +380,7 @@ async fn verify_animation_dirty(
             JsValue::from_str(&format!("dirty animation prepare failed: {error:?}"))
         })?;
     renderer
-        .render(&scene, camera)
+        .render_with_readback_mode(&scene, camera, RenderReadbackMode::Synchronous)
         .map_err(|error| JsValue::from_str(&format!("dirty animation render failed: {error:?}")))?;
     scene
         .update_animation(mixer, 1.0 / 30.0)
@@ -429,6 +445,6 @@ fn reprepare_and_render<F>(
         .prepare_with_assets(scene, assets)
         .map_err(|error| JsValue::from_str(&format!("{label} prepare failed: {error:?}")))?;
     renderer
-        .render(scene, camera)
+        .render_with_readback_mode(scene, camera, RenderReadbackMode::Synchronous)
         .map_err(|error| JsValue::from_str(&format!("{label} render failed: {error:?}")))
 }

@@ -3,7 +3,10 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { chromium } = require("playwright");
+const {
+  collectBrowserGpuEvidence,
+  launchHardwareBrowser,
+} = require("../tests/browser/hardware_browser.js");
 
 const url = process.argv[2] || "http://127.0.0.1:18104/index.html";
 const outDir = path.resolve("target/gate-artifacts/cloudflare-demo");
@@ -29,14 +32,6 @@ function assertForegroundCoverage(stats, label, minWidthFraction, minHeightFract
     );
   }
   return { rect, widthFraction, heightFraction };
-}
-
-function writePngDataUrl(file, dataUrl) {
-  const prefix = "data:image/png;base64,";
-  if (!dataUrl.startsWith(prefix)) {
-    throw new Error(`canvas did not produce a PNG data URL for ${file}`);
-  }
-  fs.writeFileSync(file, Buffer.from(dataUrl.slice(prefix.length), "base64"));
 }
 
 function statusFailed(status) {
@@ -78,17 +73,29 @@ async function waitForSceneRendered(page, scene, timeout = 90000) {
 async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFraction) {
   const file = path.join(outDir, `${scene}-canvas.png`);
   const canvas = page.locator(`.stage[data-scene='${scene}'] canvas`);
-  const capture = await canvas.evaluate(
-    (source) => {
-      const width = source.width;
-      const height = source.height;
+  const pngBytes = await canvas.screenshot({
+    type: "png",
+    timeout: CANVAS_OPERATION_TIMEOUT_MS,
+  });
+  fs.writeFileSync(file, pngBytes);
+  const stats = await page.evaluate(
+    async (pngBase64) => {
+      const image = new Image();
+      const loaded = new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error("failed to decode compositor screenshot"));
+      });
+      image.src = `data:image/png;base64,${pngBase64}`;
+      await loaded;
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
       const sampleWidth = Math.max(1, Math.min(320, width));
       const sampleHeight = Math.max(1, Math.min(240, height));
       const canvas = document.createElement("canvas");
       canvas.width = sampleWidth;
       canvas.height = sampleHeight;
       const context = canvas.getContext("2d", { willReadFrequently: true });
-      context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
+      context.drawImage(image, 0, 0, sampleWidth, sampleHeight);
       const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
       const bg = [data[0], data[1], data[2]];
       let sum = 0;
@@ -133,23 +140,17 @@ async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFracti
             }
           : null;
       return {
-        pngDataUrl: canvas.toDataURL("image/png"),
-        stats: {
-          sourceWidth: width,
-          sourceHeight: height,
-          sampleWidth,
-          sampleHeight,
-          mean,
-          deviation: Math.sqrt(variance),
-          foregroundRect,
-        },
+        sourceWidth: width,
+        sourceHeight: height,
+        sampleWidth,
+        sampleHeight,
+        mean,
+        deviation: Math.sqrt(variance),
+        foregroundRect,
       };
     },
-    undefined,
-    { timeout: CANVAS_OPERATION_TIMEOUT_MS },
+    pngBytes.toString("base64"),
   );
-  const { pngDataUrl, stats } = capture;
-  writePngDataUrl(file, pngDataUrl);
   if (stats.mean < 0.003 || stats.deviation < 0.002) {
     throw new Error(`${scene} canvas looks blank: ${JSON.stringify(stats)}`);
   }
@@ -164,17 +165,28 @@ async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFracti
 
 async function sampleSceneCanvasPixels(page, scene) {
   const canvas = page.locator(`.stage[data-scene='${scene}'] canvas`);
-  return canvas.evaluate(
-    (source) => {
-      const width = source.width;
-      const height = source.height;
+  const pngBytes = await canvas.screenshot({
+    type: "png",
+    timeout: CANVAS_OPERATION_TIMEOUT_MS,
+  });
+  return page.evaluate(
+    async (pngBase64) => {
+      const image = new Image();
+      const loaded = new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error("failed to decode compositor screenshot"));
+      });
+      image.src = `data:image/png;base64,${pngBase64}`;
+      await loaded;
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
       const sampleWidth = Math.max(1, Math.min(320, width));
       const sampleHeight = Math.max(1, Math.min(240, height));
       const scratch = document.createElement("canvas");
       scratch.width = sampleWidth;
       scratch.height = sampleHeight;
       const context = scratch.getContext("2d", { willReadFrequently: true });
-      context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
+      context.drawImage(image, 0, 0, sampleWidth, sampleHeight);
       const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
       return {
         width: sampleWidth,
@@ -182,8 +194,7 @@ async function sampleSceneCanvasPixels(page, scene) {
         pixels: Array.from(data),
       };
     },
-    undefined,
-    { timeout: CANVAS_OPERATION_TIMEOUT_MS },
+    pngBytes.toString("base64"),
   );
 }
 
@@ -267,17 +278,6 @@ async function assertConnectorMarkers(page) {
   return markers;
 }
 
-function chromiumLaunchOptions() {
-  const options = {
-    headless: true,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  };
-  if (process.env.CHROMIUM) {
-    options.executablePath = process.env.CHROMIUM;
-  }
-  return options;
-}
-
 async function fetchBytes(resourceUrl) {
   const response = await fetch(resourceUrl);
   if (!response.ok) {
@@ -346,12 +346,21 @@ async function assertImagesLoad(page) {
 (async () => {
   const errors = [];
   const deploymentBundle = await assertDeploymentBundleConsistency(url);
-  const browser = await chromium.launch(chromiumLaunchOptions());
+  const { browser, engine } = await launchHardwareBrowser("webgl2");
+  const browserGpu = await collectBrowserGpuEvidence(browser, engine).catch((error) => ({
+    source: "chromium-cdp-system-info-error",
+    error: error.message,
+  }));
+  console.error(`[cloudflare-demo] browser GPU: ${JSON.stringify(browserGpu)}`);
+  let page;
   try {
-    const page = await browser.newPage({ viewport: { width: 1366, height: 820 } });
+    page = await browser.newPage({ viewport: { width: 1366, height: 820 } });
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
     page.on("console", (message) => {
       if (message.type() === "error") errors.push(`console: ${message.text()}`);
+    });
+    page.on("requestfailed", (request) => {
+      errors.push(`requestfailed: ${request.url()} ${request.failure()?.errorText || "unknown"}`);
     });
 
     await page.goto(url, { waitUntil: "domcontentloaded" });
@@ -419,6 +428,7 @@ async function assertImagesLoad(page) {
         {
           url,
           deploymentBundle,
+          browserGpu,
           controllers: await showcaseControllers(page),
           images,
           connectorMarkers,
@@ -436,6 +446,16 @@ async function assertImagesLoad(page) {
         2,
       ),
     );
+  } catch (error) {
+    const controllers = page
+      ? await showcaseControllers(page).catch((controllerError) => ({
+          error: controllerError.message,
+        }))
+      : null;
+    error.message += `\nbrowser_gpu: ${JSON.stringify(browserGpu)}`;
+    error.message += `\ncontrollers: ${JSON.stringify(controllers)}`;
+    error.message += `\nbrowser_errors: ${JSON.stringify(errors)}`;
+    throw error;
   } finally {
     await browser.close();
   }

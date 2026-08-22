@@ -115,6 +115,30 @@ pub(super) struct GpuDeviceState {
     browser_canvas: Option<web_sys::HtmlCanvasElement>,
 }
 
+#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+impl GpuDeviceState {
+    pub(in crate::render) async fn wait_for_submitted_browser_work(&self) -> Result<(), ()> {
+        let window = web_sys::window().ok_or(())?;
+        let completion = js_sys::Promise::new(&mut |resolve, _reject| {
+            self.queue.on_submitted_work_done(move || {
+                let _ = resolve.call0(&wasm_bindgen::JsValue::UNDEFINED);
+            });
+        });
+        let timeout = js_sys::Promise::new(&mut move |_resolve, reject| {
+            if let Err(error) =
+                window.set_timeout_with_callback_and_timeout_and_arguments_0(&reject, 10_000)
+            {
+                let _ = reject.call1(&wasm_bindgen::JsValue::UNDEFINED, &error);
+            }
+        });
+        let contenders = js_sys::Array::of2(&completion, &timeout);
+        wasm_bindgen_futures::JsFuture::from(js_sys::Promise::race(&contenders))
+            .await
+            .map(|_| ())
+            .map_err(|_| ())
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 pub(super) use build::request_browser_surface_gpu;
 #[cfg(not(target_arch = "wasm32"))]

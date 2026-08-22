@@ -9,6 +9,18 @@ use super::gpu;
 use super::{RasterTarget, Renderer, backend_for_attached_surface, validate_target_size};
 
 impl Renderer {
+    #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+    pub(crate) async fn wait_for_submitted_browser_work(&self) -> Result<(), RenderError> {
+        let backend = self.target.backend;
+        let gpu = self
+            .gpu
+            .as_ref()
+            .ok_or(RenderError::GpuResourcesNotPrepared { backend })?;
+        gpu.wait_for_submitted_browser_work()
+            .await
+            .map_err(|()| RenderError::GpuReadback { backend })
+    }
+
     pub fn handle_surface_event(&mut self, event: SurfaceEvent) -> Result<(), RenderError> {
         match event {
             SurfaceEvent::Resize { width, height } => {
