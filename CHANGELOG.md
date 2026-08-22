@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.10.4] - 2026-08-22
+
 - Support orthographic cameras in authored scene recipes and fit their extents
   and depth range to requested CAD or technical-view bounds.
 
