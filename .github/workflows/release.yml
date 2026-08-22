@@ -111,6 +111,7 @@ jobs:
           python3 -m http.server 18104 --directory demo > target/gate-artifacts/cloudflare-demo-server.log 2>&1 &
           demo_server_pid=$!
           trap 'kill "$demo_server_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18104/index.html >/dev/null
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run cloudflare:demo -- http://127.0.0.1:18104/index.html
           bash scripts/release_lane_command.sh linux-webgl2-chromium npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets
           kill "$demo_server_pid" 2>/dev/null || true

@@ -18,32 +18,22 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "\"cloudflare:materials\": \"node scripts/probe_cloudflare_material_presets.mjs\"",
         ],
     );
-    require_contains(
-        root,
-        findings,
-        "VISUAL-BROWSER-M6",
-        ".github/workflows/ci.yml",
-        &[
-            "npm run browser:scene-host-proof",
-            "npm run demo:build",
-            "npm run proof:build",
-            "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
-            "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "VISUAL-BROWSER-M6",
-        ".github/workflows/release.yml",
-        &[
-            "npm run browser:scene-host-proof",
-            "npm run demo:build",
-            "npm run proof:build",
-            "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
-            "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
-        ],
-    );
+    for workflow in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        require_contains(
+            root,
+            findings,
+            "VISUAL-BROWSER-M6",
+            workflow,
+            &[
+                "npm run browser:scene-host-proof",
+                "npm run demo:build",
+                "npm run proof:build",
+                "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18104/index.html",
+                "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
+                "npm run cloudflare:materials -- http://127.0.0.1:18104/proof/?sample=material-presets",
+            ],
+        );
+    }
     require_contains(
         root,
         findings,

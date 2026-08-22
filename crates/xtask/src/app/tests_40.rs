@@ -1,6 +1,19 @@
 use crate::app::prelude::*;
 
 #[test]
+fn browser_release_workflows_wait_for_the_local_demo_server() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let startup_barrier = "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18104/index.html";
+    for relative in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let source = fs::read_to_string(root.join(relative)).expect("workflow source reads");
+        assert!(
+            source.contains(startup_barrier),
+            "{relative} must wait for the background demo server before starting browser probes"
+        );
+    }
+}
+
+#[test]
 fn hosted_workflows_bound_cargo_disk_and_avoid_broken_pipe_probes() {
     let root = repo_root().expect("test runs inside the scena workspace");
     for relative in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
