@@ -283,6 +283,7 @@ pub(super) struct MaterialShaderFeatures {
     anisotropy: bool,
     iridescence: bool,
     dispersion: bool,
+    transmission: bool,
 }
 
 impl MaterialShaderFeatures {
@@ -298,6 +299,7 @@ impl MaterialShaderFeatures {
             features.anisotropy |= material.anisotropy_strength_factor() > 0.0;
             features.iridescence |= material.iridescence_factor() > 0.0;
             features.dispersion |= material.dispersion_factor() > 0.0;
+            features.transmission |= material.transmission_factor() > 0.0;
         }
         features
     }
@@ -311,6 +313,10 @@ impl MaterialShaderFeatures {
             ("scena_material_iridescence", flag(self.iridescence)),
             ("scena_material_dispersion", flag(self.dispersion)),
         ]
+    }
+
+    pub(super) const fn requires_transmission_scene_color(self) -> bool {
+        self.transmission
     }
 }
 

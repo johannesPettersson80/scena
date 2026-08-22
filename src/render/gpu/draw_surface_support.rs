@@ -142,6 +142,24 @@ impl GpuDeviceState {
                 }
             });
         });
+        if target.backend == crate::diagnostics::Backend::WebGl2 {
+            // WebGL2 uses GlFenceBehavior::AutoFinish. A wait-poll is therefore
+            // bounded by wgpu's explicit browser policy and drives the queued
+            // map callback instead of relying on an unrelated future frame.
+            self.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .map_err(|error| {
+                    JsValue::from_str(&format!(
+                        "renderer-owned WebGL2 readback wait-poll failed: {error:?}"
+                    ))
+                })?;
+            self.last_poll_observation = "readback-wait-poll";
+            if let Some(error) = self.runtime_fault.render_error(target.backend) {
+                return Err(JsValue::from_str(&format!(
+                    "renderer-owned WebGL2 readback observed a deferred GPU fault after wait-poll: {error}"
+                )));
+            }
+        }
         JsFuture::from(promise).await?;
         let mapped = slice.get_mapped_range();
         let surface_copy_format = self.surface.as_ref().and_then(|surface| {

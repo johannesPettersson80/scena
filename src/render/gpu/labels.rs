@@ -76,6 +76,7 @@ pub(super) struct LabelResources {
     #[allow(dead_code)]
     surface_pipeline: Option<wgpu::RenderPipeline>,
     surface_flat_pipeline: Option<wgpu::RenderPipeline>,
+    #[allow(dead_code)]
     post_pipeline: wgpu::RenderPipeline,
     instance_count: u32,
 }
@@ -318,6 +319,7 @@ pub(super) fn surface_flat_pipeline(resources: &LabelResources) -> Option<&wgpu:
     resources.surface_flat_pipeline.as_ref()
 }
 
+#[allow(dead_code)]
 pub(super) const fn post_pipeline(resources: &LabelResources) -> &wgpu::RenderPipeline {
     &resources.post_pipeline
 }

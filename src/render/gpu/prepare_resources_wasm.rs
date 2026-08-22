@@ -7,6 +7,7 @@ use crate::render::prepare::{
     PreparedReflectionProbe, PreparedStrokeSegment,
 };
 
+use super::browser_readback::readback_format_for_surface;
 #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
 use super::browser_readback::{
     BrowserReadbackResourceDescriptor, create_browser_readback_resources,
@@ -15,13 +16,18 @@ use super::instancing::INSTANCE_BYTE_LEN;
 use super::material_support::reject_unsupported_volume_texture_slots;
 use super::materials::{create_material_bind_group_layout, create_material_resources};
 use super::output::{create_output_bind_group_layout, create_output_uniform_buffer};
-use super::pipeline::create_unlit_pipeline_set;
-use super::prepare_resources_support::validate_geometry_buffer_size;
+use super::pipeline::create_unlit_pipeline_set_for_requirements;
+use super::pipeline_requirements::MeshPipelineRequirements;
+use super::prepare_resources_support::{
+    browser_depth_prepass_required, validate_geometry_buffer_size,
+};
+use super::prepare_resources_wasm_support::{
+    browser_base_resource_stats, browser_rasterized_triangle_instances, browser_trace,
+};
 use super::resource_encoding::{
     encode_draw_resources, encode_retained_vertices, retained_draw_uniform_capacity,
     retained_instance_buffer_capacity,
 };
-use super::stats::GpuResourceStats;
 use super::vertices::VERTEX_BYTE_LEN;
 use super::{
     GpuDeviceState, GpuOutputPlan, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
@@ -56,6 +62,13 @@ impl GpuDeviceState {
         output_plan: GpuOutputPlan,
         work: Option<&PrepareWorkCounter>,
     ) -> Result<GpuPrepareOutcome, crate::PrepareError> {
+        #[cfg(feature = "browser-probe")]
+        let prepare_trace_started_ms = js_sys::Date::now();
+        #[cfg(not(feature = "browser-probe"))]
+        let prepare_trace_started_ms = 0.0;
+        let trace = |stage, detail| {
+            browser_trace(prepare_trace_started_ms, target.backend, stage, detail);
+        };
         self.configure_surface(target);
         self.release_prepared_resources();
         let Some(surface) = self.surface.as_ref() else {
@@ -149,6 +162,10 @@ impl GpuDeviceState {
         let triangle_shader = triangle_shader_lookup.module;
         let material_bind_group_layout =
             create_material_bind_group_layout(&self.device, texture_binding_mode);
+        trace(
+            "core-layouts-and-shader",
+            serde_json::json!({ "shader_cache_hit": triangle_shader_cache_hit }),
+        );
         let output_uniform = create_output_uniform_buffer(&self.device);
         let light_assignment = light_assignment::create_light_assignment_resources(
             &self.device,
@@ -181,19 +198,39 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             &draw_uniform_buffer,
         );
-        let depth_prepass = (matches!(target.backend, Backend::WebGpu | Backend::WebGl2)
-            && depth_stats.passes > 0)
-            .then(|| {
-                depth::create_depth_prepass_resources(
-                    &self.device,
-                    target,
-                    depth_stats.reversed_z,
-                    &output_bind_group_layout,
-                    &draw_bind_group_layout,
-                    output_plan.depth_color_enabled(),
-                    1,
-                )
-            });
+        let rasterized_triangle_instances = browser_rasterized_triangle_instances(
+            &encoded_draw_resources.draw_batches,
+            &encoded_draw_resources.instance_batches,
+        );
+        let has_depth_tested_overlays =
+            !encoded_draw_resources.stroke_batches.is_empty() || !draw_labels.quads().is_empty();
+        let depth_prepass_required = browser_depth_prepass_required(
+            matches!(target.backend, Backend::WebGpu | Backend::WebGl2) && depth_stats.passes > 0,
+            output_plan.depth_color_enabled(),
+            rasterized_triangle_instances,
+            has_depth_tested_overlays,
+        );
+        let depth_prepass = depth_prepass_required.then(|| {
+            depth::create_depth_prepass_resources(
+                &self.device,
+                target,
+                depth_stats.reversed_z,
+                &output_bind_group_layout,
+                &draw_bind_group_layout,
+                output_plan.depth_color_enabled(),
+                1,
+            )
+        });
+        trace(
+            "depth-prepass",
+            serde_json::json!({
+                "created": depth_prepass.is_some(),
+                "requested_passes": depth_stats.passes,
+                "rasterized_triangle_instances": rasterized_triangle_instances,
+                "depth_color_requested": output_plan.depth_color_enabled(),
+                "has_depth_tested_overlays": has_depth_tested_overlays,
+            }),
+        );
         let depth_compare = depth_prepass
             .as_ref()
             .map(|depth_prepass| depth_prepass.color_compare);
@@ -209,6 +246,14 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             depth_compare,
             material_features,
+            material_features.requires_transmission_scene_color()
+                || output_plan.reflections_enabled(),
+        );
+        trace(
+            "transmission",
+            serde_json::json!({
+                "pipelines_created": transmission.pipelines.is_some(),
+            }),
         );
         let environment::OutputResources {
             shadow_caster,
@@ -237,7 +282,12 @@ impl GpuDeviceState {
             environment_lighting,
             reflection_probes,
         );
-        let surface_pipeline = create_unlit_pipeline_set(
+        trace("environment-and-shadow", serde_json::json!({}));
+        let surface_pipeline_requirements = MeshPipelineRequirements::from_batches(
+            &encoded_draw_resources.draw_batches,
+            &encoded_draw_resources.instance_batches,
+        );
+        let surface_pipeline = create_unlit_pipeline_set_for_requirements(
             &self.device,
             &triangle_shader,
             surface.config.format,
@@ -248,12 +298,19 @@ impl GpuDeviceState {
             1,
             semantic_aov_capture_enabled.then_some(super::semantic_aov::FORMAT),
             material_features,
+            surface_pipeline_requirements,
+        );
+        trace(
+            "surface-pipelines",
+            serde_json::json!({
+                "compiled_pipeline_count": surface_pipeline.compiled_pipeline_count(),
+            }),
         );
         let strokes = (!retained_strokes.is_empty()).then(|| {
             super::strokes::create_resources(
                 &self.device,
                 super::strokes::StrokeResourceDescriptor {
-                    target_format: surface.config.format,
+                    target_format: readback_format_for_surface(surface.config.format),
                     surface_format: Some(surface.config.format),
                     output_bind_group_layout: &output_bind_group_layout,
                     draw_bind_group_layout: &draw_bind_group_layout,
@@ -268,7 +325,7 @@ impl GpuDeviceState {
                 &self.device,
                 &self.queue,
                 super::labels::LabelResourceDescriptor {
-                    target_format: surface.config.format,
+                    target_format: readback_format_for_surface(surface.config.format),
                     surface_format: Some(surface.config.format),
                     output_bind_group_layout: &output_bind_group_layout,
                     depth_compare,
@@ -276,6 +333,13 @@ impl GpuDeviceState {
                 },
             )
         });
+        trace(
+            "optional-strokes-and-labels",
+            serde_json::json!({
+                "strokes": strokes.is_some(),
+                "labels": labels.is_some(),
+            }),
+        );
         let semantic_aov = semantic_attribution.map(|attribution| {
             super::semantic_aov::create_resources(
                 &self.device,
@@ -294,6 +358,10 @@ impl GpuDeviceState {
                 },
             )
         });
+        trace(
+            "semantic-aov",
+            serde_json::json!({ "created": semantic_aov.is_some() }),
+        );
         #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
         let readback = matches!(target.backend, Backend::WebGpu | Backend::WebGl2).then(|| {
             create_browser_readback_resources(
@@ -307,9 +375,31 @@ impl GpuDeviceState {
                     triangle_shader: &triangle_shader,
                     depth_compare,
                     material_features,
+                    render_pipeline_required: !surface
+                        .config
+                        .usage
+                        .contains(wgpu::TextureUsages::COPY_SRC)
+                        && !output_plan.post_enabled(),
+                    surface_pipeline_reusable: !semantic_aov_capture_enabled
+                        && readback_format_for_surface(surface.config.format)
+                            == surface.config.format,
                 },
             )
         });
+        #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
+        trace(
+            "browser-readback",
+            serde_json::json!({
+                "created": readback.is_some(),
+                "pipelines_created": readback
+                    .as_ref()
+                    .is_some_and(|resources| resources.pipelines.is_some()),
+                "surface_format": format!("{:?}", surface.config.format),
+                "readback_format": readback
+                    .as_ref()
+                    .map(|resources| format!("{:?}", resources.format)),
+            }),
+        );
         #[cfg(not(any(feature = "browser-probe", feature = "scene-host")))]
         let readback: Option<super::browser_readback::BrowserReadbackResources> = None;
         let post = output_plan.post_enabled().then(|| {
@@ -331,22 +421,15 @@ impl GpuDeviceState {
                 material_features,
             )
         });
+        trace("post", serde_json::json!({ "created": post.is_some() }));
         let vertex_count = (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32;
-        let mut stats = GpuResourceStats {
-            buffers: 4,
-            pipelines: 2,
-            bind_groups: 1,
-            shader_modules: 1,
-            shader_module_creations: u64::from(!triangle_shader_cache_hit),
-            approximate_gpu_memory_bytes: vertex_buffer_size
-                .saturating_add(instance_buffer_size)
-                .saturating_add(output::OUTPUT_UNIFORM_BYTE_LEN)
-                .saturating_add(
-                    output::DRAW_UNIFORM_ENTRY_STRIDE
-                        .saturating_mul((draw_uniform_capacity as u64).max(1)),
-                ),
-            ..GpuResourceStats::default()
-        };
+        let mut stats = browser_base_resource_stats(
+            surface_pipeline.compiled_pipeline_count(),
+            triangle_shader_cache_hit,
+            vertex_buffer_size,
+            instance_buffer_size,
+            draw_uniform_capacity,
+        );
         stats.add_assign(light_assignment::resource_stats(&light_assignment));
         stats.add_assign(super::materials::resource_stats(&material_resources));
         stats.add_assign(environment::resource_stats(
@@ -354,7 +437,7 @@ impl GpuDeviceState {
             environment_lighting,
             reflection_probes,
         ));
-        stats.add_assign(transmission::resource_stats(target));
+        stats.add_assign(transmission::resource_stats(&transmission, target));
         if let Some(resources) = &depth_prepass {
             stats.add_assign(depth::resource_stats(resources, target));
         }

@@ -13,6 +13,7 @@ pub(in crate::render) struct GpuOutputPlan {
     sample_count: u32,
     post_enabled: bool,
     depth_color_enabled: bool,
+    reflections_enabled: bool,
     scene_linear_capture: bool,
 }
 
@@ -36,6 +37,7 @@ impl GpuOutputPlan {
                 || automatic_exposure
                 || scene_linear_capture,
             depth_color_enabled: ambient_occlusion || depth_of_field,
+            reflections_enabled: reflections,
             scene_linear_capture,
         }
     }
@@ -50,6 +52,10 @@ impl GpuOutputPlan {
 
     pub(in crate::render::gpu) const fn depth_color_enabled(self) -> bool {
         self.depth_color_enabled
+    }
+
+    pub(in crate::render::gpu) const fn reflections_enabled(self) -> bool {
+        self.reflections_enabled
     }
 
     pub(in crate::render::gpu) const fn scene_linear_capture_enabled(self) -> bool {

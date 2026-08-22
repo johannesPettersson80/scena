@@ -38,12 +38,15 @@ mod msaa;
 mod output;
 mod overlays;
 mod pipeline;
+mod pipeline_requirements;
 mod post;
 #[cfg(not(target_arch = "wasm32"))]
 mod prepare_resources;
 mod prepare_resources_support;
 #[cfg(target_arch = "wasm32")]
 mod prepare_resources_wasm;
+#[cfg(target_arch = "wasm32")]
+mod prepare_resources_wasm_support;
 #[cfg(not(target_arch = "wasm32"))]
 mod readback;
 mod resource_encoding;

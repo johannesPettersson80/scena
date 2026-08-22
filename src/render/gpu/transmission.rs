@@ -11,14 +11,17 @@ pub(super) struct TransmissionResources {
     pub(super) placeholder_texture: wgpu::Texture,
     pub(super) placeholder_view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
-    pub(super) pipelines: MeshPipelineSet,
+    pub(super) pipelines: Option<MeshPipelineSet>,
 }
 
-pub(super) fn resource_stats(target: RasterTarget) -> GpuResourceStats {
+pub(super) fn resource_stats(
+    resources: &TransmissionResources,
+    target: RasterTarget,
+) -> GpuResourceStats {
     GpuResourceStats {
         textures: 2,
         render_targets: 1,
-        pipelines: 2,
+        pipelines: u64::from(resources.pipelines.is_some()) * 2,
         approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(target, 4, 1) + 4,
         ..GpuResourceStats::default()
     }
@@ -35,6 +38,7 @@ pub(super) fn create_transmission_resources(
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     _depth_compare: Option<wgpu::CompareFunction>,
     material_features: super::material_uniform::MaterialShaderFeatures,
+    pipeline_required: bool,
 ) -> TransmissionResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.round_e.transmission_scene_color"),
@@ -82,18 +86,20 @@ pub(super) fn create_transmission_resources(
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..Default::default()
     });
-    let pipelines = create_unlit_pipeline_set(
-        device,
-        triangle_shader,
-        format,
-        output_bind_group_layout,
-        material_bind_group_layout,
-        draw_bind_group_layout,
-        None,
-        1,
-        None,
-        material_features,
-    );
+    let pipelines = pipeline_required.then(|| {
+        create_unlit_pipeline_set(
+            device,
+            triangle_shader,
+            format,
+            output_bind_group_layout,
+            material_bind_group_layout,
+            draw_bind_group_layout,
+            None,
+            1,
+            None,
+            material_features,
+        )
+    });
     TransmissionResources {
         texture,
         view,
@@ -107,14 +113,34 @@ pub(super) fn create_transmission_resources(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn transmission_scene_color_does_not_reuse_final_depth_prepass() {
+    fn inactive_transmission_does_not_compile_scene_color_pipelines() {
         let source = include_str!("transmission.rs")
             .split("#[cfg(test)]")
             .next()
             .expect("implementation precedes tests");
         assert!(
-            source.contains("triangle_shader,\n        format,")
-                && source.contains("draw_bind_group_layout,\n        None,")
+            source.contains("pipelines: Option<MeshPipelineSet>")
+                && source.contains("pipeline_required.then(||"),
+            "scenes without transmission or screen-space reflections must not compile the \
+             transmission-only pipeline set"
+        );
+    }
+
+    #[test]
+    fn transmission_scene_color_does_not_reuse_final_depth_prepass() {
+        let source = include_str!("transmission.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("implementation precedes tests");
+        let pipeline_creation = source
+            .split("create_unlit_pipeline_set(")
+            .nth(1)
+            .and_then(|tail| tail.split("TransmissionResources {").next())
+            .expect("transmission pipeline construction is present");
+        assert!(
+            pipeline_creation.contains("triangle_shader,")
+                && pipeline_creation.contains("draw_bind_group_layout,")
+                && pipeline_creation.contains("\n            None,\n            1,")
                 && !source.contains("transmission_scene_depth"),
             "transmission scene-color rendering must not reuse the final depth pre-pass; \
              the final depth buffer can reject the opaque target behind glass"

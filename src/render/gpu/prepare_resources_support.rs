@@ -42,6 +42,17 @@ pub(super) fn validate_geometry_buffer_size(
     })
 }
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(super) const fn browser_depth_prepass_required(
+    requested: bool,
+    depth_color_requested: bool,
+    rasterized_triangle_instances: u64,
+    has_depth_tested_overlays: bool,
+) -> bool {
+    requested
+        && (depth_color_requested || rasterized_triangle_instances > 1 || has_depth_tested_overlays)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn create_geometry_buffers(
     device: &wgpu::Device,
@@ -162,5 +173,24 @@ mod tests {
         assert!(reason.contains("912567276"));
         assert!(reason.contains("268435456"));
         assert!(reason.contains("prepared geometry"));
+    }
+
+    #[test]
+    fn browser_single_triangle_skips_an_unobservable_depth_prepass() {
+        let support = include_str!("prepare_resources_support.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("support implementation precedes tests");
+        let browser_prepare = include_str!("prepare_resources_wasm.rs");
+        assert!(
+            support.contains("browser_depth_prepass_required")
+                && browser_prepare.contains("browser_depth_prepass_required"),
+            "browser preparation must decide depth allocation from observable scene demand",
+        );
+        assert!(!browser_depth_prepass_required(true, false, 1, false));
+        assert!(browser_depth_prepass_required(true, false, 2, false));
+        assert!(browser_depth_prepass_required(true, true, 1, false));
+        assert!(browser_depth_prepass_required(true, false, 1, true));
+        assert!(!browser_depth_prepass_required(false, true, 2, true));
     }
 }

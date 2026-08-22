@@ -525,8 +525,8 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
                 prepared.bind_groups,
                 prepared.shader_modules,
             ),
-            (12, 23, 7, 19, 9, 9),
-            "the default FXAA output owner inventory, including the device-shared triangle shader, two prepared readback buffers, and the post-uniform staging buffer, must be exact before render",
+            (12, 23, 7, 16, 7, 8),
+            "the default FXAA output owner inventory, including the device-shared triangle shader, two prepared readback buffers, and the post-uniform staging buffer but no inactive shadow or transmission pipelines, must be exact before render",
         );
         assert_eq!(prepared.pending_destructions, 0);
         assert!(prepared.approximate_gpu_memory_bytes.unwrap_or_default() > 0);

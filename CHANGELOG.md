@@ -4,6 +4,20 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.10.3] - 2026-08-22
+
+- Reduce browser renderer startup work by compiling only the material pipelines
+  required by prepared batches and by avoiding unused depth, transmission, and
+  duplicate readback resources.
+- Restore reliable WebGL2 canvas pixel validation by resetting WGPU's pixel-pack
+  buffer state before typed-array readback, and keep label and stroke readback
+  pipelines aligned with the byte attachment format on both browser backends.
+- Add staged browser preparation and frame diagnostics so allocation, shader
+  compilation, upload, draw, readback, and lifecycle stalls have actionable
+  timing evidence instead of presenting as an undifferentiated timeout.
+- Keep camera-control handling out of the main browser-probe owner and extend
+  resource-lifecycle tests for the reduced pipeline allocation contract.
+
 ## [1.10.2] - 2026-08-21
 
 - Repair the release candidate validation contracts: restore renderer-owned WebGL2

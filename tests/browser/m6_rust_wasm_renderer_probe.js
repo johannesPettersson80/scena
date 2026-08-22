@@ -2011,7 +2011,30 @@ async function runAssetDoctorBrowserProof(page, artifactDir) {
 
 async function runScenaViewerElementProof(page, artifactDir) {
   await waitForProbeFunction(page, "scenaViewerElementProbe");
-  const result = await page.evaluate(() => window.scenaViewerElementProbe());
+  let result;
+  try {
+    result = await page.evaluate(() => window.scenaViewerElementProbe());
+  } catch (error) {
+    if (process.env.SCENA_BROWSER_GPU_DIAGNOSTICS === "1") {
+      const diagnostics = await page.evaluate(() => Array.from(document.querySelectorAll("canvas, scena-viewer")).flatMap((element) => {
+        const canvas = element instanceof HTMLCanvasElement
+          ? element
+          : element.shadowRoot && element.shadowRoot.querySelector("canvas");
+        if (!canvas) return [];
+        const gl = canvas.getContext("webgl2");
+        return [gl ? {
+          error: gl.getError(),
+          max_uniform_buffer_bindings: gl.getParameter(gl.MAX_UNIFORM_BUFFER_BINDINGS),
+          max_vertex_uniform_blocks: gl.getParameter(gl.MAX_VERTEX_UNIFORM_BLOCKS),
+          max_fragment_uniform_blocks: gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_BLOCKS),
+          max_combined_uniform_blocks: gl.getParameter(gl.MAX_COMBINED_UNIFORM_BLOCKS),
+        } : { error: "no-webgl2-context" }];
+      }));
+      console.error(`[scena-browser-m6] webgl2 diagnostics: ${JSON.stringify(diagnostics)}`);
+      error.message += `\nwebgl2 diagnostics: ${JSON.stringify(diagnostics)}`;
+    }
+    throw error;
+  }
   const screenshotPath = path.join(artifactDir, "scena-viewer-element-browser-proof.png");
   await page
     .locator(result.screenshot_selector || "scena-viewer[data-proof=\"custom-element\"]")
@@ -2135,6 +2158,7 @@ async function main() {
   const artifactDir = path.join(process.cwd(), "target", "gate-artifacts");
   fs.mkdirSync(artifactDir, { recursive: true });
   const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
+  const skipViewerElement = process.env.SCENA_BROWSER_SKIP_VIEWER_ELEMENT === "1";
   const forceBrowserPackage = process.env.SCENA_BROWSER_FORCE_REBUILD === "1";
   const skipBrowserPackageBuild = process.env.SCENA_SKIP_WASM_BUILD === "1";
   // A focused lifecycle run is commonly used immediately after changing the
@@ -2166,6 +2190,7 @@ async function main() {
     executablePath: chromiumExecutablePath(),
     headless: true,
     args: chromiumLaunchArgs(selectedBackends),
+    dumpio: process.env.SCENA_BROWSER_DUMPIO === "1",
   });
   const browserGpu = await collectBrowserGpuEvidence(browser, "chromium");
 
@@ -2211,7 +2236,7 @@ async function main() {
   workflows = configuredWorkflows(workflows);
   const results = [];
   try {
-    if (!parityOnly && !materialOnly && !lifecycleOnly) {
+    if (!parityOnly && !materialOnly && !lifecycleOnly && !skipViewerElement) {
       const viewerElementPage = await browser.newPage({ viewport: { width: 480, height: 320 } });
       const viewerElementConsoleMessages = [];
       viewerElementPage.on("console", (message) => {
@@ -2267,7 +2292,18 @@ async function main() {
       const page = await browser.newPage({ viewport: { width: 96, height: 96 } });
       const consoleMessages = [];
       page.on("console", (message) => {
-        consoleMessages.push(`${message.type()}: ${message.text()}`);
+        const formatted = `${message.type()}: ${message.text()}`;
+        consoleMessages.push(formatted);
+        if (
+          process.env.SCENA_BROWSER_GPU_DIAGNOSTICS === "1" &&
+          (
+            message.text().includes('"schema":"scena.browser_probe_trace.v1"') ||
+            message.text().includes('"schema":"scena.webgl2_prepare_trace.v1"') ||
+            message.text().includes('"schema":"scena.browser_page_trace.v1"')
+          )
+        ) {
+          console.log(`[scena-browser-m6] ${formatted}`);
+        }
       });
       page.on("pageerror", (error) => {
         if (consoleMessages.length > 0) {
@@ -2309,7 +2345,7 @@ async function main() {
           const consoleSuffix =
             consoleMessages.length > 0 ? `\nconsole:\n${consoleMessages.join("\n")}` : "";
           throw new Error(
-            `${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}${consoleSuffix}`,
+            `${backend} Rust/WASM renderer probe failed: ${JSON.stringify(compactBrowserProbeResult(result))}${consoleSuffix}`,
           );
         }
         const requiredEvaluation = evaluateRequiredGpuParity({

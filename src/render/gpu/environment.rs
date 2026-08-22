@@ -9,7 +9,7 @@ use super::shadow::{
 use super::stats::GpuResourceStats;
 
 /// Bundles the per-frame group-0 GPU resources that are shared by every
-/// render pass: shadow caster (texture + pipeline + active flag), shadow
+/// render pass: shadow caster (texture plus optional active resources), shadow
 /// comparison sampler, environment cubemap (mip chain), environment
 /// sampler, the BRDF LUT (split-sum specular composition), and the
 /// output bind group that ties them together with the uniform buffer.
@@ -34,6 +34,7 @@ pub(super) fn resource_stats(
     environment_lighting: &PreparedEnvironmentLighting,
     reflection_probes: &[PreparedReflectionProbe],
 ) -> GpuResourceStats {
+    let shadow_active = u64::from(directional_shadow_map_resolution.is_some());
     let shadow_edge = u64::from(directional_shadow_map_resolution.unwrap_or(1).max(1));
     let (cubemap_bytes, brdf_lut_bytes) = environment_lighting
         .cubemap()
@@ -70,10 +71,10 @@ pub(super) fn resource_stats(
     GpuResourceStats {
         textures: 3 + reflection_probes.len() as u64,
         render_targets: 1,
-        pipelines: 1,
-        bind_groups: 4 + reflection_probes.len() as u64 * 2,
-        shader_modules: 1,
-        shader_module_creations: 1,
+        pipelines: shadow_active,
+        bind_groups: 2 + shadow_active * 2 + reflection_probes.len() as u64 * 2,
+        shader_modules: shadow_active,
+        shader_module_creations: shadow_active,
         approximate_gpu_memory_bytes: shadow_edge
             .saturating_mul(shadow_edge)
             .saturating_mul(4)
@@ -336,4 +337,17 @@ pub(super) fn create_environment_sampler(device: &wgpu::Device) -> wgpu::Sampler
         mipmap_filter: wgpu::MipmapFilterMode::Linear,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shadow_pipeline_stats_are_zero_without_a_shadow_caster() {
+        let stats = resource_stats(None, &PreparedEnvironmentLighting::default(), &[]);
+        assert_eq!(stats.pipelines, 0);
+        assert_eq!(stats.shader_modules, 0);
+        assert_eq!(stats.shader_module_creations, 0);
+    }
 }

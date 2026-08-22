@@ -114,16 +114,15 @@ pub(super) struct ShadowCasterResources {
     #[allow(dead_code)]
     pub(super) texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
-    pub(super) pipeline: wgpu::RenderPipeline,
-    pub(super) active: bool,
+    pub(super) pipeline: Option<wgpu::RenderPipeline>,
     /// Camera-only bind group used by the shadow caster pass. Distinct from
     /// `output_bind_group` so that the shadow_map texture is not referenced
     /// inside the caster pass's render-pass usage scope.
-    pub(super) camera_bind_group: wgpu::BindGroup,
+    pub(super) camera_bind_group: Option<wgpu::BindGroup>,
     /// Empty bind group for slot @group(1) (the material slot) so the
     /// caster's pipeline layout aligns with the unlit pipeline's bind
     /// group indices.
-    pub(super) dummy_material_group: wgpu::BindGroup,
+    pub(super) dummy_material_group: Option<wgpu::BindGroup>,
 }
 
 pub(super) fn create_shadow_caster_resources(
@@ -134,6 +133,15 @@ pub(super) fn create_shadow_caster_resources(
 ) -> ShadowCasterResources {
     let texture = create_shadow_texture(device, resolution);
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    if resolution.is_none() {
+        return ShadowCasterResources {
+            texture,
+            view,
+            pipeline: None,
+            camera_bind_group: None,
+            dummy_material_group: None,
+        };
+    }
     let shader = create_shader_module(
         device,
         ShaderVariantId::ShadowDirectional,
@@ -194,10 +202,9 @@ pub(super) fn create_shadow_caster_resources(
     ShadowCasterResources {
         texture,
         view,
-        pipeline,
-        active: resolution.is_some(),
-        camera_bind_group,
-        dummy_material_group,
+        pipeline: Some(pipeline),
+        camera_bind_group: Some(camera_bind_group),
+        dummy_material_group: Some(dummy_material_group),
     }
 }
 
@@ -257,9 +264,13 @@ pub(super) fn encode_shadow_caster_pass(
     resources: &ShadowCasterResources,
     inputs: ShadowCasterPassInputs<'_>,
 ) {
-    if !resources.active {
+    let (Some(pipeline), Some(camera_bind_group), Some(dummy_material_group)) = (
+        resources.pipeline.as_ref(),
+        resources.camera_bind_group.as_ref(),
+        resources.dummy_material_group.as_ref(),
+    ) else {
         return;
-    }
+    };
     let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
         view: &resources.view,
         depth_ops: Some(wgpu::Operations {
@@ -282,13 +293,13 @@ pub(super) fn encode_shadow_caster_pass(
     // the encoder during the later unlit pass, after the caster pass
     // closes and the texture transitions from DEPTH_STENCIL_WRITE to
     // RESOURCE.
-    pass.set_bind_group(0, &resources.camera_bind_group, &[]);
-    pass.set_bind_group(1, &resources.dummy_material_group, &[]);
+    pass.set_bind_group(0, camera_bind_group, &[]);
+    pass.set_bind_group(1, dummy_material_group, &[]);
     pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
     let identity_instance_offset =
         u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
     pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
-    pass.set_pipeline(&resources.pipeline);
+    pass.set_pipeline(pipeline);
     for batch in inputs.draw_batches {
         let draw_offset =
             (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;

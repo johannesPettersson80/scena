@@ -300,8 +300,12 @@ impl fmt::Display for RenderError {
                 formatter,
                 "{backend:?} surface format or present mode changed during recovery"
             ),
-            Self::GpuValidation { backend } => {
-                write!(formatter, "{backend:?} reported a GPU validation error")
+            Self::GpuValidation { backend, detail } => {
+                write!(formatter, "{backend:?} reported a GPU validation error")?;
+                if let Some(detail) = detail {
+                    write!(formatter, ": {detail}")?;
+                }
+                Ok(())
             }
             Self::GpuOutOfMemory { backend } => {
                 write!(formatter, "{backend:?} GPU reported out of memory")

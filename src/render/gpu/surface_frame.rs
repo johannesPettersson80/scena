@@ -218,8 +218,10 @@ pub(super) fn acquire_surface_frame(
             }
             SurfaceAcquireAction::FailAfterRetry(_) => unreachable!("only outdated is retried"),
             SurfaceAcquireAction::FailValidation => {
+                report_surface_acquisition_validation(target, &surface.config);
                 return Err(RenderError::GpuValidation {
                     backend: target.backend,
+                    detail: Some("surface acquisition returned validation".to_string()),
                 });
             }
             SurfaceAcquireAction::FailOutOfMemory => {
@@ -229,6 +231,20 @@ pub(super) fn acquire_surface_frame(
             }
         }
     }
+}
+
+fn report_surface_acquisition_validation(
+    target: RasterTarget,
+    config: &wgpu::SurfaceConfiguration,
+) {
+    let message = format!(
+        "scena surface acquisition validation: backend={:?} target={}x{} format={:?} usage={:?}",
+        target.backend, target.width, target.height, config.format, config.usage
+    );
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&message));
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("{message}");
 }
 
 #[cfg(test)]
@@ -293,11 +309,14 @@ mod tests {
     #[test]
     fn runtime_fault_channel_preserves_validation_and_oom() {
         let state = super::GpuRuntimeFaultState::default();
-        *state.fault.lock().expect("fault lock") = Some(super::GpuRuntimeFault::Validation);
+        *state.fault.lock().expect("fault lock") = Some(super::GpuRuntimeFault::Validation(
+            "test validation".to_string(),
+        ));
         assert!(matches!(
             state.render_error(crate::Backend::HeadlessGpu),
             Some(crate::RenderError::GpuValidation {
-                backend: crate::Backend::HeadlessGpu
+                backend: crate::Backend::HeadlessGpu,
+                detail: Some(_),
             })
         ));
         *state.fault.lock().expect("fault lock") = Some(super::GpuRuntimeFault::OutOfMemory);
@@ -345,9 +364,9 @@ use crate::diagnostics::{Backend, RenderError};
 use super::super::RasterTarget;
 use super::{GpuSurfaceState, build};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum GpuRuntimeFault {
-    Validation,
+    Validation(String),
     OutOfMemory,
 }
 
@@ -361,18 +380,26 @@ impl GpuRuntimeFaultState {
         let fault = match error {
             wgpu::Error::OutOfMemory { .. } => GpuRuntimeFault::OutOfMemory,
             wgpu::Error::Validation { .. } | wgpu::Error::Internal { .. } => {
-                GpuRuntimeFault::Validation
+                GpuRuntimeFault::Validation(format!("{error:?}"))
             }
         };
         if let Ok(mut slot) = self.fault.lock() {
-            *slot = Some(fault);
+            // Pipeline creation reports a secondary "invalid module" error
+            // after the shader compiler's primary diagnostic. Preserve the
+            // first failure so browser callers receive the actionable cause.
+            if slot.is_none() {
+                *slot = Some(fault);
+            }
         }
     }
 
     pub(super) fn render_error(&self, backend: Backend) -> Option<RenderError> {
-        let fault = self.fault.lock().ok().and_then(|slot| *slot)?;
+        let fault = self.fault.lock().ok().and_then(|slot| slot.clone())?;
         Some(match fault {
-            GpuRuntimeFault::Validation => RenderError::GpuValidation { backend },
+            GpuRuntimeFault::Validation(detail) => RenderError::GpuValidation {
+                backend,
+                detail: Some(detail),
+            },
             GpuRuntimeFault::OutOfMemory => RenderError::GpuOutOfMemory { backend },
         })
     }

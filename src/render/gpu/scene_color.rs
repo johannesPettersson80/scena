@@ -22,7 +22,7 @@ pub(super) struct SceneColorPasses<'a> {
     pub(super) instance_batches: &'a [InstanceDrawBatch],
     pub(super) identity_instance: u32,
     pub(super) transmission_view: &'a wgpu::TextureView,
-    pub(super) transmission_pipelines: UnlitPipelines<'a>,
+    pub(super) transmission_pipelines: Option<UnlitPipelines<'a>>,
     pub(super) force_scene_color_pass: bool,
     pub(super) clear_color: wgpu::Color,
     pub(super) base_label: &'static str,
@@ -34,9 +34,10 @@ pub(super) fn encode_scene_color_passes(
     passes: SceneColorPasses<'_>,
 ) {
     let draw_submissions = passes.draw_submissions;
-    if passes.force_scene_color_pass
-        || has_transparent_batches(passes.draw_batches, passes.instance_batches)
-    {
+    if passes.force_scene_color_pass || passes.transmission_pipelines.is_some() {
+        let transmission_pipelines = passes
+            .transmission_pipelines
+            .expect("a forced scene-color pass requires prepared transmission pipelines");
         encode_unlit_pass(
             encoder,
             UnlitPass {
@@ -55,13 +56,15 @@ pub(super) fn encode_scene_color_passes(
                 draw_batches: passes.draw_batches,
                 instance_batches: passes.instance_batches,
                 identity_instance: passes.identity_instance,
-                pipelines: passes.transmission_pipelines,
+                pipelines: transmission_pipelines,
                 color_load: ColorLoad::Clear(passes.clear_color),
                 draw_filter: DrawFilter::OpaqueOnly,
                 label: "scena.transmission.scene_color_pass",
                 draw_submissions: &mut *draw_submissions,
             },
         );
+    }
+    if has_transparent_batches(passes.draw_batches, passes.instance_batches) {
         encode_unlit_pass(
             encoder,
             UnlitPass {

@@ -209,6 +209,11 @@ impl GpuDeviceState {
                 BrowserReadbackPass {
                     target,
                     readback,
+                    readback_pipelines: readback
+                        .pipelines
+                        .as_ref()
+                        .map(super::pipeline::MeshPipelineSet::refs)
+                        .unwrap_or_else(|| resources.surface_pipeline.refs()),
                     depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
                     vertex_buffer: &resources.vertex_buffer,
                     instance_buffer: &resources.instance_buffer,
@@ -276,7 +281,11 @@ impl GpuDeviceState {
                 instance_batches: &resources.instance_batches,
                 identity_instance: resources.identity_instance,
                 transmission_view: &resources.transmission.view,
-                transmission_pipelines: resources.transmission.pipelines.refs(),
+                transmission_pipelines: resources
+                    .transmission
+                    .pipelines
+                    .as_ref()
+                    .map(super::pipeline::MeshPipelineSet::refs),
                 force_scene_color_pass: post_settings.reflections().is_some(),
                 clear_color: wgpu_clear_color_for_target(background_color, scene_format),
                 base_label,

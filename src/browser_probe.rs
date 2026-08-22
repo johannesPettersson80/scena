@@ -1,5 +1,6 @@
 //! WASM-only browser proof hooks used by release-gate probes.
 
+mod camera_control;
 mod dropped_file;
 mod material_variant;
 mod parity;
@@ -16,10 +17,8 @@ use workflows::{build_workflow_scene, scene_with_triangle};
 
 use crate::{
     ASSET_DOCTOR_REPORT_SCHEMA_V1, AntiAliasing, AssetFetcher, Assets, Backend, Background,
-    CameraKey, EnvironmentHandle, FlyControls, FollowControls, OrbitControlAction, OrbitControls,
-    OutputColorSpace, PerspectiveCamera, PixelReadback, PlatformSurface, PointerEvent, Profile,
-    Quality, Renderer, RendererOptions, Scene, Tonemapper, Transform, Vec3, fnv1a64_hex,
-    sample_rgba8,
+    EnvironmentHandle, OutputColorSpace, PixelReadback, PlatformSurface, Profile, Quality,
+    Renderer, RendererOptions, Scene, Tonemapper, fnv1a64_hex, sample_rgba8,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -135,88 +134,7 @@ pub async fn m6_render_state_lifecycle_probe(
 
 #[wasm_bindgen(js_name = m6CameraControlKitProbe)]
 pub fn m6_camera_control_kit_probe() -> Result<String, JsValue> {
-    let mut scene = Scene::new();
-    let camera = scene
-        .add_perspective_camera(
-            scene.root(),
-            PerspectiveCamera::standard(),
-            Transform::at(Vec3::new(0.0, 0.0, 5.0)),
-        )
-        .map_err(|error| JsValue::from_str(&format!("camera insert failed: {error:?}")))?;
-    scene
-        .set_active_camera(camera)
-        .map_err(|error| JsValue::from_str(&format!("active camera failed: {error:?}")))?;
-
-    let mut orbit = OrbitControls::new(Vec3::ZERO, 4.0)
-        .presentation()
-        .zoom_limits_bounds_relative(0.5, 2.0);
-    let initial_distance = orbit.distance();
-    let orbit_actions = vec![
-        orbit.handle_pointer(PointerEvent::primary_pressed(160.0, 120.0)),
-        orbit.handle_pointer(PointerEvent::moved(184.0, 108.0, 24.0, -12.0)),
-        orbit.handle_pointer(PointerEvent::wheel(184.0, 108.0, -1.0)),
-        orbit.handle_pointer(PointerEvent::released(184.0, 108.0)),
-        orbit.advance(1.0 / 30.0),
-    ];
-    orbit
-        .apply_to_scene(&mut scene, camera)
-        .map_err(|error| JsValue::from_str(&format!("orbit apply failed: {error:?}")))?;
-    let orbit_camera = camera_translation(&scene, camera)?;
-
-    let target = scene
-        .add_empty(scene.root(), Transform::at(Vec3::new(2.0, 0.5, -1.0)))
-        .map_err(|error| JsValue::from_str(&format!("target insert failed: {error:?}")))?;
-    FollowControls::behind_and_above(3.0, 1.25)
-        .apply_to_scene(&mut scene, camera, target)
-        .map_err(|error| JsValue::from_str(&format!("follow apply failed: {error:?}")))?;
-    let follow_camera = camera_translation(&scene, camera)?;
-
-    let mut fly = FlyControls::new(Vec3::ZERO)
-        .with_yaw_pitch_degrees(90.0, 0.0)
-        .with_move_speed(2.0);
-    let fly_move = fly.move_local(1.0, 0.5, 0.25, 2.0);
-    let fly_look = fly.look_delta(8.0, -4.0);
-    fly.apply_to_scene(&mut scene, camera)
-        .map_err(|error| JsValue::from_str(&format!("fly apply failed: {error:?}")))?;
-    let fly_camera = camera_translation(&scene, camera)?;
-
-    let passed = orbit_actions.contains(&OrbitControlAction::BeginOrbit)
-        && orbit_actions.contains(&OrbitControlAction::Orbit)
-        && orbit_actions.contains(&OrbitControlAction::Zoom)
-        && orbit_actions.contains(&OrbitControlAction::End)
-        && orbit.distance() < initial_distance
-        && follow_camera.y > 0.5
-        && fly_camera.x > 0.0
-        && fly_camera.z < 0.0
-        && matches!(fly_move, OrbitControlAction::Pan)
-        && matches!(fly_look, OrbitControlAction::Orbit);
-
-    Ok(json!({
-        "schema": "scena.m6.camera_control_kit_browser_proof.v1",
-        "status": if passed { "passed" } else { "failed" },
-        "proof_class": "browser-demo",
-        "visual_proof": "browser-demo",
-        "orbit": {
-            "initial_distance": initial_distance,
-            "distance_after_zoom": orbit.distance(),
-            "yaw_radians": orbit.yaw_radians(),
-            "pitch_radians": orbit.pitch_radians(),
-            "actions": orbit_actions.iter().map(|action| action_name(*action)).collect::<Vec<_>>(),
-            "camera_translation": vec3_json(orbit_camera),
-        },
-        "follow": {
-            "target_translation": [2.0, 0.5, -1.0],
-            "camera_translation": vec3_json(follow_camera),
-        },
-        "fly": {
-            "move_action": action_name(fly_move),
-            "look_action": action_name(fly_look),
-            "camera_translation": vec3_json(fly_camera),
-            "yaw_radians": fly.yaw_radians(),
-            "pitch_radians": fly.pitch_radians(),
-        },
-    })
-    .to_string())
+    camera_control::render_camera_control_kit_probe()
 }
 
 async fn render_probe(canvas: HtmlCanvasElement, backend: Backend) -> Result<String, JsValue> {
@@ -313,8 +231,16 @@ async fn render_scene_with_options<F: AssetFetcher>(
     environment: Option<EnvironmentHandle>,
     renderer_options: RendererOptions,
 ) -> Result<String, JsValue> {
+    let trace_started_ms = js_sys::Date::now();
     let width = canvas.width();
     let height = canvas.height();
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "probe-start",
+        json!({ "width": width, "height": height }),
+    );
     let cpu_parity_required = match backend {
         Backend::WebGl2 => matches!(
             workflow,
@@ -324,6 +250,13 @@ async fn render_scene_with_options<F: AssetFetcher>(
         _ => false,
     };
     let cpu_parity_frame = if cpu_parity_required {
+        browser_probe_trace(
+            trace_started_ms,
+            backend,
+            workflow,
+            "cpu-parity-start",
+            json!({}),
+        );
         let mut cpu_renderer = Renderer::headless_with_options(width, height, renderer_options)
             .map_err(|error| JsValue::from_str(&format!("CPU parity build failed: {error:?}")))?;
         configure_probe_renderer(&mut cpu_renderer, &metadata, environment);
@@ -333,7 +266,15 @@ async fn render_scene_with_options<F: AssetFetcher>(
         cpu_renderer
             .render(scene, camera)
             .map_err(|error| JsValue::from_str(&format!("CPU parity render failed: {error:?}")))?;
-        Some(cpu_renderer.read_pixels())
+        let pixels = cpu_renderer.read_pixels();
+        browser_probe_trace(
+            trace_started_ms,
+            backend,
+            workflow,
+            "cpu-parity-complete",
+            json!({ "rgba_bytes": pixels.rgba8().len() }),
+        );
+        Some(pixels)
     } else {
         None
     };
@@ -347,21 +288,95 @@ async fn render_scene_with_options<F: AssetFetcher>(
             return Err(JsValue::from_str("browser probe requires WebGL2 or WebGPU"));
         }
     };
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-build-start",
+        json!({}),
+    );
     let mut renderer = Renderer::from_surface_async_with_options(surface, renderer_options)
         .await
         .map_err(|error| JsValue::from_str(&format!("build failed: {error:?}")))?;
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-build-complete",
+        json!({ "adapter": renderer.gpu_adapter_report() }),
+    );
     configure_probe_renderer(&mut renderer, &metadata, environment);
 
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-prepare-start",
+        json!({}),
+    );
     renderer
         .prepare_with_assets(scene, assets)
         .map_err(|error| JsValue::from_str(&format!("prepare failed: {error:?}")))?;
+    let prepared_stats = renderer.stats();
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-prepare-complete",
+        json!({
+            "buffers": prepared_stats.buffers,
+            "pipelines": prepared_stats.pipelines,
+            "bind_groups": prepared_stats.bind_groups,
+        }),
+    );
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-render-start",
+        json!({}),
+    );
     let outcome = renderer
         .render(scene, camera)
         .map_err(|error| JsValue::from_str(&format!("render failed: {error:?}")))?;
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-render-complete",
+        json!({
+            "draw_calls": outcome.draw_calls,
+            "primitives": outcome.primitives,
+        }),
+    );
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-readback-start",
+        json!({}),
+    );
     let renderer_readback = renderer.browser_readback_rgba8().await?;
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "gpu-readback-complete",
+        json!({
+            "available": renderer_readback.is_some(),
+            "rgba_bytes": renderer_readback.as_ref().map_or(0, |pixels| pixels.rgba8().len()),
+        }),
+    );
     let parity = cpu_parity_frame
         .as_ref()
         .map(|cpu| parity::cpu_browser_gpu_report(cpu, renderer_readback.as_ref(), backend));
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "parity-report-complete",
+        json!({ "created": parity.is_some() }),
+    );
     let renderer_readback = renderer_readback.as_ref().map(renderer_readback_json);
     let stats = renderer.stats();
     let capabilities = *renderer.capabilities();
@@ -388,7 +403,7 @@ async fn render_scene_with_options<F: AssetFetcher>(
         None
     };
 
-    Ok(json!({
+    let response = json!({
         "schema": "scena.m6.browser_renderer_probe.v1",
         "status": "rendered",
         "workflow": workflow,
@@ -414,7 +429,34 @@ async fn render_scene_with_options<F: AssetFetcher>(
         "renderer_readback": renderer_readback,
         "parity": parity,
     })
-    .to_string())
+    .to_string();
+    browser_probe_trace(
+        trace_started_ms,
+        backend,
+        workflow,
+        "response-serialized",
+        json!({ "bytes": response.len() }),
+    );
+    Ok(response)
+}
+
+fn browser_probe_trace(
+    started_ms: f64,
+    backend: Backend,
+    workflow: &str,
+    stage: &str,
+    detail: serde_json::Value,
+) {
+    let message = json!({
+        "schema": "scena.browser_probe_trace.v1",
+        "backend": format!("{backend:?}"),
+        "workflow": workflow,
+        "stage": stage,
+        "elapsed_ms": (js_sys::Date::now() - started_ms).round(),
+        "detail": detail,
+    })
+    .to_string();
+    web_sys::console::info_1(&JsValue::from_str(&message));
 }
 
 fn configure_probe_renderer(
@@ -434,31 +476,6 @@ fn configure_probe_renderer(
     if metadata.get("tonemapper").and_then(|value| value.as_str()) == Some("standard") {
         renderer.set_tonemapper(Tonemapper::Standard);
     }
-}
-
-fn camera_translation(scene: &Scene, camera: CameraKey) -> Result<Vec3, JsValue> {
-    let camera_node = scene
-        .camera_node(camera)
-        .ok_or_else(|| JsValue::from_str("camera node missing"))?;
-    let transform = scene
-        .world_transform(camera_node)
-        .ok_or_else(|| JsValue::from_str("camera world transform missing"))?;
-    Ok(transform.translation)
-}
-
-fn action_name(action: OrbitControlAction) -> &'static str {
-    match action {
-        OrbitControlAction::None => "None",
-        OrbitControlAction::BeginOrbit => "BeginOrbit",
-        OrbitControlAction::Orbit => "Orbit",
-        OrbitControlAction::Pan => "Pan",
-        OrbitControlAction::Zoom => "Zoom",
-        OrbitControlAction::End => "End",
-    }
-}
-
-fn vec3_json(value: Vec3) -> [f32; 3] {
-    [value.x, value.y, value.z]
 }
 
 pub(super) fn renderer_readback_json(readback: &PixelReadback) -> serde_json::Value {

@@ -290,7 +290,11 @@ impl GpuDeviceState {
                     instance_batches: &resources.instance_batches,
                     identity_instance: resources.identity_instance,
                     transmission_view: &resources.transmission.view,
-                    transmission_pipelines: resources.transmission.pipelines.refs(),
+                    transmission_pipelines: resources
+                        .transmission
+                        .pipelines
+                        .as_ref()
+                        .map(super::super::pipeline::MeshPipelineSet::refs),
                     force_scene_color_pass: post_settings.reflections().is_some(),
                     clear_color: wgpu_clear_color_for_target(background_color, scene_format),
                     base_label,
@@ -420,7 +424,11 @@ impl GpuDeviceState {
                     instance_batches: &resources.instance_batches,
                     identity_instance: resources.identity_instance,
                     transmission_view: &resources.transmission.view,
-                    transmission_pipelines: resources.transmission.pipelines.refs(),
+                    transmission_pipelines: resources
+                        .transmission
+                        .pipelines
+                        .as_ref()
+                        .map(super::super::pipeline::MeshPipelineSet::refs),
                     force_scene_color_pass: false,
                     clear_color: wgpu_clear_color_for_target(
                         background_color,

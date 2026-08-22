@@ -302,6 +302,7 @@ pub enum RenderError {
     },
     GpuValidation {
         backend: Backend,
+        detail: Option<String>,
     },
     GpuOutOfMemory {
         backend: Backend,

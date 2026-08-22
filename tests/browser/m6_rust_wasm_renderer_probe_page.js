@@ -13,7 +13,8 @@ import init, {
   m6AssetDoctorBrowserProbe,
 } from "/pkg/scena.js";
 
-let initialized = false;
+let initializationPromise = null;
+let initializationElapsedMs = null;
 let modelViewerInitialized = false;
 
 const SCENA_VIEWER_PARITY_ASSETS = [
@@ -35,11 +36,19 @@ const SCENA_VIEWER_PARITY_ASSETS = [
 ];
 
 async function ensureInit() {
-  if (!initialized) {
-    await init();
-    initialized = true;
+  if (!initializationPromise) {
+    const started = performance.now();
+    initializationPromise = init().then(() => {
+      initializationElapsedMs = Math.round(performance.now() - started);
+    });
   }
+  await initializationPromise;
 }
+
+// Start module initialization during page setup so renderer-operation timing
+// is not conflated with one-time WASM compilation. `ensureInit` caches the
+// promise, and the measured cold-start duration remains in the probe trace.
+void ensureInit();
 
 async function ensureModelViewer() {
   if (!modelViewerInitialized) {
@@ -217,6 +226,8 @@ async function renderDroppedFileIntoViewer(viewer, backend, dropDetail) {
     ...rendered,
     status: passed ? "passed" : "failed",
     pixels,
+    renderer_pixels: rendererPixels || null,
+    canvas_pixels: readback.pixels,
     pixel_source: rendererPixels && rendererPixels.nonblack > 0 ? "renderer-owned-gpu-copy" : "canvas-readback",
     pixel_readback_attempts: readback.attempts,
   };
@@ -253,6 +264,8 @@ async function renderSelectedVariantIntoViewer(viewer, backend, variantName) {
     ...rendered,
     status: passed ? "passed" : "failed",
     pixels,
+    renderer_pixels: rendererPixels || null,
+    canvas_pixels: readback.pixels,
     green_dominant: greenDominant,
     pixel_source: rendererPixels && rendererPixels.nonblack > 0 ? "renderer-owned-gpu-copy" : "canvas-readback",
     pixel_readback_attempts: readback.attempts,
@@ -603,6 +616,10 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     variant_render_active: variantRender.metadata.active_variant,
     variant_render_green_dominant: variantRender.green_dominant,
     variant_render_pixels_nonblack: variantRender.pixels.nonblack,
+    variant_render_draw_calls: variantRender.draw_calls,
+    variant_render_gpu_submissions: variantRender.gpu_submissions,
+    variant_render_renderer_pixels: variantRender.renderer_pixels,
+    variant_render_canvas_pixels: variantRender.canvas_pixels,
     annotation_count: annotationRequestDetail.anchors.length,
     annotation_visible: annotationsRenderedDetail.visible,
     annotation_update_visible: annotationsUpdatedDetail.visible,
@@ -624,6 +641,10 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     drop_render_file_name: dropRender.metadata.file_name,
     drop_render_roots: dropRender.metadata.roots,
     drop_render_pixels_nonblack: dropRender.pixels.nonblack,
+    drop_render_draw_calls: dropRender.draw_calls,
+    drop_render_gpu_submissions: dropRender.gpu_submissions,
+    drop_render_renderer_pixels: dropRender.renderer_pixels,
+    drop_render_canvas_pixels: dropRender.canvas_pixels,
     drop_render_auto_frame_status: dropRender.metadata.auto_frame.status,
     drop_render_auto_frame_proof_class: dropRender.metadata.auto_frame.proof_class,
     drop_render_auto_frame_inside_viewport: dropRender.metadata.auto_frame.inside_viewport,
@@ -1140,11 +1161,24 @@ async function readRenderedPixelsWithRetry(backend, canvas, workflow) {
 }
 
 async function runProbe(backend, workflow, render) {
+  const traceStarted = performance.now();
+  const trace = (stage, detail = {}) => console.info(JSON.stringify({
+    schema: "scena.browser_page_trace.v1",
+    backend,
+    workflow,
+    stage,
+    elapsed_ms: Math.round(performance.now() - traceStarted),
+    detail,
+  }));
   await ensureInit();
+  trace("wasm-init-complete", { cold_start_ms: initializationElapsedMs });
   const canvas = createCanvas(backend, workflow);
   const raw = await render(canvas);
+  trace("rust-render-response", { bytes: raw.length });
   const result = JSON.parse(raw);
+  trace("response-parsed");
   const readback = await readRenderedPixelsWithRetry(backend, canvas, workflow);
+  trace("canvas-readback-complete", { attempts: readback.attempts });
   const rendererReadback =
     result.renderer_readback && result.renderer_readback.pixel_statistics;
   const useRendererReadback =
@@ -1162,6 +1196,7 @@ async function runProbe(backend, workflow, render) {
     );
   }
   result.canvas_data_url = canvas.toDataURL("image/png");
+  trace("canvas-png-complete", { bytes: result.canvas_data_url.length });
   result.screenshot_metadata = {
     backend,
     workflow,
@@ -1200,6 +1235,7 @@ async function runProbe(backend, workflow, render) {
     (benchmarkOk || (result.pixels && result.pixels.nonblack > 0))
       ? "passed"
       : "failed";
+  trace("page-probe-complete", { status: result.status });
   return result;
 }
 

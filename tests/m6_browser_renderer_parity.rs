@@ -401,6 +401,43 @@ fn browser_canvas_rgba8(canvas: &HtmlCanvasElement) -> Option<Vec<u8>> {
             .expect("WebGL2 readPixels exists")
             .dyn_into::<js_sys::Function>()
             .expect("readPixels is callable");
+    // wgpu's WebGL2 readback path may leave a pixel-pack buffer and row
+    // packing state bound. The typed-array readPixels overload below is
+    // invalid while that buffer is bound, so restore client-memory packing.
+    let pixel_pack_buffer = js_sys::Reflect::get(
+        &context,
+        &wasm_bindgen::JsValue::from_str("PIXEL_PACK_BUFFER"),
+    )
+    .expect("WebGL2 PIXEL_PACK_BUFFER enum exists");
+    let bind_buffer =
+        js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("bindBuffer"))
+            .expect("WebGL2 bindBuffer exists")
+            .dyn_into::<js_sys::Function>()
+            .expect("bindBuffer is callable");
+    bind_buffer
+        .call2(&context, &pixel_pack_buffer, &wasm_bindgen::JsValue::NULL)
+        .expect("pixel-pack buffer can be unbound");
+    let pixel_store_i =
+        js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("pixelStorei"))
+            .expect("WebGL2 pixelStorei exists")
+            .dyn_into::<js_sys::Function>()
+            .expect("pixelStorei is callable");
+    for (name, value) in [
+        ("PACK_ALIGNMENT", 1_u32),
+        ("PACK_ROW_LENGTH", 0),
+        ("PACK_SKIP_PIXELS", 0),
+        ("PACK_SKIP_ROWS", 0),
+    ] {
+        let parameter = js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str(name))
+            .expect("WebGL2 pack-state enum exists");
+        pixel_store_i
+            .call2(
+                &context,
+                &parameter,
+                &wasm_bindgen::JsValue::from_f64(f64::from(value)),
+            )
+            .expect("WebGL2 pack state can be normalized");
+    }
     let bytes = js_sys::Uint8Array::new_with_length(len);
     let args = js_sys::Array::new();
     args.push(&wasm_bindgen::JsValue::from_f64(0.0));
@@ -416,6 +453,46 @@ fn browser_canvas_rgba8(canvas: &HtmlCanvasElement) -> Option<Vec<u8>> {
 
     let mut rgba8 = vec![0; len as usize];
     bytes.copy_to(rgba8.as_mut_slice());
+    if nonblack_pixel_count(&rgba8) == 0 {
+        let attributes = js_sys::Reflect::get(
+            &context,
+            &wasm_bindgen::JsValue::from_str("getContextAttributes"),
+        )
+        .ok()
+        .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+        .and_then(|function| function.call0(&context).ok());
+        let preserve_drawing_buffer = attributes.as_ref().and_then(|attributes| {
+            js_sys::Reflect::get(
+                attributes,
+                &wasm_bindgen::JsValue::from_str("preserveDrawingBuffer"),
+            )
+            .ok()
+            .and_then(|value| value.as_bool())
+        });
+        let get_parameter =
+            js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("getParameter"))
+                .ok()
+                .and_then(|value| value.dyn_into::<js_sys::Function>().ok());
+        let pixel_pack_buffer_binding = get_parameter.as_ref().and_then(|get_parameter| {
+            let parameter = js_sys::Reflect::get(
+                &context,
+                &wasm_bindgen::JsValue::from_str("PIXEL_PACK_BUFFER_BINDING"),
+            )
+            .ok()?;
+            get_parameter.call1(&context, &parameter).ok()
+        });
+        let webgl_error =
+            js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("getError"))
+                .ok()
+                .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+                .and_then(|function| function.call0(&context).ok());
+        web_sys::console::info_1(
+            &format!(
+                "[scena-webgl2-canvas-readback] zero_pixels=true preserve_drawing_buffer={preserve_drawing_buffer:?} pixel_pack_buffer_binding={pixel_pack_buffer_binding:?} webgl_error={webgl_error:?}"
+            )
+            .into(),
+        );
+    }
     Some(rgba8)
 }
 

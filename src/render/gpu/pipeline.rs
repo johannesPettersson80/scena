@@ -3,6 +3,7 @@ use super::material_bindings::MaterialTextureBindingMode;
 use super::material_uniform::{MATERIAL_UNIFORM_ENTRY_STRIDE, MaterialShaderFeatures};
 use super::materials::MaterialResources;
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
+use super::pipeline_requirements::MeshPipelineRequirements;
 use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
@@ -81,6 +82,8 @@ pub(super) struct UnlitPass<'a> {
 pub(super) struct MeshPipelineSet {
     single_sided: wgpu::RenderPipeline,
     double_sided: wgpu::RenderPipeline,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    compiled_pipeline_count: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -287,6 +290,11 @@ impl MeshPipelineSet {
             double_sided: &self.double_sided,
         }
     }
+
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub(super) const fn compiled_pipeline_count(&self) -> u64 {
+        self.compiled_pipeline_count
+    }
 }
 
 impl<'a> UnlitPipelines<'a> {
@@ -346,33 +354,62 @@ pub(super) fn create_unlit_pipeline_set(
     semantic_target_format: Option<wgpu::TextureFormat>,
     material_features: MaterialShaderFeatures,
 ) -> MeshPipelineSet {
+    create_unlit_pipeline_set_for_requirements(
+        device,
+        shader,
+        format,
+        output_bind_group_layout,
+        material_bind_group_layout,
+        draw_bind_group_layout,
+        depth_compare,
+        sample_count,
+        semantic_target_format,
+        material_features,
+        MeshPipelineRequirements::ALL,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn create_unlit_pipeline_set_for_requirements(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    output_bind_group_layout: &wgpu::BindGroupLayout,
+    material_bind_group_layout: &wgpu::BindGroupLayout,
+    draw_bind_group_layout: &wgpu::BindGroupLayout,
+    depth_compare: Option<wgpu::CompareFunction>,
+    sample_count: u32,
+    semantic_target_format: Option<wgpu::TextureFormat>,
+    material_features: MaterialShaderFeatures,
+    requirements: MeshPipelineRequirements,
+) -> MeshPipelineSet {
+    let create = |double_sided| {
+        create_unlit_pipeline(
+            device,
+            shader,
+            format,
+            output_bind_group_layout,
+            material_bind_group_layout,
+            draw_bind_group_layout,
+            depth_compare,
+            double_sided,
+            sample_count,
+            semantic_target_format,
+            material_features,
+        )
+    };
+    let single_sided = requirements.single_sided.then(|| create(false));
+    let double_sided = requirements.double_sided.then(|| create(true));
+    let (single_sided, double_sided) = match (single_sided, double_sided) {
+        (Some(single_sided), Some(double_sided)) => (single_sided, double_sided),
+        (Some(single_sided), None) => (single_sided.clone(), single_sided),
+        (None, Some(double_sided)) => (double_sided.clone(), double_sided),
+        (None, None) => unreachable!("pipeline requirements always select at least one side"),
+    };
     MeshPipelineSet {
-        single_sided: create_unlit_pipeline(
-            device,
-            shader,
-            format,
-            output_bind_group_layout,
-            material_bind_group_layout,
-            draw_bind_group_layout,
-            depth_compare,
-            false,
-            sample_count,
-            semantic_target_format,
-            material_features,
-        ),
-        double_sided: create_unlit_pipeline(
-            device,
-            shader,
-            format,
-            output_bind_group_layout,
-            material_bind_group_layout,
-            draw_bind_group_layout,
-            depth_compare,
-            true,
-            sample_count,
-            semantic_target_format,
-            material_features,
-        ),
+        single_sided,
+        double_sided,
+        compiled_pipeline_count: requirements.compiled_pipeline_count(),
     }
 }
 
@@ -476,111 +513,5 @@ fn create_unlit_pipeline(
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn unlit_pipeline_source_wires_depth_state_into_visible_color_pass() {
-        let source = include_str!("pipeline.rs");
-        let implementation = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("pipeline implementation precedes tests");
-        assert!(
-            implementation.contains("RenderPassDepthStencilAttachment")
-                && implementation.contains("depth_stencil: depth_compare.map"),
-            "visible GPU color pass must use the prepared depth buffer when one exists"
-        );
-    }
-
-    #[test]
-    fn depth_prepass_and_color_pass_use_identical_clip_space_transform() {
-        // Pi 5 V3D WebGL2 runs the fragment stage at lower-than-highp
-        // precision by default. If the depth pre-pass computes clip-space
-        // depth via a different matrix multiplication path than the color
-        // pass, the two ULP-diverge and the LessEqual depth test rejects
-        // most color-pass fragments, producing a mostly-black render on
-        // V3D-class hardware while Lavapipe/desktop GL is unaffected.
-        // Both shaders must use `clip_from_world * world_position`.
-        let depth = include_str!("depth.rs");
-        let color = include_str!("output_shader.wgsl");
-        let color_tex2d = include_str!("output_shader_texture_2d.wgsl");
-        for (label, source) in [
-            ("depth.rs", depth),
-            ("output_shader.wgsl", color),
-            ("output_shader_texture_2d.wgsl", color_tex2d),
-        ] {
-            assert!(
-                source.contains("camera.clip_from_world * world_position"),
-                "{label} vs_main must use `camera.clip_from_world * world_position` so depth values match the other passes bit-for-bit",
-            );
-            assert!(
-                !source.contains("camera.clip_from_view * camera.view_from_world * world_position")
-                    && !source.contains(
-                        "camera.clip_from_view * camera.view_from_world * draw.world_from_model",
-                    ),
-                "{label} must not reintroduce a divergent clip-space matrix path",
-            );
-        }
-    }
-
-    #[test]
-    fn unlit_pipeline_binds_material_group_for_fragment_sampling() {
-        let source = include_str!("pipeline.rs");
-        let implementation = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("pipeline implementation precedes tests");
-        assert!(
-            implementation.contains("material_bind_group_layout")
-                && implementation.contains("material_resources")
-                && implementation.contains("pass.set_bind_group(1, &material.bind_group"),
-            "visible GPU color pass must bind material resources, not only camera uniforms"
-        );
-    }
-
-    #[test]
-    fn unlit_pipeline_can_split_opaque_and_transparent_draws_for_transmission() {
-        let source = include_str!("pipeline.rs");
-        let implementation = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("pipeline implementation precedes tests");
-        assert!(
-            implementation.contains("enum DrawFilter")
-                && implementation.contains("DrawFilter::OpaqueOnly")
-                && implementation.contains("DrawFilter::TransparentOnly")
-                && implementation.contains("LoadOp::Load")
-                && implementation.contains("depth_prepass_eligible"),
-            "physical glass needs an opaque scene-color pass followed by a transparent \
-             transmission pass; one all-material alpha-blended pass can still ship fake glass"
-        );
-    }
-
-    #[test]
-    fn semantic_capture_pipeline_writes_a_witness_in_the_beauty_pass() {
-        let pipeline = include_str!("pipeline.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .expect("pipeline implementation precedes tests");
-        let scene_color = include_str!("scene_color.rs");
-        for (label, shader) in [
-            ("output_shader.wgsl", include_str!("output_shader.wgsl")),
-            (
-                "output_shader_texture_2d.wgsl",
-                include_str!("output_shader_texture_2d.wgsl"),
-            ),
-        ] {
-            assert!(
-                shader.contains("fn fs_beauty_semantic")
-                    && shader.contains("@location(0) color")
-                    && shader.contains("@location(1) semantic_id"),
-                "{label} must emit beauty color and semantic identity from one fragment invocation",
-            );
-        }
-        assert!(
-            pipeline.contains("entry_point: Some(fragment_entry_point)")
-                && pipeline.contains("semantic_target_format")
-                && scene_color.contains("semantic_view"),
-            "the visible color pipeline must bind the semantic witness as a second attachment"
-        );
-    }
-}
+#[path = "pipeline_tests.rs"]
+mod tests;

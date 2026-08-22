@@ -11,7 +11,7 @@ use super::pipeline::MeshPipelineSet;
     feature = "scene-host"
 ))]
 use super::pipeline::{BYTES_PER_PIXEL, create_unlit_pipeline_set};
-use super::pipeline::{ColorLoad, DrawFilter, UnlitPass, encode_unlit_pass};
+use super::pipeline::{ColorLoad, DrawFilter, UnlitPass, UnlitPipelines, encode_unlit_pass};
 use super::stats::GpuResourceStats;
 use super::strokes::{self, StrokeResources};
 use super::transmission::TransmissionResources;
@@ -40,6 +40,47 @@ pub(super) fn read_webgl2_canvas_rgba8(
     let read_pixels =
         js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("readPixels"))?
             .dyn_into::<js_sys::Function>()?;
+    let get_parameter =
+        js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("getParameter"))?
+            .dyn_into::<js_sys::Function>()?;
+    let read_pack_parameter = |name: &str| -> Result<wasm_bindgen::JsValue, wasm_bindgen::JsValue> {
+        let parameter = js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str(name))?;
+        get_parameter.call1(&context, &parameter)
+    };
+    let pack_state_before = format!(
+        "alignment={:?},row_length={:?},skip_pixels={:?},skip_rows={:?}",
+        read_pack_parameter("PACK_ALIGNMENT")?,
+        read_pack_parameter("PACK_ROW_LENGTH")?,
+        read_pack_parameter("PACK_SKIP_PIXELS")?,
+        read_pack_parameter("PACK_SKIP_ROWS")?,
+    );
+    // wgpu's WebGL readback implementation may leave its PACK buffer bound.
+    // The typed-array `readPixels` overload is invalid while it is bound, and
+    // would otherwise report an all-zero frame through a WebGL error.
+    let pixel_pack_buffer = js_sys::Reflect::get(
+        &context,
+        &wasm_bindgen::JsValue::from_str("PIXEL_PACK_BUFFER"),
+    )?;
+    let bind_buffer =
+        js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("bindBuffer"))?
+            .dyn_into::<js_sys::Function>()?;
+    bind_buffer.call2(&context, &pixel_pack_buffer, &wasm_bindgen::JsValue::NULL)?;
+    let pixel_store_i =
+        js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("pixelStorei"))?
+            .dyn_into::<js_sys::Function>()?;
+    for (name, value) in [
+        ("PACK_ALIGNMENT", 1_u32),
+        ("PACK_ROW_LENGTH", 0),
+        ("PACK_SKIP_PIXELS", 0),
+        ("PACK_SKIP_ROWS", 0),
+    ] {
+        let parameter = js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str(name))?;
+        pixel_store_i.call2(
+            &context,
+            &parameter,
+            &wasm_bindgen::JsValue::from_f64(f64::from(value)),
+        )?;
+    }
     let bytes = js_sys::Uint8Array::new_with_length(target.byte_len() as u32);
     let args = js_sys::Array::new();
     args.push(&wasm_bindgen::JsValue::from_f64(0.0));
@@ -50,6 +91,18 @@ pub(super) fn read_webgl2_canvas_rgba8(
     args.push(&unsigned_byte);
     args.push(bytes.as_ref());
     read_pixels.apply(&context, &args)?;
+    let get_error = js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("getError"))?
+        .dyn_into::<js_sys::Function>()?;
+    let error = get_error.call0(&context)?;
+    let no_error = js_sys::Reflect::get(&context, &wasm_bindgen::JsValue::from_str("NO_ERROR"))?;
+    if error != no_error {
+        return Err(wasm_bindgen::JsValue::from_str(&format!(
+            "renderer-owned WebGL2 readPixels failed: error={error:?}, target={}x{}, bytes={}, pack_state_before={pack_state_before}",
+            target.width,
+            target.height,
+            target.byte_len(),
+        )));
+    }
 
     let mut bottom_left_rgba8 = vec![0; target.byte_len()];
     bytes.copy_to(&mut bottom_left_rgba8);
@@ -76,7 +129,7 @@ pub(super) struct BrowserReadbackResources {
     pub(super) texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
     pub(super) buffer: wgpu::Buffer,
-    pub(super) pipelines: MeshPipelineSet,
+    pub(super) pipelines: Option<MeshPipelineSet>,
     pub(super) format: wgpu::TextureFormat,
     pub(super) padded_bytes_per_row: u32,
     #[allow(dead_code)]
@@ -91,7 +144,7 @@ pub(super) fn resource_stats(
         buffers: 1,
         textures: 1,
         render_targets: 1,
-        pipelines: 2,
+        pipelines: u64::from(resources.pipelines.is_some()) * 2,
         approximate_gpu_memory_bytes: GpuResourceStats::target_bytes(target, 4, 1)
             + u64::from(resources.padded_bytes_per_row) * u64::from(target.height),
         ..GpuResourceStats::default()
@@ -112,6 +165,8 @@ pub(super) struct BrowserReadbackResourceDescriptor<'a> {
     pub(super) triangle_shader: &'a wgpu::ShaderModule,
     pub(super) depth_compare: Option<wgpu::CompareFunction>,
     pub(super) material_features: super::material_uniform::MaterialShaderFeatures,
+    pub(super) render_pipeline_required: bool,
+    pub(super) surface_pipeline_reusable: bool,
 }
 
 #[cfg(any(
@@ -148,18 +203,21 @@ pub(super) fn create_browser_readback_resources(
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let pipelines = create_unlit_pipeline_set(
-        device,
-        descriptor.triangle_shader,
-        target_format,
-        descriptor.output_bind_group_layout,
-        descriptor.material_bind_group_layout,
-        descriptor.draw_bind_group_layout,
-        descriptor.depth_compare,
-        1,
-        None,
-        descriptor.material_features,
-    );
+    let pipelines = (descriptor.render_pipeline_required && !descriptor.surface_pipeline_reusable)
+        .then(|| {
+            create_unlit_pipeline_set(
+                device,
+                descriptor.triangle_shader,
+                target_format,
+                descriptor.output_bind_group_layout,
+                descriptor.material_bind_group_layout,
+                descriptor.draw_bind_group_layout,
+                descriptor.depth_compare,
+                1,
+                None,
+                descriptor.material_features,
+            )
+        });
     BrowserReadbackResources {
         texture,
         view,
@@ -171,12 +229,9 @@ pub(super) fn create_browser_readback_resources(
     }
 }
 
-#[cfg(any(
-    not(target_arch = "wasm32"),
-    feature = "browser-probe",
-    feature = "scene-host"
-))]
-const fn readback_format_for_surface(surface_format: wgpu::TextureFormat) -> wgpu::TextureFormat {
+pub(super) const fn readback_format_for_surface(
+    surface_format: wgpu::TextureFormat,
+) -> wgpu::TextureFormat {
     match surface_format {
         wgpu::TextureFormat::Bgra8UnormSrgb | wgpu::TextureFormat::Rgba8UnormSrgb => {
             wgpu::TextureFormat::Rgba8UnormSrgb
@@ -191,6 +246,7 @@ const fn readback_format_for_surface(surface_format: wgpu::TextureFormat) -> wgp
 pub(super) struct BrowserReadbackPass<'a> {
     pub(super) target: RasterTarget,
     pub(super) readback: &'a BrowserReadbackResources,
+    pub(super) readback_pipelines: UnlitPipelines<'a>,
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) instance_buffer: &'a wgpu::Buffer,
@@ -215,7 +271,8 @@ pub(super) fn encode_browser_readback_pass(
     pass: BrowserReadbackPass<'_>,
 ) {
     let draw_submissions = pass.draw_submissions;
-    if has_transparent_batches(pass.draw_batches, pass.instance_batches) {
+    let readback_pipelines = pass.readback_pipelines;
+    if let Some(transmission_pipelines) = pass.transmission.pipelines.as_ref() {
         encode_unlit_pass(
             encoder,
             UnlitPass {
@@ -234,13 +291,15 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipelines: pass.transmission.pipelines.refs(),
+                pipelines: transmission_pipelines.refs(),
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::OpaqueOnly,
                 label: "scena.browser.proof_transmission_scene_color_pass",
                 draw_submissions: &mut *draw_submissions,
             },
         );
+    }
+    if has_transparent_batches(pass.draw_batches, pass.instance_batches) {
         encode_unlit_pass(
             encoder,
             UnlitPass {
@@ -258,7 +317,7 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipelines: pass.readback.pipelines.refs(),
+                pipelines: readback_pipelines,
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::OpaqueOnly,
                 label: "scena.browser.proof_readback_opaque_pass",
@@ -282,7 +341,7 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipelines: pass.readback.pipelines.refs(),
+                pipelines: readback_pipelines,
                 color_load: ColorLoad::Load,
                 draw_filter: DrawFilter::TransparentOnly,
                 label: "scena.browser.proof_readback_transparent_pass",
@@ -307,7 +366,7 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipelines: pass.readback.pipelines.refs(),
+                pipelines: readback_pipelines,
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::All,
                 label: "scena.browser.proof_readback_pass",
@@ -324,7 +383,7 @@ pub(super) fn encode_browser_readback_pass(
                 output_bind_group: pass.output_bind_group,
                 draw_bind_group: pass.draw_bind_group,
                 resources: stroke_resources,
-                pipeline: strokes::post_pipeline(stroke_resources),
+                pipeline: strokes::flat_pipeline(stroke_resources),
                 label: "scena.browser.proof_stroke_readback_pass",
                 draw_submissions: &mut *draw_submissions,
             },
@@ -338,7 +397,7 @@ pub(super) fn encode_browser_readback_pass(
                 depth_view: None,
                 output_bind_group: pass.output_bind_group,
                 resources: label_resources,
-                pipeline: labels::post_pipeline(label_resources),
+                pipeline: labels::flat_pipeline(label_resources),
                 label: "scena.browser.proof_label_readback_pass",
                 draw_submissions: &mut *draw_submissions,
             },
@@ -405,18 +464,25 @@ fn has_transparent_batches(
         feature = "scene-host"
     )
 ))]
-mod tests {
-    use super::readback_format_for_surface;
+#[path = "browser_readback_tests.rs"]
+mod tests;
 
-    #[test]
-    fn browser_readback_preserves_surface_transfer_with_rgba_byte_order() {
-        assert_eq!(
-            readback_format_for_surface(wgpu::TextureFormat::Bgra8Unorm),
-            wgpu::TextureFormat::Rgba8Unorm
-        );
-        assert_eq!(
-            readback_format_for_surface(wgpu::TextureFormat::Bgra8UnormSrgb),
-            wgpu::TextureFormat::Rgba8UnormSrgb
-        );
-    }
+#[cfg(all(
+    test,
+    any(
+        not(target_arch = "wasm32"),
+        feature = "browser-probe",
+        feature = "scene-host"
+    )
+))]
+#[test]
+fn browser_readback_preserves_surface_transfer_with_rgba_byte_order() {
+    assert_eq!(
+        readback_format_for_surface(wgpu::TextureFormat::Bgra8Unorm),
+        wgpu::TextureFormat::Rgba8Unorm
+    );
+    assert_eq!(
+        readback_format_for_surface(wgpu::TextureFormat::Bgra8UnormSrgb),
+        wgpu::TextureFormat::Rgba8UnormSrgb
+    );
 }

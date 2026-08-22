@@ -32,7 +32,6 @@ pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str = concat!(
     "\n",
     include_str!("../color_contract.wgsl")
 );
-
 pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 16;
 const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 736;
 const OUTPUT_UNIFORM_FLOAT_COUNT: usize =

@@ -192,6 +192,8 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             depth_compare,
             material_features,
+            material_features.requires_transmission_scene_color()
+                || output_plan.reflections_enabled(),
         );
         let environment::OutputResources {
             shadow_caster,
@@ -400,7 +402,7 @@ impl GpuDeviceState {
             environment_lighting,
             reflection_probes,
         ));
-        stats.add_assign(transmission::resource_stats(target));
+        stats.add_assign(transmission::resource_stats(&transmission, target));
         if let Some(resources) = &depth_prepass {
             stats.add_assign(depth::resource_stats(resources, target));
         }

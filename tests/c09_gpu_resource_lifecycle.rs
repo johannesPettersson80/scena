@@ -387,8 +387,8 @@ fn msaa8_is_fully_prepared_or_rejected_before_render_optional_gpu_smoke() {
                     prepared.bind_groups,
                     prepared.shader_modules,
                 ),
-                (10, 22, 6, 13, 6, 4),
-                "supported MSAA8 owns its pipeline set, color target, overlay depth set, and shared triangle shader before render"
+                (10, 22, 6, 10, 4, 3),
+                "supported MSAA8 owns its requested pipeline set, color target, overlay depth set, and shared triangle shader before render without allocating inactive shadow or transmission pipelines"
             );
             assert!(prepared.approximate_gpu_memory_bytes > baseline.approximate_gpu_memory_bytes);
             let signature = resource_signature(prepared);
@@ -456,8 +456,8 @@ fn output_resource_changes_require_prepare_and_stats_are_complete_before_render_
             baseline.bind_groups,
             baseline.shader_modules,
         ),
-        (10, 20, 4, 9, 6, 3),
-        "the simple native baseline inventories core, light assignment, fallback material, shadow/environment, transmission, and depth owners exactly"
+        (10, 20, 4, 6, 4, 2),
+        "the simple native baseline inventories core, light assignment, fallback material, environment, and depth owners exactly while inactive shadow and transmission pipelines remain lazy"
     );
     assert!(
         baseline.gpu_textures > 0,
@@ -486,8 +486,8 @@ fn output_resource_changes_require_prepare_and_stats_are_complete_before_render_
             prepared.bind_groups,
             prepared.shader_modules,
         ),
-        (12, 27, 11, 21, 12, 10),
-        "MSAA4 + post + command-ordered uniform staging + depth-color + overlay owners are additive and exact"
+        (12, 27, 11, 20, 10, 9),
+        "MSAA4 + post + command-ordered uniform staging + depth-color + overlay owners are additive and exact while inactive shadow resources stay absent"
     );
     assert!(
         prepared.buffers == baseline.buffers + 2,
