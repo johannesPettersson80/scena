@@ -101,6 +101,19 @@ Use measurement before breadth:
   in the changed path. Save full cross-backend/browser/release gates for cross-backend
   changes, public behavior changes, or explicit release checkpoints.
 
+## Browser Capture Diagnostics
+
+For an empty, stale, slow, or hanging browser capture/readback, add a disabled-by-default
+structured trace before changing lifecycle behavior. Gate it behind an explicit diagnostics
+flag and record capture-pass start/completion, backend and readback mode, surface copy
+capability/formats, map start/completion, byte length, nonzero byte or pixel count,
+deterministic frame hash, and render/drain/map/total elapsed time.
+
+The focused browser harness must enable the trace, preserve it on failure, and assert a real
+rendered-frame invariant. A nonblack count alone is insufficient for appearance, mutation,
+or parity defects. Once the cause is proven, keep only low-overhead gated diagnostics and add
+doctor coverage for mechanically checkable capture-mode or source contracts.
+
 ## Quality Language
 
 Do not claim "pixel-perfect" across backends. Use deterministic per backend with documented

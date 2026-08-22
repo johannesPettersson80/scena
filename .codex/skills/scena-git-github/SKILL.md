@@ -87,10 +87,34 @@ diff, and run only missing gates that match files changed since that evidence.
 
 ## Release Follow-Through
 
+Before the release-candidate push or tag, inspect repository topology and workflow triggers
+instead of assuming a branch push starts validation:
+
+```bash
+git fetch origin --prune
+git log --oneline --decorate origin/main..HEAD
+git log --oneline --decorate HEAD..origin/main
+git merge-base origin/main HEAD
+sed -n '1,45p' .github/workflows/ci.yml
+sed -n '1,45p' .github/workflows/release.yml
+```
+
+Record the intended release branch, frozen SHA, tag target, and which event starts CI and
+Release. If the default branch is behind the release train, preserve the release branch
+unless the user explicitly authorizes changing topology; report the condition instead of
+deleting the only public release history.
+
+After tagging, monitor every triggered run by run ID. Prefer concise status/job polling over
+a high-volume `gh run watch` stream. Wait for all jobs to become terminal before editing; on
+failure, collect the complete run and batch remedies. Do not start a duplicate matrix while
+the deciding run is healthy.
+
 When a release is requested, release work is incomplete until all requested layers are true:
 
 - local version/changelog/docs state is correct,
 - the release commit is on the intended remote branch,
 - the tag exists on GitHub,
 - the release workflow completed successfully,
-- the GitHub release object is published and marked latest when that is the expected state.
+- the GitHub release object is published and marked latest when that is the expected state,
+- the tag dereferences to the frozen tested SHA, and
+- crates.io reports the requested version when crate publication is part of the workflow.

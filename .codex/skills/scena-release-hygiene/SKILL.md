@@ -57,7 +57,7 @@ ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CA
 For publish-readiness:
 
 ```bash
-ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo publish --dry-run'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo publish --dry-run --locked'
 ```
 
 An unrun required gate is not a pass. Record the exact blocker when a gate cannot run.
@@ -67,6 +67,29 @@ these gates.
 If the work is not release-ready yet, do not imply these gates are required after every
 increment. Report the focused/scoped proof actually run and the reason release gates are
 being deferred until the checkpoint.
+
+## Frozen Candidate Rehearsal
+
+Before tagging, freeze one candidate SHA and keep a concise ledger for that SHA. The ledger
+must name every required command, artifact, result, and covered source surface. Do not
+reconstruct release commands from memory: read the current CI and Release workflows plus the
+xtask release-lane contracts, then execute the exact checked-in wrappers for every locally
+reproducible lane.
+
+For an isolated builder snapshot without `.git`, set `SCENA_RELEASE_COMMIT` to the frozen
+local SHA for every provenance-sensitive command. Before tagging, the same frozen snapshot
+must have:
+
+- focused regression proof and scoped gates green;
+- the full native/WASM/browser checkpoint green once;
+- each locally reproducible `scripts/release_lane_command.sh` command recorded;
+- release-lane artifacts accepted by `stage-release-artifacts` and `release-readiness`;
+- `cargo publish --dry-run --locked` green; and
+- no source, harness, workflow, lockfile, or release-contract edit after the rehearsal.
+
+Any such edit invalidates the affected ledger entries. Return to the focused proof, rerun
+only affected scoped lanes, refreeze once, and perform one final full checkpoint. Do not tag
+an incompletely replayed candidate and use GitHub as the first complete test environment.
 
 Before patching a failed release run, execute
 `scripts/collect_ci_failure_evidence.sh <run-id>` and classify every failed job. Batch all

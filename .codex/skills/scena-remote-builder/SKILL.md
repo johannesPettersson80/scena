@@ -83,6 +83,34 @@ Do not delete unrelated caches, other repositories, checkouts, or user files wit
 explicit user approval. If `/tmp` is the constrained filesystem, set a task-local `TMPDIR`
 inside the validation checkout or task target cache before rerunning.
 
+## Release Candidate Environment
+
+For a full release rehearsal, declare one environment block and reuse it for every command:
+
+```bash
+env \
+  CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" \
+  CARGO_INCREMENTAL=0 \
+  CARGO_PROFILE_DEV_DEBUG=0 \
+  CARGO_PROFILE_TEST_DEBUG=0 \
+  SCENA_RELEASE_COMMIT=<frozen-local-sha> \
+  <command>
+```
+
+`SCENA_RELEASE_COMMIT` is mandatory when the isolated snapshot has no `.git`; otherwise an
+artifact provenance failure is an invocation failure, not a product failure. Record this
+environment once in the validation ledger instead of rediscovering it gate by gate.
+
+Before browser/WASM release commands, use the Node/npm versions pinned by the current
+workflow, run a clean `npm ci`, and verify `wasm-opt --version`. Do not trust reused
+`node_modules` after a parser or syntax failure: compare it with a clean install before
+changing Rust or JavaScript source. Classify mismatched or corrupt tools as environment
+failures.
+
+Before the full chain, compare free space with the previous task-scoped target size. With no
+useful history, reserve at least 20 GiB or stop and clean only the current task cache. The
+debug-symbol and incremental settings above are preconditions, not post-disk-failure fixes.
+
 ## Validation Ladder
 
 Do not make every remote run a full release validation by default. Choose the smallest
@@ -154,7 +182,7 @@ Release-ready handoff, or any task explicitly asking for full release proof, als
 
 ```bash
 ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features'
-ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo publish --dry-run'
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" cargo publish --dry-run --locked'
 ```
 
 ## Reporting Proof
