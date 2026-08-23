@@ -111,13 +111,26 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         path: path.as_str().to_string(),
         reason: "glTF primitive is missing POSITION attribute".to_string(),
     })?;
-    let normals = read_vec3_attribute(
+    let topology = match primitive.mode() {
+        Mode::Triangles => GeometryTopology::Triangles,
+        Mode::Lines => GeometryTopology::Lines,
+        other => {
+            return Err(AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: format!("unsupported glTF primitive mode {other:?}"),
+            });
+        }
+    };
+    let mut normals = read_vec3_attribute(
         path,
         primitive,
         buffers,
         &Semantic::Normals,
         mesh_quantization_declared,
     )?;
+    if topology == GeometryTopology::Lines && normals.is_none() {
+        normals = Some(vec![Vec3::Y; positions.len()]);
+    }
     let vertex_colors: Option<Vec<Color>> = reader.read_colors(0).map(|colors| {
         colors
             .into_rgba_f32()
@@ -258,15 +271,6 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             reason: "TANGENT accessor count must match POSITION count".to_string(),
         });
     }
-    let topology = match primitive.mode() {
-        Mode::Triangles => GeometryTopology::Triangles,
-        other => {
-            return Err(AssetError::Parse {
-                path: path.as_str().to_string(),
-                reason: format!("unsupported glTF primitive mode {other:?}"),
-            });
-        }
-    };
     let vertices = positions
         .into_iter()
         .zip(normals)
@@ -297,7 +301,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
     })?;
     let bounds = geometry.bounds();
     let geometry = storage.geometries.insert(std::sync::Arc::new(geometry));
-    let material = primitive
+    let source_material = primitive
         .material()
         .index()
         .and_then(|index| materials.get(index))
@@ -315,7 +319,12 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             );
             handle
         });
-    let material_variant_bindings =
+    let material = if topology == GeometryTopology::Lines {
+        insert_line_material(storage, source_material, path)
+    } else {
+        source_material
+    };
+    let mut material_variant_bindings =
         super::material_variants::parse_primitive_material_variant_bindings(
             primitive,
             materials,
@@ -325,6 +334,18 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             primitive_index,
             load_warnings,
         );
+    if topology == GeometryTopology::Lines {
+        material_variant_bindings = material_variant_bindings
+            .into_iter()
+            .map(|binding| {
+                let material = insert_line_material(storage, binding.material(), path);
+                super::material_variants::MaterialVariantBinding::new(
+                    binding.variants().to_vec(),
+                    material,
+                )
+            })
+            .collect();
+    }
     Ok(SceneAssetMesh {
         geometry,
         material,
@@ -333,4 +354,27 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         morph_weights: mesh_weights.to_vec(),
         material_variant_bindings,
     })
+}
+
+fn insert_line_material(
+    storage: &mut AssetStorage,
+    source_material: MaterialHandle,
+    path: &AssetPath,
+) -> MaterialHandle {
+    let base_color = storage
+        .materials
+        .get(source_material)
+        .map(|material| material.base_color())
+        .unwrap_or(Color::WHITE);
+    let handle = storage
+        .materials
+        .insert(std::sync::Arc::new(MaterialDesc::line(base_color, 1.0)));
+    storage.material_sources.insert(
+        handle,
+        AssetMaterialSource::generated_default(
+            path.clone(),
+            "glTF line primitive uses Scena line material",
+        ),
+    );
+    handle
 }

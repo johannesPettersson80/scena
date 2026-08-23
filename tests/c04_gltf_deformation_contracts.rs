@@ -3,8 +3,8 @@
 use base64::Engine as _;
 use scena::{
     AssetError, AssetFetcher, AssetLoadOptions, AssetLoadReport, AssetPath, Assets,
-    DirectionalLight, PerspectiveCamera, Renderer, RetainPolicy, Scene, SceneAsset, Transform,
-    Vec3,
+    DirectionalLight, GeometryTopology, MaterialKind, PerspectiveCamera, Renderer, RetainPolicy,
+    Scene, SceneAsset, Transform, Vec3,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -53,6 +53,67 @@ fn missing_normals_reject_degenerate_triangles_with_a_precise_error() {
         message.contains("degenerate triangle 0"),
         "error must identify the irrecoverable face: {message}",
     );
+}
+
+#[test]
+fn gltf_line_primitives_do_not_require_triangle_normals() {
+    let mut fixture = missing_normal_hard_edge_fixture(true, true);
+    fixture["meshes"][0]["primitives"][0]["mode"] = json!(1);
+    fixture["meshes"][0]["primitives"][0]["material"] = json!(0);
+    fixture["meshes"][0]["primitives"][0]["extensions"] = json!({
+        "KHR_materials_variants": {
+            "mappings": [{ "material": 1, "variants": [0] }]
+        }
+    });
+    fixture["materials"] = json!([
+        { "pbrMetallicRoughness": { "baseColorFactor": [1.0, 0.0, 0.0, 1.0] } },
+        { "pbrMetallicRoughness": { "baseColorFactor": [0.0, 1.0, 0.0, 1.0] } }
+    ]);
+    fixture["extensionsUsed"] = json!(["KHR_materials_variants"]);
+    fixture["extensions"] = json!({
+        "KHR_materials_variants": { "variants": [{ "name": "green" }] }
+    });
+    let (assets, scene_asset) = load_document("missing-normal-lines.gltf", fixture)
+        .expect("glTF LINES use Scena's line topology without triangle normal generation");
+    let mesh = scene_asset.nodes()[0].mesh().expect("fixture mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+
+    assert_eq!(geometry.topology(), GeometryTopology::Lines);
+    assert_eq!(geometry.indices(), &[0, 1, 2, 0, 3, 1]);
+    assert_eq!(
+        assets
+            .material(mesh.material())
+            .expect("line material resolves")
+            .kind(),
+        MaterialKind::Line,
+    );
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("glTF line scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    scene
+        .frame_import(camera, &import)
+        .expect("line asset frames");
+    let mut renderer = Renderer::headless(32, 32).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("imported glTF lines prepare as native Scena strokes");
+    renderer.render_active(&scene).expect("glTF lines render");
+    assert!(
+        renderer
+            .frame_rgba8()
+            .chunks_exact(4)
+            .any(|pixel| pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8),
+        "imported glTF lines must produce visible pixels",
+    );
+    scene
+        .set_active_variant(&import, Some("green"))
+        .expect("line material variant activates");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("line material variant remains a native Scena stroke");
 }
 
 #[test]

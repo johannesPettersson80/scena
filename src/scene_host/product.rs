@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{
     AntiAliasing, AssetFetcher, AutoExposureConfig, Background, Color, DirectionalLight,
-    EnvironmentPreset, GridFloorOptions, LookupError, MaterialDesc, PostBloomConfig,
-    ScreenSpaceAmbientOcclusionConfig, Transform, Vec3,
+    EnvironmentPreset, GeometryTopology, GridFloorOptions, LookupError, MaterialDesc, NodeKind,
+    PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Transform, Vec3,
 };
 
 pub const SCENE_HOST_GROUNDING_SCHEMA_V1: &str = "scena.scene_host_grounding.v1";
@@ -212,8 +212,36 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 
         let mut overlay_handles = Vec::new();
         for root in roots {
+            let preserved_materials = self
+                .scene
+                .subtree_nodes(root)?
+                .into_iter()
+                .filter_map(|node| {
+                    let NodeKind::Mesh(mesh) = self.scene.node(node)?.kind() else {
+                        return None;
+                    };
+                    let geometry = self.assets.geometry(mesh.geometry())?;
+                    (geometry.topology() != GeometryTopology::Triangles)
+                        .then_some((node, mesh.material()))
+                })
+                .collect::<Vec<_>>();
             self.scene.set_subtree_mesh_material(root, surface)?;
+            for (node, material) in preserved_materials {
+                self.scene.set_mesh_material(node, material)?;
+            }
             for overlay in self.scene.add_subtree_edge_overlays(root, edges)? {
+                let is_triangle_overlay = self
+                    .scene
+                    .node(overlay)
+                    .and_then(|node| match node.kind() {
+                        NodeKind::Mesh(mesh) => self.assets.geometry(mesh.geometry()),
+                        _ => None,
+                    })
+                    .is_some_and(|geometry| geometry.topology() == GeometryTopology::Triangles);
+                if !is_triangle_overlay {
+                    self.scene.remove_node(overlay)?;
+                    continue;
+                }
                 self.scene.set_helper_on_top(overlay, false)?;
                 overlay_handles.push(self.register_node(overlay));
             }
@@ -449,6 +477,56 @@ mod cad_viewport_tests {
         assert_eq!(edge_material.kind(), MaterialKind::Edge);
         assert_eq!(edge_material.stroke_width_px(), Some(1.25));
         assert_eq!(edge_material.edge_angle_threshold_degrees(), Some(18.0));
+    }
+
+    #[test]
+    fn cad_viewport_visuals_preserve_line_materials_in_mixed_imports() {
+        let mut host = SceneHostCore::headless(96, 64).expect("headless host builds");
+        let root = host
+            .scene
+            .add_empty(host.scene.root(), Transform::IDENTITY)
+            .expect("mixed import root inserts");
+        let surface_geometry = host
+            .assets
+            .create_geometry(GeometryDesc::box_xyz(2.0, 1.0, 0.5));
+        let surface_material = host.assets.create_material(MaterialDesc::unlit(Color::RED));
+        host.scene
+            .mesh(surface_geometry, surface_material)
+            .parent(root)
+            .add()
+            .expect("surface inserts");
+        let line_geometry = host.assets.create_geometry(GeometryDesc::line(
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+        ));
+        let line_material = host
+            .assets
+            .create_material(MaterialDesc::line(Color::YELLOW, 2.0));
+        let line = host
+            .scene
+            .mesh(line_geometry, line_material)
+            .parent(root)
+            .add()
+            .expect("line inserts");
+        let root_handle = host.register_node(root);
+
+        let overlays = host
+            .apply_cad_viewport_visuals(&[root_handle], "studio")
+            .expect("mixed CAD viewport presentation applies");
+
+        let NodeKind::Mesh(line_mesh) = host.scene.node(line).expect("line remains").kind() else {
+            panic!("line remains a mesh");
+        };
+        assert_eq!(
+            host.assets
+                .material(line_mesh.material())
+                .expect("line material remains")
+                .kind(),
+            MaterialKind::Line,
+        );
+        assert_eq!(overlays.len(), 1, "only the triangle surface gets edges");
+        host.prepare()
+            .expect("mixed styled scene remains renderable");
     }
 
     #[test]
