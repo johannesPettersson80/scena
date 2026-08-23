@@ -206,7 +206,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 0.82,
             ));
         let edges = self.assets.create_material(
-            MaterialDesc::edge(Color::from_srgb_u8(53, 65, 71), 1.25)
+            MaterialDesc::edge(Color::from_srgb_u8(53, 65, 71), 1.0)
                 .with_edge_angle_threshold_degrees(18.0),
         );
 
@@ -411,8 +411,10 @@ fn scene_host_background(background: &str) -> Result<Background, SceneHostError>
 mod cad_viewport_tests {
     use super::*;
     use crate::{
-        AntiAliasing, Color, GeometryDesc, MaterialDesc, MaterialKind, NodeKind, Transform,
+        AntiAliasing, Color, GeometryDesc, MaterialDesc, MaterialKind, NodeKind,
+        SceneHostCameraState, Transform, Vec3,
     };
+    use std::path::Path;
 
     #[test]
     fn cad_viewport_visuals_add_lightweight_shading_and_feature_edges() {
@@ -475,7 +477,7 @@ mod cad_viewport_tests {
             .material(edge_mesh.material())
             .expect("edge material exists");
         assert_eq!(edge_material.kind(), MaterialKind::Edge);
-        assert_eq!(edge_material.stroke_width_px(), Some(1.25));
+        assert_eq!(edge_material.stroke_width_px(), Some(1.0));
         assert_eq!(edge_material.edge_angle_threshold_degrees(), Some(18.0));
     }
 
@@ -527,6 +529,148 @@ mod cad_viewport_tests {
         assert_eq!(overlays.len(), 1, "only the triangle surface gets edges");
         host.prepare()
             .expect("mixed styled scene remains renderable");
+    }
+
+    #[test]
+    fn cad_cylinder_edges_remain_subtle_at_near_and_far_zoom() {
+        let near = render_cad_cylinder(3.4, "cad-cylinder-near.png");
+        let far = render_cad_cylinder(6.8, "cad-cylinder-far.png");
+
+        let near_metrics = cad_edge_metrics(&near);
+        let far_metrics = cad_edge_metrics(&far);
+        for (name, metrics) in [("near", near_metrics), ("far", far_metrics)] {
+            assert!(
+                metrics.top_ring_core_pixels > metrics.width / 2,
+                "{name} cap top must retain a crisp feature ring: {metrics:?}"
+            );
+            assert!(
+                metrics.bottom_ring_core_pixels > metrics.width / 2,
+                "{name} cap bottom must retain a crisp feature ring: {metrics:?}"
+            );
+            assert!(
+                metrics.center_side_core_pixels <= 2,
+                "{name} smooth cylinder side must not expose tessellation facets: {metrics:?}"
+            );
+            assert!(
+                metrics.core_fraction_of_bbox < 0.055,
+                "{name} CAD edge core must remain subtle after anti-aliasing: {metrics:?}"
+            );
+        }
+
+        let near_footprint = near_metrics.core_pixels as f32 / near_metrics.width as f32;
+        let far_footprint = far_metrics.core_pixels as f32 / far_metrics.width as f32;
+        assert!(
+            (near_footprint - far_footprint).abs() < 0.75,
+            "screen-space CAD edge footprint must stay stable across camera zoom: near={near_metrics:?}, far={far_metrics:?}"
+        );
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct CadEdgeMetrics {
+        width: u32,
+        core_pixels: u32,
+        top_ring_core_pixels: u32,
+        bottom_ring_core_pixels: u32,
+        center_side_core_pixels: u32,
+        core_fraction_of_bbox: f32,
+    }
+
+    fn cad_edge_metrics(capture: &crate::CaptureRgba8) -> CadEdgeMetrics {
+        let width = capture.descriptor.width;
+        let height = capture.descriptor.height;
+        let background = [242, 243, 245, 255];
+        let mut min_x = width;
+        let mut min_y = height;
+        let mut max_x = 0;
+        let mut max_y = 0;
+        for y in 0..height {
+            for x in 0..width {
+                let offset = ((y * width + x) * 4) as usize;
+                if capture.rgba8[offset..offset + 4] != background {
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+        assert!(min_x <= max_x && min_y <= max_y, "CAD cylinder is visible");
+        let bbox_width = max_x - min_x + 1;
+        let bbox_height = max_y - min_y + 1;
+        let top_limit = min_y + bbox_height / 3;
+        let bottom_limit = max_y - bbox_height / 3;
+        let center_left = min_x + bbox_width / 4;
+        let center_right = max_x - bbox_width / 4;
+        let mut core_pixels = 0;
+        let mut top_ring_core_pixels = 0;
+        let mut bottom_ring_core_pixels = 0;
+        let mut center_side_core_pixels = 0;
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let offset = ((y * width + x) * 4) as usize;
+                if capture.rgba8[offset..offset + 4] != [53, 65, 71, 255] {
+                    continue;
+                }
+                core_pixels += 1;
+                top_ring_core_pixels += u32::from(y <= top_limit);
+                bottom_ring_core_pixels += u32::from(y >= bottom_limit);
+                center_side_core_pixels += u32::from(
+                    (center_left..=center_right).contains(&x)
+                        && (top_limit + 1..bottom_limit).contains(&y),
+                );
+            }
+        }
+        CadEdgeMetrics {
+            width: bbox_width,
+            core_pixels,
+            top_ring_core_pixels,
+            bottom_ring_core_pixels,
+            center_side_core_pixels,
+            core_fraction_of_bbox: core_pixels as f32 / (bbox_width * bbox_height) as f32,
+        }
+    }
+
+    fn render_cad_cylinder(distance: f32, artifact_name: &str) -> crate::CaptureRgba8 {
+        let mut host = SceneHostCore::headless(320, 240).expect("headless CAD host builds");
+        let root = host
+            .scene
+            .add_empty(host.scene.root(), Transform::IDENTITY)
+            .expect("CAD cylinder root inserts");
+        let geometry = host
+            .assets
+            .create_geometry(GeometryDesc::cylinder(1.0, 2.0, 64));
+        let material = host
+            .assets
+            .create_material(MaterialDesc::pbr_metallic_roughness(
+                Color::from_srgb_u8(196, 206, 211),
+                0.0,
+                0.82,
+            ));
+        host.scene
+            .mesh(geometry, material)
+            .parent(root)
+            .add()
+            .expect("CAD cylinder inserts");
+        let root_handle = host.register_node(root);
+        host.apply_cad_viewport_visuals(&[root_handle], "studio")
+            .expect("CAD cylinder styling applies");
+        host.set_camera(SceneHostCameraState {
+            target: Vec3::ZERO,
+            distance,
+            yaw_radians: 0.65,
+            pitch_radians: 0.32,
+        })
+        .expect("CAD cylinder camera applies");
+        host.prepare().expect("CAD cylinder prepares");
+        host.render().expect("CAD cylinder renders");
+        let capture = host.capture().expect("CAD cylinder capture succeeds");
+
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/cad-edge-appearance");
+        std::fs::create_dir_all(&directory).expect("CAD edge artifact directory creates");
+        capture
+            .write_png(directory.join(artifact_name))
+            .expect("CAD edge artifact writes");
+        capture
     }
 
     #[test]

@@ -11,6 +11,9 @@ All notable user-facing changes are recorded here.
 - Verify the documented `cargo install scena --features agent` path from the
   extracted `.crate` archive before CI or release publication, preventing
   compile-time assets from being omitted from published packages.
+- Refine the built-in CAD viewport edge core from 1.25 px to 1.0 px while
+  retaining screen-space-constant sizing, crisp cylinder cap rings, and smooth
+  side-facet suppression across camera zoom.
 
 ## [1.10.5] - 2026-08-22
 
