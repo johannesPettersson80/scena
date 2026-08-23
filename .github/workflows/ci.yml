@@ -72,6 +72,7 @@ jobs:
           bash scripts/release_lane_command.sh headless-cpu node scripts/evaluate_round_e_cpu_materials.cjs
           bash scripts/release_lane_command.sh linux-native-vulkan cargo check --examples --all-features
           cargo check --example scene_inspection --features inspection
+          scripts/verify_packaged_agent_install.sh
           cargo run -p xtask -- doctor --full
           cargo run -p xtask -- claim-audit
       - name: Docs

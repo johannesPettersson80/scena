@@ -328,6 +328,8 @@ jobs:
           git diff --exit-code
       - name: Clean publish dry run
         run: cargo publish --dry-run --locked
+      - name: Verify packaged agent install
+        run: scripts/verify_packaged_agent_install.sh
       - name: Publish crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

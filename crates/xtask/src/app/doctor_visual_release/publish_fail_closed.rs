@@ -25,6 +25,37 @@ pub(crate) fn check_release_publish_dry_run_helper(root: &Path, findings: &mut V
             "diff -qr",
         ],
     );
+
+    require_contains(
+        root,
+        findings,
+        "PACKAGED-AGENT-INSTALL-GATE",
+        "scripts/verify_packaged_agent_install.sh",
+        &[
+            "set -euo pipefail",
+            "cargo package --locked --allow-dirty --no-verify",
+            "cargo install",
+            "--features agent",
+            "--locked",
+            "tar -xzf",
+            "grep -Eq",
+            "\"agent\"[[:space:]]*:[[:space:]]*true",
+        ],
+    );
+    for path in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "scripts/local_release_readiness.sh",
+        "scripts/release_publish_dry_run.sh",
+    ] {
+        require_contains(
+            root,
+            findings,
+            "PACKAGED-AGENT-INSTALL-GATE",
+            path,
+            &["scripts/verify_packaged_agent_install.sh"],
+        );
+    }
 }
 
 pub(crate) fn check_release_readiness_ci_fail_closed(root: &Path, findings: &mut Vec<Finding>) {

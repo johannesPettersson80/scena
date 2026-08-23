@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.10.5"
+version = "1.10.6"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -25,6 +25,7 @@ include = [
     "/tests/assets/gltf/material_variants_scene.gltf",
     "/tests/assets/gltf/animated_triangle_scene.glb",
     "/tests/assets/gltf/cad_plate_drawing_scene.gltf",
+    "/tests/assets/photo/final/photo_final_policy_v1.json",
     "/examples/**",
     "!/examples/furuta_render.rs",
     "/docs/**/*.md",

@@ -49,7 +49,13 @@ never exempt.
 - `cargo test --workspace`
 - `cargo check --examples --all-features`
 - `cargo run -p xtask -- doctor --full`
+- `scripts/verify_packaged_agent_install.sh`
 - `cargo publish --dry-run`
+
+The packaged-agent gate creates the exact `.crate` archive, extracts it outside
+the source checkout, installs it with the documented `--features agent --locked`
+consumer command, and checks the installed binary's feature report. Repository
+builds and default-feature package verification cannot substitute for this gate.
 
 Browser, GPU, rendered-output, and performance lanes add their own typed proof
 artifacts. Required lanes fail closed when their renderer or hardware work is

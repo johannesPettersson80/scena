@@ -4,6 +4,14 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.10.6] - 2026-08-23
+
+- Render imported glTF line primitives with line materials without requiring
+  triangle normals, and preserve those materials in mixed CAD viewport assets.
+- Verify the documented `cargo install scena --features agent` path from the
+  extracted `.crate` archive before CI or release publication, preventing
+  compile-time assets from being omitted from published packages.
+
 ## [1.10.5] - 2026-08-22
 
 - Add a versioned `SceneHostCore::set_clipping_planes_json` contract and

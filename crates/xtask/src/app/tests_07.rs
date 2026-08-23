@@ -134,6 +134,40 @@ pub(crate) fn doctor_rejects_release_publish_dry_run_helper_missing_strict_mode_
 }
 
 #[test]
+pub(crate) fn doctor_rejects_missing_packaged_agent_install_gate() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/missing-packaged-agent-install-gate");
+    let helper_path = fixture_root.join("scripts/release_publish_dry_run.sh");
+    fs::create_dir_all(helper_path.parent().expect("scripts dir")).expect("scripts dir");
+    fs::write(
+        &helper_path,
+        "#!/usr/bin/env bash\n\
+         set -euo pipefail\n\
+         cargo publish --dry-run\n\
+         publish-dry-run.log\n\
+         git worktree add --detach /tmp/x\n\
+         git worktree remove --force /tmp/x\n\
+         AGENTS.md\n\
+         .codex/skills\n\
+         cmp -s\n\
+         diff -qr\n",
+    )
+    .expect("helper fixture");
+    let mut findings = Vec::new();
+
+    check_release_publish_dry_run_helper(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "PACKAGED-AGENT-INSTALL-GATE"
+                && finding.message.contains("verify_packaged_agent_install.sh")
+        }),
+        "doctor must reject release machinery that does not verify the extracted packaged agent install: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_release_readiness_ci_continue_on_error_regression() {
     // RELEASE-READINESS-CI-FAIL-CLOSED: no GHA workflow job that runs
     // release-readiness may set continue-on-error: true. Pre-merge CI may

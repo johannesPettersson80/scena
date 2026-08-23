@@ -107,6 +107,7 @@ run_step "npm proof:build"            npm run proof:build
 run_step "cargo doctor --full"        cargo run -p xtask -- doctor --full
 run_step "cargo claim-audit"          cargo run -p xtask -- claim-audit
 run_step "cargo release-readiness"    cargo run -p xtask -- release-readiness --artifact-root "$release_artifact_root"
+run_step "packaged agent install"     scripts/verify_packaged_agent_install.sh
 run_step "cargo publish --dry-run"    cargo publish --dry-run
 
 echo >> "$log_path"

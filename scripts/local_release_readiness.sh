@@ -82,6 +82,7 @@ run_gate cargo-test-xtask cargo test -p xtask
 run_gate doctor-full cargo run -p xtask -- doctor --full
 run_gate release-readiness cargo run -p xtask -- release-readiness --artifact-root "$RELEASE_ARTIFACT_ROOT"
 run_gate package-list cargo package --list
+run_gate packaged-agent-install scripts/verify_packaged_agent_install.sh
 
 if [[ -z "$(cd "$ROOT" && git status --short)" ]]; then
   run_gate cargo-publish-dry-run cargo publish --dry-run

@@ -14,9 +14,9 @@ import init, {
   set_fixed_exposure_ev,
   tick,
   transfer_renderer_to,
-} from "./pkg/scena.js?v=1.10.5-public-ab20d4f92886";
+} from "./pkg/scena.js?v=1.10.6-public-ab20d4f92886";
 
-const WASM_URL = "./pkg/scena_bg.wasm?v=1.10.5-public-ab20d4f92886";
+const WASM_URL = "./pkg/scena_bg.wasm?v=1.10.6-public-ab20d4f92886";
 const MAX_CANVAS_DIMENSION = 2048;
 const MIN_CANVAS_RENDER_SCALE = 1.5;
 const MAX_DEVICE_PIXEL_RATIO = 2;
