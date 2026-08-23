@@ -55,6 +55,17 @@ substitutes for this explicit bootstrap. Pair the snapshot with
 `CARGO_TARGET_DIR=$HOME/.cache/codex-targets/scena-<task-slug>` and report both paths.
 Clean only that isolated copy and target cache when they are no longer needed.
 
+Treat every `rsync --delete` as an invalidation boundary. It can remove `node_modules`,
+generated browser packages, lane logs, and other ignored state that existed only on the
+builder. Therefore:
+
+- perform the final source sync before dependency installation and lane generation;
+- compare source snapshots by checksum, not only size/mtime;
+- rerun `npm ci` after that final sync and verify `require("playwright")` plus the pinned
+  `wasm-opt` executable before browser/WASM gates; and
+- never reuse a lane artifact generated before the latest sync unless its inputs and hash
+  are explicitly proven unchanged.
+
 ## Mandatory Disk Preflight
 
 The checked-in preflight above is mandatory before every remote sync or cargo gate. It
@@ -101,11 +112,29 @@ env \
 artifact provenance failure is an invocation failure, not a product failure. Record this
 environment once in the validation ledger instead of rediscovering it gate by gate.
 
+"Reuse" means pass the block explicitly on every `ssh`/`env` invocation. Environment exported
+inside one SSH shell is lost when that command exits. Browser reruns must additionally pass
+the lane values from the workflow, for example `SCENA_BROWSER_BACKENDS=webgl2` or
+`SCENA_BROWSER_BACKENDS=webgpu SCENA_GPU_EVIDENCE_CLASS=software-conformance`. Before the
+command, print the effective release SHA, backend, browser executable, and driver version to
+the lane log.
+
 Before browser/WASM release commands, use the Node/npm versions pinned by the current
 workflow, run a clean `npm ci`, and verify `wasm-opt --version`. Do not trust reused
 `node_modules` after a parser or syntax failure: compare it with a clean install before
 changing Rust or JavaScript source. Classify mismatched or corrupt tools as environment
 failures.
+
+Also verify browser/driver compatibility before `wasm-pack test`. If using a system browser,
+the Chrome/ChromeDriver major versions must match and `wasm-pack` must receive its explicit
+`--chromedriver <path>` option; setting `CHROMEDRIVER` is insufficient because wasm-pack may
+replace it. Confirm the requested WebGL2/WebGPU backend is available before interpreting a
+pixel/readback failure. On an unsupported builder OS, changing browser failure signatures
+are environment evidence; GitHub's supported browser lane remains the deciding proof.
+
+Before starting a local HTTP server, inspect the exact port and terminate only a verified
+stale Scena-owned listener, or select a fresh task-owned port. Curl the expected file before
+the browser probe. A 404 from an old worktree's listener is not a product result.
 
 Before the full chain, compare free space with the previous task-scoped target size. With no
 useful history, reserve at least 20 GiB or stop and clean only the current task cache. The

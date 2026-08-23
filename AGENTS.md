@@ -152,6 +152,47 @@ count, release-candidate push count, full-matrix run count, and user-required ac
 If any count exceeds the limits above, stop and report the process failure before doing
 more work.
 
+## Exact Release Rehearsal (non-negotiable)
+
+Do not reconstruct a release matrix from memory or from an earlier release log. Before a
+version bump, tag, or publication:
+
+1. Read the current `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
+   `scripts/release_lane_command.sh`, `scripts/local_release_readiness.sh`,
+   `scripts/release_publish_dry_run.sh`, and the `Exact Scena Release Workflow` section in
+   `.codex/skills/scena-release-hygiene/SKILL.md`.
+2. If the skill and checked-in workflows differ, the workflows are authoritative. Stop,
+   update the skill in the same candidate, and validate that documentation change before
+   continuing.
+3. Freeze one commit only after all source, tests, workflows, release metadata, and agent
+   guidance are committed. A later edit creates a new candidate SHA and invalidates affected
+   evidence.
+4. After the final `rsync --delete`, manually bootstrap/hash-check `AGENTS.md` and the full
+   skill tree, run `npm ci` again, and verify the effective Node/npm/wasm-pack/Binaryen,
+   browser, and browser-driver versions. A pre-sync dependency install is not evidence.
+5. Pass the complete frozen environment on every remote invocation. SSH shells do not retain
+   prior exports. At minimum this includes the task `CARGO_TARGET_DIR`, disabled incremental
+   and debug artifacts, `SCENA_RELEASE_COMMIT`, and the lane-specific browser backend and GPU
+   evidence class. Print and record the effective values before each lane.
+6. Replay the locally reproducible Linux native, WebGL2, WebGPU, WASM, 4K, packaged-agent,
+   doctor/docs/claim, and publish-dry-run commands exactly as documented in the skill.
+   macOS Metal and Windows DX12 remain required GitHub deciding lanes; do not synthesize or
+   claim them from the Linux builder.
+7. Build and install the extracted `.crate` with every documented installation feature set.
+   Repository all-feature builds and default-feature `cargo publish --dry-run` do not prove
+   packaged feature installations. `scripts/verify_packaged_agent_install.sh` is mandatory
+   for the documented `agent` installation.
+8. Push/tag only after the frozen locally reproducible lanes are green. Wait for every job in
+   both tag workflows to become terminal. If any job fails, collect all failures with
+   `scripts/collect_ci_failure_evidence.sh` before one consolidated correction and one new
+   candidate push.
+
+Release rehearsal must use a fresh task-owned port or prove that the configured port has no
+stale listener before starting a browser server. Browser tests must verify that the selected
+browser exposes the requested backend before interpreting pixels. A missing backend,
+browser/driver major-version mismatch, stale server, missing `node_modules`, or absent release
+environment is an invocation/environment failure, not a renderer defect.
+
 ## Validation
 
 Heavy Rust work runs on the Hetzner CPU builder by default:

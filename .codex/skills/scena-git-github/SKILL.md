@@ -104,6 +104,12 @@ Release. If the default branch is behind the release train, preserve the release
 unless the user explicitly authorizes changing topology; report the condition instead of
 deleting the only public release history.
 
+Before freezing, inventory every registered Scena worktree and the canonical checkout's
+dirty timestamps. A concurrent Cardine/Campo task must never write release WIP directly into
+the canonical Scena `main`; move it to an isolated branch/worktree first. Record the frozen
+checkout owner and do not allow another task to reuse it until release cleanup completes.
+This prevents post-release uncommitted work from being mistaken for release leftovers.
+
 After tagging, monitor every triggered run by run ID. Prefer concise status/job polling over
 a high-volume `gh run watch` stream. Wait for all jobs to become terminal before editing; on
 failure, collect the complete run and batch remedies. Do not start a duplicate matrix while
