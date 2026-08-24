@@ -373,7 +373,7 @@ jobs:
       - name: Bind downloaded evidence to this workflow run
         run: node scripts/ci_provenance.js target/release-artifacts target/release-artifacts/ci-provenance.json
       - name: Attest exact release-evidence manifest
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: target/release-artifacts/ci-provenance.json
       - name: Stage and validate source-provenance release evidence
