@@ -69,7 +69,7 @@ jobs:
           cargo run -p xtask -- doctor --full
           cargo run -p xtask -- release-lane-artifact linux-native-vulkan
           cargo run -p xtask -- release-lane-artifact headless-cpu
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-linux-native-vulkan
@@ -117,7 +117,7 @@ jobs:
           kill "$demo_server_pid" 2>/dev/null || true
           trap - EXIT
           cargo run -p xtask -- release-lane-artifact linux-webgl2-chromium
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-linux-webgl2-chromium
@@ -152,7 +152,7 @@ jobs:
           bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:q02-materials
           bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:m6
           cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-linux-webgpu-chromium
@@ -179,7 +179,7 @@ jobs:
           bash scripts/release_lane_command.sh wasm32-unknown-unknown wasm-pack build --release --target web --out-dir target/m9-browser-pkg . --features browser-probe
           bash scripts/release_lane_command.sh wasm32-unknown-unknown npm run wasm:size
           cargo run -p xtask -- release-lane-artifact wasm32-unknown-unknown
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-wasm32-unknown-unknown
@@ -221,7 +221,7 @@ jobs:
           -- --exact --nocapture
       - name: Release lane artifact
         run: cargo run -p xtask -- release-lane-artifact macos-metal
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-macos-metal
@@ -245,7 +245,7 @@ jobs:
           SCENA_M9_TIMING_POLICY=report-only-hosted SCENA_RUN_M9_PLATFORM_BENCHMARK=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release m9_platform_benchmark_writes_release_artifact -- --exact --test-threads=1
           bash scripts/release_lane_command.sh windows-dx12 cargo check --examples --all-features
           cargo run -p xtask -- release-lane-artifact windows-dx12
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-windows-dx12
@@ -265,7 +265,7 @@ jobs:
           SCENA_BENCHMARK_PROFILE: perf-test
           SCENA_BENCHMARK_COMMAND: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
         run: cargo test --profile perf-test --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-headless-4k-performance
