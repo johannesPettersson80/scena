@@ -4,6 +4,77 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Rendering
+
+- Rework GPU shading around one layered surface model shared by the native
+  and WebGL2 shaders. Clearcoat now dims the layers beneath it, sheen uses the
+  Charlie distribution with energy compensation, anisotropy reshapes the base
+  highlight and stretches environment reflections, iridescence replaces the
+  base Fresnel term with thin-film interference, and dielectric reflectance
+  follows the material IOR. Image-based lighting keeps the energy that single
+  scattering loses, so rough metals no longer render too dark. Expect fabric,
+  car paint, brushed metal and rough metal to look different from 1.10.6.
+- Diffuse environment lighting is directional on both the CPU and GPU
+  renderers: it evaluates order-2 spherical harmonics of the environment
+  toward each surface normal instead of applying one average colour. Matte
+  surfaces now show their shape under image-based lighting. CPU output under
+  an environment changes slightly; the `default-cube` CPU reference moved from
+  `[204, 208, 214]` to `[207, 212, 219]`.
+- Directional shadows on native targets use four cascades packed into one
+  atlas and percentage-closer soft shadows, so a shadow is crisp at contact
+  and softens with distance. The light frustum is fitted to occluders that can
+  shadow something; a large ground plane no longer starves the subject of
+  shadow-map resolution. Bias is a normal offset plus a slope term measured in
+  shadow texels, which removes the acne rings on curved receivers. WebGL2
+  keeps one shadow map with the nine-tap grid, now with a linear comparison
+  sampler. `directional_shadow_pcf_kernel` still reports `3`, documented as
+  the smallest comparison kernel any GPU backend runs.
+- Honour glTF alpha modes. `OPAQUE` and `MASK` materials no longer let the
+  background through where their base-colour texture carries alpha. `MASK`
+  cut-outs are alpha-tested in the depth prepass and the shadow pass on the
+  GPU, and per pixel in the CPU renderer, where masked surfaces previously
+  vanished or blended.
+- `ScreenSpaceAmbientOcclusionConfig` on native GPU targets now drives a
+  compute pass that reads the depth prepass and removes environment light, and
+  most light from sources without a shadow map, where nearby geometry blocks
+  it. Lit surfaces keep their colour and subjects gain a contact shadow. The
+  radius limit rises from 12 to 96 px and `contact()` is a preset for product
+  stills. The CPU renderer and browser targets keep the post-process filter,
+  so a frame rendered with occlusion differs between CPU and native GPU.
+  Capability reports name the native source as
+  `ssao_depth_source: "sampleable_depth_texture"`.
+- Back faces of double-sided surfaces flip their whole tangent frame, so
+  normal-mapped two-sided geometry is lit correctly from behind.
+
+### Scene
+
+- Resolve world transforms as affine matrices. A rotated child under a
+  non-uniformly scaled parent is now drawn, framed and picked where plain
+  matrix math puts it, and geometry under a mirrored parent keeps its front
+  faces. Adds `Scene::world_matrix`, a `Mat4` re-export, and `world_matrix()`
+  on the node and draw inspection records. `Scene::world_transform` returns
+  the decomposition of the matrix and is unchanged for shear-free
+  hierarchies. `Hit::normal` under a mirrored transform now points out of the
+  rendered front face.
+- `Scene::pick`, `pick_pointer`, `pick_and_select` and `pick_and_hover` see
+  mesh and instance-set nodes through bounds recorded at glTF instantiate and
+  at `prepare_with_assets`. A visible mesh that has no usable record returns
+  the new `LookupError::PickRequiresAssets { node }` instead of a silent miss.
+  `LookupError` is not `#[non_exhaustive]`, so exhaustive matches on it need a
+  new arm.
+
+### Assets
+
+- Harden glTF import against malformed and hostile files. Every accessor read
+  goes through a checked reader and reports `AssetError::Parse` naming the
+  mesh, primitive and attribute instead of panicking. Node hierarchies are
+  walked iteratively and bounded (1,024 levels and 1,000,000 nodes by default;
+  see `AssetLoadOptions::with_max_node_depth` and `with_max_node_count`), and
+  a failed load no longer poisons the asset store.
+- Stricter glTF validation: non-normalized integer `COLOR_0`, signed or
+  non-normalized `TEXCOORD_0` without `KHR_mesh_quantization`, an unreadable
+  `inverseBindMatrices` accessor, and accessors with `count` 0 are rejected.
+
 ## [1.10.6] - 2026-08-23
 
 - Render imported glTF line primitives with line materials without requiring

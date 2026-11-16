@@ -501,19 +501,34 @@ and `render.supersample:8` are allowed
 only for small captures that keep the scaled internal target within renderer
 limits.
 
-Headless and descriptor-backed CPU renders can also enable the depth-aware
-screen-space ambient occlusion baseline:
+Screen-space ambient occlusion is opt-in on every backend:
 
 ```rust
 renderer.set_screen_space_ambient_occlusion(Some(
-    scena::ScreenSpaceAmbientOcclusionConfig::subtle(),
+    scena::ScreenSpaceAmbientOcclusionConfig::contact(),
 ));
 ```
 
-The SSAO pass uses the active backend's depth information to darken contact
-edges before bloom and FXAA. CPU/headless uses the CPU depth buffer; GPU,
-WebGPU, and WebGL2 use the renderer-owned depth-color target reported as
-`ssao_depth_source: "depth_color_target"` in post-processing capability reports.
+On native GPU targets occlusion is computed before the colour pass. A compute
+pass rebuilds view-space geometry from the depth prepass, estimates how much of
+the hemisphere above each pixel is blocked within `radius_px` output pixels,
+adds a term three times wider for the soft falloff, and blurs the result along
+each surface. The colour pass then removes that share of environment light and
+most of the light from sources that cast no shadow. Light from the
+shadow-casting directional light is left alone, so lit surfaces keep their
+colour while a subject gains a contact shadow where it meets its support.
+Unlit materials are darkened directly, and blended or transmissive surfaces
+are skipped. Capability reports name the source as
+`ssao_depth_source: "sampleable_depth_texture"`. The radius scales with the
+supersample factor, so a supersampled frame keeps the same apparent reach.
+
+The CPU renderer and browser targets instead apply a depth-difference filter
+to the finished frame before bloom and FXAA. CPU/headless uses the CPU depth
+buffer (`"cpu_depth_frame"`); WebGPU and WebGL2 use the renderer-owned
+depth-color target (`"depth_color_target"`). That filter darkens everything
+under it, so `ScreenSpaceAmbientOcclusionConfig::subtle()` is the better fit
+there; `contact()` is tuned for the native pass. A frame rendered with
+occlusion therefore differs between the CPU reference and native GPU.
 
 Headless and descriptor-backed CPU renders can enable weighted blended
 order-independent transparency for overlapping alpha-blended surfaces:

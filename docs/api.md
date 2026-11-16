@@ -367,6 +367,9 @@ Additive public API changes in Unreleased:
 - `Scene::world_matrix`, `SceneNodeInspection::world_matrix`,
   `SceneDrawInspection::world_matrix`, and the re-exported `Mat4`
 - `LookupError::PickRequiresAssets` and `SceneAssetMesh::topology`
+- `ScreenSpaceAmbientOcclusionConfig::contact` and
+  `ScreenSpaceAmbientOcclusionConfig::MAX_RADIUS_PX`; the accepted radius
+  rises from 12 to 96 output pixels
 
 Additive public API changes in 1.7.0:
 
