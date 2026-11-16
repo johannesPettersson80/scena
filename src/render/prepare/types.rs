@@ -21,6 +21,8 @@ pub(in crate::render) use geometry_storage::{
 mod labels;
 pub(in crate::render) use labels::{PreparedLabelAtlas, PreparedLabelQuad};
 
+mod placement;
+
 pub(super) struct TransparentPrimitive {
     pub(super) depth: f32,
     pub(super) primitive: PreparedPrimitive,
@@ -305,13 +307,6 @@ impl PreparedPrimitive {
 
     pub(in crate::render) fn set_tint(&mut self, tint: Color) {
         self.tint = tint;
-    }
-
-    pub(in crate::render) fn set_draw_transform(
-        &mut self,
-        draw_transform: Arc<PreparedDrawTransform>,
-    ) {
-        self.draw_transform = draw_transform;
     }
 
     pub(in crate::render) fn vertices(&self) -> &[crate::geometry::Vertex; 3] {

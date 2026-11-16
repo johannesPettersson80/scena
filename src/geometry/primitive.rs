@@ -46,6 +46,13 @@ impl Primitive {
         &self.vertices
     }
 
+    /// Moves the three corners, keeping their colours and attributes.
+    pub(crate) fn set_positions(&mut self, positions: [Vec3; 3]) {
+        for (vertex, position) in self.vertices.iter_mut().zip(positions) {
+            vertex.position = position;
+        }
+    }
+
     pub(crate) fn vertex_attributes(&self) -> &[PrimitiveVertexAttributes; 3] {
         &self.attributes
     }

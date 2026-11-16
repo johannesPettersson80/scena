@@ -12,7 +12,19 @@ pub(in crate::render) fn append_geometry_primitives(
     params: PrimitiveBakeParams<'_>,
     sinks: PrimitiveSinks<'_>,
 ) -> Result<(), PrepareError> {
-    match source.geometry.topology() {
+    let baked_per_instance = source.instance.is_some();
+    let PrimitiveSinks {
+        primitives,
+        strokes: stroke_sink,
+        transparent_primitives,
+    } = sinks;
+    let first_stroke = stroke_sink.len();
+    let sinks = PrimitiveSinks {
+        primitives,
+        strokes: &mut *stroke_sink,
+        transparent_primitives,
+    };
+    let appended = match source.geometry.topology() {
         GeometryTopology::Triangles => {
             super::append_triangle_primitives(source, deformation, params, sinks)
         }
@@ -27,5 +39,14 @@ pub(in crate::render) fn append_geometry_primitives(
                 sinks,
             },
         ),
+    };
+    if baked_per_instance {
+        // These strokes carry `node x instance` placement and tint. Only the
+        // node is recorded as their source, so they must not be re-placed
+        // from it on the retained path.
+        for stroke in &mut stroke_sink[first_stroke..] {
+            stroke.mark_baked_per_instance();
+        }
     }
+    appended
 }

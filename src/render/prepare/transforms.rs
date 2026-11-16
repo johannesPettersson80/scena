@@ -157,6 +157,11 @@ pub(crate) fn invert_matrix4(matrix: &[f32; 16]) -> Option<[f32; 16]> {
     Some(inv)
 }
 
+/// Applies a column-major affine matrix to a point.
+pub(in crate::render) fn transform_point_matrix4(matrix: &[f32; 16], point: Vec3) -> Vec3 {
+    apply_matrix4_to_vec3(matrix, point, 1.0)
+}
+
 fn apply_matrix4_to_vec3(matrix: &[f32; 16], vector: Vec3, w: f32) -> Vec3 {
     Vec3::new(
         matrix[0] * vector.x + matrix[4] * vector.y + matrix[8] * vector.z + matrix[12] * w,

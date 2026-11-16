@@ -98,7 +98,12 @@ pub(super) fn filter_retained_primitives_for_scene(
                 ));
             }
             let draw_transform = draw_transforms.get(&node)?;
-            primitive.set_draw_transform(Arc::clone(draw_transform));
+            if !primitive.place(Arc::clone(draw_transform)) {
+                // One of the two placements has no inverse, so the uploaded
+                // vertices cannot be carried between them. Fall back to a
+                // full prepare.
+                return None;
+            }
             primitive.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }
         visible.push(primitive);
@@ -122,6 +127,14 @@ pub(super) fn filter_retained_instances_for_scene(
             // the per-instance bake of a full prepare.
             return None;
         }
+        // The set is drawn as `node world x instance local`. The instance half
+        // is rebuilt below; the node half lives in the template triangles'
+        // draw transform and has to follow the node and its ancestors too.
+        let node_world = scene.resolved_world(set.source_node())?;
+        let node_draw_transform = prepare::PreparedDrawTransform::shared(
+            world_from_model_matrix(node_world, scene.origin_shift()),
+            normal_from_model_matrix(node_world),
+        );
         let node_tint = scene.node_tint(set.source_node()).ok()?;
         let records = live
             .instances()
@@ -136,6 +149,15 @@ pub(super) fn filter_retained_instances_for_scene(
             })
             .collect::<Vec<_>>();
         let mut set = set.clone();
+        for primitive in set.primitives_mut() {
+            // The template carries the winding of the handedness it was baked
+            // under, and its vertices only relate to an invertible placement.
+            if node_world.is_mirrored() != primitive.baked_mirrored()
+                || !primitive.place(Arc::clone(&node_draw_transform))
+            {
+                return None;
+            }
+        }
         set.set_instances(records);
         visible_sets.push(set);
     }
@@ -153,6 +175,11 @@ pub(super) fn filter_retained_strokes_for_scene(
             scene.node(node)?;
             if !scene.visible_for_active_camera(node) {
                 continue;
+            }
+            if stroke.baked_per_instance() {
+                // Baked under node x instance, which the node transform alone
+                // cannot restore. Fall back to a full prepare.
+                return None;
             }
             let transform = scene.resolved_world(node)?;
             stroke.set_world_from_model(world_from_model_matrix(transform, scene.origin_shift()));

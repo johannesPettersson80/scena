@@ -12,6 +12,9 @@ pub(in crate::render) struct PreparedStrokeSegment {
     world_from_model: [f32; 16],
     tint: Color,
     original_segment_index: u32,
+    /// Placement and tint were baked from `node x instance`, which the source
+    /// node alone cannot reproduce.
+    baked_per_instance: bool,
 }
 
 impl PreparedStrokeSegment {
@@ -34,7 +37,16 @@ impl PreparedStrokeSegment {
             world_from_model,
             tint,
             original_segment_index: 0,
+            baked_per_instance: false,
         }
+    }
+
+    pub(in crate::render) fn mark_baked_per_instance(&mut self) {
+        self.baked_per_instance = true;
+    }
+
+    pub(in crate::render) const fn baked_per_instance(&self) -> bool {
+        self.baked_per_instance
     }
 
     /// Opts this stroke out of scene clipping (planes and section box).
