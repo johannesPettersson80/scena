@@ -1,9 +1,10 @@
 use super::instancing::INSTANCE_BYTE_LEN;
 use super::output;
-use super::resource_encoding::encode_draw_resources;
+use super::resource_encoding::{EncodedDrawResources, encode_draw_resources};
 use super::{GpuDeviceState, GpuPreparedResources};
 use crate::render::prepare::{
-    PreparedGpuLightUniform, PreparedInstanceSet, PreparedPrimitive, PreparedStrokeSegment,
+    PreparedDepthStats, PreparedGpuLightUniform, PreparedInstanceSet, PreparedPrimitive,
+    PreparedStrokeSegment,
 };
 use crate::render::{PrepareWorkCounter, RasterTarget};
 
@@ -14,6 +15,8 @@ pub(in crate::render) struct DynamicDrawStateUpdate<'a> {
     pub(in crate::render) primitives: &'a [PreparedPrimitive],
     pub(in crate::render) instances: &'a [PreparedInstanceSet],
     pub(in crate::render) strokes: &'a [PreparedStrokeSegment],
+    /// Depth-prepass requirements of `primitives` and `instances`.
+    pub(in crate::render) depth_stats: PreparedDepthStats,
     pub(in crate::render) semantic_aov_capture_enabled: bool,
     pub(in crate::render) label_quad_count: usize,
     pub(in crate::render) work: Option<&'a PrepareWorkCounter>,
@@ -31,6 +34,7 @@ impl GpuDeviceState {
             primitives: draw_primitives,
             instances: draw_instances,
             strokes: draw_strokes,
+            depth_stats,
             semantic_aov_capture_enabled,
             label_quad_count,
             work,
@@ -69,6 +73,13 @@ impl GpuDeviceState {
             &encoded.draw_uniforms,
             &encoded.instance_bytes,
         )?;
+        if depth_prepass_needed(&encoded, depth_stats, label_quad_count)
+            && resources.depth_prepass.is_none()
+        {
+            // The colour pass only depth-tests against a prepass. Drawing a
+            // list that needs one without it would paint in submission order.
+            return Err("draw list needs a depth prepass the last full prepare did not build");
+        }
         self.queue.write_buffer(
             &resources.draw_uniform_buffer,
             0,
@@ -93,6 +104,32 @@ impl GpuDeviceState {
         resources.light_from_world = light_from_world;
         Ok(())
     }
+}
+
+/// Whether a full prepare of this draw list would build a depth prepass.
+#[cfg(not(target_arch = "wasm32"))]
+fn depth_prepass_needed(
+    _encoded: &EncodedDrawResources,
+    depth_stats: PreparedDepthStats,
+    _label_quad_count: usize,
+) -> bool {
+    depth_stats.passes > 0
+}
+
+/// Whether a full prepare of this draw list would build a depth prepass. The
+/// browser path skips it for a single triangle without depth-tested overlays.
+#[cfg(target_arch = "wasm32")]
+fn depth_prepass_needed(
+    encoded: &EncodedDrawResources,
+    depth_stats: PreparedDepthStats,
+    label_quad_count: usize,
+) -> bool {
+    super::prepare_resources_support::browser_depth_prepass_required(
+        depth_stats.passes > 0,
+        false,
+        super::prepare_resources_wasm_support::browser_rasterized_triangle_instances(encoded),
+        !encoded.stroke_batches.is_empty() || label_quad_count > 0,
+    )
 }
 
 fn validate_dynamic_capacity(

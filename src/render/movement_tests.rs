@@ -5,6 +5,7 @@ use crate::scene::{Scene, Transform, Vec3};
 
 use super::{PrepareTelemetry, Renderer};
 
+mod first_view;
 mod hierarchy;
 mod instance_sets;
 mod placement;

@@ -171,7 +171,7 @@ impl GpuDeviceState {
             &draw_uniform_buffer,
         );
         let mask_shader =
-            AlphaMaskShader::for_frame(&self.device, texture_binding_mode, &encoded_draw_resources);
+            AlphaMaskShader::for_scene(&self.device, texture_binding_mode, depth_stats.masked);
         let alpha_mask = alpha_mask::pipeline_inputs(&mask_shader, &material_bind_group_layout);
         let DepthStage {
             depth_prepass,

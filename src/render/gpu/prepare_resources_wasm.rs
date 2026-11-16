@@ -210,7 +210,7 @@ impl GpuDeviceState {
             has_depth_tested_overlays,
         );
         let mask_shader =
-            AlphaMaskShader::for_frame(&self.device, texture_binding_mode, &encoded_draw_resources);
+            AlphaMaskShader::for_scene(&self.device, texture_binding_mode, depth_stats.masked);
         let alpha_mask = alpha_mask::pipeline_inputs(&mask_shader, &material_bind_group_layout);
         let depth_prepass = depth_prepass_required.then(|| {
             depth::create_depth_prepass_resources(
@@ -285,10 +285,8 @@ impl GpuDeviceState {
             reflection_probes,
         );
         trace("environment-and-shadow", serde_json::json!({}));
-        let surface_pipeline_requirements = MeshPipelineRequirements::from_batches(
-            &encoded_draw_resources.draw_batches,
-            &encoded_draw_resources.instance_batches,
-        );
+        let surface_pipeline_requirements =
+            MeshPipelineRequirements::from_retained(retained_primitives, retained_instances);
         let surface_pipeline = create_unlit_pipeline_set_for_requirements(
             &self.device,
             &triangle_shader,

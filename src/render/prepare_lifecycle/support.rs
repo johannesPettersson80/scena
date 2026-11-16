@@ -32,6 +32,23 @@ impl Renderer {
         }
     }
 
+    /// Depth-prepass requirements of a triangle list. The full prepare and
+    /// the retained path both go through here so they agree on them.
+    pub(super) fn depth_prepass_stats<'a>(
+        &self,
+        primitives: impl IntoIterator<Item = &'a prepare::PreparedPrimitive>,
+        backend: crate::diagnostics::Backend,
+    ) -> prepare::PreparedDepthStats {
+        let stats = prepare::collect_depth_prepass_stats_iter(primitives, backend);
+        #[cfg(test)]
+        let stats = if self.depth_prepass_enabled_for_test {
+            stats
+        } else {
+            prepare::PreparedDepthStats::default()
+        };
+        stats
+    }
+
     pub(in crate::render) fn dynamic_gpu_prepare_rejection_reason(
         &self,
         scene: &Scene,

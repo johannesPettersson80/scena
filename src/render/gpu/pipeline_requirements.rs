@@ -1,5 +1,4 @@
-use super::instancing::InstanceDrawBatch;
-use super::vertices::PrimitiveDrawBatch;
+use crate::render::prepare::{PreparedInstanceSet, PreparedPrimitive};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct MeshPipelineRequirements {
@@ -13,28 +12,33 @@ impl MeshPipelineRequirements {
         double_sided: true,
     };
 
+    /// The culling variants the retained template can ask for.
+    ///
+    /// This looks at every retained triangle, not at the draw list of the
+    /// frame being prepared: the retained prepare path keeps these pipelines
+    /// while the camera moves, so a double-sided mesh that starts outside the
+    /// view must not find only the back-face-culling pipeline when it arrives.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    pub(super) fn from_batches(
-        draw_batches: &[PrimitiveDrawBatch],
-        instance_batches: &[InstanceDrawBatch],
+    pub(super) fn from_retained(
+        primitives: &[PreparedPrimitive],
+        instances: &[PreparedInstanceSet],
     ) -> Self {
         let mut requirements = Self {
             single_sided: false,
             double_sided: false,
         };
-        for double_sided in draw_batches
+        for primitive in primitives
             .iter()
-            .map(|batch| batch.double_sided)
-            .chain(instance_batches.iter().map(|batch| batch.double_sided))
+            .chain(instances.iter().flat_map(|set| set.primitives().iter()))
         {
-            if double_sided {
+            if primitive.double_sided() {
                 requirements.double_sided = true;
             } else {
                 requirements.single_sided = true;
             }
         }
-        // A prepared surface still owns a valid pipeline set when every
-        // triangle was culled or when the frame contains only overlays.
+        // A prepared surface still owns a valid pipeline set when the scene
+        // contains only overlays.
         if !requirements.single_sided && !requirements.double_sided {
             requirements.single_sided = true;
         }

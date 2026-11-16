@@ -12,7 +12,6 @@ use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
 use super::materials::MaterialResources;
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::pipeline::SCENA_FRONT_FACE;
-use super::resource_encoding::EncodedDrawResources;
 use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
@@ -21,7 +20,7 @@ pub(super) const ALPHA_MASK_SHADER_TEXTURE_2D_ARRAY: &str =
 pub(super) const ALPHA_MASK_SHADER_TEXTURE_2D: &str = include_str!("alpha_mask_texture_2d.wgsl");
 
 /// Shader and material layout shared by every alpha-mask pipeline of one
-/// prepare. Built only when the prepared scene contains a masked batch, so
+/// prepare. Built only when the prepared scene contains masked geometry, so
 /// scenes without cut-outs compile no extra pipelines.
 #[derive(Debug)]
 pub(super) struct AlphaMaskShader {
@@ -29,18 +28,18 @@ pub(super) struct AlphaMaskShader {
 }
 
 impl AlphaMaskShader {
-    /// Compiles the shader when the encoded frame contains a masked batch.
-    pub(super) fn for_frame(
+    /// Compiles the shader when the prepared scene contains masked geometry.
+    ///
+    /// `alpha_masked` describes everything the retained template can draw,
+    /// not the draw list of the frame being prepared. The retained prepare
+    /// path keeps these pipelines while the camera moves, so masked geometry
+    /// that starts outside the view needs them just the same.
+    pub(super) fn for_scene(
         device: &wgpu::Device,
         texture_binding_mode: MaterialTextureBindingMode,
-        encoded: &EncodedDrawResources,
+        alpha_masked: bool,
     ) -> Option<Self> {
-        let needed = encoded.draw_batches.iter().any(|batch| batch.alpha_masked)
-            || encoded
-                .instance_batches
-                .iter()
-                .any(|batch| batch.alpha_masked);
-        needed.then(|| {
+        alpha_masked.then(|| {
             let variant = match texture_binding_mode {
                 MaterialTextureBindingMode::Texture2d => ShaderVariantId::AlphaMaskTexture2d,
                 MaterialTextureBindingMode::Texture2dArray => {

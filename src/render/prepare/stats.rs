@@ -35,6 +35,9 @@ pub(in crate::render) struct PreparedDepthStats {
     pub(in crate::render) passes: u64,
     pub(in crate::render) draws: u64,
     pub(in crate::render) reversed_z: bool,
+    /// Some of the eligible triangles use a glTF MASK material, so the depth
+    /// and shadow passes need their alpha-tested pipelines.
+    pub(in crate::render) masked: bool,
 }
 
 pub(in crate::render) fn collect_lighting_stats(
@@ -110,10 +113,15 @@ pub(in crate::render) fn collect_depth_prepass_stats_iter<'a>(
     primitives: impl IntoIterator<Item = &'a PreparedPrimitive>,
     backend: Backend,
 ) -> PreparedDepthStats {
-    let eligible_draws = primitives
+    let mut eligible_draws = 0_usize;
+    let mut masked = false;
+    for primitive in primitives
         .into_iter()
         .filter(|primitive| primitive.depth_prepass_eligible())
-        .count();
+    {
+        eligible_draws += 1;
+        masked |= primitive.semantic_alpha_cutoff().is_some();
+    }
     if eligible_draws < DEPTH_PREPASS_MIN_PRIMITIVES || !depth_prepass_backend_supported(backend) {
         PreparedDepthStats::default()
     } else {
@@ -122,6 +130,7 @@ pub(in crate::render) fn collect_depth_prepass_stats_iter<'a>(
             passes: 1,
             draws: eligible_draws as u64,
             reversed_z: capabilities.reversed_z_depth == CapabilityStatus::Supported,
+            masked,
         }
     }
 }

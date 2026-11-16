@@ -16,6 +16,7 @@ use super::{
 
 const GPU_PREPARE_DESTRUCTION_PRESSURE_LIMIT: u64 = 16_384;
 
+mod retained;
 mod support;
 
 fn gpu_triangle_primitives<'a>(
@@ -241,87 +242,27 @@ impl Renderer {
         let logical_stats =
             prepare::collect_logical_resource_stats(scene, assets, environment_count);
         step_start = log_prepare_step("camera + backend material slots", step_start);
-        if self.gpu.is_some() {
-            if let Some(reason) =
-                self.dynamic_gpu_prepare_rejection_reason(scene, &backend_material_handles)
-            {
-                log_dynamic_reject(reason);
-            } else if let Some((dynamic_primitives, dynamic_strokes, dynamic_instances)) =
-                self.reencode_retained_draws(scene)
-            {
-                let culled_primitives = culling::cull_prepared_primitives(
-                    dynamic_primitives,
-                    active_camera_projection.as_ref(),
-                    target,
-                    self.cpu_occlusion_culling
-                        && scene.clipping_planes().planes().is_empty()
-                        && scene.section_box().is_none(),
-                    true,
-                );
-                let dynamic_culled_objects = culled_primitives.culled;
-                let dynamic_primitives = culled_primitives.visible;
-                match prepare::collect_dynamic_light_from_world(scene, assets) {
-                    Ok(light_from_world) => {
-                        let semantic_label_quad_count = self
-                            .prepared
-                            .as_ref()
-                            .map(|prepared| prepared.labels.quads().len())
-                            .unwrap_or(0);
-                        let semantic_aov_capture_enabled = self.semantic_aov_capture_enabled;
-                        if let Some(gpu) = &mut self.gpu {
-                            match gpu.update_dynamic_draw_state(gpu::DynamicDrawStateUpdate {
-                                target,
-                                light_uniform: gpu_light_uniform,
-                                light_from_world,
-                                primitives: &dynamic_primitives,
-                                instances: &dynamic_instances,
-                                strokes: &dynamic_strokes,
-                                semantic_aov_capture_enabled,
-                                label_quad_count: semantic_label_quad_count,
-                                work,
-                            }) {
-                                Ok(()) => {
-                                    if let Some(prepared) = self.prepared.as_mut() {
-                                        prepared.transform_revision = scene.transform_revision();
-                                        prepared.camera_revision = scene.camera_revision();
-                                        prepared.appearance_revision = scene.appearance_revision();
-                                        prepared.visibility_revision = scene.visibility_revision();
-                                        prepared.primitives = Arc::from(dynamic_primitives);
-                                        prepared.strokes = Arc::from(dynamic_strokes);
-                                        prepared.instances = Arc::from(dynamic_instances);
-                                    }
-                                    self.stats.instances = self
-                                        .prepared
-                                        .as_ref()
-                                        .map(prepared_instance_count)
-                                        .unwrap_or(0);
-                                    self.stats.culled_objects = dynamic_culled_objects;
-                                    self.stats.textures = logical_stats.textures;
-                                    self.prepare_telemetry.dynamic_template_prepares = self
-                                        .prepare_telemetry
-                                        .dynamic_template_prepares
-                                        .saturating_add(1);
-                                    self.prepare_telemetry.draw_uniform_only_updates = self
-                                        .prepare_telemetry
-                                        .draw_uniform_only_updates
-                                        .saturating_add(1);
-                                    self.render_generation =
-                                        self.render_generation.saturating_add(1);
-                                    self.clear_rendered_frame();
-                                    self.diagnostics = diagnostics;
-                                    log_prepare_step("dynamic draw-uniform update", step_start);
-                                    log_prepare_step("prepare_inner total", total_start);
-                                    return Ok(());
-                                }
-                                Err(reason) => log_dynamic_reject(reason),
-                            }
-                        }
-                    }
-                    Err(_error) => log_dynamic_reject("dynamic shadow projection failed"),
-                }
-            } else {
-                log_dynamic_reject("visible source missing from retained template");
+        match self.prepare_retained(
+            scene,
+            assets,
+            retained::RetainedPrepareInputs {
+                target,
+                camera: active_camera_projection.as_ref(),
+                light_uniform: gpu_light_uniform,
+                material_handles: &backend_material_handles,
+                work,
+            },
+        ) {
+            Ok(()) => {
+                self.stats.textures = logical_stats.textures;
+                self.render_generation = self.render_generation.saturating_add(1);
+                self.clear_rendered_frame();
+                self.diagnostics = diagnostics;
+                log_prepare_step("dynamic draw-uniform update", step_start);
+                log_prepare_step("prepare_inner total", total_start);
+                return Ok(());
             }
+            Err(reason) => log_dynamic_reject(reason),
         }
         let backend_sampled_base_color_textures = backend_material_slots
             .iter()
@@ -387,18 +328,20 @@ impl Renderer {
         let instances = Arc::clone(&retained_instances);
         let gpu_retained_primitives = gpu_triangle_primitives(&retained_primitives, work);
         let gpu_primitives = gpu_triangle_primitives(&primitives, work);
-        let depth_stats = prepare::collect_depth_prepass_stats_iter(
+        let depth_stats = self.depth_prepass_stats(
             primitives
                 .iter()
                 .chain(instances.iter().flat_map(|set| set.primitives().iter())),
             target.backend,
         );
-        #[cfg(test)]
-        let depth_stats = if self.depth_prepass_enabled_for_test {
-            depth_stats
-        } else {
-            prepare::PreparedDepthStats::default()
-        };
+        // GPU resources are built for everything the template can draw, not
+        // for the part of it the first camera happened to see.
+        let retained_depth_stats = self.depth_prepass_stats(
+            gpu_retained_primitives
+                .iter()
+                .chain(instances.iter().flat_map(|set| set.primitives().iter())),
+            target.backend,
+        );
         self.apply_prepare_stats(
             logical_stats,
             environment_prepare_stats,
@@ -424,7 +367,7 @@ impl Renderer {
                 lighting_stats,
                 gpu_light_uniform,
                 light_from_world,
-                depth_stats,
+                retained_depth_stats,
                 &backend_material_slots,
                 &environment_lighting,
                 &reflection_probes,

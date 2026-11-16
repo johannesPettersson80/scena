@@ -1,17 +1,11 @@
-use super::{MeshPipelineRequirements, PrimitiveDrawBatch};
+use super::MeshPipelineRequirements;
+use crate::geometry::Primitive;
+use crate::material::Color;
+use crate::render::prepare::PreparedPrimitive;
 
-fn draw_batch(double_sided: bool) -> PrimitiveDrawBatch {
-    PrimitiveDrawBatch {
-        start_vertex: 0,
-        vertex_count: 3,
-        material_slot: 0,
-        draw_uniform_index: 0,
-        depth_prepass_eligible: true,
-        alpha_masked: false,
-        double_sided,
-        semantic_eligible: false,
-        reflection_probe_slot: None,
-    }
+fn retained_triangle(double_sided: bool) -> PreparedPrimitive {
+    PreparedPrimitive::new(Primitive::unlit_triangle(), None, Color::WHITE)
+        .with_double_sided(double_sided)
 }
 
 #[test]
@@ -25,24 +19,31 @@ fn browser_surface_pipeline_compilation_is_limited_to_used_sides() {
     assert!(
         pipeline.contains("MeshPipelineRequirements")
             && pipeline.contains("compiled_pipeline_count")
-            && requirements.contains("from_batches")
+            && requirements.contains("from_retained")
             && requirements.contains("compiled_pipeline_count")
-            && browser_prepare.contains("MeshPipelineRequirements::from_batches")
+            && browser_prepare.contains(
+                "MeshPipelineRequirements::from_retained(retained_primitives, retained_instances)"
+            )
             && browser_prepare.contains("create_unlit_pipeline_set_for_requirements"),
-        "WebGL2 preparation must compile only the culling variants used by the encoded scene",
+        "WebGL2 preparation must compile only the culling variants the retained scene uses, \
+         and must take them from the whole retained template: the retained prepare path keeps \
+         the pipelines while the camera brings other geometry into view",
     );
 
-    let single = MeshPipelineRequirements::from_batches(&[draw_batch(false)], &[]);
+    let single = MeshPipelineRequirements::from_retained(&[retained_triangle(false)], &[]);
     assert_eq!(single.compiled_pipeline_count(), 1);
     assert!(single.single_sided);
     assert!(!single.double_sided);
 
-    let mixed = MeshPipelineRequirements::from_batches(&[draw_batch(false), draw_batch(true)], &[]);
+    let mixed = MeshPipelineRequirements::from_retained(
+        &[retained_triangle(false), retained_triangle(true)],
+        &[],
+    );
     assert_eq!(mixed.compiled_pipeline_count(), 2);
     assert!(mixed.single_sided);
     assert!(mixed.double_sided);
 
-    let empty = MeshPipelineRequirements::from_batches(&[], &[]);
+    let empty = MeshPipelineRequirements::from_retained(&[], &[]);
     assert_eq!(empty.compiled_pipeline_count(), 1);
     assert!(empty.single_sided);
     assert!(!empty.double_sided);
