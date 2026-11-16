@@ -1,23 +1,26 @@
+use super::alpha_mask::{self, AlphaMaskPipelineInputs};
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
+use super::materials::MaterialResources;
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::shader_manifest::{ShaderVariantId, create_shader_module};
+use super::shadow_cascades::ShadowCascadeUniform;
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
+use crate::render::camera::CameraProjection;
 
-/// Comparison sampler for the directional shadow map. The fragment shader
-/// averages an explicit 3×3 texel grid, so nearest filtering keeps each of its
-/// nine `textureSampleCompareLevel` calls to one comparison instead of silently
-/// widening every grid point into another 2×2 footprint. Address mode
-/// `ClampToEdge` is sentinel-safe — the fragment shader gates the sample on the
-/// receiver's NDC frustum (review F6) so border reads never produce false
-/// self-shadow streaks.
+/// Comparison sampler for the directional shadow map. Linear filtering makes
+/// every `textureSampleCompareLevel` a hardware 2x2 percentage-closer lookup,
+/// so the shader's taps blend into a smooth footprint instead of stepping at
+/// texel boundaries. Address mode `ClampToEdge` is sentinel-safe: the fragment
+/// shader gates the sample on the receiver's NDC frustum so border reads never
+/// produce false self-shadow streaks.
 pub(super) fn create_shadow_sampler(device: &wgpu::Device) -> wgpu::Sampler {
     device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("scena.m2.shadow_sampler"),
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
         address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Nearest,
-        min_filter: wgpu::FilterMode::Nearest,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         compare: Some(wgpu::CompareFunction::LessEqual),
         ..Default::default()
@@ -33,8 +36,9 @@ pub(super) fn create_shadow_sampler(device: &wgpu::Device) -> wgpu::Sampler {
 pub(super) fn create_shadow_texture(
     device: &wgpu::Device,
     resolution: Option<u32>,
+    cascade_count: usize,
 ) -> wgpu::Texture {
-    let size = resolution.unwrap_or(1).max(1);
+    let size = resolution.unwrap_or(1).max(1) * atlas_cells_per_edge(cascade_count);
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m2.directional_shadow_map"),
         size: wgpu::Extent3d {
@@ -108,6 +112,30 @@ fn vs_main(in: VertexIn) -> @builtin(position) vec4<f32> {
 }
 "#;
 
+/// Cascades used by the native renderer. Browser backends keep one cascade:
+/// WebGL2 runs the single-map shader and the WebGPU surface path has not been
+/// taught to refit cascades per frame.
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) const NATIVE_SHADOW_CASCADE_COUNT: usize = 4;
+
+/// Byte offset of `CameraUniform::light_from_world`, the only field the caster
+/// vertex shader reads.
+const LIGHT_FROM_WORLD_UNIFORM_OFFSET: u64 = 48 * 4;
+
+/// Constant + slope depth bias against shadow acne at grazing angles. The
+/// receiver side adds a normal offset, so these stay small. Shared with the
+/// alpha-tested caster so masked and opaque occluders agree where they meet.
+const SHADOW_CASTER_DEPTH_BIAS: wgpu::DepthBiasState = wgpu::DepthBiasState {
+    constant: 2,
+    slope_scale: 1.5,
+    clamp: 0.0,
+};
+
+/// Cascades share one square atlas: one cell for a single cascade, 2x2 beyond.
+const fn atlas_cells_per_edge(cascade_count: usize) -> u32 {
+    if cascade_count > 1 { 2 } else { 1 }
+}
+
 #[derive(Debug)]
 pub(super) struct ShadowCasterResources {
     /// Owned to keep the GPU texture alive while `view` references it.
@@ -115,6 +143,9 @@ pub(super) struct ShadowCasterResources {
     pub(super) texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
     pub(super) pipeline: Option<wgpu::RenderPipeline>,
+    /// Alpha-tested caster for glTF MASK batches, so a cut-out casts the shadow
+    /// of its visible texels instead of a solid quad.
+    masked_pipeline: Option<wgpu::RenderPipeline>,
     /// Camera-only bind group used by the shadow caster pass. Distinct from
     /// `output_bind_group` so that the shadow_map texture is not referenced
     /// inside the caster pass's render-pass usage scope.
@@ -123,6 +154,57 @@ pub(super) struct ShadowCasterResources {
     /// caster's pipeline layout aligns with the unlit pipeline's bind
     /// group indices.
     pub(super) dummy_material_group: Option<wgpu::BindGroup>,
+    /// One camera uniform and bind group per cascade when the map is an
+    /// atlas. Empty for a single cascade, which reads the frame's own camera
+    /// uniform through `camera_bind_group`.
+    cascade_uniforms: Vec<wgpu::Buffer>,
+    cascade_bind_groups: Vec<wgpu::BindGroup>,
+    /// Edge length of one cascade in texels.
+    cascade_resolution: u32,
+}
+
+impl ShadowCasterResources {
+    /// Fits this frame's cascades and uploads them for the caster pass.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(super) fn update_cascades(
+        &self,
+        queue: &wgpu::Queue,
+        camera: &CameraProjection,
+        light_from_world: [f32; 16],
+    ) -> ShadowCascadeUniform {
+        let cascades = self.fit_cascades(camera, light_from_world);
+        self.write_cascades(queue, &cascades);
+        cascades
+    }
+
+    /// Fits this frame's cascades. Scenes without a shadow-casting light, and
+    /// single-cascade maps, keep the scene-fitted matrix unchanged.
+    fn fit_cascades(
+        &self,
+        camera: &CameraProjection,
+        light_from_world: [f32; 16],
+    ) -> ShadowCascadeUniform {
+        if self.cascade_bind_groups.is_empty() {
+            return ShadowCascadeUniform::single(light_from_world);
+        }
+        ShadowCascadeUniform::fit(
+            camera,
+            light_from_world,
+            self.cascade_bind_groups.len(),
+            self.cascade_resolution,
+        )
+    }
+
+    /// Uploads each cascade matrix into the uniform its caster draws read.
+    fn write_cascades(&self, queue: &wgpu::Queue, cascades: &ShadowCascadeUniform) {
+        for (uniform, matrix) in self.cascade_uniforms.iter().zip(&cascades.light_from_world) {
+            let mut bytes = [0_u8; 64];
+            for (chunk, value) in bytes.chunks_exact_mut(4).zip(matrix) {
+                chunk.copy_from_slice(&value.to_ne_bytes());
+            }
+            queue.write_buffer(uniform, LIGHT_FROM_WORLD_UNIFORM_OFFSET, &bytes);
+        }
+    }
 }
 
 pub(super) fn create_shadow_caster_resources(
@@ -130,16 +212,22 @@ pub(super) fn create_shadow_caster_resources(
     resolution: Option<u32>,
     output_uniform: &wgpu::Buffer,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
+    cascade_count: usize,
+    alpha_mask: Option<AlphaMaskPipelineInputs<'_>>,
 ) -> ShadowCasterResources {
-    let texture = create_shadow_texture(device, resolution);
+    let texture = create_shadow_texture(device, resolution, cascade_count);
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     if resolution.is_none() {
         return ShadowCasterResources {
             texture,
             view,
             pipeline: None,
+            masked_pipeline: None,
             camera_bind_group: None,
             dummy_material_group: None,
+            cascade_uniforms: Vec::new(),
+            cascade_bind_groups: Vec::new(),
+            cascade_resolution: 1,
         };
     }
     let shader = create_shader_module(
@@ -199,12 +287,45 @@ pub(super) fn create_shadow_caster_resources(
         immediate_size: 0,
     });
     let pipeline = create_shadow_pipeline(device, &pipeline_layout, &shader);
+    let masked_pipeline = alpha_mask.map(|inputs| {
+        alpha_mask::create_shadow_pipeline(
+            device,
+            inputs,
+            &camera_bind_group_layout,
+            draw_bind_group_layout,
+            SHADOW_CASTER_DEPTH_BIAS,
+        )
+    });
+    let (cascade_uniforms, cascade_bind_groups): (Vec<_>, Vec<_>) = (0..cascade_count)
+        .filter(|_| cascade_count > 1)
+        .map(|_| {
+            let uniform = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("scena.m2.shadow_cascade_uniform"),
+                size: output_uniform.size(),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("scena.m2.shadow_cascade_bind_group"),
+                layout: &camera_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform.as_entire_binding(),
+                }],
+            });
+            (uniform, bind_group)
+        })
+        .unzip();
     ShadowCasterResources {
         texture,
         view,
         pipeline: Some(pipeline),
+        masked_pipeline,
         camera_bind_group: Some(camera_bind_group),
         dummy_material_group: Some(dummy_material_group),
+        cascade_uniforms,
+        cascade_bind_groups,
+        cascade_resolution: resolution.unwrap_or(1).max(1),
     }
 }
 
@@ -243,14 +364,7 @@ fn create_shadow_pipeline(
             depth_write_enabled: Some(true),
             depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
-            // Constant + slope depth bias to combat shadow acne on grazing
-            // angles. Values match a standard ortho shadow map at
-            // 1024-2048 resolution; tuning lives next to the shader.
-            bias: wgpu::DepthBiasState {
-                constant: 2,
-                slope_scale: 1.5,
-                clamp: 0.0,
-            },
+            bias: SHADOW_CASTER_DEPTH_BIAS,
         }),
         multisample: wgpu::MultisampleState::default(),
         fragment: None,
@@ -293,35 +407,77 @@ pub(super) fn encode_shadow_caster_pass(
     // the encoder during the later unlit pass, after the caster pass
     // closes and the texture transitions from DEPTH_STENCIL_WRITE to
     // RESOURCE.
-    pass.set_bind_group(0, camera_bind_group, &[]);
-    pass.set_bind_group(1, dummy_material_group, &[]);
     pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
     let identity_instance_offset =
         u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
-    pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
-    pass.set_pipeline(pipeline);
-    for batch in inputs.draw_batches {
-        let draw_offset =
-            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
-        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
-        pass.draw(
-            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
-            0..1,
-        );
-        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
-    }
-    for batch in inputs.instance_batches {
-        let draw_offset =
-            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
-        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
-        let instance_offset =
-            u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
-        pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
-        pass.draw(
-            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
-            0..batch.instance_count,
-        );
-        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
+    // Masked batches go through the alpha-tested pipeline when it exists;
+    // without it they stay solid occluders rather than losing their shadow.
+    let alpha_test = resources.masked_pipeline.is_some();
+    let cascade_count = resources.cascade_bind_groups.len().max(1);
+    let cell = resources.cascade_resolution;
+    for cascade in 0..cascade_count {
+        // The masked pipeline uses a different layout at @group(1), so the
+        // plain pipeline and its empty material group are rebound per cascade.
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(1, dummy_material_group, &[]);
+        // A single cascade reads the frame's camera uniform and fills the
+        // whole map; atlas cascades bind their own matrix and draw into one
+        // cell each.
+        match resources.cascade_bind_groups.get(cascade) {
+            Some(bind_group) => {
+                let x = (cascade as u32 % 2) * cell;
+                let y = (cascade as u32 / 2) * cell;
+                pass.set_viewport(x as f32, y as f32, cell as f32, cell as f32, 0.0, 1.0);
+                pass.set_scissor_rect(x, y, cell, cell);
+                pass.set_bind_group(0, bind_group, &[]);
+            }
+            None => pass.set_bind_group(0, camera_bind_group, &[]),
+        }
+        pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
+        for batch in inputs.draw_batches {
+            if alpha_test && batch.alpha_masked {
+                continue;
+            }
+            let draw_offset =
+                (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+            pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+            pass.draw(
+                batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                0..1,
+            );
+            *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
+        }
+        for batch in inputs.instance_batches {
+            if alpha_test && batch.alpha_masked {
+                continue;
+            }
+            let draw_offset =
+                (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+            pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+            let instance_offset =
+                u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+            pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
+            pass.draw(
+                batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                0..batch.instance_count,
+            );
+            *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
+        }
+        if let Some(masked_pipeline) = &resources.masked_pipeline {
+            alpha_mask::encode_shadow_draws(
+                &mut pass,
+                masked_pipeline,
+                &alpha_mask::MaskedDraws {
+                    materials: inputs.material_resources,
+                    instance_buffer: inputs.instance_buffer,
+                    draw_bind_group: inputs.draw_bind_group,
+                    draw_batches: inputs.draw_batches,
+                    instance_batches: inputs.instance_batches,
+                    identity_instance: inputs.identity_instance,
+                },
+                inputs.draw_submissions,
+            );
+        }
     }
 }
 
@@ -329,8 +485,28 @@ pub(super) struct ShadowCasterPassInputs<'a> {
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) instance_buffer: &'a wgpu::Buffer,
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
+    pub(super) material_resources: &'a MaterialResources,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
     pub(super) instance_batches: &'a [InstanceDrawBatch],
     pub(super) identity_instance: u32,
     pub(super) draw_submissions: &'a mut u64,
+}
+
+impl<'a> ShadowCasterPassInputs<'a> {
+    /// Inputs that cast every batch of the prepared frame.
+    pub(super) fn for_resources(
+        resources: &'a super::GpuPreparedResources,
+        draw_submissions: &'a mut u64,
+    ) -> Self {
+        Self {
+            vertex_buffer: &resources.vertex_buffer,
+            instance_buffer: &resources.instance_buffer,
+            draw_bind_group: &resources.draw_bind_group,
+            material_resources: &resources.material_resources,
+            draw_batches: &resources.draw_batches,
+            instance_batches: &resources.instance_batches,
+            identity_instance: resources.identity_instance,
+            draw_submissions,
+        }
+    }
 }

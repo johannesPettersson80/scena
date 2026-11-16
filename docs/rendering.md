@@ -360,13 +360,29 @@ Shadow behavior is capability-aware. Applications should query capabilities and
 diagnostics when selecting optional shadow-heavy scenes or quality settings.
 Directional shadows are supported on GPU-device WebGPU/WebGL2/native lanes
 where the renderer renders a shadow map and samples it into visible receiver
-pixels. The shipped receiver filter is an explicit 3×3 texel grid: nine
-nearest-filtered depth-comparison samples averaged once per shadowed fragment.
-`directional_shadow_pcf_kernel: 3` in capabilities and frame stats names that
-sample grid, not the implicit 2×2 footprint of one linearly filtered comparison
-sample. CPU/reference and unattached factory capability rows report `degraded`
-instead of claiming the GPU receiver path. Point/spot shadow maps and cascaded
-directional maps are not currently shipped.
+pixels.
+
+Native targets fit four cascades to the camera frustum each frame and pack them
+into one atlas, so a small subject on a large floor still gets most of the
+shadow map. Each cascade is a crop of a light frustum fitted to the occluders
+that can shadow something; a ground plane with nothing behind it does not
+stretch the fit. Receivers are filtered with percentage-closer soft shadows: a
+twelve-tap blocker search sizes a rotated sixteen-tap kernel per fragment, so a
+shadow is crisp where the caster touches the receiver and softens with
+distance. Bias is a normal offset plus a slope term, both measured in shadow
+texels.
+
+WebGL2 renders one shadow map and filters it with an explicit 3×3 grid of nine
+depth-comparison samples averaged once per shadowed fragment. Both paths use a
+linear comparison sampler, so every tap is itself a 2×2 hardware comparison.
+
+`directional_shadow_pcf_kernel: 3` in capabilities and frame stats names the
+smallest comparison kernel any GPU backend runs, not the implicit 2×2 footprint
+of one linearly filtered comparison sample. CPU/reference and unattached
+factory capability rows report `degraded` instead of claiming the GPU receiver
+path. Glass-like and blended casters are still opaque to the shadow map;
+alpha-masked casters shadow only their visible texels. Point/spot shadow maps
+are not currently shipped.
 
 Area lights are evaluated as finite sampled emitters on both CPU and GPU, with
 LTC-style specular evaluation for rectangular, disc, and sphere emitter shapes.

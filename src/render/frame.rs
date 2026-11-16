@@ -318,7 +318,8 @@ impl Renderer {
             depth_of_field_post_config(self.depth_of_field, camera_projection),
             self.auto_exposure.is_some(),
             self.scene_linear_capture_enabled,
-        );
+        )
+        .with_resolution_scale(self.supersample_factor);
         #[cfg(not(target_arch = "wasm32"))]
         {
             let resolved_readback_mode = match readback_mode {

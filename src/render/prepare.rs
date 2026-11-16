@@ -9,7 +9,8 @@ pub(super) use self::diagnostics::{
 };
 pub(super) use self::dynamic::collect_dynamic_light_from_world;
 pub(in crate::render) use self::environment::{
-    EnvironmentLightingProfile, PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
+    EnvironmentLightingProfile, IRRADIANCE_SH_COEFFICIENT_COUNT, PreparedEnvironmentCubemap,
+    PreparedEnvironmentLighting,
 };
 #[doc(hidden)]
 pub use self::environment::{
@@ -148,15 +149,6 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
             .filter(|cache| cache.matches(&lights, &shadow_occluders))
             .unwrap_or_else(|| shadows::ShadowVisibilityCache::new(&lights, &shadow_occluders)),
         None => shadows::ShadowVisibilityCache::new(&lights, &shadow_occluders),
-    };
-    let shadow_projection_points = if needs_cpu_shadow_visibility {
-        None
-    } else {
-        Some(shadows::collect_shadow_projection_points(
-            scene,
-            assets,
-            origin_shift,
-        )?)
     };
     let mut primitives: Vec<PreparedPrimitive> = scene
         .renderable_nodes()
@@ -537,25 +529,15 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
             .map(|transparent| transparent.primitive),
     );
 
-    let light_from_world = lights
-        .primary_shadow_ray_direction()
-        .map(|to_light_dir| {
-            // primary_shadow_ray_direction returns the vector pointing toward
-            // the light; the shadow projection wants the direction the light
-            // travels (forward), so negate.
-            let light_direction = Vec3::new(-to_light_dir.x, -to_light_dir.y, -to_light_dir.z);
-            match shadow_projection_points.as_ref() {
-                Some(points) => shadows::directional_light_view_projection_from_points(
-                    light_direction,
-                    points.iter().copied(),
-                ),
-                None => shadows::directional_light_view_projection(
-                    light_direction,
-                    shadow_occluders.triangles(),
-                ),
-            }
-        })
-        .unwrap_or_else(identity_matrix4);
+    let light_from_world = match lights.primary_shadow_ray_direction() {
+        // primary_shadow_ray_direction returns the vector pointing toward the
+        // light; the shadow projection wants the direction the light travels.
+        Some(to_light_dir) => shadows::focused_light_view_projection(
+            -to_light_dir,
+            &shadows::collect_shadow_projection_groups(scene, assets, origin_shift)?,
+        ),
+        None => identity_matrix4(),
+    };
 
     // Hand the populated cache back so the next prepare can reuse it. An early
     // `?` return skips this, which only costs a rebuild.

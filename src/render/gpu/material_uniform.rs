@@ -17,9 +17,19 @@ pub(super) fn material_uniform_min_binding_size() -> std::num::NonZeroU64 {
 /// this stride so dynamic-offset binding can point at any layer's slot.
 pub(super) const MATERIAL_UNIFORM_ENTRY_STRIDE: u64 = 256;
 
+/// glTF alpha mode, carried in the spare `.z` lane of the base-colour UV
+/// rotation so the fragment shader can ignore base alpha for OPAQUE and MASK
+/// surfaces. Draws without a material keep vertex alpha (BLEND): that slot
+/// carries colours the CPU has already shaded and blended.
+pub(super) const ALPHA_MODE_OPAQUE: f32 = 0.0;
+pub(super) const ALPHA_MODE_MASK: f32 = 1.0;
+pub(super) const ALPHA_MODE_BLEND: f32 = 2.0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct MaterialUniformUpload {
     pub(super) offset_scale: [f32; 4],
+    /// .x = sin, .y = cos of the base-colour UV rotation, .z = alpha mode
+    /// (`ALPHA_MODE_*`), .w = reserved.
     pub(super) rotation: [f32; 4],
     pub(super) base_color_factor: [f32; 4],
     pub(super) emissive_strength: [f32; 4],
@@ -82,6 +92,11 @@ impl MaterialUniformUpload {
             AlphaMode::Mask { cutoff } => cutoff,
             AlphaMode::Opaque | AlphaMode::Blend => 0.0,
         };
+        let alpha_mode = match material.alpha_mode() {
+            AlphaMode::Opaque => ALPHA_MODE_OPAQUE,
+            AlphaMode::Mask { .. } => ALPHA_MODE_MASK,
+            AlphaMode::Blend => ALPHA_MODE_BLEND,
+        };
         let unlit_flag = match material.kind() {
             MaterialKind::Unlit => 1.0,
             MaterialKind::PbrMetallicRoughness
@@ -91,7 +106,12 @@ impl MaterialUniformUpload {
         };
         Self {
             offset_scale: transform.offset_scale,
-            rotation: transform.rotation,
+            rotation: [
+                transform.rotation[0],
+                transform.rotation[1],
+                alpha_mode,
+                0.0,
+            ],
             base_color_factor: [
                 material.base_color().r,
                 material.base_color().g,
@@ -182,7 +202,7 @@ impl MaterialUniformUpload {
                 transform.scale()[0],
                 transform.scale()[1],
             ],
-            rotation: [rotation.sin(), rotation.cos(), 0.0, 0.0],
+            rotation: [rotation.sin(), rotation.cos(), ALPHA_MODE_BLEND, 0.0],
             ..Self::identity()
         }
     }
@@ -190,7 +210,7 @@ impl MaterialUniformUpload {
     pub(super) fn identity() -> Self {
         Self {
             offset_scale: [0.0, 0.0, 1.0, 1.0],
-            rotation: [0.0, 1.0, 0.0, 0.0],
+            rotation: [0.0, 1.0, ALPHA_MODE_BLEND, 0.0],
             base_color_factor: [1.0, 1.0, 1.0, 1.0],
             emissive_strength: [0.0, 0.0, 0.0, 1.0],
             metallic_roughness_alpha: [0.0, 1.0, 0.0, 0.0],

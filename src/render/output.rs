@@ -240,6 +240,18 @@ impl Default for PostBloomConfig {
     }
 }
 
+/// Screen-space ambient occlusion.
+///
+/// On native GPU targets the occlusion is computed from the depth prepass
+/// before the colour pass and removes environment light, plus most of the
+/// light from sources that cast no shadow, where nearby geometry blocks it.
+/// Lit surfaces keep their colour, and objects gain a soft contact shadow.
+/// `radius_px` is the reach of the contact term in output pixels; a second
+/// term three times wider supplies the soft falloff around it.
+///
+/// The CPU renderer and browser targets apply a depth-difference filter to
+/// the finished frame instead. That filter uses `depth_threshold`, which the
+/// native pass ignores.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScreenSpaceAmbientOcclusionConfig {
     radius_px: u8,
@@ -248,6 +260,9 @@ pub struct ScreenSpaceAmbientOcclusionConfig {
 }
 
 impl ScreenSpaceAmbientOcclusionConfig {
+    /// Largest accepted radius in output pixels.
+    pub const MAX_RADIUS_PX: u8 = 96;
+
     pub const fn subtle() -> Self {
         Self {
             radius_px: 3,
@@ -256,9 +271,19 @@ impl ScreenSpaceAmbientOcclusionConfig {
         }
     }
 
+    /// Full-strength occlusion with a wide reach, for product stills where
+    /// the subject should sit visibly on its support.
+    pub const fn contact() -> Self {
+        Self {
+            radius_px: Self::MAX_RADIUS_PX,
+            intensity: 1.0,
+            depth_threshold: 0.0005,
+        }
+    }
+
     pub fn new(radius_px: u8, intensity: f32, depth_threshold: f32) -> Self {
         Self {
-            radius_px: radius_px.min(12),
+            radius_px: radius_px.min(Self::MAX_RADIUS_PX),
             intensity: if intensity.is_finite() {
                 intensity.clamp(0.0, 1.0)
             } else {

@@ -6,6 +6,7 @@ use super::super::prepare::{
     PreparedDepthStats, PreparedEnvironmentLighting, PreparedGpuLightUniform,
     PreparedLightingStats, PreparedMaterialSlot, PreparedReflectionProbe,
 };
+use super::alpha_mask::{self, AlphaMaskShader};
 #[cfg(target_arch = "wasm32")]
 use super::browser_readback::create_browser_readback_resources;
 use super::material_support::reject_unsupported_volume_texture_slots;
@@ -17,6 +18,7 @@ use super::prepare_resources_support::{
     build_semantic_attribution, create_geometry_buffers, validate_geometry_buffer_size,
     validate_sample_count,
 };
+mod depth_stage;
 mod pipelines;
 mod stats;
 use super::resource_encoding::{
@@ -32,6 +34,7 @@ use crate::render::prepare::{
     PreparedInstanceSet, PreparedLabelAtlas, PreparedPrimitive, PreparedStrokeSegment,
     TiledLightAssignment,
 };
+use depth_stage::{DepthStage, DepthStageInputs, create_depth_stage};
 use pipelines::create_pipeline_resources;
 use stats::{add_msaa_resource_stats, base_resource_stats};
 
@@ -167,20 +170,24 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             &draw_uniform_buffer,
         );
-        let depth_prepass = (depth_stats.passes > 0).then(|| {
-            depth::create_depth_prepass_resources(
-                &self.device,
-                target,
-                depth_stats.reversed_z,
-                &output_bind_group_layout,
-                &draw_bind_group_layout,
-                output_plan.depth_color_enabled(),
-                sample_count,
-            )
+        let mask_shader =
+            AlphaMaskShader::for_frame(&self.device, texture_binding_mode, &encoded_draw_resources);
+        let alpha_mask = alpha_mask::pipeline_inputs(&mask_shader, &material_bind_group_layout);
+        let DepthStage {
+            depth_prepass,
+            overlay_depth_prepass,
+            ambient_occlusion,
+        } = create_depth_stage(DepthStageInputs {
+            device: &self.device,
+            target,
+            depth_stats,
+            output_plan,
+            sample_count,
+            output_bind_group_layout: &output_bind_group_layout,
+            draw_bind_group_layout: &draw_bind_group_layout,
+            alpha_mask,
         });
-        let depth_compare = depth_prepass
-            .as_ref()
-            .map(|depth_prepass| depth_prepass.color_compare);
+        let depth_compare = depth::color_compare(depth_prepass.as_ref());
         let material_features = MaterialShaderFeatures::from_material_slots(material_slots);
         let transmission = transmission::create_transmission_resources(
             &self.device,
@@ -219,6 +226,7 @@ impl GpuDeviceState {
             &light_assignment,
             true,
             lighting_stats.directional_shadow_map_resolution,
+            environment::ShadowOcclusionInputs::native(alpha_mask, ambient_occlusion.output()),
             environment_lighting,
             reflection_probes,
         );
@@ -244,6 +252,7 @@ impl GpuDeviceState {
             &ltc_tables,
             &brdf_table,
             &light_assignment,
+            ambient_occlusion.output(),
             material_features,
         );
         let surface_output_uniform = pipeline_resources.surface_output_uniform;
@@ -371,19 +380,6 @@ impl GpuDeviceState {
         } else {
             None
         };
-        let overlay_depth_prepass = depth_prepass.as_ref().and_then(|depth_prepass| {
-            (sample_count > 1).then(|| {
-                depth::create_depth_prepass_resources(
-                    &self.device,
-                    target,
-                    depth_prepass.reversed_z(),
-                    &output_bind_group_layout,
-                    &draw_bind_group_layout,
-                    false,
-                    1,
-                )
-            })
-        });
         let mut stats = base_resource_stats(
             target,
             vertex_buffer_size,
@@ -409,6 +405,7 @@ impl GpuDeviceState {
         if let Some(resources) = &overlay_depth_prepass {
             stats.add_assign(depth::resource_stats(resources, target));
         }
+        stats.add_assign(ambient_occlusion.resource_stats(target));
         if let Some(resources) = &strokes {
             stats.add_assign(super::strokes::resource_stats(resources));
         }
@@ -469,6 +466,7 @@ impl GpuDeviceState {
             transmission,
             depth_prepass,
             overlay_depth_prepass,
+            ambient_occlusion,
             strokes,
             labels,
             semantic_aov,

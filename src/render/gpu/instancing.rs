@@ -70,6 +70,8 @@ pub(super) struct InstanceDrawBatch {
     pub(super) material_slot: u32,
     pub(super) draw_uniform_index: u32,
     pub(super) depth_prepass_eligible: bool,
+    /// The material is glTF MASK: depth and shadow passes must alpha-test it.
+    pub(super) alpha_masked: bool,
     pub(super) double_sided: bool,
     pub(super) semantic_eligible: bool,
 }
@@ -137,12 +139,14 @@ pub(super) fn encode_instance_draw_state_with_semantics(
             let start_vertex = primitive.original_vertex_offset();
             let material_slot = primitive.render_material_slot();
             let depth_prepass_eligible = primitive.depth_prepass_eligible();
+            let alpha_masked = primitive.semantic_alpha_cutoff().is_some();
             let double_sided = primitive.double_sided();
             let semantic_eligible = primitive.semantic_opaque();
             if let Some(last) = batches.last_mut()
                 && last.material_slot == material_slot
                 && last.draw_uniform_index == draw_uniform_index
                 && last.depth_prepass_eligible == depth_prepass_eligible
+                && last.alpha_masked == alpha_masked
                 && last.double_sided == double_sided
                 && last.semantic_eligible == semantic_eligible
                 && last.start_instance == start_instance
@@ -160,6 +164,7 @@ pub(super) fn encode_instance_draw_state_with_semantics(
                 material_slot,
                 draw_uniform_index,
                 depth_prepass_eligible,
+                alpha_masked,
                 double_sided,
                 semantic_eligible,
             });

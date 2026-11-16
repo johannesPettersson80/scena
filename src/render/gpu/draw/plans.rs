@@ -7,6 +7,7 @@ use super::super::draw_common::{
     camera_position_uniform, identity_matrix, target_color_management_uniform,
 };
 use super::super::output::OutputUniformUpload;
+use super::super::shadow_cascades::ShadowCascadeUniform;
 use super::super::{
     GpuDeviceState, GpuPostPassCounts, GpuPreparedResources, GpuRenderResult, post, readback,
     surface_frame,
@@ -175,6 +176,7 @@ pub(super) fn native_output_uniform_upload(
     lighting: PreparedGpuLightUniform,
     clipping_planes: [[f32; 4]; super::super::output::MAX_OUTPUT_CLIPPING_PLANES],
     clipping_control: [f32; 4],
+    shadow_cascades: ShadowCascadeUniform,
 ) -> OutputUniformUpload {
     OutputUniformUpload {
         exposure_ev,
@@ -196,6 +198,7 @@ pub(super) fn native_output_uniform_upload(
         lighting,
         clipping_planes,
         clipping_control,
+        shadow_cascades,
     }
 }
 

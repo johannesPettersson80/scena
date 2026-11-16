@@ -14,6 +14,7 @@ pub(in crate::render) struct GpuOutputPlan {
     post_enabled: bool,
     depth_color_enabled: bool,
     reflections_enabled: bool,
+    ambient_occlusion_enabled: bool,
     scene_linear_capture: bool,
 }
 
@@ -38,8 +39,14 @@ impl GpuOutputPlan {
                 || scene_linear_capture,
             depth_color_enabled: ambient_occlusion || depth_of_field,
             reflections_enabled: reflections,
+            ambient_occlusion_enabled: ambient_occlusion,
             scene_linear_capture,
         }
+    }
+
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(in crate::render::gpu) const fn ambient_occlusion_enabled(self) -> bool {
+        self.ambient_occlusion_enabled
     }
 
     pub(in crate::render::gpu) const fn sample_count(self) -> u32 {
@@ -81,6 +88,11 @@ pub(in crate::render) struct GpuPostSettings {
     pub(super) depth_of_field: Option<DepthOfFieldPostConfig>,
     pub(super) automatic_exposure: bool,
     pub(super) scene_linear_capture: bool,
+    /// Target pixels per output pixel; screen-space radii scale with it.
+    pub(super) resolution_scale: u32,
+    /// True when ambient occlusion was already applied inside the colour
+    /// pass, so the post chain must not darken the frame a second time.
+    pub(super) ambient_occlusion_in_color_pass: bool,
 }
 
 impl GpuPostSettings {
@@ -101,7 +113,36 @@ impl GpuPostSettings {
             depth_of_field,
             automatic_exposure,
             scene_linear_capture,
+            resolution_scale: 1,
+            ambient_occlusion_in_color_pass: false,
         }
+    }
+
+    /// Records the supersampling factor of the frame being rendered.
+    pub(in crate::render) const fn with_resolution_scale(mut self, scale: u32) -> Self {
+        self.resolution_scale = if scale == 0 { 1 } else { scale };
+        self
+    }
+
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(in crate::render::gpu) const fn with_ambient_occlusion_in_color_pass(
+        mut self,
+        applied: bool,
+    ) -> Self {
+        self.ambient_occlusion_in_color_pass = applied;
+        self
+    }
+
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(in crate::render::gpu) const fn ambient_occlusion(
+        self,
+    ) -> Option<ScreenSpaceAmbientOcclusionConfig> {
+        self.ambient_occlusion
+    }
+
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(in crate::render::gpu) const fn resolution_scale(self) -> u32 {
+        self.resolution_scale
     }
 
     pub(in crate::render::gpu) const fn enabled(self) -> bool {
@@ -151,6 +192,8 @@ impl GpuPostSettings {
             depth_of_field: self.depth_of_field,
             automatic_exposure: self.automatic_exposure,
             scene_linear_capture: self.scene_linear_capture,
+            resolution_scale: self.resolution_scale,
+            ambient_occlusion_in_color_pass: self.ambient_occlusion_in_color_pass,
         }
     }
 
@@ -164,6 +207,8 @@ impl GpuPostSettings {
             depth_of_field: self.depth_of_field,
             automatic_exposure: self.automatic_exposure,
             scene_linear_capture: self.scene_linear_capture,
+            resolution_scale: self.resolution_scale,
+            ambient_occlusion_in_color_pass: self.ambient_occlusion_in_color_pass,
         }
     }
 }

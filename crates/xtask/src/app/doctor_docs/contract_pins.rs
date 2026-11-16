@@ -142,7 +142,7 @@ fn rust_code_before_comment<'a>(line: &'a str, in_block_comment: &mut bool) -> &
     }
 }
 
-/// Some shader contracts are deliberately owned by the WGSL file included by
+/// Some shader contracts are deliberately owned by the WGSL files included by
 /// `src/render/gpu/output.rs`. Only these exact shader markers may be resolved
 /// through that companion. Rust test names, item names, attributes, and any
 /// newly added text must remain present in the Rust owner itself.
@@ -178,11 +178,19 @@ fn explicit_shader_companion_contains(root: &Path, rel: &str, needle: &str) -> b
     let Ok(owner) = fs::read_to_string(root.join(rel)) else {
         return false;
     };
-    if !owner.contains("include_str!(\"output_shader.wgsl\")") {
-        return false;
-    }
-    fs::read_to_string(root.join("src/render/gpu/output_shader.wgsl"))
-        .is_ok_and(|shader| shader.contains(needle))
+    // The native triangle shader is assembled from these sources; a marker
+    // counts only when the owner really includes the file that holds it.
+    const OUTPUT_SHADER_SOURCES: &[&str] = &[
+        "output_shader.wgsl",
+        "surface_lighting.wgsl",
+        "surface_effects.wgsl",
+        "shadow_filter_cascaded.wgsl",
+    ];
+    OUTPUT_SHADER_SOURCES.iter().any(|source| {
+        owner.contains(&format!("include_str!(\"{source}\")"))
+            && fs::read_to_string(root.join("src/render/gpu").join(source))
+                .is_ok_and(|shader| shader.contains(needle))
+    })
 }
 
 pub(crate) fn is_retired_internal_doc(rel: &str) -> bool {

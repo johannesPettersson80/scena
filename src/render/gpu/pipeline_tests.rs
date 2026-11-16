@@ -7,6 +7,7 @@ fn draw_batch(double_sided: bool) -> PrimitiveDrawBatch {
         material_slot: 0,
         draw_uniform_index: 0,
         depth_prepass_eligible: true,
+        alpha_masked: false,
         double_sided,
         semantic_eligible: false,
         reflection_probe_slot: None,

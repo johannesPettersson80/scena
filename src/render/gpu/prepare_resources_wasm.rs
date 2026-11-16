@@ -7,6 +7,7 @@ use crate::render::prepare::{
     PreparedReflectionProbe, PreparedStrokeSegment,
 };
 
+use super::alpha_mask::{self, AlphaMaskShader};
 use super::browser_readback::readback_format_for_surface;
 #[cfg(any(feature = "browser-probe", feature = "scene-host"))]
 use super::browser_readback::{
@@ -198,10 +199,8 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             &draw_uniform_buffer,
         );
-        let rasterized_triangle_instances = browser_rasterized_triangle_instances(
-            &encoded_draw_resources.draw_batches,
-            &encoded_draw_resources.instance_batches,
-        );
+        let rasterized_triangle_instances =
+            browser_rasterized_triangle_instances(&encoded_draw_resources);
         let has_depth_tested_overlays =
             !encoded_draw_resources.stroke_batches.is_empty() || !draw_labels.quads().is_empty();
         let depth_prepass_required = browser_depth_prepass_required(
@@ -210,6 +209,9 @@ impl GpuDeviceState {
             rasterized_triangle_instances,
             has_depth_tested_overlays,
         );
+        let mask_shader =
+            AlphaMaskShader::for_frame(&self.device, texture_binding_mode, &encoded_draw_resources);
+        let alpha_mask = alpha_mask::pipeline_inputs(&mask_shader, &material_bind_group_layout);
         let depth_prepass = depth_prepass_required.then(|| {
             depth::create_depth_prepass_resources(
                 &self.device,
@@ -219,6 +221,7 @@ impl GpuDeviceState {
                 &draw_bind_group_layout,
                 output_plan.depth_color_enabled(),
                 1,
+                alpha_mask,
             )
         });
         trace(
@@ -231,9 +234,7 @@ impl GpuDeviceState {
                 "has_depth_tested_overlays": has_depth_tested_overlays,
             }),
         );
-        let depth_compare = depth_prepass
-            .as_ref()
-            .map(|depth_prepass| depth_prepass.color_compare);
+        let depth_compare = depth::color_compare(depth_prepass.as_ref());
         let material_features =
             super::material_uniform::MaterialShaderFeatures::from_material_slots(material_slots);
         let transmission = transmission::create_transmission_resources(
@@ -279,6 +280,7 @@ impl GpuDeviceState {
             &light_assignment,
             include_tiled_light_storage,
             lighting_stats.directional_shadow_map_resolution,
+            environment::ShadowOcclusionInputs::browser(alpha_mask),
             environment_lighting,
             reflection_probes,
         );

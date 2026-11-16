@@ -169,7 +169,10 @@ pub(super) fn encode_chain(
         counts.screen_space_reflections = 1;
     }
 
-    if let Some(config) = settings.ambient_occlusion {
+    if settings.ambient_occlusion.is_some() && settings.ambient_occlusion_in_color_pass {
+        // Occlusion already attenuated environment light in the colour pass.
+        counts.ambient_occlusion = 1;
+    } else if let Some(config) = settings.ambient_occlusion {
         let Some(depth_prepass) = depth_prepass else {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: resources.target.backend,

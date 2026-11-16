@@ -33,30 +33,13 @@ pub(super) fn render_browser_probe(
     encode_shadow_caster_pass(
         &mut encoder,
         &resources.shadow_caster,
-        shadow::ShadowCasterPassInputs {
-            vertex_buffer: &resources.vertex_buffer,
-            instance_buffer: &resources.instance_buffer,
-            draw_bind_group: &resources.draw_bind_group,
-            draw_batches: &resources.draw_batches,
-            instance_batches: &resources.instance_batches,
-            identity_instance: resources.identity_instance,
-            draw_submissions: &mut draw_submissions,
-        },
+        shadow::ShadowCasterPassInputs::for_resources(resources, &mut draw_submissions),
     );
     if let Some(depth_prepass) = &resources.depth_prepass {
         depth::encode_depth_prepass(
             &mut encoder,
             depth_prepass,
-            depth::DepthPrepassInputs {
-                vertex_buffer: &resources.vertex_buffer,
-                instance_buffer: &resources.instance_buffer,
-                camera_bind_group: &resources.output_bind_group,
-                draw_bind_group: &resources.draw_bind_group,
-                draw_batches: &resources.draw_batches,
-                instance_batches: &resources.instance_batches,
-                identity_instance: resources.identity_instance,
-                draw_submissions: &mut draw_submissions,
-            },
+            depth::DepthPrepassInputs::for_resources(resources, &mut draw_submissions),
         );
     }
     let post_counts = if post_settings.enabled() {

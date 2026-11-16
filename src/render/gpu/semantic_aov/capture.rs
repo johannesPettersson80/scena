@@ -158,6 +158,9 @@ pub(super) fn write_camera_uniform(
             lighting: resources.light_uniform,
             clipping_planes,
             clipping_control,
+            shadow_cascades: crate::render::gpu::shadow_cascades::ShadowCascadeUniform::single(
+                resources.light_from_world,
+            ),
         }),
     );
 }

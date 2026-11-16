@@ -153,7 +153,7 @@ pub(super) fn check_sheen_material_contracts(root: &Path, findings: &mut Vec<Fin
             "var sheen_roughness_texture: texture_2d_array<f32>",
             "material.sheen_factors.rgb * sheen_color_sample.rgb",
             "material.sheen_factors.a * sheen_roughness_sample.a",
-            "sheen_light_contribution",
+            "surface.sheen_color = clamp(sheen_color, vec3<f32>(0.0), vec3<f32>(1.0));",
         ],
     );
     require_contains(
@@ -166,7 +166,19 @@ pub(super) fn check_sheen_material_contracts(root: &Path, findings: &mut Vec<Fin
             "var sheen_color_texture: texture_2d<f32>",
             "var sheen_roughness_texture: texture_2d<f32>",
             "material.sheen_factors.rgb * sheen_color_sample.rgb",
-            "sheen_light_contribution",
+            "surface.sheen_color = clamp(sheen_color, vec3<f32>(0.0), vec3<f32>(1.0));",
+        ],
+    );
+    // The lobe itself lives in the surface model shared by both variants.
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/surface_lighting.wgsl",
+        &[
+            "fn distribution_charlie(",
+            "layer = layer * s.sheen_scaling +",
+            "fn sheen_environment_brdf(",
         ],
     );
     require_contains(

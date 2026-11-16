@@ -77,7 +77,7 @@ pub(super) fn check_dispersion_material_contracts(root: &Path, findings: &mut Ve
         &[
             "dispersion_factors: vec4<f32>",
             "dispersion_factor = max(material.dispersion_factors.x, 0.0);",
-            "dispersion_light_contribution",
+            "surface.dispersion_f0 = dispersion_f0_from_ior(dispersion_ior, dispersion_factor);",
             "dispersion_f0_from_ior",
         ],
     );
@@ -89,8 +89,19 @@ pub(super) fn check_dispersion_material_contracts(root: &Path, findings: &mut Ve
         &[
             "dispersion_factors: vec4<f32>",
             "dispersion_factor = max(material.dispersion_factors.x, 0.0);",
-            "dispersion_light_contribution",
+            "surface.dispersion_f0 = dispersion_f0_from_ior(dispersion_ior, dispersion_factor);",
             "dispersion_f0_from_ior",
+        ],
+    );
+    // The lobe itself lives in the surface model shared by both variants.
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/surface_lighting.wgsl",
+        &[
+            "fn dispersion_f0_from_ior(",
+            "layer += fresnel_schlick(v_dot_h, s.dispersion_f0) *",
         ],
     );
     require_contains(

@@ -3,7 +3,7 @@ use super::{
     MAX_GPU_AREA_LIGHTS, MAX_GPU_LIGHTS_PER_TYPE, PreparedLights, directional_illuminance_lux,
     punctual_intensity_candela,
 };
-use crate::render::prepare::PreparedEnvironmentLighting;
+use crate::render::prepare::{IRRADIANCE_SH_COEFFICIENT_COUNT, PreparedEnvironmentLighting};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::render) struct PreparedGpuLightUniform {
@@ -25,6 +25,10 @@ pub(in crate::render) struct PreparedGpuLightUniform {
     pub(in crate::render) environment_diffuse_intensity: [f32; 4],
     pub(in crate::render) environment_specular_intensity: [f32; 4],
     pub(in crate::render) environment_transform: [f32; 4],
+    /// Order-2 spherical-harmonics irradiance. Encoded after the clipping
+    /// block rather than inside `LightingUniform`, so shaders that declare
+    /// only the camera prefix keep their layout.
+    pub(in crate::render) environment_sh: [[f32; 4]; IRRADIANCE_SH_COEFFICIENT_COUNT],
 }
 
 impl Default for PreparedGpuLightUniform {
@@ -47,6 +51,7 @@ impl Default for PreparedGpuLightUniform {
             environment_diffuse_intensity: [0.0, 0.0, 0.0, 0.0],
             environment_specular_intensity: [0.0, 0.0, 0.0, 0.0],
             environment_transform: [1.0, 0.0, 0.0, 0.0],
+            environment_sh: [[0.0; 4]; IRRADIANCE_SH_COEFFICIENT_COUNT],
         }
     }
 }
@@ -155,6 +160,7 @@ impl PreparedLights {
             uniform.environment_diffuse_intensity = environment.gpu_diffuse_intensity();
             uniform.environment_specular_intensity = environment.gpu_specular_intensity();
             uniform.environment_transform = environment.gpu_environment_transform();
+            uniform.environment_sh = environment.gpu_irradiance_sh();
         }
         uniform
     }

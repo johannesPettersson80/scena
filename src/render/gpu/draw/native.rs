@@ -81,6 +81,11 @@ impl GpuDeviceState {
         }
         let (clipping_planes, clipping_control) =
             encode_clipping_uniform(clipping_planes, section_box);
+        let shadow_cascades = resources.shadow_caster.update_cascades(
+            &self.queue,
+            camera_projection,
+            resources.light_from_world,
+        );
         let encode_uniform = |color_management| {
             encode_output_uniform(native_output_uniform_upload(
                 target,
@@ -92,6 +97,7 @@ impl GpuDeviceState {
                 resources.light_uniform,
                 clipping_planes,
                 clipping_control,
+                shadow_cascades,
             ))
         };
         self.queue.write_buffer(
@@ -157,30 +163,13 @@ impl GpuDeviceState {
         encode_shadow_caster_pass(
             &mut encoder,
             &resources.shadow_caster,
-            shadow::ShadowCasterPassInputs {
-                vertex_buffer: &resources.vertex_buffer,
-                instance_buffer: &resources.instance_buffer,
-                draw_bind_group: &resources.draw_bind_group,
-                draw_batches: &resources.draw_batches,
-                instance_batches: &resources.instance_batches,
-                identity_instance: resources.identity_instance,
-                draw_submissions: &mut draw_submissions,
-            },
+            shadow::ShadowCasterPassInputs::for_resources(resources, &mut draw_submissions),
         );
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,
                 depth_prepass,
-                depth::DepthPrepassInputs {
-                    vertex_buffer: &resources.vertex_buffer,
-                    instance_buffer: &resources.instance_buffer,
-                    camera_bind_group: &resources.output_bind_group,
-                    draw_bind_group: &resources.draw_bind_group,
-                    draw_batches: &resources.draw_batches,
-                    instance_batches: &resources.instance_batches,
-                    identity_instance: resources.identity_instance,
-                    draw_submissions: &mut draw_submissions,
-                },
+                depth::DepthPrepassInputs::for_resources(resources, &mut draw_submissions),
             );
         }
         if sample_count > 1 {
@@ -193,19 +182,18 @@ impl GpuDeviceState {
                 depth::encode_depth_prepass(
                     &mut encoder,
                     overlay_depth_prepass,
-                    depth::DepthPrepassInputs {
-                        vertex_buffer: &resources.vertex_buffer,
-                        instance_buffer: &resources.instance_buffer,
-                        camera_bind_group: &resources.output_bind_group,
-                        draw_bind_group: &resources.draw_bind_group,
-                        draw_batches: &resources.draw_batches,
-                        instance_batches: &resources.instance_batches,
-                        identity_instance: resources.identity_instance,
-                        draw_submissions: &mut draw_submissions,
-                    },
+                    depth::DepthPrepassInputs::for_resources(resources, &mut draw_submissions),
                 );
             }
         }
+        // Occlusion must be computed before the colour pass reads it.
+        let post_settings = resources.ambient_occlusion.encode_for_frame(
+            &mut encoder,
+            &self.queue,
+            post_settings,
+            camera_projection,
+            resources.depth_prepass.as_ref(),
+        );
         if sample_count > 1 {
             let offscreen_msaa_matches = resources.msaa_color.as_ref().is_some_and(|msaa| {
                 msaa.target == target

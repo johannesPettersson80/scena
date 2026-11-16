@@ -101,17 +101,10 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "spot_light_direction_cones",
             "environment_diffuse_intensity",
             "environment_specular_intensity",
-            "pbr_light_contribution",
-            "pbr_environment_lighting",
-            "environment_prefilter_mip",
+            "surface_punctual_lighting(",
+            "surface_environment_light(surface, in.world_position)",
             "ENVIRONMENT_PREFILTER_MAX_MIP",
             "fresnel_schlick",
-            "distribution_ggx",
-            "brdf_specular_ggx",
-            // The shader reads the baked split-sum table now, not the analytic
-            // fit it used to call. The binding itself is pinned against
-            // pbr_brdf.wgsl, which declares it.
-            "split_sum_brdf_table",
             "base_color_uv_offset_scale",
             "base_color_uv_rotation",
             "var base_color_texture: texture_2d_array<f32>",
@@ -129,6 +122,25 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "let normal_from_model = draw.normal_from_model * instance_normal_from_model",
         ],
     );
+    // The layered surface model is shared by both triangle shader variants.
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/surface_lighting.wgsl",
+        &[
+            "fn surface_direct_light(",
+            "fn surface_environment_light(",
+            "fn environment_irradiance(",
+            "fn environment_prefilter_mip",
+            "distribution_ggx",
+            "brdf_specular_ggx",
+            // The shader reads the baked split-sum table, not the analytic
+            // fit it used to call. The binding itself is pinned against
+            // pbr_brdf.wgsl, which declares it.
+            "split_sum_brdf_table",
+        ],
+    );
     require_contains(
         root,
         findings,
@@ -140,7 +152,6 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "var metallic_roughness_texture: texture_2d<f32>",
             "var occlusion_texture: texture_2d<f32>",
             "var emissive_texture: texture_2d<f32>",
-            "environment_prefilter_mip",
             "ENVIRONMENT_PREFILTER_MAX_MIP",
             "textureSample(base_color_texture, base_color_sampler, transformed_uv)",
             "instance_normal_0",
@@ -177,9 +188,9 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/output_shader_texture_2d.wgsl",
         &[
-            "fn ltc_accumulate_area_light(",
-            "ltc_accumulate_area_light(0u,",
-            "ltc_accumulate_area_light(1u,",
+            "fn surface_area_light(",
+            "shaded += surface_area_light(0u, s, world_position, area_shadow_visibility);",
+            "shaded += surface_area_light(1u, s, world_position, area_shadow_visibility);",
         ],
     );
     require_contains(

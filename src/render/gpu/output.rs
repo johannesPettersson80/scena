@@ -1,5 +1,6 @@
-use super::super::prepare::PreparedGpuLightUniform;
+use super::super::prepare::{IRRADIANCE_SH_COEFFICIENT_COUNT, PreparedGpuLightUniform};
 use super::light_assignment::LightAssignmentResources;
+use super::shadow_cascades::{MAX_SHADOW_CASCADES, ShadowCascadeUniform};
 use crate::scene::{ClippingPlane, SectionBox};
 
 /// Phase 5.4 follow-up: the WGSL fragment shader source moved into
@@ -13,6 +14,12 @@ pub(super) const GPU_COLOR_CONTRACT_WGSL: &str = include_str!("../color_contract
 pub(super) const GPU_TRIANGLE_SHADER: &str = concat!(
     include_str!("output_shader.wgsl"),
     "\n",
+    include_str!("surface_lighting.wgsl"),
+    "\n",
+    include_str!("surface_effects.wgsl"),
+    "\n",
+    include_str!("shadow_filter_cascaded.wgsl"),
+    "\n",
     include_str!("../area_ltc_tables.wgsl"),
     "\n",
     include_str!("../area_ltc.wgsl"),
@@ -24,6 +31,12 @@ pub(super) const GPU_TRIANGLE_SHADER: &str = concat!(
 pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str = concat!(
     include_str!("output_shader_texture_2d.wgsl"),
     "\n",
+    include_str!("surface_lighting.wgsl"),
+    "\n",
+    include_str!("surface_effects.wgsl"),
+    "\n",
+    include_str!("shadow_filter_single.wgsl"),
+    "\n",
     include_str!("../area_ltc_tables.wgsl"),
     "\n",
     include_str!("../area_ltc.wgsl"),
@@ -34,9 +47,17 @@ pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str = concat!(
 );
 pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 16;
 const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 736;
-const OUTPUT_UNIFORM_FLOAT_COUNT: usize =
-    OUTPUT_UNIFORM_BASE_FLOAT_COUNT + MAX_OUTPUT_CLIPPING_PLANES * 4 + 4;
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 3216;
+/// Irradiance coefficients, cascade matrices, cascade splits and shadow
+/// parameters appended after the clipping block. Shaders that only need the
+/// camera and clipping prefix (depth, shadow caster, overlays) keep declaring
+/// the shorter struct.
+const OUTPUT_UNIFORM_TAIL_FLOAT_COUNT: usize =
+    IRRADIANCE_SH_COEFFICIENT_COUNT * 4 + MAX_SHADOW_CASCADES * 16 + 4 + 4;
+const OUTPUT_UNIFORM_FLOAT_COUNT: usize = OUTPUT_UNIFORM_BASE_FLOAT_COUNT
+    + MAX_OUTPUT_CLIPPING_PLANES * 4
+    + 4
+    + OUTPUT_UNIFORM_TAIL_FLOAT_COUNT;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 3648;
 
 pub(super) use super::draw_uniform::{
     DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
@@ -148,6 +169,19 @@ pub(super) fn create_output_bind_group_layout(
             },
             count: None,
         });
+        // Screen-space ambient visibility, one f32 per target pixel. A
+        // storage buffer rather than a texture: the shader already uses every
+        // sampled-texture slot WebGPU guarantees per stage.
+        entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 12,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
     }
     entries.push(wgpu::BindGroupLayoutEntry {
         binding: 10,
@@ -198,6 +232,7 @@ pub(super) fn create_output_bind_group(
     ltc_tables: &wgpu::Buffer,
     brdf_table: &wgpu::Buffer,
     light_assignment: Option<&LightAssignmentResources>,
+    ambient_visibility: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     let mut entries = vec![
         wgpu::BindGroupEntry {
@@ -250,6 +285,10 @@ pub(super) fn create_output_bind_group(
             binding: 9,
             resource: light_assignment.tiles.as_entire_binding(),
         });
+        entries.push(wgpu::BindGroupEntry {
+            binding: 12,
+            resource: ambient_visibility.as_entire_binding(),
+        });
     }
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scena.output.bind_group"),
@@ -272,6 +311,7 @@ pub(super) struct OutputUniformUpload {
     pub(super) lighting: PreparedGpuLightUniform,
     pub(super) clipping_planes: [[f32; 4]; MAX_OUTPUT_CLIPPING_PLANES],
     pub(super) clipping_control: [f32; 4],
+    pub(super) shadow_cascades: ShadowCascadeUniform,
 }
 
 pub(super) fn encode_clipping_uniform(
@@ -406,6 +446,14 @@ pub(super) fn encode_output_uniform(
     let clipping_control_offset = offset + MAX_OUTPUT_CLIPPING_PLANES * 4;
     values[clipping_control_offset..clipping_control_offset + 4]
         .copy_from_slice(&upload.clipping_control);
+    let mut tail = clipping_control_offset + 4;
+    tail = encode_vec4_array(&mut values, tail, &upload.lighting.environment_sh);
+    for matrix in &upload.shadow_cascades.light_from_world {
+        values[tail..tail + 16].copy_from_slice(matrix);
+        tail += 16;
+    }
+    values[tail..tail + 4].copy_from_slice(&upload.shadow_cascades.splits);
+    values[tail + 4..tail + 8].copy_from_slice(&upload.shadow_cascades.params);
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -442,12 +490,18 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 3216,
+            OUTPUT_UNIFORM_BYTE_LEN as usize,
+            OUTPUT_UNIFORM_FLOAT_COUNT * 4,
+            "the uniform buffer holds exactly the encoded floats"
+        );
+        assert_eq!(
+            OUTPUT_UNIFORM_BYTE_LEN, 3648,
             "CameraUniform stores view, projection, and view-projection matrices plus \
              camera/exposure, viewport/depth, color-management, widened punctual-light arrays, \
              area-light arrays, \
-             directional-shadow-control, environment, and sixteen clipping-plane uniforms — per-draw model + normal matrices live on the new \
-             DrawUniform bind group at @group(2)"
+             directional-shadow-control, environment, sixteen clipping-plane uniforms, nine \
+             irradiance coefficients and four shadow cascades — per-draw model + normal matrices \
+             live on the DrawUniform bind group at @group(2)"
         );
         let (clipping_planes, clipping_control) = encode_clipping_uniform(&[], None);
         assert_eq!(
@@ -465,6 +519,7 @@ mod tests {
                 lighting: PreparedGpuLightUniform::default(),
                 clipping_planes,
                 clipping_control,
+                shadow_cascades: ShadowCascadeUniform::single(identity_clip_from_world()),
             })
             .len(),
             OUTPUT_UNIFORM_BYTE_LEN as usize
@@ -704,12 +759,14 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("clearcoat_light_contribution")
+                shader.contains("surface.clearcoat = clearcoat_factor;")
                     && shader.contains("if scena_material_clearcoat {")
                     && shader.contains("clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);")
                     && shader.contains("let clearcoat_roughness = clamp(material.clearcoat_factors.y * clearcoat_roughness_sample.g, 0.04, 1.0);")
                     && shader.contains("let clearcoat_normal_scale = material.clearcoat_factors.z;")
-                    && shader.contains("shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);"),
+                    && shader.contains("lit += coat_fresnel * coat_brdf * radiance * (coat_n_dot_l * s.clearcoat);")
+                    // The coat's Fresnel reflection is energy the layers below never receive.
+                    && shader.contains("lit = layer * radiance * (n_dot_l * s.clearcoat_attenuation);"),
                 "{name} shader must apply KHR_materials_clearcoat factors plus clearcoat, roughness, and normal texture channels instead of silently dropping them"
             );
         }
@@ -722,11 +779,12 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("sheen_light_contribution")
+                shader.contains("fn distribution_charlie(")
                     && shader.contains("if scena_material_sheen {")
                     && shader.contains("sheen_color = material.sheen_factors.rgb * sheen_color_sample.rgb;")
                     && shader.contains("let sheen_roughness = clamp(material.sheen_factors.a * sheen_roughness_sample.a, 0.04, 1.0);")
-                    && shader.contains("shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);"),
+                    && shader.contains("layer = layer * s.sheen_scaling +")
+                    && shader.contains("s.sheen_color * distribution_charlie(sheen_alpha, n_dot_h) *"),
                 "{name} shader must apply KHR_materials_sheen color and roughness texture channels instead of silently dropping them"
             );
         }
@@ -739,8 +797,9 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("sheen_environment_lighting")
-                    && shader.contains("environment += sheen_environment_lighting(normal, view, sheen_color, sheen_roughness);"),
+                shader.contains("fn sheen_environment_brdf(")
+                    && shader.contains("lit = lit * s.sheen_scaling +")
+                    && shader.contains("s.sheen_color * irradiance * sheen_environment_brdf(s.n_dot_v, s.sheen_roughness);"),
                 "{name} shader must apply KHR_materials_sheen under environment lighting; \
                  direct-light-only sheen cannot prove satin/fabric material presets"
             );
@@ -812,14 +871,16 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("anisotropy_light_contribution")
+                shader.contains("fn surface_anisotropic_specular(")
                     && shader.contains("let anisotropy_direction = anisotropy_sample.rg * 2.0 - vec2<f32>(1.0, 1.0);")
                     && shader.contains("if scena_material_anisotropy {")
                     && shader.contains("anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);")
                     && shader.contains("material.anisotropy_factors.y")
                     && shader.contains("world_tangent")
                     && shader.contains("tangent_handedness")
-                    && shader.contains("shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);"),
+                    && shader.contains("surface.anisotropy_t = surface_anisotropy_tangent(")
+                    // Anisotropy reshapes the base lobe; it is not a second lobe added on top.
+                    && shader.contains("specular_brdf = surface_anisotropic_specular(s, incoming, half_vector, n_dot_l, n_dot_h);"),
                 "{name} shader must apply KHR_materials_anisotropy direction, strength, and rotation instead of silently dropping them"
             );
         }
@@ -832,12 +893,14 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("iridescence_light_contribution")
+                shader.contains("fn iridescence_fresnel(")
                     && shader.contains("if scena_material_iridescence {")
                     && shader.contains("iridescence_factor = clamp(material.iridescence_factors.x * iridescence_sample.r, 0.0, 1.0);")
                     && shader.contains("let iridescence_thickness = mix(material.iridescence_factors.z, material.iridescence_factors.w, clamp(iridescence_thickness_sample.g, 0.0, 1.0));")
                     && shader.contains("material.iridescence_factors.y")
-                    && shader.contains("shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);"),
+                    && shader.contains("surface.iridescence_fresnel = iridescence_fresnel(")
+                    // Thin-film interference replaces the base Fresnel term.
+                    && shader.contains("return mix(schlick, s.iridescence_fresnel, s.iridescence);"),
                 "{name} shader must apply KHR_materials_iridescence factor, IOR, and thickness texture channels instead of silently dropping them"
             );
         }
@@ -850,12 +913,13 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("dispersion_light_contribution")
+                shader.contains("fn dispersion_f0_from_ior(")
                     && shader.contains("dispersion_factors: vec4<f32>")
                     && shader.contains("if scena_material_dispersion {")
                     && shader.contains("dispersion_factor = max(material.dispersion_factors.x, 0.0);")
                     && shader.contains("material.dispersion_factors.y")
-                    && shader.contains("shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);"),
+                    && shader.contains("surface.dispersion_f0 = dispersion_f0_from_ior(dispersion_ior, dispersion_factor);")
+                    && shader.contains("layer += fresnel_schlick(v_dot_h, s.dispersion_f0) *"),
                 "{name} shader must apply KHR_materials_dispersion factor and IOR spread instead of silently dropping them"
             );
         }
@@ -863,9 +927,19 @@ mod tests {
 
     #[test]
     fn triangle_shader_applies_occlusion_strength_to_lit_pbr_output() {
-        for (name, shader) in [
-            ("texture_2d_array", GPU_TRIANGLE_SHADER),
-            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        // The native variant folds screen-space visibility into the same
+        // indirect-only factor; WebGL2 has no such binding.
+        for (name, shader, composite) in [
+            (
+                "texture_2d_array",
+                GPU_TRIANGLE_SHADER,
+                "shaded_rgb = direct + environment * (indirect_occlusion * ambient_visibility);",
+            ),
+            (
+                "texture_2d",
+                GPU_TRIANGLE_SHADER_TEXTURE_2D,
+                "shaded_rgb = direct + environment * indirect_occlusion;",
+            ),
         ] {
             assert!(
                 shader.contains(
@@ -873,7 +947,7 @@ mod tests {
                 ) && shader.contains(
                     "let indirect_occlusion = occlusion_applied * clamp(in.baked_visibility.y, 0.0, 1.0);"
                 )
-                    && shader.contains("shaded_rgb = direct + environment * indirect_occlusion;")
+                    && shader.contains(composite)
                     && !shader
                         .contains("shaded_rgb = (direct + environment) * occlusion_applied;"),
                 "{name} shader must apply authored and baked occlusion to indirect environment \
@@ -921,7 +995,9 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("ltc_lookup_tables")
                 && GPU_TRIANGLE_SHADER.contains("var<uniform> ltc_tables: LtcTables")
                 && GPU_TRIANGLE_SHADER.contains("ltc_tables.table_1[")
-                && GPU_TRIANGLE_SHADER.contains("pbr_light_contribution")
+                && GPU_TRIANGLE_SHADER.contains("fn surface_direct_light(")
+                && GPU_TRIANGLE_SHADER
+                    .contains("shaded += surface_direct_light(s, incoming, radiance, 1.0);")
                 && GPU_TRIANGLE_SHADER.contains("fresnel_schlick")
                 && GPU_TRIANGLE_SHADER.contains("distribution_ggx")
                 && GPU_TRIANGLE_SHADER.contains("visibility_ggx_correlated")
@@ -963,18 +1039,21 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             let area_start = shader
-                .find("fn ltc_accumulate_area_light(")
-                .or_else(|| shader.find("let area_count ="))
+                .find("fn surface_area_light(")
                 .expect("area-light accumulation block");
             let area_tail = &shader[area_start..];
             let area_end = area_tail
                 .find("return shaded;")
-                .expect("end of direct-light accumulation block");
+                .expect("end of area-light accumulation block");
             let area_block = &area_tail[..area_end];
 
+            // A base specular weight of zero keeps the diffuse, sheen and coat
+            // terms of each point sample and drops only the base GGX lobe.
             assert!(
-                area_block.contains("pbr_area_light_diffuse_contribution(")
-                    && !area_block.contains("shaded += pbr_light_contribution("),
+                area_block.contains("var shaded = ltc_area_light_specular_contribution(")
+                    && area_block
+                        .contains("shaded += surface_direct_light(s, incoming, radiance, 0.0);")
+                    && !area_block.contains("surface_direct_light(s, incoming, radiance, 1.0)"),
                 "{name} area-light samples must add only diffuse energy after the continuous \
                  LTC emitter has supplied the base GGX specular lobe"
             );
@@ -1017,8 +1096,12 @@ mod tests {
                 .contains("for (var i = 0u; i < vertex_count; i = i + 1u)")
                 && !GPU_TRIANGLE_SHADER_TEXTURE_2D
                     .contains("for (var i = 0u; i < MAX_GPU_AREA_LIGHTS; i = i + 1u)")
-                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("ltc_accumulate_area_light(0u,")
-                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("ltc_accumulate_area_light(1u,"),
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
+                    "shaded += surface_area_light(0u, s, world_position, area_shadow_visibility);"
+                )
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
+                    "shaded += surface_area_light(1u, s, world_position, area_shadow_visibility);"
+                ),
             "WebGL2 LTC lighting must use constant-index expansion for the two loops that ANGLE's \
              D3D11 backend otherwise forces, and fails, to unroll (HLSL X3511)"
         );
@@ -1049,7 +1132,8 @@ mod tests {
             GPU_TRIANGLE_SHADER.contains("environment_diffuse_intensity")
                 && GPU_TRIANGLE_SHADER.contains("environment_specular_intensity")
                 && GPU_TRIANGLE_SHADER.contains("has_environment_light")
-                && GPU_TRIANGLE_SHADER.contains("pbr_environment_lighting")
+                && GPU_TRIANGLE_SHADER.contains("fn surface_environment_light(")
+                && GPU_TRIANGLE_SHADER.contains("split_sum_brdf_table(s.n_dot_v, s.roughness)")
                 && GPU_TRIANGLE_SHADER.contains("split_sum_brdf_approx"),
             "GPU PBR shader must consume prepared environment irradiance/specular uniforms \
              before backend IBL lighting can be claimed"
@@ -1063,12 +1147,13 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("fn clearcoat_environment_lighting(")
+                shader.contains("reflect(-s.view, s.clearcoat_normal),")
                     && shader.contains(
-                        "environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness, in.world_position);"
+                        "lit += coat_prefiltered * (0.04 * coat_lut.x + coat_lut.y) * (specular_intensity * s.clearcoat);"
                     )
-                    && shader
-                        .contains("shaded_rgb = direct + environment * indirect_occlusion;"),
+                    // The base layers are dimmed by what the coat reflects away.
+                    && shader.contains("lit *= s.clearcoat_attenuation;")
+                    && shader.contains("let environment = surface_environment_light(surface, in.world_position);"),
                 "{name} shader must add a separate clearcoat specular IBL lobe; \
                  direct-light clearcoat alone makes coated materials read like ordinary glossy plastic under HDR"
             );
@@ -1082,12 +1167,13 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains("fn anisotropy_environment_lighting(")
+                shader.contains("let groove_tangent = cross(s.anisotropy_b, s.view);")
                     && shader.contains(
-                        "environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction, in.world_position);"
+                        "reflection_normal = normalize(mix(groove_normal, s.normal, pow4(bend)));"
                     )
-                    && shader
-                        .contains("shaded_rgb = direct + environment * indirect_occlusion;"),
+                    && shader.contains(
+                        "environment_prefiltered(reflect(-s.view, reflection_normal), world_position, s.roughness)"
+                    ),
                 "{name} shader must route anisotropy into environment IBL; \
                  direct-light-only anisotropy leaves brushed metal with round HDR highlights"
             );
@@ -1101,11 +1187,15 @@ mod tests {
             ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
         ] {
             assert!(
-                shader.contains(
-                    "let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb"
-                ) && shader.contains(
-                    "diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w"
-                ) && !shader.contains(
+                // Diffuse IBL evaluates the prepared order-2 spherical harmonics
+                // of the environment, so it varies with the surface normal.
+                shader.contains("fn environment_irradiance(normal: vec3<f32>) -> vec3<f32>")
+                    && shader.contains("environment_sh: array<vec4<f32>, 9>")
+                    && shader.contains(
+                        "let irradiance = environment_irradiance(s.normal) * diffuse_intensity;"
+                    )
+                    && shader.contains("(multiple_scatter + diffuse_energy) * irradiance")
+                    && !shader.contains(
                     "textureSampleLevel(environment_cubemap, environment_sampler, normal, 0.0).rgb"
                 ),
                 "{name} shader must use prepared diffuse irradiance for diffuse IBL; \
@@ -1129,24 +1219,46 @@ mod tests {
              with shadow_sampler so opt-in shadowed directional lights project real depth"
         );
         assert!(
-            GPU_TRIANGLE_SHADER.contains("camera.light_from_world * vec4<f32>(world_position"),
-            "GPU shadow path must reproject world position through camera.light_from_world \
-             so the shadow lookup is in light-clip space, not world space"
+            GPU_TRIANGLE_SHADER.contains("let light_from_world = camera.shadow_cascades[cascade];")
+                && GPU_TRIANGLE_SHADER.contains(
+                    "let light_clip = light_from_world * vec4<f32>(offset_position, 1.0);"
+                )
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
+                    "let light_clip = camera.light_from_world * vec4<f32>(offset_position, 1.0);"
+                ),
+            "GPU shadow path must reproject the normal-offset world position through the \
+             light matrix so the shadow lookup is in light-clip space, not world space"
         );
+        const SHADOWED_RADIANCE: &str = "radiance *= directional_shadow_factor(world_position, \
+             geometric_normal, incoming, fragment_position.xy);";
         assert!(
-            GPU_TRIANGLE_SHADER.contains("* gpu_shadow"),
+            GPU_TRIANGLE_SHADER.contains(SHADOWED_RADIANCE)
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(SHADOWED_RADIANCE),
             "GPU PBR fragment must scale directional radiance by the GPU-sampled shadow factor \
              instead of multiplying by the (now retired) CPU shadow_visibility attribute"
         );
-        assert!(
-            GPU_TRIANGLE_SHADER.contains("directional_shadow_control[i].x > 0.5")
-                && GPU_TRIANGLE_SHADER.contains("let gpu_shadow = select(")
-                && GPU_TRIANGLE_SHADER.contains("directional_shadow_factor(world_position)")
-                && GPU_TRIANGLE_SHADER.contains("* gpu_shadow"),
-            "GPU PBR fragment must sample the directional shadow map only when a \
-             shadow-casting directional light was prepared; non-shadowed lights must not \
-             be multiplied by a placeholder shadow texture"
-        );
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            // Every shadow-factor call sits directly under a guard that
+            // identifies the one light owning the shadow map.
+            for (index, _) in shader.match_indices(SHADOWED_RADIANCE) {
+                let guard = shader[..index]
+                    .rfind("if ")
+                    .map(|start| &shader[start..index])
+                    .expect("shadow factor must be guarded");
+                assert!(
+                    guard.starts_with("if record.cone.z > 0.5 {")
+                        || guard.starts_with(
+                            "if camera.lighting.directional_shadow_control[i].x > 0.5 {"
+                        ),
+                    "{name} fragment must sample the directional shadow map only for the \
+                     shadow-casting directional light; non-shadowed lights must not be \
+                     multiplied by a placeholder shadow texture (found guard `{guard}`)"
+                );
+            }
+        }
     }
 
     fn has_directional_shadow_pcf3x3(shader: &str) -> bool {
@@ -1159,27 +1271,66 @@ mod tests {
             && shader.contains("shadow_visibility / 9.0")
     }
 
+    /// Native targets filter with percentage-closer soft shadows: a blocker
+    /// search sizes a rotated Poisson kernel that is never smaller than the
+    /// reported 3x3 grid.
+    fn has_directional_shadow_pcss(shader: &str) -> bool {
+        let filter_taps = shader
+            .split_once("const SHADOW_FILTER_TAPS: u32 = ")
+            .and_then(|(_, tail)| tail.split_once("u;"))
+            .and_then(|(count, _)| count.parse::<u32>().ok())
+            .unwrap_or(0);
+        filter_taps >= 9
+            && shader.contains("for (var i = 0u; i < SHADOW_FILTER_TAPS; i = i + 1u) {")
+            && shader.contains(
+                "visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, tap / atlas, compare_depth);",
+            )
+            && shader.contains("return visibility / f32(SHADOW_FILTER_TAPS);")
+            && shader.contains("let occluder = textureLoad(shadow_map, vec2<i32>(tap), 0);")
+            && shader.contains("camera.shadow_cascades[cascade]")
+    }
+
     #[test]
     fn triangle_shaders_use_nine_comparison_taps_for_reported_pcf3x3() {
-        for (name, shader) in [
-            ("texture_2d_array", GPU_TRIANGLE_SHADER),
-            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
-        ] {
-            assert!(
-                has_directional_shadow_pcf3x3(shader),
-                "{name} shader must execute the reported 3x3 grid of nine depth-comparison taps"
-            );
+        // The reported kernel is the floor every GPU backend meets. WebGL2
+        // runs exactly the nine-tap grid; native runs the wider PCSS kernel.
+        assert!(
+            has_directional_shadow_pcf3x3(GPU_TRIANGLE_SHADER_TEXTURE_2D),
+            "texture_2d shader must execute the reported 3x3 grid of nine depth-comparison taps"
+        );
+        let single_tap_mutation = GPU_TRIANGLE_SHADER_TEXTURE_2D.replacen(
+            "textureSampleCompareLevel(shadow_map, shadow_sampler",
+            "removedComparisonTap(",
+            8,
+        );
+        assert!(
+            !has_directional_shadow_pcf3x3(&single_tap_mutation),
+            "texture_2d oracle must reject regression to one comparison tap"
+        );
 
-            let single_tap_mutation = shader.replacen(
-                "textureSampleCompareLevel(shadow_map, shadow_sampler",
-                "removedComparisonTap(",
-                8,
-            );
-            assert!(
-                !has_directional_shadow_pcf3x3(&single_tap_mutation),
-                "{name} oracle must reject regression to one comparison tap"
-            );
-        }
+        assert!(
+            has_directional_shadow_pcss(GPU_TRIANGLE_SHADER),
+            "texture_2d_array shader must filter cascaded shadows with a blocker search and at \
+             least nine rotated comparison taps"
+        );
+        let narrow_kernel_mutation = GPU_TRIANGLE_SHADER.replacen(
+            "const SHADOW_FILTER_TAPS: u32 = 16u;",
+            "const SHADOW_FILTER_TAPS: u32 = 4u;",
+            1,
+        );
+        assert!(
+            !has_directional_shadow_pcss(&narrow_kernel_mutation),
+            "texture_2d_array oracle must reject a kernel smaller than the reported one"
+        );
+        let no_blocker_search_mutation = GPU_TRIANGLE_SHADER.replacen(
+            "let occluder = textureLoad(shadow_map, vec2<i32>(tap), 0);",
+            "let occluder = 1.0;",
+            1,
+        );
+        assert!(
+            !has_directional_shadow_pcss(&no_blocker_search_mutation),
+            "texture_2d_array oracle must reject a filter without a blocker search"
+        );
     }
 
     #[test]
@@ -1208,8 +1359,10 @@ mod tests {
             GPU_TRIANGLE_SHADER.contains("@location(4) tangent: vec4<f32>")
                 && GPU_TRIANGLE_SHADER.contains("let normal_texture_sample = textureSample(normal_texture")
                 && !GPU_TRIANGLE_SHADER.contains("let normal_sample = textureSample(normal_texture")
+                // Back faces of double-sided surfaces mirror the whole basis.
+                && GPU_TRIANGLE_SHADER.contains("let facing = select(-1.0, 1.0, front_facing);")
                 && GPU_TRIANGLE_SHADER.contains(
-                    "let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w);"
+                    "let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w) * facing;"
                 )
                 && GPU_TRIANGLE_SHADER.contains(
                     "normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal",

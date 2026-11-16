@@ -117,8 +117,10 @@ fn gpu_post_passes_have_independent_quality_measurements() {
         render_gpu_post_frame(48, 48, ssao_depth_contact_scene, |renderer| {
             renderer.set_anti_aliasing(AntiAliasing::None);
             renderer.clear_bloom();
+            // The radius has to reach the occluder: the card floats 0.16
+            // world units above the floor, about 4 px at this framing.
             renderer.set_screen_space_ambient_occlusion(Some(
-                ScreenSpaceAmbientOcclusionConfig::new(4, 0.8, 0.0),
+                ScreenSpaceAmbientOcclusionConfig::new(8, 0.8, 0.0),
             ));
         })
     else {

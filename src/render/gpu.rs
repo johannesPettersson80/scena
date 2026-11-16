@@ -1,3 +1,5 @@
+mod alpha_mask;
+mod ambient_occlusion;
 #[cfg(target_arch = "wasm32")]
 mod browser_color_space;
 #[cfg(target_arch = "wasm32")]
@@ -58,6 +60,7 @@ mod semantic_aov;
 mod shader_manifest;
 pub(crate) mod shading_tables;
 mod shadow;
+mod shadow_cascades;
 mod stats;
 mod strokes;
 mod surface_config;
@@ -235,6 +238,7 @@ struct GpuPreparedResources {
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     overlay_depth_prepass: Option<depth::DepthPrepassResources>,
+    ambient_occlusion: ambient_occlusion::AmbientOcclusionResources,
     strokes: Option<StrokeResources>,
     labels: Option<LabelResources>,
     semantic_aov: Option<semantic_aov::SemanticAovResources>,

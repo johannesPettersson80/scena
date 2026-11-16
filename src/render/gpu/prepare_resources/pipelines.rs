@@ -38,6 +38,7 @@ pub(super) fn create_pipeline_resources(
     ltc_tables: &wgpu::Buffer,
     brdf_table: &wgpu::Buffer,
     light_assignment: &LightAssignmentResources,
+    ambient_visibility: &wgpu::Buffer,
     material_features: MaterialShaderFeatures,
 ) -> PipelineResources {
     let surface_output_resources = surface_format.map(|_| {
@@ -61,6 +62,7 @@ pub(super) fn create_pipeline_resources(
             ltc_tables,
             brdf_table,
             Some(light_assignment),
+            ambient_visibility,
         );
         let opaque_bind_group = output::create_output_bind_group(
             device,
@@ -75,6 +77,7 @@ pub(super) fn create_pipeline_resources(
             ltc_tables,
             brdf_table,
             Some(light_assignment),
+            ambient_visibility,
         );
         let mut probe_bind_groups = Vec::with_capacity(reflection_probe_cubemaps.len());
         let mut probe_opaque_bind_groups = Vec::with_capacity(reflection_probe_cubemaps.len());
@@ -97,6 +100,7 @@ pub(super) fn create_pipeline_resources(
                 ltc_tables,
                 brdf_table,
                 Some(light_assignment),
+                ambient_visibility,
             ));
             probe_opaque_bind_groups.push(output::create_output_bind_group(
                 device,
@@ -111,6 +115,7 @@ pub(super) fn create_pipeline_resources(
                 ltc_tables,
                 brdf_table,
                 Some(light_assignment),
+                ambient_visibility,
             ));
         }
         (

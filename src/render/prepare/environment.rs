@@ -20,9 +20,11 @@ use super::environment_baker::{
 use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
 
 mod diagnostics;
+mod irradiance;
 use diagnostics::{debug_report_environment, warn_environment_sidecar_profile_mismatch};
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 use diagnostics::{environment_now_ms, log_environment_step};
+pub(in crate::render) use irradiance::{DiffuseIrradianceSh, IRRADIANCE_SH_COEFFICIENT_COUNT};
 
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
@@ -83,6 +85,9 @@ impl EnvironmentLightingProfile {
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedEnvironmentLighting {
     diffuse_rgb: Vec3,
+    /// Directional diffuse lighting. Its spherical mean equals `diffuse_rgb`,
+    /// so a uniform environment shades exactly as the scalar term alone.
+    diffuse_sh: DiffuseIrradianceSh,
     specular_rgb: Vec3,
     intensity: f32,
     rotation_y_radians: f32,
@@ -123,6 +128,7 @@ impl Default for PreparedEnvironmentLighting {
     fn default() -> Self {
         Self {
             diffuse_rgb: Vec3::ZERO,
+            diffuse_sh: DiffuseIrradianceSh::uniform(Vec3::ZERO),
             specular_rgb: Vec3::ZERO,
             intensity: 0.0,
             rotation_y_radians: 0.0,
@@ -226,6 +232,7 @@ impl PreparedEnvironmentLighting {
                 None => {
                     return Self {
                         diffuse_rgb: Vec3::ZERO,
+                        diffuse_sh: DiffuseIrradianceSh::uniform(Vec3::ZERO),
                         specular_rgb: Vec3::ZERO,
                         intensity: 0.0,
                         rotation_y_radians: 0.0,
@@ -250,6 +257,7 @@ impl PreparedEnvironmentLighting {
         {
             return Self {
                 diffuse_rgb: Vec3::ZERO,
+                diffuse_sh: DiffuseIrradianceSh::uniform(Vec3::ZERO),
                 specular_rgb: Vec3::ZERO,
                 intensity: 0.0,
                 rotation_y_radians: 0.0,
@@ -270,8 +278,20 @@ impl PreparedEnvironmentLighting {
                 sanitize_environment_channel(irradiance[2]),
             )
         };
+        let diffuse_sh = cubemap
+            .as_deref()
+            .and_then(|prepared| {
+                prepared.mips.first().and_then(|faces| {
+                    DiffuseIrradianceSh::from_cubemap_faces(faces, prepared.resolution)
+                })
+            })
+            .map_or_else(
+                || DiffuseIrradianceSh::uniform(diffuse_rgb),
+                |sh| sh.normalized_to_mean(diffuse_rgb),
+            );
         Self {
             diffuse_rgb,
+            diffuse_sh,
             specular_rgb,
             intensity,
             rotation_y_radians: 0.0,
@@ -312,6 +332,20 @@ impl PreparedEnvironmentLighting {
         ]
     }
 
+    /// Irradiance coefficients for the fragment shader's `environment_irradiance`.
+    pub(in crate::render::prepare) fn gpu_irradiance_sh(
+        &self,
+    ) -> [[f32; 4]; IRRADIANCE_SH_COEFFICIENT_COUNT] {
+        self.diffuse_sh.gpu_coefficients()
+    }
+
+    /// Radiance leaving a white Lambertian surface facing `normal`, before
+    /// the environment intensity is applied.
+    pub(in crate::render::prepare) fn diffuse_radiance(&self, normal: Vec3) -> Vec3 {
+        self.diffuse_sh
+            .radiance(rotate_environment_y(normal, self.rotation_y_radians))
+    }
+
     pub(in crate::render::prepare) fn gpu_specular_intensity(&self) -> [f32; 4] {
         [
             self.specular_rgb.x,
@@ -339,7 +373,7 @@ impl PreparedEnvironmentLighting {
         if !self.is_active() {
             return Vec3::ZERO;
         }
-        let diffuse = self.diffuse_rgb;
+        let diffuse = self.diffuse_radiance(normal);
         let reflection = rotate_environment_y(
             reflect_vec3(Vec3::new(-view.x, -view.y, -view.z), normal),
             self.rotation_y_radians,
@@ -631,6 +665,7 @@ mod tests {
         ];
         let lighting = PreparedEnvironmentLighting {
             diffuse_rgb: Vec3::new(0.5, 0.5, 0.5),
+            diffuse_sh: DiffuseIrradianceSh::uniform(Vec3::new(0.5, 0.5, 0.5)),
             specular_rgb: Vec3::ZERO,
             intensity: 1.0,
             rotation_y_radians: 0.0,

@@ -1,6 +1,7 @@
 use super::super::prepare::{
     PreparedEnvironmentCubemap, PreparedEnvironmentLighting, PreparedReflectionProbe,
 };
+use super::alpha_mask::AlphaMaskPipelineInputs;
 use super::light_assignment::LightAssignmentResources;
 use super::output::create_output_bind_group;
 use super::shadow::{
@@ -85,6 +86,42 @@ pub(super) fn resource_stats(
     }
 }
 
+/// Shadow and occlusion inputs of the colour bind group.
+#[derive(Clone, Copy)]
+pub(super) struct ShadowOcclusionInputs<'a> {
+    cascade_count: usize,
+    alpha_mask: Option<AlphaMaskPipelineInputs<'a>>,
+    /// Screen-space visibility; `None` binds a placeholder that leaves
+    /// lighting untouched.
+    ambient_visibility: Option<&'a wgpu::Buffer>,
+}
+
+impl<'a> ShadowOcclusionInputs<'a> {
+    /// Native frames: cascaded shadows and a computed visibility buffer.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn native(
+        alpha_mask: Option<AlphaMaskPipelineInputs<'a>>,
+        ambient_visibility: &'a wgpu::Buffer,
+    ) -> Self {
+        Self {
+            cascade_count: shadow::NATIVE_SHADOW_CASCADE_COUNT,
+            alpha_mask,
+            ambient_visibility: Some(ambient_visibility),
+        }
+    }
+
+    /// Browser frames: one shadow map, and the post-process occlusion filter
+    /// instead of a visibility buffer.
+    #[cfg(target_arch = "wasm32")]
+    pub(super) fn browser(alpha_mask: Option<AlphaMaskPipelineInputs<'a>>) -> Self {
+        Self {
+            cascade_count: 1,
+            alpha_mask,
+            ambient_visibility: None,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_output_resources(
     device: &wgpu::Device,
@@ -98,6 +135,7 @@ pub(super) fn build_output_resources(
     light_assignment: &LightAssignmentResources,
     include_tiled_light_storage: bool,
     directional_shadow_map_resolution: Option<u32>,
+    shadow_occlusion: ShadowOcclusionInputs<'_>,
     environment_lighting: &PreparedEnvironmentLighting,
     reflection_probes: &[PreparedReflectionProbe],
 ) -> OutputResources {
@@ -107,7 +145,18 @@ pub(super) fn build_output_resources(
         directional_shadow_map_resolution,
         output_uniform,
         draw_bind_group_layout,
+        shadow_occlusion.cascade_count,
+        shadow_occlusion.alpha_mask,
     );
+    let placeholder_visibility;
+    let ambient_visibility = match shadow_occlusion.ambient_visibility {
+        Some(buffer) => buffer,
+        None => {
+            // The bind groups keep the placeholder alive.
+            placeholder_visibility = super::ambient_occlusion::placeholder_visibility(device);
+            &placeholder_visibility
+        }
+    };
     let shadow_sampler = create_shadow_sampler(device);
     let environment_cubemap =
         create_environment_cubemap_texture(device, queue, environment_lighting.cubemap());
@@ -136,6 +185,7 @@ pub(super) fn build_output_resources(
         &ltc_tables,
         &brdf_table,
         include_tiled_light_storage.then_some(light_assignment),
+        ambient_visibility,
     );
     let opaque_output_bind_group = create_output_bind_group(
         device,
@@ -150,6 +200,7 @@ pub(super) fn build_output_resources(
         &ltc_tables,
         &brdf_table,
         include_tiled_light_storage.then_some(light_assignment),
+        ambient_visibility,
     );
     let mut reflection_probe_cubemaps = Vec::with_capacity(reflection_probes.len());
     let mut reflection_probe_output_bind_groups = Vec::with_capacity(reflection_probes.len());
@@ -175,6 +226,7 @@ pub(super) fn build_output_resources(
             &ltc_tables,
             &brdf_table,
             include_tiled_light_storage.then_some(light_assignment),
+            ambient_visibility,
         ));
         reflection_probe_opaque_output_bind_groups.push(create_output_bind_group(
             device,
@@ -189,6 +241,7 @@ pub(super) fn build_output_resources(
             &ltc_tables,
             &brdf_table,
             include_tiled_light_storage.then_some(light_assignment),
+            ambient_visibility,
         ));
         reflection_probe_cubemaps.push(cubemap);
     }

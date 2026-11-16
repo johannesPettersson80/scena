@@ -112,6 +112,7 @@ pub(crate) use crate::app::doctor_scene_platform::{
     check_remote_builder_bootstrap_contracts, check_reversed_z_contracts,
     check_scene_light_contracts, check_shadow_map_contracts, check_unit_test_first_governance,
     check_webgl2_depth_contracts, contains_scope_term, directional_shadow_shader_has_pcf3x3,
+    directional_shadow_shader_has_pcss,
 };
 pub(crate) use crate::app::doctor_visual_release::{
     check_c04_release_readiness_contract, check_ci_attestation_contracts,

@@ -85,10 +85,11 @@ This lets applications present clear UI instead of failing silently.
 - Texture arrays and texture limits.
 - Shadow support. Directional shadows are supported only on GPU-device backends
   with visible receiver-darkening proof. The reported
-  `directional_shadow_pcf_kernel: 3` means nine explicit nearest-filtered
-  depth-comparison samples over a 3×3 texel grid. CPU/reference and unattached
-  factory capability rows report degraded; point/spot and cascaded shadows are
-  not claimed.
+  `directional_shadow_pcf_kernel: 3` is the smallest comparison kernel any GPU
+  backend runs: WebGL2 averages nine explicit depth-comparison samples over a
+  3×3 texel grid, and native targets run a wider soft-shadow kernel over four
+  cascades. CPU/reference and unattached factory capability rows report
+  degraded; point/spot shadows are not claimed.
 - Environment lighting support.
 - Material feature support such as clearcoat, sheen, anisotropy, iridescence,
   and dispersion factor handling or texture sampling in CPU/reference and GPU

@@ -122,22 +122,51 @@ fn q03_doctor_rejects_quadrant_only_structure_evidence() {
 #[test]
 fn q05_doctor_evaluator_rejects_single_shadow_comparison_tap() {
     let root = repo_root().expect("test runs inside the scena workspace");
-    for relative in [
-        "src/render/gpu/output_shader.wgsl",
-        "src/render/gpu/output_shader_texture_2d.wgsl",
-    ] {
-        let source = fs::read_to_string(root.join(relative)).expect("Q05 shader reads");
-        assert!(directional_shadow_shader_has_pcf3x3(&source));
+    let source = fs::read_to_string(root.join("src/render/gpu/shadow_filter_single.wgsl"))
+        .expect("Q05 single-map shader reads");
+    assert!(directional_shadow_shader_has_pcf3x3(&source));
 
-        let single_tap_mutation = source.replacen(
-            "textureSampleCompareLevel(shadow_map, shadow_sampler",
-            "removedComparisonTap(",
-            8,
-        );
-        assert_ne!(source, single_tap_mutation);
+    let single_tap_mutation = source.replacen(
+        "textureSampleCompareLevel(shadow_map, shadow_sampler",
+        "removedComparisonTap(",
+        8,
+    );
+    assert_ne!(source, single_tap_mutation);
+    assert!(
+        !directional_shadow_shader_has_pcf3x3(&single_tap_mutation),
+        "Q05 doctor evaluator must reject the reviewed one-tap implementation"
+    );
+}
+
+#[test]
+fn q05_doctor_evaluator_rejects_weakened_cascaded_soft_shadows() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let source = fs::read_to_string(root.join("src/render/gpu/shadow_filter_cascaded.wgsl"))
+        .expect("Q05 cascaded shader reads");
+    assert!(directional_shadow_shader_has_pcss(&source));
+
+    for (from, to, reason) in [
+        (
+            "const SHADOW_FILTER_TAPS: u32 = 16u;",
+            "const SHADOW_FILTER_TAPS: u32 = 4u;",
+            "a kernel smaller than the reported 3x3 grid",
+        ),
+        (
+            "let occluder = textureLoad(shadow_map, vec2<i32>(tap), 0);",
+            "let occluder = 1.0;",
+            "a filter without a blocker search",
+        ),
+        (
+            "camera.shadow_cascades[cascade]",
+            "camera.light_from_world",
+            "a filter that ignores the cascade matrices",
+        ),
+    ] {
+        let mutation = source.replacen(from, to, 1);
+        assert_ne!(source, mutation, "mutation source text must exist: {from}");
         assert!(
-            !directional_shadow_shader_has_pcf3x3(&single_tap_mutation),
-            "Q05 doctor evaluator must reject the reviewed one-tap implementation"
+            !directional_shadow_shader_has_pcss(&mutation),
+            "Q05 doctor evaluator must reject {reason}"
         );
     }
 }

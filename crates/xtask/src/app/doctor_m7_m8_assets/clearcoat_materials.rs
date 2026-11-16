@@ -154,7 +154,7 @@ pub(super) fn check_clearcoat_material_contracts(root: &Path, findings: &mut Vec
             "material.clearcoat_factors.x * clearcoat_sample.r",
             "material.clearcoat_factors.y * clearcoat_roughness_sample.g",
             "material.clearcoat_factors.z",
-            "clearcoat_light_contribution",
+            "surface.clearcoat = clearcoat_factor;",
         ],
     );
     require_contains(
@@ -168,7 +168,19 @@ pub(super) fn check_clearcoat_material_contracts(root: &Path, findings: &mut Vec
             "var clearcoat_roughness_texture: texture_2d<f32>",
             "var clearcoat_normal_texture: texture_2d<f32>",
             "material.clearcoat_factors.x * clearcoat_sample.r",
-            "clearcoat_light_contribution",
+            "surface.clearcoat = clearcoat_factor;",
+        ],
+    );
+    // The lobe itself lives in the surface model shared by both variants.
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/surface_lighting.wgsl",
+        &[
+            "lit += coat_fresnel * coat_brdf * radiance * (coat_n_dot_l * s.clearcoat);",
+            "lit = layer * radiance * (n_dot_l * s.clearcoat_attenuation);",
+            "lit *= s.clearcoat_attenuation;",
         ],
     );
     require_contains(

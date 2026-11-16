@@ -82,6 +82,15 @@ struct CameraUniform {
     lighting: LightingUniform,
     clipping_planes: array<vec4<f32>, 16>,
     clipping_control: vec4<f32>,
+    // Order-2 spherical-harmonics irradiance; see `environment_irradiance`.
+    environment_sh: array<vec4<f32>, 9>,
+    // Directional shadow cascades; see shadow_filter_cascaded.wgsl.
+    shadow_cascades: array<mat4x4<f32>, 4>,
+    // View-space far distance of each cascade.
+    shadow_splits: vec4<f32>,
+    // .x = cascade count, .y = atlas scale per cascade,
+    // .z = normal offset in texels, .w = light angular-radius tangent.
+    shadow_params: vec4<f32>,
 };
 
 struct TiledLightRecord {
@@ -196,6 +205,26 @@ var<storage, read> light_tile_indices: array<u32>;
 
 @group(0) @binding(9)
 var<storage, read> light_tiles: array<TiledLightTile>;
+
+// Screen-space ambient visibility from `ambient_occlusion.wgsl`: one f32 per
+// target pixel in row-major order, or a single 1.0 when the pass is off.
+@group(0) @binding(12)
+var<storage, read> ambient_visibility: array<f32>;
+
+// Share of the screen-space occlusion applied to lights that cast no shadow.
+const UNSHADOWED_LIGHT_OCCLUSION: f32 = 0.7;
+
+// Visibility of environment light at this fragment. Only surfaces written by
+// the depth prepass own the pixel under them, so blended and transmissive
+// fragments keep full ambient light instead of inheriting what lies behind.
+fn screen_space_visibility(fragment_position: vec4<f32>, owns_depth: bool) -> f32 {
+    let index = u32(fragment_position.y) * u32(camera.viewport_near_far.x)
+        + u32(fragment_position.x);
+    if !owns_depth || index >= arrayLength(&ambient_visibility) {
+        return 1.0;
+    }
+    return ambient_visibility[index];
+}
 
 @group(2) @binding(0)
 var<uniform> draw: DrawUniform;
@@ -394,7 +423,7 @@ fn fs_semantic(in: VertexOut) -> SemanticOutput {
     return output;
 }
 
-fn shade_fragment(in: VertexOut) -> vec4<f32> {
+fn shade_fragment(in: VertexOut, front_facing: bool) -> vec4<f32> {
     if clipped_by_scene(in.world_position) {
         discard;
     }
@@ -451,9 +480,11 @@ fn shade_fragment(in: VertexOut) -> vec4<f32> {
         raw_normal.z,
     );
     let normal_sample = normalize(scaled_tangent_normal);
-    let world_normal = normalize(in.normal);
-    let world_tangent = normalize(in.tangent.xyz);
-    let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w);
+    // glTF: back faces of double-sided surfaces shade with the reversed frame.
+    let facing = select(-1.0, 1.0, front_facing);
+    let world_normal = normalize(in.normal) * facing;
+    let world_tangent = normalize(in.tangent.xyz) * facing;
+    let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w) * facing;
     let normal = normalize(normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal);
     // Auto-generated micro detail is smaller than a normal product-still pixel.
     // Fold its variance into roughness instead of resolving world-space waves
@@ -510,45 +541,92 @@ fn shade_fragment(in: VertexOut) -> vec4<f32> {
     if material.metallic_roughness_alpha.z > 0.0 && base.a < material.metallic_roughness_alpha.z {
         discard;
     }
+    // glTF alpha modes: OPAQUE and MASK surfaces are fully opaque whatever
+    // alpha their base colour carries; only a ghosting tint keeps them
+    // see-through. BLEND surfaces use the full base alpha.
+    var surface_alpha = base.a;
+    if material.base_color_uv_rotation.z < 1.5 {
+        surface_alpha = draw.tint.a * in.instance_tint.a;
+    }
     let emissive = material.emissive_strength.rgb * emissive_sample * material.emissive_strength.w;
     let view = normalize(camera.camera_position_exposure.xyz - in.world_position);
-    var shaded_rgb = base.rgb;
+    let ambient_visibility = screen_space_visibility(
+        in.position,
+        surface_alpha >= 0.999 && material.transmission_factors.x <= 0.0,
+    );
+    // An unlit colour is all the light the surface has, so occlusion scales
+    // it directly; lit surfaces lose only ambient and unshadowed light.
+    var shaded_rgb = base.rgb * ambient_visibility;
+    var coat_attenuation = 1.0;
     if material.metallic_roughness_alpha.w < 0.5 {
-        shaded_rgb = base.rgb * occlusion_applied;
-        let direct = pbr_punctual_lighting(
-            base.rgb,
-            metallic,
-            roughness,
-            normal,
-            view,
-            clearcoat_normal,
-            clearcoat_factor,
-            clearcoat_roughness,
-            sheen_color,
-            sheen_roughness,
-            world_tangent,
-            in.tangent.w,
-            anisotropy_strength,
-            material.anisotropy_factors.y,
-            anisotropy_direction,
-            iridescence_factor,
-            material.iridescence_factors.y,
-            iridescence_thickness,
-            dispersion_factor,
-            dispersion_ior,
+        var surface: Surface;
+        surface.base = base.rgb;
+        surface.metallic = metallic;
+        surface.diffuse_color = base.rgb * (1.0 - metallic);
+        surface.f0 = mix(vec3<f32>(f0_from_ior(material.transmission_factors.y)), base.rgb, metallic);
+        surface.f90 = 1.0;
+        surface.roughness = roughness;
+        surface.alpha = roughness * roughness;
+        surface.normal = normal;
+        surface.view = view;
+        surface.n_dot_v = max(dot(normal, view), 0.001);
+        surface.clearcoat = clearcoat_factor;
+        surface.clearcoat_roughness = clearcoat_roughness;
+        surface.clearcoat_normal = clearcoat_normal;
+        surface.clearcoat_attenuation = 1.0 -
+            clearcoat_factor * fresnel_schlick(max(dot(clearcoat_normal, view), 0.0), vec3<f32>(0.04)).x;
+        surface.sheen_color = clamp(sheen_color, vec3<f32>(0.0), vec3<f32>(1.0));
+        surface.sheen_roughness = max(sheen_roughness, MIN_SHEEN_ROUGHNESS);
+        surface.sheen_scaling = 1.0 - SHEEN_ENERGY_COMPENSATION *
+            max(surface.sheen_color.r, max(surface.sheen_color.g, surface.sheen_color.b));
+        surface.anisotropy = anisotropy_strength;
+        surface.anisotropy_t = world_tangent;
+        surface.anisotropy_b = bitangent;
+        if scena_material_anisotropy {
+            if anisotropy_strength > 0.0 {
+                surface.anisotropy_t = surface_anisotropy_tangent(
+                    normal,
+                    world_tangent,
+                    in.tangent.w,
+                    anisotropy_direction,
+                    material.anisotropy_factors.y,
+                );
+                surface.anisotropy_b = normalize(cross(normal, surface.anisotropy_t));
+            }
+        }
+        surface.iridescence = 0.0;
+        surface.iridescence_fresnel = vec3<f32>(0.0);
+        if scena_material_iridescence {
+            if iridescence_factor > 0.0 {
+                surface.iridescence = iridescence_factor;
+                surface.iridescence_fresnel = iridescence_fresnel(
+                    material.iridescence_factors.y,
+                    surface.n_dot_v,
+                    iridescence_thickness,
+                    surface.f0,
+                );
+            }
+        }
+        surface.dispersion = dispersion_factor;
+        surface.dispersion_f0 = dispersion_f0_from_ior(dispersion_ior, dispersion_factor);
+        coat_attenuation = surface.clearcoat_attenuation;
+        shaded_rgb = base.rgb * (occlusion_applied * ambient_visibility);
+        // Lights without a shadow map have no other occlusion: the screen
+        // visibility stands in for the soft shadow a fill light would cast.
+        let direct = surface_punctual_lighting(
+            surface,
             in.world_position,
+            world_normal,
             in.position,
             in.baked_visibility.x,
+            mix(1.0, ambient_visibility, UNSHADOWED_LIGHT_OCCLUSION),
         );
-        var environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view, in.world_position);
-        environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness, in.world_position);
-        environment += sheen_environment_lighting(normal, view, sheen_color, sheen_roughness);
-        environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction, in.world_position);
+        let environment = surface_environment_light(surface, in.world_position);
         if has_punctual_light() || has_environment_light() {
-            shaded_rgb = direct + environment * indirect_occlusion;
+            shaded_rgb = direct + environment * (indirect_occlusion * ambient_visibility);
         }
     }
-    let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
+    let shaded = vec4<f32>(shaded_rgb + emissive * coat_attenuation, surface_alpha);
     let color_management_mode = camera.color_management.x;
     var output_rgb = shaded.rgb;
     if camera.color_management.y >= -0.5 {
@@ -579,247 +657,50 @@ fn shade_fragment(in: VertexOut) -> vec4<f32> {
     return vec4<f32>(encode_post_target_rgb(output_rgb, camera.color_management.y), shaded.a);
 }
 
-fn physical_transmission_color(
-    frag_coord: vec2<f32>,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    tint: vec3<f32>,
-    roughness: f32,
-    surface_rgb: vec3<f32>,
-) -> vec4<f32> {
-    let transmission = clamp(material.transmission_factors.x, 0.0, 1.0);
-    if transmission <= 0.001 {
-        return vec4<f32>(0.0);
-    }
-    let viewport = max(camera.viewport_near_far.xy, vec2<f32>(1.0, 1.0));
-    let uv = clamp(frag_coord / viewport, vec2<f32>(0.001), vec2<f32>(0.999));
-    let ior = max(material.transmission_factors.y, 1.01);
-    let thickness = max(material.transmission_factors.z, 0.0);
-    let view_dir = normalize(view);
-    let normal_dir = normalize(normal);
-    let n_dot_v = max(dot(normal_dir, view_dir), 0.0);
-    let rim_fresnel = pow(1.0 - n_dot_v, 5.0);
-    let refracted = refract(-view_dir, normal_dir, 1.0 / ior);
-    let thickness_scale = 0.004 + min(thickness, 1.0) * 0.028;
-    let refracted_uv = clamp(
-        uv + vec2<f32>(refracted.x, -refracted.y) * thickness_scale * transmission,
-        vec2<f32>(0.001),
-        vec2<f32>(0.999),
-    );
-    let texel = 1.0 / viewport;
-    let blur_px = roughness * roughness * 48.0;
-    let blur = texel * blur_px;
-    let straight = textureSample(transmission_color_texture, transmission_color_sampler, uv).rgb;
-    let refracted_center = textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv).rgb;
-    let refracted_blurred =
-        refracted_center * 0.36 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv + vec2<f32>(blur.x, 0.0)).rgb * 0.16 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(blur.x, 0.0)).rgb * 0.16 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv + vec2<f32>(0.0, blur.y)).rgb * 0.16 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(0.0, blur.y)).rgb * 0.16;
-    let refraction_mix = clamp(0.58 + roughness * 0.40 + rim_fresnel * 0.10, 0.58, 0.96);
-    let scene_color = mix(straight, refracted_blurred, refraction_mix);
-    let tint_strength = clamp(transmission * 0.035, 0.0, 0.035);
-    let volume_tint = volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w);
-    let transmitted = scene_color * volume_tint * mix(vec3<f32>(1.0), tint, tint_strength);
-    let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);
-    let reflected = surface_rgb * volume_tint * (1.08 + rim_fresnel * 0.72);
-    return vec4<f32>(mix(transmitted, reflected, reflection_weight), 1.0);
-}
-
-fn screen_space_material_reflection(
-    frag_coord: vec2<f32>,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    surface_rgb: vec3<f32>,
-) -> vec3<f32> {
-    let strength = clamp(camera.color_management.z, 0.0, 1.0);
-    let ssr_active = step(0.001, strength) * step(0.5, metallic);
-    let viewport = max(camera.viewport_near_far.xy, vec2<f32>(1.0, 1.0));
-    let uv = clamp(frag_coord / viewport, vec2<f32>(0.001), vec2<f32>(0.999));
-    let normal_dir = normalize(normal);
-    let view_dir = normalize(view);
-    let reflection = reflect(-view_dir, normal_dir);
-    let reflect_scale = (0.12 + (1.0 - roughness) * 0.24) * strength;
-    let raw_reflected_uv = uv + vec2<f32>(reflection.x, -reflection.y) * reflect_scale;
-    let edge_distance = min(
-        min(raw_reflected_uv.x, raw_reflected_uv.y),
-        min(1.0 - raw_reflected_uv.x, 1.0 - raw_reflected_uv.y),
-    );
-    let edge_fade = smoothstep(0.0, 0.02, edge_distance);
-    let reflected_uv = clamp(
-        raw_reflected_uv,
-        vec2<f32>(0.001),
-        vec2<f32>(0.999),
-    );
-    let texel = 1.0 / viewport;
-    let blur_px = clamp(roughness * roughness * 14.0 + camera.color_management.w * 5.0, 0.0, 8.0);
-    let blur = texel * blur_px;
-    let reflected =
-        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv).rgb * 0.44 +
-        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv + vec2<f32>(blur.x, 0.0)).rgb * 0.14 +
-        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv - vec2<f32>(blur.x, 0.0)).rgb * 0.14 +
-        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv + vec2<f32>(0.0, blur.y)).rgb * 0.14 +
-        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv - vec2<f32>(0.0, blur.y)).rgb * 0.14;
-    let n_dot_v = max(dot(normal_dir, view_dir), 0.0);
-    let fresnel = pow5(1.0 - n_dot_v);
-    let weight = clamp(ssr_active * strength * metallic * (0.38 + fresnel * 0.52) * (1.0 - roughness * 0.55) * edge_fade, 0.0, 0.88);
-    return mix(surface_rgb, reflected, weight);
-}
-
-fn volume_transmittance(
-    thickness: f32,
-    attenuation_color: vec3<f32>,
-    attenuation_distance: f32,
-) -> vec3<f32> {
-    if thickness <= 0.000001 || attenuation_distance > 1.0e20 {
-        return vec3<f32>(1.0);
-    }
-    let exponent = thickness / max(attenuation_distance, 0.0001);
-    return vec3<f32>(
-        pow(clamp(attenuation_color.r, 0.0, 1.0), exponent),
-        pow(clamp(attenuation_color.g, 0.0, 1.0), exponent),
-        pow(clamp(attenuation_color.b, 0.0, 1.0), exponent),
-    );
-}
-
-fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
-    // Phase 1B step 2: GPU shadow map sampling. Project the fragment's world
-    // position into light-clip space, map clip [-1..1, -1..1, 0..1] to
-    // texture [0..1, 0..1] (Y-flip — clip y is up, texture v is down), and
-    // sample with depth-comparison.
-    let light_clip = camera.light_from_world * vec4<f32>(world_position, 1.0);
-    if light_clip.w <= 0.0 {
-        return 1.0;
-    }
-    let light_ndc = light_clip.xyz / light_clip.w;
-    let shadow_uv = vec2<f32>(light_ndc.x * 0.5 + 0.5, light_ndc.y * -0.5 + 0.5);
-    // Receivers outside the shadow caster AABB get full radiance — the
-    // sampler's ClampToEdge would otherwise read the texture border and
-    // produce false self-shadow streaks (review F6).
-    if shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
-       shadow_uv.y < 0.0 || shadow_uv.y > 1.0 ||
-       light_ndc.z < 0.0 || light_ndc.z > 1.0 {
-        return 1.0;
-    }
-    let shadow_texel_size = 1.0 / vec2<f32>(textureDimensions(shadow_map));
-    var shadow_visibility = 0.0;
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>(-1.0, -1.0), light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 0.0, -1.0), light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 1.0, -1.0), light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>(-1.0,  0.0), light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv, light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 1.0,  0.0), light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>(-1.0,  1.0), light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 0.0,  1.0), light_ndc.z);
-    shadow_visibility += textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv + shadow_texel_size * vec2<f32>( 1.0,  1.0), light_ndc.z);
-    return shadow_visibility / 9.0;
-}
-
-fn area_light_sample_position(index: u32, sample: u32) -> vec3<f32> {
-    let center = camera.lighting.area_light_position_flux[index].xyz;
-    let axis_x_shape = camera.lighting.area_light_axis_x_shape[index];
-    let axis_x = axis_x_shape.xyz;
-    let axis_y = camera.lighting.area_light_axis_y_range[index].xyz;
-    if axis_x_shape.w < 0.5 {
-        let column = f32(sample % 4u);
-        let row = f32(sample / 4u);
-        let sx = column * 0.5 - 0.75;
-        let sy = row * 0.5 - 0.75;
-        return center + axis_x * sx + axis_y * sy;
-    }
-    if axis_x_shape.w < 1.5 {
-        let offsets = array<vec2<f32>, 16>(
-            vec2<f32>(0.35, 0.0),
-            vec2<f32>(0.247487, 0.247487),
-            vec2<f32>(0.0, 0.35),
-            vec2<f32>(-0.247487, 0.247487),
-            vec2<f32>(-0.35, 0.0),
-            vec2<f32>(-0.247487, -0.247487),
-            vec2<f32>(0.0, -0.35),
-            vec2<f32>(0.247487, -0.247487),
-            vec2<f32>(0.69291, 0.287013),
-            vec2<f32>(0.287013, 0.69291),
-            vec2<f32>(-0.287013, 0.69291),
-            vec2<f32>(-0.69291, 0.287013),
-            vec2<f32>(-0.69291, -0.287013),
-            vec2<f32>(-0.287013, -0.69291),
-            vec2<f32>(0.287013, -0.69291),
-            vec2<f32>(0.69291, -0.287013),
-        );
-        let offset = offsets[sample];
-        return center + axis_x * offset.x + axis_y * offset.y;
-    }
-    let radius = max(max(length(axis_x), length(axis_y)), 0.001);
-    let raw_forward = cross(axis_x, axis_y);
-    let forward_direction = select(
-        vec3<f32>(0.0, 0.0, 1.0),
-        normalize(raw_forward),
-        dot(raw_forward, raw_forward) > 0.00000001,
-    );
-    let forward = forward_direction * radius;
-    let offsets = array<vec3<f32>, 16>(
-        vec3<f32>(0.577350, 0.577350, 0.577350),
-        vec3<f32>(-0.577350, 0.577350, 0.577350),
-        vec3<f32>(0.577350, -0.577350, 0.577350),
-        vec3<f32>(-0.577350, -0.577350, 0.577350),
-        vec3<f32>(0.577350, 0.577350, -0.577350),
-        vec3<f32>(-0.577350, 0.577350, -0.577350),
-        vec3<f32>(0.577350, -0.577350, -0.577350),
-        vec3<f32>(-0.577350, -0.577350, -0.577350),
-        vec3<f32>(1.0, 0.0, 0.0),
-        vec3<f32>(-1.0, 0.0, 0.0),
-        vec3<f32>(0.0, 1.0, 0.0),
-        vec3<f32>(0.0, -1.0, 0.0),
-        vec3<f32>(0.0, 0.0, 1.0),
-        vec3<f32>(0.0, 0.0, -1.0),
-        vec3<f32>(0.0, 0.707107, 0.707107),
-        vec3<f32>(0.0, -0.707107, -0.707107),
-    );
-    let offset = offsets[sample];
-    return center + axis_x * offset.x + axis_y * offset.y + forward * offset.z;
-}
-
-fn area_light_radiance(index: u32, sample_position: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
-    let to_light = sample_position - world_position;
-    let range = camera.lighting.area_light_axis_y_range[index].w;
-    let intensity_per_sample = camera.lighting.area_light_position_flux[index].w / (4.0 * PI) / f32(AREA_LIGHT_SAMPLE_COUNT);
-    return camera.lighting.area_light_color[index].rgb *
-        intensity_per_sample *
-        distance_attenuation(to_light, range);
-}
-
-fn pbr_punctual_lighting(
-    base: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    clearcoat_normal: vec3<f32>,
-    clearcoat_factor: f32,
-    clearcoat_roughness: f32,
-    sheen_color: vec3<f32>,
-    sheen_roughness: f32,
-    world_tangent: vec3<f32>,
-    tangent_handedness: f32,
-    anisotropy_strength: f32,
-    anisotropy_rotation: f32,
-    anisotropy_direction: vec2<f32>,
-    iridescence_factor: f32,
-    iridescence_ior: f32,
-    iridescence_thickness: f32,
-    dispersion_factor: f32,
-    dispersion_ior: f32,
+// One area light: analytic LTC specular plus point-sampled diffuse and
+// coating lobes. The point samples skip the base specular lobe, which the LTC
+// integral already covers.
+fn surface_area_light(
+    index: u32,
+    s: Surface,
     world_position: vec3<f32>,
+    area_shadow_visibility: f32,
+) -> vec3<f32> {
+    var shaded = ltc_area_light_specular_contribution(
+        index,
+        s.base,
+        s.metallic,
+        s.roughness,
+        s.normal,
+        s.view,
+        world_position,
+        area_shadow_visibility,
+    ) * s.clearcoat_attenuation;
+    for (var sample = 0u; sample < AREA_LIGHT_SAMPLE_COUNT; sample = sample + 1u) {
+        let sample_position = area_light_sample_position(index, sample);
+        let incoming = normalize(sample_position - world_position);
+        let radiance = area_light_radiance(index, sample_position, world_position) * area_shadow_visibility;
+        shaded += surface_direct_light(s, incoming, radiance, 0.0);
+    }
+    return shaded;
+}
+
+// Direct lighting from every analytic light in the scene.
+// `geometric_normal` is the interpolated surface normal before normal mapping;
+// shadow bias uses it so normal-map detail cannot push samples under the
+// surface.
+fn surface_punctual_lighting(
+    s: Surface,
+    world_position: vec3<f32>,
+    geometric_normal: vec3<f32>,
     fragment_position: vec4<f32>,
     shadow_visibility: f32,
+    unshadowed_visibility: f32,
 ) -> vec3<f32> {
     var shaded = vec3<f32>(0.0);
-    // Directional shadows use the GPU shadow map below. The vertex stream's
-    // shadow_visibility now carries deterministic area-light sample visibility
-    // so CPU and GPU agree on soft penumbra approximation for finite emitters.
+    // Directional shadows use the GPU shadow map. The vertex stream's
+    // shadow_visibility carries deterministic area-light sample visibility so
+    // CPU and GPU agree on the soft penumbra of finite emitters.
     let area_shadow_visibility = clamp(shadow_visibility, 0.0, 1.0);
     if tiled_lighting_active() {
         let tile = tiled_light_tile(fragment_position);
@@ -834,11 +715,18 @@ fn pbr_punctual_lighting(
                 if kind < 0.5 {
                     incoming = normalize(-record.position_intensity.xyz);
                     radiance = record.color_range.rgb * record.position_intensity.w;
+                    // cone.z marks the directional light that owns the shadow map.
+                    if record.cone.z > 0.5 {
+                        radiance *= directional_shadow_factor(world_position, geometric_normal, incoming, fragment_position.xy);
+                    } else {
+                        radiance *= unshadowed_visibility;
+                    }
                 } else if kind < 1.5 {
                     let to_light = record.position_intensity.xyz - world_position;
                     incoming = normalize(to_light);
                     let attenuation = distance_attenuation(to_light, record.color_range.w);
-                    radiance = record.color_range.rgb * record.position_intensity.w * attenuation;
+                    radiance = record.color_range.rgb * record.position_intensity.w * attenuation
+                        * unshadowed_visibility;
                 } else {
                     let to_light = record.position_intensity.xyz - world_position;
                     incoming = normalize(to_light);
@@ -849,14 +737,10 @@ fn pbr_punctual_lighting(
                         record.cone.y,
                     );
                     let attenuation = distance_attenuation(to_light, record.color_range.w);
-                    radiance = record.color_range.rgb * record.position_intensity.w * attenuation * cone;
+                    radiance = record.color_range.rgb * record.position_intensity.w * attenuation * cone
+                        * unshadowed_visibility;
                 }
-                shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-                shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-                shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-                shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-                shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-                shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+                shaded += surface_direct_light(s, incoming, radiance, 1.0);
             }
         }
     }
@@ -865,19 +749,13 @@ fn pbr_punctual_lighting(
         if i < directional_count {
             let light_direction = camera.lighting.directional_light_direction_intensity[i];
             let incoming = normalize(-light_direction.xyz);
-            let gpu_shadow = select(
-                1.0,
-                directional_shadow_factor(world_position),
-                camera.lighting.directional_shadow_control[i].x > 0.5,
-            );
-            let radiance = camera.lighting.directional_light_color[i].rgb *
-                light_direction.w * gpu_shadow;
-            shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-            shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-            shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-            shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-            shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-            shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+            var radiance = camera.lighting.directional_light_color[i].rgb * light_direction.w;
+            if camera.lighting.directional_shadow_control[i].x > 0.5 {
+                radiance *= directional_shadow_factor(world_position, geometric_normal, incoming, fragment_position.xy);
+            } else {
+                radiance *= unshadowed_visibility;
+            }
+            shaded += surface_direct_light(s, incoming, radiance, 1.0);
         }
     }
     let point_count = min(u32(camera.lighting.light_counts.y), MAX_GPU_LIGHTS_PER_TYPE);
@@ -888,13 +766,8 @@ fn pbr_punctual_lighting(
             let to_light = point_light.xyz - world_position;
             let incoming = normalize(to_light);
             let attenuation = distance_attenuation(to_light, point_color.w);
-            let radiance = point_color.rgb * point_light.w * attenuation;
-            shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-            shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-            shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-            shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-            shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-            shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+            let radiance = point_color.rgb * point_light.w * attenuation * unshadowed_visibility;
+            shaded += surface_direct_light(s, incoming, radiance, 1.0);
         }
     }
     let spot_count = min(u32(camera.lighting.light_counts.z), MAX_GPU_LIGHTS_PER_TYPE);
@@ -913,40 +786,14 @@ fn pbr_punctual_lighting(
             );
             let attenuation = distance_attenuation(to_light, spot_cones.z);
             let radiance = camera.lighting.spot_light_color_range[i].rgb *
-                spot_light.w * attenuation * cone;
-            shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-            shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-            shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-            shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-            shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-            shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+                spot_light.w * attenuation * cone * unshadowed_visibility;
+            shaded += surface_direct_light(s, incoming, radiance, 1.0);
         }
     }
     let area_count = min(u32(camera.lighting.light_counts.w), MAX_GPU_AREA_LIGHTS);
     for (var i = 0u; i < MAX_GPU_AREA_LIGHTS; i = i + 1u) {
         if i < area_count {
-            shaded += ltc_area_light_specular_contribution(
-                i,
-                base,
-                metallic,
-                roughness,
-                normal,
-                view,
-                world_position,
-                area_shadow_visibility,
-            );
-            for (var sample = 0u; sample < AREA_LIGHT_SAMPLE_COUNT; sample = sample + 1u) {
-                let sample_position = area_light_sample_position(i, sample);
-                let to_light = sample_position - world_position;
-                let incoming = normalize(to_light);
-                let radiance = area_light_radiance(i, sample_position, world_position) * area_shadow_visibility;
-                shaded += pbr_area_light_diffuse_contribution(base, metallic, normal, view, incoming, radiance);
-                shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-                shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-                shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-                shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-                shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
-            }
+            shaded += surface_area_light(i, s, world_position, area_shadow_visibility);
         }
     }
     return shaded;
@@ -958,14 +805,14 @@ struct BeautySemanticOutput {
 };
 
 @fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    return shade_fragment(in);
+fn fs_main(in: VertexOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return shade_fragment(in, front_facing);
 }
 
 @fragment
-fn fs_beauty_semantic(in: VertexOut) -> BeautySemanticOutput {
+fn fs_beauty_semantic(in: VertexOut, @builtin(front_facing) front_facing: bool) -> BeautySemanticOutput {
     var output: BeautySemanticOutput;
-    output.color = shade_fragment(in);
+    output.color = shade_fragment(in, front_facing);
     output.semantic_id = in.semantic_id;
     return output;
 }
@@ -990,440 +837,4 @@ fn tiled_light_tile(fragment_position: vec4<f32>) -> TiledLightTile {
     let tile_x = min(u32(max(fragment_position.x, 0.0)) / tile_size, columns - 1u);
     let tile_y = min(u32(max(fragment_position.y, 0.0)) / tile_size, rows - 1u);
     return light_tiles[1u + tile_y * columns + tile_x];
-}
-
-fn has_environment_light() -> bool {
-    return camera.lighting.environment_diffuse_intensity.w > 0.0 ||
-        camera.lighting.environment_specular_intensity.w > 0.0;
-}
-
-fn environment_prefilter_mip(roughness: f32) -> f32 {
-    return sqrt(clamp(roughness, 0.0, 1.0)) * ENVIRONMENT_PREFILTER_MAX_MIP;
-}
-
-fn rotate_environment_direction(direction: vec3<f32>) -> vec3<f32> {
-    let cosine = camera.lighting.environment_transform.x;
-    let sine = camera.lighting.environment_transform.y;
-    return vec3<f32>(
-        cosine * direction.x + sine * direction.z,
-        direction.y,
-        -sine * direction.x + cosine * direction.z,
-    );
-}
-
-fn environment_reflection_direction(
-    world_position: vec3<f32>,
-    direction: vec3<f32>,
-) -> vec3<f32> {
-    if draw.reflection_probe_bounds_min.w < 0.5 {
-        return rotate_environment_direction(direction);
-    }
-    let epsilon = vec3<f32>(0.000001);
-    let safe_direction = select(
-        select(-epsilon, epsilon, direction >= vec3<f32>(0.0)),
-        direction,
-        abs(direction) >= epsilon,
-    );
-    let exit_plane = select(
-        draw.reflection_probe_bounds_min.xyz,
-        draw.reflection_probe_bounds_max.xyz,
-        safe_direction >= vec3<f32>(0.0),
-    );
-    let distances = (exit_plane - world_position) / safe_direction;
-    let distance = max(min(distances.x, min(distances.y, distances.z)), 0.0);
-    let projected = world_position + safe_direction * distance - draw.reflection_probe_capture.xyz;
-    let projected_length = length(projected);
-    return select(direction, projected / max(projected_length, 0.000001), projected_length > 0.000001);
-}
-
-fn pbr_environment_lighting(
-    base: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    world_position: vec3<f32>,
-) -> vec3<f32> {
-    if !has_environment_light() {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
-    let fresnel = fresnel_schlick(n_dot_v, f0);
-    let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
-    // Phase 1C step 2: real diffuse + specular IBL.
-    //   - Diffuse: prepared irradiance from the active environment.
-    //   - Specular: GGX-prefiltered cubemap sampled in the reflection
-    //     direction at a roughness-driven mip, then composited with an
-    //     baked split-sum BRDF table.
-    let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb;
-    let diffuse = diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w;
-    let reflection = environment_reflection_direction(world_position, reflect(-view, normal));
-    let prefilter_mip = environment_prefilter_mip(roughness);
-    let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = split_sum_brdf_table(n_dot_v, roughness);
-    let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y)) * camera.lighting.environment_specular_intensity.w;
-    return diffuse + specular;
-}
-
-fn clearcoat_environment_lighting(
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    factor: f32,
-    roughness: f32,
-    world_position: vec3<f32>,
-) -> vec3<f32> {
-    if !has_environment_light() || factor <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let reflection = environment_reflection_direction(world_position, reflect(-view, normal));
-    let prefilter_mip = environment_prefilter_mip(roughness);
-    let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = split_sum_brdf_table(n_dot_v, roughness);
-    let specular = prefiltered * (vec3<f32>(0.04) * lut_sample.x + vec3<f32>(lut_sample.y));
-    return specular * camera.lighting.environment_specular_intensity.w * factor;
-}
-
-fn sheen_environment_lighting(
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    color: vec3<f32>,
-    roughness: f32,
-) -> vec3<f32> {
-    if !has_environment_light() {
-        return vec3<f32>(0.0);
-    }
-    let sheen_color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
-    if max(sheen_color.r, max(sheen_color.g, sheen_color.b)) <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.0);
-    let grazing = pow(1.0 - n_dot_v, mix(2.2, 0.65, clamp(roughness, 0.0, 1.0)));
-    let irradiance = camera.lighting.environment_diffuse_intensity.rgb * camera.lighting.environment_diffuse_intensity.w +
-        camera.lighting.environment_specular_intensity.rgb * camera.lighting.environment_specular_intensity.w;
-    let broadness = mix(0.26, 1.25, clamp(roughness, 0.0, 1.0));
-    return sheen_color * irradiance * grazing * broadness;
-}
-
-fn anisotropy_environment_lighting(
-    base: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    normal: vec3<f32>,
-    tangent: vec3<f32>,
-    tangent_handedness: f32,
-    view: vec3<f32>,
-    strength: f32,
-    rotation: f32,
-    direction: vec2<f32>,
-    world_position: vec3<f32>,
-) -> vec3<f32> {
-    if !has_environment_light() || strength <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let safe_tangent = normalize(tangent - normal * dot(tangent, normal));
-    let bitangent = normalize(cross(normal, safe_tangent) * select(-1.0, 1.0, tangent_handedness >= 0.0));
-    let anisotropy_direction = rotated_anisotropy_direction(direction, rotation);
-    let anisotropic_t = normalize(safe_tangent * anisotropy_direction.x + bitangent * anisotropy_direction.y);
-    let anisotropic_normal = normalize(mix(normal, anisotropic_t, clamp(strength * 0.55, 0.0, 0.55)));
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let reflection = environment_reflection_direction(world_position, reflect(-view, anisotropic_normal));
-    let directional_roughness = clamp(roughness * (1.0 - strength * 0.60), 0.04, 1.0);
-    let prefilter_mip = environment_prefilter_mip(directional_roughness);
-    let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = split_sum_brdf_table(n_dot_v, directional_roughness);
-    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
-    let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y));
-    return specular * camera.lighting.environment_specular_intensity.w * strength;
-}
-
-fn pbr_light_contribution(
-    base: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    incoming: vec3<f32>,
-    radiance: vec3<f32>,
-) -> vec3<f32> {
-    let n_dot_l = max(dot(normal, incoming), 0.0);
-    if n_dot_l <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let half_vector = normalize(view + incoming);
-    let n_dot_h = max(dot(normal, half_vector), 0.0);
-    let v_dot_h = max(dot(view, half_vector), 0.0);
-    let alpha = roughness * roughness;
-    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
-    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
-    let fresnel = fresnel_schlick(v_dot_h, f0);
-    let specular = fresnel * specular_brdf;
-    let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
-    let diffuse = diffuse_energy * base / PI;
-    return (diffuse + specular) * radiance * n_dot_l;
-}
-
-fn pbr_area_light_diffuse_contribution(
-    base: vec3<f32>,
-    metallic: f32,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    incoming: vec3<f32>,
-    radiance: vec3<f32>,
-) -> vec3<f32> {
-    let n_dot_l = max(dot(normal, incoming), 0.0);
-    if n_dot_l <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let half_vector = normalize(view + incoming);
-    let v_dot_h = max(dot(view, half_vector), 0.0);
-    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
-    let fresnel = fresnel_schlick(v_dot_h, f0);
-    let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
-    return diffuse_energy * base * radiance * n_dot_l / PI;
-}
-
-fn clearcoat_light_contribution(
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    incoming: vec3<f32>,
-    radiance: vec3<f32>,
-    factor: f32,
-    roughness: f32,
-) -> vec3<f32> {
-    if factor <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_l = max(dot(normal, incoming), 0.0);
-    if n_dot_l <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let half_vector = normalize(view + incoming);
-    let n_dot_h = max(dot(normal, half_vector), 0.0);
-    let v_dot_h = max(dot(view, half_vector), 0.0);
-    let alpha = roughness * roughness;
-    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
-    let fresnel = fresnel_schlick(v_dot_h, vec3<f32>(0.04));
-    let specular = fresnel * specular_brdf;
-    return specular * radiance * n_dot_l * factor;
-}
-
-fn sheen_light_contribution(
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    incoming: vec3<f32>,
-    radiance: vec3<f32>,
-    color: vec3<f32>,
-    roughness: f32,
-) -> vec3<f32> {
-    let sheen_color_clamped = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
-    if max(sheen_color_clamped.r, max(sheen_color_clamped.g, sheen_color_clamped.b)) <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_l = max(dot(normal, incoming), 0.0);
-    if n_dot_l <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let half_vector = normalize(view + incoming);
-    let n_dot_h = max(dot(normal, half_vector), 0.0);
-    let alpha = roughness * roughness;
-    let sheen = sheen_color_clamped * brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
-    return sheen * radiance * n_dot_l;
-}
-
-fn anisotropy_light_contribution(
-    base: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    normal: vec3<f32>,
-    tangent: vec3<f32>,
-    tangent_handedness: f32,
-    view: vec3<f32>,
-    incoming: vec3<f32>,
-    radiance: vec3<f32>,
-    strength: f32,
-    rotation: f32,
-    direction: vec2<f32>,
-) -> vec3<f32> {
-    if strength <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_l = max(dot(normal, incoming), 0.0);
-    if n_dot_l <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let safe_tangent = normalize(tangent - normal * dot(tangent, normal));
-    let bitangent = normalize(cross(normal, safe_tangent) * select(-1.0, 1.0, tangent_handedness >= 0.0));
-    let anisotropy_direction = rotated_anisotropy_direction(direction, rotation);
-    let anisotropic_t = normalize(safe_tangent * anisotropy_direction.x + bitangent * anisotropy_direction.y);
-    let anisotropic_b = normalize(cross(normal, anisotropic_t));
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let half_vector = normalize(view + incoming);
-    let n_dot_h = max(dot(normal, half_vector), 0.0);
-    let v_dot_h = max(dot(view, half_vector), 0.0);
-    let t_dot_v = dot(anisotropic_t, view);
-    let b_dot_v = dot(anisotropic_b, view);
-    let t_dot_l = dot(anisotropic_t, incoming);
-    let b_dot_l = dot(anisotropic_b, incoming);
-    let t_dot_h = dot(anisotropic_t, half_vector);
-    let b_dot_h = dot(anisotropic_b, half_vector);
-    let base_alpha = roughness * roughness;
-    let tangent_alpha = mix(base_alpha, 1.0, strength * strength);
-    let bitangent_alpha = base_alpha;
-    let distribution = distribution_ggx_anisotropic(n_dot_h, t_dot_h, b_dot_h, tangent_alpha, bitangent_alpha);
-    let visibility = visibility_ggx_anisotropic(n_dot_l, n_dot_v, b_dot_v, t_dot_v, t_dot_l, b_dot_l, tangent_alpha, bitangent_alpha);
-    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
-    let fresnel = fresnel_schlick(v_dot_h, f0);
-    return fresnel * distribution * visibility * radiance * n_dot_l * strength;
-}
-
-fn iridescence_light_contribution(
-    base: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    incoming: vec3<f32>,
-    radiance: vec3<f32>,
-    factor: f32,
-    ior: f32,
-    thickness_nm: f32,
-) -> vec3<f32> {
-    if factor <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_l = max(dot(normal, incoming), 0.0);
-    if n_dot_l <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let half_vector = normalize(view + incoming);
-    let n_dot_h = max(dot(normal, half_vector), 0.0);
-    let v_dot_h = max(dot(view, half_vector), 0.0);
-    let alpha = roughness * roughness;
-    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
-    let film_color = iridescence_film_color(thickness_nm, ior);
-    let f0 = (vec3<f32>(0.04) * (1.0 - metallic) + base * metallic) * film_color;
-    let fresnel = fresnel_schlick(v_dot_h, f0);
-    let specular = fresnel * film_color * specular_brdf;
-    return specular * radiance * n_dot_l * factor;
-}
-
-fn dispersion_light_contribution(
-    base: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    normal: vec3<f32>,
-    view: vec3<f32>,
-    incoming: vec3<f32>,
-    radiance: vec3<f32>,
-    factor: f32,
-    ior: f32,
-) -> vec3<f32> {
-    let dispersion = max(factor, 0.0);
-    if dispersion <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_l = max(dot(normal, incoming), 0.0);
-    if n_dot_l <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let n_dot_v = max(dot(normal, view), 0.001);
-    let half_vector = normalize(view + incoming);
-    let n_dot_h = max(dot(normal, half_vector), 0.0);
-    let v_dot_h = max(dot(view, half_vector), 0.0);
-    let alpha = roughness * roughness;
-    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
-    let f0 = dispersion_f0_from_ior(ior, dispersion);
-    let fresnel = fresnel_schlick(v_dot_h, f0);
-    let specular = fresnel * specular_brdf;
-    _ = base;
-    _ = metallic;
-    return specular * radiance * n_dot_l * dispersion;
-}
-
-fn iridescence_film_color(thickness_nm: f32, ior: f32) -> vec3<f32> {
-    let safe_ior = select(1.3, ior, ior > 0.0);
-    let phase = max(thickness_nm, 0.0) * safe_ior / 650.0 * PI * 1.25;
-    return clamp(vec3<f32>(
-        sin(phase) * 0.5 + 0.5,
-        sin(phase + 2.0 * PI / 3.0) * 0.5 + 0.5,
-        sin(phase + 4.0 * PI / 3.0) * 0.5 + 0.5,
-    ), vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-fn dispersion_f0_from_ior(ior: f32, dispersion: f32) -> vec3<f32> {
-    let safe_ior = max(ior, 1.0);
-    let half_spread = (safe_ior - 1.0) * 0.025 * max(dispersion, 0.0);
-    return vec3<f32>(
-        f0_from_ior(max(safe_ior - half_spread, 1.0)),
-        f0_from_ior(safe_ior),
-        f0_from_ior(safe_ior + half_spread),
-    );
-}
-
-fn f0_from_ior(ior: f32) -> f32 {
-    let ratio = (ior - 1.0) / max(ior + 1.0, 0.0001);
-    return ratio * ratio;
-}
-
-fn distribution_ggx_anisotropic(n_dot_h: f32, t_dot_h: f32, b_dot_h: f32, tangent_alpha: f32, bitangent_alpha: f32) -> f32 {
-    let alpha_product = max(tangent_alpha * bitangent_alpha, 0.0001);
-    let f = vec3<f32>(
-        bitangent_alpha * t_dot_h,
-        tangent_alpha * b_dot_h,
-        alpha_product * n_dot_h,
-    );
-    let w2 = alpha_product / max(dot(f, f), 0.0001);
-    return alpha_product * w2 * w2 / PI;
-}
-
-fn visibility_ggx_anisotropic(
-    n_dot_l: f32,
-    n_dot_v: f32,
-    b_dot_v: f32,
-    t_dot_v: f32,
-    t_dot_l: f32,
-    b_dot_l: f32,
-    tangent_alpha: f32,
-    bitangent_alpha: f32,
-) -> f32 {
-    let ggx_v = n_dot_l * length(vec3<f32>(tangent_alpha * t_dot_v, bitangent_alpha * b_dot_v, n_dot_v));
-    let ggx_l = n_dot_v * length(vec3<f32>(tangent_alpha * t_dot_l, bitangent_alpha * b_dot_l, n_dot_l));
-    return clamp(0.5 / max(ggx_v + ggx_l, 0.0001), 0.0, 1.0);
-}
-
-fn rotated_anisotropy_direction(direction: vec2<f32>, rotation: f32) -> vec2<f32> {
-    let normalized_direction = select(vec2<f32>(1.0, 0.0), normalize(direction), length(direction) > 0.0001);
-    let sin_r = sin(rotation);
-    let cos_r = cos(rotation);
-    return vec2<f32>(
-        normalized_direction.x * cos_r - normalized_direction.y * sin_r,
-        normalized_direction.x * sin_r + normalized_direction.y * cos_r,
-    );
-}
-
-fn distance_attenuation(to_light: vec3<f32>, range: f32) -> f32 {
-    let distance_squared = max(dot(to_light, to_light), 0.0001);
-    let inverse_square = 1.0 / distance_squared;
-    if range <= 0.0 {
-        return inverse_square;
-    }
-    let distance = sqrt(distance_squared);
-    let range_falloff = clamp(1.0 - pow4(distance / range), 0.0, 1.0);
-    return inverse_square * range_falloff * range_falloff;
-}
-
-fn spot_cone_attenuation(cos_angle: f32, inner_cone_cos: f32, outer_cone_cos: f32) -> f32 {
-    if cos_angle >= inner_cone_cos {
-        return 1.0;
-    }
-    if cos_angle <= outer_cone_cos {
-        return 0.0;
-    }
-    return clamp((cos_angle - outer_cone_cos) / (inner_cone_cos - outer_cone_cos), 0.0, 1.0);
 }

@@ -171,7 +171,7 @@ pub(super) fn check_iridescence_material_contracts(root: &Path, findings: &mut V
             "var iridescence_thickness_texture: texture_2d_array<f32>",
             "material.iridescence_factors.x * iridescence_sample.r",
             "mix(material.iridescence_factors.z, material.iridescence_factors.w, clamp(iridescence_thickness_sample.g, 0.0, 1.0))",
-            "iridescence_light_contribution",
+            "surface.iridescence_fresnel = iridescence_fresnel(",
         ],
     );
     require_contains(
@@ -183,7 +183,18 @@ pub(super) fn check_iridescence_material_contracts(root: &Path, findings: &mut V
             "iridescence_factors: vec4<f32>",
             "var iridescence_texture: texture_2d<f32>",
             "var iridescence_thickness_texture: texture_2d<f32>",
-            "iridescence_light_contribution",
+            "surface.iridescence_fresnel = iridescence_fresnel(",
+        ],
+    );
+    // The lobe itself lives in the surface model shared by both variants.
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/surface_lighting.wgsl",
+        &[
+            "fn iridescence_fresnel(",
+            "return mix(schlick, s.iridescence_fresnel, s.iridescence);",
         ],
     );
     require_contains(

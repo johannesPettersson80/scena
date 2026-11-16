@@ -1,12 +1,11 @@
 use crate::assets::{Assets, MaterialHandle};
 use crate::diagnostics::PrepareError;
-use crate::geometry::{Aabb, GeometryDesc, GeometryTopology, GeometryVertex};
+use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
 use crate::scene::{NodeKey, Scene, Transform, Vec3};
 
 use super::super::materials::render_material_slot;
 use super::super::transforms::{compose_transform, transform_position, transform_primitive};
 use super::DeformationInputs;
-use super::math::bounds_corners;
 use super::{ShadowOccluder, ShadowOccluderSet};
 
 pub(super) fn collect_occluders<F>(
@@ -92,68 +91,7 @@ pub(crate) fn cpu_shadow_visibility_required(
         })
 }
 
-pub(crate) fn collect_shadow_projection_points<F>(
-    scene: &Scene,
-    assets: Option<&Assets<F>>,
-    origin_shift: Vec3,
-) -> Result<Vec<Vec3>, PrepareError> {
-    let mut points = Vec::new();
-
-    for (renderable, transform) in scene.renderables() {
-        for primitive in renderable.primitives() {
-            let primitive = transform_primitive(primitive, transform, origin_shift);
-            points.extend(primitive.vertices().iter().map(|vertex| vertex.position));
-        }
-    }
-
-    let Some(assets) = assets else {
-        return Ok(points);
-    };
-
-    for (node, mesh, transform) in scene.mesh_nodes() {
-        let geometry = assets
-            .geometry(mesh.geometry())
-            .ok_or(PrepareError::GeometryNotFound {
-                node,
-                geometry: mesh.geometry(),
-            })?;
-        append_shadow_projection_points(
-            &mut points,
-            node,
-            &geometry,
-            DeformationInputs {
-                morph_weights: scene.morph_weights(node),
-                skin_matrices: scene.skin_matrices(node).as_deref(),
-            },
-            transform,
-            origin_shift,
-        )?;
-    }
-
-    for (node, instance_set, node_transform) in scene.instance_set_nodes() {
-        let geometry =
-            assets
-                .geometry(instance_set.geometry())
-                .ok_or(PrepareError::GeometryNotFound {
-                    node,
-                    geometry: instance_set.geometry(),
-                })?;
-        for instance in instance_set.instances() {
-            append_shadow_projection_points(
-                &mut points,
-                node,
-                &geometry,
-                DeformationInputs::default(),
-                compose_transform(node_transform, instance.transform()),
-                origin_shift,
-            )?;
-        }
-    }
-
-    Ok(points)
-}
-
-fn shadow_vertices(
+pub(super) fn shadow_vertices(
     node: NodeKey,
     geometry: &GeometryDesc,
     deformation: DeformationInputs<'_>,
@@ -196,42 +134,4 @@ fn append_shadow_geometry(
             ),
         });
     }
-}
-
-fn append_shadow_projection_points(
-    points: &mut Vec<Vec3>,
-    node: NodeKey,
-    geometry: &GeometryDesc,
-    deformation: DeformationInputs<'_>,
-    transform: Transform,
-    origin_shift: Vec3,
-) -> Result<(), PrepareError> {
-    if geometry.topology() != GeometryTopology::Triangles {
-        return Ok(());
-    }
-    if deformation.morph_weights.is_none()
-        && deformation.skin_matrices.is_none()
-        && geometry.skin().is_none()
-    {
-        append_transformed_bounds_points(points, geometry.bounds(), transform, origin_shift);
-        return Ok(());
-    }
-
-    for vertex in shadow_vertices(node, geometry, deformation)? {
-        points.push(transform_position(vertex.position, transform, origin_shift));
-    }
-    Ok(())
-}
-
-fn append_transformed_bounds_points(
-    points: &mut Vec<Vec3>,
-    bounds: Aabb,
-    transform: Transform,
-    origin_shift: Vec3,
-) {
-    points.extend(
-        bounds_corners(bounds)
-            .into_iter()
-            .map(|corner| transform_position(corner, transform, origin_shift)),
-    );
 }

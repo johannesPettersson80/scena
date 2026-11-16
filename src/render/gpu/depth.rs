@@ -1,10 +1,16 @@
 use super::super::RasterTarget;
-use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
+use super::alpha_mask::{self, AlphaMaskDepthPipelines, AlphaMaskPipelineInputs};
+use super::instancing::{INSTANCE_BYTE_LEN, InstanceDrawBatch};
+use super::materials::MaterialResources;
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
-use super::pipeline::{DrawSideFilter, SCENA_FRONT_FACE};
+use super::pipeline::DrawSideFilter;
 use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::stats::GpuResourceStats;
-use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
+use super::vertices::PrimitiveDrawBatch;
+
+mod pipeline;
+
+use pipeline::create_pipeline;
 
 pub(super) const DEPTH_PREPASS_SHADER: &str = r#"
 struct VertexIn {
@@ -156,6 +162,9 @@ pub(super) struct DepthPrepassResources {
     color_view: Option<wgpu::TextureView>,
     single_sided_pipeline: wgpu::RenderPipeline,
     double_sided_pipeline: wgpu::RenderPipeline,
+    /// Alpha-tested pipelines for glTF MASK batches; `None` when the prepared
+    /// scene has no masked material.
+    masked_pipelines: Option<AlphaMaskDepthPipelines>,
     clear_depth: f32,
     reversed_z: bool,
     pub(super) color_compare: wgpu::CompareFunction,
@@ -163,6 +172,7 @@ pub(super) struct DepthPrepassResources {
     sample_count: u32,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn create_depth_prepass_resources(
     device: &wgpu::Device,
     target: RasterTarget,
@@ -171,6 +181,7 @@ pub(super) fn create_depth_prepass_resources(
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_color_enabled: bool,
     sample_count: u32,
+    alpha_mask: Option<AlphaMaskPipelineInputs<'_>>,
 ) -> DepthPrepassResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m2.depth_prepass"),
@@ -272,6 +283,18 @@ pub(super) fn create_depth_prepass_resources(
         sample_count,
     );
 
+    let masked_pipelines = alpha_mask.map(|inputs| {
+        AlphaMaskDepthPipelines::create(
+            device,
+            inputs,
+            camera_bind_group_layout,
+            draw_bind_group_layout,
+            color_compare,
+            depth_color_enabled.then_some(DEPTH_COLOR_FORMAT),
+            sample_count,
+        )
+    });
+
     DepthPrepassResources {
         texture,
         view,
@@ -281,85 +304,12 @@ pub(super) fn create_depth_prepass_resources(
         color_view,
         single_sided_pipeline,
         double_sided_pipeline,
+        masked_pipelines,
         clear_depth: if reversed_z { 0.0 } else { 1.0 },
         reversed_z,
         color_compare,
         sample_count,
     }
-}
-
-fn create_pipeline(
-    device: &wgpu::Device,
-    pipeline_layout: &wgpu::PipelineLayout,
-    shader: &wgpu::ShaderModule,
-    color_compare: wgpu::CompareFunction,
-    depth_color_enabled: bool,
-    double_sided: bool,
-    sample_count: u32,
-) -> wgpu::RenderPipeline {
-    let vertex_buffer = wgpu::VertexBufferLayout {
-        array_stride: VERTEX_BYTE_LEN as u64,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &VERTEX_ATTRIBUTES,
-    };
-    let label = if double_sided {
-        "scena.m2.depth_prepass_pipeline.double_sided"
-    } else {
-        "scena.m2.depth_prepass_pipeline.single_sided"
-    };
-    let color_targets = depth_color_enabled
-        .then_some(Some(wgpu::ColorTargetState {
-            format: DEPTH_COLOR_FORMAT,
-            blend: None,
-            write_mask: wgpu::ColorWrites::ALL,
-        }))
-        .into_iter()
-        .collect::<Vec<_>>();
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(label),
-        layout: Some(pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[
-                vertex_buffer,
-                wgpu::VertexBufferLayout {
-                    array_stride: INSTANCE_BYTE_LEN as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &INSTANCE_ATTRIBUTES,
-                },
-            ],
-        },
-        primitive: wgpu::PrimitiveState {
-            front_face: SCENA_FRONT_FACE,
-            cull_mode: (!double_sided).then_some(wgpu::Face::Back),
-            ..Default::default()
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(color_compare),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState {
-            count: sample_count,
-            ..Default::default()
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some(if depth_color_enabled {
-                "fs_main"
-            } else {
-                "fs_depth_only"
-            }),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &color_targets,
-        }),
-        multiview_mask: None,
-        cache: None,
-    })
 }
 
 impl DepthPrepassResources {
@@ -383,6 +333,13 @@ impl DepthPrepassResources {
     pub(super) const fn sample_count(&self) -> u32 {
         self.sample_count
     }
+}
+
+/// Depth comparison the colour pass must use against `prepass`, if any.
+pub(super) fn color_compare(
+    prepass: Option<&DepthPrepassResources>,
+) -> Option<wgpu::CompareFunction> {
+    prepass.map(|prepass| prepass.color_compare)
 }
 
 pub(super) fn resource_stats(
@@ -454,6 +411,9 @@ pub(super) fn encode_depth_prepass(
     let identity_instance_offset =
         u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
     pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
+    // Masked batches are alpha-tested below; without those pipelines they fall
+    // back to the plain ones rather than vanishing from the depth buffer.
+    let alpha_test = resources.masked_pipelines.is_some();
     for side_filter in [DrawSideFilter::SingleSided, DrawSideFilter::DoubleSided] {
         let pipeline = match side_filter {
             DrawSideFilter::SingleSided => &resources.single_sided_pipeline,
@@ -461,7 +421,10 @@ pub(super) fn encode_depth_prepass(
         };
         pass.set_pipeline(pipeline);
         for batch in inputs.draw_batches {
-            if !batch.depth_prepass_eligible || !side_filter.includes(batch) {
+            if !batch.depth_prepass_eligible
+                || !side_filter.includes(batch)
+                || (alpha_test && batch.alpha_masked)
+            {
                 continue;
             }
             let draw_offset =
@@ -474,7 +437,10 @@ pub(super) fn encode_depth_prepass(
             *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
         }
         for batch in inputs.instance_batches {
-            if !batch.depth_prepass_eligible || !side_filter.includes_instance(batch) {
+            if !batch.depth_prepass_eligible
+                || !side_filter.includes_instance(batch)
+                || (alpha_test && batch.alpha_masked)
+            {
                 continue;
             }
             let draw_offset =
@@ -490,6 +456,21 @@ pub(super) fn encode_depth_prepass(
             *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
         }
     }
+    if let Some(pipelines) = &resources.masked_pipelines {
+        alpha_mask::encode_depth_draws(
+            &mut pass,
+            pipelines,
+            &alpha_mask::MaskedDraws {
+                materials: inputs.material_resources,
+                instance_buffer: inputs.instance_buffer,
+                draw_bind_group: inputs.draw_bind_group,
+                draw_batches: inputs.draw_batches,
+                instance_batches: inputs.instance_batches,
+                identity_instance: inputs.identity_instance,
+            },
+            inputs.draw_submissions,
+        );
+    }
 }
 
 pub(super) struct DepthPrepassInputs<'a> {
@@ -497,10 +478,32 @@ pub(super) struct DepthPrepassInputs<'a> {
     pub(super) instance_buffer: &'a wgpu::Buffer,
     pub(super) camera_bind_group: &'a wgpu::BindGroup,
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
+    pub(super) material_resources: &'a MaterialResources,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
     pub(super) instance_batches: &'a [InstanceDrawBatch],
     pub(super) identity_instance: u32,
     pub(super) draw_submissions: &'a mut u64,
+}
+
+impl<'a> DepthPrepassInputs<'a> {
+    /// Inputs that draw every batch of the prepared frame with the frame's
+    /// own camera.
+    pub(super) fn for_resources(
+        resources: &'a super::GpuPreparedResources,
+        draw_submissions: &'a mut u64,
+    ) -> Self {
+        Self {
+            vertex_buffer: &resources.vertex_buffer,
+            instance_buffer: &resources.instance_buffer,
+            camera_bind_group: &resources.output_bind_group,
+            draw_bind_group: &resources.draw_bind_group,
+            material_resources: &resources.material_resources,
+            draw_batches: &resources.draw_batches,
+            instance_batches: &resources.instance_batches,
+            identity_instance: resources.identity_instance,
+            draw_submissions,
+        }
+    }
 }
 
 fn depth_clear_color(clear_depth: f32) -> wgpu::Color {

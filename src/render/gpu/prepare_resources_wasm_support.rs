@@ -2,9 +2,8 @@
 
 use crate::diagnostics::Backend;
 
-use super::instancing::InstanceDrawBatch;
+use super::resource_encoding::EncodedDrawResources;
 use super::stats::GpuResourceStats;
-use super::vertices::PrimitiveDrawBatch;
 
 pub(super) fn browser_trace(
     started_ms: f64,
@@ -28,14 +27,12 @@ pub(super) fn browser_trace(
     let _ = (started_ms, backend, stage, detail);
 }
 
-pub(super) fn browser_rasterized_triangle_instances(
-    draw_batches: &[PrimitiveDrawBatch],
-    instance_batches: &[InstanceDrawBatch],
-) -> u64 {
-    draw_batches
+pub(super) fn browser_rasterized_triangle_instances(encoded: &EncodedDrawResources) -> u64 {
+    encoded
+        .draw_batches
         .iter()
         .map(|batch| u64::from(batch.vertex_count / 3))
-        .chain(instance_batches.iter().map(|batch| {
+        .chain(encoded.instance_batches.iter().map(|batch| {
             u64::from(batch.vertex_count / 3).saturating_mul(u64::from(batch.instance_count))
         }))
         .fold(0_u64, u64::saturating_add)

@@ -135,7 +135,7 @@ pub(super) fn check_anisotropy_material_contracts(root: &Path, findings: &mut Ve
             "var anisotropy_texture: texture_2d_array<f32>",
             "anisotropy_sample.rg * 2.0",
             "material.anisotropy_factors.x * anisotropy_sample.b",
-            "anisotropy_light_contribution",
+            "surface.anisotropy_t = surface_anisotropy_tangent(",
         ],
     );
     require_contains(
@@ -146,7 +146,18 @@ pub(super) fn check_anisotropy_material_contracts(root: &Path, findings: &mut Ve
         &[
             "anisotropy_factors: vec4<f32>",
             "var anisotropy_texture: texture_2d<f32>",
-            "anisotropy_light_contribution",
+            "surface.anisotropy_t = surface_anisotropy_tangent(",
+        ],
+    );
+    // The lobe itself lives in the surface model shared by both variants.
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/surface_lighting.wgsl",
+        &[
+            "fn surface_anisotropic_specular(",
+            "specular_brdf = surface_anisotropic_specular(s, incoming, half_vector, n_dot_l, n_dot_h);",
         ],
     );
     require_contains(

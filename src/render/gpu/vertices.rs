@@ -48,6 +48,8 @@ pub(super) struct PrimitiveDrawBatch {
     pub(super) material_slot: u32,
     pub(super) draw_uniform_index: u32,
     pub(super) depth_prepass_eligible: bool,
+    /// The material is glTF MASK: depth and shadow passes must alpha-test it.
+    pub(super) alpha_masked: bool,
     pub(super) double_sided: bool,
     pub(super) semantic_eligible: bool,
     pub(super) reflection_probe_slot: Option<u32>,
@@ -243,6 +245,7 @@ pub(super) fn encode_draw_batches_indexed_with_semantics(
         let start_vertex = primitive.original_vertex_offset();
         let material_slot = primitive.render_material_slot();
         let depth_prepass_eligible = primitive.depth_prepass_eligible();
+        let alpha_masked = primitive.semantic_alpha_cutoff().is_some();
         let double_sided = primitive.double_sided();
         let semantic_eligible = primitive.semantic_opaque() && primitive.source_node().is_some();
         let reflection_probe_slot = primitive.reflection_probe().map(|probe| probe.slot());
@@ -252,6 +255,7 @@ pub(super) fn encode_draw_batches_indexed_with_semantics(
             && last.material_slot == material_slot
             && last.draw_uniform_index == draw_uniform_index
             && last.depth_prepass_eligible == depth_prepass_eligible
+            && last.alpha_masked == alpha_masked
             && last.double_sided == double_sided
             && last.semantic_eligible == semantic_eligible
             && last.reflection_probe_slot == reflection_probe_slot
@@ -266,6 +270,7 @@ pub(super) fn encode_draw_batches_indexed_with_semantics(
             material_slot,
             draw_uniform_index,
             depth_prepass_eligible,
+            alpha_masked,
             double_sided,
             semantic_eligible,
             reflection_probe_slot,
@@ -480,6 +485,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    alpha_masked: false,
                     double_sided: false,
                     semantic_eligible: true,
                     reflection_probe_slot: None,
@@ -490,6 +496,7 @@ mod tests {
                     material_slot: 2,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    alpha_masked: false,
                     double_sided: false,
                     semantic_eligible: true,
                     reflection_probe_slot: None,
@@ -638,6 +645,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    alpha_masked: false,
                     double_sided: false,
                     semantic_eligible: true,
                     reflection_probe_slot: None,
@@ -648,6 +656,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: false,
+                    alpha_masked: false,
                     double_sided: false,
                     semantic_eligible: true,
                     reflection_probe_slot: None,
@@ -679,6 +688,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    alpha_masked: false,
                     double_sided: false,
                     semantic_eligible: true,
                     reflection_probe_slot: None,
@@ -689,6 +699,7 @@ mod tests {
                     material_slot: 1,
                     draw_uniform_index: 0,
                     depth_prepass_eligible: true,
+                    alpha_masked: false,
                     double_sided: true,
                     semantic_eligible: true,
                     reflection_probe_slot: None,

@@ -22,7 +22,15 @@ pub(super) enum ShaderProfile {
 const VF: &[&str] = &["vs_main", "fs_main"];
 const DEPTH: &[&str] = &["vs_main", "fs_main", "fs_depth_only"];
 const VS: &[&str] = &["vs_main"];
+const ALPHA_MASK: &[&str] = &[
+    "vs_depth",
+    "vs_shadow",
+    "fs_depth_color",
+    "fs_depth_only",
+    "fs_shadow",
+];
 const TRIANGLE: &[&str] = &["vs_main", "fs_main", "fs_semantic"];
+const AMBIENT_OCCLUSION: &[&str] = &["cs_occlusion", "cs_blur"];
 
 macro_rules! define_shader_variants {
     ($($variant:ident => ($id:literal, $source:expr, $entries:expr, $profile:ident, [$($axis:literal),* $(,)?])),+ $(,)?) => {
@@ -64,6 +72,14 @@ define_shader_variants! {
         "depth.prepass", super::depth::DEPTH_PREPASS_SHADER, DEPTH,
         NativeWebGpu, ["depth", "instancing"]
     ),
+    AlphaMaskTexture2dArray => (
+        "alpha_mask.texture_2d_array", super::alpha_mask::ALPHA_MASK_SHADER_TEXTURE_2D_ARRAY, ALPHA_MASK,
+        NativeWebGpu, ["binding:texture_2d_array", "depth", "shadows", "alpha_mask", "instancing"]
+    ),
+    AlphaMaskTexture2d => (
+        "alpha_mask.texture_2d", super::alpha_mask::ALPHA_MASK_SHADER_TEXTURE_2D, ALPHA_MASK,
+        WebGl2Compatible, ["binding:texture_2d", "depth", "shadows", "alpha_mask", "instancing"]
+    ),
     LabelsFinal => (
         "labels.final", super::labels::FINAL_SHADER, VF,
         NativeWebGpu, ["labels", "target:srgb"]
@@ -83,6 +99,10 @@ define_shader_variants! {
     ShadowDirectional => (
         "shadow.directional", super::shadow::SHADOW_CASTER_SHADER, VS,
         NativeWebGpu, ["shadows", "depth", "instancing"]
+    ),
+    AmbientOcclusion => (
+        "ambient_occlusion", super::ambient_occlusion::AMBIENT_OCCLUSION_SHADER, AMBIENT_OCCLUSION,
+        NativeWebGpu, ["ambient_occlusion", "depth"]
     ),
     PostBloom => (
         "post.bloom", super::post::BLOOM_SHADER, VF,
@@ -315,8 +335,13 @@ mod tests {
             );
         }
         assert_eq!(
-            compute_entry_points, 0,
-            "the production renderer currently owns no compute shader modules"
+            compute_entry_points, 2,
+            "ambient occlusion owns the only compute entry points (occlusion and blur); a new \
+             compute stage must be inventoried here deliberately"
+        );
+        assert!(
+            axes.contains("ambient_occlusion"),
+            "missing shader feature axis ambient_occlusion"
         );
         validate_manifest_coverage(PRODUCTION_SHADER_IDS).unwrap();
         assert!(
@@ -367,12 +392,28 @@ mod tests {
     /// They are coarse by design: the rule above names the specific hazard,
     /// while these catch any other change that inflates a shader wholesale.
     ///
-    /// Measured maxima, both `triangle` fragment entry points: 5,263 SPIR-V
-    /// instructions and 84,931 bytes of GLSL ES 3.00. With the LTC tables baked
-    /// in as `const` arrays the same entry points measured 7,405 instructions
-    /// and roughly 117,000 bytes, so these budgets reject that shape.
-    const MAX_ENTRY_POINT_SPIRV_INSTRUCTIONS: usize = 6_000;
+    /// The WebGL2 budget is the hardware-driven one: tile-based mobile GPUs
+    /// (Mesa V3D on the Raspberry Pi 5) fail register allocation on oversized
+    /// fragment shaders. Measured maxima for the WebGL2 `triangle` fragment
+    /// entry points: 5,446 SPIR-V instructions and under 100,000 bytes of GLSL
+    /// ES 3.00. With the LTC tables baked in as `const` arrays the same entry
+    /// points measured 7,405 instructions and roughly 117,000 bytes, so these
+    /// budgets reject that shape.
+    ///
+    /// The native and WebGPU variant additionally carries tiled lighting,
+    /// shadow cascades and the soft-shadow blocker search, none of which the
+    /// WebGL2 variant compiles. It measures 6,240 instructions and gets its
+    /// own ceiling so it cannot hide growth of the WebGL2 shader.
+    const MAX_WEBGL2_ENTRY_POINT_SPIRV_INSTRUCTIONS: usize = 6_000;
+    const MAX_NATIVE_ENTRY_POINT_SPIRV_INSTRUCTIONS: usize = 6_800;
     const MAX_WEBGL2_ENTRY_POINT_GLSL_BYTES: usize = 100_000;
+
+    const fn spirv_instruction_budget(profile: ShaderProfile) -> usize {
+        match profile {
+            ShaderProfile::WebGl2Compatible => MAX_WEBGL2_ENTRY_POINT_SPIRV_INSTRUCTIONS,
+            ShaderProfile::NativeWebGpu => MAX_NATIVE_ENTRY_POINT_SPIRV_INSTRUCTIONS,
+        }
+    }
 
     /// Resolves an access chain to the global it ultimately reads, so a uniform
     /// or storage buffer is not mistaken for an in-shader constant table.
@@ -544,8 +585,9 @@ mod tests {
 
     #[test]
     fn every_production_entry_point_stays_inside_its_spirv_budget() {
-        let mut measured: Vec<(String, usize)> = Vec::new();
+        let mut measured: Vec<(String, usize, usize)> = Vec::new();
         for variant in production_shader_variants() {
+            let budget = spirv_instruction_budget(variant.profile);
             let (module, info) = parse_and_validate(&variant);
             for entry in module.entry_points.iter() {
                 let words = naga::back::spv::write_vec(
@@ -570,16 +612,20 @@ mod tests {
                     instructions += 1;
                     offset += word_count;
                 }
-                measured.push((format!("{} {}", variant.id, entry.name), instructions));
+                measured.push((
+                    format!("{} {}", variant.id, entry.name),
+                    instructions,
+                    budget,
+                ));
             }
         }
         let over: Vec<_> = measured
             .iter()
-            .filter(|(_, count)| *count > MAX_ENTRY_POINT_SPIRV_INSTRUCTIONS)
+            .filter(|(_, count, budget)| count > budget)
             .collect();
         assert!(
             over.is_empty(),
-            "SPIR-V budget is {MAX_ENTRY_POINT_SPIRV_INSTRUCTIONS} instructions; measured {measured:?}"
+            "SPIR-V instruction budgets exceeded (name, measured, budget): {over:?}; all: {measured:?}"
         );
     }
 }

@@ -416,7 +416,11 @@ fn fill_prefilter_face(
 /// `(N·V, roughness)`. Returned slice is `size * size * 2` floats laid
 /// out row-major. The shader computes specular as
 /// `prefiltered_radiance * (F0 * lut.x + lut.y)`.
-fn cubemap_face_direction(face_index: usize, u: f32, v: f32) -> Vec3 {
+pub(in crate::render::prepare) fn cubemap_face_direction(
+    face_index: usize,
+    u: f32,
+    v: f32,
+) -> Vec3 {
     let normal = ENVIRONMENT_CUBEMAP_FACE_NORMALS[face_index.min(5)];
     let raw = match face_index {
         0 => Vec3::new(1.0, -v, -u),

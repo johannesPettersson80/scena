@@ -125,34 +125,54 @@ pub(crate) fn check_material_reflection_quality_contracts(
             "floor-only post reflections do not prove chrome/mirror material reflections",
         ],
     );
+    // Transmission and material reflections are one source shared by both
+    // triangle shader variants, so the two cannot drift apart.
     require_contains(
         root,
         findings,
         "ARCH-RENDER-QUALITY",
+        "src/render/gpu/surface_effects.wgsl",
+        &[
+            "fn physical_transmission_color",
+            "volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w)",
+            "textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv",
+            "fn screen_space_material_reflection",
+            "camera.color_management.z",
+            "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/gpu/output.rs",
+        &["include_str!(\"surface_effects.wgsl\")"],
+    );
+    for shader in [
         "src/render/gpu/output_shader.wgsl",
-        &[
-            "fn physical_transmission_color",
-            "volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w)",
-            "textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv",
-            "fn screen_space_material_reflection",
-            "camera.color_management.z",
-            "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-RENDER-QUALITY",
         "src/render/gpu/output_shader_texture_2d.wgsl",
-        &[
-            "fn physical_transmission_color",
-            "volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w)",
-            "textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv",
-            "fn screen_space_material_reflection",
-            "camera.color_management.z",
-            "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv",
-        ],
-    );
+    ] {
+        require_contains(
+            root,
+            findings,
+            "ARCH-RENDER-QUALITY",
+            shader,
+            &[
+                "output_rgb = screen_space_material_reflection(",
+                "let transmitted = physical_transmission_color(",
+            ],
+        );
+        forbid_contains(
+            root,
+            findings,
+            "ARCH-RENDER-QUALITY",
+            shader,
+            &[
+                "fn physical_transmission_color",
+                "fn screen_space_material_reflection",
+            ],
+        );
+    }
     require_contains(
         root,
         findings,

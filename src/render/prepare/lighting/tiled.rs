@@ -118,8 +118,13 @@ pub(in crate::render) fn collect_tiled_light_assignment(
     let mut records = Vec::with_capacity(record_count);
     let mut tile_lists = vec![Vec::<u32>::new(); tile_count];
 
+    let mut shadow_slot_used = false;
     for light in &lights.directional {
-        let index = push_directional_record(&mut records, light);
+        // Only one directional light owns the shadow map; mark its record so
+        // the tiled shading loop still applies the shadow.
+        let owns_shadow_map = light.casts_shadows && !shadow_slot_used;
+        shadow_slot_used |= owns_shadow_map;
+        let index = push_directional_record(&mut records, light, owns_shadow_map);
         for list in &mut tile_lists {
             list.push(index);
         }
@@ -193,6 +198,7 @@ pub(in crate::render) fn collect_tiled_light_assignment(
 fn push_directional_record(
     records: &mut Vec<PreparedTiledGpuLightRecord>,
     light: &PreparedDirectionalLight,
+    owns_shadow_map: bool,
 ) -> u32 {
     let index = records.len() as u32;
     records.push(PreparedTiledGpuLightRecord {
@@ -204,7 +210,7 @@ fn push_directional_record(
         ],
         direction_kind: [0.0, 0.0, -1.0, KIND_DIRECTIONAL],
         color_range: [light.color.r, light.color.g, light.color.b, 0.0],
-        cone: [0.0, 0.0, 0.0, 0.0],
+        cone: [0.0, 0.0, if owns_shadow_map { 1.0 } else { 0.0 }, 0.0],
     });
     index
 }

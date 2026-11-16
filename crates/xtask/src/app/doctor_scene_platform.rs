@@ -73,7 +73,7 @@ pub(crate) use semantic_aov::{
 };
 pub(crate) use shadow_depth::{
     check_depth_prepass_contracts, check_directional_shadow_contracts, check_shadow_map_contracts,
-    directional_shadow_shader_has_pcf3x3,
+    directional_shadow_shader_has_pcf3x3, directional_shadow_shader_has_pcss,
 };
 pub(crate) use strict_gpu_construction::check_c13_strict_gpu_construction_contracts;
 pub(crate) use surface_acquisition::check_full_review_surface_acquisition_contracts;

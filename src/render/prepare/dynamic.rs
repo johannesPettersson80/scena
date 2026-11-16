@@ -1,6 +1,6 @@
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
-use crate::scene::{Scene, Vec3};
+use crate::scene::Scene;
 
 use super::{PreparedLights, identity_matrix4, shadows};
 
@@ -18,11 +18,8 @@ pub(in crate::render) fn collect_dynamic_light_from_world<F>(
     let Some(to_light_dir) = lights.primary_shadow_ray_direction() else {
         return Ok(identity_matrix4());
     };
-    let light_direction = Vec3::new(-to_light_dir.x, -to_light_dir.y, -to_light_dir.z);
-    let shadow_projection_points =
-        shadows::collect_shadow_projection_points(scene, assets, origin_shift)?;
-    Ok(shadows::directional_light_view_projection_from_points(
-        light_direction,
-        shadow_projection_points,
+    Ok(shadows::focused_light_view_projection(
+        -to_light_dir,
+        &shadows::collect_shadow_projection_groups(scene, assets, origin_shift)?,
     ))
 }

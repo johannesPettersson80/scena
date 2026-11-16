@@ -1,7 +1,9 @@
 use crate::app::prelude::*;
 
 mod q05_pcf;
-pub(crate) use q05_pcf::directional_shadow_shader_has_pcf3x3;
+pub(crate) use q05_pcf::{
+    directional_shadow_shader_has_pcf3x3, directional_shadow_shader_has_pcss,
+};
 
 pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
@@ -98,7 +100,8 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
             "var shadow_sampler: sampler_comparison",
             "fn directional_shadow_factor",
             "textureSampleCompareLevel(shadow_map, shadow_sampler",
-            "* gpu_shadow",
+            "const SHADOWED_RADIANCE: &str",
+            "shadow factor must be guarded",
             "triangle_shader_samples_directional_shadow_map_in_fragment",
         ],
     );
