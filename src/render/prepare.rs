@@ -51,7 +51,7 @@ mod diagnostics;
 mod dynamic;
 mod environment;
 pub(crate) use environment::BRDF_LUT_SIZE;
-mod environment_baker;
+pub(in crate::render) mod environment_baker;
 mod labels;
 mod material_batch;
 pub(in crate::render) use self::material_batch::compute_material_batch_plan;
@@ -66,7 +66,7 @@ mod section_caps;
 pub(in crate::render) mod shadows;
 mod stats;
 mod strokes;
-mod tangents;
+pub(in crate::render) mod tangents;
 #[cfg(test)]
 mod tests;
 pub(super) mod transforms;

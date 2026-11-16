@@ -45,6 +45,18 @@ All notable user-facing changes are recorded here.
   `ssao_depth_source: "sampleable_depth_texture"`.
 - Back faces of double-sided surfaces flip their whole tangent frame, so
   normal-mapped two-sided geometry is lit correctly from behind.
+- Add path-traced stills. `Renderer::path_trace` renders the scene on the CPU
+  by simulating light transport: area lights with shadows that soften with
+  distance, bounce light, real reflections and refraction, glass with
+  absorption, emissive surfaces as light sources, an importance-sampled HDR
+  environment at up to 2048 texels per cube edge, and a thin-lens camera for
+  true depth of field. It reads the same scene, lights, environment,
+  exposure and tone mapping as the rasterizer, in the same light units, and
+  is reproducible for a seed. `PathTraceOptions` sets samples, bounces, the
+  variance-guided denoiser and the firefly clamp; `PathTracedImage` carries
+  8-bit sRGB, linear radiance and statistics. Anisotropy, iridescence and
+  caustics are not simulated. `scena photo render --path-trace` delivers a
+  photo's final frame this way; see `docs/rendering.md`.
 
 ### Scene
 

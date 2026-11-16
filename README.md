@@ -113,6 +113,21 @@ and tent reconstruction. It measures each visible material after framing and
 uses the smallest installed `1k`, `2k`, or `4k` sibling that retains at least
 one source texel per output pixel.
 
+Add `--path-trace` to deliver the still from the path tracer instead of the
+rasterizer:
+
+```bash
+scena photo render product.recipe.json --gpu --path-trace --samples 256 \
+  --out product.png --report product.photo.json
+```
+
+The camera, focus and lighting are chosen as before; the delivered frame is
+then computed by simulating light transport on the CPU, which gives soft
+area-light shadows, bounce light, and true reflections and refraction at the
+cost of render time. The same renderer is available to Rust code as
+`Renderer::path_trace`; see
+[Path-traced stills](docs/rendering.md#path-traced-stills).
+
 For a GLB with several handmade material slots, bind each visible source
 material independently:
 
@@ -579,6 +594,7 @@ the [API overview](docs/api.md#core-types).
 | Industrial/static scenes | [`industrial_static_scene.rs`](examples/industrial_static_scene.rs), [`static_batching.rs`](examples/static_batching.rs), [`labels_helpers.rs`](examples/labels_helpers.rs) |
 | Diagnostics and inspection | [`beginner_diagnostics.rs`](examples/beginner_diagnostics.rs), [`scene_inspection.rs`](examples/scene_inspection.rs) |
 | Platform setup | [`native_window.rs`](examples/native_window.rs), [`browser_canvas.rs`](examples/browser_canvas.rs) |
+| Path-traced stills | [`path_traced_still.rs`](examples/path_traced_still.rs) |
 
 All public examples are part of the compile-check surface.
 

@@ -219,10 +219,11 @@ pub use render::{
     AntiAliasing, AutoExposureConfig, AutoExposureMeteringDomain, AutoExposureResult,
     AutoExposureStatus, AutoExposureSubjectRect, Background, BakedAmbientOcclusionConfig,
     DepthOfFieldConfig, HeadlessBackendSelectionReport, MeteringMode, OffscreenTarget,
-    OrderIndependentTransparencyConfig, PixelReadback, PostBloomConfig, PrepareWorkMetrics,
-    Profile, Quality, ReconstructionFilter, RenderMode, RenderReadbackMode, RenderWorkMetrics,
-    Renderer, RendererOptions, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig,
-    Tonemapper, WhiteBalance, estimate_auto_exposure_from_linear_colors,
+    OrderIndependentTransparencyConfig, PathTraceError, PathTraceOptions, PathTraceStats,
+    PathTracedImage, PixelReadback, PostBloomConfig, PrepareWorkMetrics, Profile, Quality,
+    ReconstructionFilter, RenderMode, RenderReadbackMode, RenderWorkMetrics, Renderer,
+    RendererOptions, ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, Tonemapper,
+    WhiteBalance, estimate_auto_exposure_from_linear_colors,
     estimate_auto_exposure_from_linear_colors_with_subject_rect, estimate_auto_exposure_from_srgb8,
 };
 #[cfg(feature = "inspection")]

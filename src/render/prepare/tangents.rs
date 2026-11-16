@@ -66,7 +66,7 @@ pub(super) fn accumulate_vertex_tangents(
     adapter.output
 }
 
-pub(super) fn generate_model_tangents(
+pub(in crate::render) fn generate_model_tangents(
     vertices: &[GeometryVertex],
     indices: &[u32],
     tex_coords0: Option<&[[f32; 2]]>,

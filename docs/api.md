@@ -72,6 +72,21 @@ compatibility `gpu_polled` boolean is true only for `Confirmed`.
 
 Additive public API changes in Unreleased:
 
+- `Renderer::path_trace` and `Renderer::path_trace_with_progress` render a
+  path-traced still from a `Scene`, its `Assets` and a camera, returning a
+  `PathTracedImage` (`rgba8()`, `linear_radiance()`, `stats()`,
+  `to_png_bytes()`, `write_png()`). `PathTraceOptions` (`new()`, `preview()`,
+  `production()`, `with_samples_per_pixel`, `with_max_bounces`,
+  `with_denoise`, `with_seed`, `with_radiance_clamp`,
+  `with_directional_light_angular_radius`, `with_environment_resolution`)
+  sets quality, `PathTraceStats` describes what was traced and what was left
+  out, and `PathTraceError` (`#[non_exhaustive]`) reports a missing camera,
+  geometry, material or environment, an unusable camera, a model node, or a
+  scene over the triangle limit. See "Path-traced stills" in
+  [Rendering](rendering.md).
+- `scena photo render` accepts `--path-trace`, `--samples <n>`,
+  `--bounces <n>` and `--no-denoise`.
+
 - `scena photo plan <asset-or-recipe>` and
   `scena photo render <asset-or-recipe>` CLI workflows for bounded
   camera-behavior stills, plus the stable `scena.photo_plan.v1`,

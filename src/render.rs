@@ -43,6 +43,7 @@ mod linear_capture_tests;
 mod offscreen;
 mod output;
 mod parallel;
+mod path_trace;
 mod pbr_brdf;
 mod physical_transmission;
 mod prepare;
@@ -108,6 +109,7 @@ pub use self::output::{
     AntiAliasing, DepthOfFieldConfig, OrderIndependentTransparencyConfig, PostBloomConfig,
     ReconstructionFilter, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
+pub use self::path_trace::{PathTraceError, PathTraceOptions, PathTraceStats, PathTracedImage};
 #[doc(hidden)]
 pub use self::prepare::{
     EnvironmentBakeMetrics, precompute_environment_sidecar, precompute_environment_sidecar_profiled,

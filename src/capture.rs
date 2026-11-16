@@ -196,6 +196,23 @@ pub enum CaptureError {
     },
 }
 
+/// Encodes RGBA8 pixels as a PNG, for other owners of finished images.
+pub(crate) fn encode_rgba8_as_png(
+    width: u32,
+    height: u32,
+    rgba8: &[u8],
+) -> Result<Vec<u8>, CapturePngError> {
+    png::encode_png_rgba8(width, height, rgba8)
+}
+
+/// Writes encoded PNG bytes to a file.
+pub(crate) fn write_png_file(
+    path: impl AsRef<std::path::Path>,
+    bytes: Vec<u8>,
+) -> Result<(), CapturePngError> {
+    png::write_png(path, bytes)
+}
+
 impl CaptureDescriptor {
     pub fn to_schema_json(&self) -> serde_json::Value {
         serde_json::to_value(self).expect("capture descriptor contains only serializable fields")

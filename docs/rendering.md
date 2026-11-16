@@ -546,6 +546,108 @@ OIT remains a separate capability-gated lane.
 
 For generated images, see [Headless rendering](headless-rendering.md).
 
+## Path-traced stills
+
+`Renderer::path_trace` renders a still by simulating light transport instead
+of rasterizing. It follows many random light paths through every pixel and
+averages them, so soft shadows, bounce light, reflections and refraction come
+out of one simulation rather than from separate approximations. It runs on
+the CPU, needs no GPU, and takes seconds to minutes per image; it is a mode
+for finished stills, not for interaction.
+
+```rust
+use scena::PathTraceOptions;
+
+let options = PathTraceOptions::new().with_samples_per_pixel(128);
+let image = renderer.path_trace(&scene, &assets, camera, &options)?;
+image.write_png("still.png")?;
+```
+
+The call reads the scene as it stands: nothing is prepared first and the
+renderer is not changed. The image has the renderer's target size and uses
+its environment, environment intensity and rotation, background, exposure,
+white balance, tone mapping and depth-of-field settings, so one scene can be
+rasterized and path traced with the same framing and exposure.
+`examples/path_traced_still.rs` lights a subject with three softboxes on a
+seamless backdrop and writes the result.
+
+What is simulated:
+
+- **Lights.** Directional, point, spot and area lights in the units the
+  rasterizer uses, so brightness matches: a tessellated floor under each
+  light type measures within 8 % of the CPU rasterizer. Area lights (rect,
+  disc and sphere) are real emitters: their shadows soften with distance and
+  they appear in reflections, but the camera does not see them directly. A
+  directional light has an angular radius
+  (`with_directional_light_angular_radius`, default 0.5 degrees) that
+  softens its shadow edges; one set not to cast shadows lights every surface
+  that faces it, as in the rasterizer.
+- **Environment.** An HDR environment is sampled into a cube of
+  `environment_resolution` texels per edge (default 1024, where the
+  rasterizer uses 256) and sampled in proportion to its brightness, so small
+  bright sources in the image cast clean shadows. Rays that leave the scene
+  after a bounce see the environment; the camera sees the renderer's
+  background colour.
+- **Materials.** Metallic-roughness materials with base-colour,
+  metallic-roughness, normal and emissive textures and texture transforms;
+  clearcoat; sheen; alpha cut-outs and blending; vertex colours and node
+  tints. Emissive surfaces light the scene and are sampled as light sources.
+  Unlit materials show their colour whatever the lighting.
+- **Glass.** A material with transmission refracts and reflects by its index
+  of refraction. With a thickness it is a solid whose attenuation colour
+  absorbs along the path inside; without one it is a thin sheet. Roughness
+  frosts it.
+- **Camera.** Perspective and orthographic cameras with the scene camera's
+  near and far planes. With depth of field configured, rays leave a lens of
+  the configured focal length and f-stop, which gives true defocus blur.
+
+The layers conserve energy: no combination of base, sheen and clearcoat
+reflects more light than it receives at any view angle. This makes sheen
+slightly brighter face-on and darker at grazing angles than the rasterizer's
+constant sheen weight.
+
+Limits to know about:
+
+- Anisotropy and iridescence are not simulated; such materials render as the
+  plain base material.
+- Light focused through glass (caustics) is not simulated. Light passes
+  through glass in a straight line when shadows are computed, tinted by the
+  glass and dimmed by its reflection, so glass objects cast soft tinted
+  shadows.
+- Lines, wireframes, edges, labels and particles are overlays rather than lit
+  surfaces and are left out. `PathTracedImage::stats()` reports how many
+  nodes were skipped.
+- Model nodes are not traced; instantiate the imported scene instead.
+- Every triangle is stored in world space, so instanced geometry counts once
+  per instance, up to 16 million triangles.
+- The CPU rasterizer places pixel centres on whole coordinates, half a pixel
+  from where the path tracer and the GPU place them, so silhouettes can
+  differ from a CPU-rasterized frame by one pixel.
+
+Quality is set by `PathTraceOptions`:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `samples_per_pixel` | 64 | Noise falls with the square root of the sample count; time grows in proportion. `preview()` uses 16, `production()` 256. |
+| `max_bounces` | 8 | How often a path may change direction. More bounces brighten interiors and stacked glass. |
+| `denoise` | on | An edge-avoiding wavelet filter guided by surface colour, normal and position. It smooths only as far as each pixel's measured noise warrants, so converged detail stays. |
+| `radiance_clamp` | 32 | Brightest scattered light one path may contribute, relative to the exposure. It removes isolated bright pixels at the cost of a little energy in rare light paths. |
+| `seed` | 0 | The same seed, scene and settings give the same image whatever the thread count. |
+
+`PathTracedImage::rgba8()` is display-ready sRGB.
+`PathTracedImage::linear_radiance()` is the scene radiance before tone
+mapping, weighted by coverage, for compositing or a different grade.
+`Renderer::path_trace_with_progress` reports finished rows for a progress
+display.
+
+The `scena` CLI delivers a photo this way with
+`scena photo render <asset> --out <png> --report <json> --path-trace`.
+`--samples <n>`, `--bounces <n>` and `--no-denoise` tune it. The camera,
+exposure, focus and lighting are still chosen by the rasterized
+camera-behavior loop; the delivered frame is then traced from that scene and
+the quality policy is evaluated on the traced pixels. The report gains a
+`path_trace` block with the settings and scene statistics.
+
 ## Lifecycle
 
 `prepare()` validates and uploads current scene state. `render()` draws
