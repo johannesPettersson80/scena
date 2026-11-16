@@ -382,9 +382,9 @@ fn subject_geometry_profile<F: AssetFetcher>(
         let Some(geometry) = host.assets.geometry(draw.geometry()) else {
             continue;
         };
-        let rotation = draw.world_transform().rotation;
+        let world = draw.world();
         for vertex in geometry.vertices() {
-            let normal = (rotation * vertex.normal).normalize_or_zero();
+            let normal = world.transform_normal(vertex.normal).normalize_or_zero();
             if !normal.is_finite() || normal.length_squared() <= 1.0e-8 {
                 continue;
             }
@@ -419,7 +419,7 @@ fn subject_material_profile<F: AssetFetcher>(
             .assets
             .geometry(draw.geometry())
             .map_or(0.0, |geometry| {
-                geometry_surface_area(&geometry, draw.world_transform())
+                geometry_surface_area(&geometry, draw.world())
             });
         if let Some((_, accumulated_area)) = materials
             .iter_mut()
@@ -480,7 +480,10 @@ fn subject_material_profile<F: AssetFetcher>(
     })
 }
 
-fn geometry_surface_area(geometry: &crate::GeometryDesc, transform: Transform) -> f32 {
+fn geometry_surface_area(
+    geometry: &crate::GeometryDesc,
+    transform: crate::scene::WorldTransform,
+) -> f32 {
     if geometry.topology() != crate::GeometryTopology::Triangles {
         return 0.0;
     }
@@ -491,15 +494,7 @@ fn geometry_surface_area(geometry: &crate::GeometryDesc, transform: Transform) -
             let a = geometry.vertices().get(triangle[0] as usize)?.position;
             let b = geometry.vertices().get(triangle[1] as usize)?.position;
             let c = geometry.vertices().get(triangle[2] as usize)?.position;
-            let transform_point = |point: Vec3| {
-                transform.translation
-                    + transform.rotation
-                        * Vec3::new(
-                            point.x * transform.scale.x,
-                            point.y * transform.scale.y,
-                            point.z * transform.scale.z,
-                        )
-            };
+            let transform_point = |point: Vec3| transform.transform_point(point);
             let area = (transform_point(b) - transform_point(a))
                 .cross(transform_point(c) - transform_point(a))
                 .length()

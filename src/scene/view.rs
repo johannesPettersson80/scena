@@ -2,7 +2,7 @@ use crate::assets::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 
-use super::transforms::{local_transform_from_world, validate_transform};
+use super::transforms::{local_point_from_world, local_transform_from_world, validate_transform};
 use super::view_math::{
     inverse_unit_quat, look_rotation, multiply_quat, normalize_or, positive_min, positive_or,
     subtract_vec3, union_aabb,
@@ -369,12 +369,34 @@ impl Scene {
 
         camera_transform.rotation = if let Some(parent) = camera_parent {
             let parent_world = self
-                .world_transform(parent)
+                .resolved_world(parent)
                 .ok_or(LookupError::NodeNotFound(parent))?;
-            multiply_quat(
-                inverse_unit_quat(parent_world.rotation),
-                desired_world_rotation,
-            )
+            match parent_world.uniform_rotation() {
+                Some(parent_rotation) => {
+                    multiply_quat(inverse_unit_quat(parent_rotation), desired_world_rotation)
+                }
+                // A non-uniformly scaled, mirrored, or sheared parent has no
+                // rotation to undo. Aim in the parent's local space, where the
+                // parent matrix then carries the camera onto the target.
+                None => {
+                    let local_from_world = parent_world.inverse().ok_or(
+                        LookupError::NonInvertibleParentTransform {
+                            node: camera_node,
+                            parent,
+                        },
+                    )?;
+                    look_rotation(
+                        normalize_or(
+                            local_from_world.transform_vector(forward),
+                            Vec3::new(0.0, 0.0, -1.0),
+                        ),
+                        normalize_or(
+                            local_from_world.transform_vector(Vec3::new(0.0, 1.0, 0.0)),
+                            Vec3::new(0.0, 1.0, 0.0),
+                        ),
+                    )
+                }
+            }
         } else {
             desired_world_rotation
         };
@@ -383,11 +405,7 @@ impl Scene {
 
     /// Moves a node origin to an exact world-space point.
     pub fn move_origin_to(&mut self, node: NodeKey, center: Vec3) -> Result<(), LookupError> {
-        let mut world_transform = self
-            .world_transform(node)
-            .ok_or(LookupError::NodeNotFound(node))?;
-        world_transform.translation = center;
-        let transform = self.local_transform_for_world(node, world_transform)?;
+        let transform = self.local_transform_with_world_origin(node, center)?;
         self.set_node_transform_and_mark_changed(node, transform)
     }
 
@@ -408,11 +426,12 @@ impl Scene {
         let bounds = self
             .visible_asset_backed_node_subtree_bounds_world(node, assets, false)
             .ok_or(LookupError::ImportHasNoBounds)?;
-        let mut world = self
-            .world_transform(node)
-            .ok_or(LookupError::NodeNotFound(node))?;
-        world.translation += center - bounds.center();
-        let local = self.local_transform_for_world(node, world)?;
+        let world_origin = self
+            .resolved_world(node)
+            .ok_or(LookupError::NodeNotFound(node))?
+            .translation();
+        let local = self
+            .local_transform_with_world_origin(node, world_origin + (center - bounds.center()))?;
         self.set_node_transform_and_mark_changed(node, local)
     }
 
@@ -462,10 +481,44 @@ impl Scene {
             return Ok(world_transform);
         };
         let parent_world = self
-            .world_transform(parent)
+            .resolved_world(parent)
             .ok_or(LookupError::NodeNotFound(parent))?;
         local_transform_from_world(parent_world, world_transform)
             .ok_or(LookupError::NonInvertibleParentTransform { node, parent })
+    }
+
+    /// The local transform that moves a node's origin to `world_origin`
+    /// without changing how the node is oriented, scaled, or sheared.
+    fn local_transform_with_world_origin(
+        &self,
+        node: NodeKey,
+        world_origin: Vec3,
+    ) -> Result<Transform, LookupError> {
+        let world = self
+            .resolved_world(node)
+            .ok_or(LookupError::NodeNotFound(node))?;
+        if let Some(mut world_transform) = world.exact_trs() {
+            world_transform.translation = world_origin;
+            return self.local_transform_for_world(node, world_transform);
+        }
+        // A sheared node has no world TRS to edit. Only its local translation
+        // changes: the point its parent carries onto the requested origin.
+        let node_ref = self
+            .nodes
+            .get(node)
+            .ok_or(LookupError::NodeNotFound(node))?;
+        let mut local = node_ref.transform;
+        local.translation = match node_ref.parent {
+            Some(parent) => {
+                let parent_world = self
+                    .resolved_world(parent)
+                    .ok_or(LookupError::NodeNotFound(parent))?;
+                local_point_from_world(parent_world, world_origin)
+                    .ok_or(LookupError::NonInvertibleParentTransform { node, parent })?
+            }
+            None => world_origin,
+        };
+        validate_transform(local)
     }
 
     fn set_node_transform_and_mark_changed(

@@ -311,7 +311,7 @@ pub use scene::{
     ImportOptions, ImportPivot, InspectionHelperKind, InspectionHelperReport,
     InspectionToolkitReport, Instance, InstanceId, InstanceSet, InstanceSetKey, LabelBillboard,
     LabelDesc, LabelFontError, LabelFontFace, LabelKey, LabelMetrics, Light, LightBuilder,
-    LightKey, MAX_REFLECTION_PROBES, MeasurementAxis, MeasurementKind, MeasurementOverlay,
+    LightKey, MAX_REFLECTION_PROBES, Mat4, MeasurementAxis, MeasurementKind, MeasurementOverlay,
     MeasurementOverlayReport, MeasurementReport, MeshBuilder, MeshNode, ModelBuilder, ModelNode,
     Node, NodeKey, NodeKind, OrthographicCamera, PLACEMENT_VERBS, Particle, ParticleSet,
     ParticleSetError, ParticleSetKey, PerspectiveCamera, PointLight, ProjectedPoint, Quat,

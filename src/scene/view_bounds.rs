@@ -1,7 +1,6 @@
 use crate::assets::Assets;
 use crate::geometry::Aabb;
 
-use super::transforms::compose_transform;
 use super::view_math::{merge_optional_bounds, transform_aabb, union_aabb};
 use super::{Node, NodeKey, NodeKind, Scene};
 
@@ -16,7 +15,7 @@ impl Scene {
             })
             .filter(|(node, _)| include_helpers || !self.has_tag(*node, "scena:inspection:helper"))
             .filter_map(|(node, bounds)| {
-                let transform = self.world_transform(node)?;
+                let transform = self.resolved_world(node)?;
                 Some(transform_aabb(bounds, transform))
             })
             .reduce(union_aabb)
@@ -48,7 +47,7 @@ impl Scene {
     pub(super) fn node_subtree_bounds_world(&self, node: NodeKey) -> Option<Aabb> {
         let node_ref = self.nodes.get(node)?;
         let local_bounds = self.node_bounds.get(&node).and_then(|bounds| {
-            let transform = self.world_transform(node)?;
+            let transform = self.resolved_world(node)?;
             Some(transform_aabb(*bounds, transform))
         });
         node_ref
@@ -95,7 +94,7 @@ impl Scene {
         }
         let node_ref = self.nodes.get(node)?;
         let local = self.node_bounds.get(&node).and_then(|bounds| {
-            self.world_transform(node)
+            self.resolved_world(node)
                 .map(|transform| transform_aabb(*bounds, transform))
         });
         node_ref
@@ -120,7 +119,7 @@ impl Scene {
         }
         let node_ref = self.nodes.get(node)?;
         let stored = self.node_bounds.get(&node).and_then(|bounds| {
-            self.world_transform(node)
+            self.resolved_world(node)
                 .map(|transform| transform_aabb(*bounds, transform))
         });
         let direct = self.asset_backed_node_bounds_world(node, node_ref, assets);
@@ -161,19 +160,19 @@ impl Scene {
         match &node_ref.kind {
             NodeKind::Mesh(mesh) => {
                 let geometry = assets.geometry(mesh.geometry())?;
-                let transform = self.world_transform(node)?;
+                let transform = self.resolved_world(node)?;
                 Some(transform_aabb(geometry.bounds(), transform))
             }
             NodeKind::InstanceSet(instance_set) => {
                 let instance_set = self.instance_sets.get(*instance_set)?;
                 let geometry = assets.geometry(instance_set.geometry())?;
-                let node_transform = self.world_transform(node)?;
+                let node_transform = self.resolved_world(node)?;
                 instance_set
                     .instances()
                     .map(|instance| {
                         transform_aabb(
                             geometry.bounds(),
-                            compose_transform(node_transform, instance.transform()),
+                            node_transform.child(instance.transform()),
                         )
                     })
                     .reduce(union_aabb)

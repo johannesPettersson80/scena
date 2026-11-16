@@ -222,7 +222,7 @@ fn reflection_probe_groups<F: AssetFetcher>(
         let Some(score) = reflection_probe_material_score(&host.assets, &material) else {
             continue;
         };
-        let bounds = transformed_aabb(draw.local_bounds(), draw.world_transform());
+        let bounds = crate::scene::view_math::transform_aabb(draw.local_bounds(), draw.world());
         grouped
             .entry(draw.material())
             .and_modify(|group| {
@@ -428,22 +428,6 @@ fn expanded_probe_bounds(bounds: Aabb) -> Aabb {
         (half.z + padding).max(0.02),
     );
     Aabb::new(center - half, center + half)
-}
-
-fn transformed_aabb(bounds: Aabb, transform: Transform) -> Aabb {
-    let mut min = Vec3::splat(f32::INFINITY);
-    let mut max = Vec3::splat(f32::NEG_INFINITY);
-    for x in [bounds.min.x, bounds.max.x] {
-        for y in [bounds.min.y, bounds.max.y] {
-            for z in [bounds.min.z, bounds.max.z] {
-                let point = transform.translation
-                    + transform.rotation * (Vec3::new(x, y, z) * transform.scale);
-                min = min.min(point);
-                max = max.max(point);
-            }
-        }
-    }
-    Aabb::new(min, max)
 }
 
 fn reflection_probe_error(error: crate::ReflectionProbeError) -> SceneHostError {

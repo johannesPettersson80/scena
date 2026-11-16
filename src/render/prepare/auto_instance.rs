@@ -20,7 +20,7 @@ const MIN_AUTO_INSTANCE_GROUP_SIZE: usize = 4;
 #[derive(Debug, Clone, Copy)]
 struct AutoInstanceCandidate {
     node: crate::scene::NodeKey,
-    transform: crate::scene::Transform,
+    transform: crate::scene::WorldTransform,
 }
 
 #[derive(Debug)]
@@ -61,6 +61,12 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
             continue;
         }
         if scene.morph_weights(node).is_some() || scene.skin_matrices(node).is_some() {
+            continue;
+        }
+        if transform.is_mirrored() {
+            // The shared template is baked once with one triangle winding. A
+            // mirrored node needs the opposite winding, so it keeps its own
+            // per-node bake instead of joining the batch.
             continue;
         }
         let tint = scene.node_tint(node).unwrap_or(None);
@@ -135,7 +141,7 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
             PrimitiveBakeParams {
                 target,
                 screen_space_scale,
-                transform: crate::scene::Transform::IDENTITY,
+                transform: crate::scene::WorldTransform::IDENTITY,
                 origin_shift,
                 lights,
                 shadow_occluders,

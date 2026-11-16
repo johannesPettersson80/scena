@@ -1,7 +1,7 @@
 use crate::geometry::GeometryVertex;
-use crate::scene::{Transform, Vec3};
+use crate::scene::{Vec3, WorldTransform};
 
-use super::transforms::{transform_normal, transform_position};
+use super::transforms::{transform_normal, transform_position, transform_tangent};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct TangentFrame {
@@ -18,7 +18,7 @@ pub(super) fn accumulate_vertex_tangents(
     vertices: &[GeometryVertex],
     indices: &[u32],
     tex_coords0: Option<&[[f32; 2]]>,
-    transform: Transform,
+    transform: WorldTransform,
     origin_shift: Vec3,
 ) -> Vec<TangentFrame> {
     let face_count = indices.len() / 3;
@@ -75,7 +75,7 @@ pub(super) fn generate_model_tangents(
         vertices,
         indices,
         tex_coords0,
-        Transform::IDENTITY,
+        WorldTransform::IDENTITY,
         Vec3::ZERO,
     )
     .into_iter()
@@ -93,17 +93,10 @@ pub(super) fn generate_model_tangents(
 pub(super) fn transform_model_tangents(
     tangents: &[[f32; 4]],
     vertices: &[GeometryVertex],
-    transform: Transform,
+    transform: WorldTransform,
 ) -> Vec<TangentFrame> {
-    let direction_transform = Transform {
-        translation: Vec3::ZERO,
-        ..transform
-    };
-    let handedness_scale = if transform.scale.x * transform.scale.y * transform.scale.z < 0.0 {
-        -1.0
-    } else {
-        1.0
-    };
+    let direction_transform = transform.without_translation();
+    let handedness_scale = if transform.is_mirrored() { -1.0 } else { 1.0 };
     vertices
         .iter()
         .zip(tangents.iter().copied())
@@ -192,7 +185,7 @@ impl<'a> bevy_mikktspace::Geometry for MikktspaceAdapter<'a> {
 pub(super) fn authored_vertex_tangents(
     tangents: Option<&[[f32; 4]]>,
     vertices: &[GeometryVertex],
-    transform: Transform,
+    transform: WorldTransform,
 ) -> Option<Vec<TangentFrame>> {
     let tangents = tangents?;
     Some(
@@ -202,7 +195,7 @@ pub(super) fn authored_vertex_tangents(
             .map(|(vertex, tangent)| {
                 let normal = transform_normal(vertex.normal, transform);
                 let transformed =
-                    transform_normal(Vec3::new(tangent[0], tangent[1], tangent[2]), transform);
+                    transform_tangent(Vec3::new(tangent[0], tangent[1], tangent[2]), transform);
                 let orthogonal = subtract_vec3(
                     transformed,
                     scale_vec3(normal, dot_vec3(transformed, normal)),
@@ -310,6 +303,7 @@ fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
 mod tests {
     use super::*;
     use crate::GeometryDesc;
+    use crate::scene::Transform;
 
     #[test]
     fn generated_triangle_tangent_follows_texcoord_u_axis() {
@@ -393,7 +387,7 @@ mod tests {
             &vertices,
             &[0, 1, 2, 0, 3, 4],
             Some(&tex_coords),
-            Transform::IDENTITY,
+            WorldTransform::IDENTITY,
             Vec3::ZERO,
         );
 
@@ -426,7 +420,7 @@ mod tests {
             &vertices,
             &[0, 1, 2],
             Some(&mirrored_uvs),
-            Transform::IDENTITY,
+            WorldTransform::IDENTITY,
             Vec3::ZERO,
         );
 
@@ -505,6 +499,7 @@ mod tests {
         };
 
         let model = generate_model_tangents(&vertices, &indices, Some(&uvs));
+        let transform = WorldTransform::from(transform);
         let cached = transform_model_tangents(&model, &vertices, transform);
         let direct =
             accumulate_vertex_tangents(&vertices, &indices, Some(&uvs), transform, Vec3::ZERO);
@@ -528,7 +523,7 @@ mod tests {
             ..Transform::IDENTITY
         };
 
-        let transformed = transform_model_tangents(&model, &vertices, mirrored);
+        let transformed = transform_model_tangents(&model, &vertices, mirrored.into());
 
         assert_eq!(transformed[0].handedness, -1.0);
         assert!(dot_vec3(transformed[0].tangent, Vec3::Z).abs() < 0.0001);
@@ -542,8 +537,9 @@ mod tests {
         }];
         let authored = [[1.0, 0.0, 0.5, -1.0]];
 
-        let tangents = authored_vertex_tangents(Some(&authored), &vertices, Transform::IDENTITY)
-            .expect("authored tangents are present");
+        let tangents =
+            authored_vertex_tangents(Some(&authored), &vertices, WorldTransform::IDENTITY)
+                .expect("authored tangents are present");
 
         assert_vec3_near(tangents[0].tangent, Vec3::new(1.0, 0.0, 0.0));
         assert_eq!(tangents[0].handedness, -1.0);
@@ -585,7 +581,7 @@ mod tests {
             &vertices,
             &indices,
             Some(&tex_coords),
-            Transform::IDENTITY,
+            WorldTransform::IDENTITY,
             Vec3::ZERO,
         );
 
@@ -621,7 +617,7 @@ mod tests {
             &vertices,
             &[0, 1, 2],
             Some(&collapsed_uvs),
-            Transform::IDENTITY,
+            WorldTransform::IDENTITY,
             Vec3::ZERO,
         );
 

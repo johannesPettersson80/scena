@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::assets::{MaterialHandle, TextureHandle};
 use crate::geometry::{Aabb, GeometryDesc, Primitive, PrimitiveVertexAttributes, SkinningMatrix};
 use crate::material::{Color, MaterialDesc};
-use crate::scene::{InstanceId, InstanceSetKey, NodeKey, ReflectionProbeKey, Transform, Vec3};
+use crate::scene::{InstanceId, InstanceSetKey, NodeKey, ReflectionProbeKey, Vec3, WorldTransform};
 
 use super::super::physical_transmission::PreparedPhysicalTransmission as PhysicalTransmission;
 use super::super::{PrepareWorkCounter, RasterTarget, camera::CameraProjection};
@@ -366,6 +366,11 @@ impl PreparedPrimitive {
         self.draw_transform.world_from_model
     }
 
+    /// Whether this triangle was baked under a winding-reversing transform.
+    pub(in crate::render) fn baked_mirrored(&self) -> bool {
+        self.draw_transform.mirrored()
+    }
+
     pub(in crate::render) fn normal_from_model(&self) -> [f32; 16] {
         self.draw_transform.normal_from_model
     }
@@ -531,7 +536,8 @@ pub(in crate::render) use prepared_stroke::PreparedStrokeSegment;
 pub(super) struct PrimitiveBakeParams<'lights> {
     pub(super) target: RasterTarget,
     pub(super) screen_space_scale: f32,
-    pub(super) transform: Transform,
+    /// Exact world placement of the geometry being baked.
+    pub(super) transform: WorldTransform,
     pub(super) origin_shift: Vec3,
     pub(super) lights: &'lights PreparedLights,
     pub(super) shadow_occluders: &'lights ShadowOccluderSet,

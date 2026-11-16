@@ -4,7 +4,7 @@ use crate::picking::{
     CursorPosition, Hit, HitTarget, InteractionContext, PickingMetrics, Viewport,
 };
 
-use super::{CameraKey, NodeKey, NodeKind, RenderableNode, Scene, Transform};
+use super::{CameraKey, NodeKey, NodeKind, RenderableNode, Scene, WorldTransform};
 
 impl Scene {
     pub fn pick(
@@ -19,12 +19,14 @@ impl Scene {
     /// Intersects asset-backed mesh triangles in their current rendered pose.
     ///
     /// Morph targets are evaluated before skinning, matching render and shadow
-    /// preparation. Node transforms and instance-root transforms are then
-    /// applied in scene-graph order. Hits report world-space distance, position,
-    /// and the transformed geometric winding normal; singular transforms only
-    /// remain hittable where they leave a nondegenerate triangle. Missing or
-    /// invalid deformation inputs return a structured
-    /// [`LookupError::InvalidSkinBinding`] instead of using base vertices.
+    /// preparation. Each node's exact world matrix and each instance transform
+    /// are then applied in scene-graph order, so sheared and mirrored
+    /// hierarchies are hit where they are drawn. Hits report world-space
+    /// distance, position, and the geometric normal of the rendered front
+    /// face; singular transforms only remain hittable where they leave a
+    /// nondegenerate triangle. Missing or invalid deformation inputs return a
+    /// structured [`LookupError::InvalidSkinBinding`] instead of using base
+    /// vertices.
     pub fn pick_with_assets<F>(
         &self,
         camera: CameraKey,
@@ -152,12 +154,12 @@ impl Scene {
 
     pub(crate) fn pickable_renderables(
         &self,
-    ) -> impl Iterator<Item = (NodeKey, &RenderableNode, Transform)> {
+    ) -> impl Iterator<Item = (NodeKey, &RenderableNode, WorldTransform)> {
         self.nodes
             .iter()
             .filter_map(|(key, node)| match &node.kind {
                 NodeKind::Renderable(renderable) if self.visible_for_active_camera(key) => self
-                    .world_transform(key)
+                    .resolved_world(key)
                     .map(|transform| (key, renderable, transform)),
                 NodeKind::Empty
                 | NodeKind::Renderable(_)

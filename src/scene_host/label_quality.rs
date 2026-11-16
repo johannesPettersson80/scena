@@ -3,8 +3,8 @@ use crate::geometry::GeometryTopology;
 use crate::material::Color;
 use crate::scene::LabelBillboard;
 use crate::{
-    AssetFetcher, CaptureScreenRegion, RenderQualityRegion, Transform, Vec3,
-    screen_region_from_center_size, screen_region_from_points,
+    AssetFetcher, CaptureScreenRegion, RenderQualityRegion, screen_region_from_center_size,
+    screen_region_from_points,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +69,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             return Vec::new();
         }
         let mut regions = Vec::new();
-        for (node, mesh, transform) in self.scene.mesh_nodes() {
+        for (node, mesh, world) in self.scene.mesh_nodes() {
             if !self.scene.visible_for_active_camera(node) {
                 continue;
             }
@@ -79,7 +79,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             if geometry.topology() != GeometryTopology::Lines {
                 continue;
             }
-            let world = self.scene.world_transform(node).unwrap_or(transform);
             let vertices = geometry.vertices();
             let stroke_padding = self
                 .assets
@@ -95,8 +94,8 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 let Some(end) = vertices.get(segment[1] as usize) else {
                     continue;
                 };
-                let start = transform_point(world, start.position);
-                let end = transform_point(world, end.position);
+                let start = world.transform_point(start.position);
+                let end = world.transform_point(end.position);
                 let Ok(Some(start)) =
                     self.scene
                         .project_world_point(self.active_camera, start, width, height)
@@ -126,10 +125,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         }
         regions
     }
-}
-
-fn transform_point(transform: Transform, point: Vec3) -> Vec3 {
-    transform.translation + transform.rotation * (point * transform.scale)
 }
 
 fn render_quality_region(

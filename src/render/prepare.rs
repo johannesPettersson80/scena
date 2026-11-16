@@ -354,8 +354,12 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
         validate_material_texture_handles(node, instance_set.material(), &material, assets)?;
         let material_textures = PreparedMaterialTextures::new(assets, &material);
 
+        // One instanced draw shares one triangle winding. An instance whose own
+        // transform mirrors would be culled from the wrong side, so such a set is
+        // baked per instance, where each instance's winding is restored.
         let can_use_gpu_instance_path = gpu_instance_path
             && reflection_probes.is_empty()
+            && !instance_set_has_mirrored_instance(instance_set)
             && !matches!(
                 material.kind(),
                 crate::material::MaterialKind::Line
@@ -561,7 +565,7 @@ fn selected_reflection_probe(
     node: crate::scene::NodeKey,
     material: crate::assets::MaterialHandle,
     local_bounds: crate::geometry::Aabb,
-    transform: crate::scene::Transform,
+    transform: crate::scene::WorldTransform,
     origin_shift: Vec3,
 ) -> Option<PreparedReflectionProbe> {
     let world_center = crate::scene::view_math::transform_aabb(local_bounds, transform).center();
@@ -593,6 +597,14 @@ fn collect_prepared_instance_records(
             )
         })
         .collect()
+}
+
+/// Whether any visible instance mirrors the geometry relative to its set.
+pub(super) fn instance_set_has_mirrored_instance(instance_set: &crate::scene::InstanceSet) -> bool {
+    instance_set
+        .instances()
+        .filter(|instance| instance.visible())
+        .any(|instance| crate::scene::WorldTransform::from(instance.transform()).is_mirrored())
 }
 
 fn instance_set_key_for_node(

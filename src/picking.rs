@@ -4,7 +4,9 @@ use crate::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, TriangleBvh};
 use crate::material::MaterialKind;
-use crate::scene::{Camera, CameraKey, InstanceId, NodeKey, Scene, Transform, Vec3};
+use crate::scene::{
+    Camera, CameraKey, InstanceId, NodeKey, Scene, Transform, Vec3, WorldTransform,
+};
 
 mod geometry_hit;
 mod math;
@@ -45,9 +47,11 @@ pub enum HitTarget {
 ///
 /// `distance` is measured in world-space units along the normalized camera ray,
 /// and `world_position` is `ray_origin + ray_direction * distance`. `normal` is
-/// the normalized geometric normal from the transformed triangle winding. A
-/// negative scale can therefore reverse it; nonuniform scale is applied before
-/// intersection. Triangles collapsed by a singular transform are not hittable.
+/// the normalized geometric normal of the triangle as it is rendered: the node's
+/// exact world matrix is applied before intersection, shear included, and the
+/// winding of a mirrored (negative-determinant) transform is restored so the
+/// normal keeps pointing out of the front face. Triangles collapsed by a
+/// singular transform are not hittable.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {
     /// The scene node or concrete instance whose triangle was intersected.
@@ -56,7 +60,8 @@ pub struct Hit {
     pub distance: f32,
     /// World-space intersection position.
     pub world_position: Vec3,
-    /// Normalized transformed geometric normal, or `None` for a degenerate face.
+    /// Normalized geometric normal of the rendered front face, or `None` for a
+    /// degenerate face.
     pub normal: Option<Vec3>,
 }
 
@@ -232,13 +237,10 @@ fn raycast_scene_with_assets_impl<const PROFILE: bool, F>(
 ) -> Result<Option<Hit>, LookupError> {
     let mut best = pick_renderables::<PROFILE>(scene, ray, metrics);
 
-    for (node, mesh, _local_transform) in scene.mesh_nodes() {
+    for (node, mesh, transform) in scene.mesh_nodes() {
         if PROFILE {
             metrics.mesh_nodes_considered = metrics.mesh_nodes_considered.saturating_add(1);
         }
-        let transform = scene
-            .world_transform(node)
-            .ok_or(LookupError::NodeNotFound(node))?;
         let geometry = assets
             .geometry(mesh.geometry())
             .ok_or(LookupError::GeometryNotFound {
@@ -274,13 +276,10 @@ fn raycast_scene_with_assets_impl<const PROFILE: bool, F>(
             best = nearest_hit(best, Some(hit));
         }
     }
-    for (node, instance_set, _local_transform) in scene.instance_set_nodes() {
+    for (node, instance_set, node_transform) in scene.instance_set_nodes() {
         if PROFILE {
             metrics.instance_sets_considered = metrics.instance_sets_considered.saturating_add(1);
         }
-        let node_transform = scene
-            .world_transform(node)
-            .ok_or(LookupError::NodeNotFound(node))?;
         let geometry =
             assets
                 .geometry(instance_set.geometry())
@@ -357,8 +356,10 @@ fn camera_ray(
     let camera_node = scene
         .camera_node(camera)
         .ok_or(LookupError::CameraNotFound(camera))?;
+    // The ray is the camera-local ray carried through the camera's exact world
+    // matrix, the inverse of the view matrix both backends render with.
     let world_from_camera = scene
-        .world_transform(camera_node)
+        .resolved_world(camera_node)
         .ok_or(LookupError::CameraNotFound(camera))?;
     let (x, y) = cursor.physical_xy(viewport);
     let ndc_x = x / viewport.physical_width as f32 * 2.0 - 1.0;
@@ -378,8 +379,8 @@ fn camera_ray(
                 -1.0,
             ));
             Ok(Ray {
-                origin: world_from_camera.translation,
-                direction: normalize(rotate_vec3(world_from_camera.rotation, local_direction)),
+                origin: world_from_camera.translation(),
+                direction: normalize(world_from_camera.transform_vector(local_direction)),
             })
         }
         Camera::Orthographic(camera) => {
@@ -392,10 +393,7 @@ fn camera_ray(
             );
             Ok(Ray {
                 origin: transform_point(local_origin, world_from_camera),
-                direction: normalize(rotate_vec3(
-                    world_from_camera.rotation,
-                    Vec3::new(0.0, 0.0, -1.0),
-                )),
+                direction: normalize(world_from_camera.transform_vector(Vec3::new(0.0, 0.0, -1.0))),
             })
         }
     }
@@ -404,7 +402,7 @@ fn camera_ray(
 fn hit_primitive<const PROFILE: bool>(
     node: NodeKey,
     primitive: &Primitive,
-    transform: Transform,
+    transform: WorldTransform,
     ray: Ray,
     metrics: &mut PickingMetrics,
 ) -> Option<Hit> {
@@ -415,7 +413,13 @@ fn hit_primitive<const PROFILE: bool>(
     let a = transform_point(a.position, transform);
     let b = transform_point(b.position, transform);
     let c = transform_point(c.position, transform);
-    hit_triangle::<PROFILE>(HitTarget::Node(node), a, b, c, ray, metrics)
+    hit_triangle::<PROFILE>(
+        HitTarget::Node(node),
+        [a, b, c],
+        transform.is_mirrored(),
+        ray,
+        metrics,
+    )
 }
 
 fn nearest_hit(left: Option<Hit>, right: Option<Hit>) -> Option<Hit> {

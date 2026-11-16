@@ -7,7 +7,7 @@ use super::checks::{region_from_screen, round3};
 use crate::geometry::GeometryTopology;
 use crate::{
     AssetFetcher, CaptureRgba8, CaptureScreenRect, CaptureScreenRegion, SceneCompositionRegionV1,
-    screen_region_from_points, screen_region_from_rect, transform_point_for_projection,
+    screen_region_from_points, screen_region_from_rect,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,7 +69,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         capture: &CaptureRgba8,
     ) -> Vec<CompositionOverlaySegmentV1> {
         let mut segments = Vec::new();
-        for (node, mesh, transform) in self.scene.mesh_nodes() {
+        for (node, mesh, world) in self.scene.mesh_nodes() {
             if !self.scene.visible_for_active_camera(node) {
                 continue;
             }
@@ -79,7 +79,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             if geometry.topology() != GeometryTopology::Lines {
                 continue;
             }
-            let world = self.scene.world_transform(node).unwrap_or(transform);
             let vertices = geometry.vertices();
             let padding = self
                 .assets
@@ -95,8 +94,8 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 let Some(end) = vertices.get(segment[1] as usize) else {
                     continue;
                 };
-                let start = transform_point_for_projection(world, start.position);
-                let end = transform_point_for_projection(world, end.position);
+                let start = world.transform_point(start.position);
+                let end = world.transform_point(end.position);
                 let Some(start) = crate::project_world_point_from_capture(capture, start) else {
                     continue;
                 };

@@ -10,8 +10,7 @@ use super::types::{ImportBuild, ImportedNode, PendingSkinBinding, mesh_node_kind
 use super::units::convert_marker_units;
 use super::{ImportAnchor, ImportConnector, MeshVariantRecord};
 use crate::diagnostics::{ImportDiagnosticOverlayKind, InstantiateError};
-use crate::scene::transforms::compose_transform;
-use crate::scene::{Light, NodeKey, NodeKind, Scene, Transform};
+use crate::scene::{Light, NodeKey, NodeKind, Scene, Transform, WorldTransform};
 
 /// One asset node waiting to be instantiated, together with the scene context
 /// its parent established for it.
@@ -21,14 +20,14 @@ struct PendingNode {
     parent: NodeKey,
     imported_parent: Option<NodeKey>,
     import_root: Option<NodeKey>,
-    root_from_parent: Transform,
+    root_from_parent: WorldTransform,
 }
 
 /// What instantiating one asset node hands down to its children.
 struct InstantiatedNode {
     node: NodeKey,
     placement_node: NodeKey,
-    root_from_node: Transform,
+    root_from_node: WorldTransform,
 }
 
 impl Scene {
@@ -53,7 +52,7 @@ impl Scene {
             parent,
             imported_parent: None,
             import_root,
-            root_from_parent: Transform::IDENTITY,
+            root_from_parent: WorldTransform::IDENTITY,
         }];
         while let Some(next) = pending.pop() {
             let instantiated = self.instantiate_scene_asset_node(&next, build)?;
@@ -209,9 +208,12 @@ impl Scene {
             bounds,
         });
         let placement_node = pending.import_root.unwrap_or(node);
+        // Exact placement of this node relative to the import's placement
+        // root, so anchors and connectors below a non-uniformly scaled node
+        // report where they are drawn.
         let root_from_node = match pending.import_root {
-            Some(_) => compose_transform(pending.root_from_parent, transform),
-            None => Transform::IDENTITY,
+            Some(_) => pending.root_from_parent.child(transform),
+            None => WorldTransform::IDENTITY,
         };
         let label = source_node.name().map(str::to_string);
         let overlay_options = build.options;
@@ -273,7 +275,7 @@ impl Scene {
                 node,
                 placement_node,
                 transform: anchor_transform,
-                placement_transform: compose_transform(root_from_node, anchor_connection_transform),
+                placement_transform: root_from_node.child(anchor_connection_transform).trs(),
                 tags: anchor.tags().clone(),
                 label: anchor.label().map(str::to_string),
                 source_units: anchor_units,
@@ -335,10 +337,7 @@ impl Scene {
                 node,
                 placement_node,
                 transform: connector_transform,
-                placement_transform: compose_transform(
-                    root_from_node,
-                    connector_connection_transform,
-                ),
+                placement_transform: root_from_node.child(connector_connection_transform).trs(),
                 source_units: build.options.source_units(),
                 source_coordinate_system: build.options.source_coordinate_system(),
                 live: Arc::clone(build.import_live),

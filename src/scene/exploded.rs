@@ -2,7 +2,7 @@ use crate::assets::{AssetFetcher, Assets};
 use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 
-use super::transforms::local_transform_from_world;
+use super::transforms::local_transform_from_world_trs;
 use super::{NodeKey, Scene, SceneImport, Transform, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,7 +93,7 @@ impl ExplodedView {
         let assembly_center = assembly_bounds.center();
         let targets = self.targets(scene)?;
         let mut updates = Vec::new();
-        let mut planned_worlds = BTreeMap::new();
+        let mut planned_offsets = BTreeMap::new();
 
         for (index, target) in targets.into_iter().enumerate() {
             let Some(bounds) = scene.node_world_bounds(target.node, assets)? else {
@@ -103,9 +103,6 @@ impl ExplodedView {
                 .node(target.node)
                 .ok_or(LookupError::NodeNotFound(target.node))?
                 .transform();
-            let world = scene
-                .world_transform(target.node)
-                .ok_or(LookupError::NodeNotFound(target.node))?;
             let direction = match axis {
                 Some(axis) => axis_direction(axis, bounds.center(), assembly_center, index),
                 None => radial_direction(bounds.center(), assembly_center, index),
@@ -115,10 +112,9 @@ impl ExplodedView {
                 ExplodedViewMode::HierarchyDepth => target.depth.max(1) as f32,
             };
             let offset = direction * self.distance * self.factor * depth_multiplier;
-            let target_world = world.with_translation(world.translation + offset);
             let transform =
-                local_transform_for_node(scene, target.node, target_world, &planned_worlds)?;
-            planned_worlds.insert(target.node, target_world);
+                local_transform_for_offset(scene, target.node, offset, &planned_offsets)?;
+            planned_offsets.insert(target.node, offset);
             updates.push(ExplodedTransformUpdate {
                 node: target.node,
                 original,
@@ -220,27 +216,50 @@ fn collect_descendants(
     Ok(())
 }
 
-fn local_transform_for_node(
+/// The local transform that moves `node` by the world-space `offset`, given
+/// the world-space offsets already planned for its ancestors.
+fn local_transform_for_offset(
     scene: &Scene,
     node: NodeKey,
-    world: Transform,
-    planned_worlds: &BTreeMap<NodeKey, Transform>,
+    offset: Vec3,
+    planned_offsets: &BTreeMap<NodeKey, Vec3>,
 ) -> Result<Transform, LookupError> {
-    let parent = scene
-        .node(node)
-        .ok_or(LookupError::NodeNotFound(node))?
-        .parent();
-    let Some(parent) = parent else {
-        return Ok(world);
+    let node_ref = scene.node(node).ok_or(LookupError::NodeNotFound(node))?;
+    let world = scene
+        .resolved_world(node)
+        .ok_or(LookupError::NodeNotFound(node))?;
+    let Some(parent) = node_ref.parent() else {
+        let world = world.trs();
+        return Ok(world.with_translation(world.translation + offset));
     };
-    let parent_world = match planned_worlds.get(&parent).copied() {
-        Some(world) => world,
-        None => scene
-            .world_transform(parent)
-            .ok_or(LookupError::NodeNotFound(parent))?,
-    };
-    local_transform_from_world(parent_world, world)
-        .ok_or(LookupError::NonInvertibleParentTransform { node, parent })
+    let parent_world = scene
+        .resolved_world(parent)
+        .ok_or(LookupError::NodeNotFound(parent))?;
+    let parent_offset = planned_offsets.get(&parent).copied();
+    if let (Some(world), Some(parent_world)) = (world.exact_trs(), parent_world.exact_trs()) {
+        let planned_parent_world = match parent_offset {
+            Some(parent_offset) => {
+                parent_world.with_translation(parent_world.translation + parent_offset)
+            }
+            None => parent_world,
+        };
+        return local_transform_from_world_trs(
+            planned_parent_world,
+            world.with_translation(world.translation + offset),
+        )
+        .ok_or(LookupError::NonInvertibleParentTransform { node, parent });
+    }
+    // A sheared hierarchy has no world TRS to move. The node keeps its local
+    // rotation and scale and takes the offset its moved parent has not
+    // already carried, expressed in the parent's local space.
+    let local_from_world = parent_world
+        .inverse()
+        .ok_or(LookupError::NonInvertibleParentTransform { node, parent })?;
+    let local = node_ref.transform();
+    Ok(local.with_translation(
+        local.translation
+            + local_from_world.transform_vector(offset - parent_offset.unwrap_or(Vec3::ZERO)),
+    ))
 }
 
 fn validate_factor(factor: f32) -> Result<(), LookupError> {

@@ -338,7 +338,7 @@ impl SceneImport {
             .iter()
             .filter_map(|record| {
                 let bounds = record.bounds?;
-                let transform = scene.world_transform(record.node)?;
+                let transform = scene.resolved_world(record.node)?;
                 Some(transform_aabb(bounds, transform))
             })
             .fold(None, |bounds, next| Some(union_optional(bounds, next)))

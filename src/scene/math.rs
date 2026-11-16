@@ -16,7 +16,7 @@ use std::ops::Mul;
 use glam::Mat3;
 use serde::{Deserialize, Serialize};
 
-pub use glam::{Quat, Vec3};
+pub use glam::{Mat4, Quat, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Transform {
@@ -99,6 +99,13 @@ impl Transform {
     /// The child translation is first scaled by the parent scale, then rotated
     /// by the parent rotation, then offset by the parent translation. Rotation
     /// is composed and normalized, and scale is multiplied component-wise.
+    ///
+    /// The result is exact only when the parent scale is uniform or the child
+    /// is unrotated. A non-uniformly scaled parent with a rotated child
+    /// produces shear, which translation/rotation/scale cannot represent, so
+    /// this helper then returns an approximation. The scene itself resolves
+    /// hierarchies as matrices; use [`Scene::world_matrix`](crate::Scene::world_matrix)
+    /// for the exact world transform of a node.
     pub fn compose(parent: Self, child: Self) -> Self {
         let scaled_child_translation = child.translation * parent.scale;
         Self {

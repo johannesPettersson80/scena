@@ -1,22 +1,22 @@
 use super::{
     Aabb, Camera, CameraKey, InstanceSet, LabelDesc, LabelKey, Light, LightKey, MeshNode, NodeKey,
-    NodeKind, RenderableNode, Scene, Transform,
+    NodeKind, RenderableNode, Scene, Transform, WorldTransform,
 };
 
 impl Scene {
-    pub(crate) fn renderables(&self) -> impl Iterator<Item = (&RenderableNode, Transform)> {
+    pub(crate) fn renderables(&self) -> impl Iterator<Item = (&RenderableNode, WorldTransform)> {
         self.renderable_nodes()
             .map(|(_node, renderable, transform)| (renderable, transform))
     }
 
     pub(crate) fn renderable_nodes(
         &self,
-    ) -> impl Iterator<Item = (super::NodeKey, &RenderableNode, Transform)> {
+    ) -> impl Iterator<Item = (super::NodeKey, &RenderableNode, WorldTransform)> {
         self.nodes
             .iter()
             .filter_map(|(node_key, node)| match &node.kind {
                 NodeKind::Renderable(renderable) if self.visible_for_active_camera(node_key) => {
-                    self.world_transform(node_key)
+                    self.resolved_world(node_key)
                         .map(|transform| (node_key, renderable, transform))
                 }
                 NodeKind::Empty
@@ -40,7 +40,9 @@ impl Scene {
             + self.label_nodes().count()
     }
 
-    pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
+    pub(crate) fn mesh_nodes(
+        &self,
+    ) -> impl Iterator<Item = (NodeKey, MeshNode, WorldTransform)> + '_ {
         self.nodes.iter().filter_map(|(key, node)| {
             let NodeKind::Mesh(mesh) = node.kind else {
                 return None;
@@ -48,14 +50,14 @@ impl Scene {
             if !self.visible_for_active_camera(key) {
                 return None;
             }
-            self.world_transform(key)
+            self.resolved_world(key)
                 .map(|transform| (key, mesh, transform))
         })
     }
 
     pub(crate) fn instance_set_nodes(
         &self,
-    ) -> impl Iterator<Item = (NodeKey, &InstanceSet, Transform)> + '_ {
+    ) -> impl Iterator<Item = (NodeKey, &InstanceSet, WorldTransform)> + '_ {
         self.nodes.iter().filter_map(|(node_key, node)| {
             let NodeKind::InstanceSet(instance_set) = node.kind else {
                 return None;
@@ -66,7 +68,7 @@ impl Scene {
             self.instance_sets
                 .get(instance_set)
                 .and_then(|instance_set| {
-                    self.world_transform(node_key)
+                    self.resolved_world(node_key)
                         .map(|transform| (node_key, instance_set, transform))
                 })
         })

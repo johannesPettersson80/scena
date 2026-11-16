@@ -1,6 +1,6 @@
 use crate::assets::GeometryHandle;
 use crate::geometry::Aabb;
-use crate::scene::{NodeKey, Scene, Transform, Vec3};
+use crate::scene::{NodeKey, Scene, Vec3, WorldTransform};
 
 use crate::render::camera::CameraProjection;
 
@@ -9,7 +9,7 @@ pub(super) fn select_mesh_lod_geometry(
     node: NodeKey,
     base_geometry: GeometryHandle,
     local_bounds: Aabb,
-    transform: Transform,
+    transform: WorldTransform,
     camera_projection: Option<&CameraProjection>,
 ) -> GeometryHandle {
     let Some(levels) = scene.mesh_lods(node) else {
@@ -28,7 +28,7 @@ pub(super) fn select_mesh_lod_geometry(
 
 fn projected_bounds_screen_fraction(
     local_bounds: Aabb,
-    transform: Transform,
+    transform: WorldTransform,
     camera_projection: Option<&CameraProjection>,
 ) -> Option<f32> {
     let projection = camera_projection?;

@@ -1,6 +1,6 @@
 use crate::geometry::{Primitive, Vertex};
 use crate::material::Color;
-use crate::scene::{Particle, Scene, Transform, Vec3};
+use crate::scene::{Particle, Scene, Vec3, WorldTransform};
 
 use super::super::camera::CameraProjection;
 use super::transforms::transform_position;
@@ -66,7 +66,7 @@ pub(super) fn append_particle_primitives(
 
 fn particle_corners(
     particle: Particle,
-    transform: Transform,
+    transform: WorldTransform,
     camera_projection: &CameraProjection,
     billboard_right: Vec3,
     billboard_up: Vec3,

@@ -1,6 +1,6 @@
 use crate::diagnostics::{Capabilities, CapabilityStatus, RenderError};
 use crate::scene::view_math::world_to_view as world_to_view_point;
-use crate::scene::{Camera, CameraKey, Quat, Scene, Transform, Vec3};
+use crate::scene::{Camera, CameraKey, LocalFromWorld, Quat, Scene, Vec3, WorldTransform};
 
 use super::RasterTarget;
 
@@ -9,7 +9,14 @@ mod depth_projection;
 #[derive(Debug, Clone)]
 pub(super) struct CameraProjection {
     camera: Camera,
-    world_from_camera: Transform,
+    /// Exact world placement of the camera node. The view matrix is its
+    /// inverse, scale and shear included.
+    world_from_camera: WorldTransform,
+    /// Inverse of a camera placement that TRS cannot describe, cached because
+    /// the CPU rasterizer projects every vertex through it. `None` for an
+    /// exact TRS placement, which inverts analytically, and for a singular
+    /// matrix, which projects nothing.
+    view_from_world: Option<LocalFromWorld>,
     target: RasterTarget,
 }
 
@@ -35,11 +42,16 @@ impl CameraProjection {
             .camera_node(camera)
             .ok_or(RenderError::CameraNotFound(camera))?;
         let world_from_camera = scene
-            .world_transform(camera_node)
+            .resolved_world(camera_node)
             .ok_or(RenderError::CameraNotFound(camera))?;
+        let view_from_world = match world_from_camera.exact_trs() {
+            Some(_) => None,
+            None => world_from_camera.inverse(),
+        };
         Ok(Self {
             camera: camera_desc,
             world_from_camera,
+            view_from_world,
             target,
         })
     }
@@ -93,11 +105,11 @@ impl CameraProjection {
     }
 
     pub(super) const fn camera_position(&self) -> Vec3 {
-        self.world_from_camera.translation
+        self.world_from_camera.translation()
     }
 
     pub(super) fn billboard_axes(&self) -> (Vec3, Vec3) {
-        let rotation = self.world_from_camera.rotation;
+        let rotation = self.world_from_camera.trs().rotation;
         let rotation =
             if rotation.length_squared().is_finite() && rotation.length_squared() > f32::EPSILON {
                 rotation.normalize()
@@ -216,22 +228,35 @@ impl CameraProjection {
     }
 
     pub(super) fn world_from_view_matrix(&self) -> Option<[f32; 16]> {
-        if !is_finite_nonzero_scale(self.world_from_camera.scale) {
+        let Some(world_from_camera) = self.world_from_camera.exact_trs() else {
+            self.view_from_world?;
+            let matrix = self.world_from_camera.matrix();
+            let (x, y, z) = (
+                matrix.matrix3.x_axis,
+                matrix.matrix3.y_axis,
+                matrix.matrix3.z_axis,
+            );
+            let t = matrix.translation;
+            return Some([
+                x.x, x.y, x.z, 0.0, y.x, y.y, y.z, 0.0, z.x, z.y, z.z, 0.0, t.x, t.y, t.z, 1.0,
+            ]);
+        };
+        if !is_finite_nonzero_scale(world_from_camera.scale) {
             return None;
         }
         let x = scale_vec3(
-            rotate_vec3(self.world_from_camera.rotation, Vec3::new(1.0, 0.0, 0.0)),
-            self.world_from_camera.scale.x,
+            rotate_vec3(world_from_camera.rotation, Vec3::new(1.0, 0.0, 0.0)),
+            world_from_camera.scale.x,
         );
         let y = scale_vec3(
-            rotate_vec3(self.world_from_camera.rotation, Vec3::new(0.0, 1.0, 0.0)),
-            self.world_from_camera.scale.y,
+            rotate_vec3(world_from_camera.rotation, Vec3::new(0.0, 1.0, 0.0)),
+            world_from_camera.scale.y,
         );
         let z = scale_vec3(
-            rotate_vec3(self.world_from_camera.rotation, Vec3::new(0.0, 0.0, 1.0)),
-            self.world_from_camera.scale.z,
+            rotate_vec3(world_from_camera.rotation, Vec3::new(0.0, 0.0, 1.0)),
+            world_from_camera.scale.z,
         );
-        let t = self.world_from_camera.translation;
+        let t = world_from_camera.translation;
         Some([
             x.x, x.y, x.z, 0.0, y.x, y.y, y.z, 0.0, z.x, z.y, z.z, 0.0, t.x, t.y, t.z, 1.0,
         ])
@@ -339,7 +364,12 @@ impl CameraProjection {
     }
 
     fn world_to_view(&self, world_position: Vec3) -> Option<Vec3> {
-        world_to_view_point(world_position, self.world_from_camera)
+        match self.world_from_camera.exact_trs() {
+            Some(world_from_camera) => world_to_view_point(world_position, world_from_camera),
+            None => self
+                .view_from_world
+                .map(|view_from_world| view_from_world.transform_point(world_position)),
+        }
     }
 
     pub(super) fn uses_reversed_z(&self) -> bool {
@@ -348,23 +378,35 @@ impl CameraProjection {
     }
 
     fn view_rows_and_translation(&self) -> Option<([Vec3; 3], Vec3)> {
-        let scale = self.world_from_camera.scale;
+        let Some(world_from_camera) = self.world_from_camera.exact_trs() else {
+            let view = self.view_from_world?.matrix();
+            let rows = view.matrix3.transpose();
+            return Some((
+                [
+                    Vec3::from(rows.x_axis),
+                    Vec3::from(rows.y_axis),
+                    Vec3::from(rows.z_axis),
+                ],
+                Vec3::from(view.translation),
+            ));
+        };
+        let scale = world_from_camera.scale;
         if !is_finite_nonzero_scale(scale) {
             return None;
         }
         let right = scale_vec3(
-            rotate_vec3(self.world_from_camera.rotation, Vec3::new(1.0, 0.0, 0.0)),
+            rotate_vec3(world_from_camera.rotation, Vec3::new(1.0, 0.0, 0.0)),
             scale.x.recip(),
         );
         let up = scale_vec3(
-            rotate_vec3(self.world_from_camera.rotation, Vec3::new(0.0, 1.0, 0.0)),
+            rotate_vec3(world_from_camera.rotation, Vec3::new(0.0, 1.0, 0.0)),
             scale.y.recip(),
         );
         let forward = scale_vec3(
-            rotate_vec3(self.world_from_camera.rotation, Vec3::new(0.0, 0.0, 1.0)),
+            rotate_vec3(world_from_camera.rotation, Vec3::new(0.0, 0.0, 1.0)),
             scale.z.recip(),
         );
-        let camera_position = self.world_from_camera.translation;
+        let camera_position = world_from_camera.translation;
         let translation = Vec3::new(
             -dot(right, camera_position),
             -dot(up, camera_position),
@@ -496,7 +538,7 @@ fn finite_positive(value: f32) -> Option<f32> {
 mod tests {
     use super::*;
     use crate::diagnostics::Backend;
-    use crate::scene::{PerspectiveCamera, Scene};
+    use crate::scene::{PerspectiveCamera, Scene, Transform};
 
     #[test]
     fn clip_from_world_matrix_matches_perspective_project_result() {

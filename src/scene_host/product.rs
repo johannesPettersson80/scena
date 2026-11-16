@@ -358,12 +358,13 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         if drop_y.abs() <= 1.0e-6 {
             return Ok(());
         }
-        let mut world = self
+        let origin = self
             .scene
             .world_transform(node_key)
-            .ok_or(LookupError::NodeNotFound(node_key))?;
-        world.translation += Vec3::new(0.0, drop_y, 0.0);
-        self.scene.align_to(node_key, world)?;
+            .ok_or(LookupError::NodeNotFound(node_key))?
+            .translation;
+        self.scene
+            .move_origin_to(node_key, origin + Vec3::new(0.0, drop_y, 0.0))?;
         Ok(())
     }
 }

@@ -2,10 +2,10 @@ use crate::assets::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 
-use super::transforms::compose_transform;
 use super::view_math::{transform_aabb, union_aabb, world_to_view};
 use super::{
     Camera, CameraKey, DepthRange, NodeKey, NodeKind, PerspectiveCamera, Scene, Transform, Vec3,
+    WorldTransform,
 };
 
 mod fit;
@@ -603,7 +603,7 @@ impl Scene {
             .camera_node(camera)
             .ok_or(LookupError::CameraNotFound(camera))?;
         let world_from_camera = self
-            .world_transform(camera_node)
+            .resolved_world(camera_node)
             .ok_or(LookupError::CameraNotFound(camera))?;
         let Some(view) = world_to_view(world_position, world_from_camera) else {
             return Ok(None);
@@ -707,7 +707,7 @@ impl Scene {
             });
         }
         let local_bounds = self
-            .node_subtree_bounds_in_space(node, Transform::IDENTITY, assets)?
+            .node_subtree_bounds_in_space(node, WorldTransform::IDENTITY, assets)?
             .ok_or(LookupError::ImportHasNoBounds)?;
         transforms
             .iter()
@@ -719,7 +719,7 @@ impl Scene {
     fn node_subtree_bounds_in_space<F>(
         &self,
         node: NodeKey,
-        space_from_node: Transform,
+        space_from_node: WorldTransform,
         assets: &Assets<F>,
     ) -> Result<Option<Aabb>, LookupError> {
         let node_ref = self
@@ -753,7 +753,7 @@ impl Scene {
                     .map(|instance| {
                         transform_aabb(
                             geometry.bounds(),
-                            compose_transform(space_from_node, instance.transform()),
+                            space_from_node.child(instance.transform()),
                         )
                     })
                     .reduce(union_aabb)
@@ -769,7 +769,7 @@ impl Scene {
                 .nodes
                 .get(*child)
                 .ok_or(LookupError::NodeNotFound(*child))?;
-            let child_space = compose_transform(space_from_node, child_ref.transform);
+            let child_space = space_from_node.child(child_ref.transform);
             if let Some(child_bounds) =
                 self.node_subtree_bounds_in_space(*child, child_space, assets)?
             {

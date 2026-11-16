@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
 use crate::geometry::Aabb;
 use crate::scene::view_math::{transform_aabb, union_aabb};
-use crate::scene::{Light, SourceCoordinateSystem, SourceUnits, Transform};
+use crate::scene::{Light, SourceCoordinateSystem, SourceUnits, Transform, WorldTransform};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -151,14 +151,14 @@ impl SceneAsset {
             .root_indices()
             .into_iter()
             .rev()
-            .map(|root| (root, Transform::IDENTITY))
+            .map(|root| (root, WorldTransform::IDENTITY))
             .collect::<Vec<_>>();
         let mut bounds = None::<Aabb>;
         while let Some((node_index, asset_from_parent)) = pending.pop() {
             let Some(node) = self.inner.nodes.get(node_index) else {
                 continue;
             };
-            let asset_from_node = Transform::compose(asset_from_parent, node.transform);
+            let asset_from_node = asset_from_parent.child(node.transform);
             let mesh_bounds = node
                 .meshes
                 .iter()

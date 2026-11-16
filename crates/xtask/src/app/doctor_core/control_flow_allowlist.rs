@@ -106,6 +106,11 @@ pub(super) const DIAGNOSTIC_EARLY_RETURNS: &[DiagnosticEarlyReturn] = &[
         rationale: "optional adapter probe until the required CPU-WebGL2 parity lane owns it",
     },
     DiagnosticEarlyReturn {
+        path: "tests/world_matrix_rendering.rs",
+        owner: "renderer-quality/world-matrix",
+        rationale: "every GPU proof has an unconditional CPU twin in the same file; the GPU twin returns only when no headless adapter can be created",
+    },
+    DiagnosticEarlyReturn {
         path: "tests/trust_platform_repro.rs",
         owner: "external-fixture/Q07",
         rationale: "manual out-of-repo reproduction requiring a separately installed asset",

@@ -30,7 +30,8 @@ use super::tangents::{
     transform_model_tangents,
 };
 use super::transforms::{
-    normal_from_model_matrix, transform_normal, transform_position, world_from_model_matrix,
+    normal_from_model_matrix, restore_front_face_winding, transform_normal, transform_position,
+    world_from_model_matrix,
 };
 use super::types::{
     DeformationInputs, GeometryPrimitiveSource, PreparedDrawTransform, PreparedMaterialReflection,
@@ -187,7 +188,7 @@ fn append_triangle_primitives(
         Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2
     );
     let mut subdivision_scratch = Vec::new();
-    let photographic_uv_scale = photographic_uv_scale(&source, params.transform.scale);
+    let photographic_uv_scale = photographic_uv_scale(&source, params.transform.trs().scale);
     let mut visibility_debug = visibility_debug_enabled().then(VisibilityDebugStats::default);
 
     for triangle in source.geometry.indices().chunks_exact(3) {
@@ -411,7 +412,7 @@ fn append_triangle_primitives(
                 multiply_color(lit, corner.vertex_color)
             }
         };
-        let corners = [
+        let mut corners = [
             CpuBakeCorner {
                 position: position_a,
                 geometric_normal: geometric_normal_a,
@@ -461,6 +462,7 @@ fn append_triangle_primitives(
                 ambient_visibility: ambient_visibility_c,
             },
         ];
+        restore_front_face_winding(params.transform, &mut corners);
         let screen_edge_pixels =
             triangle_screen_edge_pixels(corners, params.camera_projection, params.target);
         let requested_subdivisions = cpu_texture_subdivisions(

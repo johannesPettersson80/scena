@@ -38,7 +38,7 @@ pub(crate) fn check_c12_deformed_picking_contracts(root: &Path, findings: &mut V
                 "ray_triangle_intersection_tests",
                 "deformed_vertex_bytes_materialized",
                 "World-space distance from the camera-ray origin",
-                "negative scale can therefore reverse it",
+                "normal keeps pointing out of the front face",
             ],
         ),
         (

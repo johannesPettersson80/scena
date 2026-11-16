@@ -57,6 +57,7 @@ mod view;
 mod view_bounds;
 pub(crate) mod view_math;
 mod visibility;
+mod world_transform;
 pub use anchors::AnchorFrame;
 pub use annotations::{
     AnnotationAnchor, AnnotationAnchorTarget, AnnotationProjectionReportV1, AnnotationProjectionV1,
@@ -104,7 +105,7 @@ pub use lights::{
     StudioLightingHandles,
 };
 pub use lod::MeshLodLevel;
-pub use math::{Angle, Quat, Transform, Vec3};
+pub use math::{Angle, Mat4, Quat, Transform, Vec3};
 pub use measurements::{
     MeasurementAxis, MeasurementKind, MeasurementOverlay, MeasurementOverlayReport,
     MeasurementReport, UnitFormat,
@@ -124,6 +125,7 @@ pub use reflection_probes::{
 };
 pub use resolved_cache::ResolvedSceneCacheStats;
 pub use skinning::SceneSkinBinding;
+pub(crate) use world_transform::{LocalFromWorld, WorldTransform, rotate_vec3};
 
 new_key_type! {
     pub struct NodeKey;

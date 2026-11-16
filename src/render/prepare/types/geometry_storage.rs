@@ -12,6 +12,10 @@ pub(in crate::render) struct PreparedDrawTransform {
     pub(super) normal_from_model: [f32; 16],
     pub(super) world_to_model: Option<[f32; 16]>,
     pub(super) model_from_normal: Option<[f32; 16]>,
+    /// The world matrix reverses triangle winding. Triangles baked under it
+    /// carry the compensating corner swap, so the flag must not change while
+    /// the bake is retained.
+    pub(super) mirrored: bool,
 }
 
 impl PreparedDrawTransform {
@@ -22,15 +26,28 @@ impl PreparedDrawTransform {
         Arc::new(Self {
             world_to_model: invert_matrix4(&world_from_model),
             model_from_normal: invert_matrix4(&normal_from_model),
+            mirrored: linear_determinant(&world_from_model) < 0.0,
             world_from_model,
             normal_from_model,
         })
+    }
+
+    pub(in crate::render) const fn mirrored(&self) -> bool {
+        self.mirrored
     }
 
     pub(super) fn identity() -> Arc<Self> {
         let matrix = crate::render::prepare::transforms::identity_matrix4();
         Self::shared(matrix, matrix)
     }
+}
+
+/// Determinant of the upper-left 3x3 of a column-major matrix, in `f64` so
+/// very small scales keep their sign.
+fn linear_determinant(matrix: &[f32; 16]) -> f64 {
+    let m = |index: usize| f64::from(matrix[index]);
+    m(0) * (m(5) * m(10) - m(9) * m(6)) - m(4) * (m(1) * m(10) - m(9) * m(2))
+        + m(8) * (m(1) * m(6) - m(5) * m(2))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

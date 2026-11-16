@@ -5,7 +5,7 @@ use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 use crate::material::Color;
 
-use super::{NodeKey, NodeKind, ParticleSetKey, Scene, Transform, Vec3};
+use super::{NodeKey, NodeKind, ParticleSetKey, Scene, Transform, Vec3, WorldTransform};
 
 /// One host-supplied screen-space particle.
 ///
@@ -103,7 +103,7 @@ impl Scene {
 
     pub(crate) fn particle_set_nodes(
         &self,
-    ) -> impl Iterator<Item = (NodeKey, &ParticleSet, Transform)> + '_ {
+    ) -> impl Iterator<Item = (NodeKey, &ParticleSet, WorldTransform)> + '_ {
         self.nodes.iter().filter_map(|(node_key, node)| {
             let NodeKind::ParticleSet(particle_set) = node.kind else {
                 return None;
@@ -114,7 +114,7 @@ impl Scene {
             self.particle_sets
                 .get(particle_set)
                 .and_then(|particle_set| {
-                    self.world_transform(node_key)
+                    self.resolved_world(node_key)
                         .map(|transform| (node_key, particle_set, transform))
                 })
         })

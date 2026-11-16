@@ -5,7 +5,7 @@ pub(super) fn hit_geometry<const PROFILE: bool>(
     geometry: &GeometryDesc,
     vertices: &[crate::geometry::GeometryVertex],
     deformed: bool,
-    transform: Transform,
+    transform: WorldTransform,
     ray: Ray,
     metrics: &mut PickingMetrics,
 ) -> Option<Hit> {
@@ -42,9 +42,12 @@ pub(super) fn hit_geometry<const PROFILE: bool>(
             best,
             hit_triangle::<PROFILE>(
                 HitTarget::Node(node),
-                transform_point(a.position, transform),
-                transform_point(b.position, transform),
-                transform_point(c.position, transform),
+                [
+                    transform_point(a.position, transform),
+                    transform_point(b.position, transform),
+                    transform_point(c.position, transform),
+                ],
+                transform.is_mirrored(),
                 ray,
                 metrics,
             ),
@@ -58,7 +61,7 @@ pub(super) struct GeometryInstanceHitInput<'a> {
     pub(super) instance: InstanceId,
     pub(super) geometry: &'a GeometryDesc,
     pub(super) vertices: &'a [crate::geometry::GeometryVertex],
-    pub(super) node_transform: Transform,
+    pub(super) node_transform: WorldTransform,
     pub(super) instance_transform: Transform,
     pub(super) ray: Ray,
 }
@@ -79,6 +82,8 @@ pub(super) fn hit_geometry_instance<const PROFILE: bool>(
     if geometry.topology() != GeometryTopology::Triangles {
         return None;
     }
+    let instance_transform = WorldTransform::from(instance_transform);
+    let mirrored = node_transform.is_mirrored() != instance_transform.is_mirrored();
     let node_local_ray = inverse_transform_ray(ray, node_transform)?;
     let local_ray = inverse_transform_ray(node_local_ray, instance_transform)?;
     let bvh = triangle_bvh::<PROFILE>(geometry, vertices, false, metrics);
@@ -110,18 +115,21 @@ pub(super) fn hit_geometry_instance<const PROFILE: bool>(
             best,
             hit_triangle::<PROFILE>(
                 HitTarget::Instance { node, instance },
-                transform_point(
-                    transform_point(a.position, instance_transform),
-                    node_transform,
-                ),
-                transform_point(
-                    transform_point(b.position, instance_transform),
-                    node_transform,
-                ),
-                transform_point(
-                    transform_point(c.position, instance_transform),
-                    node_transform,
-                ),
+                [
+                    transform_point(
+                        transform_point(a.position, instance_transform),
+                        node_transform,
+                    ),
+                    transform_point(
+                        transform_point(b.position, instance_transform),
+                        node_transform,
+                    ),
+                    transform_point(
+                        transform_point(c.position, instance_transform),
+                        node_transform,
+                    ),
+                ],
+                mirrored,
                 ray,
                 metrics,
             ),
@@ -170,8 +178,18 @@ fn ray_hits_bvh_bounds<const PROFILE: bool>(
     hit
 }
 
-fn inverse_transform_ray(ray: Ray, transform: Transform) -> Option<Ray> {
+/// Carries a world-space ray into the local space of `transform`. The local
+/// direction is not unit length, so a parameter along it stays a world-space
+/// distance.
+fn inverse_transform_ray(ray: Ray, transform: WorldTransform) -> Option<Ray> {
     const MIN_SCALE: f32 = 1.0e-8;
+    let Some(transform) = transform.exact_trs() else {
+        let local_from_world = transform.inverse()?;
+        return Some(Ray {
+            origin: local_from_world.transform_point(ray.origin),
+            direction: local_from_world.transform_vector(ray.direction),
+        });
+    };
     if !transform.scale.x.is_finite()
         || !transform.scale.y.is_finite()
         || !transform.scale.z.is_finite()
@@ -206,14 +224,18 @@ fn inverse_transform_ray(ray: Ray, transform: Transform) -> Option<Ray> {
     })
 }
 
+/// Intersects one world-space triangle. `mirrored` says the triangle was
+/// carried through a winding-reversing transform; its corners are then read
+/// in the order the renderer draws them, so the reported normal is the
+/// front-face normal either way.
 pub(super) fn hit_triangle<const PROFILE: bool>(
     target: HitTarget,
-    a: Vec3,
-    b: Vec3,
-    c: Vec3,
+    [a, b, c]: [Vec3; 3],
+    mirrored: bool,
     ray: Ray,
     metrics: &mut PickingMetrics,
 ) -> Option<Hit> {
+    let (b, c) = if mirrored { (c, b) } else { (b, c) };
     if PROFILE {
         metrics.triangle_bounds_tests = metrics.triangle_bounds_tests.saturating_add(1);
     }

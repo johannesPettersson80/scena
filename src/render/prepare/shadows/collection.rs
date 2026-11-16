@@ -1,7 +1,7 @@
 use crate::assets::{Assets, MaterialHandle};
 use crate::diagnostics::PrepareError;
 use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
-use crate::scene::{NodeKey, Scene, Transform, Vec3};
+use crate::scene::{NodeKey, Scene, Vec3, WorldTransform};
 
 use super::super::materials::render_material_slot;
 use super::super::transforms::{compose_transform, transform_position, transform_primitive};
@@ -109,7 +109,7 @@ fn append_shadow_geometry(
     occluders: &mut Vec<ShadowOccluder>,
     geometry: &GeometryDesc,
     vertices: &[GeometryVertex],
-    transform: Transform,
+    transform: WorldTransform,
     origin_shift: Vec3,
 ) {
     if geometry.topology() != GeometryTopology::Triangles {

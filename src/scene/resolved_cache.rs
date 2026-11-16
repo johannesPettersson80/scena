@@ -1,7 +1,6 @@
 use slotmap::SecondaryMap;
 
-use super::transforms::compose_transform;
-use super::{CameraKey, NodeKey, Scene, Transform};
+use super::{CameraKey, NodeKey, Scene, WorldTransform};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ResolvedSceneCacheStats {
@@ -13,7 +12,9 @@ pub struct ResolvedSceneCacheStats {
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct ResolvedNodeState {
-    pub(super) world_transform: Transform,
+    /// Exact world placement: the product of the local matrices from the
+    /// root down to this node.
+    pub(super) world: WorldTransform,
     pub(super) hierarchy_visible: bool,
     pub(super) camera_visible: bool,
 }
@@ -27,7 +28,7 @@ pub(super) struct ResolvedSceneCache {
     camera_layer_mask: u64,
     initialized: bool,
     nodes: SecondaryMap<NodeKey, ResolvedNodeState>,
-    traversal_stack: Vec<(NodeKey, Transform, bool)>,
+    traversal_stack: Vec<(NodeKey, WorldTransform, bool)>,
     stats: ResolvedSceneCacheStats,
 }
 
@@ -83,18 +84,18 @@ impl Scene {
         let root = self.root;
         cache
             .traversal_stack
-            .push((root, Transform::IDENTITY, true));
+            .push((root, WorldTransform::IDENTITY, true));
         while let Some((node_key, parent_world, parent_visible)) = cache.traversal_stack.pop() {
             let Some(node) = self.nodes.get(node_key) else {
                 continue;
             };
-            let world_transform = compose_transform(parent_world, node.transform);
+            let world = parent_world.child(node.transform);
             let hierarchy_visible = parent_visible && node.visible;
             let camera_visible = hierarchy_visible && camera_layer_mask & node.layer_mask != 0;
             cache.nodes.insert(
                 node_key,
                 ResolvedNodeState {
-                    world_transform,
+                    world,
                     hierarchy_visible,
                     camera_visible,
                 },
@@ -103,7 +104,7 @@ impl Scene {
                 node.children
                     .iter()
                     .rev()
-                    .map(|child| (*child, world_transform, hierarchy_visible)),
+                    .map(|child| (*child, world, hierarchy_visible)),
             );
         }
         cache.structure_revision = self.structure_revision;
@@ -133,7 +134,7 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::{PerspectiveCamera, Vec3};
+    use crate::scene::{PerspectiveCamera, Transform, Vec3};
 
     #[test]
     fn pf04_pf05_contract_cache_tracks_reparent_remove_replace_and_camera_layers() {

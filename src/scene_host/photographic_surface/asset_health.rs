@@ -26,20 +26,8 @@ pub(super) fn material_values_are_physical(material: &MaterialDesc) -> bool {
         })
 }
 
-pub(super) fn transform_bounds(bounds: Aabb, transform: Transform) -> Aabb {
-    let mut minimum = Vec3::splat(f32::INFINITY);
-    let mut maximum = Vec3::splat(f32::NEG_INFINITY);
-    for x in [bounds.min.x, bounds.max.x] {
-        for y in [bounds.min.y, bounds.max.y] {
-            for z in [bounds.min.z, bounds.max.z] {
-                let point = transform.translation
-                    + transform.rotation * (Vec3::new(x, y, z) * transform.scale);
-                minimum = minimum.min(point);
-                maximum = maximum.max(point);
-            }
-        }
-    }
-    Aabb::new(minimum, maximum)
+pub(super) fn transform_bounds(bounds: Aabb, transform: crate::scene::WorldTransform) -> Aabb {
+    crate::scene::view_math::transform_aabb(bounds, transform)
 }
 
 pub(super) fn append_component_layout_issues(

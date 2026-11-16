@@ -364,6 +364,8 @@ Additive public API changes in Unreleased:
 - `SceneRecipeBuildInstanceV1` and additive
   `SceneRecipeBuildV1::instances` rows mapping recipe-local authored instance IDs
   to runtime-scoped set/instance identity
+- `Scene::world_matrix`, `SceneNodeInspection::world_matrix`,
+  `SceneDrawInspection::world_matrix`, and the re-exported `Mat4`
 
 Additive public API changes in 1.7.0:
 
@@ -1028,6 +1030,17 @@ published v1.8.0, `scale_by` replaced scale despite its compositional name; use
 `with_uniform_scale` when migrating code that intentionally depended on that
 old behavior.
 
+A node's place in the world is an affine matrix, not a `Transform`. A rotated
+child of a non-uniformly scaled parent is sheared, and translation, rotation,
+and scale cannot express shear. `Scene::world_matrix(node)` returns the exact
+matrix that rendering, picking, bounds, framing, and skinning use.
+`Scene::world_transform(node)` returns its translation/rotation/scale
+decomposition: the translation is always exact, and the whole value is exact
+whenever no ancestor combines non-uniform scale with a rotated descendant.
+`Transform::compose` multiplies scale component by component, so it carries the
+same limit; hierarchies of translation, rotation, and uniform scale are
+unaffected.
+
 ## Typed handles
 
 `scena` uses typed handles instead of raw integers or string identifiers for
@@ -1168,9 +1181,11 @@ vertices when a skin binding is missing or invalid.
 
 `Hit::distance` is measured in world-space units along the normalized camera
 ray. `Hit::world_position` is the corresponding world-space intersection.
-`Hit::normal` is the normalized geometric normal derived from transformed
-triangle winding, so negative scale reverses it and nonuniform scale changes it
-according to the transformed face. A singular transform is permitted as scene
+`Hit::normal` is the normalized geometric normal of the triangle as it is
+rendered: the node's exact world matrix is applied before intersection, so
+nonuniform scale and shear change it according to the transformed face, and the
+winding of a mirrored (negative-determinant) transform is restored so the normal
+keeps pointing out of the front face. A singular transform is permitted as scene
 state, but any triangle it collapses to zero area is not hittable. Invalid
 deformation data returns `LookupError::InvalidSkinBinding`.
 

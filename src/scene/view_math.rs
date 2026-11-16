@@ -1,6 +1,6 @@
 use crate::geometry::Aabb;
 
-use super::{Quat, Transform, Vec3};
+use super::{Quat, Vec3, WorldTransform};
 
 pub(super) fn look_rotation(forward: Vec3, up: Vec3) -> Quat {
     let right = normalize_or(cross_vec3(forward, up), Vec3::new(1.0, 0.0, 0.0));
@@ -81,7 +81,19 @@ pub(super) fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
 }
 
-pub(crate) fn world_to_view(world_position: Vec3, world_from_camera: Transform) -> Option<Vec3> {
+/// Carries a world-space point into a camera's view space: the inverse of the
+/// camera node's exact world matrix, scale and shear included. Returns `None`
+/// when that matrix is singular.
+pub(crate) fn world_to_view(
+    world_position: Vec3,
+    world_from_camera: impl Into<WorldTransform>,
+) -> Option<Vec3> {
+    let world_from_camera = world_from_camera.into();
+    let Some(world_from_camera) = world_from_camera.exact_trs() else {
+        return world_from_camera
+            .inverse()
+            .map(|view_from_world| view_from_world.transform_point(world_position));
+    };
     if !world_from_camera.translation.is_finite()
         || !world_from_camera.rotation.is_finite()
         || !is_finite_nonzero_scale(world_from_camera.scale)
@@ -116,10 +128,15 @@ pub(super) fn positive_min(values: [f32; 3]) -> f32 {
         .unwrap_or(1.0)
 }
 
-pub(crate) fn transform_aabb(bounds: Aabb, transform: Transform) -> Aabb {
+/// Axis-aligned bounds of `bounds` after `transform`.
+///
+/// Takes the exact world placement of a node, so a sheared hierarchy bounds
+/// what is actually drawn. A plain [`Transform`] converts losslessly.
+pub(crate) fn transform_aabb(bounds: Aabb, transform: impl Into<WorldTransform>) -> Aabb {
+    let transform = transform.into();
     aabb_corners(bounds)
         .into_iter()
-        .map(|corner| transform_point(corner, transform))
+        .map(|corner| transform.transform_point(corner))
         .map(|point| Aabb::new(point, point))
         .reduce(union_aabb)
         .expect("AABB has corners")
@@ -140,18 +157,6 @@ fn aabb_corners(bounds: Aabb) -> [Vec3; 8] {
         Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
         Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
     ]
-}
-
-fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
-    let scaled = Vec3::new(
-        point.x * transform.scale.x,
-        point.y * transform.scale.y,
-        point.z * transform.scale.z,
-    );
-    add_vec3(
-        rotate_vec3(transform.rotation, scaled),
-        transform.translation,
-    )
 }
 
 fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
@@ -204,10 +209,6 @@ pub(crate) fn union_aabb(left: Aabb, right: Aabb) -> Aabb {
             left.max.z.max(right.max.z),
         ),
     )
-}
-
-const fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 pub(super) const fn positive_or(value: f32, fallback: f32) -> f32 {

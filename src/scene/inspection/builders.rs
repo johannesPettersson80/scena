@@ -1,8 +1,7 @@
 use crate::assets::{Assets, GeometryHandle, MaterialHandle};
 use crate::geometry::GeometryTopology;
 
-use super::super::transforms::{compose_transform, rotate_vec3};
-use super::super::{Camera, CameraKey, InstanceId, NodeKey, Scene, Transform, Vec3};
+use super::super::{Camera, CameraKey, InstanceId, NodeKey, Scene, Vec3, WorldTransform};
 use super::{
     SceneCameraFrustumInspection, SceneDrawInspection, SceneMaterialInspection,
     SceneNormalInspection,
@@ -17,7 +16,7 @@ impl Scene {
             return Vec::new();
         };
         let mut draw_list = Vec::new();
-        for (node, mesh, node_transform) in self.mesh_nodes() {
+        for (node, mesh, node_world) in self.mesh_nodes() {
             append_draw_entry(
                 &mut draw_list,
                 assets,
@@ -26,12 +25,11 @@ impl Scene {
                     instance: None,
                     geometry: mesh.geometry(),
                     material: mesh.material(),
-                    world_transform: self.world_transform(node).unwrap_or(node_transform),
+                    world: node_world,
                 },
             );
         }
-        for (node, instance_set, node_transform) in self.instance_set_nodes() {
-            let node_world = self.world_transform(node).unwrap_or(node_transform);
+        for (node, instance_set, node_world) in self.instance_set_nodes() {
             for instance in instance_set
                 .instances()
                 .filter(|instance| instance.visible())
@@ -44,7 +42,7 @@ impl Scene {
                         instance: Some(instance.id()),
                         geometry: instance_set.geometry(),
                         material: instance_set.material(),
-                        world_transform: compose_transform(node_world, instance.transform()),
+                        world: node_world.child(instance.transform()),
                     },
                 );
             }
@@ -60,7 +58,7 @@ impl Scene {
             return Vec::new();
         };
         let mut overlays = Vec::new();
-        for (node, mesh, node_transform) in self.mesh_nodes() {
+        for (node, mesh, node_world) in self.mesh_nodes() {
             append_normal_overlay(
                 &mut overlays,
                 assets,
@@ -68,12 +66,11 @@ impl Scene {
                     node,
                     instance: None,
                     geometry: mesh.geometry(),
-                    world_transform: self.world_transform(node).unwrap_or(node_transform),
+                    world: node_world,
                 },
             );
         }
-        for (node, instance_set, node_transform) in self.instance_set_nodes() {
-            let node_world = self.world_transform(node).unwrap_or(node_transform);
+        for (node, instance_set, node_world) in self.instance_set_nodes() {
             for instance in instance_set
                 .instances()
                 .filter(|instance| instance.visible())
@@ -85,7 +82,7 @@ impl Scene {
                         node,
                         instance: Some(instance.id()),
                         geometry: instance_set.geometry(),
-                        world_transform: compose_transform(node_world, instance.transform()),
+                        world: node_world.child(instance.transform()),
                     },
                 );
             }
@@ -98,8 +95,8 @@ impl Scene {
             .iter()
             .filter_map(|(camera, desc)| {
                 let node = self.camera_node(camera)?;
-                let world_transform = self.world_transform(node)?;
-                Some(camera_frustum(camera, node, desc.clone(), world_transform))
+                let world = self.resolved_world(node)?;
+                Some(camera_frustum(camera, node, desc.clone(), world))
             })
             .collect()
     }
@@ -110,7 +107,7 @@ struct NormalOverlayInput {
     node: NodeKey,
     instance: Option<InstanceId>,
     geometry: GeometryHandle,
-    world_transform: Transform,
+    world: WorldTransform,
 }
 
 const NORMAL_DEBUG_LENGTH: f32 = 0.1;
@@ -127,15 +124,12 @@ fn append_normal_overlay<F>(
         .vertices()
         .iter()
         .map(|vertex| {
-            let start = transform_point(input.world_transform, vertex.position);
-            let end = transform_point(
-                input.world_transform,
-                Vec3::new(
-                    vertex.position.x + vertex.normal.x * NORMAL_DEBUG_LENGTH,
-                    vertex.position.y + vertex.normal.y * NORMAL_DEBUG_LENGTH,
-                    vertex.position.z + vertex.normal.z * NORMAL_DEBUG_LENGTH,
-                ),
-            );
+            let start = input.world.transform_point(vertex.position);
+            let end = input.world.transform_point(Vec3::new(
+                vertex.position.x + vertex.normal.x * NORMAL_DEBUG_LENGTH,
+                vertex.position.y + vertex.normal.y * NORMAL_DEBUG_LENGTH,
+                vertex.position.z + vertex.normal.z * NORMAL_DEBUG_LENGTH,
+            ));
             [start, end]
         })
         .collect();
@@ -154,7 +148,7 @@ struct DrawEntryInput {
     instance: Option<InstanceId>,
     geometry: GeometryHandle,
     material: MaterialHandle,
-    world_transform: Transform,
+    world: WorldTransform,
 }
 
 fn append_draw_entry<F>(
@@ -179,7 +173,7 @@ fn append_draw_entry<F>(
         vertex_count: geometry.vertices().len(),
         index_count: geometry.indices().len(),
         local_bounds: geometry.bounds(),
-        world_transform: input.world_transform,
+        world: input.world,
     });
 }
 
@@ -194,7 +188,7 @@ fn camera_frustum(
     camera: CameraKey,
     node: NodeKey,
     desc: Camera,
-    world_transform: Transform,
+    world: WorldTransform,
 ) -> SceneCameraFrustumInspection {
     let (near, far, local_corners) = match desc {
         Camera::Perspective(camera_desc) => {
@@ -245,7 +239,7 @@ fn camera_frustum(
         node,
         near,
         far,
-        corners: local_corners.map(|corner| transform_point(world_transform, corner)),
+        corners: local_corners.map(|corner| world.transform_point(corner)),
     }
 }
 
@@ -272,20 +266,6 @@ const fn frustum_corners_from_extents(
         Vec3::new(far_right, far_top, far_z),
         Vec3::new(far_left, far_top, far_z),
     ]
-}
-
-fn transform_point(transform: Transform, point: Vec3) -> Vec3 {
-    let scaled = Vec3::new(
-        point.x * transform.scale.x,
-        point.y * transform.scale.y,
-        point.z * transform.scale.z,
-    );
-    let rotated = rotate_vec3(transform.rotation, scaled);
-    Vec3::new(
-        transform.translation.x + rotated.x,
-        transform.translation.y + rotated.y,
-        transform.translation.z + rotated.z,
-    )
 }
 
 const fn positive_or(value: f32, fallback: f32) -> f32 {

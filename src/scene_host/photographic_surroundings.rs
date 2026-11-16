@@ -502,7 +502,7 @@ fn authored_support_node<F: AssetFetcher>(
     host.scene.mesh_nodes().find_map(|(node, mesh, world)| {
         let geometry = host.assets.geometry(mesh.geometry())?;
         let local = geometry.bounds().half_extent() * 2.0;
-        let world_size = local * world.scale.abs();
+        let world_size = local * world.trs().scale.abs();
         let thin = world_size.y <= subject_size.y.max(0.01) * 0.04;
         let broad = world_size.x >= subject_size.x * 0.8 && world_size.z >= subject_size.z * 0.8;
         let near_base = host

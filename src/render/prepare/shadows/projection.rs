@@ -19,7 +19,7 @@ use std::ops::Range;
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
 use crate::geometry::{Aabb, GeometryDesc, GeometryTopology};
-use crate::scene::{NodeKey, Scene, Transform, Vec3};
+use crate::scene::{NodeKey, Scene, Vec3, WorldTransform};
 
 use super::super::identity_matrix4;
 use super::super::transforms::{compose_transform, transform_position, transform_primitive};
@@ -119,7 +119,7 @@ fn push_geometry_group(
     node: NodeKey,
     geometry: &GeometryDesc,
     deformation: DeformationInputs<'_>,
-    transform: Transform,
+    transform: WorldTransform,
     origin_shift: Vec3,
 ) -> Result<(), PrepareError> {
     if geometry.topology() != GeometryTopology::Triangles {

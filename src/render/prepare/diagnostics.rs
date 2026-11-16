@@ -1,7 +1,7 @@
 use crate::assets::Assets;
 use crate::diagnostics::{Backend, Diagnostic, DiagnosticCode};
 use crate::geometry::Aabb;
-use crate::scene::{Camera, Quat, Scene, Transform, Vec3};
+use crate::scene::{Camera, Scene, Vec3};
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
@@ -131,13 +131,13 @@ pub(in crate::render) fn collect_camera_visibility_diagnostics(
     }
 
     for (node, bounds) in scene.mesh_bounds_nodes() {
-        let Some(transform) = scene.world_transform(node) else {
+        let Some(transform) = scene.resolved_world(node) else {
             continue;
         };
         for corner in aabb_corners(bounds) {
             mesh_bound_vertices = mesh_bound_vertices.saturating_add(1);
             collect_visibility_sample(
-                transform_point(corner, transform),
+                transform.transform_point(corner),
                 &projection,
                 &mut vertices,
                 &mut behind_vertices,
@@ -190,16 +190,13 @@ pub(in crate::render) fn collect_asset_camera_visibility_diagnostics<F>(
     let mut behind_vertices = 0_u32;
     let mut vertices_inside_frustum = 0_u32;
 
-    for (node, mesh, _transform) in scene.mesh_nodes() {
+    for (_node, mesh, transform) in scene.mesh_nodes() {
         let Some(geometry) = assets.geometry(mesh.geometry()) else {
-            continue;
-        };
-        let Some(transform) = scene.world_transform(node) else {
             continue;
         };
         for corner in aabb_corners(geometry.bounds()) {
             collect_visibility_sample(
-                transform_point(corner, transform),
+                transform.transform_point(corner),
                 &projection,
                 &mut vertices,
                 &mut behind_vertices,
@@ -208,18 +205,15 @@ pub(in crate::render) fn collect_asset_camera_visibility_diagnostics<F>(
         }
     }
 
-    for (node, instance_set, _transform) in scene.instance_set_nodes() {
+    for (_node, instance_set, node_transform) in scene.instance_set_nodes() {
         let Some(geometry) = assets.geometry(instance_set.geometry()) else {
             continue;
         };
-        let Some(node_transform) = scene.world_transform(node) else {
-            continue;
-        };
         for instance in instance_set.instances() {
-            let transform = compose_transform(node_transform, instance.transform());
+            let transform = node_transform.child(instance.transform());
             for corner in aabb_corners(geometry.bounds()) {
                 collect_visibility_sample(
-                    transform_point(corner, transform),
+                    transform.transform_point(corner),
                     &projection,
                     &mut vertices,
                     &mut behind_vertices,
@@ -281,49 +275,6 @@ fn aabb_corners(bounds: Aabb) -> [Vec3; 8] {
         Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
         Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
     ]
-}
-
-fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
-    let scaled = Vec3::new(
-        point.x * transform.scale.x,
-        point.y * transform.scale.y,
-        point.z * transform.scale.z,
-    );
-    add_vec3(
-        rotate_vec3(transform.rotation, scaled),
-        transform.translation,
-    )
-}
-
-fn compose_transform(parent: Transform, child: Transform) -> Transform {
-    Transform::compose(parent, child)
-}
-
-fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
-    let length_squared = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return vector;
-    }
-    let inverse_length = length_squared.sqrt().recip();
-    let qx = rotation.x * inverse_length;
-    let qy = rotation.y * inverse_length;
-    let qz = rotation.z * inverse_length;
-    let qw = rotation.w * inverse_length;
-    let tx = 2.0 * (qy * vector.z - qz * vector.y);
-    let ty = 2.0 * (qz * vector.x - qx * vector.z);
-    let tz = 2.0 * (qx * vector.y - qy * vector.x);
-    Vec3::new(
-        vector.x + qw * tx + (qy * tz - qz * ty),
-        vector.y + qw * ty + (qz * tx - qx * tz),
-        vector.z + qw * tz + (qx * ty - qy * tx),
-    )
-}
-
-const fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 fn is_valid_depth_range(camera: &Camera) -> bool {

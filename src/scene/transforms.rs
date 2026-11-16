@@ -1,6 +1,6 @@
 use crate::diagnostics::LookupError;
 
-use super::{NodeKey, Quat, Scene, Transform, Vec3};
+use super::{Mat4, NodeKey, Quat, Scene, Transform, Vec3, WorldTransform};
 
 impl Scene {
     pub fn set_transform(
@@ -49,9 +49,41 @@ impl Scene {
         Ok(())
     }
 
+    /// Returns the node's world transform as translation, rotation, and scale.
+    ///
+    /// This is the TRS decomposition of [`Self::world_matrix`]. It is exact
+    /// whenever the hierarchy cannot shear: every ancestor has uniform scale,
+    /// or no node below a non-uniformly scaled ancestor is rotated. Those
+    /// hierarchies return the composed transform unchanged.
+    ///
+    /// A rotated node under a non-uniformly scaled ancestor is sheared, which
+    /// translation/rotation/scale cannot represent. For such a node the
+    /// translation is still exact, the rotation is the nearest orthonormal
+    /// basis that keeps the node's Z axis, and the scale is the length of each
+    /// basis axis (negative on X when the hierarchy mirrors). Use
+    /// [`Self::world_matrix`] when placing geometry or converting points.
     pub fn world_transform(&self, node: NodeKey) -> Option<Transform> {
+        self.resolved_world(node).map(WorldTransform::trs)
+    }
+
+    /// Returns the exact world transform of a node as a column-major matrix.
+    ///
+    /// The matrix is the product of the local transforms from the scene root
+    /// down to `node`, so it carries the shear a non-uniformly scaled or
+    /// mirrored ancestor gives a rotated descendant. Both render backends,
+    /// asset-aware picking, bounds, and framing place the node with this
+    /// matrix: `world_matrix(node)?.transform_point3(local)` is where a point
+    /// in the node's local space is drawn.
+    ///
+    /// Returns `None` when `node` is not in this scene.
+    pub fn world_matrix(&self, node: NodeKey) -> Option<Mat4> {
+        self.resolved_world(node).map(WorldTransform::to_mat4)
+    }
+
+    /// The resolved world placement of a node: exact matrix plus TRS view.
+    pub(crate) fn resolved_world(&self, node: NodeKey) -> Option<WorldTransform> {
         self.resolved_node_state(node)
-            .map(|resolved| resolved.world_transform)
+            .map(|resolved| resolved.world)
     }
 }
 
@@ -68,11 +100,43 @@ pub(super) fn validate_transform(transform: Transform) -> Result<Transform, Look
     }
 }
 
+/// Composes two TRS frames that are known not to shear, such as the rigid
+/// connector frames the connection solver mates. Node hierarchies compose
+/// through [`WorldTransform::child`] instead.
 pub(super) fn compose_transform(parent: Transform, child: Transform) -> Transform {
     Transform::compose(parent, child)
 }
 
-pub(super) fn local_transform_from_world(parent: Transform, world: Transform) -> Option<Transform> {
+/// The local transform that gives a node the world transform `world` under
+/// `parent`, or `None` when the parent placement cannot be inverted.
+///
+/// Under a sheared parent the exact local transform is `parent^-1 * world`,
+/// which is itself a matrix; its TRS decomposition is returned and is exact
+/// whenever that product has no shear.
+pub(super) fn local_transform_from_world(
+    parent: WorldTransform,
+    world: Transform,
+) -> Option<Transform> {
+    if let Some(parent) = parent.exact_trs() {
+        return local_transform_from_world_trs(parent, world);
+    }
+    let local_from_world = parent.inverse()?;
+    let local = local_from_world.matrix() * WorldTransform::from(world).matrix();
+    Some(WorldTransform::from_matrix(local).trs())
+}
+
+/// The local position that puts a node origin at `world_origin` under
+/// `parent`. Exact for every parent, sheared or not.
+pub(super) fn local_point_from_world(parent: WorldTransform, world_origin: Vec3) -> Option<Vec3> {
+    parent
+        .inverse()
+        .map(|local_from_world| local_from_world.transform_point(world_origin))
+}
+
+pub(super) fn local_transform_from_world_trs(
+    parent: Transform,
+    world: Transform,
+) -> Option<Transform> {
     if !is_invertible_scale(parent.scale) {
         return None;
     }

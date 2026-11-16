@@ -158,7 +158,7 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
             "pub fn skin_binding",
             "pub fn skin_matrices",
             "set_initial_skin_binding",
-            "world_transform",
+            "resolved_world",
             "SkinningMatrix::inverse_from_transform",
         ],
     );

@@ -1,7 +1,7 @@
 use earcut::Earcut;
 
 use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
-use crate::scene::{ClippingPlane, SectionBox, Transform, Vec3};
+use crate::scene::{ClippingPlane, SectionBox, Vec3, WorldTransform};
 
 use super::transforms::transform_position;
 
@@ -26,7 +26,7 @@ struct CapLoop {
 
 pub(super) fn build_section_cap_geometry(
     geometry: &GeometryDesc,
-    transform: Transform,
+    transform: WorldTransform,
     origin_shift: Vec3,
     section: SectionBox,
 ) -> Option<GeometryDesc> {
@@ -312,12 +312,12 @@ fn loop_depth(loops: &[CapLoop], mut index: usize) -> usize {
 fn append_triangulated_loops(
     loops: &[CapLoop],
     plane: ClippingPlane,
-    transform: Transform,
+    transform: WorldTransform,
     vertices: &mut Vec<GeometryVertex>,
     indices: &mut Vec<u32>,
 ) {
     let desired_world_normal = -plane.normal();
-    let local_normal = inverse_rotate_normal(desired_world_normal, transform);
+    let local_normal = local_normal_for_world_normal(desired_world_normal, transform);
     for outer in 0..loops.len() {
         if !loop_depth(loops, outer).is_multiple_of(2) {
             continue;
@@ -347,11 +347,13 @@ fn append_triangulated_loops(
             let world_a = transform_position(corners[0], transform, Vec3::ZERO);
             let world_b = transform_position(corners[1], transform, Vec3::ZERO);
             let world_c = transform_position(corners[2], transform, Vec3::ZERO);
-            if (world_b - world_a)
+            let faces_desired_normal = (world_b - world_a)
                 .cross(world_c - world_a)
                 .dot(desired_world_normal)
-                < 0.0
-            {
+                >= 0.0;
+            // Baking reverses the winding of mirrored geometry once more, so a
+            // mirrored cap is authored facing the other way.
+            if faces_desired_normal == transform.is_mirrored() {
                 corners.swap(1, 2);
             }
             let base = vertices.len() as u32;
@@ -364,8 +366,13 @@ fn append_triangulated_loops(
     }
 }
 
-fn inverse_rotate_normal(normal: Vec3, transform: Transform) -> Vec3 {
-    let rotation = transform.rotation;
+/// The local normal that baking carries onto `normal` in world space.
+fn local_normal_for_world_normal(normal: Vec3, transform: WorldTransform) -> Vec3 {
+    let Some(rotation) = transform.uniform_rotation() else {
+        return transform
+            .inverse_transform_normal(normal)
+            .normalize_or_zero();
+    };
     if !rotation.is_finite() || rotation.length_squared() <= f32::EPSILON {
         normal
     } else {

@@ -1,4 +1,4 @@
-use crate::scene::{Quat, Transform, Vec3};
+use crate::scene::{Quat, Vec3, WorldTransform};
 
 use super::Ray;
 
@@ -71,18 +71,8 @@ fn axis_interval(origin: f32, direction: f32, min: f32, max: f32) -> Option<(f32
     Some((first.min(second), first.max(second)))
 }
 
-pub(super) fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
-    let scaled = Vec3::new(
-        point.x * transform.scale.x,
-        point.y * transform.scale.y,
-        point.z * transform.scale.z,
-    );
-    let rotated = rotate_vec3(transform.rotation, scaled);
-    Vec3::new(
-        rotated.x + transform.translation.x,
-        rotated.y + transform.translation.y,
-        rotated.z + transform.translation.z,
-    )
+pub(super) fn transform_point(point: Vec3, transform: WorldTransform) -> Vec3 {
+    transform.transform_point(point)
 }
 
 pub(super) const fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {

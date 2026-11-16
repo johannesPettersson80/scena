@@ -10,7 +10,7 @@ pub use crate::{
     Background, BakedAmbientOcclusionConfig, BuildError, Camera, CameraKey, Color,
     DirectionalLight, EnvironmentHandle, EnvironmentPreset, FramingOptions, FramingOutcome,
     GeometryDesc, GeometryError, GeometryHandle, GridFloorOptions, Hit, ImportError, ImportOptions,
-    LookupError, MaterialDesc, MaterialHandle, NodeKey, OrbitControls, OrthographicCamera,
+    LookupError, Mat4, MaterialDesc, MaterialHandle, NodeKey, OrbitControls, OrthographicCamera,
     PerspectiveCamera, PhotographicSurfaceAssets, PhotographicSurfaceDesc, PhotographicSurfaceKind,
     PointLight, PrepareError, Profile, Quality, Quat, ReflectionProbe, ReflectionProbeError,
     ReflectionProbeKey, RenderError, RenderOutcome, Renderer, RendererOptions, Scene, SceneAsset,

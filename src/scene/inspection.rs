@@ -2,7 +2,10 @@ use crate::assets::{Assets, GeometryHandle, MaterialHandle};
 use crate::geometry::{Aabb, GeometryTopology};
 use crate::material::Color;
 
-use super::{CameraKey, InstanceId, LightKey, NodeKey, NodeKind, Scene, Transform, Vec3};
+use super::{
+    CameraKey, InstanceId, LightKey, Mat4, NodeKey, NodeKind, Scene, Transform, Vec3,
+    WorldTransform,
+};
 
 mod builders;
 mod material;
@@ -45,7 +48,7 @@ pub struct SceneNodeInspection {
     parent: Option<NodeKey>,
     kind: &'static str,
     transform: Transform,
-    world_transform: Transform,
+    world: WorldTransform,
     visible: bool,
     tags: Vec<String>,
     bounds: Option<Aabb>,
@@ -72,7 +75,7 @@ pub struct SceneDrawInspection {
     vertex_count: usize,
     index_count: usize,
     local_bounds: Aabb,
-    world_transform: Transform,
+    world: WorldTransform,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -113,7 +116,9 @@ impl Scene {
                     parent: node.parent,
                     kind: kind_name(&node.kind),
                     transform: node.transform,
-                    world_transform: self.world_transform(node_key).unwrap_or(node.transform),
+                    world: self
+                        .resolved_world(node_key)
+                        .unwrap_or_else(|| WorldTransform::from(node.transform)),
                     visible: node.visible,
                     tags: node.tags.iter().cloned().collect(),
                     bounds: self.node_bounds.get(&node_key).copied(),
@@ -237,8 +242,21 @@ impl SceneNodeInspection {
         self.transform
     }
 
+    /// The node's world transform as translation, rotation, and scale: the
+    /// TRS decomposition of [`Self::world_matrix`], exact only when the
+    /// hierarchy has no shear.
     pub const fn world_transform(&self) -> Transform {
-        self.world_transform
+        self.world.trs()
+    }
+
+    /// The node's exact world matrix, as [`Scene::world_matrix`] reports it.
+    pub fn world_matrix(&self) -> Mat4 {
+        self.world.to_mat4()
+    }
+
+    #[cfg(feature = "scene-host")]
+    pub(crate) const fn world(&self) -> WorldTransform {
+        self.world
     }
 
     pub const fn visible(&self) -> bool {
@@ -331,8 +349,22 @@ impl SceneDrawInspection {
         self.local_bounds
     }
 
+    /// The draw's world transform as translation, rotation, and scale: the
+    /// TRS decomposition of [`Self::world_matrix`], exact only when the
+    /// hierarchy has no shear.
     pub const fn world_transform(&self) -> Transform {
-        self.world_transform
+        self.world.trs()
+    }
+
+    /// The exact matrix that places [`Self::local_bounds`] and the draw's
+    /// geometry in the world.
+    pub fn world_matrix(&self) -> Mat4 {
+        self.world.to_mat4()
+    }
+
+    #[cfg(feature = "scene-host")]
+    pub(crate) const fn world(&self) -> WorldTransform {
+        self.world
     }
 }
 

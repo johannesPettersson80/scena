@@ -76,6 +76,66 @@ fn transform_only_gpu_prepare_updates_draw_uniforms_without_recollecting_primiti
 }
 
 #[test]
+fn mirroring_a_prepared_gpu_mesh_rebakes_instead_of_reusing_its_winding() {
+    let Some(mut renderer) = headless_gpu_for_movement_test(48, 48) else {
+        return;
+    };
+    let assets = Assets::new();
+    // A single-sided plane turned to face the camera.
+    let geometry = assets.create_geometry(GeometryDesc::plane(0.6, 0.6));
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8));
+    let facing_camera = Transform::at(Vec3::new(-0.3, 0.0, 0.0)).rotate_x_deg(90.0);
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let plane = scene
+        .mesh(geometry, material)
+        .transform(facing_camera)
+        .add()
+        .expect("plane inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("initial GPU prepare succeeds");
+    renderer
+        .render(&scene, camera)
+        .expect("initial GPU render succeeds");
+    let initial_x = visible_centroid_x(renderer.frame_rgba8(), 48)
+        .expect("initial render must contain the plane");
+    let first = renderer.movement_prepare_telemetry_for_test();
+
+    // Only the transform changes, but it now reverses triangle winding. The
+    // uploaded vertex buffer carries the old winding, so redrawing it under
+    // the mirrored matrix would cull the plane's front face.
+    scene
+        .set_transform(plane, facing_camera.with_scale(Vec3::new(-1.0, 1.0, 1.0)))
+        .expect("plane mirrors");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("mirroring GPU prepare succeeds");
+    renderer
+        .render(&scene, camera)
+        .expect("mirrored GPU render succeeds");
+    let mirrored_x = visible_centroid_x(renderer.frame_rgba8(), 48)
+        .expect("a mirrored single-sided plane must stay visible");
+    let second = renderer.movement_prepare_telemetry_for_test();
+
+    assert_eq!(
+        second.prepared_primitive_collections,
+        first.prepared_primitive_collections + 1,
+        "a transform that reverses winding must re-bake the primitives"
+    );
+    assert_eq!(
+        second.draw_uniform_only_updates, first.draw_uniform_only_updates,
+        "a transform that reverses winding must not reuse the retained draws"
+    );
+    assert!(
+        (mirrored_x - initial_x).abs() <= 1.0,
+        "mirroring a symmetric plane in place must not move it: initial_x={initial_x:.2}, mirrored_x={mirrored_x:.2}"
+    );
+}
+
+#[test]
 fn transform_only_cpu_prepare_moves_rendered_mesh_pixels() {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));

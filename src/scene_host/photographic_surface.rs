@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::{SceneHostCore, SceneHostError};
 use crate::{
     Aabb, AssetFetcher, Color, MaterialDesc, MaterialKind, PhotographicSurfaceDesc,
-    PhotographicSurfaceKind, Transform, Vec3,
+    PhotographicSurfaceKind,
 };
 
 mod asset_health;
@@ -142,7 +142,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 Some("supply coherent visible subject geometry"),
             ));
         }
-        let mut component_signatures = Vec::<(crate::GeometryHandle, Transform)>::new();
+        let mut component_signatures = Vec::<(crate::GeometryHandle, crate::Mat4)>::new();
         let mut component_bounds = Vec::<(u64, Aabb)>::new();
         for node in inspection.nodes() {
             if !subtree.contains(&node.node()) {
@@ -161,7 +161,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                     Some("show the component or exclude it from the photographic subject"),
                 ));
             }
-            let signature = (geometry, node.world_transform());
+            let signature = (geometry, node.world_matrix());
             if component_signatures.contains(&signature) {
                 report.issues.push(asset_issue(
                     PhotographicAssetIssueClassV1::AppearanceChangeRequired,
@@ -188,7 +188,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 report.coherent_visible_subject = false;
             }
             if let Some(bounds) = node.bounds() {
-                let bounds = transform_bounds(bounds, node.world_transform());
+                let bounds = transform_bounds(bounds, node.world());
                 let component_radius = bounds.bounding_sphere_radius();
                 if component_radius <= subject_radius * 1.0e-5 {
                     report.issues.push(asset_issue(

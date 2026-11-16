@@ -121,7 +121,7 @@ pub(crate) fn check_m3a_import_runtime_contracts(root: &Path, findings: &mut Vec
             "pub fn path(&self, path: &str)",
             "pub fn bounds_local",
             "pub fn bounds_world",
-            "scene.world_transform(record.node)",
+            "scene.resolved_world(record.node)",
             "pub fn pivot(&self",
             "pub fn diagnostic_overlays",
             "pub fn anchor(&self",

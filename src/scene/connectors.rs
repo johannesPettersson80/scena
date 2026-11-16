@@ -406,12 +406,17 @@ impl Scene {
         validate_connector_transform(&source, options)?;
         validate_connector_transform(&target, options)?;
         validate_node_transform(source.node, source_node.transform, options)?;
-        let target_world = self
-            .world_transform(target.node)
+        // The solver mates rigid frames, so it works on the TRS view of each
+        // host and rejects mirrored or non-uniformly scaled ones below. The
+        // connector frames themselves are placed by the exact host matrix.
+        let target_host = self
+            .resolved_world(target.node)
             .ok_or(ConnectionError::NodeNotFound(target.node))?;
-        let source_current_world = self
-            .world_transform(source.node)
+        let source_host = self
+            .resolved_world(source.node)
             .ok_or(ConnectionError::NodeNotFound(source.node))?;
+        let target_world = target_host.trs();
+        let source_current_world = source_host.trs();
         validate_transform_scale(target.node, target_world, options)?;
         let resolved_parent = match options.parenting() {
             ConnectionParenting::PreserveSourceParent => source_node.parent(),
@@ -435,9 +440,8 @@ impl Scene {
             validate_transform_scale(parent, source_parent_world, options)?;
         }
 
-        let target_connector_world = compose_transform(target_world, target.local_transform);
-        let source_current_connector =
-            compose_transform(source_current_world, source.local_transform);
+        let target_connector_world = target_host.child(target.local_transform).trs();
+        let source_current_connector = source_host.child(source.local_transform).trs();
         let snap_distance = source_current_connector
             .translation
             .distance(target_connector_world.translation);

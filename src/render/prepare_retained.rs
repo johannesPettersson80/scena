@@ -79,8 +79,19 @@ pub(super) fn filter_retained_primitives_for_scene(
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
+            if primitive.source_instance().is_some() {
+                // Baked under node x instance, which the node transform alone
+                // cannot restore. Fall back to a full prepare.
+                return None;
+            }
             if let std::collections::btree_map::Entry::Vacant(entry) = draw_transforms.entry(node) {
-                let transform = scene.world_transform(node)?;
+                let transform = scene.resolved_world(node)?;
+                if transform.is_mirrored() != primitive.baked_mirrored() {
+                    // The retained triangles carry the winding of the old
+                    // handedness; re-drawing them mirrored would cull the
+                    // front faces. Fall back to a full prepare.
+                    return None;
+                }
                 entry.insert(prepare::PreparedDrawTransform::shared(
                     world_from_model_matrix(transform, scene.origin_shift()),
                     normal_from_model_matrix(transform),
@@ -106,6 +117,11 @@ pub(super) fn filter_retained_instances_for_scene(
             continue;
         }
         let live = scene.instance_set(set.source_set()?)?;
+        if prepare::instance_set_has_mirrored_instance(live) {
+            // An instanced draw shares one winding; a mirrored instance needs
+            // the per-instance bake of a full prepare.
+            return None;
+        }
         let node_tint = scene.node_tint(set.source_node()).ok()?;
         let records = live
             .instances()
@@ -138,7 +154,7 @@ pub(super) fn filter_retained_strokes_for_scene(
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
-            let transform = scene.world_transform(node)?;
+            let transform = scene.resolved_world(node)?;
             stroke.set_world_from_model(world_from_model_matrix(transform, scene.origin_shift()));
             stroke.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }

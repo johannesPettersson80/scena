@@ -197,7 +197,7 @@ impl SceneInspectionReport {
                         kind: source.kind.to_owned(),
                         tags: source.tags.clone(),
                         local_transform: source.transform,
-                        world_transform: source.world_transform,
+                        world_transform: source.world_transform(),
                         visible: source.visible,
                         bounds: source.bounds,
                         layer_mask: source.layer_mask,
@@ -227,7 +227,7 @@ impl SceneInspectionReport {
                         vertex_count: draw.vertex_count,
                         index_count: draw.index_count,
                         local_bounds: draw.local_bounds,
-                        world_transform: draw.world_transform,
+                        world_transform: draw.world_transform(),
                     })
                 })
                 .collect(),

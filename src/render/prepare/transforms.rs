@@ -1,5 +1,5 @@
 use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
-use crate::scene::{Quat, Transform, Vec3};
+use crate::scene::{Transform, Vec3, WorldTransform};
 
 pub(super) const fn identity_matrix4() -> [f32; 16] {
     [
@@ -9,24 +9,25 @@ pub(super) const fn identity_matrix4() -> [f32; 16] {
 
 pub(super) fn transform_primitive(
     primitive: &Primitive,
-    transform: Transform,
+    transform: WorldTransform,
     origin_shift: Vec3,
 ) -> Primitive {
     let [a, b, c] = primitive.vertices();
     let [attributes_a, attributes_b, attributes_c] = primitive.vertex_attributes();
-    let transformed = Primitive::triangle_with_attributes(
-        [
-            transform_vertex(*a, transform, origin_shift),
-            transform_vertex(*b, transform, origin_shift),
-            transform_vertex(*c, transform, origin_shift),
-        ],
-        [
-            transform_vertex_attributes(*attributes_a, transform),
-            transform_vertex_attributes(*attributes_b, transform),
-            transform_vertex_attributes(*attributes_c, transform),
-        ],
-    )
-    .with_render_material_slot(primitive.render_material_slot());
+    let mut vertices = [
+        transform_vertex(*a, transform, origin_shift),
+        transform_vertex(*b, transform, origin_shift),
+        transform_vertex(*c, transform, origin_shift),
+    ];
+    let mut attributes = [
+        transform_vertex_attributes(*attributes_a, transform),
+        transform_vertex_attributes(*attributes_b, transform),
+        transform_vertex_attributes(*attributes_c, transform),
+    ];
+    restore_front_face_winding(transform, &mut vertices);
+    restore_front_face_winding(transform, &mut attributes);
+    let transformed = Primitive::triangle_with_attributes(vertices, attributes)
+        .with_render_material_slot(primitive.render_material_slot());
     if primitive.depth_prepass_eligible() {
         transformed
     } else {
@@ -34,9 +35,22 @@ pub(super) fn transform_primitive(
     }
 }
 
+/// Keeps counter-clockwise triangles front-facing under a mirrored transform.
+///
+/// A world matrix with a negative determinant reverses triangle winding, which
+/// would make both rasterizers cull the front faces of single-sided geometry
+/// and draw its inside. Swapping two corners of every baked triangle undoes
+/// the reversal once, for the CPU rasterizer and for the vertex data the GPU
+/// path derives from the same bake.
+pub(super) fn restore_front_face_winding<T>(transform: WorldTransform, corners: &mut [T; 3]) {
+    if transform.is_mirrored() {
+        corners.swap(1, 2);
+    }
+}
+
 pub(super) fn prepared_primitive(
     primitive: &Primitive,
-    transform: Transform,
+    transform: WorldTransform,
     origin_shift: Vec3,
 ) -> Primitive {
     transform_primitive(primitive, transform, origin_shift)
@@ -151,123 +165,79 @@ fn apply_matrix4_to_vec3(matrix: &[f32; 16], vector: Vec3, w: f32) -> Vec3 {
     )
 }
 
+/// The per-draw model matrix: the node's exact world matrix, rebased onto the
+/// scene origin shift.
 pub(in crate::render) fn world_from_model_matrix(
-    transform: Transform,
+    transform: impl Into<WorldTransform>,
     origin_shift: Vec3,
 ) -> [f32; 16] {
-    let s = transform.scale;
-    let qx = transform.rotation.x;
-    let qy = transform.rotation.y;
-    let qz = transform.rotation.z;
-    let qw = transform.rotation.w;
-    let length_squared = qx * qx + qy * qy + qz * qz + qw * qw;
-    let (rx, ry, rz, rw) = if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        (0.0, 0.0, 0.0, 1.0)
-    } else {
-        let inverse_length = length_squared.sqrt().recip();
-        (
-            qx * inverse_length,
-            qy * inverse_length,
-            qz * inverse_length,
-            qw * inverse_length,
-        )
-    };
-    let xx = rx * rx;
-    let yy = ry * ry;
-    let zz = rz * rz;
-    let xy = rx * ry;
-    let xz = rx * rz;
-    let yz = ry * rz;
-    let wx = rw * rx;
-    let wy = rw * ry;
-    let wz = rw * rz;
-    let m00 = (1.0 - 2.0 * (yy + zz)) * s.x;
-    let m01 = (2.0 * (xy + wz)) * s.x;
-    let m02 = (2.0 * (xz - wy)) * s.x;
-    let m10 = (2.0 * (xy - wz)) * s.y;
-    let m11 = (1.0 - 2.0 * (xx + zz)) * s.y;
-    let m12 = (2.0 * (yz + wx)) * s.y;
-    let m20 = (2.0 * (xz + wy)) * s.z;
-    let m21 = (2.0 * (yz - wx)) * s.z;
-    let m22 = (1.0 - 2.0 * (xx + yy)) * s.z;
-    let tx = transform.translation.x - origin_shift.x;
-    let ty = transform.translation.y - origin_shift.y;
-    let tz = transform.translation.z - origin_shift.z;
+    let matrix = transform.into().matrix();
+    let x = matrix.matrix3.x_axis;
+    let y = matrix.matrix3.y_axis;
+    let z = matrix.matrix3.z_axis;
+    let tx = matrix.translation.x - origin_shift.x;
+    let ty = matrix.translation.y - origin_shift.y;
+    let tz = matrix.translation.z - origin_shift.z;
     [
-        m00, m01, m02, 0.0, m10, m11, m12, 0.0, m20, m21, m22, 0.0, tx, ty, tz, 1.0,
+        x.x, x.y, x.z, 0.0, y.x, y.y, y.z, 0.0, z.x, z.y, z.z, 0.0, tx, ty, tz, 1.0,
     ]
 }
 
-pub(in crate::render) fn normal_from_model_matrix(transform: Transform) -> [f32; 16] {
-    let qx = transform.rotation.x;
-    let qy = transform.rotation.y;
-    let qz = transform.rotation.z;
-    let qw = transform.rotation.w;
-    let length_squared = qx * qx + qy * qy + qz * qz + qw * qw;
-    let (rx, ry, rz, rw) = if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        (0.0, 0.0, 0.0, 1.0)
-    } else {
-        let inverse_length = length_squared.sqrt().recip();
-        (
-            qx * inverse_length,
-            qy * inverse_length,
-            qz * inverse_length,
-            qw * inverse_length,
-        )
-    };
-    let xx = rx * rx;
-    let yy = ry * ry;
-    let zz = rz * rz;
-    let xy = rx * ry;
-    let xz = rx * rz;
-    let yz = ry * rz;
-    let wx = rw * rx;
-    let wy = rw * ry;
-    let wz = rw * rz;
-    let m00 = 1.0 - 2.0 * (yy + zz);
-    let m01 = 2.0 * (xy + wz);
-    let m02 = 2.0 * (xz - wy);
-    let m10 = 2.0 * (xy - wz);
-    let m11 = 1.0 - 2.0 * (xx + zz);
-    let m12 = 2.0 * (yz + wx);
-    let m20 = 2.0 * (xz + wy);
-    let m21 = 2.0 * (yz - wx);
-    let m22 = 1.0 - 2.0 * (xx + yy);
+/// The per-draw normal matrix: the inverse transpose of the world matrix's
+/// linear part, up to a positive factor the shaders normalize away.
+pub(in crate::render) fn normal_from_model_matrix(
+    transform: impl Into<WorldTransform>,
+) -> [f32; 16] {
+    let normal = transform.into().normal_matrix();
+    let x = normal.x_axis;
+    let y = normal.y_axis;
+    let z = normal.z_axis;
     [
-        m00, m01, m02, 0.0, m10, m11, m12, 0.0, m20, m21, m22, 0.0, 0.0, 0.0, 0.0, 1.0,
+        x.x, x.y, x.z, 0.0, y.x, y.y, y.z, 0.0, z.x, z.y, z.z, 0.0, 0.0, 0.0, 0.0, 1.0,
     ]
 }
 
-pub(super) fn compose_transform(parent: Transform, child: Transform) -> Transform {
-    Transform::compose(parent, child)
+/// Composes a node's world placement with a local TRS transform, such as one
+/// instance of an instance set.
+pub(super) fn compose_transform(parent: WorldTransform, child: Transform) -> WorldTransform {
+    parent.child(child)
 }
 
 pub(in crate::render) fn transform_position(
     position: Vec3,
-    transform: Transform,
+    transform: WorldTransform,
     origin_shift: Vec3,
 ) -> Vec3 {
-    let scaled = Vec3::new(
-        position.x * transform.scale.x,
-        position.y * transform.scale.y,
-        position.z * transform.scale.z,
-    );
-    let rotated = rotate_vec3(transform.rotation, scaled);
-    subtract_vec3(add_vec3(rotated, transform.translation), origin_shift)
+    subtract_vec3(transform.transform_point(position), origin_shift)
 }
 
-pub(super) fn transform_normal(normal: Vec3, transform: Transform) -> Vec3 {
-    normalize_or(
-        rotate_vec3(transform.rotation, normal),
-        Vec3::new(0.0, 0.0, 1.0),
-    )
+/// Carries a surface normal into world space with the inverse transpose of
+/// the world matrix, so non-uniform scale and mirroring keep it perpendicular
+/// to the surface and pointing outward.
+pub(super) fn transform_normal(normal: Vec3, transform: WorldTransform) -> Vec3 {
+    normalize_or(transform.transform_normal(normal), Vec3::new(0.0, 0.0, 1.0))
+}
+
+/// Carries a surface tangent into world space. Tangents lie in the surface,
+/// so they follow the world matrix itself rather than its inverse transpose.
+pub(super) fn transform_tangent(tangent: Vec3, transform: WorldTransform) -> Vec3 {
+    match transform.uniform_rotation() {
+        Some(rotation) => normalize_or(
+            crate::scene::rotate_vec3(rotation, tangent),
+            Vec3::new(0.0, 0.0, 1.0),
+        ),
+        None => normalize_or(
+            transform.transform_vector(tangent),
+            Vec3::new(0.0, 0.0, 1.0),
+        ),
+    }
 }
 
 pub(super) fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
 }
 
-fn transform_vertex(vertex: Vertex, transform: Transform, origin_shift: Vec3) -> Vertex {
+fn transform_vertex(vertex: Vertex, transform: WorldTransform, origin_shift: Vec3) -> Vertex {
     Vertex {
         position: transform_position(vertex.position, transform, origin_shift),
         color: vertex.color,
@@ -276,43 +246,16 @@ fn transform_vertex(vertex: Vertex, transform: Transform, origin_shift: Vec3) ->
 
 fn transform_vertex_attributes(
     attributes: PrimitiveVertexAttributes,
-    transform: Transform,
+    transform: WorldTransform,
 ) -> PrimitiveVertexAttributes {
     PrimitiveVertexAttributes {
         normal: transform_normal(attributes.normal, transform),
         tex_coord0: attributes.tex_coord0,
-        tangent: transform_normal(attributes.tangent, transform),
+        tangent: transform_tangent(attributes.tangent, transform),
         tangent_handedness: attributes.tangent_handedness,
         shadow_visibility: attributes.shadow_visibility,
         ambient_visibility: attributes.ambient_visibility,
     }
-}
-
-fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
-    let length_squared = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return vector;
-    }
-    let inverse_length = length_squared.sqrt().recip();
-    let qx = rotation.x * inverse_length;
-    let qy = rotation.y * inverse_length;
-    let qz = rotation.z * inverse_length;
-    let qw = rotation.w * inverse_length;
-    let tx = 2.0 * (qy * vector.z - qz * vector.y);
-    let ty = 2.0 * (qz * vector.x - qx * vector.z);
-    let tz = 2.0 * (qx * vector.y - qy * vector.x);
-    Vec3::new(
-        vector.x + qw * tx + (qy * tz - qz * ty),
-        vector.y + qw * ty + (qz * tx - qx * tz),
-        vector.z + qw * tz + (qx * ty - qy * tx),
-    )
-}
-
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 fn dot_vec3(left: Vec3, right: Vec3) -> f32 {

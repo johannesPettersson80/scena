@@ -178,7 +178,10 @@ fn picking_reports_world_distance_and_winding_normal_for_scaled_geometry() {
 
     let hit = pick_world_x(&scene, &assets, camera, 0.0).expect("scaled triangle hits");
     assert_eq!(hit.target(), HitTarget::Node(mesh));
-    assert_hit_geometry(hit, Vec3::new(0.0, 0.0, -2.0), -Vec3::Z);
+    // The scale mirrors X, which reverses the triangle's winding. Rendering
+    // restores it so the mirrored triangle keeps facing +Z, and the reported
+    // normal is that rendered front face rather than the reversed winding.
+    assert_hit_geometry(hit, Vec3::new(0.0, 0.0, -2.0), Vec3::Z);
     assert!((hit.distance - 5.0).abs() < 1.0e-5);
 
     scene

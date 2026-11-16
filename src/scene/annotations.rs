@@ -166,12 +166,11 @@ impl Scene {
     ) -> Result<AnnotationProjectionV1, LookupError> {
         let world_position = match anchor.target {
             AnnotationAnchorTarget::World { position } => position,
-            AnnotationAnchorTarget::Node { node, local_offset } => {
-                let world_transform = self
-                    .world_transform(node)
-                    .ok_or(LookupError::NodeNotFound(node))?;
-                Transform::compose(world_transform, Transform::at(local_offset)).translation
-            }
+            AnnotationAnchorTarget::Node { node, local_offset } => self
+                .resolved_world(node)
+                .ok_or(LookupError::NodeNotFound(node))?
+                .child(Transform::at(local_offset))
+                .translation(),
         };
 
         let projected =
