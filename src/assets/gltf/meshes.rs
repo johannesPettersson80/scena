@@ -8,7 +8,7 @@ use ::gltf::Primitive;
 use ::gltf::accessor::Accessor;
 use ::gltf::accessor::Item as AccessorItem;
 use ::gltf::accessor::{DataType, Dimensions};
-use ::gltf::mesh::{Mode, Semantic};
+use ::gltf::mesh::Semantic;
 
 use crate::diagnostics::AssetError;
 use crate::geometry::{GeometryDesc, GeometryMorphTarget, GeometryTopology, GeometryVertex};
@@ -27,6 +27,7 @@ use super::typed_accessors::{
 mod accessors;
 mod attribute_streams;
 mod flat_normals;
+mod primitive_modes;
 use accessors::{
     PrimitiveSource, Vec3Encoding, read_tangent_attribute, read_vec3_accessor, read_vec3_attribute,
     reject_skin_sets_above_one,
@@ -120,16 +121,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             ),
         },
     )?;
-    let topology = match primitive.mode() {
-        Mode::Triangles => GeometryTopology::Triangles,
-        Mode::Lines => GeometryTopology::Lines,
-        other => {
-            return Err(AssetError::Parse {
-                path: path.as_str().to_string(),
-                reason: format!("unsupported glTF primitive mode {other:?}"),
-            });
-        }
-    };
+    let topology = primitive_modes::topology(source, primitive.mode())?;
     let mut normals = read_vec3_attribute(source, primitive, &Semantic::Normals)?;
     if topology == GeometryTopology::Lines && normals.is_none() {
         source.charge("NORMAL attribute", positions.len(), size_of::<Vec3>())?;
@@ -214,6 +206,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             (0..positions.len() as u32).collect()
         }
     };
+    let indices = primitive_modes::list_indices(source, primitive.mode(), indices)?;
     let computed_flat_normals = normals.is_none();
     let source_triangle_count = indices.len() / 3;
     let flat_normals::ResolvedPrimitiveStreams {

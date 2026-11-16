@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use base64::Engine as _;
 use scena::{
-    AssetError, AssetFetcher, AssetPath, Assets, Color, Light, LightKey, NodeKey, NodeKind, Scene,
-    SceneAsset, Transform, Vec3,
+    AssetError, AssetFetcher, AssetLoadOptions, AssetPath, Assets, Color, GeometryDesc,
+    GeometryTopology, Light, LightKey, NodeKey, NodeKind, Scene, SceneAsset, Transform, Vec3,
 };
 use serde_json::{Value, json};
 
@@ -186,6 +186,239 @@ fn only_light_child(scene: &Scene, node: NodeKey) -> ImportedLight {
     lights[0]
 }
 
+#[test]
+fn triangle_strips_and_fans_import_as_triangle_lists() {
+    // glTF: strip triangle i is (i, i+1, i+2) when i is even and (i, i+2, i+1)
+    // when i is odd, which keeps every triangle wound the same way; fan
+    // triangle i is (i+1, i+2, 0).
+    let strip = primitive_geometry(MeshMode::TriangleStrip, &RIBBON, None, true);
+    assert_eq!(strip.topology(), GeometryTopology::Triangles);
+    assert_eq!(strip.indices(), [0, 1, 2, 1, 3, 2, 2, 3, 4]);
+    assert_eq!(strip.vertices().len(), RIBBON.len());
+
+    let indexed_strip = primitive_geometry(
+        MeshMode::TriangleStrip,
+        &RIBBON,
+        Some(&[4, 3, 2, 1, 0]),
+        true,
+    );
+    assert_eq!(indexed_strip.indices(), [4, 3, 2, 3, 1, 2, 2, 1, 0]);
+
+    let fan = primitive_geometry(MeshMode::TriangleFan, &FAN, None, true);
+    assert_eq!(fan.topology(), GeometryTopology::Triangles);
+    assert_eq!(fan.indices(), [1, 2, 0, 2, 3, 0]);
+
+    let indexed_fan = primitive_geometry(MeshMode::TriangleFan, &FAN, Some(&[3, 0, 1, 2]), true);
+    assert_eq!(indexed_fan.indices(), [0, 1, 3, 1, 2, 3]);
+}
+
+#[test]
+fn strip_winding_alternation_gives_every_computed_normal_the_same_side() {
+    // Without NORMAL the importer computes one flat normal per triangle. If
+    // the odd strip triangles kept the (i, i+1, i+2) order their normals
+    // would point the other way.
+    for (mode, positions) in [
+        (MeshMode::TriangleStrip, RIBBON.as_slice()),
+        (MeshMode::TriangleFan, FAN.as_slice()),
+    ] {
+        let geometry = primitive_geometry(mode, positions, None, false);
+        let triangles = positions.len() - 2;
+        assert_eq!(
+            geometry.vertices().len(),
+            triangles * 3,
+            "{mode:?}: flat shading owns one vertex per triangle corner",
+        );
+        for vertex in geometry.vertices() {
+            assert_eq!(
+                vertex.normal,
+                Vec3::Z,
+                "{mode:?}: every triangle faces +Z like the first one",
+            );
+        }
+    }
+}
+
+#[test]
+fn strips_drop_the_degenerate_triangles_that_stitch_them_together() {
+    // Exporters join strips by repeating indices. Triangles that repeat an
+    // index have no area; they are stitching, not geometry.
+    let stitched = primitive_geometry(
+        MeshMode::TriangleStrip,
+        &RIBBON,
+        Some(&[0, 1, 2, 2, 3, 3, 4, 2]),
+        true,
+    );
+    // Candidates: (0,1,2) (1,2,2) (2,2,3) (2,3,3) (3,3,4) (3,2,4).
+    assert_eq!(stitched.indices(), [0, 1, 2, 3, 2, 4]);
+
+    // A strip made only of stitching keeps its triangles, so the primitive
+    // still loads and owns its vertices.
+    let only_stitching =
+        primitive_geometry(MeshMode::TriangleStrip, &RIBBON, Some(&[1, 1, 1, 1]), true);
+    assert_eq!(only_stitching.indices(), [1, 1, 1, 1, 1, 1]);
+}
+
+#[test]
+fn line_strips_and_loops_import_as_line_lists() {
+    let strip = primitive_geometry(MeshMode::LineStrip, &FAN, None, false);
+    assert_eq!(strip.topology(), GeometryTopology::Lines);
+    assert_eq!(strip.indices(), [0, 1, 1, 2, 2, 3]);
+
+    let closed = primitive_geometry(MeshMode::LineLoop, &FAN, None, false);
+    assert_eq!(closed.topology(), GeometryTopology::Lines);
+    assert_eq!(closed.indices(), [0, 1, 1, 2, 2, 3, 3, 0]);
+
+    let indexed_loop = primitive_geometry(MeshMode::LineLoop, &FAN, Some(&[2, 0, 1]), false);
+    assert_eq!(indexed_loop.indices(), [2, 0, 0, 1, 1, 2]);
+
+    let indexed_strip = primitive_geometry(MeshMode::LineStrip, &FAN, Some(&[3, 1]), false);
+    assert_eq!(indexed_strip.indices(), [3, 1]);
+}
+
+#[test]
+fn strips_fans_and_loops_that_are_too_short_fail_with_a_structured_error() {
+    const TWO: &[u16] = &[0, 1];
+    const ONE: &[u16] = &[0];
+    for (mode, name, indices, minimum) in [
+        (MeshMode::TriangleStrip, "TRIANGLE_STRIP", TWO, "3"),
+        (MeshMode::TriangleFan, "TRIANGLE_FAN", TWO, "3"),
+        (MeshMode::LineStrip, "LINE_STRIP", ONE, "2"),
+        (MeshMode::LineLoop, "LINE_LOOP", ONE, "2"),
+    ] {
+        let document = primitive_document(mode, &FAN, Some(indices), true);
+        let assets = assets_with([("short.gltf", document)]);
+        let error = load(&assets, "short.gltf").expect_err("a primitive too short to draw fails");
+        assert!(
+            matches!(
+                &error,
+                AssetError::Parse { reason, .. }
+                    if reason.contains("mesh 0 primitive 0")
+                        && reason.contains(name)
+                        && reason.contains(&format!("at least {minimum}"))
+            ),
+            "{name}: the error must name the primitive, the mode and the minimum: {error:?}",
+        );
+    }
+}
+
+#[test]
+fn point_primitives_are_rejected_with_a_structured_error() {
+    let document = primitive_document(MeshMode::Points, &FAN, None, true);
+    let assets = assets_with([("points.gltf", document)]);
+    let error = load(&assets, "points.gltf").expect_err("point primitives are not drawn");
+    assert!(
+        matches!(
+            &error,
+            AssetError::Parse { reason, .. }
+                if reason.contains("mesh 0 primitive 0") && reason.contains("POINTS")
+        ),
+        "the error must name the primitive and the mode: {error:?}",
+    );
+}
+
+#[test]
+fn expanded_strip_indices_count_against_the_accessor_byte_budget() {
+    // A strip of n indices becomes 3 * (n - 2) list indices: 3,002 two-byte
+    // indices turn into 36,000 bytes of triangle list.
+    let indices = [0u16, 1, 2].repeat(1_001);
+    let document = primitive_document(
+        MeshMode::TriangleStrip,
+        &TRIANGLE,
+        Some(&indices[..3_002]),
+        true,
+    );
+    let assets = assets_with([("long-strip.gltf", document)]);
+    load(&assets, "long-strip.gltf").expect("the default budget admits the strip");
+    let error = pollster::block_on(assets.load_scene_with_options(
+        memory_path("long-strip.gltf"),
+        AssetLoadOptions::default().with_max_accessor_bytes(16_384),
+    ))
+    .expect_err("the expanded triangle list must count against the budget");
+    assert!(
+        matches!(
+            &error,
+            AssetError::PolicyViolation { reason, .. }
+                if reason.contains("TRIANGLE_STRIP") && reason.contains("36000 bytes")
+        ),
+        "the budget must run out on the expanded strip: {error:?}",
+    );
+}
+
+/// glTF primitive modes, by their `mode` value.
+#[derive(Debug, Clone, Copy)]
+enum MeshMode {
+    Points = 0,
+    LineLoop = 2,
+    LineStrip = 3,
+    TriangleStrip = 5,
+    TriangleFan = 6,
+}
+
+/// A zig-zag ribbon in the XY plane whose strip triangles all face +Z.
+const RIBBON: [[f32; 3]; 5] = [
+    [0.0, 0.0, 0.0],
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [1.0, 1.0, 0.0],
+    [0.0, 2.0, 0.0],
+];
+
+/// A unit square in the XY plane, counter-clockwise from the origin.
+const FAN: [[f32; 3]; 4] = [
+    [0.0, 0.0, 0.0],
+    [1.0, 0.0, 0.0],
+    [1.0, 1.0, 0.0],
+    [0.0, 1.0, 0.0],
+];
+
+fn primitive_document(
+    mode: MeshMode,
+    positions: &[[f32; 3]],
+    indices: Option<&[u16]>,
+    with_normals: bool,
+) -> Value {
+    let mut buffers = Buffers::default();
+    let mut primitive = json!({
+        "mode": mode as u32,
+        "attributes": {"POSITION": buffers.positions(positions)},
+    });
+    if with_normals {
+        primitive["attributes"]["NORMAL"] =
+            json!(buffers.vec3(&vec![[0.0, 0.0, 1.0]; positions.len()]));
+    }
+    if let Some(indices) = indices {
+        primitive["indices"] = json!(buffers.indices(indices));
+    }
+    buffers.finish(json!({
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [primitive]}],
+    }))
+}
+
+fn primitive_geometry(
+    mode: MeshMode,
+    positions: &[[f32; 3]],
+    indices: Option<&[u16]>,
+    with_normals: bool,
+) -> GeometryDesc {
+    let document = primitive_document(mode, positions, indices, with_normals);
+    let assets = assets_with([("primitive.gltf", document)]);
+    let scene_asset = load(&assets, "primitive.gltf")
+        .unwrap_or_else(|error| panic!("{mode:?} primitive must load: {error:?}"));
+    let mesh = scene_asset.nodes()[0].mesh().expect("the node has a mesh");
+    assert_eq!(
+        mesh.topology(),
+        assets
+            .geometry(mesh.geometry())
+            .expect("geometry resolves")
+            .topology(),
+    );
+    assets.geometry(mesh.geometry()).expect("geometry resolves")
+}
+
 const TRIANGLE: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
 
 /// Binary payload and accessors of an embedded glTF document.
@@ -242,7 +475,6 @@ impl Buffers {
         accessor
     }
 
-    #[allow(dead_code)]
     fn indices(&mut self, values: &[u16]) -> usize {
         let data = values
             .iter()

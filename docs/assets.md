@@ -112,10 +112,11 @@ before it allocates it:
 - each decoded stream counts `count` times its in-memory element size, every
   time it is read, so an accessor shared by several primitives counts once per
   primitive;
-- per-vertex data the importer derives counts the same way: generated indices,
-  flat normals (one vertex per triangle corner in every stream), default line
-  normals, the zero deltas of morph targets that omit `POSITION`, and the
-  per-keyframe vectors of morph-weight animation.
+- data the importer derives counts the same way: generated indices, the list
+  indices of strips, fans, and loops, flat normals (one vertex per triangle
+  corner in every stream), default line normals, the zero deltas of morph
+  targets that omit `POSITION`, and the per-keyframe vectors of morph-weight
+  animation.
 
 The reservation that would pass the budget fails with the stream's name, its
 size, and the running total, and nothing is allocated for it. Hosts that load
@@ -241,6 +242,31 @@ identity, and nodes reachable only from other scenes are not instantiated.
 resolved source index, optional name, and whether selection was default,
 explicit-index, or explicit-name. The scene selector is part of the cache key,
 so a cached default scene can never satisfy a later explicit selection.
+
+### Primitive modes
+
+The renderer draws triangle lists and line lists. Every glTF primitive mode
+that describes triangles or lines is imported as one of the two:
+
+| glTF `mode` | Imported as |
+|---|---|
+| `TRIANGLES` (4, the default) | triangle list, unchanged |
+| `TRIANGLE_STRIP` (5) | triangle list: triangle *i* is (*i*, *i*+1, *i*+2) when *i* is even and (*i*, *i*+2, *i*+1) when it is odd, so the whole strip keeps the winding of its first triangle |
+| `TRIANGLE_FAN` (6) | triangle list: triangle *i* is (*i*+1, *i*+2, 0) |
+| `LINES` (1) | line list, unchanged |
+| `LINE_STRIP` (3) | line list: segment *i* is (*i*, *i*+1) |
+| `LINE_LOOP` (2) | line list: the strip's segments plus one from the last vertex back to the first |
+| `POINTS` (0) | not supported: the load fails with an `AssetError::Parse` that names the mesh and primitive |
+
+The rewrite applies to the index accessor, or to the vertex order of a
+primitive without one, so vertices and their attributes are shared exactly as
+authored. Strip and fan triangles that repeat an index are the zero-area
+triangles exporters use to stitch strips together and are dropped; a primitive
+made only of them keeps them. A strip or fan needs at least three vertices and
+a line strip or loop at least two; a shorter one fails with the mesh, primitive
+and mode. The rewritten index list counts against the accessor byte budget.
+`SceneAssetMesh::topology()` and `GeometryDesc::topology()` report the imported
+list topology.
 
 ### Lights
 
