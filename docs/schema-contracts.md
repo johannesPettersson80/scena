@@ -1770,7 +1770,8 @@ are `null` rather than fabricated.
 
 `scena.photo_render_result.v1` is emitted by
 `scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png>
---report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>]`. It is the stdout command
+--report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>]
+[--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]]`. It is the stdout command
 envelope for the bounded camera-behavior easy path. On success it reports
 `ok:true`, the normalized intent, emitted PNG/report/descriptor paths, optional
 emitted recipe path, the selected candidate, subject quality metrics, and any
@@ -1788,6 +1789,22 @@ recipe subjects through the CLI.
 `scena validate` fully validates the required report sections; missing
 candidate attempts, selected candidate, exposure report, focus report, or
 quality verdict fail closed instead of passing as envelope-only JSON.
+
+With `--path-trace` the camera-behavior loop still selects the camera,
+exposure, focus and lighting on the rasterizer, and the delivered PNG is then
+path traced from that scene. Subject metrics and the quality policy are
+evaluated on the traced pixels, the selected candidate's `adjustment` is
+`"path_traced"`, and both the result envelope and the report carry a
+`path_trace` object: `samples_per_pixel` (default 128), `max_bounces`
+(default 8), `denoised`, `camera_paths`, `triangles`, `emissive_triangles`,
+`lights`, `materials`, `textures`, `environment_resolution`,
+`hidden_stand_in_shadow_nodes` (the blended contact-shadow decals the
+rasterized photo uses, hidden because traced light casts that shadow itself),
+`skipped` counts for stroke, label and particle nodes and degenerate
+triangles, and `elapsed_ms`. In the envelope `path_trace` is `null` for a
+rasterized photo; the report omits it. The composited planar ground
+reflection is not applied to a traced frame. `--samples`, `--bounces` and
+`--no-denoise` without `--path-trace` are usage errors.
 
 `scena.photo_plan.v1` is emitted by
 `scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json>`.

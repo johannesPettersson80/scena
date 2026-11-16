@@ -5,7 +5,7 @@ const RECIPE_BUILD_COMMAND: &str =
     "recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...";
 const RECIPE_RENDER_COMMAND: &str = "recipe render <recipe.json> [--verify] --out <png> [--introspect] [--detail] [--gpu] [--max-imports <n>] [--allow-root <directory>]...";
 const PHOTO_PLAN_COMMAND: &str = "photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...";
-const PHOTO_RENDER_COMMAND: &str = "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]...";
+const PHOTO_RENDER_COMMAND: &str = "photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]] [--max-imports <n>] [--allow-root <directory>]...";
 const RENDER_COMMAND: &str =
     "render <asset-or-recipe> --out <png> [--introspect] [--gpu] [--allow-root <directory>]...";
 const INSPECT_COMMAND: &str = "inspect <asset-or-recipe> [--allow-root <directory>]...";
@@ -235,7 +235,7 @@ fn command_usage(path: &[&str]) -> Option<(&'static str, &'static str)> {
         ),
         ["photo", "render"] => (
             PHOTO_RENDER_COMMAND,
-            "scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]...",
+            "scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]] [--max-imports <n>] [--allow-root <directory>]...",
         ),
         ["recipe"] => (
             "recipe",

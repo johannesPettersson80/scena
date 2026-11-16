@@ -9,6 +9,9 @@ use super::scena_output::{
     CliBackendSelectionV1, CliOutcome, add_recipe_policy_to_outcome,
     json_outcome_with_backend_selection,
 };
+use super::scena_photo_path_trace::{
+    self as photo_path_trace, PhotoPathTraceArgs, PhotoPathTraceFlags,
+};
 use super::scena_policy::{effective_recipe_policy, push_allow_root};
 
 const PHOTO_RENDER_RESULT_SCHEMA_V1: &str = "scena.photo_render_result.v1";
@@ -69,6 +72,8 @@ struct PhotoRenderArgs {
     max_imports: Option<usize>,
     allow_roots: Vec<PathBuf>,
     subject: Option<scena::SceneRecipeTargetV1>,
+    /// Deliver the final frame from the path tracer, with these settings.
+    path_trace: Option<PhotoPathTraceArgs>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -541,7 +546,10 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
             measure_photo_subject_frame(&mut host, &selected.capture, &subject, args.gpu)?;
         selected.final_candidate.adjustment = Some("final_dark_material_lighting");
     }
+    // A traced frame gets its ground reflection from the ground's own
+    // material, so the composited stand-in is left out.
     if source.quality.is_final()
+        && args.path_trace.is_none()
         && source.ground == scena::scene_host::PhotographicGroundV1::Reflective
         && let Some(planar) = host
             .capture_photographic_planar_reflection(&mut shaded_selection.surroundings_report)
@@ -574,6 +582,58 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
             measure_photo_subject_with_aov(&host, &selected.capture, &subject, &final_aov)?;
         selected.final_candidate.adjustment = Some("planar_ground_reflection");
     }
+    // The loop above settled the camera, exposure, focus and lighting on the
+    // rasterizer. With --path-trace the delivered pixels are traced from that
+    // same scene, and everything measured from here on is measured on them.
+    let path_trace_report = match args.path_trace {
+        Some(path_trace) => {
+            let stand_in_shadows = &shaded_selection.surroundings_report.contact_shadow_nodes;
+            let mut delivery = photo_path_trace::deliver(&host, stand_in_shadows, path_trace)?;
+            // Traced light is blocked by the set the subject stands in, which
+            // the rasterizer's environment light is not, so the exposure the
+            // loop chose for the rasterized frame is re-metered on this one.
+            // Each correction develops the traced radiance again; nothing is
+            // traced twice.
+            let mut exposure_attempts = 0;
+            for attempt in 0..photo_path_trace::EXPOSURE_MAX_ATTEMPTS {
+                exposure_attempts = attempt + 1;
+                selected.capture = host
+                    .capture_from_rgba8(
+                        selected.capture.descriptor.width,
+                        selected.capture.descriptor.height,
+                        delivery.image.rgba8().to_vec(),
+                    )
+                    .map_err(runtime_failure)?;
+                final_metrics =
+                    measure_photo_subject_with_aov(&host, &selected.capture, &subject, &final_aov)?;
+                let current_ev = host.renderer().exposure_ev();
+                let next_ev = if args.optimize {
+                    corrected_focus_delivery_exposure_ev(current_ev, final_metrics)
+                } else {
+                    bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, final_metrics)
+                };
+                let Some(next_ev) = next_ev.filter(|next| (next - current_ev).abs() > f32::EPSILON)
+                else {
+                    break;
+                };
+                if attempt + 1 == photo_path_trace::EXPOSURE_MAX_ATTEMPTS {
+                    break;
+                }
+                host.renderer_mut().clear_auto_exposure();
+                host.renderer_mut().set_exposure_ev(next_ev);
+                // A capture is bound to the renderer's current frame, so the
+                // rasterized frame is brought to the new exposure as well.
+                render_capture(&mut host, &mut selected.work_metrics)?;
+                host.renderer().develop_path_traced(&mut delivery.image);
+            }
+            selected.final_candidate.exposure_ev = host.renderer().exposure_ev();
+            selected.final_candidate.adjustment = Some("path_traced");
+            delivery.report["exposure_ev"] = json!(host.renderer().exposure_ev());
+            delivery.report["exposure_attempts"] = json!(exposure_attempts);
+            Some(delivery.report)
+        }
+        None => None,
+    };
     let mut quality_analysis = photo_quality_analysis_json(
         &selected.capture,
         &final_aov,
@@ -698,7 +758,7 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
             .collect(),
         material_resolution_selection: selected.material_resolution_selection.clone(),
     });
-    let report = photo_report(PhotoReportInput {
+    let mut report = photo_report(PhotoReportInput {
         args: &args,
         source: &source,
         manifest: &build.manifest,
@@ -721,6 +781,11 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
             emitted_recipe_path: args.emit_recipe.as_deref().map(path_for_json),
         },
     });
+    // Present only for a traced delivery; its absence means the frame was
+    // rasterized.
+    if let Some(path_trace) = &path_trace_report {
+        report["path_trace"] = path_trace.clone();
+    }
     ensure_parent_dir(&args.report)?;
     std::fs::write(
         &args.report,
@@ -760,6 +825,7 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
             "quality": report["quality"].clone(),
             "selected": report["selected"].clone(),
             "failure_codes": report["failure_codes"].clone(),
+            "path_trace": path_trace_report,
         }),
         if ok { 0 } else { 1 },
         "failed to serialize photo render result",
@@ -4397,6 +4463,7 @@ impl PhotoRenderArgs {
         let mut max_imports = None;
         let mut allow_roots = Vec::new();
         let mut subject = None;
+        let mut path_trace = PhotoPathTraceFlags::default();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -4408,6 +4475,28 @@ impl PhotoRenderArgs {
                 "--out" => {
                     out = Some(PathBuf::from(flag_value(args, index, "--out")?));
                     index += 2;
+                }
+                "--path-trace" => {
+                    path_trace.enabled = true;
+                    index += 1;
+                }
+                "--samples" => {
+                    let value = flag_value(args, index, "--samples")?;
+                    let limit = scena::PathTraceOptions::MAX_SAMPLES_PER_PIXEL;
+                    path_trace.samples =
+                        Some(photo_path_trace::parse_count("--samples", &value, limit)?);
+                    index += 2;
+                }
+                "--bounces" => {
+                    let value = flag_value(args, index, "--bounces")?;
+                    let limit = scena::PathTraceOptions::MAX_BOUNCES;
+                    path_trace.bounces =
+                        Some(photo_path_trace::parse_count("--bounces", &value, limit)?);
+                    index += 2;
+                }
+                "--no-denoise" => {
+                    path_trace.no_denoise = true;
+                    index += 1;
                 }
                 "--report" => {
                     report = Some(PathBuf::from(flag_value(args, index, "--report")?));
@@ -4487,6 +4576,7 @@ impl PhotoRenderArgs {
             max_imports,
             allow_roots,
             subject,
+            path_trace: path_trace.resolve()?,
         })
     }
 }
@@ -4671,11 +4761,11 @@ fn runtime_failure(error: impl std::fmt::Display) -> CliFailure {
 }
 
 fn photo_usage() -> &'static str {
-    "usage: scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...; scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...; scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]] [--max-imports <n>] [--allow-root <directory>]..."
 }
 
 fn photo_render_usage() -> &'static str {
-    "usage: scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]] [--max-imports <n>] [--allow-root <directory>]..."
 }
 
 fn photo_plan_usage() -> &'static str {

@@ -28,6 +28,7 @@ mod label_quality;
 mod material_resolution;
 mod material_variants;
 mod measurements;
+mod path_trace;
 mod photo;
 mod photo_quality;
 mod photographic_lighting;

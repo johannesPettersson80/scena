@@ -34,6 +34,9 @@ mod scena_output;
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 #[path = "scena/photo.rs"]
 mod scena_photo;
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+#[path = "scena/photo_path_trace.rs"]
+mod scena_photo_path_trace;
 #[path = "scena/place.rs"]
 mod scena_place;
 #[path = "scena/policy.rs"]
@@ -256,7 +259,7 @@ fn run(args: Vec<String>) -> Result<CliOutcome, Box<CliError>> {
              'validate-recipe <recipe.json> [--allow-root <directory>]...', \
              'place <recipe.json> (--import <id>|--node <id>) --verb <verb>', \
              'photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json>', \
-             'photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--optimize]', \
+             'photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]]', \
              'diff <before.recipe.json> <after.recipe.json> [--render --out-dir <dir>] [--exit-code]', \
              'recipe build <recipe.json> [--max-imports <n>] [--allow-root <directory>]...', \
              'recipe render <recipe.json> --verify --out <png> [--allow-root <directory>]...', \
