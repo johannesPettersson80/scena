@@ -226,8 +226,8 @@ pub(crate) fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Findi
         root,
         findings,
         "ARCH-RENDER-ALPHA",
-        "src/render/prepare/cpu_bake.rs",
-        &["average_sort_depth", "camera_projection.camera_depth"],
+        "src/render/prepare/blend_order.rs",
+        &["fn blend_depth", "camera_projection.camera_depth"],
     );
     require_contains(
         root,

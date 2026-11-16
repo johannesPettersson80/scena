@@ -181,3 +181,40 @@ pub(super) fn tinted_vertex_color(
 ) -> crate::material::Color {
     tint.map_or(color, |tint| multiply_color(color, tint))
 }
+
+/// Records what the vertex data of a mesh is computed from beyond the mesh's
+/// own placement and tint, which the retained prepare path re-derives.
+pub(super) fn record_bake_dependencies(
+    source: &GeometryPrimitiveSource<'_>,
+    params: &PrimitiveBakeParams<'_>,
+    backend_shaded_material: bool,
+) {
+    let bake = params.bake;
+    if params.lights.has_area_lights() || params.baked_ambient_occlusion.is_some() {
+        // Per-vertex visibility is ray traced against the rest of the scene,
+        // at a density chosen from each triangle's size on screen.
+        bake.depends_on_view();
+        bake.depends_on_placement();
+    }
+    if source.material.photographic_surface_tile_size_m().is_some() {
+        // Texture coordinates are scaled by the node's world scale.
+        bake.depends_on_placement();
+    }
+    if backend_shaded_material {
+        return;
+    }
+    let environment = params
+        .reflection_probe
+        .as_ref()
+        .map_or(&params.environment_lighting, |probe| probe.lighting());
+    if super::super::lighting::material_is_lit(source.material, params.lights, environment) {
+        // Lit per vertex here, from world-space lights and shadows and from
+        // the direction to the camera.
+        bake.depends_on_view();
+        bake.depends_on_placement();
+    }
+    if super::super::cpu_bake::samples_textures_on_cpu(source.material) {
+        // Texture detail is resolved by subdividing to on-screen size.
+        bake.depends_on_view();
+    }
+}

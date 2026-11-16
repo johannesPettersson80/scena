@@ -156,10 +156,6 @@ impl PreparedLabelQuad {
         self.solid_coverage
     }
 
-    pub(in crate::render) fn set_tint(&mut self, tint: Color) {
-        self.tint = tint;
-    }
-
     pub(in crate::render) fn final_color(&self) -> Color {
         Color::from_linear_rgba(
             self.color.r * self.tint.r,

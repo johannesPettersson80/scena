@@ -3,6 +3,7 @@ use crate::material::Color;
 use crate::scene::{Particle, Scene, Vec3, WorldTransform};
 
 use super::super::camera::CameraProjection;
+use super::bake_dependencies::BakeDependencyRecorder;
 use super::transforms::transform_position;
 use super::types::PreparedPrimitive;
 
@@ -10,8 +11,16 @@ pub(super) fn append_particle_primitives(
     scene: &Scene,
     camera_projection: Option<&CameraProjection>,
     origin_shift: Vec3,
+    bake: &BakeDependencyRecorder,
     primitives: &mut Vec<PreparedPrimitive>,
 ) {
+    if scene.particle_set_nodes().next().is_some() {
+        // Billboards face the camera and are sized by their distance from
+        // it, and their corners are world positions. None of that can be
+        // re-derived by swapping a per-draw matrix.
+        bake.depends_on_view();
+        bake.depends_on_placement();
+    }
     let Some(camera_projection) = camera_projection else {
         return;
     };
@@ -45,7 +54,8 @@ pub(super) fn append_particle_primitives(
                     Color::WHITE,
                 )
                 .without_semantic_attribution()
-                .with_double_sided(true),
+                .with_double_sided(true)
+                .with_world_authored_corners(),
             );
             primitives.push(
                 PreparedPrimitive::new(
@@ -58,7 +68,8 @@ pub(super) fn append_particle_primitives(
                     Color::WHITE,
                 )
                 .without_semantic_attribution()
-                .with_double_sided(true),
+                .with_double_sided(true)
+                .with_world_authored_corners(),
             );
         }
     }

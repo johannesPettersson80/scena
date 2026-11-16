@@ -8,6 +8,7 @@ use crate::geometry::{GeometryDesc, GeometrySkin};
 use crate::material::{AlphaMode, Color, MaterialDesc};
 use crate::scene::{Scene, SceneSkinBinding, Transform, Vec3};
 
+use super::prepare_lifecycle::FullPrepareReason;
 use super::{PrepareTelemetry, Renderer};
 
 impl Renderer {
@@ -19,10 +20,8 @@ impl Renderer {
         &self,
         scene: &Scene,
         assets: &Assets,
-    ) -> Option<&'static str> {
-        let slots = super::prepare::collect_backend_material_slots(scene, Some(assets));
-        let handles = slots.iter().map(|slot| slot.handle).collect::<Vec<_>>();
-        self.dynamic_gpu_prepare_rejection_reason(scene, &handles)
+    ) -> Option<FullPrepareReason> {
+        self.full_prepare_reason_for_test(scene, assets)
     }
 
     fn phase5_retained_primitive_count_for_test(&self) -> usize {
@@ -164,7 +163,7 @@ fn off_frustum_source_stays_in_retained_template_across_camera_motion() {
 }
 
 #[test]
-fn off_frustum_transparency_prevents_unsafe_dynamic_reentry() {
+fn off_frustum_transparency_re_enters_through_the_retained_template() {
     let Some(mut renderer) = headless_gpu_for_phase5_test(48, 48) else {
         return;
     };
@@ -195,15 +194,47 @@ fn off_frustum_transparency_prevents_unsafe_dynamic_reentry() {
         12,
         "only the twelve triangles of the opaque box start in the draw set",
     );
+    let first = renderer.phase5_prepare_telemetry_for_test();
     let camera_node = scene.camera_node(camera).expect("camera node resolves");
     scene
         .set_transform(camera_node, Transform::at(Vec3::new(100.0, 0.0, 2.0)))
         .expect("camera pans to transparent mesh");
 
+    // The blended box was baked and uploaded with the rest of the scene; its
+    // triangles only need ordering for the camera that now sees them.
     assert_eq!(
         renderer.phase5_dynamic_rejection_reason_for_test(&scene, &assets),
-        Some("moving mesh missing GPU material slot"),
-        "off-frustum transparency must force a full prepare because its material was not uploaded into the visible draw slots",
+        None,
+        "a camera move must keep a template that holds off-frustum blended geometry",
+    );
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("re-entry prepares");
+    renderer.render(&scene, camera).expect("re-entry renders");
+    let second = renderer.phase5_prepare_telemetry_for_test();
+    assert_eq!(
+        second.prepared_primitive_collections, first.prepared_primitive_collections,
+        "re-entry of blended geometry must reuse the retained template",
+    );
+
+    let dynamic_frame = renderer.frame_rgba8().to_vec();
+    let Some(mut forced_full_renderer) = headless_gpu_for_phase5_test(48, 48) else {
+        return;
+    };
+    forced_full_renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("fresh renderer performs a full prepare");
+    forced_full_renderer
+        .render(&scene, camera)
+        .expect("fresh renderer renders");
+    assert!(
+        visible_centroid_x(&dynamic_frame, 48).is_some(),
+        "the re-entered blended box must produce pixels",
+    );
+    assert_eq!(
+        dynamic_frame,
+        forced_full_renderer.frame_rgba8(),
+        "re-entered blended geometry must match a forced full prepare exactly",
     );
 }
 
@@ -329,7 +360,7 @@ fn skinned_joint_transform_rejects_dynamic_gpu_prepare_fast_path() {
 
     assert_eq!(
         renderer.phase5_dynamic_rejection_reason_for_test(&scene, &assets),
-        Some("skinned joints may have moved"),
+        Some(FullPrepareReason::Skinning),
         "skinned joint motion must force a full GPU re-bake until skinning is shader-driven"
     );
 }

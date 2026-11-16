@@ -23,6 +23,7 @@ pub(super) use self::lighting::{
     PreparedGpuLightUniform, TiledLightAssignment, collect_gpu_light_uniform,
     collect_gpu_tiled_light_assignment, gpu_tiled_light_assignment_required,
 };
+pub(in crate::render) use self::lod::collect_mesh_lod_selection;
 use self::lod::select_mesh_lod_geometry;
 use self::materials::{PreparedMaterialTextures, validate_material_texture_handles};
 use self::primitives::append_geometry_primitives;
@@ -41,11 +42,14 @@ pub(super) use self::stats::{
 use self::transforms::{identity_matrix4, prepared_primitive};
 use self::types::{
     DeformationInputs, GeometryPrimitiveSource, PreparedScene, PrimitiveBakeParams, PrimitiveSinks,
-    TransparentPrimitive,
 };
 use super::{PrepareWorkCounter, RasterTarget, camera::CameraProjection};
 
 mod auto_instance;
+mod bake_dependencies;
+pub(in crate::render) use self::bake_dependencies::BakeDependencies;
+mod blend_order;
+pub(in crate::render) use self::blend_order::resort_blended_primitives;
 mod cpu_bake;
 mod diagnostics;
 mod dynamic;
@@ -128,6 +132,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
     }
 
     let origin_shift = scene.origin_shift();
+    let bake = bake_dependencies::BakeDependencyRecorder::default();
     let lights = PreparedLights::from_scene(scene, origin_shift);
     let needs_cpu_shadow_visibility = cpu_shadow_visibility_required(scene, backend_material_slots)
         || lights.has_area_lights()
@@ -169,7 +174,13 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
         .collect();
     let mut transparent_primitives = Vec::new();
     let labels = labels::prepare_label_atlas(target, scene, camera_projection, origin_shift);
-    particles::append_particle_primitives(scene, camera_projection, origin_shift, &mut primitives);
+    particles::append_particle_primitives(
+        scene,
+        camera_projection,
+        origin_shift,
+        &bake,
+        &mut primitives,
+    );
     let mut strokes = Vec::new();
     let mut instances = Vec::new();
     let gpu_instance_path = scene.section_box().is_none()
@@ -195,6 +206,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
             backend_material_slots,
             environment_lighting.clone(),
             work,
+            &bake,
             &mut instances,
             &mut strokes,
         )?
@@ -279,6 +291,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 environment_lighting: environment_lighting.clone(),
                 reflection_probe: reflection_probe.clone(),
                 work,
+                bake: &bake,
             },
             PrimitiveSinks {
                 primitives: &mut primitives,
@@ -325,6 +338,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                     environment_lighting: environment_lighting.clone(),
                     reflection_probe,
                     work,
+                    bake: &bake,
                 },
                 PrimitiveSinks {
                     primitives: &mut primitives,
@@ -397,6 +411,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                     environment_lighting: environment_lighting.clone(),
                     reflection_probe: None,
                     work,
+                    bake: &bake,
                 },
                 PrimitiveSinks {
                     primitives: &mut retained,
@@ -463,6 +478,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                         environment_lighting: environment_lighting.clone(),
                         reflection_probe: reflection_probe.clone(),
                         work,
+                        bake: &bake,
                     },
                     PrimitiveSinks {
                         primitives: &mut primitives,
@@ -512,6 +528,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                             environment_lighting: environment_lighting.clone(),
                             reflection_probe,
                             work,
+                            bake: &bake,
                         },
                         PrimitiveSinks {
                             primitives: &mut primitives,
@@ -524,14 +541,8 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
         }
     }
 
-    // Descending depth: larger local-space z is treated as farther for the M1 foundation.
-    transparent_primitives
-        .sort_by(|left: &TransparentPrimitive, right| right.depth.total_cmp(&left.depth));
-    primitives.extend(
-        transparent_primitives
-            .into_iter()
-            .map(|transparent| transparent.primitive),
-    );
+    // Blended triangles close the list, farthest first for the active camera.
+    primitives.extend(blend_order::into_back_to_front(transparent_primitives));
 
     let light_from_world = match lights.primary_shadow_ray_direction() {
         // primary_shadow_ray_direction returns the vector pointing toward the
@@ -555,6 +566,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
         labels,
         instances,
         light_from_world,
+        bake_dependencies: bake.finish(),
     })
 }
 

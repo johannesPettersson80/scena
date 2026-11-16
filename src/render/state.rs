@@ -23,6 +23,19 @@ pub(super) struct PreparedSceneState {
     pub(super) labels: Arc<prepare::PreparedLabelAtlas>,
     pub(super) retained_instances: Arc<[prepare::PreparedInstanceSet]>,
     pub(super) instances: Arc<[prepare::PreparedInstanceSet]>,
+    /// Which alpha-blended triangle sits in which slot of the GPU vertex
+    /// buffer; the retained path re-sorts them per camera.
+    pub(super) blend_vertex_slots: super::prepare_retained::BlendVertexSlots,
+    /// The camera the visible lists were culled and ordered for.
+    pub(super) view: super::prepare_retained::PreparedView,
+    /// Where the scene's content was when the template was baked.
+    pub(super) content: super::prepare_retained::ContentPlacement,
+    /// What the template's vertex data was computed from.
+    pub(super) bake: prepare::BakeDependencies,
+    /// The reflection probes the template was baked with.
+    pub(super) probes: super::prepare_retained::PreparedProbes,
+    /// The LOD geometry the template was baked from, per mesh with levels.
+    pub(super) lod_selection: Vec<(crate::scene::NodeKey, crate::assets::GeometryHandle)>,
     pub(super) clipping_planes: Arc<[ClippingPlane]>,
     pub(super) section_box: Option<SectionBox>,
 }

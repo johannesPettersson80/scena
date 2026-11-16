@@ -15,8 +15,6 @@ use super::types::{
 use super::{PreparedEnvironmentLighting, draw_uniform_tint};
 use crate::render::{PrepareWorkCounter, RasterTarget, camera::CameraProjection};
 
-const MIN_AUTO_INSTANCE_GROUP_SIZE: usize = 4;
-
 #[derive(Debug, Clone, Copy)]
 struct AutoInstanceCandidate {
     node: crate::scene::NodeKey,
@@ -46,6 +44,7 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
     backend_material_slots: &[crate::assets::MaterialHandle],
     environment_lighting: PreparedEnvironmentLighting,
     work: Option<&PrepareWorkCounter>,
+    bake: &super::bake_dependencies::BakeDependencyRecorder,
     instances: &mut Vec<PreparedInstanceSet>,
     strokes: &mut Vec<PreparedStrokeSegment>,
 ) -> Result<Vec<crate::scene::NodeKey>, PrepareError> {
@@ -91,7 +90,7 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
     let mut auto_instanced_nodes = Vec::new();
     for group in groups
         .into_iter()
-        .filter(|group| group.candidates.len() >= MIN_AUTO_INSTANCE_GROUP_SIZE)
+        .filter(|group| group.candidates.len() >= PreparedInstanceSet::MIN_AUTO_BATCHED_MEMBERS)
     {
         let source_node = group.candidates[0].node;
         let geometry =
@@ -153,6 +152,7 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
                 environment_lighting: environment_lighting.clone(),
                 reflection_probe: None,
                 work,
+                bake,
             },
             PrimitiveSinks {
                 primitives: &mut retained,
@@ -181,9 +181,14 @@ pub(super) fn append_auto_instanced_mesh_groups<F>(
             })
             .collect::<Vec<_>>();
         strokes.extend(instance_strokes);
-        auto_instanced_nodes.extend(group.candidates.iter().map(|candidate| candidate.node));
-        instances.push(PreparedInstanceSet::new_auto_batched(
-            source_node,
+        let member_nodes = group
+            .candidates
+            .iter()
+            .map(|candidate| candidate.node)
+            .collect::<Vec<_>>();
+        auto_instanced_nodes.extend(member_nodes.iter().copied());
+        instances.extend(PreparedInstanceSet::new_auto_batched(
+            member_nodes,
             retained,
             records,
         ));

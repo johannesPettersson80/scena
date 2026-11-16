@@ -1,3 +1,4 @@
+use super::retained::RetainedDraws;
 use super::*;
 
 impl Renderer {
@@ -49,83 +50,10 @@ impl Renderer {
         stats
     }
 
-    pub(in crate::render) fn dynamic_gpu_prepare_rejection_reason(
-        &self,
-        scene: &Scene,
-        backend_material_handles: &[crate::assets::MaterialHandle],
-    ) -> Option<&'static str> {
-        let Some(prepared) = self.prepared.as_ref() else {
-            return Some("no prepared template");
-        };
-        if !prepared.scene.ptr_eq(&scene.identity()) {
-            return Some("scene identity changed");
-        }
-        if prepared.structure_revision != scene.structure_revision() {
-            return Some("structure revision changed");
-        }
-        if prepared.camera_revision != scene.camera_revision() {
-            return Some("camera descriptor revision changed");
-        }
-        if prepared.environment_revision != self.environment_revision {
-            return Some("environment revision changed");
-        }
-        if prepared.target_revision != self.target_revision {
-            return Some("target revision changed");
-        }
-        if prepared.output_resources_revision != self.output_resources_revision {
-            return Some("output resources revision changed");
-        }
-        if prepared.transform_revision == scene.transform_revision() {
-            return None;
-        }
-        if scene.section_box().is_some() {
-            return Some("section caps require a full prepare after transforms change");
-        }
-        if scene.reflection_probes().next().is_some() {
-            return Some("reflection probe selection requires full prepare");
-        }
-        if scene.model_nodes().next().is_some() {
-            return Some("model nodes present");
-        }
-        if scene.has_mesh_lods() {
-            return Some("mesh LOD selection is view-dependent");
-        }
-        if scene.label_nodes().next().is_some() {
-            return Some("label nodes present");
-        }
-        if scene
-            .mesh_nodes()
-            .any(|(node, _mesh, _transform)| scene.skin_binding(node).is_some())
-        {
-            return Some("skinned joints may have moved");
-        }
-        if prepare::gpu_tiled_light_assignment_required(scene) {
-            return Some("tiled light assignment may have moved");
-        }
-        if scene
-            .mesh_nodes()
-            .any(|(_node, mesh, _transform)| !backend_material_handles.contains(&mesh.material()))
-        {
-            return Some("moving mesh missing GPU material slot");
-        }
-        if !prepared
-            .primitives
-            .iter()
-            .all(|primitive| !primitive.gpu_triangle_path() || primitive.depth_prepass_eligible())
-        {
-            return Some("non-opaque primitive present");
-        }
-        None
-    }
-
-    pub(super) fn reencode_retained_draws(
-        &self,
-        scene: &Scene,
-    ) -> Option<(
-        Vec<prepare::PreparedPrimitive>,
-        Vec<prepare::PreparedStrokeSegment>,
-        Vec<prepare::PreparedInstanceSet>,
-    )> {
+    /// Re-derives what the scene wants drawn from the retained template:
+    /// hidden sources dropped, every remaining draw placed and tinted as its
+    /// node is now. `None` when the template cannot express the scene.
+    pub(super) fn reencode_retained_draws(&self, scene: &Scene) -> Option<RetainedDraws> {
         let prepared = self.prepared.as_ref()?;
         if !retained_template_covers_visible_sources(
             scene,
@@ -136,18 +64,12 @@ impl Renderer {
         ) {
             return None;
         }
-        let primitives =
-            filter_retained_primitives_for_scene(scene, &prepared.retained_primitives)?
-                .into_iter()
-                .filter(prepare::PreparedPrimitive::gpu_triangle_path)
-                .collect();
-        let strokes = filter_retained_strokes_for_scene(scene, &prepared.retained_strokes)?;
-        let instances = filter_retained_instances_for_scene(scene, &prepared.retained_instances)?;
-        let labels = filter_retained_labels_for_scene(scene, &prepared.retained_labels)?;
-        if !labels.is_empty() {
-            return None;
-        }
-        Some((primitives, strokes, instances))
+        Some(RetainedDraws {
+            primitives: filter_retained_primitives_for_scene(scene, &prepared.retained_primitives)?,
+            strokes: filter_retained_strokes_for_scene(scene, &prepared.retained_strokes)?,
+            instances: filter_retained_instances_for_scene(scene, &prepared.retained_instances)?,
+            labels: filter_retained_labels_for_scene(scene, &prepared.retained_labels)?,
+        })
     }
 
     pub(super) fn apply_prepare_stats(
@@ -188,13 +110,15 @@ impl Renderer {
         mesh_node: crate::scene::NodeKey,
         stroke_node: crate::scene::NodeKey,
     ) -> Option<(usize, usize)> {
-        let (primitives, strokes, _instances) = self.reencode_retained_draws(scene)?;
+        let draws = self.reencode_retained_draws(scene)?;
         Some((
-            primitives
+            draws
+                .primitives
                 .iter()
                 .filter(|primitive| primitive.source_node() == Some(mesh_node))
                 .count(),
-            strokes
+            draws
+                .strokes
                 .iter()
                 .filter(|stroke| stroke.source_node() == Some(stroke_node))
                 .count(),

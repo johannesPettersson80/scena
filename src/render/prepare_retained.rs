@@ -7,6 +7,13 @@ use crate::scene::{NodeKey, Scene, Vec3};
 use super::{PreparedSceneState, prepare};
 use prepare::transforms::{normal_from_model_matrix, world_from_model_matrix};
 
+mod blend_slots;
+pub(in crate::render) use blend_slots::{BlendSlotAssignment, BlendVertexSlots};
+mod probe_state;
+pub(in crate::render) use probe_state::PreparedProbes;
+mod scene_motion;
+pub(in crate::render) use scene_motion::{ContentPlacement, PreparedView};
+
 pub(super) fn assign_original_vertex_offsets(
     primitives: Vec<prepare::PreparedPrimitive>,
 ) -> Vec<prepare::PreparedPrimitive> {
@@ -84,6 +91,13 @@ pub(super) fn filter_retained_primitives_for_scene(
                 // cannot restore. Fall back to a full prepare.
                 return None;
             }
+            if primitive.world_authored() || !primitive.gpu_triangle_path() {
+                // Authored in world space, or one of the stroke quads that no
+                // renderer draws: the node only decides whether the triangle
+                // is in the list, and it stays as a full prepare leaves it.
+                visible.push(primitive);
+                continue;
+            }
             if let std::collections::btree_map::Entry::Vacant(entry) = draw_transforms.entry(node) {
                 let transform = scene.resolved_world(node)?;
                 if transform.is_mirrored() != primitive.baked_mirrored() {
@@ -117,11 +131,15 @@ pub(super) fn filter_retained_instances_for_scene(
 ) -> Option<Vec<prepare::PreparedInstanceSet>> {
     let mut visible_sets = Vec::with_capacity(retained.len());
     for set in retained {
+        let Some(source_set) = set.source_set() else {
+            visible_sets.push(refresh_auto_batched_group(scene, set)?);
+            continue;
+        };
         scene.node(set.source_node())?;
         if !scene.visible_for_active_camera(set.source_node()) {
             continue;
         }
-        let live = scene.instance_set(set.source_set()?)?;
+        let live = scene.instance_set(source_set)?;
         if prepare::instance_set_has_mirrored_instance(live) {
             // An instanced draw shares one winding; a mirrored instance needs
             // the per-instance bake of a full prepare.
@@ -164,6 +182,44 @@ pub(super) fn filter_retained_instances_for_scene(
     Some(visible_sets)
 }
 
+/// Rebuilds the records of an automatically batched group of mesh nodes from
+/// where those nodes are now, leaving out members that are hidden.
+///
+/// `None` when a full prepare would no longer form this group: a member was
+/// removed or mirrors its geometry and needs a bake of its own, the member the
+/// template was baked as is hidden, or too few members remain visible.
+fn refresh_auto_batched_group(
+    scene: &Scene,
+    group: &prepare::PreparedInstanceSet,
+) -> Option<prepare::PreparedInstanceSet> {
+    let mut records = Vec::with_capacity(group.member_nodes().len());
+    for node in group.member_nodes() {
+        let world = scene.resolved_world(*node)?;
+        if !scene.visible_for_active_camera(*node) {
+            if *node == group.source_node() {
+                // The group is baked, clipped and attributed as its first
+                // member; a full prepare would pick another one.
+                return None;
+            }
+            continue;
+        }
+        if world.is_mirrored() {
+            return None;
+        }
+        records.push(prepare::PreparedInstanceRecord::auto_batched(
+            world_from_model_matrix(world, Vec3::ZERO),
+            normal_from_model_matrix(world),
+            prepare::draw_uniform_tint(scene.node_tint(*node).ok()?),
+        ));
+    }
+    if records.len() < prepare::PreparedInstanceSet::MIN_AUTO_BATCHED_MEMBERS {
+        return None;
+    }
+    let mut group = group.clone();
+    group.set_instances(records);
+    Some(group)
+}
+
 pub(super) fn filter_retained_strokes_for_scene(
     scene: &Scene,
     retained: &[prepare::PreparedStrokeSegment],
@@ -196,14 +252,14 @@ pub(super) fn filter_retained_labels_for_scene(
 ) -> Option<prepare::PreparedLabelAtlas> {
     let mut labels = retained.clone();
     let mut visible = Vec::with_capacity(labels.quads().len());
+    // A full prepare lays labels out untinted, so only visibility is
+    // re-derived here.
     for quad in labels.quads().iter().copied() {
-        let mut quad = quad;
         if let Some(node) = quad.source_node() {
             scene.node(node)?;
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
-            quad.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }
         visible.push(quad);
     }
@@ -238,6 +294,11 @@ pub(super) fn retained_template_covers_visible_sources(
             .iter()
             .map(prepare::PreparedInstanceSet::source_node),
     );
+    retained_sources.extend(
+        retained_instances
+            .iter()
+            .flat_map(|set| set.member_nodes().iter().copied()),
+    );
 
     scene
         .renderable_nodes()
@@ -251,6 +312,9 @@ pub(super) fn retained_template_covers_visible_sources(
         && scene
             .label_nodes()
             .all(|(node, _, _, _)| retained_sources.contains(&node))
+        && scene
+            .particle_set_nodes()
+            .all(|(node, _, _)| retained_sources.contains(&node))
 }
 
 pub(super) fn prepared_instance_count(prepared: &PreparedSceneState) -> u64 {

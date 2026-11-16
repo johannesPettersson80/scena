@@ -1,4 +1,4 @@
-use crate::assets::GeometryHandle;
+use crate::assets::{Assets, GeometryHandle};
 use crate::geometry::Aabb;
 use crate::scene::{NodeKey, Scene, Vec3, WorldTransform};
 
@@ -24,6 +24,40 @@ pub(super) fn select_mesh_lod_geometry(
         .iter()
         .find(|level| fraction <= level.max_screen_fraction())
         .map_or(base_geometry, |level| level.geometry())
+}
+
+/// The geometry a prepare bakes for every mesh that has LOD levels, in scene
+/// order. The choice depends on the camera and on where the mesh is, so the
+/// retained prepare path compares this against the choice its template was
+/// baked with before reusing it.
+pub(in crate::render) fn collect_mesh_lod_selection<F>(
+    scene: &Scene,
+    assets: Option<&Assets<F>>,
+    camera_projection: Option<&CameraProjection>,
+) -> Vec<(NodeKey, GeometryHandle)> {
+    if !scene.has_mesh_lods() {
+        return Vec::new();
+    }
+    scene
+        .mesh_nodes()
+        .filter(|(node, _mesh, _transform)| scene.mesh_lods(*node).is_some())
+        .map(|(node, mesh, transform)| {
+            let bounds = assets
+                .and_then(|assets| assets.geometry_snapshot(mesh.geometry()))
+                .map(|geometry| geometry.bounds());
+            let selected = bounds.map_or(mesh.geometry(), |bounds| {
+                select_mesh_lod_geometry(
+                    scene,
+                    node,
+                    mesh.geometry(),
+                    bounds,
+                    transform,
+                    camera_projection,
+                )
+            });
+            (node, selected)
+        })
+        .collect()
 }
 
 fn projected_bounds_screen_fraction(

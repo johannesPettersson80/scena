@@ -2,6 +2,7 @@ use crate::material::{Color, MaterialDesc};
 use crate::scene::Vec3;
 
 use super::super::camera::CameraProjection;
+use super::blend_order::blend_depth;
 use super::lighting::PreparedLights;
 use super::materials::MaterialPass;
 use super::shadows::{ShadowOccluderSet, ShadowVisibilityCache};
@@ -85,8 +86,23 @@ pub(super) fn cpu_texture_subdivisions(
     if backend_shaded_material {
         return 1;
     }
+    if !samples_textures_on_cpu(material) || screen_edge_pixels <= 0.0 || uv_span <= 0.0 {
+        return 1;
+    }
+
+    let screen_footprint = screen_edge_pixels * uv_span;
+    let texture_footprint = texture_edge_texels * uv_span;
+    (screen_footprint.max(texture_footprint) / CPU_TEXTURE_PIXELS_PER_SUBDIVISION)
+        .ceil()
+        .clamp(1.0, CPU_TEXTURE_SUBDIVISION_HARD_CAP as f32) as u32
+}
+
+/// Whether a material shaded on the CPU reads any texture. Such a material
+/// is subdivided to the size its triangles have on screen, which makes its
+/// tessellation depend on the camera.
+pub(super) fn samples_textures_on_cpu(material: &MaterialDesc) -> bool {
     let transmissive = material.transmission_factor() > 0.001;
-    let has_active_texture = material.base_color_texture().is_some()
+    material.base_color_texture().is_some()
         || material.normal_texture().is_some()
         || material.metallic_roughness_texture().is_some()
         || material.occlusion_texture().is_some()
@@ -102,16 +118,7 @@ pub(super) fn cpu_texture_subdivisions(
         || (transmissive && material.transmission_texture().is_some())
         || (transmissive
             && material.thickness_factor() > 0.0
-            && material.thickness_texture().is_some());
-    if !has_active_texture || screen_edge_pixels <= 0.0 || uv_span <= 0.0 {
-        return 1;
-    }
-
-    let screen_footprint = screen_edge_pixels * uv_span;
-    let texture_footprint = texture_edge_texels * uv_span;
-    (screen_footprint.max(texture_footprint) / CPU_TEXTURE_PIXELS_PER_SUBDIVISION)
-        .ceil()
-        .clamp(1.0, CPU_TEXTURE_SUBDIVISION_HARD_CAP as f32) as u32
+            && material.thickness_texture().is_some())
 }
 
 // Keeping the single-triangle case inline avoids a heap allocation in the CPU
@@ -179,7 +186,7 @@ pub(super) fn push_material_pass_primitive(
     match material_pass {
         MaterialPass::Opaque => sinks.primitives.push(primitive),
         MaterialPass::Blend => sinks.transparent_primitives.push(TransparentPrimitive {
-            depth: average_sort_depth(&primitive, camera_projection),
+            depth: blend_depth(&primitive, camera_projection),
             primitive: primitive.without_depth_prepass(),
         }),
         MaterialPass::Mask { cutoff } => {
@@ -410,29 +417,6 @@ fn normalize_vec3(vector: Vec3) -> Vec3 {
     } else {
         Vec3::new(vector.x / length, vector.y / length, vector.z / length)
     }
-}
-
-fn average_sort_depth(
-    primitive: &PreparedPrimitive,
-    camera_projection: Option<&CameraProjection>,
-) -> f32 {
-    if let Some(camera_projection) = camera_projection {
-        let vertices = primitive.vertices();
-        let mut depth_sum = 0.0;
-        let mut depth_count = 0;
-        for vertex in vertices {
-            if let Some(depth) = camera_projection.camera_depth(vertex.position) {
-                depth_sum += depth;
-                depth_count += 1;
-            }
-        }
-        if depth_count > 0 {
-            return depth_sum / depth_count as f32;
-        }
-    }
-
-    let vertices = primitive.vertices();
-    (vertices[0].position.z + vertices[1].position.z + vertices[2].position.z) / 3.0
 }
 
 #[cfg(test)]

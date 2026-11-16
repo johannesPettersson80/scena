@@ -64,7 +64,9 @@ pub(super) fn create_geometry_buffers(
     let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("scena.m0.scene_vertices"),
         size: vertex_buffer_size,
-        usage: wgpu::BufferUsages::VERTEX,
+        // COPY_DST: the retained prepare path rewrites the slots of blended
+        // triangles when a new camera re-sorts them.
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: true,
     });
     if !vertex_bytes.is_empty() {

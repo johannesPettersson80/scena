@@ -6,6 +6,17 @@ use super::{PreparedDrawTransform, PreparedPrimitive};
 use crate::render::prepare::transforms::transform_point_matrix4;
 
 impl PreparedPrimitive {
+    /// Marks a triangle whose corners are world positions rather than a
+    /// bake of its source node's geometry.
+    pub(in crate::render) const fn with_world_authored_corners(mut self) -> Self {
+        self.world_authored = true;
+        self
+    }
+
+    pub(in crate::render) const fn world_authored(&self) -> bool {
+        self.world_authored
+    }
+
     /// Re-places the triangle under `draw_transform`, the way the retained
     /// prepare path moves a draw without baking it again.
     ///

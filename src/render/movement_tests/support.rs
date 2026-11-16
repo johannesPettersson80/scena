@@ -1,8 +1,9 @@
 //! Shared fixtures for the retained-prepare movement tests.
 
 use crate::assets::Assets;
-use crate::scene::{CameraKey, Scene};
+use crate::scene::{CameraKey, Scene, Transform, Vec3};
 
+use super::super::prepare_lifecycle::FullPrepareReason;
 use super::super::{PrepareTelemetry, Renderer};
 
 /// Which renderer a movement test drives.
@@ -97,11 +98,66 @@ pub(super) struct RetainedFrame {
     pub(super) frame: Vec<u8>,
     /// What preparing that frame cost.
     pub(super) work: PrepareWork,
+    /// Why that prepare baked the scene again, if it did.
+    pub(super) full_prepare_reason: Option<FullPrepareReason>,
     /// The same scene through a renderer that has never seen it.
     pub(super) reference: Vec<u8>,
+    /// [`DrawnStats`] of the renderer under test and of the reference.
+    pub(super) stats: (DrawnStats, DrawnStats),
+}
+
+/// What a renderer reports about the frame it just drew, for the counts a
+/// retained prepare has to keep in step with a full one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct DrawnStats {
+    triangles: u64,
+    instances: u64,
+    culled_objects: u64,
+    depth_prepass_passes: u64,
+    depth_prepass_draws: u64,
+}
+
+impl DrawnStats {
+    pub(super) fn of(renderer: &Renderer) -> Self {
+        let stats = renderer.stats();
+        Self {
+            triangles: stats.triangles,
+            instances: stats.instances,
+            culled_objects: stats.culled_objects,
+            depth_prepass_passes: stats.depth_prepass_passes,
+            depth_prepass_draws: stats.depth_prepass_draws,
+        }
+    }
 }
 
 impl RetainedFrame {
+    /// The change was absorbed by the retained template, and the frame is
+    /// byte for byte the one a full prepare produces.
+    pub(super) fn assert_retained(&self, case: &str) {
+        assert_eq!(
+            (self.work, self.full_prepare_reason),
+            (PrepareWork::RETAINED, None),
+            "{case}: the prepare must reuse the retained template"
+        );
+        self.assert_matches_full_prepare(case);
+    }
+
+    /// The change made the prepare bake the scene again, for `reason` and
+    /// no other, and the frame is the one a renderer new to the scene
+    /// produces.
+    pub(super) fn assert_full_prepare(&self, reason: FullPrepareReason, case: &str) {
+        assert_eq!(
+            (
+                self.work.full_prepares,
+                self.work.retained_prepares,
+                self.full_prepare_reason,
+            ),
+            (1, 0, Some(reason)),
+            "{case}: (full prepares, retained prepares, reason for the full prepare)"
+        );
+        self.assert_matches_full_prepare(case);
+    }
+
     /// The retained frame must be, byte for byte, the frame a full prepare
     /// produces. This holds whenever no node moved: the vertex data and every
     /// per-draw matrix are then the ones a full prepare would upload.
@@ -111,6 +167,16 @@ impl RetainedFrame {
             (0, 0),
             "{case}: (differing pixels, largest channel difference) between the retained \
              frame and a fresh full prepare must be zero"
+        );
+        self.assert_reports_what_a_full_prepare_reports(case);
+    }
+
+    /// The renderer must report the frame it drew as a renderer new to the
+    /// scene reports it.
+    fn assert_reports_what_a_full_prepare_reports(&self, case: &str) {
+        assert_eq!(
+            self.stats.0, self.stats.1,
+            "{case}: renderer stats after the retained prepare and after a fresh full prepare"
         );
     }
 
@@ -131,6 +197,7 @@ impl RetainedFrame {
              rounding (at most {allowed_pixels} pixels by at most 2 levels), but {pixels} pixels \
              differ by up to {largest}"
         );
+        self.assert_reports_what_a_full_prepare_reports(case);
     }
 }
 
@@ -143,22 +210,73 @@ pub(super) fn retained_frame_after(
     assets: &Assets,
     change: impl FnOnce(&mut Scene),
 ) -> Option<RetainedFrame> {
+    retained_frame_after_configured(backend, size, scene, assets, |_renderer| {}, change)
+}
+
+/// [`retained_frame_after`] with `configure` applied to the renderer under
+/// test and to the reference renderer before either sees the scene.
+pub(super) fn retained_frame_after_configured(
+    backend: Backend,
+    size: u32,
+    scene: &mut Scene,
+    assets: &Assets,
+    configure: impl Fn(&mut Renderer),
+    change: impl FnOnce(&mut Scene),
+) -> Option<RetainedFrame> {
     let camera = scene
         .active_camera()
         .expect("the scene has an active camera");
     let mut renderer = backend.renderer(size, size)?;
+    configure(&mut renderer);
     prepare_and_render(&mut renderer, scene, assets, camera);
     change(scene);
     let camera = scene
         .active_camera()
         .expect("the scene has an active camera");
     let (frame, work) = prepare_and_render(&mut renderer, scene, assets, camera);
-    let reference = fresh_full_prepare_frame(backend, size, size, scene, assets, camera);
+    let full_prepare_reason = (work.full_prepares > 0)
+        .then(|| {
+            renderer
+                .movement_prepare_telemetry_for_test()
+                .last_full_prepare_reason
+        })
+        .flatten();
+    let mut fresh = backend
+        .renderer(size, size)
+        .expect("the reference renderer uses the backend the test already built");
+    configure(&mut fresh);
+    let (reference, fresh_work) = prepare_and_render(&mut fresh, scene, assets, camera);
+    assert_eq!(
+        fresh_work.full_prepares, 1,
+        "the reference frame must come from a full prepare"
+    );
     Some(RetainedFrame {
         frame,
         work,
+        full_prepare_reason,
         reference,
+        stats: (DrawnStats::of(&renderer), DrawnStats::of(&fresh)),
     })
+}
+
+/// Places the camera on a horizontal circle around the origin, looking at it.
+pub(super) fn orbit_camera(scene: &mut Scene, camera: CameraKey, yaw_degrees: f32, radius: f32) {
+    let yaw = yaw_degrees.to_radians();
+    let eye = Vec3::new(radius * yaw.sin(), 0.0, radius * yaw.cos());
+    let node = scene.camera_node(camera).expect("camera node resolves");
+    scene
+        .set_transform(node, Transform::at(eye).looking_at(Vec3::ZERO, Vec3::Y))
+        .expect("camera orbits");
+}
+
+pub(super) fn pixel(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+    let index = ((y * width + x) * 4) as usize;
+    [
+        frame[index],
+        frame[index + 1],
+        frame[index + 2],
+        frame[index + 3],
+    ]
 }
 
 /// Number of pixels whose RGBA differs between two frames, and the largest

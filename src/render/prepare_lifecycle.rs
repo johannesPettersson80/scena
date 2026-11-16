@@ -4,6 +4,7 @@ use crate::scene::{ClippingPlane, Scene};
 
 use super::camera;
 use super::prepare_retained::{
+    BlendVertexSlots, ContentPlacement, PreparedProbes, PreparedView,
     assign_original_instance_vertex_offsets, assign_original_label_quad_indices,
     assign_original_stroke_indices, assign_original_vertex_offsets,
     filter_retained_instances_for_scene, filter_retained_labels_for_scene,
@@ -16,6 +17,8 @@ use super::{
 
 const GPU_PREPARE_DESTRUCTION_PRESSURE_LIMIT: u64 = 16_384;
 
+mod reasons;
+pub(in crate::render) use reasons::FullPrepareReason;
 mod retained;
 mod support;
 
@@ -249,7 +252,6 @@ impl Renderer {
                 target,
                 camera: active_camera_projection.as_ref(),
                 light_uniform: gpu_light_uniform,
-                material_handles: &backend_material_handles,
                 work,
             },
         ) {
@@ -262,7 +264,10 @@ impl Renderer {
                 log_prepare_step("prepare_inner total", total_start);
                 return Ok(());
             }
-            Err(reason) => log_dynamic_reject(reason),
+            Err(reason) => {
+                self.prepare_telemetry.last_full_prepare_reason = Some(reason);
+                log_dynamic_reject(reason.as_str());
+            }
         }
         let backend_sampled_base_color_textures = backend_material_slots
             .iter()
@@ -290,6 +295,9 @@ impl Renderer {
             self.prepare_telemetry.full_prepares.saturating_add(1);
         step_start = log_prepare_step("collect_prepared_primitives", step_start);
         let light_from_world = prepared_scene.light_from_world;
+        let bake_dependencies = prepared_scene.bake_dependencies;
+        let lod_selection =
+            prepare::collect_mesh_lod_selection(scene, assets, active_camera_projection.as_ref());
         let mut retained_primitives = assign_original_vertex_offsets(prepared_scene.primitives);
         if let Some(work) = work {
             work.record_prepared_geometry_storage(prepare::share_model_space_vertex_buffer(
@@ -407,6 +415,12 @@ impl Renderer {
             environment_revision: self.environment_revision,
             target_revision: self.target_revision,
             output_resources_revision: self.output_resources_revision,
+            blend_vertex_slots: BlendVertexSlots::from_template(&retained_primitives),
+            view: PreparedView::of(scene),
+            content: ContentPlacement::of(scene),
+            bake: bake_dependencies,
+            probes: PreparedProbes::of(scene),
+            lod_selection,
             retained_primitives,
             primitives,
             retained_strokes,

@@ -3,10 +3,11 @@ use std::sync::Arc;
 use crate::assets::{MaterialHandle, TextureHandle};
 use crate::geometry::{Aabb, GeometryDesc, Primitive, PrimitiveVertexAttributes, SkinningMatrix};
 use crate::material::{Color, MaterialDesc};
-use crate::scene::{InstanceId, InstanceSetKey, NodeKey, ReflectionProbeKey, Vec3, WorldTransform};
+use crate::scene::{InstanceId, NodeKey, ReflectionProbeKey, Vec3, WorldTransform};
 
 use super::super::physical_transmission::PreparedPhysicalTransmission as PhysicalTransmission;
 use super::super::{PrepareWorkCounter, RasterTarget, camera::CameraProjection};
+use super::bake_dependencies::{BakeDependencies, BakeDependencyRecorder};
 use super::environment::PreparedEnvironmentLighting;
 use super::lighting::PreparedLights;
 use super::materials::PreparedMaterialTextures;
@@ -21,6 +22,7 @@ pub(in crate::render) use geometry_storage::{
 mod labels;
 pub(in crate::render) use labels::{PreparedLabelAtlas, PreparedLabelQuad};
 
+mod blend;
 mod placement;
 
 pub(super) struct TransparentPrimitive {
@@ -53,6 +55,7 @@ pub(in crate::render) struct PreparedScene {
     pub(in crate::render) labels: PreparedLabelAtlas,
     pub(in crate::render) instances: Vec<PreparedInstanceSet>,
     pub(in crate::render) light_from_world: [f32; 16],
+    pub(in crate::render) bake_dependencies: BakeDependencies,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -125,6 +128,13 @@ pub(in crate::render) struct PreparedPrimitive {
     clip_with_scene: bool,
     semantic_alpha_cutoff: Option<f32>,
     original_vertex_offset: u32,
+    /// Collection-order number of an alpha-blended triangle; `None` for
+    /// everything drawn before the blended tail. See `blend_order`.
+    blend_sequence: Option<u32>,
+    /// The corners were authored directly in world space, as particle
+    /// billboards are. The source node hides the triangle but neither
+    /// places nor tints it.
+    world_authored: bool,
     tint: Color,
     gpu_triangle_path: bool,
     double_sided: bool,
@@ -166,6 +176,8 @@ impl PreparedPrimitive {
             clip_with_scene: true,
             semantic_alpha_cutoff: None,
             original_vertex_offset: 0,
+            blend_sequence: None,
+            world_authored: false,
             tint,
             gpu_triangle_path: true,
             double_sided: false,
@@ -410,119 +422,8 @@ impl PreparedMaterialReflection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(in crate::render) struct PreparedInstanceSet {
-    source_node: NodeKey,
-    source_set: Option<InstanceSetKey>,
-    primitives: Vec<PreparedPrimitive>,
-    instances: Vec<PreparedInstanceRecord>,
-}
-
-impl PreparedInstanceSet {
-    pub(in crate::render) fn new(
-        source_node: NodeKey,
-        source_set: InstanceSetKey,
-        primitives: Vec<PreparedPrimitive>,
-        instances: Vec<PreparedInstanceRecord>,
-    ) -> Self {
-        Self {
-            source_node,
-            source_set: Some(source_set),
-            primitives,
-            instances,
-        }
-    }
-
-    pub(in crate::render) fn new_auto_batched(
-        source_node: NodeKey,
-        primitives: Vec<PreparedPrimitive>,
-        instances: Vec<PreparedInstanceRecord>,
-    ) -> Self {
-        Self {
-            source_node,
-            source_set: None,
-            primitives,
-            instances,
-        }
-    }
-
-    pub(in crate::render) const fn source_node(&self) -> NodeKey {
-        self.source_node
-    }
-
-    pub(in crate::render) const fn source_set(&self) -> Option<InstanceSetKey> {
-        self.source_set
-    }
-
-    pub(in crate::render) fn primitives(&self) -> &[PreparedPrimitive] {
-        &self.primitives
-    }
-
-    pub(in crate::render) fn primitives_mut(&mut self) -> &mut [PreparedPrimitive] {
-        &mut self.primitives
-    }
-
-    pub(in crate::render) fn instances(&self) -> &[PreparedInstanceRecord] {
-        &self.instances
-    }
-
-    pub(in crate::render) fn set_instances(&mut self, instances: Vec<PreparedInstanceRecord>) {
-        self.instances = instances;
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(in crate::render) struct PreparedInstanceRecord {
-    source_instance: Option<InstanceId>,
-    world_from_model: [f32; 16],
-    normal_from_model: [f32; 16],
-    tint: Color,
-}
-
-impl PreparedInstanceRecord {
-    pub(in crate::render) const fn new(
-        source_instance: InstanceId,
-        world_from_model: [f32; 16],
-        normal_from_model: [f32; 16],
-        tint: Color,
-    ) -> Self {
-        Self {
-            source_instance: Some(source_instance),
-            world_from_model,
-            normal_from_model,
-            tint,
-        }
-    }
-
-    pub(in crate::render) const fn auto_batched(
-        world_from_model: [f32; 16],
-        normal_from_model: [f32; 16],
-        tint: Color,
-    ) -> Self {
-        Self {
-            source_instance: None,
-            world_from_model,
-            normal_from_model,
-            tint,
-        }
-    }
-
-    pub(in crate::render) const fn world_from_model(self) -> [f32; 16] {
-        self.world_from_model
-    }
-
-    pub(in crate::render) const fn normal_from_model(self) -> [f32; 16] {
-        self.normal_from_model
-    }
-
-    pub(in crate::render) const fn tint(self) -> Color {
-        self.tint
-    }
-
-    pub(in crate::render) const fn source_instance(self) -> Option<InstanceId> {
-        self.source_instance
-    }
-}
+mod instance_set;
+pub(in crate::render) use instance_set::{PreparedInstanceRecord, PreparedInstanceSet};
 
 mod prepared_stroke;
 pub(in crate::render) use prepared_stroke::PreparedStrokeSegment;
@@ -547,6 +448,8 @@ pub(super) struct PrimitiveBakeParams<'lights> {
     pub(super) environment_lighting: PreparedEnvironmentLighting,
     pub(super) reflection_probe: Option<PreparedReflectionProbe>,
     pub(super) work: Option<&'lights PrepareWorkCounter>,
+    /// Receives what the baked vertex data was computed from.
+    pub(super) bake: &'lights BakeDependencyRecorder,
 }
 
 #[derive(Clone, Copy, Default)]

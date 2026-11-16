@@ -1,6 +1,7 @@
 use super::instancing::INSTANCE_BYTE_LEN;
 use super::output;
 use super::resource_encoding::{EncodedDrawResources, encode_draw_resources};
+use super::vertices::{VERTEX_BYTE_LEN, encode_vertices_iter};
 use super::{GpuDeviceState, GpuPreparedResources};
 use crate::render::prepare::{
     PreparedDepthStats, PreparedGpuLightUniform, PreparedInstanceSet, PreparedPrimitive,
@@ -13,6 +14,9 @@ pub(in crate::render) struct DynamicDrawStateUpdate<'a> {
     pub(in crate::render) light_uniform: PreparedGpuLightUniform,
     pub(in crate::render) light_from_world: [f32; 16],
     pub(in crate::render) primitives: &'a [PreparedPrimitive],
+    /// Blended triangles whose vertex-buffer slot holds another triangle
+    /// after a re-sort. They occupy consecutive slots, in this order.
+    pub(in crate::render) blend_vertex_rewrite: &'a [PreparedPrimitive],
     pub(in crate::render) instances: &'a [PreparedInstanceSet],
     pub(in crate::render) strokes: &'a [PreparedStrokeSegment],
     /// Depth-prepass requirements of `primitives` and `instances`.
@@ -32,6 +36,7 @@ impl GpuDeviceState {
             light_uniform,
             light_from_world,
             primitives: draw_primitives,
+            blend_vertex_rewrite,
             instances: draw_instances,
             strokes: draw_strokes,
             depth_stats,
@@ -79,6 +84,11 @@ impl GpuDeviceState {
             // The colour pass only depth-tests against a prepass. Drawing a
             // list that needs one without it would paint in submission order.
             return Err("draw list needs a depth prepass the last full prepare did not build");
+        }
+        let blend_vertices = blend_vertex_write(resources, blend_vertex_rewrite)?;
+        if let Some((offset, bytes)) = &blend_vertices {
+            self.queue
+                .write_buffer(&resources.vertex_buffer, *offset, bytes);
         }
         self.queue.write_buffer(
             &resources.draw_uniform_buffer,
@@ -130,6 +140,25 @@ fn depth_prepass_needed(
         super::prepare_resources_wasm_support::browser_rasterized_triangle_instances(encoded),
         !encoded.stroke_batches.is_empty() || label_quad_count > 0,
     )
+}
+
+/// Encodes the re-sorted blended triangles for the slots they now occupy.
+///
+/// Returns the byte offset into the vertex buffer and the bytes to write, or
+/// `None` when every triangle already sits in its slot.
+fn blend_vertex_write(
+    resources: &GpuPreparedResources,
+    rewrite: &[PreparedPrimitive],
+) -> Result<Option<(u64, Vec<u8>)>, &'static str> {
+    let Some(first) = rewrite.first() else {
+        return Ok(None);
+    };
+    let offset = u64::from(first.original_vertex_offset()) * VERTEX_BYTE_LEN as u64;
+    let (bytes, _metrics) = encode_vertices_iter(rewrite.iter(), rewrite.len());
+    if offset.saturating_add(bytes.len() as u64) > resources.vertex_buffer.size() {
+        return Err("re-sorted blended triangles do not fit the prepared vertex buffer");
+    }
+    Ok(Some((offset, bytes)))
 }
 
 fn validate_dynamic_capacity(

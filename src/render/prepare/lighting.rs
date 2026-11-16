@@ -227,6 +227,17 @@ pub(in crate::render) fn gpu_tiled_light_assignment_required(scene: &Scene) -> b
     assignment_required(&lights)
 }
 
+/// Whether [`material_color`] shades a material from the lights, the
+/// environment and the view vector, rather than returning its base colour.
+pub(super) fn material_is_lit(
+    material: &MaterialDesc,
+    lights: &PreparedLights,
+    environment: &PreparedEnvironmentLighting,
+) -> bool {
+    matches!(material.kind(), MaterialKind::PbrMetallicRoughness)
+        && (lights.has_direct_lights() || environment.is_active())
+}
+
 pub(super) fn material_color(
     material: &MaterialDesc,
     lights: &PreparedLights,
@@ -236,7 +247,7 @@ pub(super) fn material_color(
     let mut color = match material.kind() {
         MaterialKind::Unlit => base,
         MaterialKind::PbrMetallicRoughness
-            if lights.has_direct_lights() || input.environment.is_active() =>
+            if material_is_lit(material, lights, &input.environment) =>
         {
             let components = shade_pbr_base_color(material, base, lights, input);
             let authored_occlusion = 1.0

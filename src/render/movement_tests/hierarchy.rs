@@ -10,8 +10,7 @@ use crate::material::{Color, MaterialDesc};
 use crate::scene::{DirectionalLight, NodeKey, Scene, Transform, Vec3};
 
 use super::support::{
-    Backend, PrepareWork, RetainedFrame, fresh_full_prepare_frame, prepare_and_render,
-    retained_frame_after,
+    Backend, DrawnStats, PrepareWork, RetainedFrame, prepare_and_render, retained_frame_after,
 };
 
 const SIZE: u32 = 64;
@@ -191,18 +190,18 @@ fn re_showing_a_moved_subtree_draws_it_where_it_is_now() {
     let (shown, work) = frame(&mut fixture.scene, &fixture.assets);
 
     assert_eq!(work, PrepareWork::RETAINED);
-    let reference = fresh_full_prepare_frame(
-        Backend::Gpu,
-        SIZE,
-        SIZE,
-        &mut fixture.scene,
-        &fixture.assets,
-        camera,
-    );
+    let stats = DrawnStats::of(&renderer);
+    let mut fresh = Backend::Gpu
+        .renderer(SIZE, SIZE)
+        .expect("the reference renderer uses the backend the test already built");
+    let (reference, _) =
+        prepare_and_render(&mut fresh, &mut fixture.scene, &fixture.assets, camera);
     RetainedFrame {
         frame: shown,
         work,
+        full_prepare_reason: None,
         reference,
+        stats: (stats, DrawnStats::of(&fresh)),
     }
     .assert_matches_full_prepare_within_rounding("subtree moved while hidden, then shown");
 }

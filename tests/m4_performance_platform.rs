@@ -624,6 +624,159 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     })
 }
 
+/// A red pane in front of the origin and a blue pane behind it, both half
+/// transparent, around a small opaque box.
+fn blended_pane_scene(assets: &Assets, lit: bool) -> (Scene, CameraKey) {
+    let material = |color: Color, blended: bool| {
+        let desc = if lit {
+            MaterialDesc::pbr_metallic_roughness(color, 0.0, 0.7)
+        } else {
+            MaterialDesc::unlit(color)
+        };
+        assets.create_material(if blended {
+            desc.with_alpha_mode(scena::AlphaMode::Blend)
+                .with_double_sided(true)
+        } else {
+            desc
+        })
+    };
+    let pane = assets.create_geometry(GeometryDesc::plane(1.0, 1.0));
+    let cube = assets.create_geometry(GeometryDesc::box_xyz(0.2, 0.2, 0.2));
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("camera inserts");
+    for yaw in [0.0, 180.0] {
+        scene
+            .directional_light(scena::DirectionalLight::default())
+            .transform(Transform::IDENTITY.rotate_y_deg(yaw))
+            .add()
+            .expect("light inserts");
+    }
+    for (z, color) in [
+        (0.5, Color::from_linear_rgba(1.0, 0.05, 0.05, 0.5)),
+        (-0.5, Color::from_linear_rgba(0.05, 0.05, 1.0, 0.5)),
+    ] {
+        scene
+            .mesh(pane, material(color, true))
+            .transform(Transform::at(Vec3::new(0.0, 0.0, z)).rotate_x_deg(90.0))
+            .add()
+            .expect("blended pane inserts");
+    }
+    scene
+        .mesh(cube, material(Color::from_linear_rgb(0.6, 0.6, 0.6), false))
+        .add()
+        .expect("opaque box inserts");
+    (scene, camera)
+}
+
+/// Orbits the camera around [`blended_pane_scene`] and requires every prepare
+/// after the first to reuse the prepared triangles, and every frame to equal
+/// the frame a renderer new to the scene produces from the same camera.
+fn assert_camera_orbit_reuses_prepared_triangles(
+    label: &str,
+    lit: bool,
+    build: impl Fn() -> Renderer,
+) {
+    const WIDTH: u32 = 96;
+    let assets = Assets::new();
+    let (mut scene, camera) = blended_pane_scene(&assets, lit);
+    let camera_node = scene.camera_node(camera).expect("camera node resolves");
+    let orbit = |scene: &mut Scene, yaw_degrees: f32| {
+        let yaw = yaw_degrees.to_radians();
+        let eye = Vec3::new(2.2 * yaw.sin(), 0.0, 2.2 * yaw.cos());
+        scene
+            .set_transform(
+                camera_node,
+                Transform::at(eye).looking_at(Vec3::ZERO, Vec3::Y),
+            )
+            .expect("camera orbits");
+    };
+    // Covered by both panes but not by the box between them.
+    let both_panes = |frame: &[u8]| {
+        let index = ((48 * WIDTH + 58) * 4) as usize;
+        (i32::from(frame[index]), i32::from(frame[index + 2]))
+    };
+
+    orbit(&mut scene, 0.0);
+    let mut renderer = build();
+    let first = renderer
+        .prepare_with_assets_profiled(&mut scene, &assets)
+        .expect("first prepare succeeds");
+    assert!(
+        first.prepared_triangle_count > 0,
+        "{label}: the first prepare bakes the scene"
+    );
+    renderer
+        .render(&scene, camera)
+        .expect("first frame renders");
+    let (red, blue) = both_panes(renderer.frame_rgba8());
+    assert!(
+        red > blue + 15,
+        "{label}: from the front the red pane blends last, got red={red} blue={blue}"
+    );
+
+    for yaw in [40.0, 180.0, 300.0] {
+        orbit(&mut scene, yaw);
+        let work = renderer
+            .prepare_with_assets_profiled(&mut scene, &assets)
+            .expect("prepare after a camera move succeeds");
+        assert_eq!(
+            (
+                work.prepared_triangle_count,
+                work.gpu_buffer_creations,
+                work.gpu_pipeline_creations,
+                work.gpu_bind_group_creations,
+            ),
+            (0, 0, 0, 0),
+            "{label} yaw {yaw}: a camera move must not bake triangles or rebuild GPU resources \
+             (prepared triangles, buffers, pipelines, bind groups)"
+        );
+        renderer
+            .render(&scene, camera)
+            .expect("orbit frame renders");
+
+        let mut fresh = build();
+        fresh
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("reference prepare succeeds");
+        fresh
+            .render(&scene, camera)
+            .expect("reference frame renders");
+        assert!(
+            renderer.frame_rgba8() == fresh.frame_rgba8(),
+            "{label} yaw {yaw}: the frame must equal a full prepare from the same camera"
+        );
+        if yaw == 180.0 {
+            let (red, blue) = both_panes(renderer.frame_rgba8());
+            assert!(
+                blue > red + 15,
+                "{label}: from behind the blue pane blends last, which needs the panes \
+                 re-sorted for this camera, got red={red} blue={blue}"
+            );
+        }
+    }
+}
+
+#[test]
+fn camera_orbit_around_blended_meshes_reuses_prepared_triangles_on_the_cpu() {
+    // Unlit, so nothing the CPU renderer bakes per vertex depends on the view.
+    assert_camera_orbit_reuses_prepared_triangles("cpu", false, || {
+        Renderer::headless(96, 96).expect("CPU renderer builds")
+    });
+}
+
+#[test]
+fn camera_orbit_around_blended_meshes_reuses_prepared_triangles_on_the_gpu() {
+    match Renderer::headless_gpu(96, 96) {
+        Ok(_) => assert_camera_orbit_reuses_prepared_triangles("gpu", true, || {
+            Renderer::headless_gpu(96, 96).expect("GPU renderer builds")
+        }),
+        Err(error) if std::env::var_os("SCENA_USE_GPU").is_none() => {
+            eprintln!("skipping the GPU blended-orbit proof without an available adapter: {error}");
+        }
+        Err(error) => panic!("SCENA_USE_GPU requires the blended-orbit proof adapter: {error}"),
+    }
+}
+
 #[test]
 fn transform_dirty_state_propagates_through_world_transform_queries() {
     let mut scene = Scene::new();

@@ -58,6 +58,32 @@ pub(crate) fn check_render_movement_contracts(root: &Path, findings: &mut Vec<Fi
             "transform_only_cpu_prepare_moves_rendered_mesh_pixels",
             "line_geometry_gpu_prepare_updates_draw_uniforms_without_recollecting_strokes",
             "must move the rendered mesh pixels",
+            "orbiting_blended_panes_re_sorts_them_without_a_full_prepare_on_the_gpu",
+            "orbiting_unlit_blended_panes_re_sorts_them_without_a_full_prepare_on_the_cpu",
+            "moving_an_instance_set_node_moves_its_instances_on_the_retained_gpu_path",
+            "a camera move must not bake the scene again",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-MOVEMENT",
+        "tests/m4_performance_platform.rs",
+        &[
+            "camera_orbit_around_blended_meshes_reuses_prepared_triangles_on_the_cpu",
+            "camera_orbit_around_blended_meshes_reuses_prepared_triangles_on_the_gpu",
+            "the frame must equal a full prepare from the same camera",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-MOVEMENT",
+        "src/render/prepare_lifecycle.rs",
+        &[
+            "enum FullPrepareReason",
+            "fn full_prepare_reason",
+            "prepare::resort_blended_primitives",
         ],
     );
     require_contains(

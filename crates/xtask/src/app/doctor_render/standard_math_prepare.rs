@@ -87,9 +87,21 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         "ARCH-PREPARE-ASSETS",
         "src/render/prepare/cpu_bake.rs",
         &[
-            "fn average_sort_depth",
+            "blend_depth(&primitive, camera_projection)",
             "push_material_pass_primitive",
             "subdivided_cpu_corners",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/render/prepare/blend_order.rs",
+        &[
+            "fn blend_depth",
+            "fn into_back_to_front",
+            "fn resort_blended_primitives",
+            "total_cmp",
         ],
     );
     require_contains(

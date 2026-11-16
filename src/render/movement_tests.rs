@@ -5,11 +5,15 @@ use crate::scene::{Scene, Transform, Vec3};
 
 use super::{PrepareTelemetry, Renderer};
 
+mod baked_content;
 mod first_view;
 mod hierarchy;
 mod instance_sets;
 mod placement;
+mod reuse_stage;
 mod support;
+mod template_reuse;
+mod transparent_orbit;
 
 impl Renderer {
     fn movement_prepare_telemetry_for_test(&self) -> PrepareTelemetry {

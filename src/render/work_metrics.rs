@@ -62,6 +62,9 @@ pub(super) struct PrepareTelemetry {
     pub(super) static_gpu_resource_rebuilds: u64,
     pub(super) dynamic_template_prepares: u64,
     pub(super) draw_uniform_only_updates: u64,
+    /// Why the most recent prepare that could not reuse the retained
+    /// template had to bake the scene again.
+    pub(super) last_full_prepare_reason: Option<super::prepare_lifecycle::FullPrepareReason>,
 }
 
 /// Controls whether a GPU render only presents or also synchronously copies

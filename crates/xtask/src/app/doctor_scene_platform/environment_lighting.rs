@@ -468,7 +468,7 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
             "pub(super) struct MaterialShadingInput",
             "pub(super) struct PreparedLights",
             "pub(super) fn from_scene(scene: &Scene, origin_shift: Vec3) -> Self",
-            "lights.has_direct_lights() || input.environment.is_active()",
+            "lights.has_direct_lights() || environment.is_active()",
             "shade_pbr_base_color",
             "PbrMaterial::new",
             "punctual_light_contribution",

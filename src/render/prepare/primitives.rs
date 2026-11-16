@@ -47,8 +47,8 @@ pub(in crate::render) use material_helpers::draw_uniform_tint;
 use material_helpers::{
     average_texture_sample, brighter_color, camera_facing_double_sided_normal,
     cpu_texture_sample_slot_count, material_reflection, material_transmission,
-    photographic_uv_scale, scale_uv, structural_vertex_tint, tinted_vertex_color,
-    triangle_screen_edge_pixels, triangle_uv_span,
+    photographic_uv_scale, record_bake_dependencies, scale_uv, structural_vertex_tint,
+    tinted_vertex_color, triangle_screen_edge_pixels, triangle_uv_span,
 };
 
 fn append_triangle_primitives(
@@ -189,6 +189,7 @@ fn append_triangle_primitives(
     );
     let mut subdivision_scratch = Vec::new();
     let photographic_uv_scale = photographic_uv_scale(&source, params.transform.trs().scale);
+    record_bake_dependencies(&source, &params, backend_shaded_material);
     let mut visibility_debug = visibility_debug_enabled().then(VisibilityDebugStats::default);
 
     for triangle in source.geometry.indices().chunks_exact(3) {

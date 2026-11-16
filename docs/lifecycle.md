@@ -57,6 +57,55 @@ Call `prepare()` again after:
 - receiving surface resize or context-loss events,
 - changing relevant renderer settings.
 
+## What a prepare costs
+
+The first prepare of a scene bakes it: geometry is resolved into triangles and,
+on a GPU backend, uploaded. A later prepare keeps that bake whenever the change
+is one the renderer can re-derive from it. It then only refreshes per-draw
+placement and tint, visibility, culling, and the back-to-front order of
+alpha-blended and transmissive triangles for the active camera.
+`PrepareWorkMetrics::prepared_triangle_count` is `0` for such a prepare, and on
+a GPU backend no buffer, pipeline, or bind group is created.
+
+| Change | GPU backends | CPU renderer |
+|---|---|---|
+| Camera moved, re-framed, or another camera made active | keeps the bake | keeps the bake for unlit, untextured materials; lit or textured materials are shaded and tessellated per vertex for the camera and are baked again |
+| Opaque node tint | keeps the bake | keeps the bake |
+| Node hidden, or shown again | keeps the bake | keeps the bake for unlit materials; lit materials carry baked shadows and are baked again |
+| Mesh, light, instance-set node, or an ancestor moved | keeps the bake | bakes again |
+| Instance moved, tinted, hidden, or shown | keeps the bake for sets drawn instanced | bakes again |
+
+A prepare always bakes again when the scene structure, the environment, the
+render target, or an output setting changed; when a reflection probe was
+added, removed, or given another environment; when a node is shown that was
+hidden at the last bake; when a transform flips a node between mirrored and
+unmirrored or collapses it to zero scale; and when the scene holds an instance
+set that is baked per instance instead of drawn instanced (the CPU renderer,
+native surfaces, sets with a mirrored instance or a line material, and scenes
+with a section box or reflection probes).
+
+Some content is laid out for one view or one placement, so "keeps the bake"
+does not apply to a scene that holds it:
+
+- a view change bakes again in a scene with labels, particles, area lights,
+  baked ambient occlusion, more punctual lights than the fixed GPU light
+  uniform holds, or a mesh that would now select another LOD level;
+- moved content bakes again in a scene with a section box, skinned meshes,
+  reflection probes, labels, particles, area lights, baked ambient occlusion,
+  more punctual lights than the fixed GPU light uniform holds, or materials
+  with a physical tile size;
+- hiding or showing a node bakes again in a scene with particles, area lights,
+  baked ambient occlusion, or materials with a physical tile size, and hiding
+  a label always does;
+- four or more meshes that share geometry and material are drawn as one
+  batch on GPU backends. Hiding the first of them, or so many that fewer than
+  four stay visible, bakes again.
+
+The frame after a kept bake is the frame a full prepare produces from the same
+scene and camera. It is byte-identical when no draw moved. A draw that moved
+keeps the vertices recovered from its first placement, so a shaded pixel can
+differ in its last bit from a renderer that baked the draw where it is now.
+
 ## Context loss versus device loss
 
 A recoverable surface or browser context loss does not mean the underlying
