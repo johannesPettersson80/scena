@@ -3,6 +3,7 @@ use crate::scene::Vec3;
 
 use super::RasterTarget;
 use super::cpu::{CpuFrame, CpuTriangleClipInputs};
+use super::cpu_color::{mix_color, multiply_color};
 use super::cpu_geometry::{self, CpuProjectedPrimitive, CpuScreenTriangle, CpuScreenVertex};
 use super::physical_transmission::{
     PhysicalTransmissionInputs, PreparedPhysicalTransmission, physical_transmission_color,
@@ -138,35 +139,6 @@ fn draw_projected_physical_transmission_cpu(
         }
     }
     pixels_encoded
-}
-
-fn mix_color(vertices: [CpuScreenVertex; 3], weights: [f32; 3]) -> Color {
-    mix_color_affine(
-        vertices[0].color,
-        vertices[1].color,
-        vertices[2].color,
-        weights[0],
-        weights[1],
-        weights[2],
-    )
-}
-
-fn mix_color_affine(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
-    Color::from_linear_rgba(
-        a.r * w0 + b.r * w1 + c.r * w2,
-        a.g * w0 + b.g * w1 + c.g * w2,
-        a.b * w0 + b.b * w1 + c.b * w2,
-        a.a * w0 + b.a * w1 + c.a * w2,
-    )
-}
-
-fn multiply_color(color: Color, tint: Color) -> Color {
-    Color::from_linear_rgba(
-        color.r * tint.r,
-        color.g * tint.g,
-        color.b * tint.b,
-        color.a * tint.a,
-    )
 }
 
 fn sample_post_scene_color(frame: &[Color], target: RasterTarget, uv: [f32; 2]) -> Vec3 {

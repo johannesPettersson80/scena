@@ -16,6 +16,7 @@ mod camera;
 mod color_contract;
 mod cpu;
 mod cpu_clip;
+mod cpu_color;
 mod cpu_geometry;
 mod cpu_labels;
 mod cpu_overlay;

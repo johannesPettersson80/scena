@@ -2,6 +2,7 @@ use crate::material::Color;
 
 use super::RasterTarget;
 pub(super) use super::cpu_clip::CpuTriangleClipInputs;
+use super::cpu_color::{mix_color, multiply_color, opaque_pass_color};
 use super::cpu_geometry::{self, CpuProjectedPrimitive, CpuScreenTriangle, CpuScreenVertex};
 pub(super) use super::cpu_overlay::write_label_overlay_pixel;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
@@ -221,6 +222,7 @@ fn draw_projected_primitive_cpu(
         return;
     }
     let inverse_area = area.recip();
+    let alpha_cutoff = primitive.semantic_alpha_cutoff();
     for y in min_y..=max_y {
         for x in min_x..=max_x {
             let px = x as f32 + 0.5;
@@ -242,7 +244,11 @@ fn draw_projected_primitive_cpu(
             if cpu_geometry::point_is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
-            let color = multiply_color(mix_color(vertices, weights), primitive.tint());
+            let tint = primitive.tint();
+            let color = multiply_color(mix_color(vertices, weights), tint);
+            let Some(color) = opaque_pass_color(color, alpha_cutoff, tint.a) else {
+                continue;
+            };
             let depth = mix_depth(vertices, [w0, w1, w2]);
             let local_pixel_index = cpu_frame.local_pixel_index(x, y);
             if write_pixel(cpu_frame, x, y, color, depth)
@@ -404,35 +410,6 @@ pub(super) fn resolve_order_independent_transparency_cpu(
             .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
     }
     u64::from(touched)
-}
-
-fn mix_color(vertices: [CpuScreenVertex; 3], weights: [f32; 3]) -> Color {
-    mix_color_affine(
-        vertices[0].color,
-        vertices[1].color,
-        vertices[2].color,
-        weights[0],
-        weights[1],
-        weights[2],
-    )
-}
-
-fn mix_color_affine(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
-    Color::from_linear_rgba(
-        a.r * w0 + b.r * w1 + c.r * w2,
-        a.g * w0 + b.g * w1 + c.g * w2,
-        a.b * w0 + b.b * w1 + c.b * w2,
-        a.a * w0 + b.a * w1 + c.a * w2,
-    )
-}
-
-fn multiply_color(color: Color, tint: Color) -> Color {
-    Color::from_linear_rgba(
-        color.r * tint.r,
-        color.g * tint.g,
-        color.b * tint.b,
-        color.a * tint.a,
-    )
 }
 
 fn mix_depth(vertices: [CpuScreenVertex; 3], affine: [f32; 3]) -> f32 {
