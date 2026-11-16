@@ -13,27 +13,30 @@ use super::{
 impl PreparedEnvironmentLighting {
     /// Image-based lighting for every layer of `s`.
     ///
-    /// The sheen and clearcoat terms follow the shader. The base layer keeps
-    /// the form the CPU reference images were approved with: the analytic
-    /// split-sum fit, Schlick diffuse weighting at the view angle, and single
-    /// scattering only. The shader reads the baked table for the base as well
-    /// and adds the Fdez-Aguera multiple-scattering term; moving the base here
-    /// changes every image-based-lit material, layered or not.
+    /// The layers follow the shader: anisotropy bends the reflection,
+    /// iridescence drives the integrated reflectance, sheen and clearcoat sit
+    /// on top. The base layer keeps the form the CPU reference images were
+    /// approved with: the analytic split-sum fit, Schlick diffuse weighting at
+    /// the view angle, and single scattering only. The shader reads the baked
+    /// table for the base as well and adds the Fdez-Aguera multiple-scattering
+    /// term; moving the base here changes every image-based-lit material,
+    /// layered or not.
     pub(in crate::render::prepare) fn surface_environment_light(&self, s: &Surface) -> Vec3 {
         if !self.is_active() {
             return Vec3::ZERO;
         }
         let irradiance = self.diffuse_radiance(s.normal);
-        let prefiltered = self.environment_prefiltered(s.view, s.normal, s.roughness);
+        let prefiltered = self.environment_prefiltered(s.view, s.reflection_normal(), s.roughness);
         let lut = if self.cubemap.is_some() {
             pbr_brdf::split_sum_brdf_approx(dot_vec3(s.normal, s.view), s.roughness)
         } else {
             (1.0, 0.0)
         };
-        let fresnel = pbr_brdf::fresnel_schlick(s.f0, s.n_dot_v);
+        let f0 = s.environment_f0();
+        let fresnel = pbr_brdf::fresnel_schlick(f0, s.n_dot_v);
         let diffuse_energy = scale_vec3(Vec3::new(1.0, 1.0, 1.0) - fresnel, 1.0 - s.metallic);
         let diffuse = diffuse_energy * s.base * irradiance;
-        let single_scatter = scale_vec3(s.f0, lut.0) + Vec3::new(lut.1, lut.1, lut.1);
+        let single_scatter = scale_vec3(f0, lut.0) + Vec3::new(lut.1, lut.1, lut.1);
         let mut lit = diffuse + prefiltered * single_scatter;
         if s.has_sheen() {
             lit = scale_vec3(lit, s.sheen_scaling)

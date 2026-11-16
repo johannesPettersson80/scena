@@ -28,6 +28,8 @@ const PAIRED_CALIBRATION_SWEEPS: &[(&str, &str, &[&str])] = &[
             "base_layer_matches_the_reference_radiance",
             "clearcoat_attenuates_the_layers_beneath_and_adds_its_own_lobe",
             "sheen_scales_the_base_by_its_energy_compensation_and_adds_the_charlie_lobe",
+            "anisotropy_reshapes_the_base_lobe_instead_of_adding_one",
+            "iridescence_replaces_the_base_fresnel_term",
         ],
     ),
 ];

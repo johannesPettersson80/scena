@@ -28,9 +28,15 @@ pub(in crate::render) fn alpha_roughness(perceptual_roughness: f32) -> f32 {
 }
 
 pub(in crate::render) fn f0_metallic_roughness(base: Vec3, metallic: f32) -> Vec3 {
+    f0_for_dielectric(DIELECTRIC_F0, base, metallic)
+}
+
+/// Reflectance at normal incidence of a surface whose dielectric part reflects
+/// `dielectric_f0` and whose metallic part reflects its base colour.
+pub(in crate::render) fn f0_for_dielectric(dielectric_f0: f32, base: Vec3, metallic: f32) -> Vec3 {
     let metallic = clamp_unit(metallic);
     mix_vec3(
-        Vec3::new(DIELECTRIC_F0, DIELECTRIC_F0, DIELECTRIC_F0),
+        Vec3::new(dielectric_f0, dielectric_f0, dielectric_f0),
         base,
         metallic,
     )

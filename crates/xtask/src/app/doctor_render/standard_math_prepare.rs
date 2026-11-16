@@ -24,6 +24,7 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
         &[
             "pub(in crate::render::prepare) struct Surface",
             "pub(in crate::render::prepare) fn surface_direct_light(",
+            "pub(in crate::render::prepare) fn with_ior(",
             "n_dot_l * s.clearcoat_attenuation",
             "coat_n_dot_l * s.clearcoat",
         ],
@@ -35,6 +36,7 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
         "src/render/prepare/pbr_contract/surface/tests.rs",
         &[
             "surface_without_layers_reproduces_the_pre_port_direct_light_bits",
+            "default_index_of_refraction_leaves_the_surface_exactly_as_built",
             "clearcoat_at_normal_incidence_dims_the_base_by_exactly_its_fresnel_reflectance",
             "clearcoat_attenuates_the_layers_beneath_and_adds_its_own_lobe",
         ],
@@ -71,6 +73,8 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
         "src/render/prepare/materials.rs",
         "src/render/prepare/pbr_contract/surface.rs",
         "src/render/prepare/pbr_contract/sheen.rs",
+        "src/render/prepare/pbr_contract/anisotropy.rs",
+        "src/render/prepare/pbr_contract/iridescence.rs",
         "src/render/prepare/environment/surface_light.rs",
     ] {
         forbid_contains(

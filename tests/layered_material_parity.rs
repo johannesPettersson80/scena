@@ -38,30 +38,85 @@ const CAMERA_DISTANCE: f32 = 1.6;
 const MEASURED_RADIUS_FRACTION: f32 = 0.92;
 
 /// Mean absolute CPU/GPU difference per colour channel, in 8-bit steps, that
-/// the plain metallic-roughness sphere may show in this scene. Mesa lavapipe
-/// measures 0.67 / 2.12 / 2.89 for red / green / blue. The blue channel carries
-/// the specular reflection of the environment, which the CPU renderer still
-/// evaluates with the analytic split-sum fit where the shader reads the baked
-/// table; that is the remaining difference between the two base layers.
-const PLAIN_BASELINE_CEILING: f64 = 3.5;
-/// A layered sphere may differ by at most this much more than the plain one.
-/// Both renderers evaluate the layers with the same formulas, so a layer adds
-/// nothing systematic: lavapipe measures 2.31 (clearcoat), 2.31 (sheen) and
-/// 2.07 (clearcoat over sheen) for the worst channel, below the plain sphere's
-/// 2.89. Before the CPU renderer evaluated layers the way the shader does, the
-/// same measurement gave 23.5, 71.2 and 58.2.
+/// a plain metallic-roughness sphere may show in this scene. What it measures
+/// is the base-layer image-based lighting: the CPU renderer weights it with
+/// the analytic split-sum fit and single scattering, the shader with the baked
+/// table and multiple scattering. That difference grows with the reflectance
+/// at normal incidence, so the metal sits far above the dielectric. Mesa
+/// lavapipe measures 0.67 / 2.12 / 2.89 (red / green / blue) for the dielectric
+/// and 15.12 / 15.71 / 16.66 for the metal.
+const PLAIN_DIELECTRIC_CEILING: f64 = 3.5;
+const PLAIN_METAL_CEILING: f64 = 18.0;
+/// A layered sphere may differ by at most this much more than the plain sphere
+/// it is built on. Both renderers evaluate the layers with the same formulas,
+/// so a layer adds nothing systematic. Worst channel on lavapipe, before the
+/// CPU renderer evaluated layers the way the shader does and after:
+///
+/// | sphere                  | before | after | plain base |
+/// |-------------------------|-------:|------:|-----------:|
+/// | clearcoat               |   23.5 |   2.3 |        2.9 |
+/// | sheen                   |   71.2 |   2.3 |        2.9 |
+/// | anisotropy              |    6.9 |   2.9 |        2.9 |
+/// | iridescence             |  159.9 |   2.5 |        2.9 |
+/// | clearcoat over sheen    |   58.2 |   2.1 |        2.9 |
+/// | anisotropy on metal     |   17.8 |  16.5 |       16.7 |
+/// | iridescence on metal    |   69.0 |  16.4 |       16.7 |
+/// | index of refraction 2.0 |   37.3 |   7.3 |  see below |
 const LAYER_MARGIN_OVER_BASELINE: f64 = 0.5;
 /// A layer must move the image by at least this much on both renderers, so
 /// agreement cannot come from both of them ignoring it.
 const MIN_LAYER_EFFECT: f64 = 1.0;
 
-fn plain_material() -> MaterialDesc {
-    MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(170, 60, 44), 0.0, 0.4)
+#[derive(Clone, Copy, PartialEq)]
+enum Base {
+    Dielectric,
+    Metal,
+}
+
+impl Base {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Dielectric => "plain-dielectric",
+            Self::Metal => "plain-metal",
+        }
+    }
+
+    const fn ceiling(self) -> f64 {
+        match self {
+            Self::Dielectric => PLAIN_DIELECTRIC_CEILING,
+            Self::Metal => PLAIN_METAL_CEILING,
+        }
+    }
+
+    fn material(self) -> MaterialDesc {
+        match self {
+            Self::Dielectric => {
+                MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(170, 60, 44), 0.0, 0.4)
+            }
+            Self::Metal => {
+                MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(200, 204, 210), 1.0, 0.38)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Bound {
+    /// A layer on top of a base: the plain base's difference plus the margin.
+    LayerOver,
+    /// A change of the base reflectance itself. An index of refraction of 2.0
+    /// raises a dielectric's reflectance from 0.04 to 0.111, and the
+    /// base-layer difference grows with it, so the sphere sits between the
+    /// plain dielectric and the plain metal (reflectance about 0.6) and must
+    /// stay below the metal.
+    BelowPlainMetal,
 }
 
 struct LayerCase {
     name: &'static str,
+    base: Base,
     material: MaterialDesc,
+    bound: Bound,
 }
 
 fn layer_cases() -> Vec<LayerCase> {
@@ -75,20 +130,69 @@ fn layer_cases() -> Vec<LayerCase> {
             .with_sheen_color_factor(Color::from_linear_rgb(0.9, 0.75, 0.6))
             .with_sheen_roughness_factor(0.45)
     };
+    let anisotropy = |material: MaterialDesc| material.with_anisotropy_strength_factor(0.8);
+    let iridescence = |material: MaterialDesc| {
+        material
+            .with_iridescence_factor(1.0)
+            .with_iridescence_ior(1.3)
+            .with_iridescence_thickness_range_nm(100.0, 400.0)
+    };
+    let layer = |name, base: Base, material| LayerCase {
+        name,
+        base,
+        material,
+        bound: Bound::LayerOver,
+    };
     vec![
+        layer(
+            "clearcoat",
+            Base::Dielectric,
+            clearcoat(Base::Dielectric.material()),
+        ),
+        layer(
+            "sheen",
+            Base::Dielectric,
+            sheen(Base::Dielectric.material()),
+        ),
+        layer(
+            "anisotropy",
+            Base::Dielectric,
+            anisotropy(Base::Dielectric.material()),
+        ),
+        layer(
+            "iridescence",
+            Base::Dielectric,
+            iridescence(Base::Dielectric.material()),
+        ),
+        layer(
+            "clearcoat-sheen",
+            Base::Dielectric,
+            sheen(clearcoat(Base::Dielectric.material())),
+        ),
+        layer(
+            "anisotropy-metal",
+            Base::Metal,
+            anisotropy(Base::Metal.material()),
+        ),
+        layer(
+            "iridescence-metal",
+            Base::Metal,
+            iridescence(Base::Metal.material()),
+        ),
         LayerCase {
-            name: "clearcoat",
-            material: clearcoat(plain_material()),
-        },
-        LayerCase {
-            name: "sheen",
-            material: sheen(plain_material()),
-        },
-        LayerCase {
-            name: "clearcoat-sheen",
-            material: sheen(clearcoat(plain_material())),
+            name: "index-of-refraction",
+            base: Base::Dielectric,
+            material: Base::Dielectric.material().with_ior(2.0),
+            bound: Bound::BelowPlainMetal,
         },
     ]
+}
+
+struct PlainFrames {
+    base: Base,
+    cpu: Vec<u8>,
+    gpu: Vec<u8>,
+    delta: MaskedDelta,
 }
 
 #[test]
@@ -102,23 +206,51 @@ fn layered_materials_match_cpu_and_gpu_as_closely_as_plain_metallic_roughness() 
     let mut records = Vec::new();
     let mut assertions = 0_u64;
 
-    let plain_cpu = cpu.render(plain_material());
-    let plain_gpu = gpu.render(plain_material());
-    write_png(&artifacts.join("plain-cpu.png"), &plain_cpu);
-    write_png(&artifacts.join("plain-gpu.png"), &plain_gpu);
-    let plain_delta = masked_delta(&plain_cpu, &plain_gpu);
-    report("plain", &plain_delta);
-    records.push(Record::new("plain", &plain_delta, None));
-    assert!(
-        plain_delta.worst_channel() <= PLAIN_BASELINE_CEILING,
-        "the plain metallic-roughness sphere differs between CPU and GPU by {:?} per channel, \
-         above the {PLAIN_BASELINE_CEILING} ceiling the layer tolerance is derived from",
-        plain_delta.mean_abs,
-    );
-    assertions += 1;
-    let tolerance = plain_delta.worst_channel() + LAYER_MARGIN_OVER_BASELINE;
+    let plain = [Base::Dielectric, Base::Metal].map(|base| {
+        let cpu_frame = cpu.render(base.material());
+        let gpu_frame = gpu.render(base.material());
+        write_png(
+            &artifacts.join(format!("{}-cpu.png", base.name())),
+            &cpu_frame,
+        );
+        write_png(
+            &artifacts.join(format!("{}-gpu.png", base.name())),
+            &gpu_frame,
+        );
+        let delta = masked_delta(&cpu_frame, &gpu_frame);
+        report(base.name(), &delta);
+        PlainFrames {
+            base,
+            cpu: cpu_frame,
+            gpu: gpu_frame,
+            delta,
+        }
+    });
+    for frames in &plain {
+        records.push(Record::new(frames.base.name(), &frames.delta, None));
+        assert!(
+            frames.delta.worst_channel() <= frames.base.ceiling(),
+            "the {} sphere differs between CPU and GPU by {:?} per channel, above the {} \
+             ceiling the layer tolerances are derived from",
+            frames.base.name(),
+            frames.delta.mean_abs,
+            frames.base.ceiling(),
+        );
+        assertions += 1;
+    }
+    let plain_of = |base: Base| {
+        plain
+            .iter()
+            .find(|frames| frames.base == base)
+            .expect("both plain bases are rendered")
+    };
 
     for case in layer_cases() {
+        let base = plain_of(case.base);
+        let tolerance = match case.bound {
+            Bound::LayerOver => base.delta.worst_channel() + LAYER_MARGIN_OVER_BASELINE,
+            Bound::BelowPlainMetal => plain_of(Base::Metal).delta.worst_channel(),
+        };
         let cpu_frame = cpu.render(case.material.clone());
         let gpu_frame = gpu.render(case.material);
         write_png(
@@ -133,23 +265,24 @@ fn layered_materials_match_cpu_and_gpu_as_closely_as_plain_metallic_roughness() 
         report(case.name, &delta);
         records.push(Record::new(case.name, &delta, Some(tolerance)));
 
-        let cpu_effect = masked_delta(&cpu_frame, &plain_cpu).mean;
-        let gpu_effect = masked_delta(&gpu_frame, &plain_gpu).mean;
+        let cpu_effect = masked_delta(&cpu_frame, &base.cpu).mean;
+        let gpu_effect = masked_delta(&gpu_frame, &base.gpu).mean;
         assert!(
             cpu_effect >= MIN_LAYER_EFFECT && gpu_effect >= MIN_LAYER_EFFECT,
             "{} must change the rendered sphere on both renderers; CPU moved {cpu_effect:.3} and \
-             GPU moved {gpu_effect:.3} 8-bit steps from the plain sphere",
+             GPU moved {gpu_effect:.3} 8-bit steps from the {} sphere",
             case.name,
+            case.base.name(),
         );
         assertions += 1;
         assert!(
             delta.worst_channel() <= tolerance,
-            "{} differs between CPU and GPU by {:?} per channel, above {tolerance:.3}: the plain \
-             sphere differs by {:.3} in the same run and a layer may add at most \
-             {LAYER_MARGIN_OVER_BASELINE}",
+            "{} differs between CPU and GPU by {:?} per channel, above {tolerance:.3}; the {} \
+             sphere differs by {:.3} in the same run",
             case.name,
             delta.mean_abs,
-            plain_delta.worst_channel(),
+            case.base.name(),
+            base.delta.worst_channel(),
         );
         assertions += 1;
     }
@@ -180,7 +313,7 @@ impl SphereRig {
         let assets = Assets::new();
         let mut scene = Scene::new();
         let geometry = assets.create_geometry(GeometryDesc::sphere(SPHERE_RADIUS, 192, 128));
-        let material = assets.create_material(plain_material());
+        let material = assets.create_material(Base::Dielectric.material());
         let sphere = scene
             .mesh(geometry, material)
             .add()
@@ -320,7 +453,7 @@ fn write_json(path: &Path, records: &[Record]) {
     writeln!(&mut json, "  \"schema\": \"{SCHEMA}\",").expect("write to string");
     writeln!(
         &mut json,
-        "  \"plain_baseline_ceiling\": {PLAIN_BASELINE_CEILING},"
+        "  \"plain_dielectric_ceiling\": {PLAIN_DIELECTRIC_CEILING}, \"plain_metal_ceiling\": {PLAIN_METAL_CEILING},"
     )
     .expect("write to string");
     writeln!(

@@ -38,7 +38,7 @@ pub(super) fn check_dispersion_material_contracts(root: &Path, findings: &mut Ve
         findings,
         "ASSETS-M8",
         "src/render/prepare/lighting.rs",
-        &["material.dispersion_factor()", "LayeredMaterialLobes"],
+        &["material.dispersion_factor()", "VolumeLobes"],
     );
     require_contains(
         root,

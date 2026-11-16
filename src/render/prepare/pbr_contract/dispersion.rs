@@ -1,5 +1,5 @@
 use super::{
-    MIN_DENOMINATOR, MIN_N_DOT_V, PbrMaterial, add_vec3, dot_vec3, finite_non_negative,
+    MIN_N_DOT_V, PbrMaterial, add_vec3, dot_vec3, f0_from_ior, finite_non_negative,
     fresnel_schlick, multiply_vec3, normalize_or, roughness_or_min, scale_vec3,
 };
 use crate::scene::Vec3;
@@ -54,11 +54,6 @@ fn dispersion_f0_from_ior(ior: f32, dispersion: f32) -> Vec3 {
         f0_from_ior(ior),
         f0_from_ior(ior + half_spread),
     )
-}
-
-fn f0_from_ior(ior: f32) -> f32 {
-    let ratio = (ior - 1.0) / (ior + 1.0).max(MIN_DENOMINATOR);
-    ratio * ratio
 }
 
 #[cfg(test)]

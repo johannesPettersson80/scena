@@ -14,19 +14,25 @@ All notable user-facing changes are recorded here.
   follows the material IOR. Image-based lighting keeps the energy that single
   scattering loses, so rough metals no longer render too dark. Expect fabric,
   car paint, brushed metal and rough metal to look different from 1.10.6.
-- The CPU renderer evaluates clearcoat and sheen as layers of that same
-  surface model, for direct lights and for image-based lighting, instead of
-  adding them on top of a finished base. A clearcoat dims everything beneath
-  it, emitted light included, and a sheen layer is a Charlie lobe that takes
-  its energy from the base. CPU output changes for every material that uses
-  clearcoat or sheen, the `clearcoat_plastic`, `satin` and `leather` presets
-  among them: a sheen surface seen head-on is darker than before, and the
-  bright centre spot the old model drew under an environment is gone. Such
-  materials now differ between CPU and GPU frames no more than plain
-  metallic-roughness materials do. Materials without these layers render byte
-  for byte as before. The CPU renderer still evaluates base-layer image-based
-  lighting, anisotropy, iridescence and IOR-dependent reflectance its own way;
-  see "Layered surface model" in `docs/rendering.md`.
+- The CPU renderer evaluates clearcoat, sheen, anisotropy, iridescence and
+  IOR-dependent reflectance as layers of that same surface model, for direct
+  lights and for image-based lighting, instead of adding each as a lobe on top
+  of a finished base. A clearcoat dims everything beneath it, emitted light
+  included; a sheen layer is a Charlie lobe that takes its energy from the
+  base; anisotropy stretches the one specular highlight instead of adding a
+  second; iridescence is thin-film interference in place of the base Fresnel
+  term; and a dielectric's reflectance follows its index of refraction. CPU
+  output changes for every material that uses one of these, the
+  `clearcoat_plastic`, `satin`, `leather` and `brushed_steel` presets and
+  glass with a non-default index of refraction among them: a sheen surface
+  seen head-on is darker than before, a brushed highlight peaks lower, the
+  flat colour cast the old iridescence added is gone, and so is the bright
+  centre spot the old model drew under an environment. Such materials now
+  differ between CPU and GPU frames no more than the plain
+  metallic-roughness material they are built on. Materials without these
+  layers render byte for byte as before. The CPU renderer still evaluates
+  base-layer image-based lighting and dispersion its own way; see "Layered
+  surface model" in `docs/rendering.md`.
 - Diffuse environment lighting is directional on both the CPU and GPU
   renderers: it evaluates order-2 spherical harmonics of the environment
   toward each surface normal instead of applying one average colour. Matte

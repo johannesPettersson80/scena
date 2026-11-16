@@ -3551,9 +3551,12 @@ fn m8_anisotropy_png_texture_affects_cpu_preview_pixels() {
     let no_anisotropy = render_max_luminance_for_anisotropy_texture([255, 128, 0, 255]);
     let full_anisotropy = render_max_luminance_for_anisotropy_texture([255, 128, 255, 255]);
 
+    // Anisotropy stretches the one specular lobe along the tangent, so its
+    // peak drops. A second lobe added on top could only raise it.
     assert!(
-        full_anisotropy > no_anisotropy,
-        "anisotropy texture B channel must multiply anisotropyStrength and affect CPU preview lighting: off={no_anisotropy} on={full_anisotropy}",
+        full_anisotropy < no_anisotropy,
+        "anisotropy texture B channel must multiply anisotropyStrength and affect CPU preview lighting: \
+         the stretched highlight must peak lower, off={no_anisotropy} on={full_anisotropy}",
     );
 }
 

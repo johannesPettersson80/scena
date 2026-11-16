@@ -333,3 +333,179 @@ fn assert_vec3_close(actual: Vec3, expected: Vec3, tolerance: f32, label: &str) 
         "{label}: expected {expected:?}, got {actual:?}, delta {delta:?}"
     );
 }
+
+#[test]
+fn default_index_of_refraction_leaves_the_surface_exactly_as_built() {
+    let material = PbrMaterial::new(Vec3::new(0.6, 0.3, 0.1), 0.0, 0.5);
+    let normal = Vec3::new(0.0, 0.0, 1.0);
+    let plain = Surface::new(material, normal, normal);
+    assert_eq!(
+        plain.with_ior(1.5),
+        plain,
+        "the glTF default index is the 0.04 the base layer is built with"
+    );
+    assert_eq!(
+        plain.f0,
+        Vec3::new(DIELECTRIC_F0, DIELECTRIC_F0, DIELECTRIC_F0)
+    );
+}
+
+#[test]
+fn index_of_refraction_sets_the_dielectric_reflectance() {
+    let base = Vec3::new(0.6, 0.3, 0.1);
+    let normal = Vec3::new(0.0, 0.0, 1.0);
+    // ((n - 1) / (n + 1))^2. An index of 0 is the glTF value for a surface
+    // that reflects everything.
+    for (ior, expected) in [
+        (1.33_f32, 0.020_059_3_f32),
+        (2.0, 0.111_111_1),
+        (2.42, 0.172_394_9),
+        (1.0, 0.0),
+        (0.0, 1.0),
+    ] {
+        let surface = Surface::new(PbrMaterial::new(base, 0.0, 0.5), normal, normal).with_ior(ior);
+        assert_vec3_close(
+            surface.f0,
+            Vec3::new(expected, expected, expected),
+            1.0e-6,
+            &format!("dielectric reflectance at index {ior}"),
+        );
+    }
+
+    // A metal reflects its base colour whatever the index; a half metal mixes
+    // the two reflectances.
+    let metal = Surface::new(PbrMaterial::new(base, 1.0, 0.5), normal, normal).with_ior(2.0);
+    assert_eq!(metal.f0, base);
+    let half = Surface::new(PbrMaterial::new(base, 0.5, 0.5), normal, normal).with_ior(2.0);
+    assert_vec3_close(
+        half.f0,
+        Vec3::new(0.355_555_6, 0.205_555_6, 0.105_555_6),
+        1.0e-6,
+        "half-metal reflectance at index 2",
+    );
+}
+
+/// A white metal in the reference scene: its Fresnel term is 1, so the
+/// radiance it reflects is the specular lobe itself. The mesh tangent is `+X`.
+fn anisotropic_reference(strength: f32, rotation: f32) -> Vec3 {
+    let surface = Surface::new(
+        PbrMaterial::new(Vec3::new(1.0, 1.0, 1.0), 1.0, 0.42),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(0.6, 0.0, 0.8),
+    )
+    .with_anisotropy(
+        strength,
+        (1.0, 0.0),
+        rotation,
+        Vec3::new(1.0, 0.0, 0.0),
+        1.0,
+    );
+    surface_direct_light(
+        &surface,
+        Vec3::new(-0.8, 0.0, 0.6),
+        Vec3::new(1.0, 1.0, 1.0),
+        1.0,
+    )
+}
+
+#[test]
+fn anisotropy_reshapes_the_base_lobe_instead_of_adding_one() {
+    let isotropic = anisotropic_reference(0.0, 0.0);
+    assert_close(isotropic.x, 1.192_502, 5.0e-6, "isotropic lobe");
+
+    // Stretched along the tangent, which lies in the plane of incidence.
+    assert_close(
+        anisotropic_reference(0.5, 0.0).x,
+        1.093_563_8,
+        5.0e-6,
+        "half strength along the tangent",
+    );
+    let along = anisotropic_reference(1.0, 0.0);
+    assert_close(
+        along.x,
+        0.386_673_8,
+        5.0e-6,
+        "full strength along the tangent",
+    );
+
+    // Rotated a quarter turn, the lobe is stretched across the plane of
+    // incidence instead.
+    let quarter_turn = std::f32::consts::FRAC_PI_2;
+    assert_close(
+        anisotropic_reference(0.5, quarter_turn).x,
+        0.550_241_6,
+        5.0e-6,
+        "half strength across the tangent",
+    );
+    let across = anisotropic_reference(1.0, quarter_turn);
+    assert_close(
+        across.x,
+        0.210_357_3,
+        5.0e-6,
+        "full strength across the tangent",
+    );
+
+    assert!(
+        along.x < isotropic.x && across.x < along.x,
+        "anisotropy spreads the one base lobe; a lobe added on top could only brighten it: \
+         isotropic {isotropic:?}, along {along:?}, across {across:?}"
+    );
+}
+
+#[test]
+fn zero_anisotropy_strength_is_the_isotropic_surface() {
+    let plain = Surface::new(
+        PbrMaterial::new(Vec3::new(0.9, 0.8, 0.7), 1.0, 0.42),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(0.6, 0.0, 0.8),
+    );
+    assert_eq!(
+        plain.with_anisotropy(0.0, (0.3, 0.9), 1.2, Vec3::new(1.0, 0.0, 0.0), -1.0),
+        plain
+    );
+    assert_eq!(plain.reflection_normal(), plain.normal);
+}
+
+#[test]
+fn iridescence_replaces_the_base_fresnel_term() {
+    let plain = Surface::new(
+        PbrMaterial::new(Vec3::new(0.58, 0.61, 0.65), 1.0, 0.42),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(0.6, 0.0, 0.8),
+    );
+    let incoming = Vec3::new(-0.8, 0.0, 0.6);
+    let radiance = Vec3::new(1.0, 1.0, 1.0);
+
+    let film = plain.with_iridescence(1.0, 1.3, 250.0);
+    assert_vec3_close(
+        film.iridescence_fresnel,
+        Vec3::new(0.593_683_1, 0.604_333_7, 0.556_842_7),
+        2.0e-4,
+        "film reflectance at the view angle",
+    );
+    // A metal has no diffuse term, so what it reflects is that reflectance
+    // times the specular lobe.
+    assert_vec3_close(
+        surface_direct_light(&film, incoming, radiance, 1.0),
+        Vec3::new(0.707_968_3, 0.720_669_2, 0.664_036),
+        3.0e-4,
+        "full iridescence",
+    );
+    assert_vec3_close(
+        surface_direct_light(
+            &plain.with_iridescence(0.5, 1.3, 250.0),
+            incoming,
+            radiance,
+            1.0,
+        ),
+        Vec3::new(0.700_349_5, 0.724_548_9, 0.720_031),
+        3.0e-4,
+        "half iridescence mixes the film with the Schlick term",
+    );
+    assert_eq!(
+        plain.with_iridescence(0.0, 1.3, 250.0),
+        plain,
+        "a zero iridescence factor is not a layer"
+    );
+    assert_eq!(plain.environment_f0(), plain.f0);
+}

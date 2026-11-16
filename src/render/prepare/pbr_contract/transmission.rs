@@ -1,6 +1,6 @@
 use super::{
-    MIN_DENOMINATOR, MIN_N_DOT_V, PbrMaterial, dot_vec3, finite_non_negative, fresnel_schlick,
-    multiply_vec3, normalize_or, scale_vec3,
+    MIN_DENOMINATOR, MIN_N_DOT_V, PbrMaterial, dot_vec3, f0_from_ior, finite_non_negative,
+    fresnel_schlick, multiply_vec3, normalize_or, scale_vec3,
 };
 use crate::scene::Vec3;
 
@@ -76,11 +76,6 @@ fn attenuation_channel(value: f32, exponent: f32) -> f32 {
     } else {
         1.0
     }
-}
-
-fn f0_from_ior(ior: f32) -> f32 {
-    let ratio = (ior - 1.0) / (ior + 1.0).max(MIN_DENOMINATOR);
-    ratio * ratio
 }
 
 #[cfg(test)]

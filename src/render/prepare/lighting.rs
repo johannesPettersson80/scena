@@ -18,7 +18,7 @@ use area::{
     AREA_LIGHT_SAMPLE_COUNT, PreparedAreaLight, area_light_sample_positions, prepared_area_light,
 };
 pub(in crate::render) use gpu_uniform::PreparedGpuLightUniform;
-use lobes::LayeredMaterialLobes;
+use lobes::VolumeLobes;
 use ltc::ltc_area_light_specular_contribution;
 use math::*;
 pub(in crate::render) use tiled::{
@@ -277,13 +277,13 @@ pub(super) fn material_color(
     color
 }
 
-/// Builds the layered surface of one shaded vertex, together with the lobes
-/// the surface model does not own.
+/// Builds the layered surface of one shaded vertex, together with the
+/// dispersion and transmission-volume lobes the surface model does not own.
 fn material_surface(
     material: &MaterialDesc,
     base: Color,
     input: &MaterialShadingInput,
-) -> (Surface, LayeredMaterialLobes) {
+) -> (Surface, VolumeLobes) {
     let (normal, micro_roughness) =
         photographic_micro_surface(material, input.position, input.normal, input.tangent);
     let view = input
@@ -307,7 +307,26 @@ fn material_surface(
         sheen_color_factor.g * input.sheen_color_texture.g,
         sheen_color_factor.b * input.sheen_color_texture.b,
     );
+    let iridescence_thickness_mix = clamp_unit(input.iridescence_thickness_texture);
+    let iridescence_thickness_nm = material.iridescence_thickness_minimum_nm()
+        * (1.0 - iridescence_thickness_mix)
+        + material.iridescence_thickness_maximum_nm() * iridescence_thickness_mix;
+    // The index of refraction comes first: the iridescence layer is built from
+    // the reflectance it sets.
     let surface = Surface::new(pbr_material, normal, view)
+        .with_ior(material.ior())
+        .with_anisotropy(
+            material.anisotropy_strength_factor() * input.anisotropy_texture.z,
+            (input.anisotropy_texture.x, input.anisotropy_texture.y),
+            material.anisotropy_rotation_radians(),
+            input.tangent,
+            input.tangent_handedness,
+        )
+        .with_iridescence(
+            material.iridescence_factor() * input.iridescence_texture,
+            material.iridescence_ior(),
+            iridescence_thickness_nm,
+        )
         .with_sheen(
             sheen_color,
             material.sheen_roughness_factor() * input.sheen_roughness_texture,
@@ -318,21 +337,10 @@ fn material_surface(
             normalize_or(input.clearcoat_normal, normal),
         );
     let attenuation_color = material.attenuation_color();
-    let lobes = LayeredMaterialLobes {
+    let lobes = VolumeLobes {
         pbr_material,
         normal,
         view,
-        tangent: input.tangent,
-        tangent_handedness: input.tangent_handedness,
-        anisotropy_strength: material.anisotropy_strength_factor(),
-        anisotropy_rotation: material.anisotropy_rotation_radians(),
-        anisotropy_texture: input.anisotropy_texture,
-        iridescence_factor: material.iridescence_factor(),
-        iridescence_ior: material.iridescence_ior(),
-        iridescence_thickness_minimum: material.iridescence_thickness_minimum_nm(),
-        iridescence_thickness_maximum: material.iridescence_thickness_maximum_nm(),
-        iridescence_texture: input.iridescence_texture,
-        iridescence_thickness_texture: input.iridescence_thickness_texture,
         dispersion_factor: material.dispersion_factor(),
         transmission_factor: material.transmission_factor() * input.transmission_texture,
         ior: material.ior(),
@@ -351,7 +359,7 @@ fn material_surface(
 /// Direct lighting from every analytic light in the scene.
 fn surface_punctual_lighting(
     s: &Surface,
-    lobes: &LayeredMaterialLobes,
+    lobes: &VolumeLobes,
     lights: &PreparedLights,
     input: &MaterialShadingInput,
 ) -> Vec3 {
@@ -417,7 +425,7 @@ fn surface_area_light(
     mut shaded: Vec3,
     light: PreparedAreaLight,
     s: &Surface,
-    lobes: &LayeredMaterialLobes,
+    lobes: &VolumeLobes,
     input: &MaterialShadingInput,
 ) -> Vec3 {
     let intensity_per_sample =
@@ -464,7 +472,7 @@ fn surface_area_light(
 /// lobes the surface model does not own.
 fn surface_environment_lighting(
     s: &Surface,
-    lobes: &LayeredMaterialLobes,
+    lobes: &VolumeLobes,
     input: &MaterialShadingInput,
 ) -> Vec3 {
     let mut indirect = input.environment.surface_environment_light(s);

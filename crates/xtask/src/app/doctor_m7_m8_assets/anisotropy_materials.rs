@@ -40,15 +40,37 @@ pub(super) fn check_anisotropy_material_contracts(root: &Path, findings: &mut Ve
         "src/render/prepare/materials.rs",
         &["anisotropy_texture_sample"],
     );
+    // The CPU renderer reshapes the base specular lobe the way the shader
+    // does, instead of adding an anisotropic lobe on top of the isotropic one.
     require_contains(
         root,
         findings,
         "ASSETS-M8",
-        "src/render/prepare/pbr_contract.rs",
+        "src/render/prepare/pbr_contract/anisotropy.rs",
         &[
-            "anisotropy_light_contribution",
-            "anisotropy_light_contribution_uses_strength_texture_and_direction",
+            "fn surface_anisotropy_tangent(",
+            "fn distribution_ggx_anisotropic(",
+            "fn visibility_ggx_anisotropic(",
+            "fn anisotropic_reflection_normal(",
+            "equal_alphas_reduce_to_the_isotropic_ggx_lobe",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/pbr_contract/surface.rs",
+        &[
+            "pub(in crate::render::prepare) fn with_anisotropy(",
+            "surface_anisotropic_specular(s, incoming, half_vector, n_dot_l, n_dot_h)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/pbr_contract/surface/tests.rs",
+        &["anisotropy_reshapes_the_base_lobe_instead_of_adding_one"],
     );
     require_contains(
         root,

@@ -491,7 +491,8 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
             "Surface::new(pbr_material, normal, view)",
             "surface_direct_light(s, incoming, radiance, 1.0)",
             "surface_direct_light(s, incoming, radiance, 0.0)",
-            "LayeredMaterialLobes",
+            ".with_ior(material.ior())",
+            "VolumeLobes",
             "material.clearcoat_factor()",
             "material.clearcoat_roughness_factor()",
             "inverse_square_range_attenuation",
@@ -514,9 +515,8 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
         "ARCH-DIRECT-LIGHT-SHADING",
         "src/render/prepare/lighting/lobes.rs",
         &[
-            "anisotropy_light_contribution",
-            "iridescence_light_contribution",
             "dispersion_light_contribution",
+            "transmission_volume_light_contribution",
         ],
     );
     require_contains(

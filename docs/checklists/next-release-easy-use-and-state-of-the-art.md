@@ -1307,10 +1307,10 @@ the rendered result is part of the contract.
   PBR math owned by `pbr_contract`,
   `sheen_scales_the_base_by_its_energy_compensation_and_adds_the_charlie_lobe`
   keeps the sheen layer owned by `pbr_contract`,
-  `anisotropy_light_contribution_uses_strength_texture_and_direction`
-  keeps the anisotropy lobe owned by `pbr_contract`,
-  `iridescence_light_contribution_uses_factor_thickness_and_textures`
-  keeps the iridescence lobe owned by `pbr_contract`, and
+  `anisotropy_reshapes_the_base_lobe_instead_of_adding_one`
+  keeps the anisotropy layer owned by `pbr_contract`,
+  `iridescence_replaces_the_base_fresnel_term`
+  keeps the iridescence layer owned by `pbr_contract`, and
   `dispersion_light_contribution_uses_factor_and_ior_spread` keeps the
   dispersion lobe owned by `pbr_contract`,
   `transmission_volume_uses_factor_ior_thickness_and_attenuation` keeps

@@ -57,15 +57,36 @@ pub(super) fn check_iridescence_material_contracts(root: &Path, findings: &mut V
             "iridescence_thickness_texture_sample",
         ],
     );
+    // The CPU renderer evaluates the same thin-film model as the shader and
+    // lets it replace the base Fresnel term.
     require_contains(
         root,
         findings,
         "ASSETS-M8",
-        "src/render/prepare/pbr_contract.rs",
+        "src/render/prepare/pbr_contract/iridescence.rs",
         &[
-            "iridescence_light_contribution",
-            "iridescence_light_contribution_uses_factor_thickness_and_textures",
+            "pub(super) fn iridescence_fresnel(",
+            "pub(super) fn iridescence_sensitivity(",
+            "thin_film_fresnel_matches_reference_values",
+            "a_film_of_zero_thickness_reduces_to_the_plain_fresnel_term",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/pbr_contract/surface.rs",
+        &[
+            "pub(in crate::render::prepare) fn with_iridescence(",
+            "mix_vec3(schlick, s.iridescence_fresnel, s.iridescence)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/pbr_contract/surface/tests.rs",
+        &["iridescence_replaces_the_base_fresnel_term"],
     );
     require_contains(
         root,

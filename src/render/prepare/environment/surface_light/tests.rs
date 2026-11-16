@@ -276,3 +276,58 @@ fn assert_vec3_close(actual: Vec3, expected: Vec3, tolerance: f32, label: &str) 
         "{label}: expected {expected:?}, got {actual:?}, delta {delta:?}"
     );
 }
+
+#[test]
+fn iridescence_drives_the_integrated_reflectance_of_image_based_light() {
+    // Expected radiances are double-precision evaluations outside this crate:
+    // the film reflectance at the view angle is inverted through Schlick and
+    // weighted by the analytic split-sum fit.
+    let (lighting, ..) = uniform_lighting();
+    let plain = reference_surface();
+    assert_vec3_close(
+        lighting.surface_environment_light(&plain),
+        Vec3::new(0.327_232_9, 0.147_934, 0.055_007_5),
+        2.0e-6,
+        "plain dielectric",
+    );
+    assert_vec3_close(
+        lighting.surface_environment_light(&plain.with_iridescence(1.0, 1.3, 400.0)),
+        Vec3::new(0.304_617_6, 0.135_238_1, 0.053_917_5),
+        2.0e-4,
+        "full iridescence",
+    );
+    assert_vec3_close(
+        lighting.surface_environment_light(&plain.with_iridescence(0.5, 1.3, 400.0)),
+        Vec3::new(0.315_925_3, 0.141_586_1, 0.054_462_5),
+        2.0e-4,
+        "half iridescence",
+    );
+}
+
+#[test]
+fn anisotropy_mirrors_the_environment_about_the_bent_normal() {
+    let lighting = lighting_with(Some(structured_cubemap(vec![0.9, 0.05], 1)));
+    let base = Vec3::new(0.9, 0.8, 0.7);
+    let normal = Vec3::new(0.0, 0.0, 1.0);
+    let view = Vec3::new(0.3, 0.5, 0.8).normalize();
+    let plain = Surface::new(PbrMaterial::new(base, 1.0, 0.3), normal, view);
+    let brushed = plain.with_anisotropy(0.8, (1.0, 0.0), 0.0, Vec3::new(1.0, 0.0, 0.0), 1.0);
+    let bent = brushed.reflection_normal();
+    assert!(
+        bent.dot(normal) < 0.999,
+        "an anisotropic gloss must bend the reflection normal, got {bent:?}"
+    );
+
+    // A metal has no diffuse term: what it reflects is the prefiltered
+    // radiance along the bent mirror direction times the unchanged weight.
+    let lut = pbr_brdf::split_sum_brdf_approx(normal.dot(view), 0.3);
+    let weight = base * lut.0 + Vec3::splat(lut.1);
+    let expected = lighting.environment_prefiltered(view, bent, 0.3) * weight * lighting.intensity;
+    let actual = lighting.surface_environment_light(&brushed);
+    assert_vec3_close(actual, expected, 1.0e-6, "anisotropic reflection");
+    assert_ne!(
+        actual,
+        lighting.surface_environment_light(&plain),
+        "the bent reflection must reach a different part of the environment"
+    );
+}
