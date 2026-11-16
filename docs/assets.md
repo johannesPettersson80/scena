@@ -242,6 +242,16 @@ resolved source index, optional name, and whether selection was default,
 explicit-index, or explicit-name. The scene selector is part of the cache key,
 so a cached default scene can never satisfy a later explicit selection.
 
+### Lights
+
+`KHR_lights_punctual` directional, point, and spot lights instantiate as scene
+lights. A node that carries only a light becomes the light node. A node that
+also carries a mesh keeps its mesh (or instanced mesh) node and gains the light
+as a child with an identity transform, so the light shines from the node's own
+frame and follows the node when it is moved or animated. The child is not one
+of the node's primitives: morph weights and weight animation never target it,
+and it is removed together with the import.
+
 ### Quantized geometry, morphs, animation, and skins
 
 `KHR_mesh_quantization` POSITION accessors accept every extension-defined

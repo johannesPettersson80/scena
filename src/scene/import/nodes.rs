@@ -9,7 +9,7 @@ use super::instancing::instanced_bounds;
 use super::types::{ImportBuild, ImportedNode, PendingSkinBinding, mesh_node_kind};
 use super::units::convert_marker_units;
 use super::{ImportAnchor, ImportConnector, MeshVariantRecord};
-use crate::diagnostics::{ImportDiagnosticOverlayKind, InstantiateError};
+use crate::diagnostics::{ImportDiagnosticOverlayKind, InstantiateError, LookupError};
 use crate::scene::{Light, NodeKey, NodeKind, Scene, Transform, WorldTransform};
 
 /// One asset node waiting to be instantiated, together with the scene context
@@ -168,28 +168,7 @@ impl Scene {
                 }
                 node
             }
-            ([], Some(light)) => match light.light() {
-                Light::Directional(light) => self
-                    .directional_light(light)
-                    .parent(parent)
-                    .transform(transform)
-                    .add(),
-                Light::Point(light) => self
-                    .point_light(light)
-                    .parent(parent)
-                    .transform(transform)
-                    .add(),
-                Light::Spot(light) => self
-                    .spot_light(light)
-                    .parent(parent)
-                    .transform(transform)
-                    .add(),
-                Light::Area(light) => self
-                    .area_light(light)
-                    .parent(parent)
-                    .transform(transform)
-                    .add(),
-            },
+            ([], Some(light)) => self.add_imported_light(parent, light.light(), transform),
             ([], None) => self.insert_node(parent, NodeKind::Empty, transform),
         }
         .expect("import parent was inserted by this scene");
@@ -201,6 +180,16 @@ impl Scene {
                 .map(|parent| parent.children().to_vec())
                 .unwrap_or_default(),
         };
+        // A node may carry a mesh and a light at once. The scene node is then
+        // the mesh, and the light becomes a child that shines from the node's
+        // own frame. It is added after `morph_nodes` is read so it is never
+        // mistaken for one of the node's primitives.
+        if !meshes.is_empty()
+            && let Some(light) = source_node.light()
+        {
+            self.add_imported_light(node, light.light(), Transform::IDENTITY)
+                .expect("the mesh node was inserted by this scene");
+        }
         build.records.push(ImportedNode {
             source_index,
             node,
@@ -358,5 +347,20 @@ impl Scene {
             placement_node,
             root_from_node,
         })
+    }
+
+    fn add_imported_light(
+        &mut self,
+        parent: NodeKey,
+        light: Light,
+        transform: Transform,
+    ) -> Result<NodeKey, LookupError> {
+        let builder = match light {
+            Light::Directional(light) => self.directional_light(light),
+            Light::Point(light) => self.point_light(light),
+            Light::Spot(light) => self.spot_light(light),
+            Light::Area(light) => self.area_light(light),
+        };
+        builder.parent(parent).transform(transform).add()
     }
 }

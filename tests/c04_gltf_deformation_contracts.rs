@@ -962,6 +962,49 @@ fn multi_primitive_weight_channel_fans_out_to_each_renderable_child() {
 }
 
 #[test]
+fn a_light_on_a_multi_primitive_morph_node_is_not_a_morph_target() {
+    let mut document = multi_primitive_fixture();
+    document["extensionsUsed"] = json!(["KHR_lights_punctual"]);
+    document["extensions"] = json!({"KHR_lights_punctual": {"lights": [{"type": "point"}]}});
+    document["nodes"][0]["extensions"] = json!({"KHR_lights_punctual": {"light": 0}});
+    let (_assets, scene_asset) = load_document("lit-multi-primitive-morph.gltf", document)
+        .expect("a morph mesh node may also carry a light");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("lit multi-primitive morph fixture instantiates");
+    let parent = import.node("MultiMorph").expect("source node resolves");
+    let (lights, primitives): (Vec<_>, Vec<_>) = scene
+        .node(parent)
+        .expect("parent exists")
+        .children()
+        .iter()
+        .copied()
+        .partition(|child| {
+            matches!(
+                scene.node(*child).expect("child exists").kind(),
+                scena::NodeKind::Light(_)
+            )
+        });
+    assert_eq!(primitives.len(), 2, "each primitive must be renderable");
+    assert_eq!(lights.len(), 1, "the node's light must be imported");
+
+    let mixer = scene
+        .create_animation_mixer(&import, "FanOut")
+        .expect("the weight channel binds to the primitives, not to the light");
+    scene
+        .seek_animation(mixer, 1.0)
+        .expect("the weight channel samples");
+    for child in &primitives {
+        assert_weights_near(scene.morph_weights(*child).unwrap(), &[1.0]);
+    }
+    assert!(
+        scene.morph_weights(lights[0]).is_none(),
+        "a light never receives morph weights",
+    );
+}
+
+#[test]
 fn morph_targets_preserve_cardinality_and_optional_normal_tangent_semantics() {
     let (assets, scene_asset) =
         load_document("sparse-morph-semantics.gltf", sparse_morph_fixture())
