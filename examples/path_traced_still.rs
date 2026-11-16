@@ -3,18 +3,25 @@
 //! ```text
 //! cargo run --release --example path_traced_still -- spheres --samples 128 --out spheres.png
 //! cargo run --release --example path_traced_still -- demo/samples/khronos/WaterBottle.glb
+//! cargo run --release --example path_traced_still -- spheres --rasterize --out raster.png
+//! cargo run --release --example path_traced_still -- demo/samples/gate-valve/gate_valve_dn100.glb
 //! ```
 //!
 //! The subject stands on a seamless backdrop under three softboxes. Nothing
-//! here is specific to path tracing except the last call: the same scene
-//! renders with `Renderer::render` too.
+//! here is specific to path tracing except the last call: `--rasterize`
+//! draws the same scene with `Renderer::render` for a side-by-side look.
+//!
+//! A model whose materials state a surface finish, as the gate valve's do,
+//! is traced with it. `--plain` traces the bare mesh and plain materials
+//! instead, and `--edge-radius-mm <mm>` rounds the edges of parts that have
+//! no finish.
 
 use std::f32::consts::FRAC_PI_2;
 
 use scena::{
-    Aabb, Angle, AreaLight, AreaLightShape, Assets, Color, DepthOfFieldConfig, GeometryDesc,
-    GeometryTopology, GeometryVertex, MaterialDesc, PathTraceOptions, PerspectiveCamera, Renderer,
-    Scene, Transform, Vec3,
+    Aabb, Angle, AreaLight, AreaLightShape, Assets, CaptureOptions, Color, DepthOfFieldConfig,
+    GeometryDesc, GeometryTopology, GeometryVertex, MaterialDesc, PathTraceOptions,
+    PerspectiveCamera, Renderer, Scene, Transform, Vec3,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -138,7 +145,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .add()?;
     }
 
-    let mut renderer = Renderer::headless(width, height)?;
+    // Tracing needs no GPU. Rasterizing prefers one and falls back to the CPU.
+    let rasterize = arguments.iter().any(|argument| argument == "--rasterize");
+    let mut renderer = if rasterize {
+        Renderer::headless_gpu(width, height).or_else(|_| Renderer::headless(width, height))?
+    } else {
+        Renderer::headless(width, height)?
+    };
     renderer.set_environment(assets.default_environment());
     renderer.set_environment_intensity(0.15);
     renderer.set_background_color(Color::from_linear_rgb(0.02, 0.02, 0.022));
@@ -153,10 +166,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         8,
     )));
 
+    if rasterize {
+        renderer.prepare_with_assets(&mut scene, &assets)?;
+        renderer.render(&scene, camera)?;
+        renderer
+            .capture_rgba8(&scene, CaptureOptions::default())?
+            .write_png(output)?;
+        eprintln!("{output}: {width}x{height}, rasterized");
+        return Ok(());
+    }
+
+    let flag = |name: &str| arguments.iter().any(|argument| argument == name);
+    let edge_radius_m = option("--edge-radius-mm")
+        .and_then(|value| value.parse::<f32>().ok())
+        .map_or(0.0, |millimetres| millimetres * 0.001);
     let options = PathTraceOptions::new()
         .with_samples_per_pixel(number("--samples", 128))
         .with_max_bounces(number("--bounces", 10))
-        .with_denoise(!arguments.iter().any(|argument| argument == "--no-denoise"));
+        .with_denoise(!flag("--no-denoise"))
+        .with_surface_detail(!flag("--plain"))
+        .with_edge_radius_m(edge_radius_m);
     let started = std::time::Instant::now();
     let image =
         renderer.path_trace_with_progress(&scene, &assets, camera, &options, &|done, total| {
@@ -167,10 +196,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     image.write_png(output)?;
     let stats = image.stats();
     eprintln!(
-        "{output}: {width}x{height}, {} samples per pixel, {} triangles, {} lights, {:.1} s",
+        "{output}: {width}x{height}, {} samples per pixel, {} triangles, {} lights, \
+         {} finished and {} rounded surfaces, {:.1} s",
         stats.samples_per_pixel,
         stats.triangles,
         stats.lights,
+        stats.finished_surfaces,
+        stats.rounded_surfaces,
         started.elapsed().as_secs_f32()
     );
     Ok(())
