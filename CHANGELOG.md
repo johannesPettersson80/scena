@@ -74,6 +74,8 @@ All notable user-facing changes are recorded here.
   the new `LookupError::PickRequiresAssets { node }` instead of a silent miss.
   `LookupError` is not `#[non_exhaustive]`, so exhaustive matches on it need a
   new arm.
+- A glTF node with both a mesh and a `KHR_lights_punctual` light imports
+  both; the light becomes a child of the mesh node.
 
 ### Assets
 
@@ -85,7 +87,34 @@ All notable user-facing changes are recorded here.
   a failed load no longer poisons the asset store.
 - Stricter glTF validation: non-normalized integer `COLOR_0`, signed or
   non-normalized `TEXCOORD_0` without `KHR_mesh_quantization`, an unreadable
-  `inverseBindMatrices` accessor, and accessors with `count` 0 are rejected.
+  `inverseBindMatrices` accessor, accessors with `count` 0, a `bufferView`
+  that runs past its buffer's `byteLength`, and an embedded buffer shorter
+  than its `byteLength` are rejected.
+- Bound the memory a glTF import materializes. Decoded accessors, the data
+  derived from them and, with `meshopt`, decompressed
+  `EXT_meshopt_compression` views are reserved from a per-import budget
+  before allocation: 1 GiB by default, set with
+  `AssetLoadOptions::with_max_accessor_bytes`, reported as
+  `AssetError::PolicyViolation`. A sparse accessor with a huge `count` used to
+  abort the process.
+- Import `TRIANGLE_STRIP`, `TRIANGLE_FAN`, `LINE_STRIP` and `LINE_LOOP` as
+  triangle and line lists. `POINTS` is still rejected.
+- Percent-decode glTF buffer and image URIs for assets addressed by a
+  file-system path; URL-addressed assets and browser builds keep the encoding.
+  A file name containing a literal percent escape must be referenced with
+  `%25`.
+- A zero-area triangle in a primitive without `NORMAL` and a skinned vertex
+  with all-zero weights no longer fail the asset. They are reported as
+  `AssetLoadWarning::DegenerateTriangleNormals` and `SkinVerticesUnweighted`
+  (`degenerate_triangle_normals`, `skin_vertices_unweighted`). Neither warning
+  enum is `#[non_exhaustive]`, so exhaustive matches need new arms.
+- Morphed normals are summed over all targets and normalized once, so meshes
+  that blend two or more `NORMAL`-delta targets shade slightly differently.
+  `GeometryDesc::skinned_vertices` leaves a vertex without weights in place
+  instead of moving it to the origin.
+- `Assets::release_unreferenced` keeps materials reachable only through
+  `KHR_materials_variants`, the textures of every retained material, and
+  textures returned by `Assets::load_texture`.
 
 ## [1.10.6] - 2026-08-23
 
