@@ -427,7 +427,7 @@ impl<F> Assets<F> {
 
         let handle = {
             let mut storage = self.storage();
-            if let Some(handle) = storage.texture_lookup.get(&cache_key).copied() {
+            let handle = if let Some(handle) = storage.texture_lookup.get(&cache_key).copied() {
                 if source_bytes.is_some() {
                     let texture =
                         storage
@@ -455,7 +455,10 @@ impl<F> Assets<F> {
                     )?));
                 storage.texture_lookup.insert(cache_key, handle);
                 handle
-            }
+            };
+            // The caller owns this handle like one from `create_material`.
+            storage.user_created_textures.insert(handle);
+            handle
         };
         #[cfg(target_arch = "wasm32")]
         self.decode_browser_texture_image(handle).await?;
@@ -561,14 +564,6 @@ impl<F> Assets<F> {
             self.storage.clear_poison();
             poisoned.into_inner()
         })
-    }
-
-    fn cached_texture_if_decoded(&self, cache_key: &TextureCacheKey) -> Option<TextureHandle> {
-        let storage = self.storage();
-        let handle = *storage.texture_lookup.get(cache_key)?;
-        let texture = storage.textures.get(handle)?;
-        (!texture_format_has_cpu_decoder(cache_key.source_format) || texture.has_decoded_pixels())
-            .then_some(handle)
     }
 
     async fn fetch_optional_texture_bytes(

@@ -484,6 +484,23 @@ Added roots attach to the first prior host parent while retaining the new
 asset-authored local state. If instantiation fails, no old root or host override
 is removed.
 
+Every reload leaves the replaced scene's geometry, material, and texture
+descriptors in the store, because an instantiated `Scene` may still draw with
+them. `Assets::release_unreferenced` frees the ones nothing can reach any more.
+It keeps:
+
+- the geometry and default material of every mesh of every cached scene, and
+  every material a `KHR_materials_variants` binding of that mesh can select,
+  so `Scene::set_active_variant` never swaps in a freed handle;
+- every descriptor the caller created or loaded: `Assets::create_geometry`,
+  `Assets::create_material`, `Assets::create_environment`, and
+  `Assets::load_texture`;
+- every texture a retained material samples, including an imported texture that
+  only a caller-created material still uses.
+
+Pass scenes that are still instantiated but no longer cached to
+`Assets::release_unreferenced_with_scene_roots`; they are rooted the same way.
+
 Draco mesh compression is intentionally not decoder-backed yet. On native and
 browser targets, optional `KHR_draco_mesh_compression` reports structured
 degradation metadata and required Draco usage fails with

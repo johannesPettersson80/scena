@@ -19,7 +19,8 @@ use std::future::ready;
 use std::sync::{Arc, Mutex};
 
 use scena::{
-    AssetError, AssetFetcher, AssetPath, Assets, Color, GeometryDesc, MaterialDesc, RetainPolicy,
+    AssetError, AssetFetcher, AssetPath, Assets, Color, GeometryDesc, MaterialDesc, Renderer,
+    RetainPolicy, Scene, TextureColorSpace,
 };
 
 #[test]
@@ -218,6 +219,217 @@ fn m8_release_unreferenced_with_scene_roots_retains_older_reload_descriptors() {
         assets.material(first_material).is_some(),
         "old scene material must survive while the caller passes the old SceneAsset as a root",
     );
+}
+
+#[test]
+fn m8_release_unreferenced_retains_materials_reachable_only_through_material_variants() {
+    // KHR_materials_variants binds materials a primitive does not use until a
+    // variant is selected. They belong to the scene just like its default
+    // material: collecting them would leave `Scene::set_active_variant`
+    // swapping in a handle that no longer resolves.
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/material_variants_scene.gltf"))
+            .expect("variants fixture loads");
+    let mesh = scene_asset.nodes()[0].mesh().expect("fixture mesh exists");
+    let variant_materials = mesh
+        .material_variant_bindings()
+        .iter()
+        .map(|binding| binding.material())
+        .collect::<Vec<_>>();
+    assert_eq!(variant_materials.len(), 2, "the fixture binds two variants");
+    assert!(
+        !variant_materials.contains(&mesh.material()),
+        "the variant materials are reachable only through the bindings",
+    );
+
+    let stats = assets.release_unreferenced();
+    assert_eq!(
+        stats.materials_evicted, 0,
+        "variant materials of a cached scene must survive: {stats:?}",
+    );
+    for material in &variant_materials {
+        assert!(
+            assets.material(*material).is_some(),
+            "variant material {material:?} must still resolve",
+        );
+    }
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("variants scene instantiates");
+    scene
+        .set_active_variant(&import, Some("midnight"))
+        .expect("the midnight variant is selectable");
+    scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(32, 32).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("the selected variant's material must still resolve at prepare time");
+}
+
+#[test]
+fn m8_release_unreferenced_with_scene_roots_retains_variant_materials_of_the_roots() {
+    let path = AssetPath::from("memory://rooted-gc/variants.gltf");
+    let variants = std::fs::read("tests/assets/gltf/material_variants_scene.gltf")
+        .expect("variants fixture reads");
+    let fetcher = MutableMemoryFetcher::new(vec![(path.clone(), variants)]);
+    let mut assets = Assets::with_fetcher(fetcher.clone());
+    assets.set_retain_policy(RetainPolicy::Always);
+    let first = pollster::block_on(assets.load_scene(path.clone())).expect("first scene loads");
+    let variant_materials = first.nodes()[0]
+        .mesh()
+        .expect("fixture mesh exists")
+        .material_variant_bindings()
+        .iter()
+        .map(|binding| binding.material())
+        .collect::<Vec<_>>();
+
+    // Reloading replaces the cache entry, so only the explicit root keeps the
+    // first asset alive.
+    fetcher.insert(
+        path,
+        coloured_triangle_gltf([0.0, 0.0, 1.0, 1.0]).into_bytes(),
+    );
+    pollster::block_on(assets.reload_scene(&first)).expect("scene reloads");
+
+    let stats = assets.release_unreferenced_with_scene_roots([&first]);
+    assert_eq!(
+        stats.materials_evicted, 0,
+        "variant materials of an explicit scene root must survive: {stats:?}",
+    );
+    for material in &variant_materials {
+        assert!(assets.material(*material).is_some());
+    }
+
+    let stats = assets.release_unreferenced();
+    assert_eq!(
+        stats.materials_evicted, 3,
+        "without the root, the replaced scene's default and variant materials go: {stats:?}",
+    );
+}
+
+#[test]
+fn m8_release_unreferenced_retains_textures_of_user_created_materials() {
+    // A user-created material is always retained, so the textures it samples
+    // have to be retained with it: otherwise the surviving material holds a
+    // texture handle that no longer resolves.
+    let texture_path = AssetPath::from("memory://gc/albedo.png");
+    let fetcher = MutableMemoryFetcher::new(vec![(texture_path.clone(), one_pixel_png())]);
+    let assets = Assets::with_fetcher(fetcher);
+    let texture =
+        pollster::block_on(assets.load_texture(texture_path.clone(), TextureColorSpace::Srgb))
+            .expect("texture loads");
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::WHITE).with_base_color_texture(texture));
+
+    let stats = assets.release_unreferenced();
+    assert_eq!(
+        stats.textures_evicted, 0,
+        "a texture sampled by a user-created material must survive: {stats:?}",
+    );
+    assert!(assets.texture(texture).is_some());
+    assert_eq!(
+        assets
+            .material(material)
+            .expect("user material resolves")
+            .base_color_texture(),
+        Some(texture),
+    );
+    assert_eq!(
+        pollster::block_on(assets.load_texture(texture_path, TextureColorSpace::Srgb))
+            .expect("texture loads again"),
+        texture,
+        "the texture cache still serves the retained handle",
+    );
+}
+
+#[test]
+fn m8_release_unreferenced_retains_loaded_textures_that_no_material_uses_yet() {
+    // `Assets::load_texture` hands the caller a handle exactly like
+    // `Assets::create_material` does. It must not disappear between loading
+    // the texture and attaching it to a material.
+    let texture_path = AssetPath::from("memory://gc/pending.png");
+    let fetcher = MutableMemoryFetcher::new(vec![(texture_path.clone(), one_pixel_png())]);
+    let assets = Assets::with_fetcher(fetcher);
+    let texture = pollster::block_on(assets.load_texture(texture_path, TextureColorSpace::Srgb))
+        .expect("texture loads");
+
+    let stats = assets.release_unreferenced();
+    assert_eq!(
+        stats.textures_evicted, 0,
+        "a texture the caller loaded must survive: {stats:?}",
+    );
+    assert!(assets.texture(texture).is_some());
+}
+
+#[test]
+fn m8_release_unreferenced_retains_scene_textures_that_a_user_material_still_samples() {
+    // Copy an imported material and keep using its texture after the scene it
+    // came from was replaced: the texture is no longer reachable from any
+    // scene, only from the user-created copy.
+    let scene_path = AssetPath::from("memory://gc/textured.gltf");
+    let fetcher = MutableMemoryFetcher::new(vec![
+        (scene_path.clone(), textured_triangle_gltf().into_bytes()),
+        (AssetPath::from("memory://gc/albedo.png"), one_pixel_png()),
+    ]);
+    let mut assets = Assets::with_fetcher(fetcher.clone());
+    assets.set_retain_policy(RetainPolicy::Always);
+    let first = pollster::block_on(assets.load_scene(scene_path.clone())).expect("scene loads");
+    let imported = assets
+        .material(first.nodes()[0].mesh().expect("mesh exists").material())
+        .expect("imported material resolves");
+    let texture = imported
+        .base_color_texture()
+        .expect("the imported material samples a texture");
+    let copy = assets.create_material(imported);
+
+    fetcher.insert(
+        scene_path,
+        coloured_triangle_gltf([0.0, 0.0, 1.0, 1.0]).into_bytes(),
+    );
+    pollster::block_on(assets.reload_scene(&first)).expect("scene reloads");
+
+    let stats = assets.release_unreferenced();
+    assert_eq!(
+        stats.textures_evicted, 0,
+        "the user-created copy still samples the texture: {stats:?}",
+    );
+    assert!(assets.texture(texture).is_some());
+    assert_eq!(
+        assets
+            .material(copy)
+            .expect("user material resolves")
+            .base_color_texture(),
+        Some(texture),
+    );
+}
+
+fn one_pixel_png() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(std::io::Cursor::new(&mut bytes), 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("PNG header writes");
+        writer
+            .write_image_data(&[255, 128, 64, 255])
+            .expect("PNG payload writes");
+    }
+    bytes
+}
+
+/// The coloured triangle with a base color texture read from `albedo.png`.
+fn textured_triangle_gltf() -> String {
+    let mut document: serde_json::Value =
+        serde_json::from_str(&coloured_triangle_gltf([1.0, 1.0, 1.0, 1.0]))
+            .expect("triangle fixture parses");
+    document["images"] = serde_json::json!([{"uri": "albedo.png"}]);
+    document["textures"] = serde_json::json!([{"source": 0}]);
+    document["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"] =
+        serde_json::json!({"index": 0});
+    document.to_string()
 }
 
 #[derive(Clone)]

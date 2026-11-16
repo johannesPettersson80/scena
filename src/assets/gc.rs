@@ -24,10 +24,12 @@ impl<F> Assets<F> {
     /// reading the typed `*HandleNotFound` error documentation.
     ///
     /// Reachability is rooted at:
-    /// - every `SceneAsset` in `scene_lookup` (its `nodes()`'s `meshes()`
-    ///   contribute their `GeometryHandle` and `MaterialHandle`);
+    /// - every `SceneAsset` in `scene_lookup`: each mesh contributes its
+    ///   `GeometryHandle`, its `MaterialHandle`, and every material one of
+    ///   its `KHR_materials_variants` bindings can select;
     /// - every cached `EnvironmentHandle` in `environment_lookup`;
-    /// - the texture slots of every reachable material descriptor.
+    /// - the texture slots of every retained material descriptor, whether a
+    ///   scene reaches it or the caller created it.
     ///
     /// A `SceneAsset` returned by [`Assets::load_scene`] but later replaced by
     /// [`Assets::reload_scene`] is no longer reachable here. If a caller still
@@ -61,26 +63,33 @@ impl<F> Assets<F> {
         let mut referenced_textures: BTreeSet<TextureHandle> = BTreeSet::new();
         let mut referenced_environments: BTreeSet<EnvironmentHandle> = BTreeSet::new();
 
-        for scene in storage.scene_lookup.values() {
+        let mut root_scene = |scene: &SceneAsset| {
             for node in scene.nodes() {
                 for mesh in node.meshes() {
                     referenced_geometries.insert(mesh.geometry());
                     referenced_materials.insert(mesh.material());
+                    // A variant binding names a material the mesh does not
+                    // use until `Scene::set_active_variant` selects it.
+                    referenced_materials.extend(
+                        mesh.material_variant_bindings()
+                            .iter()
+                            .map(|binding| binding.material()),
+                    );
                 }
             }
-        }
-        for scene in scene_roots {
-            for node in scene.nodes() {
-                for mesh in node.meshes() {
-                    referenced_geometries.insert(mesh.geometry());
-                    referenced_materials.insert(mesh.material());
-                }
-            }
-        }
+        };
+        storage.scene_lookup.values().for_each(&mut root_scene);
+        scene_roots.into_iter().for_each(&mut root_scene);
         for environment in storage.environment_lookup.values().copied() {
             referenced_environments.insert(environment);
         }
-        for material_handle in referenced_materials.iter().copied() {
+        // Every material that survives keeps its textures: a user-created
+        // material is retained below, so its texture slots are roots too.
+        let retained_materials = referenced_materials
+            .iter()
+            .chain(&storage.user_created_materials)
+            .copied();
+        for material_handle in retained_materials {
             if let Some(material) = storage.materials.get(material_handle) {
                 for handle in [
                     material.base_color_texture(),
