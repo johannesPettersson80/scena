@@ -121,7 +121,7 @@ before it allocates it:
   targets that omit `POSITION`, and the per-keyframe vectors of morph-weight
   animation.
 
-The reservation that would pass the budget fails with the stream's name, its
+A reservation that would exceed the budget fails with the stream's name, its
 size, and the running total, and nothing is allocated for it. Hosts that load
 untrusted files can lower the budget; hosts that load very large trusted
 models raise it.
@@ -484,9 +484,8 @@ Added roots attach to the first prior host parent while retaining the new
 asset-authored local state. If instantiation fails, no old root or host override
 is removed.
 
-Every reload leaves the replaced scene's geometry, material, and texture
-descriptors in the store, because an instantiated `Scene` may still draw with
-them. `Assets::release_unreferenced` frees the ones nothing can reach any more.
+A reload leaves the descriptors of the replaced scene in the store, because an
+instantiated `Scene` may still draw with them. `Assets::release_unreferenced` frees the ones nothing can reach any more.
 It keeps:
 
 - the geometry and default material of every mesh of every cached scene, and
