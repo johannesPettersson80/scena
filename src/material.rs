@@ -4,12 +4,14 @@ use crate::assets::TextureHandle;
 
 mod color;
 mod extensions;
+mod finish;
 mod presets;
 mod scalars;
 mod types;
 
 pub(crate) use color::srgb_u8_to_linear;
 pub use color::{Color, ColorParseError};
+pub use finish::SurfaceFinish;
 use scalars::{clamp_degrees_or, clamp_unit_or, non_negative_or, positive_or, sanitize_alpha_mode};
 pub use types::{AlphaMode, MaterialKind, TextureColorSpace, TextureTransform};
 
@@ -114,6 +116,7 @@ pub struct MaterialDesc {
     edge_angle_threshold_degrees: Option<f32>,
     photographic_surface_tile_size_m: Option<f32>,
     photographic_micro_surface: Option<PhotographicMicroSurface>,
+    surface_finish: Option<SurfaceFinish>,
 }
 
 impl MaterialDesc {
@@ -257,6 +260,7 @@ impl MaterialDesc {
             edge_angle_threshold_degrees,
             photographic_surface_tile_size_m: None,
             photographic_micro_surface: None,
+            surface_finish: None,
         }
     }
 

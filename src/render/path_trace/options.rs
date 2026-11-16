@@ -20,6 +20,8 @@ pub struct PathTraceOptions {
     radiance_clamp: f32,
     directional_light_angular_radius: f32,
     environment_resolution: u32,
+    surface_detail: bool,
+    edge_radius_m: f32,
 }
 
 impl Default for PathTraceOptions {
@@ -32,6 +34,8 @@ impl Default for PathTraceOptions {
             radiance_clamp: 32.0,
             directional_light_angular_radius: 0.5_f32.to_radians(),
             environment_resolution: 1024,
+            surface_detail: true,
+            edge_radius_m: 0.0,
         }
     }
 }
@@ -43,6 +47,8 @@ impl PathTraceOptions {
     pub const MAX_BOUNCES: u32 = 64;
     /// Largest accepted environment cube edge, in texels.
     pub const MAX_ENVIRONMENT_RESOLUTION: u32 = 2048;
+    /// Largest accepted [`Self::with_edge_radius_m`], in metres.
+    pub const MAX_EDGE_RADIUS_M: f32 = 1.0;
 
     /// Balanced defaults: 64 paths per pixel, 8 bounces, denoised.
     pub fn new() -> Self {
@@ -100,6 +106,17 @@ impl PathTraceOptions {
     /// Texels along each edge of the cube an HDR environment is sampled into.
     pub const fn environment_resolution(self) -> u32 {
         self.environment_resolution
+    }
+
+    /// Whether surface finishes and rounded edges are traced.
+    pub const fn surface_detail(self) -> bool {
+        self.surface_detail
+    }
+
+    /// Edge rounding radius, in metres, of surfaces whose material has no
+    /// [`crate::SurfaceFinish`].
+    pub const fn edge_radius_m(self) -> f32 {
+        self.edge_radius_m
     }
 
     /// Sets the paths per pixel, clamped to `1..=MAX_SAMPLES_PER_PIXEL`.
@@ -168,6 +185,38 @@ impl PathTraceOptions {
         };
         self
     }
+
+    /// Turns surface detail on or off; it is on unless turned off.
+    ///
+    /// With it on, a material's [`crate::SurfaceFinish`] is traced and edges
+    /// are rounded. Off, every surface is the plain material on the bare
+    /// mesh, which is what the rasterizer draws.
+    pub const fn with_surface_detail(mut self, surface_detail: bool) -> Self {
+        self.surface_detail = surface_detail;
+        self
+    }
+
+    /// Rounds the edges of every surface whose material has no
+    /// [`crate::SurfaceFinish`] to `radius_m` metres; a finish brings its
+    /// own radius.
+    ///
+    /// The rounding is a shading effect, as described on
+    /// [`crate::SurfaceFinish::with_edge_radius_m`]. It reaches across the
+    /// faces of one mesh, so parts modelled as separate meshes keep a crisp
+    /// line where they meet. Values are clamped to
+    /// `0.0..=MAX_EDGE_RADIUS_M`; `0.0`, the default, leaves edges sharp.
+    pub const fn with_edge_radius_m(mut self, radius_m: f32) -> Self {
+        self.edge_radius_m = if radius_m > 0.0 {
+            if radius_m > Self::MAX_EDGE_RADIUS_M {
+                Self::MAX_EDGE_RADIUS_M
+            } else {
+                radius_m
+            }
+        } else {
+            0.0
+        };
+        self
+    }
 }
 
 /// What a path-traced render contained and how it was computed.
@@ -196,4 +245,8 @@ pub struct PathTraceStats {
     pub skipped_particle_nodes: u32,
     /// Triangles left out because they have no area or are not finite.
     pub skipped_degenerate_triangles: u64,
+    /// Meshes and instances traced with a surface finish.
+    pub finished_surfaces: u32,
+    /// Meshes and instances traced with rounded edges.
+    pub rounded_surfaces: u32,
 }

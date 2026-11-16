@@ -132,6 +132,16 @@ impl TraceCamera {
 
     /// The ray through `film`, a position on the image from its top-left
     /// corner in `[0, 1]`, leaving the lens at the point `lens` selects.
+    /// Width of one of the image's `rows` of pixels on a surface the camera
+    /// faces: per unit of distance from the camera, plus a constant.
+    pub(super) fn pixel_footprint(&self, rows: u32) -> (f32, f32) {
+        let rows = rows.max(1) as f32;
+        match self.projection {
+            Projection::Perspective { half_height, .. } => (2.0 * half_height / rows, 0.0),
+            Projection::Orthographic { bottom, top, .. } => (0.0, (top - bottom).abs() / rows),
+        }
+    }
+
     pub(super) fn ray(&self, film: (f32, f32), lens: (f32, f32)) -> CameraRay {
         let (x, y) = (film.0 * 2.0 - 1.0, 1.0 - film.1 * 2.0);
         // In camera space the ray advances one unit of depth per unit of

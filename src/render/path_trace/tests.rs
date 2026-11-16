@@ -899,3 +899,5 @@ fn missing_inputs_are_reported_instead_of_rendered_around() {
         "{error:?}"
     );
 }
+
+mod detail;

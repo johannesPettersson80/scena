@@ -12,7 +12,7 @@ use super::light::LightSampler;
 use super::material::TraceMaterial;
 use super::sampling::{Frame, Rng, power_heuristic};
 use super::scene::{NONE, TraceScene};
-use super::shading::Shading;
+use super::shading::{Shading, lift};
 
 /// Bounces after which a path may be ended at random.
 const ROULETTE_START: u32 = 3;
@@ -25,6 +25,9 @@ pub(super) struct Tracer<'a> {
     pub(super) emitters: &'a Emitters,
     pub(super) environment: Option<&'a TraceEnvironment>,
     pub(super) max_bounces: u32,
+    /// Width of an image pixel on a surface: per unit of distance along the
+    /// path, plus a constant.
+    pub(super) footprint: (f32, f32),
 }
 
 /// The first surface a camera path meets, which guides the denoiser.
@@ -73,12 +76,6 @@ impl Arrival {
     }
 }
 
-/// Distance a ray's origin is lifted off its surface. Positions are measured
-/// from the camera, so this scales with the surface's distance from it.
-fn lift(position: Vec3) -> f32 {
-    2.0e-5 * position.abs().max_element().max(1.0e-2)
-}
-
 impl Tracer<'_> {
     pub(super) fn trace(&self, ray: CameraRay, rng: &mut Rng) -> PathSample {
         let mut sample = PathSample {
@@ -92,6 +89,7 @@ impl Tracer<'_> {
         let mut arrival = Arrival::Camera;
         // Solid glass the ray is travelling inside, which absorbs along it.
         let mut medium: Option<&TraceMaterial> = None;
+        let mut travelled = 0.0_f32;
         for bounce in 0..=self.max_bounces {
             let hit = self.scene.closest(origin, direction, reach, skip, rng);
             let camera_ray = matches!(arrival, Arrival::Camera);
@@ -106,7 +104,15 @@ impl Tracer<'_> {
                 }
                 break;
             };
-            let shading = self.scene.shade(direction, &hit);
+            let mut shading = self.scene.shade(direction, &hit);
+            travelled += hit.distance;
+            // Surface detail matters where the image shows the surface
+            // itself, directly or in a mirror, not in the light it bounces.
+            if !matches!(arrival, Arrival::Scattered { .. }) && self.scene.detailed(hit.triangle) {
+                let footprint = self.footprint.0 * travelled + self.footprint.1;
+                self.scene
+                    .refine(&mut shading, &hit, direction, footprint, rng);
+            }
             let surface = &shading.surface;
             if let Some(medium) = medium {
                 throughput *= medium.transmittance(hit.distance);

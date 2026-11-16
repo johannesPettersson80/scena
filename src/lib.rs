@@ -151,7 +151,7 @@ pub use geometry::{
 };
 pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
-    DEFAULT_STROKE_WIDTH_PX, MaterialDesc, MaterialKind, PhotographicMicroSurface,
+    DEFAULT_STROKE_WIDTH_PX, MaterialDesc, MaterialKind, PhotographicMicroSurface, SurfaceFinish,
     TextureColorSpace, TextureTransform,
 };
 pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, PickingMetrics, Viewport};

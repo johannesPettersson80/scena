@@ -13,6 +13,8 @@ use crate::scene::{NodeKey, Scene, WorldTransform};
 use super::super::prepare::tangents::generate_model_tangents;
 use super::PathTraceError;
 use super::bvh::Bvh;
+use super::detail::DetailSettings;
+use super::finish::TraceFinish;
 use super::material::{Coverage, TextureStore, TraceMaterial, TraceTexture};
 
 /// Marks a triangle without tangents or vertex colours.
@@ -31,6 +33,9 @@ pub(super) struct TraceObject {
     pub(super) culls_back_faces: bool,
     /// Hits are tested against the surface's opacity.
     pub(super) tests_coverage: bool,
+    /// Radius to which the object's edges are rounded when shading, or zero.
+    pub(super) edge_radius: f32,
+    pub(super) finish: Option<TraceFinish>,
 }
 
 pub(super) struct TriangleAttributes {
@@ -69,6 +74,7 @@ struct Builder<'a, F> {
     /// World position every vertex is measured from, which keeps coordinates
     /// small and precise however far the scene lies from the world origin.
     origin: Vec3,
+    detail: DetailSettings,
     store: TextureStore,
     material_slots: HashMap<MaterialHandle, Option<u32>>,
     vertex_color_material: Option<u32>,
@@ -102,6 +108,7 @@ impl TraceScene {
         assets: &Assets<F>,
         origin: Vec3,
         without: &[NodeKey],
+        detail: DetailSettings,
     ) -> Result<Self, PathTraceError> {
         if let Some(node) = scene.model_nodes().next() {
             return Err(PathTraceError::UnsupportedModelNode { node });
@@ -111,6 +118,7 @@ impl TraceScene {
         let mut builder = Builder {
             assets,
             origin,
+            detail,
             store: TextureStore::default(),
             material_slots: HashMap::new(),
             vertex_color_material: None,
@@ -250,6 +258,8 @@ impl<F> Builder<'_, F> {
             tint_alpha,
             culls_back_faces: !traced.double_sided && !traced.transmits(),
             tests_coverage: traced.coverage != Coverage::Opaque || tint_alpha < 1.0,
+            edge_radius: 0.0,
+            finish: None,
         });
         self.objects.len() as u32 - 1
     }
@@ -275,6 +285,16 @@ impl<F> Builder<'_, F> {
             });
         }
         let object = self.object(source.material, source.tint);
+        if self.detail.enabled && !self.materials[source.material as usize].unlit {
+            let finish = self.materials[source.material as usize]
+                .finish
+                .map(|finish| TraceFinish::new(finish, world.matrix()));
+            let object = &mut self.objects[object as usize];
+            object.edge_radius = finish
+                .as_ref()
+                .map_or(self.detail.edge_radius, |finish| finish.edge_radius);
+            object.finish = finish;
+        }
         let model_tangents = self.materials[source.material as usize]
             .uses_tangents()
             .then(|| model_tangents(&source))

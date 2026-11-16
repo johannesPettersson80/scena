@@ -21,6 +21,12 @@ pub(super) struct Shading<'a> {
     pub(super) material: &'a TraceMaterial,
 }
 
+/// Distance a ray's origin is lifted off its surface. Positions are measured
+/// from the camera, so this scales with the surface's distance from it.
+pub(super) fn lift(position: Vec3) -> f32 {
+    2.0e-5 * position.abs().max_element().max(1.0e-2)
+}
+
 fn mix(values: [Vec3; 3], hit: &Hit) -> Vec3 {
     values[0] * (1.0 - hit.u - hit.v) + values[1] * hit.u + values[2] * hit.v
 }
@@ -164,14 +170,8 @@ impl TraceScene {
         let attributes = &self.attributes[hit.triangle as usize];
         let object = &self.objects[attributes.object as usize];
         let material = &self.materials[object.material as usize];
-        let winding = self.winding_normal(hit.triangle).normalize_or_zero();
+        let (winding, mut normal) = self.outward_normals(hit);
         let front = winding.dot(direction) < 0.0;
-        let mut normal = mix(attributes.normals, hit).normalize_or_zero();
-        if normal.dot(winding) <= 0.0 {
-            // Vertex normals that disagree with the winding would light the
-            // wrong side; the face normal is the safe reading.
-            normal = winding;
-        }
         let (vertex_color, _) = self.vertex_color(hit);
         let surface = material.surface(&self.textures, self.uv(hit), vertex_color * object.tint);
         if let Some(mapped) = surface.normal_map

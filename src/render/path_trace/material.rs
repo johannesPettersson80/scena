@@ -3,7 +3,9 @@
 use glam::Vec3;
 
 use crate::assets::{Assets, TextureDesc, TextureHandle, TextureWrap};
-use crate::material::{AlphaMode, MaterialDesc, MaterialKind, TextureTransform, srgb_u8_to_linear};
+use crate::material::{
+    AlphaMode, MaterialDesc, MaterialKind, SurfaceFinish, TextureTransform, srgb_u8_to_linear,
+};
 
 /// Decoded RGBA8 texture with bilinear lookup.
 pub(super) struct TraceTexture {
@@ -129,6 +131,7 @@ pub(super) struct TraceMaterial {
     clearcoat_roughness: f32,
     sheen_color: Vec3,
     sheen_roughness: f32,
+    pub(super) finish: Option<SurfaceFinish>,
 }
 
 /// Collects decoded textures, sharing one copy per handle and colour space.
@@ -226,6 +229,7 @@ impl TraceMaterial {
             clearcoat_roughness: desc.clearcoat_roughness_factor(),
             sheen_color: rgb(desc.sheen_color_factor()),
             sheen_roughness: desc.sheen_roughness_factor(),
+            finish: desc.surface_finish(),
         }
     }
 
@@ -305,6 +309,7 @@ impl TraceMaterial {
             clearcoat_roughness: 0.0,
             sheen_color: Vec3::ZERO,
             sheen_roughness: 0.5,
+            finish: None,
         }
     }
 
@@ -378,7 +383,7 @@ pub(super) struct Surface {
 
 /// Lowest roughness traced as a rough lobe; below it highlights alias badly
 /// and the sampling densities lose precision.
-const MIN_ROUGHNESS: f32 = 0.03;
+pub(super) const MIN_ROUGHNESS: f32 = 0.03;
 
 impl TraceMaterial {
     pub(super) fn surface(

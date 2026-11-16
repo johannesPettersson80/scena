@@ -17,15 +17,19 @@ mod bsdf;
 mod bvh;
 mod camera;
 mod denoise;
+mod detail;
 mod emitters;
 mod environment;
 mod error;
 mod film;
+mod finish;
 mod image;
 mod integrator;
 mod light;
 mod material;
+mod noise;
 mod options;
+mod rounding;
 mod sampling;
 mod scene;
 mod shading;
@@ -40,6 +44,7 @@ use crate::assets::Assets;
 use crate::scene::{CameraKey, NodeKey, Scene};
 
 use self::camera::TraceCamera;
+use self::detail::DetailSettings;
 use self::emitters::Emitters;
 use self::environment::TraceEnvironment;
 use self::integrator::Tracer;
@@ -57,7 +62,8 @@ impl Renderer {
     ///
     /// Meshes and instance sets with unlit or metallic-roughness materials
     /// are traced, with their textures, normal maps, cut-outs, clearcoat,
-    /// sheen and glass. Anisotropy and iridescence are not traced and
+    /// sheen and glass, and with the [`crate::SurfaceFinish`] of materials
+    /// that have one. Anisotropy and iridescence are not traced and
     /// render as the plain material. Lines, wireframes, labels and particles
     /// are overlays rather than lit surfaces and are left out; the returned
     /// [`PathTraceStats`] say how many.
@@ -142,7 +148,11 @@ impl Renderer {
         }
         let (camera, origin) =
             TraceCamera::from_scene(scene, camera, (width, height), self.depth_of_field)?;
-        let traced = TraceScene::build(scene, assets, origin, without)?;
+        let detail = DetailSettings {
+            enabled: options.surface_detail(),
+            edge_radius: options.edge_radius_m(),
+        };
+        let traced = TraceScene::build(scene, assets, origin, without, detail)?;
         let lights = light::collect(scene, origin, options.directional_light_angular_radius());
         let emitters = Emitters::build(&traced);
         let environment = match self.environment {
@@ -165,12 +175,20 @@ impl Renderer {
             emitters: &emitters,
             environment: environment.as_ref(),
             max_bounces: options.max_bounces(),
+            footprint: camera.pixel_footprint(height),
         };
         // The clamp is set against the exposed image, so the same setting
         // suits a dim scene and a bright one.
         let clamp = options.radiance_clamp() * (-self.output.exposure_ev()).exp2();
         let film = film::expose(&tracer, &camera, (width, height), options, clamp, progress);
         let (radiance, rgba8) = film.develop(options.denoise(), self.output, self.background_color);
+        let count = |wanted: &dyn Fn(&scene::TraceObject) -> bool| {
+            traced
+                .objects
+                .iter()
+                .filter(|object| wanted(object))
+                .count() as u32
+        };
         Ok(PathTracedImage {
             width,
             height,
@@ -193,6 +211,8 @@ impl Renderer {
                 skipped_label_nodes: traced.skipped.label_nodes,
                 skipped_particle_nodes: traced.skipped.particle_nodes,
                 skipped_degenerate_triangles: traced.skipped.degenerate_triangles,
+                finished_surfaces: count(&|object| object.finish.is_some()),
+                rounded_surfaces: count(&|object| object.edge_radius > 0.0),
             },
         })
     }
