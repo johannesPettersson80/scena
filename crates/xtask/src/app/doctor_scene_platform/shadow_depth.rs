@@ -280,10 +280,24 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
         &[
             "pub(super) fn resource_stats(",
             "directional_shadow_map_resolution: Option<u32>",
-            "let shadow_edge =",
-            "textures: 3",
-            "render_targets: 1",
-            "shadow_edge",
+            "shadow_caster: GpuResourceStats",
+            "stats.add_assign(shadow_caster);",
+        ],
+    );
+    // The caster inventories its own map or atlas, pipelines and cascade
+    // uniforms; the environment stats only add them in.
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/gpu/shadow.rs",
+        &[
+            "pub(super) fn caster_resource_stats(",
+            "pub(super) fn resource_stats(&self) -> GpuResourceStats",
+            "atlas_cells_per_edge(cascade_count)",
+            "textures: 1,",
+            "render_targets: 1,",
+            "bind_groups: active * 2 + cascades,",
         ],
     );
     require_contains(

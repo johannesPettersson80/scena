@@ -29,6 +29,8 @@ const SPLIT_LAMBDA: f32 = 0.8;
 const MIN_NEAR_TO_FAR_RATIO: f32 = 0.01;
 /// Border kept around each crop so the widest filter kernel stays inside it.
 const CROP_BORDER_TEXELS: f32 = 26.0;
+/// Edge of one cascade cell relative to the 2x2 atlas.
+const ATLAS_SCALE: f32 = 0.5;
 
 /// Shadow data appended to the camera uniform.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,10 +69,14 @@ impl ShadowCascadeUniform {
         cascade_resolution: u32,
     ) -> Self {
         let cascade_count = cascade_count.clamp(1, MAX_SHADOW_CASCADES);
-        let single = Self::single(light_from_world);
         if cascade_count == 1 {
-            return single;
+            return Self::single(light_from_world);
         }
+        // Past this point the map is an atlas. A fit that cannot be computed
+        // still renders the scene matrix into every cell, so the fallback
+        // must read one cell rather than the whole atlas.
+        let mut single = Self::single(light_from_world);
+        single.params[1] = ATLAS_SCALE;
         let (Some(view_from_world), Some(world_from_view), Some(view_from_clip)) = (
             camera.view_from_world_matrix(),
             camera.world_from_view_matrix(),
@@ -110,7 +116,7 @@ impl ShadowCascadeUniform {
         let mut uniform = single;
         uniform.params = [
             cascade_count as f32,
-            0.5,
+            ATLAS_SCALE,
             NORMAL_OFFSET_TEXELS,
             DEFAULT_LIGHT_TANGENT,
         ];
@@ -225,6 +231,67 @@ mod tests {
         assert_eq!(uniform.cascade_count(), 1);
         assert_eq!(uniform.light_from_world[0], matrix);
         assert_eq!(uniform.params[1], 1.0, "one cascade owns the whole map");
+        assert!(uniform.splits.iter().all(|split| *split == f32::MAX));
+    }
+
+    fn test_camera() -> CameraProjection {
+        use crate::diagnostics::Backend;
+        use crate::render::RasterTarget;
+        use crate::scene::{PerspectiveCamera, Scene, Transform, Vec3};
+
+        let mut scene = Scene::new();
+        let camera = scene
+            .add_perspective_camera(
+                scene.root(),
+                PerspectiveCamera::default(),
+                Transform::at(Vec3::new(0.0, 1.0, 6.0)),
+            )
+            .expect("camera inserts");
+        let target = RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::HeadlessGpu,
+        };
+        CameraProjection::from_scene(&scene, camera, target).expect("projection")
+    }
+
+    #[test]
+    fn fitted_cascades_crop_the_scene_matrix_and_cover_the_far_range() {
+        let camera = test_camera();
+        let scene_fit = Mat4::orthographic_rh(-40.0, 40.0, -40.0, 40.0, 0.0, 100.0)
+            * Mat4::look_at_rh(Vec3::new(0.0, 50.0, 0.0), Vec3::ZERO, Vec3::Z);
+        let uniform = ShadowCascadeUniform::fit(&camera, scene_fit.to_cols_array(), 4, 1024);
+        assert_eq!(uniform.cascade_count(), 4);
+        assert_eq!(uniform.params[1], ATLAS_SCALE);
+        assert_eq!(
+            uniform.splits[3],
+            f32::MAX,
+            "the last cascade has no far limit"
+        );
+        assert!(uniform.splits[0] < uniform.splits[1] && uniform.splits[1] < uniform.splits[2]);
+        // Each crop magnifies the scene fit: a cascade never covers more of
+        // the light frustum than the fit it was cut from.
+        for cascade in &uniform.light_from_world {
+            let crop = Mat4::from_cols_array(cascade) * scene_fit.inverse();
+            assert!(crop.x_axis.x >= 1.0 - 1.0e-4 && crop.y_axis.y >= 1.0 - 1.0e-4);
+        }
+    }
+
+    #[test]
+    fn unfittable_atlas_falls_back_to_one_cell_of_the_scene_matrix() {
+        // A singular light matrix cannot be cropped. The caster still fills
+        // every atlas cell with it, so the receiver must sample one cell.
+        let camera = test_camera();
+        let degenerate = [0.0; 16];
+        let uniform = ShadowCascadeUniform::fit(&camera, degenerate, 4, 1024);
+        assert_eq!(uniform.cascade_count(), 1);
+        assert_eq!(uniform.params[1], ATLAS_SCALE);
+        assert!(
+            uniform
+                .light_from_world
+                .iter()
+                .all(|matrix| *matrix == degenerate)
+        );
         assert!(uniform.splits.iter().all(|split| *split == f32::MAX));
     }
 

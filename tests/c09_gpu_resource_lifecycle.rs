@@ -486,12 +486,16 @@ fn output_resource_changes_require_prepare_and_stats_are_complete_before_render_
             prepared.bind_groups,
             prepared.shader_modules,
         ),
-        (12, 27, 11, 20, 10, 9),
-        "MSAA4 + post + command-ordered uniform staging + depth-color + overlay owners are additive and exact while inactive shadow resources stay absent"
+        // The ambient-occlusion compute passes add six buffers (three
+        // visibility buffers, three uniforms), two pipelines, three bind
+        // groups and one shader module to the post and overlay owners.
+        (18, 27, 11, 22, 13, 10),
+        "MSAA4 + post + ambient occlusion + command-ordered uniform staging + depth-color + overlay owners are additive and exact while inactive shadow resources stay absent"
     );
     assert!(
-        prepared.buffers == baseline.buffers + 2,
-        "post owns both its live uniform and a command-ordered staging buffer"
+        prepared.buffers == baseline.buffers + 2 + 6,
+        "post owns both its live uniform and a command-ordered staging buffer, and ambient \
+         occlusion owns three visibility buffers with one uniform each"
     );
     assert!(
         prepared.render_targets > baseline.render_targets,

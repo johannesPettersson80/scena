@@ -394,7 +394,8 @@ impl GpuDeviceState {
         stats.add_assign(light_assignment::resource_stats(&light_assignment));
         stats.add_assign(super::materials::resource_stats(&material_resources));
         stats.add_assign(environment::resource_stats(
-            lighting_stats.directional_shadow_map_resolution,
+            shadow_caster.resource_stats(),
+            mask_shader.is_some(),
             environment_lighting,
             reflection_probes,
         ));

@@ -112,10 +112,14 @@ impl Renderer {
             screen_space_ambient_occlusion,
             depth_of_field,
             ssao_depth_source: screen_space_ambient_occlusion.then(|| {
-                if self.gpu.is_some() {
+                if self.gpu.is_none() {
+                    PostProcessingDepthSourceV1::CpuDepthFrame
+                } else if cfg!(target_arch = "wasm32") {
                     PostProcessingDepthSourceV1::DepthColorTarget
                 } else {
-                    PostProcessingDepthSourceV1::CpuDepthFrame
+                    // The native occlusion pass reads the depth prepass
+                    // itself rather than its packed colour copy.
+                    PostProcessingDepthSourceV1::SampleableDepthTexture
                 }
             }),
             dof_depth_source: depth_of_field.then(|| {

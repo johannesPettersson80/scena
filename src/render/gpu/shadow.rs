@@ -4,6 +4,7 @@ use super::materials::MaterialResources;
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::shader_manifest::{ShaderVariantId, create_shader_module};
 use super::shadow_cascades::ShadowCascadeUniform;
+use super::stats::GpuResourceStats;
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 use crate::render::camera::CameraProjection;
 
@@ -136,6 +137,34 @@ const fn atlas_cells_per_edge(cascade_count: usize) -> u32 {
     if cascade_count > 1 { 2 } else { 1 }
 }
 
+/// Inventory of a caster with `cascade_count` cascade uniforms (zero for a
+/// single map) of `cascade_resolution` texels per edge.
+pub(super) fn caster_resource_stats(
+    active: bool,
+    masked: bool,
+    cascade_count: usize,
+    cascade_resolution: u32,
+    cascade_uniform_bytes: u64,
+) -> GpuResourceStats {
+    let active = u64::from(active);
+    let cascades = cascade_count as u64;
+    let edge = u64::from(cascade_resolution) * u64::from(atlas_cells_per_edge(cascade_count));
+    GpuResourceStats {
+        buffers: cascades,
+        textures: 1,
+        render_targets: 1,
+        pipelines: active + u64::from(masked),
+        bind_groups: active * 2 + cascades,
+        shader_modules: active,
+        shader_module_creations: active,
+        approximate_gpu_memory_bytes: edge
+            .saturating_mul(edge)
+            .saturating_mul(4)
+            .saturating_add(cascade_uniform_bytes),
+        ..GpuResourceStats::default()
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct ShadowCasterResources {
     /// Owned to keep the GPU texture alive while `view` references it.
@@ -164,6 +193,18 @@ pub(super) struct ShadowCasterResources {
 }
 
 impl ShadowCasterResources {
+    /// Everything the caster owns: the map or atlas, the caster pipelines,
+    /// and one uniform and bind group per cascade.
+    pub(super) fn resource_stats(&self) -> GpuResourceStats {
+        caster_resource_stats(
+            self.pipeline.is_some(),
+            self.masked_pipeline.is_some(),
+            self.cascade_uniforms.len(),
+            self.cascade_resolution,
+            self.cascade_uniforms.iter().map(wgpu::Buffer::size).sum(),
+        )
+    }
+
     /// Fits this frame's cascades and uploads them for the caster pass.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(super) fn update_cascades(

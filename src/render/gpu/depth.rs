@@ -358,7 +358,7 @@ pub(super) fn resource_stats(
     GpuResourceStats {
         textures: 1 + color + color_msaa,
         render_targets: 1 + color + color_msaa,
-        pipelines: 2,
+        pipelines: 2 + 2 * u64::from(resources.masked_pipelines.is_some()),
         shader_modules: 1,
         shader_module_creations: 1,
         approximate_gpu_memory_bytes: texture_bytes

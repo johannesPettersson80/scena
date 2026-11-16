@@ -31,12 +31,14 @@ pub(super) struct OutputResources {
 }
 
 pub(super) fn resource_stats(
-    directional_shadow_map_resolution: Option<u32>,
+    shadow_caster: GpuResourceStats,
+    alpha_mask_shader: bool,
     environment_lighting: &PreparedEnvironmentLighting,
     reflection_probes: &[PreparedReflectionProbe],
 ) -> GpuResourceStats {
-    let shadow_active = u64::from(directional_shadow_map_resolution.is_some());
-    let shadow_edge = u64::from(directional_shadow_map_resolution.unwrap_or(1).max(1));
+    // The alpha-mask shader module is shared by the depth and shadow
+    // pipelines, so it is inventoried once here rather than by either user.
+    let mask_shader = u64::from(alpha_mask_shader);
     let (cubemap_bytes, brdf_lut_bytes) = environment_lighting
         .cubemap()
         .map(|cubemap| {
@@ -69,21 +71,18 @@ pub(super) fn resource_stats(
                 .sum::<u64>()
         })
         .sum::<u64>();
-    GpuResourceStats {
-        textures: 3 + reflection_probes.len() as u64,
-        render_targets: 1,
-        pipelines: shadow_active,
-        bind_groups: 2 + shadow_active * 2 + reflection_probes.len() as u64 * 2,
-        shader_modules: shadow_active,
-        shader_module_creations: shadow_active,
-        approximate_gpu_memory_bytes: shadow_edge
-            .saturating_mul(shadow_edge)
-            .saturating_mul(4)
-            .saturating_add(cubemap_bytes)
+    let mut stats = GpuResourceStats {
+        textures: 2 + reflection_probes.len() as u64,
+        bind_groups: 2 + reflection_probes.len() as u64 * 2,
+        shader_modules: mask_shader,
+        shader_module_creations: mask_shader,
+        approximate_gpu_memory_bytes: cubemap_bytes
             .saturating_add(probe_cubemap_bytes)
             .saturating_add(brdf_lut_bytes),
         ..GpuResourceStats::default()
-    }
+    };
+    stats.add_assign(shadow_caster);
+    stats
 }
 
 /// Shadow and occlusion inputs of the colour bind group.
@@ -398,9 +397,34 @@ mod tests {
 
     #[test]
     fn shadow_pipeline_stats_are_zero_without_a_shadow_caster() {
-        let stats = resource_stats(None, &PreparedEnvironmentLighting::default(), &[]);
+        let inactive = shadow::caster_resource_stats(false, false, 0, 1, 0);
+        let stats = resource_stats(
+            inactive,
+            false,
+            &PreparedEnvironmentLighting::default(),
+            &[],
+        );
         assert_eq!(stats.pipelines, 0);
         assert_eq!(stats.shader_modules, 0);
         assert_eq!(stats.shader_module_creations, 0);
+        // The one-texel placeholder map is still a texture and a target.
+        assert_eq!((stats.textures, stats.render_targets), (3, 1));
+        assert_eq!(stats.bind_groups, 2);
+    }
+
+    #[test]
+    fn cascaded_caster_inventories_its_atlas_uniforms_and_masked_pipeline() {
+        let cascaded = shadow::caster_resource_stats(true, true, 4, 1024, 4 * 3648);
+        let stats = resource_stats(cascaded, true, &PreparedEnvironmentLighting::default(), &[]);
+        assert_eq!(stats.buffers, 4, "one uniform per cascade");
+        assert_eq!(stats.pipelines, 2, "plain and alpha-tested casters");
+        assert_eq!(stats.bind_groups, 2 + 2 + 4);
+        assert_eq!(stats.shader_modules, 2, "caster and alpha-mask shaders");
+        let single = shadow::caster_resource_stats(true, false, 0, 1024, 0);
+        assert_eq!(
+            cascaded.approximate_gpu_memory_bytes - 4 * 3648,
+            4 * single.approximate_gpu_memory_bytes,
+            "the 2x2 atlas holds four maps"
+        );
     }
 }
