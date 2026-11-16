@@ -2,10 +2,13 @@
 //!
 //! The `gltf` crate's typed readers assume an already-validated accessor
 //! layout: they reach `unreachable!()` on an unexpected component type,
-//! underflow on `count == 0`, and slice past a stride that is shorter than the
-//! element. Importer streams are therefore opened through
-//! [`typed_accessor_iter`], which proves those preconditions first and reports
-//! a structured error that names the stream being decoded.
+//! underflow on `count == 0`, slice past a stride that is shorter than the
+//! element, and allocate whatever a sparse accessor's `count` declares.
+//! Importer streams are therefore decoded through [`decode_accessor`], which
+//! proves those preconditions, reserves the decoded size from the import's
+//! accessor byte budget, and reports a structured error that names the stream
+//! being decoded. `xtask doctor` rejects any other accessor read under
+//! `src/assets/gltf`.
 
 use std::mem::size_of;
 
@@ -16,13 +19,31 @@ use crate::diagnostics::AssetError;
 use super::AssetPath;
 use super::buffers::ResolvedGltfBuffers;
 
-/// Opens `accessor` as a stream of `T` elements.
+/// Decodes `accessor` into a vector, converting each `T` element with
+/// `convert`.
 ///
 /// `T` must be the exact element layout of the accessor; callers choose it by
 /// matching on the accessor's component type and dimensions, and a mismatch is
 /// reported instead of being reinterpreted. `label` names the stream for the
 /// error message, for example `mesh 0 primitive 2 TEXCOORD_0 attribute`.
-pub(super) fn typed_accessor_iter<'b, T: Item>(
+///
+/// The decoded size is charged to the accessor byte budget before the vector
+/// is allocated, so every read is bounded, including a zero-initialised sparse
+/// accessor whose storage exists only as a declared `count`.
+pub(super) fn decode_accessor<T: Item, Out>(
+    path: &AssetPath,
+    buffers: &ResolvedGltfBuffers,
+    accessor: &Accessor<'_>,
+    label: &str,
+    convert: impl FnMut(T) -> Out,
+) -> Result<Vec<Out>, AssetError> {
+    let elements = typed_accessor_iter::<T>(path, buffers, accessor, label)?;
+    buffers.charge_accessor_bytes(path, label, accessor.count(), size_of::<Out>())?;
+    Ok(elements.map(convert).collect())
+}
+
+/// Opens `accessor` as a stream of `T` elements after validating its layout.
+fn typed_accessor_iter<'b, T: Item>(
     path: &AssetPath,
     buffers: &'b ResolvedGltfBuffers,
     accessor: &Accessor<'_>,

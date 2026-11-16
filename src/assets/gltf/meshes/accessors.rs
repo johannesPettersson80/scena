@@ -23,13 +23,33 @@ impl<'a> PrimitiveSource<'a> {
         accessor_error(self.path, &self.label(stream), reason)
     }
 
-    /// Opens one accessor of this primitive as a checked stream of `T`.
-    pub(super) fn stream<T: AccessorItem>(
+    /// Decodes one accessor of this primitive through the checked reader,
+    /// converting each `T` element with `convert`.
+    pub(super) fn decode<T: AccessorItem, Out>(
         &self,
         accessor: &Accessor<'_>,
         stream: &str,
-    ) -> Result<AccessorIter<'a, T>, AssetError> {
-        typed_accessor_iter(self.path, self.buffers, accessor, &self.label(stream))
+        convert: impl FnMut(T) -> Out,
+    ) -> Result<Vec<Out>, AssetError> {
+        decode_accessor(
+            self.path,
+            self.buffers,
+            accessor,
+            &self.label(stream),
+            convert,
+        )
+    }
+
+    /// Reserves accessor byte budget for per-vertex data the importer derives
+    /// rather than decodes, such as generated indices or flat normals.
+    pub(super) fn charge(
+        &self,
+        stream: &str,
+        elements: usize,
+        element_bytes: usize,
+    ) -> Result<(), AssetError> {
+        self.buffers
+            .charge_accessor_bytes(self.path, &self.label(stream), elements, element_bytes)
     }
 
     /// Integer encodings other than the core-specification ones are legal only
@@ -95,10 +115,7 @@ pub(super) fn read_vec3_accessor(
     }
     macro_rules! read_vec3 {
         ($component:ty, $convert:expr) => {
-            source
-                .stream::<$component>(&accessor, stream)?
-                .map($convert)
-                .collect::<Vec<_>>()
+            source.decode::<$component, _>(&accessor, stream, $convert)?
         };
     }
     let values = match (encoding, accessor.data_type(), accessor.normalized()) {
@@ -180,10 +197,7 @@ pub(super) fn read_tangent_attribute(
     }
     macro_rules! read_vec4 {
         ($component:ty, $convert:expr) => {
-            source
-                .stream::<$component>(&accessor, STREAM)?
-                .map($convert)
-                .collect::<Vec<_>>()
+            source.decode::<$component, _>(&accessor, STREAM, $convert)?
         };
     }
     let values = match (accessor.data_type(), accessor.normalized()) {

@@ -38,7 +38,6 @@ pub(super) fn validate_document_structure(
     let cameras = array_len(root.get("cameras"));
     let accessors = array_len(root.get("accessors"));
     let buffer_views = array_len(root.get("bufferViews"));
-    let buffers = array_len(root.get("buffers"));
     let materials = array_len(root.get("materials"));
     let images = array_len(root.get("images"));
     let samplers = array_len(root.get("samplers"));
@@ -54,7 +53,7 @@ pub(super) fn validate_document_structure(
     validate_node_graph(path, root.get("nodes"), node_references, limits)?;
     validate_meshes(path, root.get("meshes"), accessors, materials)?;
     validate_accessors(path, root.get("accessors"), root.get("bufferViews"))?;
-    validate_buffer_views(path, root.get("bufferViews"), buffers)?;
+    validate_buffer_views(path, root.get("bufferViews"), root.get("buffers"))?;
     validate_textures(path, root.get("textures"), images, samplers)?;
     validate_material_texture_refs(path, root.get("materials"), textures)?;
     validate_images(path, root.get("images"), buffer_views)?;
@@ -199,11 +198,16 @@ fn validate_accessors(
     Ok(())
 }
 
+/// Every bufferView must name an existing buffer and lie inside that
+/// buffer's declared `byteLength`. Buffer resolution then requires each source
+/// to provide at least the declared length, so a view that passes here can
+/// never address bytes that do not exist.
 fn validate_buffer_views(
     path: &AssetPath,
     value: Option<&Value>,
-    buffer_count: usize,
+    buffers: Option<&Value>,
 ) -> Result<(), AssetError> {
+    let buffer_count = array_len(buffers);
     for (index, view) in values(value).enumerate() {
         validate_index(
             path,
@@ -211,6 +215,31 @@ fn validate_buffer_views(
             &format!("$.bufferViews[{index}].buffer"),
             buffer_count,
         )?;
+        let Some(buffer_index) = view.get("buffer").and_then(Value::as_u64) else {
+            continue;
+        };
+        let Some(buffer) = values(buffers).nth(buffer_index as usize) else {
+            continue;
+        };
+        let byte_field =
+            |object: &Value, field: &str| object.get(field).and_then(Value::as_u64).unwrap_or(0);
+        let offset = byte_field(view, "byteOffset");
+        let length = byte_field(view, "byteLength");
+        let available = byte_field(buffer, "byteLength");
+        let end = offset.checked_add(length).ok_or_else(|| {
+            parse_error(
+                path,
+                format!("$.bufferViews[{index}] byte range overflowed: {offset} + {length}"),
+            )
+        })?;
+        if end > available {
+            return Err(parse_error(
+                path,
+                format!(
+                    "$.bufferViews[{index}] byte range {offset}..{end} exceeds buffer {buffer_index} byteLength {available}"
+                ),
+            ));
+        }
     }
     Ok(())
 }

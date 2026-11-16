@@ -923,6 +923,227 @@ fn addressable_node_paths_cover_a_deep_named_chain_on_a_small_stack() {
     assert!(paths.contains_key(&"/n".repeat(DEPTH)));
 }
 
+#[test]
+fn zero_initialised_sparse_accessors_load_within_the_accessor_byte_budget() {
+    assert_eq!(AssetLoadOptions::default().max_accessor_bytes(), 1 << 30);
+    assert_eq!(
+        AssetLoadOptions::default()
+            .with_max_accessor_bytes(4_096)
+            .max_accessor_bytes(),
+        4_096
+    );
+
+    // A legitimate use of a sparse accessor without a bufferView: three
+    // zero-initialised positions with two of them overridden.
+    let assets = assets_with([("sparse.gltf", sparse_position_document(3))]);
+    let asset = load(&assets, "sparse.gltf").expect("a small sparse accessor loads");
+    let positions = first_geometry(&assets, &asset)
+        .vertices()
+        .iter()
+        .map(|vertex| vertex.position)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        positions,
+        vec![
+            Vec3::ZERO,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0)
+        ],
+    );
+
+    // The same stream no longer fits a 16-byte budget: three VEC3 floats
+    // decode to 36 bytes. The cached scene must not satisfy the stricter
+    // request either.
+    let error = load_with(
+        &assets,
+        "sparse.gltf",
+        AssetLoadOptions::default().with_max_accessor_bytes(16),
+    )
+    .expect_err("a budget smaller than the stream must reject it");
+    assert!(
+        matches!(
+            &error,
+            AssetError::PolicyViolation { reason, help, .. }
+                if reason.contains("mesh 0 primitive 0 POSITION")
+                    && reason.contains("36 bytes")
+                    && reason.contains("max_accessor_bytes 16")
+                    && help.contains("with_max_accessor_bytes")
+        ),
+        "the error must name the stream, its size, the budget, and the knob: {error:?}",
+    );
+}
+
+#[test]
+fn a_sparse_accessor_with_a_huge_count_fails_before_anything_is_allocated() {
+    // Four billion zero-initialised VEC3 floats are 48 GB that no file byte
+    // backs: only `count` says so. The budget must stop this at the first read.
+    let assets = assets_with([
+        ("bomb.gltf", sparse_position_document(4_000_000_000)),
+        ("valid.gltf", TriangleFixture::new().document()),
+    ]);
+    let error = catch_unwind(AssertUnwindSafe(|| load(&assets, "bomb.gltf")))
+        .expect("a huge sparse count must not panic")
+        .expect_err("a huge sparse count must be rejected");
+    assert!(
+        matches!(
+            &error,
+            AssetError::PolicyViolation { reason, .. }
+                if reason.contains("POSITION")
+                    && reason.contains("48000000000 bytes")
+                    && reason.contains("max_accessor_bytes 1073741824")
+        ),
+        "the error must report the declared size and the default budget: {error:?}",
+    );
+    load(&assets, "valid.gltf").expect("the store must still load a valid asset");
+}
+
+#[test]
+fn every_read_of_a_shared_accessor_counts_against_the_budget() {
+    // One hundred primitives share a single POSITION/NORMAL pair. Each
+    // primitive decodes its own copy, so the budget counts every read.
+    let fixture = TriangleFixture::new();
+    let mut document = fixture.document();
+    document["meshes"][0]["primitives"] = json!(vec![fixture.primitive(); 100]);
+    let assets = assets_with([("shared.gltf", document)]);
+
+    let asset = load(&assets, "shared.gltf").expect("the default budget admits all reads");
+    assert_eq!(asset.primitive_count(), 100);
+
+    let error = load_with(
+        &assets,
+        "shared.gltf",
+        AssetLoadOptions::default().with_max_accessor_bytes(1_024),
+    )
+    .expect_err("one kilobyte cannot hold one hundred copies of the streams");
+    assert!(
+        matches!(
+            &error,
+            AssetError::PolicyViolation { reason, .. }
+                if reason.contains("mesh 0 primitive ") && !reason.contains("primitive 0 ")
+        ),
+        "the budget must run out on a later primitive, not the first: {error:?}",
+    );
+}
+
+#[test]
+fn derived_vertex_data_counts_against_the_budget() {
+    // Morph targets that omit POSITION still need one zero vector per vertex.
+    // A thousand of them on a three-vertex primitive are 36,000 bytes that
+    // only the JSON array length declares.
+    let fixture = TriangleFixture::new();
+    let mut targets = fixture.document();
+    targets["meshes"][0]["primitives"][0]["targets"] = json!(vec![json!({}); 1_000]);
+    targets["meshes"][0]["weights"] = json!(vec![0.0; 1_000]);
+
+    // Flat shading splits every index into its own vertex: 3,000 one-byte
+    // indices become 3,000 corners of position, normal, and index.
+    let mut unshaded = TriangleFixture::new();
+    unshaded.attributes.remove("NORMAL");
+    let corner_indices = unshaded.accessor(
+        &[0, 1, 2].repeat(1_000),
+        UNSIGNED_BYTE,
+        "SCALAR",
+        3_000,
+        None,
+    );
+    unshaded.indices(corner_indices);
+
+    for (name, document, budget, expected) in [
+        ("empty-morph-targets", targets, 4_096, "morph target"),
+        (
+            "flat-normal-expansion",
+            unshaded.document(),
+            32_768,
+            "flat NORMAL expansion",
+        ),
+    ] {
+        let assets = assets_with([("derived.gltf", document)]);
+        load(&assets, "derived.gltf")
+            .unwrap_or_else(|error| panic!("{name} must load under the default budget: {error}"));
+        let error = load_with(
+            &assets,
+            "derived.gltf",
+            AssetLoadOptions::default().with_max_accessor_bytes(budget),
+        )
+        .expect_err("derived per-vertex data must count against the budget");
+        assert!(
+            matches!(
+                &error,
+                AssetError::PolicyViolation { reason, .. } if reason.contains(expected)
+            ),
+            "{name} must run out of budget on {expected}: {error:?}",
+        );
+    }
+}
+
+#[test]
+fn buffer_views_must_lie_inside_their_buffer() {
+    // (name, byteOffset of the NORMAL bufferView)
+    for (name, byte_offset) in [
+        ("view-past-buffer-end", json!(1_000_000)),
+        ("view-range-overflows", json!(u64::MAX - 8)),
+    ] {
+        let mut document = TriangleFixture::new().document();
+        document["bufferViews"][1]["byteOffset"] = byte_offset;
+        let assets = assets_with([
+            ("view.gltf", document),
+            ("valid.gltf", TriangleFixture::new().document()),
+        ]);
+        let error = catch_unwind(AssertUnwindSafe(|| load(&assets, "view.gltf")))
+            .unwrap_or_else(|_| panic!("{name} must not panic"))
+            .expect_err("a bufferView outside its buffer must be rejected");
+        assert!(
+            matches!(
+                &error,
+                AssetError::Parse { reason, .. } if reason.contains("$.bufferViews[1]")
+            ),
+            "{name} must name the bufferView: {error:?}",
+        );
+        load(&assets, "valid.gltf").expect("the store must still load a valid asset");
+    }
+}
+
+#[test]
+fn embedded_buffers_shorter_than_their_byte_length_are_rejected() {
+    let fixture = TriangleFixture::new();
+    let mut document = fixture.document();
+    // Every bufferView still lies inside the bytes that exist; only the
+    // buffer's declared length promises more than the data URI holds.
+    document["buffers"][0]["byteLength"] = json!(fixture.bytes.len() + 64);
+    let assets = assets_with([("short-buffer.gltf", document)]);
+    let error = load(&assets, "short-buffer.gltf")
+        .expect_err("a buffer shorter than its byteLength must be rejected");
+    assert!(
+        matches!(
+            &error,
+            AssetError::Parse { reason, .. }
+                if reason.contains("buffer 0") && reason.contains("byteLength")
+        ),
+        "the error must name the buffer and its declared length: {error:?}",
+    );
+}
+
+/// A triangle whose POSITION accessor has no bufferView: `count` positions
+/// start as zeros and sparse storage overrides elements 1 and 2.
+fn sparse_position_document(count: u64) -> Value {
+    let mut mesh = TriangleFixture::new();
+    let sparse_indices = mesh.view(&[1, 2]);
+    let sparse_values = mesh.view(&f32_bytes(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]));
+    mesh.accessors[0] = json!({
+        "componentType": FLOAT,
+        "count": count,
+        "type": "VEC3",
+        "min": [0.0, 0.0, 0.0],
+        "max": [1.0, 1.0, 0.0],
+        "sparse": {
+            "count": 2,
+            "indices": {"bufferView": sparse_indices, "componentType": UNSIGNED_BYTE},
+            "values": {"bufferView": sparse_values},
+        },
+    });
+    mesh.document()
+}
+
 /// `depth` nodes in a single parent-to-child chain; the last one carries a
 /// triangle mesh and the name `Leaf`.
 fn node_chain_document(depth: usize) -> Value {
@@ -1175,6 +1396,14 @@ fn assets_with<const N: usize>(documents: [(&str, Value); N]) -> Assets<MemoryFe
 
 fn load(assets: &Assets<MemoryFetcher>, name: &str) -> Result<SceneAsset, AssetError> {
     pollster::block_on(assets.load_scene(memory_path(name)))
+}
+
+fn load_with(
+    assets: &Assets<MemoryFetcher>,
+    name: &str,
+    options: AssetLoadOptions,
+) -> Result<SceneAsset, AssetError> {
+    pollster::block_on(assets.load_scene_with_options(memory_path(name), options))
 }
 
 fn first_geometry(assets: &Assets<MemoryFetcher>, scene_asset: &SceneAsset) -> scena::GeometryDesc {

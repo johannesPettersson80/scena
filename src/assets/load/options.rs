@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use super::limits::{DEFAULT_MAX_NODE_COUNT, DEFAULT_MAX_NODE_DEPTH, GltfImportLimits};
+use super::limits::{
+    DEFAULT_MAX_ACCESSOR_BYTES, DEFAULT_MAX_NODE_COUNT, DEFAULT_MAX_NODE_DEPTH, GltfImportLimits,
+};
 
 /// Semantic validation and resource-policy inputs for one scene load.
 ///
@@ -19,6 +21,8 @@ pub struct AssetLoadOptions {
     max_node_depth: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     max_node_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_accessor_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
@@ -49,6 +53,7 @@ impl AssetLoadOptions {
             gltf_scene: GltfSceneSelection::Default,
             max_node_depth: None,
             max_node_count: None,
+            max_accessor_bytes: None,
         }
     }
 
@@ -132,11 +137,36 @@ impl AssetLoadOptions {
         }
     }
 
+    /// Limits how many bytes a glTF import may materialize from accessors.
+    ///
+    /// Every decoded stream counts with its in-memory element size each time
+    /// it is read, so an accessor shared by several primitives counts once per
+    /// primitive, and so does the per-vertex data the importer derives: flat
+    /// normals, generated indices, converted strips and fans, and the zero
+    /// deltas of morph targets that omit `POSITION`. The default is 1 GiB. A
+    /// stream that would exceed the budget fails with
+    /// [`crate::AssetError::PolicyViolation`] before it is allocated, which is
+    /// what keeps a zero-initialised sparse accessor with a huge `count` from
+    /// deciding how much memory a load takes.
+    pub const fn with_max_accessor_bytes(mut self, max_accessor_bytes: u64) -> Self {
+        self.max_accessor_bytes = Some(max_accessor_bytes);
+        self
+    }
+
+    /// The accessor byte budget in effect for this load.
+    pub const fn max_accessor_bytes(&self) -> u64 {
+        match self.max_accessor_bytes {
+            Some(max_accessor_bytes) => max_accessor_bytes,
+            None => DEFAULT_MAX_ACCESSOR_BYTES,
+        }
+    }
+
     /// The structural glTF limits in effect for this load.
     pub(crate) const fn gltf_limits(&self) -> GltfImportLimits {
         GltfImportLimits {
             max_node_depth: self.max_node_depth(),
             max_node_count: self.max_node_count(),
+            max_accessor_bytes: self.max_accessor_bytes(),
         }
     }
 
@@ -147,6 +177,8 @@ impl AssetLoadOptions {
             (limits.max_node_depth != DEFAULT_MAX_NODE_DEPTH).then_some(limits.max_node_depth);
         self.max_node_count =
             (limits.max_node_count != DEFAULT_MAX_NODE_COUNT).then_some(limits.max_node_count);
+        self.max_accessor_bytes = (limits.max_accessor_bytes != DEFAULT_MAX_ACCESSOR_BYTES)
+            .then_some(limits.max_accessor_bytes);
         self
     }
 }

@@ -513,7 +513,7 @@ mod tests {
         let path = AssetPath::from("memory:c01-texture-index-identity.gltf");
         let gltf = super::super::open_gltf_with_massage(&path, &bytes, &Default::default())
             .expect("C01 fixture parses through the production glTF path");
-        let buffers = ResolvedGltfBuffers::new(Vec::new());
+        let buffers = ResolvedGltfBuffers::new(Vec::new(), u64::MAX);
         let assets = crate::assets::Assets::new();
         let mut storage = assets.storage();
 
@@ -667,7 +667,7 @@ mod tests {
         let path = AssetPath::from("fixtures/c01/model.gltf");
         let gltf = super::super::open_gltf_with_massage(&path, &bytes, &Default::default())
             .expect("C01 source fixture parses");
-        let buffers = ResolvedGltfBuffers::new(vec![embedded_png.clone()]);
+        let buffers = ResolvedGltfBuffers::new(vec![embedded_png.clone()], u64::MAX);
         let external_path = resolve_relative_path(&path, "external.png");
         let mut external_images = BTreeMap::new();
         external_images.insert(external_path.clone(), external_png);
@@ -726,7 +726,7 @@ mod tests {
         let path = AssetPath::from("memory:c01-unresolved-referenced-texture.gltf");
         let gltf = super::super::open_gltf_with_massage(&path, &bytes, &Default::default())
             .expect("C01 error fixture parses");
-        let buffers = ResolvedGltfBuffers::new(Vec::new());
+        let buffers = ResolvedGltfBuffers::new(Vec::new(), u64::MAX);
         let assets = crate::assets::Assets::new();
         let mut storage = assets.storage();
         let textures = parse_textures(

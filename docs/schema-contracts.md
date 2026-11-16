@@ -2678,9 +2678,9 @@ satisfied. Cache-hit reports preserve warnings, external-resource status rows,
 material fallback provenance, and external resource counts from the original
 load, while `fetched_bytes` remains `0` for the cache-hit call itself. Both
 option fields are additive in v1 and deserialize to lenient, unlimited defaults
-when absent. Inside either option object, `max_node_depth` and
-`max_node_count` appear only when the caller overrode the default structural
-import limit; an absent field means the documented default applied.
+when absent. Inside either option object, `max_node_depth`, `max_node_count`,
+and `max_accessor_bytes` appear only when the caller overrode the default
+structural import limit; an absent field means the documented default applied.
 
 `external_resources` is a deterministic status table for external buffers and
 images discovered from the glTF. Each row has `kind` (`buffer` or `image`),

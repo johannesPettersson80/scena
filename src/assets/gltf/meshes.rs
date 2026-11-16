@@ -7,7 +7,6 @@ use ::gltf::Document;
 use ::gltf::Primitive;
 use ::gltf::accessor::Accessor;
 use ::gltf::accessor::Item as AccessorItem;
-use ::gltf::accessor::Iter as AccessorIter;
 use ::gltf::accessor::{DataType, Dimensions};
 use ::gltf::mesh::{Mode, Semantic};
 
@@ -22,7 +21,7 @@ use super::super::{
 use super::SceneAssetMesh;
 use super::buffers::ResolvedGltfBuffers;
 use super::typed_accessors::{
-    accessor_error, normalize_i8, normalize_i16, normalize_u8, normalize_u16, typed_accessor_iter,
+    accessor_error, decode_accessor, normalize_i8, normalize_i16, normalize_u8, normalize_u16,
 };
 
 mod accessors;
@@ -133,6 +132,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
     };
     let mut normals = read_vec3_attribute(source, primitive, &Semantic::Normals)?;
     if topology == GeometryTopology::Lines && normals.is_none() {
+        source.charge("NORMAL attribute", positions.len(), size_of::<Vec3>())?;
         normals = Some(vec![Vec3::Y; positions.len()]);
     }
     let vertex_colors: Option<Vec<Color>> = read_colors(source, primitive, 0)?;
@@ -166,14 +166,17 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         .morph_targets()
         .enumerate()
         .map(|(target_index, target)| {
+            let position_stream = format!("morph target {target_index} POSITION");
             let position_deltas = match target.positions() {
-                Some(accessor) => read_vec3_accessor(
-                    source,
-                    accessor,
-                    &format!("morph target {target_index} POSITION"),
-                    Vec3Encoding::Position,
-                )?,
-                None => vec![Vec3::ZERO; vertex_count],
+                Some(accessor) => {
+                    read_vec3_accessor(source, accessor, &position_stream, Vec3Encoding::Position)?
+                }
+                None => {
+                    // A target may omit POSITION, but its zero deltas are
+                    // still one vector per vertex and count like decoded data.
+                    source.charge(&position_stream, vertex_count, size_of::<Vec3>())?;
+                    vec![Vec3::ZERO; vertex_count]
+                }
             };
             let normal_deltas = target
                 .normals()
@@ -206,7 +209,10 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         .collect::<Result<Vec<_>, AssetError>>()?;
     let indices: Vec<u32> = match read_indices(source, primitive)? {
         Some(indices) => indices,
-        None => (0..positions.len() as u32).collect(),
+        None => {
+            source.charge("indices", positions.len(), size_of::<u32>())?;
+            (0..positions.len() as u32).collect()
+        }
     };
     let computed_flat_normals = normals.is_none();
     let source_triangle_count = indices.len() / 3;
@@ -220,7 +226,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         skin,
         morph_targets,
     } = flat_normals::resolve(flat_normals::PrimitiveStreams {
-        path,
+        source,
         positions,
         normals,
         indices,

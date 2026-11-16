@@ -41,10 +41,7 @@ pub(super) fn read_tex_coords(
     }
     macro_rules! read_vec2 {
         ($component:ty, $convert:expr) => {
-            source
-                .stream::<[$component; 2]>(&accessor, &stream)?
-                .map(|value| value.map($convert))
-                .collect::<Vec<_>>()
+            source.decode::<[$component; 2], _>(&accessor, &stream, |value| value.map($convert))?
         };
     }
     let values = match (data_type, normalized) {
@@ -80,11 +77,9 @@ pub(super) fn read_colors(
     let stream = format!("COLOR_{set} attribute");
     macro_rules! read_color {
         ($element:ty, $convert:expr) => {
-            source
-                .stream::<$element>(&accessor, &stream)?
-                .map(|value| value.map($convert))
-                .map(color_from_components)
-                .collect::<Vec<_>>()
+            source.decode::<$element, _>(&accessor, &stream, |value| {
+                color_from_components(value.map($convert))
+            })?
         };
     }
     let values = match (
@@ -121,14 +116,12 @@ pub(super) fn read_joints(
     };
     let stream = format!("JOINTS_{set} attribute");
     let values = match (accessor.data_type(), accessor.dimensions()) {
-        (DataType::U8, Dimensions::Vec4) => source
-            .stream::<[u8; 4]>(&accessor, &stream)?
-            .map(|joints| joints.map(usize::from))
-            .collect::<Vec<_>>(),
-        (DataType::U16, Dimensions::Vec4) => source
-            .stream::<[u16; 4]>(&accessor, &stream)?
-            .map(|joints| joints.map(usize::from))
-            .collect::<Vec<_>>(),
+        (DataType::U8, Dimensions::Vec4) => {
+            source.decode::<[u8; 4], _>(&accessor, &stream, |joints| joints.map(usize::from))?
+        }
+        (DataType::U16, Dimensions::Vec4) => {
+            source.decode::<[u16; 4], _>(&accessor, &stream, |joints| joints.map(usize::from))?
+        }
         (data_type, dimensions) => {
             return Err(source.error(
                 &stream,
@@ -156,17 +149,16 @@ pub(super) fn read_weights(
         accessor.normalized(),
         accessor.dimensions(),
     ) {
-        (DataType::F32, false, Dimensions::Vec4) => source
-            .stream::<[f32; 4]>(&accessor, &stream)?
-            .collect::<Vec<_>>(),
-        (DataType::U8, true, Dimensions::Vec4) => source
-            .stream::<[u8; 4]>(&accessor, &stream)?
-            .map(|weights| weights.map(normalize_u8))
-            .collect::<Vec<_>>(),
-        (DataType::U16, true, Dimensions::Vec4) => source
-            .stream::<[u16; 4]>(&accessor, &stream)?
-            .map(|weights| weights.map(normalize_u16))
-            .collect::<Vec<_>>(),
+        (DataType::F32, false, Dimensions::Vec4) => {
+            source.decode::<[f32; 4], _>(&accessor, &stream, std::convert::identity)?
+        }
+        (DataType::U8, true, Dimensions::Vec4) => {
+            source.decode::<[u8; 4], _>(&accessor, &stream, |weights| weights.map(normalize_u8))?
+        }
+        (DataType::U16, true, Dimensions::Vec4) => {
+            source
+                .decode::<[u16; 4], _>(&accessor, &stream, |weights| weights.map(normalize_u16))?
+        }
         (data_type, normalized, dimensions) => {
             return Err(source.error(
                 &stream,
@@ -189,16 +181,14 @@ pub(super) fn read_indices(
         return Ok(None);
     };
     let values = match (accessor.data_type(), accessor.dimensions()) {
-        (DataType::U8, Dimensions::Scalar) => source
-            .stream::<u8>(&accessor, STREAM)?
-            .map(u32::from)
-            .collect::<Vec<_>>(),
-        (DataType::U16, Dimensions::Scalar) => source
-            .stream::<u16>(&accessor, STREAM)?
-            .map(u32::from)
-            .collect::<Vec<_>>(),
+        (DataType::U8, Dimensions::Scalar) => {
+            source.decode::<u8, _>(&accessor, STREAM, u32::from)?
+        }
+        (DataType::U16, Dimensions::Scalar) => {
+            source.decode::<u16, _>(&accessor, STREAM, u32::from)?
+        }
         (DataType::U32, Dimensions::Scalar) => {
-            source.stream::<u32>(&accessor, STREAM)?.collect::<Vec<_>>()
+            source.decode::<u32, _>(&accessor, STREAM, std::convert::identity)?
         }
         (data_type, dimensions) => {
             return Err(source.error(

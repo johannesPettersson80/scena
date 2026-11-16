@@ -4,8 +4,10 @@ use crate::geometry::{GeometryMorphTarget, GeometrySkin};
 use crate::material::Color;
 use crate::scene::Vec3;
 
+use super::accessors::PrimitiveSource;
+
 pub(super) struct PrimitiveStreams<'a> {
-    pub(super) path: &'a AssetPath,
+    pub(super) source: PrimitiveSource<'a>,
     pub(super) positions: Vec<Vec3>,
     pub(super) normals: Option<Vec<Vec3>>,
     pub(super) indices: Vec<u32>,
@@ -31,7 +33,7 @@ pub(super) fn resolve(
     streams: PrimitiveStreams<'_>,
 ) -> Result<ResolvedPrimitiveStreams, AssetError> {
     let PrimitiveStreams {
-        path,
+        source,
         positions,
         normals,
         indices,
@@ -54,7 +56,7 @@ pub(super) fn resolve(
         });
     }
     expand_missing_flat_normals(MissingNormalStreams {
-        path,
+        source,
         positions,
         indices,
         vertex_colors,
@@ -66,7 +68,7 @@ pub(super) fn resolve(
 }
 
 struct MissingNormalStreams<'a> {
-    path: &'a AssetPath,
+    source: PrimitiveSource<'a>,
     positions: Vec<Vec3>,
     indices: Vec<u32>,
     vertex_colors: Option<Vec<Color>>,
@@ -80,7 +82,7 @@ fn expand_missing_flat_normals(
     streams: MissingNormalStreams<'_>,
 ) -> Result<ResolvedPrimitiveStreams, AssetError> {
     let MissingNormalStreams {
-        path,
+        source,
         positions,
         indices,
         vertex_colors,
@@ -89,6 +91,7 @@ fn expand_missing_flat_normals(
         skin,
         morph_targets,
     } = streams;
+    let path = source.path;
     if !indices.len().is_multiple_of(3) {
         return Err(missing_normal_error(
             path,
@@ -98,6 +101,28 @@ fn expand_missing_flat_normals(
             ),
         ));
     }
+
+    // Flat shading gives every triangle corner its own vertex, so each index
+    // becomes one element in every stream. Reserve that before allocating: a
+    // one-byte index would otherwise expand into dozens of unaccounted bytes.
+    let corner_bytes = size_of::<Vec3>() * 2
+        + size_of::<u32>()
+        + vertex_colors.as_ref().map_or(0, |_| size_of::<Color>())
+        + tex_coords0.as_ref().map_or(0, |_| size_of::<[f32; 2]>())
+        + tangents.as_ref().map_or(0, |_| size_of::<[f32; 4]>())
+        + skin
+            .as_ref()
+            .map_or(0, |_| size_of::<[usize; 4]>() + size_of::<[f32; 4]>())
+        + morph_targets
+            .iter()
+            .map(|target| {
+                let streams = 1
+                    + usize::from(target.normal_deltas().is_some())
+                    + usize::from(target.tangent_deltas().is_some());
+                streams * size_of::<Vec3>()
+            })
+            .sum::<usize>();
+    source.charge("flat NORMAL expansion", indices.len(), corner_bytes)?;
 
     let mut expanded_positions = Vec::with_capacity(indices.len());
     let mut expanded_normals = Vec::with_capacity(indices.len());

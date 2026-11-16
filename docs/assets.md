@@ -82,8 +82,33 @@ the measured value, the limit, and the option that raises it.
 |---|---|---|
 | Node depth: nodes on the longest root-to-leaf chain (a root has depth 1) | 1,024 | `AssetLoadOptions::with_max_node_depth` |
 | Node count: nodes declared by the document | 1,000,000 | `AssetLoadOptions::with_max_node_count` |
+| Accessor bytes: bytes the import materializes from accessors | 1 GiB (1,073,741,824) | `AssetLoadOptions::with_max_accessor_bytes` |
 
-The limits apply to the whole document, not only the selected scene. Import,
+The accessor byte budget is what keeps a declared `count` from deciding how
+much memory a load takes. A sparse accessor without a `bufferView` is
+zero-initialised and backed by no file bytes at all, so a few hundred bytes of
+JSON can declare gigabytes. The importer therefore reserves every stream
+before it allocates it:
+
+- each decoded stream counts `count` times its in-memory element size, every
+  time it is read, so an accessor shared by several primitives counts once per
+  primitive;
+- per-vertex data the importer derives counts the same way: generated indices,
+  flat normals (one vertex per triangle corner in every stream), default line
+  normals, the zero deltas of morph targets that omit `POSITION`, and the
+  per-keyframe vectors of morph-weight animation.
+
+The reservation that would pass the budget fails with the stream's name, its
+size, and the running total, and nothing is allocated for it. Hosts that load
+untrusted files can lower the budget; hosts that load very large trusted
+models raise it.
+
+Buffers are checked before any accessor is read. Every `bufferView` must lie
+inside its buffer's declared `byteLength`, and every buffer source (GLB chunk,
+external file, or data URI) must provide at least that many bytes, so a view
+or accessor can never address bytes that do not exist.
+
+The node limits apply to the whole document, not only the selected scene. Import,
 `SceneAsset::bounds`, `Scene::instantiate`, and
 `SceneImport::addressable_node_paths` walk the hierarchy with explicit work
 lists, so a raised depth limit costs heap memory rather than call-stack depth.

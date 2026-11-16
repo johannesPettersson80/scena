@@ -58,7 +58,7 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
             "read_output_vec3",
             "read_output_rotations",
             "read_output_weights",
-            "typed_accessor_iter",
+            "decode_accessor",
             "AnimationInterpolation::CubicSpline",
         ],
     );

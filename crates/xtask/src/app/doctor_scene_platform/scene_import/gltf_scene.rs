@@ -25,7 +25,7 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         &[
             "parse_meshes",
             "PrimitiveSource",
-            "typed_accessor_iter",
+            "decode_accessor",
             "read_positions",
             "Semantic::Positions",
             "normalize_i16_vec3",

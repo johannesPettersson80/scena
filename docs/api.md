@@ -460,6 +460,9 @@ Transform mutation invariant:
   `AssetLoadOptions::with_max_node_count` for the structural glTF import limits
   (defaults 1,024 and 1,000,000), with `max_node_depth` and `max_node_count`
   returning the limit in effect
+- `AssetLoadOptions::with_max_accessor_bytes` for the budget of bytes one glTF
+  import may materialize from accessors (default 1 GiB), with
+  `max_accessor_bytes` returning the budget in effect
 - `AssetProvenance` and `AssetDerivative`
 - `SceneAsset::provenance`
 - `TextureDesc::provenance`

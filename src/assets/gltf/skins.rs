@@ -9,7 +9,7 @@ use crate::geometry::SkinningMatrix;
 
 use super::super::AssetPath;
 use super::buffers::ResolvedGltfBuffers;
-use super::typed_accessors::{accessor_error, typed_accessor_iter};
+use super::typed_accessors::{accessor_error, decode_accessor};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneAssetSkin {
@@ -76,16 +76,14 @@ fn read_inverse_bind_matrices(
             ),
         ));
     }
-    let matrices = typed_accessor_iter::<[[f32; 4]; 4]>(path, buffers, &accessor, &label)?
-        .map(|matrix| {
-            let mut flat = [0.0_f32; 16];
-            for (column, source) in matrix.iter().enumerate() {
-                for (row, value) in source.iter().enumerate() {
-                    flat[column * 4 + row] = *value;
-                }
+    let matrices = decode_accessor(path, buffers, &accessor, &label, |matrix: [[f32; 4]; 4]| {
+        let mut flat = [0.0_f32; 16];
+        for (column, source) in matrix.iter().enumerate() {
+            for (row, value) in source.iter().enumerate() {
+                flat[column * 4 + row] = *value;
             }
-            SkinningMatrix::from_gltf_column_major(flat)
-        })
-        .collect();
+        }
+        SkinningMatrix::from_gltf_column_major(flat)
+    })?;
     Ok(Some(matrices))
 }

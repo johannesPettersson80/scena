@@ -11,7 +11,6 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use ::gltf::Gltf;
-use ::gltf::buffer::Source as BufferSource;
 
 use crate::diagnostics::AssetError;
 
@@ -20,7 +19,7 @@ use self::animation::parse_gltf_clips;
 pub use self::connectors::SceneAssetConnector;
 pub use self::extensions::{GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus};
 use self::extensions::{collect_extension_diagnostics, is_v1_required_gltf_extension};
-use self::external::{external_buffer_paths, external_image_paths, resolve_relative_path};
+use self::external::{external_buffer_paths, external_image_paths};
 use self::lights::parse_punctual_lights;
 pub use self::material_variants::MaterialVariantBinding;
 use self::materials::parse_materials;
@@ -229,12 +228,13 @@ impl SceneAsset {
             step_start = log_gltf_step("metadata + extensions", step_start);
         }
 
-        let mut buffers = buffers::ResolvedGltfBuffers::new(resolve_buffers(
+        let mut buffers = buffers::ResolvedGltfBuffers::resolve(
             path,
             gltf,
             binary_chunk,
             external_buffers,
-        )?);
+            limits.max_accessor_bytes,
+        )?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("resolve_buffers", step_start);
@@ -354,69 +354,6 @@ fn validate_gltf_version(path: &AssetPath, gltf: &Gltf) -> Result<(), AssetError
             reason: "expected glTF asset.version \"2.0\"".to_string(),
         })
     }
-}
-
-fn resolve_buffers(
-    path: &AssetPath,
-    gltf: &Gltf,
-    binary_chunk: Option<&[u8]>,
-    external_buffers: &BTreeMap<usize, Vec<u8>>,
-) -> Result<Vec<Vec<u8>>, AssetError> {
-    gltf.document
-        .buffers()
-        .map(|buffer| {
-            let byte_length = buffer.length();
-            match buffer.source() {
-                BufferSource::Bin => {
-                    let bin = binary_chunk.ok_or_else(|| AssetError::Parse {
-                        path: path.as_str().to_string(),
-                        reason: "glTF buffer without uri requires a GLB binary chunk".to_string(),
-                    })?;
-                    Ok(bin
-                        .get(..byte_length)
-                        .ok_or_else(|| AssetError::Parse {
-                            path: path.as_str().to_string(),
-                            reason: "GLB binary chunk is shorter than buffer byteLength".to_string(),
-                        })?
-                        .to_vec())
-                }
-                BufferSource::Uri(uri) => {
-                    if uri.starts_with("data:") {
-                        let (_, encoded) =
-                            uri.split_once(";base64,").ok_or_else(|| AssetError::Parse {
-                                path: path.as_str().to_string(),
-                                reason:
-                                    "only embedded base64 glTF buffers are supported in this loader slice"
-                                        .to_string(),
-                            })?;
-                        use base64::Engine;
-                        base64::engine::general_purpose::STANDARD
-                            .decode(encoded)
-                            .map_err(|error| AssetError::Parse {
-                                path: path.as_str().to_string(),
-                                reason: format!("invalid embedded buffer base64: {error}"),
-                            })
-                    } else {
-                        let _resolved = resolve_relative_path(path, uri);
-                        let bytes = external_buffers
-                            .get(&buffer.index())
-                            .ok_or_else(|| AssetError::Parse {
-                                path: path.as_str().to_string(),
-                                reason: "external glTF buffer was not fetched".to_string(),
-                            })?;
-                        bytes
-                            .get(..byte_length)
-                            .map(<[u8]>::to_vec)
-                            .ok_or_else(|| AssetError::Parse {
-                                path: path.as_str().to_string(),
-                                reason: "external glTF buffer is shorter than byteLength"
-                                    .to_string(),
-                            })
-                    }
-                }
-            }
-        })
-        .collect()
 }
 
 pub(super) fn has_glb_magic(bytes: &[u8]) -> bool {

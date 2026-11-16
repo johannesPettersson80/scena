@@ -7,7 +7,7 @@ use crate::scene::{Quat, Transform, Vec3};
 
 use super::AssetPath;
 use super::buffers::ResolvedGltfBuffers;
-use super::typed_accessors::{normalize_i8, normalize_i16, typed_accessor_iter};
+use super::typed_accessors::{decode_accessor, normalize_i8, normalize_i16};
 
 const EXTENSION: &str = "EXT_mesh_gpu_instancing";
 
@@ -94,9 +94,7 @@ fn read_optional_vec3_attribute(
         ));
     }
     let label = format!("{EXTENSION} {semantic}");
-    let values = typed_accessor_iter::<[f32; 3]>(path, buffers, &accessor, &label)?
-        .map(Vec3::from_array)
-        .collect();
+    let values = decode_accessor(path, buffers, &accessor, &label, Vec3::from_array)?;
     Ok(Some(values))
 }
 
@@ -117,16 +115,20 @@ fn read_optional_rotation_attribute(
         ));
     }
     let label = format!("{EXTENSION} ROTATION");
-    let rotations = match (accessor.data_type(), accessor.normalized()) {
-        (DataType::F32, _) => typed_accessor_iter::<[f32; 4]>(path, buffers, &accessor, &label)?
-            .map(|values| quat_from_xyzw(path, values))
-            .collect::<Result<Vec<_>, _>>()?,
-        (DataType::I8, true) => typed_accessor_iter::<[i8; 4]>(path, buffers, &accessor, &label)?
-            .map(|values| quat_from_xyzw(path, values.map(normalize_i8)))
-            .collect::<Result<Vec<_>, _>>()?,
-        (DataType::I16, true) => typed_accessor_iter::<[i16; 4]>(path, buffers, &accessor, &label)?
-            .map(|values| quat_from_xyzw(path, values.map(normalize_i16)))
-            .collect::<Result<Vec<_>, _>>()?,
+    let components: Vec<[f32; 4]> = match (accessor.data_type(), accessor.normalized()) {
+        (DataType::F32, _) => {
+            decode_accessor(path, buffers, &accessor, &label, std::convert::identity)?
+        }
+        (DataType::I8, true) => {
+            decode_accessor(path, buffers, &accessor, &label, |values: [i8; 4]| {
+                values.map(normalize_i8)
+            })?
+        }
+        (DataType::I16, true) => {
+            decode_accessor(path, buffers, &accessor, &label, |values: [i16; 4]| {
+                values.map(normalize_i16)
+            })?
+        }
         _ => {
             return Err(parse_error(
                 path,
@@ -136,6 +138,10 @@ fn read_optional_rotation_attribute(
             ));
         }
     };
+    let rotations = components
+        .into_iter()
+        .map(|values| quat_from_xyzw(path, values))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Some(rotations))
 }
 

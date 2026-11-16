@@ -10,11 +10,20 @@ pub(crate) const DEFAULT_MAX_NODE_DEPTH: usize = 1_024;
 /// Total number of nodes in the document.
 pub(crate) const DEFAULT_MAX_NODE_COUNT: usize = 1_000_000;
 
+/// Bytes one import may materialize from accessors: 1 GiB.
+///
+/// Every decoded stream counts with its in-memory element size each time it
+/// is read, and so does the per-vertex data the importer derives from it. A
+/// zero-initialised sparse accessor is not backed by file bytes at all, so
+/// without this budget its `count` alone would decide how much is allocated.
+pub(crate) const DEFAULT_MAX_ACCESSOR_BYTES: u64 = 1 << 30;
+
 /// Structural limits resolved from [`super::AssetLoadOptions`] for one import.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GltfImportLimits {
     pub(crate) max_node_depth: usize,
     pub(crate) max_node_count: usize,
+    pub(crate) max_accessor_bytes: u64,
 }
 
 impl Default for GltfImportLimits {
@@ -22,6 +31,7 @@ impl Default for GltfImportLimits {
         Self {
             max_node_depth: DEFAULT_MAX_NODE_DEPTH,
             max_node_count: DEFAULT_MAX_NODE_COUNT,
+            max_accessor_bytes: DEFAULT_MAX_ACCESSOR_BYTES,
         }
     }
 }
@@ -33,5 +43,6 @@ impl GltfImportLimits {
     pub(crate) fn within(&self, requested: &Self) -> bool {
         self.max_node_depth <= requested.max_node_depth
             && self.max_node_count <= requested.max_node_count
+            && self.max_accessor_bytes <= requested.max_accessor_bytes
     }
 }

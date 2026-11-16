@@ -4,7 +4,7 @@
 //! rather than an `unreachable!()` inside the upstream channel reader.
 
 use ::gltf::Document;
-use ::gltf::accessor::{Accessor, DataType, Dimensions};
+use ::gltf::accessor::{Accessor, DataType, Dimensions, Item as AccessorItem};
 use ::gltf::animation::Interpolation as GltfInterpolation;
 use ::gltf::animation::Property as GltfProperty;
 
@@ -19,7 +19,7 @@ use crate::scene::Quat;
 use super::SceneAssetClip;
 use super::buffers::ResolvedGltfBuffers;
 use super::typed_accessors::{
-    accessor_error, normalize_i8, normalize_i16, normalize_u8, normalize_u16, typed_accessor_iter,
+    accessor_error, decode_accessor, normalize_i8, normalize_i16, normalize_u8, normalize_u16,
 };
 
 pub(super) fn parse_gltf_clips(
@@ -138,6 +138,7 @@ fn parse_channel(
             collect_weight_keyframes(
                 WeightChannelSpec {
                     path,
+                    buffers,
                     clip_index,
                     channel_index,
                     node_index: target_node,
@@ -189,7 +190,7 @@ impl ChannelStreams<'_> {
                 ),
             ));
         }
-        Ok(typed_accessor_iter::<f32>(self.path, self.buffers, accessor, &label)?.collect())
+        self.decode(accessor, &label, std::convert::identity::<f32>)
     }
 
     fn read_output_vec3(&self, accessor: &Accessor<'_>) -> Result<Vec<[f32; 3]>, AssetError> {
@@ -204,7 +205,7 @@ impl ChannelStreams<'_> {
                 ),
             ));
         }
-        Ok(typed_accessor_iter::<[f32; 3]>(self.path, self.buffers, accessor, &label)?.collect())
+        self.decode(accessor, &label, std::convert::identity::<[f32; 3]>)
     }
 
     /// Integer rotation keys are normalized per the glTF animation rules.
@@ -212,39 +213,41 @@ impl ChannelStreams<'_> {
         let label = self.label("output");
         macro_rules! read_quat {
             ($component:ty, $convert:expr) => {
-                typed_accessor_iter::<[$component; 4]>(self.path, self.buffers, accessor, &label)?
-                    .map(|value| value.map($convert))
-                    .collect()
+                self.decode(accessor, &label, |value: [$component; 4]| {
+                    value.map($convert)
+                })
             };
         }
-        Ok(match accessor.data_type() {
+        match accessor.data_type() {
             DataType::F32 => read_quat!(f32, std::convert::identity),
             DataType::I8 => read_quat!(i8, normalize_i8),
             DataType::U8 => read_quat!(u8, normalize_u8),
             DataType::I16 => read_quat!(i16, normalize_i16),
             DataType::U16 => read_quat!(u16, normalize_u16),
-            DataType::U32 => return Err(self.unsigned_int_output(&label, "rotation")),
-        })
+            DataType::U32 => Err(self.unsigned_int_output(&label, "rotation")),
+        }
     }
 
     /// Integer morph-weight keys are normalized per the glTF animation rules.
     fn read_output_weights(&self, accessor: &Accessor<'_>) -> Result<Vec<f32>, AssetError> {
         let label = self.label("output");
-        macro_rules! read_weights {
-            ($component:ty, $convert:expr) => {
-                typed_accessor_iter::<$component>(self.path, self.buffers, accessor, &label)?
-                    .map($convert)
-                    .collect()
-            };
+        match accessor.data_type() {
+            DataType::F32 => self.decode(accessor, &label, std::convert::identity::<f32>),
+            DataType::I8 => self.decode(accessor, &label, normalize_i8),
+            DataType::U8 => self.decode(accessor, &label, normalize_u8),
+            DataType::I16 => self.decode(accessor, &label, normalize_i16),
+            DataType::U16 => self.decode(accessor, &label, normalize_u16),
+            DataType::U32 => Err(self.unsigned_int_output(&label, "weights")),
         }
-        Ok(match accessor.data_type() {
-            DataType::F32 => read_weights!(f32, std::convert::identity),
-            DataType::I8 => read_weights!(i8, normalize_i8),
-            DataType::U8 => read_weights!(u8, normalize_u8),
-            DataType::I16 => read_weights!(i16, normalize_i16),
-            DataType::U16 => read_weights!(u16, normalize_u16),
-            DataType::U32 => return Err(self.unsigned_int_output(&label, "weights")),
-        })
+    }
+
+    fn decode<T: AccessorItem, Out>(
+        &self,
+        accessor: &Accessor<'_>,
+        label: &str,
+        convert: impl FnMut(T) -> Out,
+    ) -> Result<Vec<Out>, AssetError> {
+        decode_accessor(self.path, self.buffers, accessor, label, convert)
     }
 
     fn unsigned_int_output(&self, label: &str, property: &str) -> AssetError {
@@ -260,6 +263,7 @@ impl ChannelStreams<'_> {
 
 struct WeightChannelSpec<'a> {
     path: &'a AssetPath,
+    buffers: &'a ResolvedGltfBuffers,
     clip_index: usize,
     channel_index: usize,
     node_index: usize,
@@ -308,6 +312,17 @@ fn collect_weight_keyframes(
         }
     }
     let chunk_size = targets_per_keyframe;
+    // Each keyframe becomes its own vector; with one morph target that header
+    // outweighs the four decoded bytes it holds, so it is reserved explicitly.
+    context.buffers.charge_accessor_bytes(
+        context.path,
+        &format!(
+            "animation {} channel {} weight keyframes",
+            context.clip_index, context.channel_index
+        ),
+        raw.len() / chunk_size,
+        size_of::<Vec<f32>>(),
+    )?;
     Ok(AnimationOutput::Weights(
         raw.chunks_exact(chunk_size).map(<[f32]>::to_vec).collect(),
     ))
