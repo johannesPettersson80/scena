@@ -39,6 +39,28 @@ pub(super) fn check_clearcoat_material_contracts(root: &Path, findings: &mut Vec
             "clearcoat_normal_texture_sample",
         ],
     );
+    // The CPU renderer layers the coat the way the shader does: everything
+    // beneath it is attenuated by the coat's Fresnel reflectance.
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/pbr_contract/surface.rs",
+        &[
+            "pub(in crate::render::prepare) fn with_clearcoat(",
+            "self.clearcoat_attenuation = 1.0 - factor * coat_fresnel.x;",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/environment/surface_light.rs",
+        &[
+            "scale_vec3(lit, s.clearcoat_attenuation)",
+            "self.split_sum_brdf_table(coat_n_dot_v, s.clearcoat_roughness)",
+        ],
+    );
     require_contains(
         root,
         findings,

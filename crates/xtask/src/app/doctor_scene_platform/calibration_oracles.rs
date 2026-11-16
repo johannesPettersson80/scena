@@ -21,6 +21,15 @@ const PAIRED_CALIBRATION_SWEEPS: &[(&str, &str, &[&str])] = &[
             "refract_vec3_matches_snells_law",
         ],
     ),
+    (
+        "tests/layered_material_parity.rs",
+        "src/render/prepare/pbr_contract/surface/tests.rs",
+        &[
+            "base_layer_matches_the_reference_radiance",
+            "clearcoat_attenuates_the_layers_beneath_and_adds_its_own_lobe",
+            "sheen_scales_the_base_by_its_energy_compensation_and_adds_the_charlie_lobe",
+        ],
+    ),
 ];
 
 /// Parity sweeps that compare behavior or backends rather than calibrate against

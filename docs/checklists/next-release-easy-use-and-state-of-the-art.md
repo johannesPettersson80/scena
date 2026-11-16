@@ -1303,10 +1303,10 @@ the rendered result is part of the contract.
   `m8_transmission_volume_textures_affect_cpu_preview_pixels` proves the
   CPU preview samples transmission red-channel and thickness green-channel
   texture data,
-  `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
-  math owned by `pbr_contract`,
-  `sheen_light_contribution_adds_colored_lobe` keeps the sheen lobe owned
-  by `pbr_contract`,
+  `clearcoat_attenuates_the_layers_beneath_and_adds_its_own_lobe` keeps the
+  PBR math owned by `pbr_contract`,
+  `sheen_scales_the_base_by_its_energy_compensation_and_adds_the_charlie_lobe`
+  keeps the sheen layer owned by `pbr_contract`,
   `anisotropy_light_contribution_uses_strength_texture_and_direction`
   keeps the anisotropy lobe owned by `pbr_contract`,
   `iridescence_light_contribution_uses_factor_thickness_and_textures`

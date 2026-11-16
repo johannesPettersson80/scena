@@ -279,6 +279,9 @@ fn parity_test_target(test_name: &str) -> &'static str {
             "transmission_parity"
         }
         "core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep" => "pbr_brdf_parity",
+        "layered_materials_match_cpu_and_gpu_as_closely_as_plain_metallic_roughness" => {
+            "layered_material_parity"
+        }
         "pf08_adaptive_texture_bake_preserves_seams_perspective_and_material_identity_cpu_gpu" => {
             "pf08_texture_bake_parity"
         }

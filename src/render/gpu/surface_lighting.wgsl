@@ -11,7 +11,9 @@
 //     replacing its Fresnel term,
 //   - sheen: Charlie lobe on top, base scaled down by the energy it reflects,
 //   - clearcoat: GGX lobe on top, everything below attenuated by its Fresnel.
-// The Rust reference implementation is src/render/prepare/pbr_contract.rs.
+// The CPU renderer evaluates the same model with the same names:
+// src/render/prepare/pbr_contract/surface.rs for direct light and
+// src/render/prepare/environment/surface_light.rs for the environment.
 
 const MIN_SHEEN_ROUGHNESS: f32 = 0.07;
 const SHEEN_ENERGY_COMPENSATION: f32 = 0.157;

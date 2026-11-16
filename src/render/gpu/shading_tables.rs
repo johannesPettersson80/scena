@@ -55,7 +55,7 @@ pub(super) fn create_ltc_table_buffer(device: &wgpu::Device, queue: &wgpu::Queue
 /// floor. Packing two texels per `vec4` and halving the edge gives 8 KiB, and
 /// `brdf_table_resample_error_stays_far_below_the_analytic_fit` measures what
 /// that costs against the same reference the analytic fit was measured against.
-pub(crate) const BRDF_TABLE_SIZE: u32 = 32;
+pub(crate) use crate::render::pbr_brdf::BRDF_TABLE_SIZE;
 
 /// 512 `vec4`s of two packed `(scale, bias)` texels.
 pub(crate) const BRDF_TABLE_BYTE_LEN: u64 = (BRDF_TABLE_SIZE * BRDF_TABLE_SIZE / 2) as u64 * 16;
@@ -63,33 +63,16 @@ pub(crate) const BRDF_TABLE_BYTE_LEN: u64 = (BRDF_TABLE_SIZE * BRDF_TABLE_SIZE /
 const _: () = assert!(BRDF_TABLE_BYTE_LEN <= 16_384);
 
 /// Box-filters the baked table down to `BRDF_TABLE_SIZE` and packs it in the
-/// order `BrdfLutTable` declares. Averaging rather than point-sampling keeps the
-/// resampled cell equal to the mean of the cells it replaces, which is what the
-/// integral over that cell means.
+/// order `BrdfLutTable` declares. The filter is `pbr_brdf::brdf_table_texel`,
+/// which the CPU renderer reads through `pbr_brdf::split_sum_brdf_table`, so
+/// both renderers shade from the same texels.
 pub(crate) fn brdf_table_bytes(baked: &[f32], baked_size: u32) -> Vec<u8> {
     let mut packed = Vec::with_capacity((BRDF_TABLE_SIZE * BRDF_TABLE_SIZE) as usize * 2);
-    let ratio = (baked_size / BRDF_TABLE_SIZE).max(1) as usize;
     for y in 0..BRDF_TABLE_SIZE as usize {
         for x in 0..BRDF_TABLE_SIZE as usize {
-            let mut scale = 0.0_f64;
-            let mut bias = 0.0_f64;
-            let mut samples = 0.0_f64;
-            for dy in 0..ratio {
-                for dx in 0..ratio {
-                    let sy = (y * ratio + dy).min(baked_size as usize - 1);
-                    let sx = (x * ratio + dx).min(baked_size as usize - 1);
-                    let index = (sy * baked_size as usize + sx) * 2;
-                    let (Some(s), Some(b)) = (baked.get(index), baked.get(index + 1)) else {
-                        continue;
-                    };
-                    scale += f64::from(*s);
-                    bias += f64::from(*b);
-                    samples += 1.0;
-                }
-            }
-            let samples = samples.max(1.0);
-            packed.push((scale / samples) as f32);
-            packed.push((bias / samples) as f32);
+            let (scale, bias) = crate::render::pbr_brdf::brdf_table_texel(baked, baked_size, x, y);
+            packed.push(scale);
+            packed.push(bias);
         }
     }
     let mut bytes = Vec::with_capacity(BRDF_TABLE_BYTE_LEN as usize);

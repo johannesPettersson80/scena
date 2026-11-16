@@ -214,9 +214,26 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
             "BRDF_LUT_SIZE",
             "gpu_diffuse_intensity",
             "gpu_specular_intensity",
-            "pbr_contribution",
+            "mod surface_light;",
             "collect_environment_lighting",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare/environment/surface_light.rs",
+        &[
+            "pub(in crate::render::prepare) fn surface_environment_light(&self, s: &Surface)",
+            "pbr_brdf::split_sum_brdf_approx(dot_vec3(s.normal, s.view), s.roughness)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare/environment/surface_light/tests.rs",
+        &["surface_without_layers_reproduces_the_pre_port_environment_bits"],
     );
     require_contains(
         root,
@@ -469,15 +486,17 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
             "pub(super) struct PreparedLights",
             "pub(super) fn from_scene(scene: &Scene, origin_shift: Vec3) -> Self",
             "lights.has_direct_lights() || environment.is_active()",
-            "shade_pbr_base_color",
+            "fn surface_punctual_lighting(",
             "PbrMaterial::new",
-            "punctual_light_contribution",
+            "Surface::new(pbr_material, normal, view)",
+            "surface_direct_light(s, incoming, radiance, 1.0)",
+            "surface_direct_light(s, incoming, radiance, 0.0)",
             "LayeredMaterialLobes",
             "material.clearcoat_factor()",
             "material.clearcoat_roughness_factor()",
             "inverse_square_range_attenuation",
             "input.environment",
-            ".pbr_contribution(",
+            ".surface_environment_light(s)",
             "input.metallic_roughness_texture",
             "input.occlusion_texture",
             "input.emissive_texture",
@@ -495,8 +514,6 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
         "ARCH-DIRECT-LIGHT-SHADING",
         "src/render/prepare/lighting/lobes.rs",
         &[
-            "clearcoat_light_contribution",
-            "sheen_light_contribution",
             "anisotropy_light_contribution",
             "iridescence_light_contribution",
             "dispersion_light_contribution",

@@ -87,12 +87,13 @@ pub(in crate::render) fn brdf_specular_ggx(
         * ggx_visibility_correlated(n_dot_l, n_dot_v, alpha_roughness)
 }
 
-/// Analytic split-sum BRDF approximation used by the runtime environment path.
+/// Karis's analytic split-sum BRDF fit.
 ///
-/// WebGL2's fragment texture-unit floor leaves no safe room for binding the
-/// baked BRDF LUT alongside the existing material/global texture set. Keeping
-/// this approximation in the shared contract makes CPU, WebGPU, and WebGL2 use
-/// one runtime convention instead of CPU sampling a LUT while GPU approximates.
+/// The shaders read the baked table through a uniform block instead
+/// (`split_sum_brdf_table`). The CPU renderer still weights base-layer
+/// image-based lighting with this fit, because its approved reference images
+/// were rendered with it; the layers it evaluates above the base read the
+/// table like the shaders do.
 pub(in crate::render) fn split_sum_brdf_approx(n_dot_v: f32, roughness: f32) -> (f32, f32) {
     let n_dot_v = n_dot_v.clamp(0.0, 1.0);
     let roughness = roughness.clamp(0.0, 1.0);
@@ -102,6 +103,65 @@ pub(in crate::render) fn split_sum_brdf_approx(n_dot_v: f32, roughness: f32) -> 
     let r_w = roughness.mul_add(0.022, -0.04);
     let a004 = (r_x * r_x).min(2.0_f32.powf(-9.28 * n_dot_v)) * r_x + r_y;
     ((-1.04_f32).mul_add(a004, r_z), 1.04_f32.mul_add(a004, r_w))
+}
+
+/// Edge length of the split-sum table the shaders read (`BRDF_LUT_TABLE_SIZE`
+/// in `pbr_brdf.wgsl`).
+pub(crate) const BRDF_TABLE_SIZE: u32 = 32;
+
+/// One `(scale, bias)` texel of the shader table: the mean of the baked cells
+/// it replaces, which is what the integral over that cell means.
+///
+/// The GPU upload packs exactly these values, so a CPU lookup and a shader
+/// lookup read the same table.
+pub(in crate::render) fn brdf_table_texel(
+    baked: &[f32],
+    baked_size: u32,
+    x: usize,
+    y: usize,
+) -> (f32, f32) {
+    let ratio = (baked_size / BRDF_TABLE_SIZE).max(1) as usize;
+    let last = (baked_size as usize).saturating_sub(1);
+    let mut scale = 0.0_f64;
+    let mut bias = 0.0_f64;
+    let mut samples = 0.0_f64;
+    for dy in 0..ratio {
+        for dx in 0..ratio {
+            let sy = (y * ratio + dy).min(last);
+            let sx = (x * ratio + dx).min(last);
+            let index = (sy * baked_size as usize + sx) * 2;
+            let (Some(s), Some(b)) = (baked.get(index), baked.get(index + 1)) else {
+                continue;
+            };
+            scale += f64::from(*s);
+            bias += f64::from(*b);
+            samples += 1.0;
+        }
+    }
+    let samples = samples.max(1.0);
+    ((scale / samples) as f32, (bias / samples) as f32)
+}
+
+/// Bilinear read of the baked split-sum table, matching `split_sum_brdf_table`
+/// in `pbr_brdf.wgsl`: texel centres sit at `(i + 0.5) / size`.
+pub(in crate::render) fn split_sum_brdf_table(
+    baked: &[f32],
+    baked_size: u32,
+    n_dot_v: f32,
+    roughness: f32,
+) -> (f32, f32) {
+    let size = BRDF_TABLE_SIZE as f32;
+    let last = (BRDF_TABLE_SIZE - 1) as usize;
+    let u = (n_dot_v.clamp(0.0, 1.0) * size - 0.5).clamp(0.0, size - 1.0);
+    let v = (roughness.clamp(0.0, 1.0) * size - 0.5).clamp(0.0, size - 1.0);
+    let (x0, y0) = (u.floor() as usize, v.floor() as usize);
+    let (x1, y1) = ((x0 + 1).min(last), (y0 + 1).min(last));
+    let (fx, fy) = (u - u.floor(), v - v.floor());
+    let texel = |x: usize, y: usize| brdf_table_texel(baked, baked_size, x, y);
+    let mix = |a: (f32, f32), b: (f32, f32), t: f32| (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+    let lower = mix(texel(x0, y0), texel(x1, y0), fx);
+    let upper = mix(texel(x0, y1), texel(x1, y1), fx);
+    mix(lower, upper, fy)
 }
 
 fn clamp_unit(value: f32) -> f32 {
@@ -175,6 +235,64 @@ mod tests {
         let high = split_sum_brdf_approx(0.8, 0.7);
         assert_close(high.0, 0.6136032, 0.00001, "high roughness scale");
         assert_close(high.1, 0.0013968, 0.00001, "high roughness bias");
+    }
+
+    #[test]
+    fn split_sum_brdf_table_reads_the_texels_the_gpu_upload_packs() {
+        // A baked table whose every cell differs, so a wrong texel shows.
+        let baked_size = 64_u32;
+        let baked: Vec<f32> = (0..baked_size * baked_size)
+            .flat_map(|cell| {
+                let (x, y) = (cell % baked_size, cell / baked_size);
+                [
+                    x as f32 * 0.01 + y as f32 * 0.001,
+                    0.9 - x as f32 * 0.003 + y as f32 * 0.002,
+                ]
+            })
+            .collect();
+        let packed = crate::render::gpu::shading_tables::brdf_table_bytes(&baked, baked_size);
+        let packed_texel = |x: u32, y: u32| {
+            let at = ((y * BRDF_TABLE_SIZE + x) * 8) as usize;
+            let read = |offset: usize| {
+                f32::from_le_bytes(packed[offset..offset + 4].try_into().expect("f32"))
+            };
+            (read(at), read(at + 4))
+        };
+
+        // Each table texel is the mean of the 2x2 baked cells it replaces.
+        let cell = |x: usize, y: usize| baked[(y * baked_size as usize + x) * 2];
+        let mean = (cell(10, 6) + cell(11, 6) + cell(10, 7) + cell(11, 7)) / 4.0;
+        assert_close(packed_texel(5, 3).0, mean, 1.0e-6, "box-filtered scale");
+
+        // At a texel centre the bilinear read returns that texel exactly.
+        for (x, y) in [(0, 0), (5, 3), (17, 30), (31, 31)] {
+            let centre = |index: u32| (index as f32 + 0.5) / BRDF_TABLE_SIZE as f32;
+            assert_eq!(
+                split_sum_brdf_table(&baked, baked_size, centre(x), centre(y)),
+                packed_texel(x, y),
+                "texel ({x}, {y})"
+            );
+        }
+
+        // Halfway between two texel centres it returns their average, and
+        // outside the outermost centres it clamps instead of extrapolating.
+        let halfway = split_sum_brdf_table(&baked, baked_size, 6.0 / 32.0, 3.5 / 32.0);
+        assert_close(
+            halfway.0,
+            (packed_texel(5, 3).0 + packed_texel(6, 3).0) * 0.5,
+            1.0e-6,
+            "bilinear scale",
+        );
+        assert_close(
+            halfway.1,
+            (packed_texel(5, 3).1 + packed_texel(6, 3).1) * 0.5,
+            1.0e-6,
+            "bilinear bias",
+        );
+        assert_eq!(
+            split_sum_brdf_table(&baked, baked_size, 0.0, 1.0),
+            packed_texel(0, 31)
+        );
     }
 
     // ---- External ground-truth oracles (analytic / numeric, not CPU↔GPU

@@ -3526,9 +3526,16 @@ fn m8_sheen_png_textures_affect_cpu_preview_pixels() {
     let black_sheen = render_center_rgb_for_sheen_color_texture([0, 0, 0, 255]);
     let red_sheen = render_center_rgb_for_sheen_color_texture([255, 0, 0, 255]);
 
+    // The probe looks straight at a face lit head-on, where the Charlie sheen
+    // lobe is dark. What the sheen layer does there is reflect part of the
+    // light before it reaches the base, so a sheen colour dims every channel.
     assert!(
-        red_sheen[0] > black_sheen[0],
-        "sheen color texture RGB must affect CPU preview lighting instead of being silently ignored: black={black_sheen:?} red={red_sheen:?}",
+        red_sheen
+            .iter()
+            .zip(black_sheen)
+            .all(|(sheen, plain)| *sheen < plain),
+        "sheen color texture RGB must affect CPU preview lighting instead of being silently ignored: \
+         a sheen layer takes its energy from the base, black={black_sheen:?} red={red_sheen:?}",
     );
 
     let polished = render_max_luminance_for_sheen_roughness_texture([0, 0, 0, 0]);

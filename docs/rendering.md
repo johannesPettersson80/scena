@@ -202,6 +202,49 @@ Material workflows include:
 - emissive output,
 - ACES/sRGB output.
 
+### Layered surface model
+
+The CPU renderer and the GPU shaders evaluate one layered surface. The shader
+side is `src/render/gpu/surface_lighting.wgsl`; the CPU side is
+`src/render/prepare/pbr_contract/surface.rs`, which keeps the shader's names so
+the two can be read side by side.
+
+- The base layer is Lambert diffuse plus GGX specular.
+- Sheen is a Charlie lobe on top of the base. The base keeps
+  `1 - 0.157 * max(sheen colour)` of its energy, so a sheen layer dims a
+  surface seen head-on and brightens its grazing rim.
+- Clearcoat is a GGX lobe on top of everything. The layers beneath it, emitted
+  light included, keep `1 - clearcoat * F` of their light, where `F` is the
+  coat's Fresnel reflectance at the view angle. A coat is not added on top of
+  an unchanged base.
+
+Both renderers apply these rules to direct lights and to image-based lighting.
+A material that uses no layer renders on the CPU exactly as it did before the
+layers existed; `tests/cpu_core_material_bytes.rs` pins those bytes against the
+last commit without the layered model.
+
+`tests/layered_material_parity.rs` renders a sphere per layer on both
+renderers under one directional light and the default environment. On Mesa
+lavapipe a clearcoat, a sheen and a clearcoat-over-sheen sphere differ between
+CPU and GPU by at most 2.3 code values per channel on average, against 2.9 for
+the plain sphere they are built on.
+
+The CPU renderer still differs from the shaders in these places:
+
+- Base-layer image-based lighting. The CPU renderer weights environment light
+  with the analytic split-sum fit and single scattering; the shaders read the
+  baked split-sum table and add the multiple-scattering term. A rough metal
+  under an environment is therefore darker on the CPU, by about 16 code values
+  for a metal of roughness 0.38 under the default environment. Changing this
+  moves every image-based-lit CPU frame, layered or not.
+- Anisotropy and iridescence are still added to the base on the CPU as separate
+  lobes. The shaders reshape the base lobe and replace its Fresnel term.
+- Dielectric reflectance follows the material IOR only in the shaders. The CPU
+  renderer uses 0.04 for every dielectric.
+- Dispersion keeps its own CPU approximation.
+- The CPU renderer shades vertices and interpolates, so a highlight narrower
+  than the mesh tessellation is resolved by the shaders only.
+
 ### KHR material visual-proof contract
 
 The deterministic CPU/reference proof for clearcoat, sheen, anisotropy,

@@ -45,15 +45,43 @@ pub(super) fn check_sheen_material_contracts(root: &Path, findings: &mut Vec<Fin
             "sheen_roughness_texture_sample",
         ],
     );
+    // The CPU renderer evaluates the same sheen layer as the shader: a Charlie
+    // lobe on top of a base scaled down by the energy the layer reflects.
     require_contains(
         root,
         findings,
         "ASSETS-M8",
-        "src/render/prepare/pbr_contract.rs",
+        "src/render/prepare/pbr_contract/sheen.rs",
         &[
-            "sheen_light_contribution",
-            "sheen_light_contribution_adds_colored_lobe",
+            "fn distribution_charlie(",
+            "fn visibility_neubelt(",
+            "fn sheen_environment_brdf(",
+            "sheen_energy_compensation_matches_the_shader_constants",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/pbr_contract/surface.rs",
+        &[
+            "pub(in crate::render::prepare) fn with_sheen(",
+            "scale_vec3(layer, s.sheen_scaling)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/pbr_contract/surface/tests.rs",
+        &["sheen_scales_the_base_by_its_energy_compensation_and_adds_the_charlie_lobe"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/environment/surface_light.rs",
+        &["sheen_environment_brdf(s.n_dot_v, s.sheen_roughness)"],
     );
     require_contains(
         root,

@@ -11,16 +11,15 @@ use crate::diagnostics::PrepareError;
 use crate::scene::Scene;
 use crate::scene::Vec3;
 
-use super::super::pbr_brdf;
 use super::environment_baker::{
     EnvironmentBakeMetrics, EnvironmentIblBakeQuality, EnvironmentIblBakeRequest,
     bake_environment_ibl, bake_environment_ibl_profiled, prefilter_lod_for_roughness,
     sample_prefiltered_cubemap_lod,
 };
-use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
 
 mod diagnostics;
 mod irradiance;
+mod surface_light;
 use diagnostics::{debug_report_environment, warn_environment_sidecar_profile_mismatch};
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 use diagnostics::{environment_now_ms, log_environment_step};
@@ -363,36 +362,6 @@ impl PreparedEnvironmentLighting {
             0.0,
         ]
     }
-
-    pub(in crate::render::prepare) fn pbr_contribution(
-        &self,
-        material: PbrMaterial,
-        normal: Vec3,
-        view: Vec3,
-    ) -> Vec3 {
-        if !self.is_active() {
-            return Vec3::ZERO;
-        }
-        let diffuse = self.diffuse_radiance(normal);
-        let reflection = rotate_environment_y(
-            reflect_vec3(Vec3::new(-view.x, -view.y, -view.z), normal),
-            self.rotation_y_radians,
-        );
-        let prefiltered = self
-            .cubemap
-            .as_deref()
-            .map(|cubemap| sample_prefiltered_specular(cubemap, reflection, material.roughness))
-            .unwrap_or(self.specular_rgb);
-        let brdf = if self.cubemap.is_some() {
-            pbr_brdf::split_sum_brdf_approx(dot_vec3(normal, view), material.roughness)
-        } else {
-            (1.0, 0.0)
-        };
-        scale_vec3(
-            environment_split_sum_contribution(material, normal, view, diffuse, prefiltered, brdf),
-            self.intensity,
-        )
-    }
 }
 
 fn rotate_environment_y(direction: Vec3, radians: f32) -> Vec3 {
@@ -566,6 +535,7 @@ fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
+    use super::super::pbr_contract::{PbrMaterial, Surface};
     use super::*;
 
     #[test]
@@ -653,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn pbr_contribution_uses_prepared_diffuse_irradiance_not_raw_cubemap_radiance() {
+    fn surface_environment_light_uses_prepared_diffuse_irradiance_not_raw_cubemap_radiance() {
         let black_face = vec![0.0, 0.0, 0.0, 1.0];
         let black_mip = [
             black_face.clone(),
@@ -678,11 +648,11 @@ mod tests {
             })),
         };
 
-        let contribution = lighting.pbr_contribution(
+        let contribution = lighting.surface_environment_light(&Surface::new(
             PbrMaterial::new(Vec3::new(0.8, 0.7, 0.6), 0.0, 1.0),
             Vec3::new(0.0, 1.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
-        );
+        ));
 
         assert!(
             contribution.x > 0.0 && contribution.y > 0.0 && contribution.z > 0.0,

@@ -2,7 +2,8 @@
 //!
 //! This module is the single Rust owner for CPU/reference PBR math. GPU WGSL
 //! and WebGL2 shader code mirrors these formulas and is doctor-guarded against
-//! private material-response tuning constants.
+//! private material-response tuning constants. The layered surface model in
+//! `surface` is the Rust side of `src/render/gpu/surface_lighting.wgsl`.
 
 use std::f32::consts::PI;
 
@@ -12,6 +13,10 @@ use super::super::pbr_brdf;
 
 mod dispersion;
 pub(super) use dispersion::dispersion_light_contribution;
+mod sheen;
+pub(super) use sheen::sheen_environment_brdf;
+mod surface;
+pub(super) use surface::{Surface, surface_direct_light};
 mod transmission;
 pub(super) use transmission::transmission_volume_light_contribution;
 
@@ -43,121 +48,6 @@ impl PbrMaterial {
 
 pub(super) fn roughness_or_min(value: f32) -> f32 {
     pbr_brdf::perceptual_roughness_or_min(value)
-}
-
-pub(super) fn punctual_light_contribution(
-    material: PbrMaterial,
-    normal: Vec3,
-    view: Vec3,
-    incoming: Vec3,
-    radiance: Vec3,
-) -> Vec3 {
-    let incoming = normalize_or(incoming, Vec3::ZERO);
-    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
-    if n_dot_l <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
-    let half_vector = normalize_or(add_vec3(view, incoming), normal);
-    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
-    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
-    let alpha = pbr_brdf::alpha_roughness(material.roughness);
-    let specular_brdf = pbr_brdf::brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
-    let fresnel = fresnel_schlick(v_dot_h, material.f0());
-    let specular = scale_vec3(fresnel, specular_brdf);
-    let diffuse_energy = scale_vec3(
-        subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
-        1.0 - material.metallic,
-    );
-    let diffuse = scale_vec3(multiply_vec3(diffuse_energy, material.base), PI.recip());
-    scale_vec3(
-        multiply_vec3(add_vec3(diffuse, specular), radiance),
-        n_dot_l,
-    )
-}
-
-pub(super) fn pbr_area_light_diffuse_contribution(
-    material: PbrMaterial,
-    normal: Vec3,
-    view: Vec3,
-    incoming: Vec3,
-    radiance: Vec3,
-) -> Vec3 {
-    let incoming = normalize_or(incoming, Vec3::ZERO);
-    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
-    if n_dot_l <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let half_vector = normalize_or(add_vec3(view, incoming), normal);
-    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
-    let fresnel = fresnel_schlick(v_dot_h, material.f0());
-    let diffuse_energy = scale_vec3(
-        subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
-        1.0 - material.metallic,
-    );
-    let diffuse = scale_vec3(multiply_vec3(diffuse_energy, material.base), PI.recip());
-    scale_vec3(multiply_vec3(diffuse, radiance), n_dot_l)
-}
-
-pub(super) fn clearcoat_light_contribution(
-    normal: Vec3,
-    view: Vec3,
-    incoming: Vec3,
-    radiance: Vec3,
-    factor: f32,
-    roughness: f32,
-) -> Vec3 {
-    let factor = clamp_unit(factor);
-    if factor <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let incoming = normalize_or(incoming, Vec3::ZERO);
-    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
-    if n_dot_l <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
-    let half_vector = normalize_or(add_vec3(view, incoming), normal);
-    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
-    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
-    let roughness = roughness_or_min(roughness);
-    let alpha = pbr_brdf::alpha_roughness(roughness);
-    let specular_brdf = pbr_brdf::brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
-    let fresnel = fresnel_schlick(
-        v_dot_h,
-        Vec3::new(DIELECTRIC_F0, DIELECTRIC_F0, DIELECTRIC_F0),
-    );
-    let specular = scale_vec3(fresnel, specular_brdf * factor);
-    scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
-}
-
-pub(super) fn sheen_light_contribution(
-    normal: Vec3,
-    view: Vec3,
-    incoming: Vec3,
-    radiance: Vec3,
-    color: Vec3,
-    roughness: f32,
-) -> Vec3 {
-    let color = clamp_vec3_unit(color);
-    if max_component(color) <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let incoming = normalize_or(incoming, Vec3::ZERO);
-    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
-    if n_dot_l <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
-    let half_vector = normalize_or(add_vec3(view, incoming), normal);
-    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
-    let roughness = roughness_or_min(roughness);
-    let alpha = pbr_brdf::alpha_roughness(roughness);
-    let sheen = scale_vec3(
-        color,
-        pbr_brdf::brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h),
-    );
-    scale_vec3(multiply_vec3(sheen, radiance), n_dot_l)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -280,33 +170,6 @@ pub(super) fn iridescence_light_contribution(
         multiply_vec3(add_vec3(specular, film_sideband), radiance),
         n_dot_l,
     )
-}
-
-pub(super) fn environment_split_sum_contribution(
-    material: PbrMaterial,
-    normal: Vec3,
-    view: Vec3,
-    diffuse_irradiance: Vec3,
-    prefiltered_specular: Vec3,
-    brdf_scale_bias: (f32, f32),
-) -> Vec3 {
-    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
-    let fresnel = fresnel_schlick(n_dot_v, material.f0());
-    let diffuse_energy = scale_vec3(
-        subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
-        1.0 - material.metallic,
-    );
-    let diffuse = multiply_vec3(
-        multiply_vec3(diffuse_energy, material.base),
-        diffuse_irradiance,
-    );
-    let f0 = material.f0();
-    let specular_factor = add_vec3(
-        scale_vec3(f0, brdf_scale_bias.0),
-        Vec3::new(brdf_scale_bias.1, brdf_scale_bias.1, brdf_scale_bias.1),
-    );
-    let specular = multiply_vec3(prefiltered_specular, specular_factor);
-    add_vec3(diffuse, specular)
 }
 
 pub(super) fn directional_illuminance_lux(value: f32) -> f32 {
@@ -532,12 +395,15 @@ mod tests {
         let material = PbrMaterial::new(Vec3::new(0.7, 0.72, 0.75), 1.0, 0.2);
         let grazing_z = 0.05_f32;
         let grazing_x = (1.0 - grazing_z * grazing_z).sqrt();
-        let actual = punctual_light_contribution(
-            material,
-            Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(grazing_x, 0.0, grazing_z),
+        let actual = surface_direct_light(
+            &Surface::new(
+                material,
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(grazing_x, 0.0, grazing_z),
+            ),
             Vec3::new(-grazing_x, 0.0, grazing_z),
             Vec3::new(1.0, 1.0, 1.0),
+            1.0,
         );
 
         assert_vec3_close(
@@ -554,20 +420,22 @@ mod tests {
         let view = normal;
         let incoming = normal;
         let radiance = Vec3::new(2.0, 2.0, 2.0);
-        let dielectric = pbr_area_light_diffuse_contribution(
-            PbrMaterial::new(Vec3::new(0.7, 0.3, 0.1), 0.0, 0.05),
-            normal,
-            view,
-            incoming,
-            radiance,
-        );
-        let metal = pbr_area_light_diffuse_contribution(
-            PbrMaterial::new(Vec3::new(0.7, 0.3, 0.1), 1.0, 0.05),
-            normal,
-            view,
-            incoming,
-            radiance,
-        );
+        // Weight 0 is how area-light point samples are shaded: the LTC
+        // integral owns their base specular lobe.
+        let sampled = |metallic: f32| {
+            surface_direct_light(
+                &Surface::new(
+                    PbrMaterial::new(Vec3::new(0.7, 0.3, 0.1), metallic, 0.05),
+                    normal,
+                    view,
+                ),
+                incoming,
+                radiance,
+                0.0,
+            )
+        };
+        let dielectric = sampled(0.0);
+        let metal = sampled(1.0);
 
         assert!(
             dielectric.x > 0.0 && dielectric.y > 0.0 && dielectric.z > 0.0,
@@ -598,45 +466,6 @@ mod tests {
             (directional_illuminance_lux(10_000.0) - 1.0).abs() < 1e-6,
             "a default 10k-lux directional light must be calibrated to renderer scene-linear \
              units instead of being injected as raw 10000x HDR radiance"
-        );
-    }
-
-    #[test]
-    fn clearcoat_light_contribution_adds_dielectric_lobe() {
-        let normal = Vec3::new(0.0, 0.0, 1.0);
-        let view = normal;
-        let incoming = normal;
-        let radiance = Vec3::new(1.0, 1.0, 1.0);
-        let off = clearcoat_light_contribution(normal, view, incoming, radiance, 0.0, 0.1);
-        let on = clearcoat_light_contribution(normal, view, incoming, radiance, 1.0, 0.1);
-
-        assert_eq!(off, Vec3::ZERO);
-        assert!(
-            on.x > 0.0 && on.y > 0.0 && on.z > 0.0,
-            "clearcoat must add a white dielectric specular lobe"
-        );
-    }
-
-    #[test]
-    fn sheen_light_contribution_adds_colored_lobe() {
-        let normal = Vec3::new(0.0, 0.0, 1.0);
-        let view = normal;
-        let incoming = normal;
-        let radiance = Vec3::new(1.0, 1.0, 1.0);
-        let off = sheen_light_contribution(normal, view, incoming, radiance, Vec3::ZERO, 0.35);
-        let red = sheen_light_contribution(
-            normal,
-            view,
-            incoming,
-            radiance,
-            Vec3::new(1.0, 0.0, 0.0),
-            0.35,
-        );
-
-        assert_eq!(off, Vec3::ZERO);
-        assert!(
-            red.x > 0.0 && red.y == 0.0 && red.z == 0.0,
-            "sheen must add a colored texture/factor-driven lobe"
         );
     }
 

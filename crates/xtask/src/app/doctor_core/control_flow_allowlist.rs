@@ -130,4 +130,14 @@ pub(super) const DIAGNOSTIC_EARLY_RETURNS: &[DiagnosticEarlyReturn] = &[
         owner: "external-fixture/Q07",
         rationale: "manual out-of-repo reproduction requiring a separately installed asset",
     },
+    DiagnosticEarlyReturn {
+        path: "tests/layered_material_parity.rs",
+        owner: "renderer-quality/layered-materials",
+        rationale: "optional adapter probe that returns only when no GPU adapter is available and writes the typed skipped parity artifact; SCENA_REQUIRE_GPU_PARITY fails closed, and the CPU side of the layered surface model is pinned unconditionally by the pbr_contract surface unit tests",
+    },
+    DiagnosticEarlyReturn {
+        path: "tests/cpu_core_material_bytes.rs",
+        owner: "renderer-quality/layered-materials",
+        rationale: "the pinned frames are x86_64-unknown-linux-gnu captures of commit 4da02d2 and other C libraries may round transcendental functions differently, so the byte comparison returns elsewhere; the platform-independent proof that a surface without layers keeps its bits is the unconditional lib tests surface_without_layers_reproduces_the_pre_port_direct_light_bits and surface_without_layers_reproduces_the_pre_port_environment_bits",
+    },
 ];

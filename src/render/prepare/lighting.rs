@@ -1,7 +1,6 @@
 use super::pbr_contract::{
-    PbrMaterial, directional_illuminance_lux, inverse_square_range_attenuation,
-    pbr_area_light_diffuse_contribution, punctual_intensity_candela, punctual_light_contribution,
-    roughness_or_min, spot_cone_attenuation,
+    PbrMaterial, Surface, directional_illuminance_lux, inverse_square_range_attenuation,
+    punctual_intensity_candela, roughness_or_min, spot_cone_attenuation, surface_direct_light,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Scene, Vec3};
@@ -54,12 +53,6 @@ pub(super) struct MaterialShadingInput {
     pub(super) directional_shadow_factor: f32,
     pub(super) area_shadow_factor: f32,
     pub(super) ambient_visibility: f32,
-}
-
-#[derive(Clone, Copy)]
-struct PbrShadingComponents {
-    direct: Vec3,
-    indirect: Vec3,
 }
 
 #[derive(Default)]
@@ -244,31 +237,38 @@ pub(super) fn material_color(
     input: &MaterialShadingInput,
 ) -> Color {
     let base = multiply_color(material.base_color(), input.base_color_texture);
+    // Share of the light emitted beneath a clearcoat that leaves through it.
+    let mut coat_attenuation = 1.0;
     let mut color = match material.kind() {
         MaterialKind::Unlit => base,
-        MaterialKind::PbrMetallicRoughness
-            if material_is_lit(material, lights, &input.environment) =>
-        {
-            let components = shade_pbr_base_color(material, base, lights, input);
-            let authored_occlusion = 1.0
-                + (input.occlusion_texture.clamp(0.0, 1.0) - 1.0)
-                    * material.occlusion_strength().clamp(0.0, 1.0);
-            let indirect_occlusion = authored_occlusion * input.ambient_visibility.clamp(0.0, 1.0);
-            Color::from_linear_rgba(
-                components.direct.x + components.indirect.x * indirect_occlusion,
-                components.direct.y + components.indirect.y * indirect_occlusion,
-                components.direct.z + components.indirect.z * indirect_occlusion,
-                base.a,
-            )
+        MaterialKind::PbrMetallicRoughness => {
+            let (surface, lobes) = material_surface(material, base, input);
+            coat_attenuation = surface.clearcoat_attenuation;
+            if material_is_lit(material, lights, &input.environment) {
+                let direct = surface_punctual_lighting(&surface, &lobes, lights, input);
+                let indirect = surface_environment_lighting(&surface, &lobes, input);
+                let authored_occlusion = 1.0
+                    + (input.occlusion_texture.clamp(0.0, 1.0) - 1.0)
+                        * material.occlusion_strength().clamp(0.0, 1.0);
+                let indirect_occlusion =
+                    authored_occlusion * input.ambient_visibility.clamp(0.0, 1.0);
+                Color::from_linear_rgba(
+                    direct.x + indirect.x * indirect_occlusion,
+                    direct.y + indirect.y * indirect_occlusion,
+                    direct.z + indirect.z * indirect_occlusion,
+                    base.a,
+                )
+            } else {
+                base
+            }
         }
-        MaterialKind::PbrMetallicRoughness => base,
         MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge => base,
     };
     let emissive = material.emissive();
     let emissive_strength = material.emissive_strength();
-    color.r += emissive.r * input.emissive_texture.r * emissive_strength;
-    color.g += emissive.g * input.emissive_texture.g * emissive_strength;
-    color.b += emissive.b * input.emissive_texture.b * emissive_strength;
+    color.r += emissive.r * input.emissive_texture.r * emissive_strength * coat_attenuation;
+    color.g += emissive.g * input.emissive_texture.g * emissive_strength * coat_attenuation;
+    color.b += emissive.b * input.emissive_texture.b * emissive_strength * coat_attenuation;
     match material.alpha_mode() {
         AlphaMode::Opaque => color.a = 1.0,
         AlphaMode::Blend => {}
@@ -277,12 +277,13 @@ pub(super) fn material_color(
     color
 }
 
-fn shade_pbr_base_color(
+/// Builds the layered surface of one shaded vertex, together with the lobes
+/// the surface model does not own.
+fn material_surface(
     material: &MaterialDesc,
     base: Color,
-    lights: &PreparedLights,
     input: &MaterialShadingInput,
-) -> PbrShadingComponents {
+) -> (Surface, LayeredMaterialLobes) {
     let (normal, micro_roughness) =
         photographic_micro_surface(material, input.position, input.normal, input.tangent);
     let view = input
@@ -300,62 +301,60 @@ fn shade_pbr_base_color(
         material.roughness_factor() * input.metallic_roughness_texture.1 + micro_roughness,
     );
     let pbr_material = PbrMaterial::new(base_rgb, metallic, roughness);
-    let clearcoat_factor = clamp_unit(material.clearcoat_factor() * input.clearcoat_texture);
-    let clearcoat_roughness =
-        roughness_or_min(material.clearcoat_roughness_factor() * input.clearcoat_roughness_texture);
-    let clearcoat_normal = normalize_or(input.clearcoat_normal, normal);
     let sheen_color_factor = material.sheen_color_factor();
     let sheen_color = Vec3::new(
         sheen_color_factor.r * input.sheen_color_texture.r,
         sheen_color_factor.g * input.sheen_color_texture.g,
         sheen_color_factor.b * input.sheen_color_texture.b,
     );
-    let sheen_roughness =
-        roughness_or_min(material.sheen_roughness_factor() * input.sheen_roughness_texture);
-    let anisotropy_strength = material.anisotropy_strength_factor();
-    let anisotropy_rotation = material.anisotropy_rotation_radians();
-    let iridescence_factor = material.iridescence_factor();
-    let iridescence_ior = material.iridescence_ior();
-    let iridescence_thickness_minimum = material.iridescence_thickness_minimum_nm();
-    let iridescence_thickness_maximum = material.iridescence_thickness_maximum_nm();
-    let dispersion_factor = material.dispersion_factor();
-    let transmission_factor = material.transmission_factor();
-    let ior = material.ior();
-    let thickness_factor = material.thickness_factor();
+    let surface = Surface::new(pbr_material, normal, view)
+        .with_sheen(
+            sheen_color,
+            material.sheen_roughness_factor() * input.sheen_roughness_texture,
+        )
+        .with_clearcoat(
+            material.clearcoat_factor() * input.clearcoat_texture,
+            material.clearcoat_roughness_factor() * input.clearcoat_roughness_texture,
+            normalize_or(input.clearcoat_normal, normal),
+        );
     let attenuation_color = material.attenuation_color();
-    let attenuation_distance = material.attenuation_distance();
-    let layered_lobes = LayeredMaterialLobes {
+    let lobes = LayeredMaterialLobes {
         pbr_material,
         normal,
-        clearcoat_normal,
         view,
         tangent: input.tangent,
         tangent_handedness: input.tangent_handedness,
-        clearcoat_factor,
-        clearcoat_roughness,
-        sheen_color,
-        sheen_roughness,
-        anisotropy_strength,
-        anisotropy_rotation,
+        anisotropy_strength: material.anisotropy_strength_factor(),
+        anisotropy_rotation: material.anisotropy_rotation_radians(),
         anisotropy_texture: input.anisotropy_texture,
-        iridescence_factor,
-        iridescence_ior,
-        iridescence_thickness_minimum,
-        iridescence_thickness_maximum,
+        iridescence_factor: material.iridescence_factor(),
+        iridescence_ior: material.iridescence_ior(),
+        iridescence_thickness_minimum: material.iridescence_thickness_minimum_nm(),
+        iridescence_thickness_maximum: material.iridescence_thickness_maximum_nm(),
         iridescence_texture: input.iridescence_texture,
         iridescence_thickness_texture: input.iridescence_thickness_texture,
-        dispersion_factor,
-        transmission_factor: transmission_factor * input.transmission_texture,
-        ior,
-        thickness_factor,
+        dispersion_factor: material.dispersion_factor(),
+        transmission_factor: material.transmission_factor() * input.transmission_texture,
+        ior: material.ior(),
+        thickness_factor: material.thickness_factor(),
         thickness_texture: input.thickness_texture,
         attenuation_color: Vec3::new(
             attenuation_color.r,
             attenuation_color.g,
             attenuation_color.b,
         ),
-        attenuation_distance,
+        attenuation_distance: material.attenuation_distance(),
     };
+    (surface, lobes)
+}
+
+/// Direct lighting from every analytic light in the scene.
+fn surface_punctual_lighting(
+    s: &Surface,
+    lobes: &LayeredMaterialLobes,
+    lights: &PreparedLights,
+    input: &MaterialShadingInput,
+) -> Vec3 {
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -369,11 +368,8 @@ fn shade_pbr_base_color(
             light.color,
             directional_illuminance_lux(light.illuminance_lux) * shadow_factor,
         );
-        shaded = add_vec3(
-            shaded,
-            punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
-        );
-        shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
+        shaded = add_vec3(shaded, surface_direct_light(s, incoming, radiance, 1.0));
+        shaded = add_vec3(shaded, lobes.contribution(incoming, radiance));
     }
     for light in &lights.point {
         let to_light = subtract_vec3(light.position, input.position);
@@ -383,11 +379,8 @@ fn shade_pbr_base_color(
             punctual_intensity_candela(light.intensity_candela)
                 * inverse_square_range_attenuation(to_light, light.range),
         );
-        shaded = add_vec3(
-            shaded,
-            punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
-        );
-        shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
+        shaded = add_vec3(shaded, surface_direct_light(s, incoming, radiance, 1.0));
+        shaded = add_vec3(shaded, lobes.contribution(incoming, radiance));
     }
     for light in &lights.spot {
         let to_light = subtract_vec3(light.position, input.position);
@@ -404,51 +397,77 @@ fn shade_pbr_base_color(
                 * inverse_square_range_attenuation(to_light, light.range)
                 * cone,
         );
-        shaded = add_vec3(
-            shaded,
-            punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
-        );
-        shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
+        shaded = add_vec3(shaded, surface_direct_light(s, incoming, radiance, 1.0));
+        shaded = add_vec3(shaded, lobes.contribution(incoming, radiance));
     }
     for light in &lights.area {
-        let intensity_per_sample = light.luminous_flux_lumens
-            / (4.0 * std::f32::consts::PI)
-            / AREA_LIGHT_SAMPLE_COUNT as f32;
-        let shadow_factor = input.area_shadow_factor.clamp(0.0, 1.0);
-        shaded = add_vec3(
-            shaded,
-            ltc_area_light_specular_contribution(
-                *light,
-                input.position,
-                normal,
-                view,
-                pbr_material,
-                shadow_factor,
-            ),
-        );
-        for sample_position in area_light_sample_positions(*light) {
-            let to_light = subtract_vec3(sample_position, input.position);
-            let incoming = normalize_or(to_light, Vec3::ZERO);
-            let radiance = scale_color(
-                light.color,
-                punctual_intensity_candela(intensity_per_sample)
-                    * inverse_square_range_attenuation(to_light, light.range),
-            );
-            let radiance = Vec3::new(
-                radiance.x * shadow_factor,
-                radiance.y * shadow_factor,
-                radiance.z * shadow_factor,
-            );
-            shaded = add_vec3(
-                shaded,
-                pbr_area_light_diffuse_contribution(pbr_material, normal, view, incoming, radiance),
-            );
-            shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
-        }
+        shaded = surface_area_light(shaded, *light, s, lobes, input);
     }
-    let mut indirect = input
-        .environment
-        .pbr_contribution(pbr_material, normal, view);
+    shaded
+}
+
+/// Adds one area light to `shaded`: analytic LTC specular plus point-sampled
+/// diffuse and coating lobes. The point samples skip the base specular lobe,
+/// which the LTC integral already covers.
+///
+/// The running total is threaded through rather than summed per light, so
+/// every term joins it in the order the approved CPU references were rendered
+/// with.
+fn surface_area_light(
+    mut shaded: Vec3,
+    light: PreparedAreaLight,
+    s: &Surface,
+    lobes: &LayeredMaterialLobes,
+    input: &MaterialShadingInput,
+) -> Vec3 {
+    let intensity_per_sample =
+        light.luminous_flux_lumens / (4.0 * std::f32::consts::PI) / AREA_LIGHT_SAMPLE_COUNT as f32;
+    let shadow_factor = input.area_shadow_factor.clamp(0.0, 1.0);
+    let specular = ltc_area_light_specular_contribution(
+        light,
+        input.position,
+        s.normal,
+        s.view,
+        lobes.pbr_material,
+        shadow_factor,
+    );
+    // The coat sits above the LTC lobe too. Without a coat the factor is
+    // exactly 1, which leaves every bit of the lobe as it was.
+    shaded = add_vec3(
+        shaded,
+        Vec3::new(
+            specular.x * s.clearcoat_attenuation,
+            specular.y * s.clearcoat_attenuation,
+            specular.z * s.clearcoat_attenuation,
+        ),
+    );
+    for sample_position in area_light_sample_positions(light) {
+        let to_light = subtract_vec3(sample_position, input.position);
+        let incoming = normalize_or(to_light, Vec3::ZERO);
+        let radiance = scale_color(
+            light.color,
+            punctual_intensity_candela(intensity_per_sample)
+                * inverse_square_range_attenuation(to_light, light.range),
+        );
+        let radiance = Vec3::new(
+            radiance.x * shadow_factor,
+            radiance.y * shadow_factor,
+            radiance.z * shadow_factor,
+        );
+        shaded = add_vec3(shaded, surface_direct_light(s, incoming, radiance, 0.0));
+        shaded = add_vec3(shaded, lobes.contribution(incoming, radiance));
+    }
+    shaded
+}
+
+/// Image-based lighting of the surface, plus the environment response of the
+/// lobes the surface model does not own.
+fn surface_environment_lighting(
+    s: &Surface,
+    lobes: &LayeredMaterialLobes,
+    input: &MaterialShadingInput,
+) -> Vec3 {
+    let mut indirect = input.environment.surface_environment_light(s);
     if input.environment.is_active() {
         let environment_specular = input.environment.gpu_specular_intensity();
         let environment_radiance = Vec3::new(
@@ -456,16 +475,9 @@ fn shade_pbr_base_color(
             environment_specular[1] * environment_specular[3],
             environment_specular[2] * environment_specular[3],
         );
-        indirect = add_vec3(
-            indirect,
-            layered_lobes.contribution(normal, environment_radiance),
-        );
+        indirect = add_vec3(indirect, lobes.contribution(s.normal, environment_radiance));
     }
-
-    PbrShadingComponents {
-        direct: shaded,
-        indirect,
-    }
+    indirect
 }
 
 fn photographic_micro_surface(

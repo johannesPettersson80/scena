@@ -9,8 +9,44 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
         &[
             "pbr_material_uses_gltf_dielectric_and_metallic_f0",
             "light_units_do_not_apply_scene_tuned_divisors_or_clamps",
-            "clearcoat_light_contribution",
-            "clearcoat_light_contribution_adds_dielectric_lobe",
+            "pub(super) use surface::{Surface, surface_direct_light};",
+        ],
+    );
+    // The CPU renderer shades through the same layered surface model as
+    // `surface_lighting.wgsl`: a coat attenuates what lies beneath it instead
+    // of being added on top, and a surface without layers must keep the bits
+    // the approved CPU references were rendered with.
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STANDARD-MATH",
+        "src/render/prepare/pbr_contract/surface.rs",
+        &[
+            "pub(in crate::render::prepare) struct Surface",
+            "pub(in crate::render::prepare) fn surface_direct_light(",
+            "n_dot_l * s.clearcoat_attenuation",
+            "coat_n_dot_l * s.clearcoat",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STANDARD-MATH",
+        "src/render/prepare/pbr_contract/surface/tests.rs",
+        &[
+            "surface_without_layers_reproduces_the_pre_port_direct_light_bits",
+            "clearcoat_at_normal_incidence_dims_the_base_by_exactly_its_fresnel_reflectance",
+            "clearcoat_attenuates_the_layers_beneath_and_adds_its_own_lobe",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STANDARD-MATH",
+        "tests/cpu_core_material_bytes.rs",
+        &[
+            "core_materials_render_the_bytes_they_rendered_before_the_layered_surface_model",
+            "frame_sha256_at_4da02d2",
         ],
     );
     require_contains(
@@ -33,6 +69,9 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
         "src/render/prepare/lighting/math.rs",
         "src/render/prepare/lighting/tiled.rs",
         "src/render/prepare/materials.rs",
+        "src/render/prepare/pbr_contract/surface.rs",
+        "src/render/prepare/pbr_contract/sheen.rs",
+        "src/render/prepare/environment/surface_light.rs",
     ] {
         forbid_contains(
             root,

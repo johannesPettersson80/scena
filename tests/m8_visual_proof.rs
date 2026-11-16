@@ -512,7 +512,7 @@ struct FeatureRegion {
 #[serde(rename_all = "kebab-case")]
 enum FeatureDirection {
     LuminanceIncrease,
-    RedIncrease,
+    LuminanceDecrease,
     SpatialRedistribution,
     BlueMinusRedIncrease,
     ChromaticSpreadIncrease,
@@ -692,7 +692,9 @@ fn evaluate_feature_candidate(
         FeatureDirection::LuminanceIncrease => {
             ((candidate_mean.iter().sum::<f64>() - control_mean.iter().sum::<f64>()) / 3.0) as f32
         }
-        FeatureDirection::RedIncrease => (candidate_mean[0] - control_mean[0]) as f32,
+        FeatureDirection::LuminanceDecrease => {
+            ((control_mean.iter().sum::<f64>() - candidate_mean.iter().sum::<f64>()) / 3.0) as f32
+        }
         FeatureDirection::SpatialRedistribution => effect_rmse,
         FeatureDirection::BlueMinusRedIncrease => {
             ((candidate_mean[2] - candidate_mean[0]) - (control_mean[2] - control_mean[0])) as f32
@@ -876,10 +878,15 @@ fn render_khr_material_feature_cases() -> Vec<KhrMaterialFeatureCase> {
                 0.0,
             ),
             region: common_region,
-            direction: FeatureDirection::RedIncrease,
-            min_effect_rmse: 20.0,
+            // The probe looks straight at a face lit head-on. The Charlie
+            // sheen lobe is dark there, so what the layer shows is the energy
+            // it takes from the base: every channel dims by the sheen
+            // compensation. Measured effect RMSE and mean decrease are both
+            // close to 10 code values.
+            direction: FeatureDirection::LuminanceDecrease,
+            min_effect_rmse: 5.0,
             min_changed_pixel_fraction: 0.25,
-            min_direction_metric: 20.0,
+            min_direction_metric: 5.0,
         },
         KhrMaterialFeatureCase {
             name: "anisotropy-light-left",
