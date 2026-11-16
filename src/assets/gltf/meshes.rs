@@ -35,6 +35,24 @@ use accessors::{
 use attribute_streams::{read_colors, read_indices, read_joints, read_tex_coords, read_weights};
 mod skin_influences;
 
+/// How many elements of a primitive a fallback applied to, and the first one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Affected {
+    count: usize,
+    first: usize,
+}
+
+impl Affected {
+    fn record(affected: &mut Option<Self>, index: usize) {
+        affected
+            .get_or_insert(Self {
+                count: 0,
+                first: index,
+            })
+            .count += 1;
+    }
+}
+
 pub(super) fn parse_meshes(
     path: &AssetPath,
     document: &Document,
@@ -152,6 +170,15 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             retained_influences: 4,
         });
     }
+    if let Some(unweighted) = skin.unweighted_vertices {
+        load_warnings.push(AssetLoadWarning::SkinVerticesUnweighted {
+            path: path.clone(),
+            mesh_index,
+            primitive_index,
+            affected_vertices: unweighted.count,
+            first_vertex: unweighted.first,
+        });
+    }
     let skin = skin.skin;
     let vertex_count = positions.len();
     let morph_targets = primitive
@@ -218,6 +245,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         tangents,
         skin,
         morph_targets,
+        degenerate_triangles,
     } = flat_normals::resolve(flat_normals::PrimitiveStreams {
         source,
         positions,
@@ -235,6 +263,15 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             mesh_index,
             primitive_index,
             triangle_count: source_triangle_count,
+        });
+    }
+    if let Some(degenerate) = degenerate_triangles {
+        load_warnings.push(AssetLoadWarning::DegenerateTriangleNormals {
+            path: path.clone(),
+            mesh_index,
+            primitive_index,
+            affected_triangles: degenerate.count,
+            first_triangle: degenerate.first,
         });
     }
     if normals.len() != positions.len() {

@@ -2,6 +2,8 @@ use crate::assets::AssetPath;
 use crate::diagnostics::AssetError;
 use crate::geometry::GeometrySkin;
 
+use super::Affected;
+
 pub(super) struct SkinSet {
     pub(super) joints: Option<Vec<[usize; 4]>>,
     pub(super) weights: Option<Vec<[f32; 4]>>,
@@ -10,6 +12,9 @@ pub(super) struct SkinSet {
 pub(super) struct SkinResolution {
     pub(super) skin: Option<GeometrySkin>,
     pub(super) truncated_vertices: usize,
+    /// Vertices whose weights are all zero. They keep `[0.0; 4]`, which
+    /// skinning treats as bound to no joint.
+    pub(super) unweighted_vertices: Option<Affected>,
 }
 
 type SkinVectors = (Vec<[usize; 4]>, Vec<[f32; 4]>);
@@ -31,19 +36,28 @@ pub(super) fn resolve(
         return Ok(SkinResolution {
             skin: None,
             truncated_vertices: 0,
+            unweighted_vertices: None,
         });
     };
     validate_vertex_counts(path, 0, &primary_joints, &primary_weights)?;
 
+    let mut unweighted_vertices = None;
     let Some((secondary_joints, secondary_weights)) = secondary else {
         let weights = primary_weights
             .into_iter()
             .enumerate()
-            .map(|(vertex_index, weights)| validate_and_normalize(path, vertex_index, 0, weights))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|(vertex_index, weights)| {
+                let weights = validate_and_normalize(path, vertex_index, 0, weights)?;
+                if weights == [0.0; 4] {
+                    Affected::record(&mut unweighted_vertices, vertex_index);
+                }
+                Ok(weights)
+            })
+            .collect::<Result<Vec<_>, AssetError>>()?;
         return Ok(SkinResolution {
             skin: Some(GeometrySkin::new(primary_joints, weights)),
             truncated_vertices: 0,
+            unweighted_vertices,
         });
     };
     validate_vertex_counts(path, 1, &secondary_joints, &secondary_weights)?;
@@ -98,11 +112,11 @@ pub(super) fn resolve(
             .iter()
             .map(|influence| influence.weight)
             .sum::<f32>();
-        if !selected_sum.is_finite() || selected_sum <= 0.0 {
+        if !selected_sum.is_finite() {
             return Err(invalid_weights(
                 path,
                 vertex_index,
-                "must have a finite non-zero sum",
+                "must have a finite sum",
             ));
         }
         joints.push([
@@ -111,16 +125,22 @@ pub(super) fn resolve(
             selected[2].joint,
             selected[3].joint,
         ]);
-        weights.push([
-            selected[0].weight / selected_sum,
-            selected[1].weight / selected_sum,
-            selected[2].weight / selected_sum,
-            selected[3].weight / selected_sum,
-        ]);
+        if selected_sum > 0.0 {
+            weights.push([
+                selected[0].weight / selected_sum,
+                selected[1].weight / selected_sum,
+                selected[2].weight / selected_sum,
+                selected[3].weight / selected_sum,
+            ]);
+        } else {
+            Affected::record(&mut unweighted_vertices, vertex_index);
+            weights.push([0.0; 4]);
+        }
     }
     Ok(SkinResolution {
         skin: Some(GeometrySkin::new(joints, weights)),
         truncated_vertices,
+        unweighted_vertices,
     })
 }
 
@@ -186,6 +206,8 @@ fn append_set(
     Ok(())
 }
 
+/// Scales valid weights to sum to one. Weights that are all zero have
+/// nothing to scale and are returned as they are: the vertex is unweighted.
 fn validate_and_normalize(
     path: &AssetPath,
     vertex_index: usize,
@@ -194,15 +216,17 @@ fn validate_and_normalize(
 ) -> Result<[f32; 4], AssetError> {
     validate_weights(path, vertex_index, set, weights)?;
     let sum = weights.iter().sum::<f32>();
-    if !sum.is_finite() || sum <= 0.0 {
+    if !sum.is_finite() {
         return Err(invalid_weights(
             path,
             vertex_index,
-            "must have a finite non-zero sum",
+            "must have a finite sum",
         ));
     }
-    for weight in &mut weights {
-        *weight /= sum;
+    if sum > 0.0 {
+        for weight in &mut weights {
+            *weight /= sum;
+        }
     }
     Ok(weights)
 }

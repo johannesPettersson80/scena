@@ -21,9 +21,14 @@ pub(crate) fn check_c04_deformation_contracts(root: &Path, findings: &mut Vec<Fi
             "src/assets/gltf/meshes/skin_influences.rs",
             &[
                 "validate_and_normalize",
-                "must have a finite non-zero sum",
+                "must have a finite sum",
+                "Affected::record(&mut unweighted_vertices, vertex_index)",
                 "WEIGHTS_{set} vertex {vertex_index}",
             ],
+        ),
+        (
+            "src/geometry/skinning.rs",
+            &["if skin.weights[vertex_index] == [0.0; 4]"],
         ),
         (
             "src/assets/gltf/animation.rs",
@@ -90,7 +95,9 @@ pub(crate) fn check_c04_deformation_contracts(root: &Path, findings: &mut Vec<Fi
                 "`POSITION` values",
                 "one-key clip at",
                 "time zero while rejecting empty",
-                "finite, non-negative, non-zero-sum skin weights",
+                "finite, non-negative skin weights with a finite sum",
+                "weights are all zero is bound to no joint",
+                "`skin_vertices_unweighted` warning",
             ],
         ),
     ];
@@ -112,6 +119,8 @@ pub(crate) fn check_c04_deformation_contracts(root: &Path, findings: &mut Vec<Fi
             "morph_targets_preserve_cardinality_and_optional_normal_tangent_semantics",
             "imported_animation_static_policy_accepts_one_key_and_rejects_malformed_clips",
             "skin_weights_are_validated_and_renormalized_for_all_legal_encodings",
+            "vertices_without_skin_weights_stay_in_the_bind_pose_and_are_reported",
+            "secondary_skin_sets_keep_unweighted_vertices_unskinned",
         ],
     );
 

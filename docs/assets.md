@@ -78,9 +78,12 @@ warnings (`external_buffer_missing` and `external_image_missing`), and material
 fallback provenance such as optional compressed texture sources that used an
 authored fallback image or missing material texture bytes that bind the generated
 renderer fallback texture. Geometry decisions are explicit too:
-`computed_flat_normals` identifies a primitive that omitted `NORMAL`, while
-`skin_influences_truncated` identifies how many vertices exceeded the prepared
-four-influence limit after `JOINTS_0/1` and `WEIGHTS_0/1` were combined.
+`computed_flat_normals` identifies a primitive that omitted `NORMAL`,
+`degenerate_triangle_normals` identifies how many of its triangles had no area
+and received the fallback normal, `skin_influences_truncated` identifies how
+many vertices exceeded the prepared four-influence limit after `JOINTS_0/1` and
+`WEIGHTS_0/1` were combined, and `skin_vertices_unweighted` identifies how many
+vertices carried no skin weight at all.
 
 Use `AssetLoadOptions::with_strict_external_resources(true)` when missing
 external buffers should fail loading instead of producing warnings, and
@@ -324,10 +327,16 @@ Triangle primitives that omit `NORMAL` use glTF flat shading. Scena computes
 the geometric face normal and splits indexed geometry into one vertex per
 triangle corner so a hard edge never inherits a neighboring face normal. Every
 parallel stream—colors, UV0, tangents, morph deltas, joints, and weights—is
-split through the same source index. A degenerate face has no recoverable
-normal and fails with its triangle index. Successful computation is recorded as
+split through the same source index. Successful computation is recorded as
 `computed_flat_normals` in `scena.asset_load_report.v1` and as an informational
 asset-doctor finding.
+
+A triangle without area has no face normal. It also covers no pixel, so it does
+not fail the asset: each such triangle receives the fixed fallback normal +Y,
+and the primitive records one `degenerate_triangle_normals` warning with the
+number of affected triangles and the index of the first one. The fallback only
+becomes visible if a morph target or a skin later gives the triangle area;
+author `NORMAL` when that shading matters.
 
 Morph import preserves target order even when a target omits POSITION, carries
 optional normal and tangent deltas into render preparation, and fans an animated
@@ -341,8 +350,13 @@ frame before lighting.
 Imported animation validation permits the glTF static case of a one-key clip at
 time zero while rejecting empty, non-finite, duplicate/non-monotonic, or
 shape-mismatched channels. Imported U8, U16, and floating-point skin vectors
-must contain finite, non-negative, non-zero-sum skin weights; valid vectors are
-renormalized to sum to one after decoding. `JOINTS_1` and `WEIGHTS_1` are read
+must contain finite, non-negative skin weights with a finite sum; vectors with
+a positive sum are renormalized to sum to one after decoding. A vertex whose
+weights are all zero is bound to no joint: it keeps `[0, 0, 0, 0]`, is not
+skinned, and stays at its authored position in the mesh node's space while the
+rest of the mesh follows the skeleton. The primitive records one
+`skin_vertices_unweighted` warning with the number of such vertices and the
+index of the first one. `JOINTS_1` and `WEIGHTS_1` are read
 with set 0, the strongest four nonzero influences are selected with stable
 source-order tie breaking, and the retained values are renormalized once. A
 vertex with more than four nonzero source influences produces the structured

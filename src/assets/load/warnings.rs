@@ -28,6 +28,26 @@ pub enum AssetLoadWarning {
         source_influences: usize,
         retained_influences: usize,
     },
+    /// Triangles of a primitive without `NORMAL` that have no area and so no
+    /// face normal. They were given the +Y fallback normal. `first_triangle`
+    /// indexes the primitive's triangle list.
+    DegenerateTriangleNormals {
+        path: AssetPath,
+        mesh_index: usize,
+        primitive_index: usize,
+        affected_triangles: usize,
+        first_triangle: usize,
+    },
+    /// Vertices of a skinned primitive whose weights are all zero. They are
+    /// bound to no joint and keep their authored position. `first_vertex`
+    /// indexes the primitive's source vertices.
+    SkinVerticesUnweighted {
+        path: AssetPath,
+        mesh_index: usize,
+        primitive_index: usize,
+        affected_vertices: usize,
+        first_vertex: usize,
+    },
     InvalidMaterialVariantMapping {
         path: AssetPath,
         mesh_index: usize,
@@ -72,6 +92,20 @@ pub enum AssetLoadWarningV1 {
         affected_vertices: usize,
         source_influences: usize,
         retained_influences: usize,
+    },
+    DegenerateTriangleNormals {
+        path: String,
+        mesh_index: usize,
+        primitive_index: usize,
+        affected_triangles: usize,
+        first_triangle: usize,
+    },
+    SkinVerticesUnweighted {
+        path: String,
+        mesh_index: usize,
+        primitive_index: usize,
+        affected_vertices: usize,
+        first_vertex: usize,
     },
     InvalidMaterialVariantMapping {
         path: String,
@@ -133,6 +167,32 @@ impl From<&AssetLoadWarning> for AssetLoadWarningV1 {
                 affected_vertices: *affected_vertices,
                 source_influences: *source_influences,
                 retained_influences: *retained_influences,
+            },
+            AssetLoadWarning::DegenerateTriangleNormals {
+                path,
+                mesh_index,
+                primitive_index,
+                affected_triangles,
+                first_triangle,
+            } => Self::DegenerateTriangleNormals {
+                path: path.as_str().to_owned(),
+                mesh_index: *mesh_index,
+                primitive_index: *primitive_index,
+                affected_triangles: *affected_triangles,
+                first_triangle: *first_triangle,
+            },
+            AssetLoadWarning::SkinVerticesUnweighted {
+                path,
+                mesh_index,
+                primitive_index,
+                affected_vertices,
+                first_vertex,
+            } => Self::SkinVerticesUnweighted {
+                path: path.as_str().to_owned(),
+                mesh_index: *mesh_index,
+                primitive_index: *primitive_index,
+                affected_vertices: *affected_vertices,
+                first_vertex: *first_vertex,
             },
             AssetLoadWarning::InvalidMaterialVariantMapping {
                 path,

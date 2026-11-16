@@ -448,6 +448,10 @@ Transform mutation invariant:
 - `AssetLoadWarningV1::ComputedFlatNormals` and
   `AssetLoadWarningV1::SkinInfluencesTruncated` expose geometry computation and
   four-influence degradation instead of leaving importer decisions implicit
+- `AssetLoadWarningV1::DegenerateTriangleNormals` and
+  `AssetLoadWarningV1::SkinVerticesUnweighted` report zero-area triangles that
+  received the fallback normal and vertices that carry no skin weight, each
+  with the affected count and the first index
 - `AssetMaterialSource` and `AssetMaterialSourceKind`
 - `AssetLoadReport<SceneAsset>::to_schema_report`
 - `AssetLoadReport<SceneAsset>::to_schema_json`

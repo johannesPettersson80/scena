@@ -75,6 +75,50 @@ pub(super) fn finding_for_load_warning(warning: &AssetLoadWarning) -> AssetDocto
                 .to_owned(),
             source: "asset_load_report".to_owned(),
         },
+        AssetLoadWarning::DegenerateTriangleNormals {
+            path,
+            mesh_index,
+            primitive_index,
+            affected_triangles,
+            first_triangle,
+        } => AssetDoctorFindingV1 {
+            severity: AssetDoctorSeverityV1::Warning,
+            code: "degenerate_triangle_normals".to_owned(),
+            path: Some(path.as_str().to_owned()),
+            field: Some(format!(
+                "meshes[{mesh_index}].primitives[{primitive_index}].attributes.POSITION"
+            )),
+            extension: None,
+            message: format!(
+                "{affected_triangles} zero-area triangles have no face normal and use the +Y fallback; the first is triangle {first_triangle}"
+            ),
+            help: "a primitive without NORMAL is flat shaded from its triangles, and a triangle without area has no face normal".to_owned(),
+            suggested_fix: "Remove the degenerate triangles, or author NORMAL so their shading is defined if a morph target or skin gives them area."
+                .to_owned(),
+            source: "asset_load_report".to_owned(),
+        },
+        AssetLoadWarning::SkinVerticesUnweighted {
+            path,
+            mesh_index,
+            primitive_index,
+            affected_vertices,
+            first_vertex,
+        } => AssetDoctorFindingV1 {
+            severity: AssetDoctorSeverityV1::Warning,
+            code: "skin_vertices_unweighted".to_owned(),
+            path: Some(path.as_str().to_owned()),
+            field: Some(format!(
+                "meshes[{mesh_index}].primitives[{primitive_index}].attributes.WEIGHTS_0"
+            )),
+            extension: None,
+            message: format!(
+                "{affected_vertices} vertices have all-zero skin weights and stay in the bind pose; the first is vertex {first_vertex}"
+            ),
+            help: "glTF requires the weights of a skinned vertex to sum to one; a vertex without weight is bound to no joint and does not follow the skeleton".to_owned(),
+            suggested_fix: "Weight the vertices to a joint, or move unrigged geometry into a primitive without JOINTS_0 and WEIGHTS_0."
+                .to_owned(),
+            source: "asset_load_report".to_owned(),
+        },
         AssetLoadWarning::InvalidMaterialVariantMapping {
             path,
             mesh_index,

@@ -11,7 +11,8 @@ pub(crate) fn check_c14_gltf_semantic_contract(root: &Path, findings: &mut Vec<F
         &[
             "expand_missing_flat_normals",
             "try_normalize()",
-            "cannot compute flat NORMAL for degenerate triangle",
+            "const DEGENERATE_TRIANGLE_NORMAL: Vec3 = Vec3::Y;",
+            "Affected::record(&mut degenerate_triangles, triangle_index)",
             "copy_optional(",
             "GeometryMorphTarget::new_with_semantics",
             "GeometrySkin::new",
@@ -59,7 +60,9 @@ pub(crate) fn check_c14_gltf_semantic_contract(root: &Path, findings: &mut Vec<F
             "read_joints(source, primitive, 1)",
             "read_weights(source, primitive, 1)",
             "AssetLoadWarning::ComputedFlatNormals",
+            "AssetLoadWarning::DegenerateTriangleNormals",
             "AssetLoadWarning::SkinInfluencesTruncated",
+            "AssetLoadWarning::SkinVerticesUnweighted",
             "reject_skin_sets_above_one",
         ],
     );
@@ -82,7 +85,12 @@ pub(crate) fn check_c14_gltf_semantic_contract(root: &Path, findings: &mut Vec<F
         "src/assets/load/warnings.rs",
         &[
             "ComputedFlatNormals",
+            "DegenerateTriangleNormals",
+            "affected_triangles",
+            "first_triangle",
             "SkinInfluencesTruncated",
+            "SkinVerticesUnweighted",
+            "first_vertex",
             "source_influences",
             "retained_influences",
         ],
@@ -94,7 +102,8 @@ pub(crate) fn check_c14_gltf_semantic_contract(root: &Path, findings: &mut Vec<F
         "tests/c04_gltf_deformation_contracts.rs",
         &[
             "missing_normals_are_computed_per_face_for_indexed_and_nonindexed_meshes",
-            "missing_normals_reject_degenerate_triangles_with_a_precise_error",
+            "missing_normals_on_degenerate_triangles_use_a_reported_fallback_normal",
+            "a_primitive_made_only_of_degenerate_triangles_still_loads",
             "computed_flat_normals_are_recorded_in_the_asset_load_report",
             "every_material_texture_slot_rejects_unsupported_texcoord_one_explicitly",
             "secondary_skin_influences_select_the_strongest_four_and_report_degradation",
@@ -126,7 +135,9 @@ pub(crate) fn check_c14_gltf_semantic_contract(root: &Path, findings: &mut Vec<F
             "docs/assets.md",
             &[
                 "computed_flat_normals",
+                "degenerate_triangle_normals",
                 "skin_influences_truncated",
+                "skin_vertices_unweighted",
                 "TEXCOORD_0",
             ][..],
         ),
@@ -151,7 +162,12 @@ pub(crate) fn check_c14_gltf_semantic_contract(root: &Path, findings: &mut Vec<F
         ),
         (
             "tests/assets/stable-contracts/asset_load_report.v1.json",
-            &["computed_flat_normals", "skin_influences_truncated"][..],
+            &[
+                "computed_flat_normals",
+                "degenerate_triangle_normals",
+                "skin_influences_truncated",
+                "skin_vertices_unweighted",
+            ][..],
         ),
     ] {
         require_contains(root, findings, RULE, path, needles);

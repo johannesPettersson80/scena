@@ -60,6 +60,22 @@
       "affected_vertices": 4,
       "source_influences": 8,
       "retained_influences": 4
+    },
+    {
+      "kind": "degenerate_triangle_normals",
+      "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "mesh_index": 0,
+      "primitive_index": 0,
+      "affected_triangles": 2,
+      "first_triangle": 7
+    },
+    {
+      "kind": "skin_vertices_unweighted",
+      "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "mesh_index": 0,
+      "primitive_index": 0,
+      "affected_vertices": 3,
+      "first_vertex": 5
     }
   ],
   "progress_events": [

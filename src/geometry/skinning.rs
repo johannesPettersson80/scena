@@ -48,6 +48,10 @@ impl GeometryDesc {
         self.skin.as_ref()
     }
 
+    /// Applies linear blend skinning to `source_vertices`.
+    ///
+    /// A vertex whose four weights are zero is bound to no joint: it is
+    /// returned unchanged instead of being collapsed onto the origin.
     pub fn skinned_vertices(
         &self,
         source_vertices: &[GeometryVertex],
@@ -88,6 +92,13 @@ impl GeometryDesc {
         );
         let mut vertices = Vec::with_capacity(source_vertices.len());
         for (vertex_index, source) in source_vertices.iter().enumerate() {
+            if skin.weights[vertex_index] == [0.0; 4] {
+                // No weight binds the vertex to no joint. Summing its
+                // influences would collapse it onto the origin, so it is not
+                // skinned and keeps its source pose.
+                vertices.push(*source);
+                continue;
+            }
             let mut position = Vec3::ZERO;
             let mut normal = Vec3::ZERO;
             for influence in 0..4 {
@@ -464,6 +475,50 @@ mod tests {
 
         assert_eq!(metrics.normal_matrices_prepared, joints.len() as u64);
         assert_eq!(metrics.weighted_influences, 1_200);
+    }
+
+    /// A vertex whose four weights are zero is bound to no joint. Summing its
+    /// influences would move it to the origin; it keeps its source pose.
+    #[test]
+    fn a_vertex_without_weights_keeps_its_source_position_and_normal() {
+        let geometry = GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![
+                GeometryVertex {
+                    position: Vec3::new(3.0, 4.0, 5.0),
+                    normal: Vec3::X,
+                },
+                GeometryVertex {
+                    position: Vec3::X,
+                    normal: Vec3::X,
+                },
+                GeometryVertex {
+                    position: Vec3::Y,
+                    normal: Vec3::X,
+                },
+            ],
+            vec![0, 1, 2],
+        )
+        .expect("geometry validates")
+        .with_skin(GeometrySkin::new(
+            // The unweighted vertex names a joint that does not exist: with no
+            // weight it is never looked up.
+            vec![[9, 9, 9, 9], [0, 0, 0, 0], [0, 0, 0, 0]],
+            vec![[0.0; 4], [1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
+        ))
+        .expect("skin validates");
+        let joint = SkinningMatrix::from_transform(Transform::at(Vec3::Z));
+        let mut metrics = SkinningWorkMetrics::default();
+        let skinned = geometry
+            .skinned_vertices_profiled(geometry.vertices(), &[joint], &mut metrics)
+            .expect("skinning succeeds")
+            .expect("skinned vertices are produced");
+
+        assert_vec3_near(skinned[0].position, Vec3::new(3.0, 4.0, 5.0));
+        assert_vec3_near(skinned[0].normal, Vec3::X);
+        assert_vec3_near(skinned[1].position, Vec3::new(1.0, 0.0, 1.0));
+        assert_vec3_near(skinned[2].position, Vec3::new(0.0, 1.0, 1.0));
+        assert_eq!(metrics.weighted_influences, 2);
     }
 
     fn assert_vec3_near(actual: Vec3, expected: Vec3) {

@@ -4,7 +4,13 @@ use crate::geometry::{GeometryMorphTarget, GeometrySkin};
 use crate::material::Color;
 use crate::scene::Vec3;
 
+use super::Affected;
 use super::accessors::PrimitiveSource;
+
+/// Normal of a triangle without area. Such a triangle has no face normal and
+/// covers no pixel, so the value only shows if a morph target or a skin later
+/// gives the triangle area.
+const DEGENERATE_TRIANGLE_NORMAL: Vec3 = Vec3::Y;
 
 pub(super) struct PrimitiveStreams<'a> {
     pub(super) source: PrimitiveSource<'a>,
@@ -27,6 +33,8 @@ pub(super) struct ResolvedPrimitiveStreams {
     pub(super) tangents: Option<Vec<[f32; 4]>>,
     pub(super) skin: Option<GeometrySkin>,
     pub(super) morph_targets: Vec<GeometryMorphTarget>,
+    /// Triangles that received [`DEGENERATE_TRIANGLE_NORMAL`].
+    pub(super) degenerate_triangles: Option<Affected>,
 }
 
 pub(super) fn resolve(
@@ -53,6 +61,7 @@ pub(super) fn resolve(
             tangents,
             skin,
             morph_targets,
+            degenerate_triangles: None,
         });
     }
     expand_missing_flat_normals(MissingNormalStreams {
@@ -148,6 +157,7 @@ fn expand_missing_flat_normals(
         })
         .collect::<Vec<_>>();
 
+    let mut degenerate_triangles = None;
     for (triangle_index, triangle) in indices.chunks_exact(3).enumerate() {
         let source_indices = [
             source_index(path, triangle[0], positions.len())?,
@@ -155,12 +165,10 @@ fn expand_missing_flat_normals(
             source_index(path, triangle[2], positions.len())?,
         ];
         let [a, b, c] = source_indices.map(|index| positions[index]);
-        let normal = (b - a).cross(c - a).try_normalize().ok_or_else(|| {
-            missing_normal_error(
-                path,
-                format!("cannot compute flat NORMAL for degenerate triangle {triangle_index}"),
-            )
-        })?;
+        let normal = (b - a).cross(c - a).try_normalize().unwrap_or_else(|| {
+            Affected::record(&mut degenerate_triangles, triangle_index);
+            DEGENERATE_TRIANGLE_NORMAL
+        });
         for source_index in source_indices {
             expanded_positions.push(positions[source_index]);
             expanded_normals.push(normal);
@@ -253,6 +261,7 @@ fn expand_missing_flat_normals(
         tangents: expanded_tangents,
         skin,
         morph_targets,
+        degenerate_triangles,
     })
 }
 

@@ -4,7 +4,7 @@ use base64::Engine as _;
 use scena::{
     AssetError, AssetFetcher, AssetLoadOptions, AssetLoadReport, AssetPath, Assets,
     DirectionalLight, GeometryTopology, MaterialKind, PerspectiveCamera, Renderer, RetainPolicy,
-    Scene, SceneAsset, Transform, Vec3,
+    Scene, SceneAsset, SkinningMatrix, Transform, Vec3,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -38,20 +38,93 @@ fn missing_normals_are_computed_per_face_for_indexed_and_nonindexed_meshes() {
 }
 
 #[test]
-fn missing_normals_reject_degenerate_triangles_with_a_precise_error() {
-    let error = expect_load_error(
+fn missing_normals_on_degenerate_triangles_use_a_reported_fallback_normal() {
+    // A zero-area triangle has no face normal. It also covers no pixel, so it
+    // must not cost the whole asset: it gets the +Y fallback and a warning
+    // that says how many triangles were affected and where the first one is.
+    let (assets, report) = load_document_report(
+        "missing-normal-degenerate-mix.gltf",
+        degenerate_triangle_mix_fixture(),
+    )
+    .expect("degenerate triangles without NORMAL must not fail the asset");
+    let mesh = report.asset().nodes()[0]
+        .mesh()
+        .expect("fixture mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+    assert_eq!(geometry.vertices().len(), 12);
+    let expected = [
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(1.0, 0.0, 0.0),
+    ];
+    for (triangle, expected) in geometry.vertices().chunks_exact(3).zip(expected) {
+        for vertex in triangle {
+            assert_vec3_near(vertex.normal, expected);
+        }
+    }
+
+    let warnings = report.to_schema_json()["warnings"]
+        .as_array()
+        .expect("schema warnings are an array")
+        .clone();
+    assert!(
+        warnings.iter().any(|warning| {
+            warning["kind"] == "degenerate_triangle_normals"
+                && warning["mesh_index"] == 0
+                && warning["primitive_index"] == 0
+                && warning["affected_triangles"] == 2
+                && warning["first_triangle"] == 1
+        }),
+        "the fallback must be machine-readable: {warnings:?}",
+    );
+    assert!(
+        warnings.iter().any(|warning| {
+            warning["kind"] == "computed_flat_normals" && warning["triangle_count"] == 4
+        }),
+        "flat-normal computation still reports every source triangle: {warnings:?}",
+    );
+
+    let mut scene = Scene::new();
+    scene
+        .instantiate(report.asset())
+        .expect("the asset instantiates");
+    scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(32, 32).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("degenerate triangles prepare without error");
+    renderer
+        .render_active(&scene)
+        .expect("degenerate triangles render without error");
+}
+
+#[test]
+fn a_primitive_made_only_of_degenerate_triangles_still_loads() {
+    let (assets, report) = load_document_report(
         "missing-normal-degenerate.gltf",
         missing_normal_hard_edge_fixture(false, true),
-        "missing NORMAL on a degenerate triangle must fail closed",
-    );
-    let message = error.to_string();
+    )
+    .expect("an all-degenerate primitive without NORMAL must not fail the asset");
+    let mesh = report.asset().nodes()[0]
+        .mesh()
+        .expect("fixture mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+    assert_eq!(geometry.vertices().len(), 6);
+    for vertex in geometry.vertices() {
+        assert_vec3_near(vertex.normal, Vec3::new(0.0, 1.0, 0.0));
+    }
+    let warnings = report.to_schema_json()["warnings"]
+        .as_array()
+        .expect("schema warnings are an array")
+        .clone();
     assert!(
-        message.contains("NORMAL"),
-        "error must name NORMAL: {message}"
-    );
-    assert!(
-        message.contains("degenerate triangle 0"),
-        "error must identify the irrecoverable face: {message}",
+        warnings.iter().any(|warning| {
+            warning["kind"] == "degenerate_triangle_normals"
+                && warning["affected_triangles"] == 2
+                && warning["first_triangle"] == 0
+        }),
+        "both triangles must be reported: {warnings:?}",
     );
 }
 
@@ -1186,8 +1259,13 @@ fn skin_weights_are_validated_and_renormalized_for_all_legal_encodings() {
     }
 
     for (name, weights, expected) in [
-        ("zero", [0.0, 0.0, 0.0, 0.0], "non-zero sum"),
         ("nonfinite", [f32::NAN, 0.0, 0.0, 0.0], "finite"),
+        ("infinite", [f32::INFINITY, 0.0, 0.0, 0.0], "finite"),
+        (
+            "overflowing-sum",
+            [f32::MAX, f32::MAX, 0.0, 0.0],
+            "finite sum",
+        ),
         ("negative", [-0.1, 0.6, 0.5, 0.0], "non-negative"),
     ] {
         let error = expect_load_error(
@@ -1200,6 +1278,115 @@ fn skin_weights_are_validated_and_renormalized_for_all_legal_encodings() {
             "{name} error must contain {expected:?}: {error}",
         );
     }
+
+    let error = expect_load_error(
+        "skin-overflowing-eight.gltf",
+        skin_influences_fixture_with_primary(
+            [f32::MAX, f32::MAX, 0.0, 0.0],
+            [4, 5, 6, 7],
+            [0.0; 4],
+        ),
+        "an overflowing eight-influence sum must fail during asset loading",
+    );
+    assert!(
+        error.to_string().contains("finite sum"),
+        "the eight-influence path must reject an overflowing sum: {error}",
+    );
+}
+
+#[test]
+fn vertices_without_skin_weights_stay_in_the_bind_pose_and_are_reported() {
+    // All-zero weights bind a vertex to no joint. That is not valid glTF, but
+    // exporters write it for unrigged parts of a rigged mesh, and it must not
+    // cost the whole asset. Such a vertex is not skinned at all.
+    let weights = [
+        [0.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.25, 0.25, 0.0, 0.0],
+    ];
+    let (assets, report) = load_document_report(
+        "skin-unweighted.gltf",
+        skin_weight_fixture(SkinWeightEncoding::F32PerVertex(weights)),
+    )
+    .expect("a vertex whose skin weights are all zero must not fail the asset");
+    let warnings = report.to_schema_json()["warnings"]
+        .as_array()
+        .expect("schema warnings are an array")
+        .clone();
+    assert!(
+        warnings.iter().any(|warning| {
+            warning["kind"] == "skin_vertices_unweighted"
+                && warning["mesh_index"] == 0
+                && warning["primitive_index"] == 0
+                && warning["affected_vertices"] == 1
+                && warning["first_vertex"] == 0
+        }),
+        "unweighted vertices must be machine-readable: {warnings:?}",
+    );
+
+    let mesh = report.asset().nodes()[0].mesh().unwrap();
+    let geometry = assets.geometry(mesh.geometry()).unwrap();
+    let skin = geometry.skin().unwrap();
+    assert_weights_near(&skin.weights()[0], &[0.0, 0.0, 0.0, 0.0]);
+    assert_weights_near(&skin.weights()[1], &[1.0, 0.0, 0.0, 0.0]);
+    assert_weights_near(&skin.weights()[2], &[0.5, 0.5, 0.0, 0.0]);
+
+    // Lift the only joint by one unit: weighted vertices follow it, the
+    // unweighted vertex keeps its authored position and normal.
+    let lifted = SkinningMatrix::from_transform(Transform::at(Vec3::Y));
+    let rest = geometry.vertices();
+    let posed = geometry
+        .skinned_vertices(rest, &[lifted])
+        .expect("skinning evaluates")
+        .expect("the geometry is skinned");
+    assert_vec3_near(posed[0].position, rest[0].position);
+    assert_vec3_near(posed[0].normal, rest[0].normal);
+    assert_vec3_near(posed[1].position, rest[1].position + Vec3::Y);
+    assert_vec3_near(posed[2].position, rest[2].position + Vec3::Y);
+
+    let mut scene = Scene::new();
+    scene
+        .instantiate(report.asset())
+        .expect("the skinned asset instantiates");
+    scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(32, 32).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("unweighted skin vertices prepare without error");
+}
+
+#[test]
+fn secondary_skin_sets_keep_unweighted_vertices_unskinned() {
+    // The eight-influence path selects the strongest four; a vertex whose
+    // eight weights are all zero has nothing to select and stays unskinned.
+    let (assets, report) = load_document_report(
+        "skin-unweighted-eight.gltf",
+        skin_influences_fixture_with_primary([0.0; 4], [4, 5, 6, 7], [0.0; 4]),
+    )
+    .expect("eight zero weights must not fail the asset");
+    let mesh = report.asset().nodes()[0].mesh().unwrap();
+    let geometry = assets.geometry(mesh.geometry()).unwrap();
+    for weights in geometry.skin().unwrap().weights() {
+        assert_weights_near(weights, &[0.0, 0.0, 0.0, 0.0]);
+    }
+    let warnings = report.to_schema_json()["warnings"]
+        .as_array()
+        .expect("schema warnings are an array")
+        .clone();
+    assert!(
+        warnings.iter().any(|warning| {
+            warning["kind"] == "skin_vertices_unweighted"
+                && warning["affected_vertices"] == 3
+                && warning["first_vertex"] == 0
+        }),
+        "every unweighted vertex must be counted: {warnings:?}",
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning["kind"] == "skin_influences_truncated"),
+        "a vertex without influences is not a truncated one: {warnings:?}",
+    );
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1495,6 +1682,40 @@ fn missing_normal_hard_edge_fixture(indexed: bool, degenerate: bool) -> Value {
     })
 }
 
+/// Four non-indexed triangles without NORMAL: a +Z face, three collinear
+/// points, three coincident points, and a +X face.
+fn degenerate_triangle_mix_fixture() -> Value {
+    let positions: [[f32; 3]; 12] = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let mut bytes = Vec::new();
+    for position in &positions {
+        push_f32s(&mut bytes, position);
+    }
+    json!({
+        "asset":{"version":"2.0"},
+        "nodes":[{"name":"DegenerateMix","mesh":0}],
+        "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],
+        "buffers":[{"byteLength":bytes.len(),"uri":data_uri(&bytes)}],
+        "bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":bytes.len()}],
+        "accessors":[{
+            "bufferView":0,"componentType":5126,"count":positions.len(),"type":"VEC3",
+            "min":[0.0,0.0,0.0],"max":[2.0,1.0,1.0]
+        }]
+    })
+}
+
 fn texture_coordinate_one_fixture(slot: &str) -> Value {
     let mut bytes = triangle_positions_indices();
     let tex_coords1 = bytes.len();
@@ -1545,6 +1766,18 @@ fn eight_skin_influences_fixture() -> Value {
 }
 
 fn skin_influences_fixture(secondary_joints: [u16; 4], secondary_weights: [f32; 4]) -> Value {
+    skin_influences_fixture_with_primary(
+        [0.05, 0.2, 0.1, 0.15],
+        secondary_joints,
+        secondary_weights,
+    )
+}
+
+fn skin_influences_fixture_with_primary(
+    primary_weights: [f32; 4],
+    secondary_joints: [u16; 4],
+    secondary_weights: [f32; 4],
+) -> Value {
     let mut bytes = triangle_positions_indices();
     let joints0 = bytes.len();
     for _ in 0..3 {
@@ -1552,7 +1785,7 @@ fn skin_influences_fixture(secondary_joints: [u16; 4], secondary_weights: [f32; 
     }
     let weights0 = bytes.len();
     for _ in 0..3 {
-        push_f32s(&mut bytes, &[0.05, 0.2, 0.1, 0.15]);
+        push_f32s(&mut bytes, &primary_weights);
     }
     let joints1 = bytes.len();
     for _ in 0..3 {
@@ -2132,6 +2365,7 @@ enum SkinWeightEncoding {
     U8([u8; 4]),
     U16([u16; 4]),
     F32([f32; 4]),
+    F32PerVertex([[f32; 4]; 3]),
 }
 
 fn skin_weight_fixture(encoding: SkinWeightEncoding) -> Value {
@@ -2155,6 +2389,12 @@ fn skin_weight_fixture(encoding: SkinWeightEncoding) -> Value {
         SkinWeightEncoding::F32(value) => {
             for _ in 0..3 {
                 push_f32s(&mut bytes, &value);
+            }
+            (5126, false, 16)
+        }
+        SkinWeightEncoding::F32PerVertex(values) => {
+            for value in &values {
+                push_f32s(&mut bytes, value);
             }
             (5126, false, 16)
         }
