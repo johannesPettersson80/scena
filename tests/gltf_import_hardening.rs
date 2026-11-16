@@ -1123,6 +1123,109 @@ fn embedded_buffers_shorter_than_their_byte_length_are_rejected() {
     );
 }
 
+#[test]
+fn percent_encoded_external_uris_resolve_to_the_decoded_file_names() {
+    // glTF URIs are RFC 3986 references: a file called "Box With Spaces.bin"
+    // is referenced as "Box%20With%20Spaces.bin" (the Khronos "Box With
+    // Spaces" sample does exactly this), and non-ASCII names are UTF-8
+    // percent-encoded.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/gltf-import-hardening/percent encoded uris");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory creates");
+
+    let fixture = TriangleFixture::new();
+    std::fs::write(dir.join("Box With Spaces.bin"), &fixture.bytes).expect("buffer file writes");
+    std::fs::write(dir.join("Normal Map café.png"), one_pixel_png()).expect("image file writes");
+    let mut document = fixture.document();
+    document["buffers"][0]["uri"] = json!("Box%20With%20Spaces.bin");
+    document["images"] = json!([{"uri": "Normal%20Map%20caf%C3%A9.png"}]);
+    document["textures"] = json!([{"source": 0}]);
+    document["materials"] = json!([{
+        "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}
+    }]);
+    document["meshes"][0]["primitives"][0]["material"] = json!(0);
+    let scene_path = dir.join("Box With Spaces.gltf");
+    std::fs::write(
+        &scene_path,
+        serde_json::to_vec(&document).expect("fixture serializes"),
+    )
+    .expect("scene file writes");
+
+    let assets = Assets::new();
+    let report = pollster::block_on(
+        assets.load_scene_with_report_options(
+            scene_path.to_string_lossy().into_owned(),
+            AssetLoadOptions::default()
+                .with_strict_external_resources(true)
+                .with_strict_textures(true),
+        ),
+    )
+    .expect("percent-encoded buffer and image URIs must resolve to the decoded file names");
+    assert_eq!(report.external_buffers(), 1);
+    assert_eq!(report.external_images(), 1);
+
+    let mesh = report.asset().nodes()[0]
+        .mesh()
+        .expect("fixture has a mesh");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry resolves");
+    assert_eq!(geometry.vertices().len(), 3);
+    let material = assets.material(mesh.material()).expect("material resolves");
+    let texture = material
+        .base_color_texture()
+        .and_then(|handle| assets.texture(handle))
+        .expect("the base color texture resolves");
+    assert_eq!(texture.decoded_dimensions(), Some((1, 1)));
+    assert!(
+        texture.path().as_str().ends_with("Normal Map café.png"),
+        "the texture identity is the decoded file name: {:?}",
+        texture.path(),
+    );
+}
+
+#[test]
+fn external_uris_stay_encoded_when_the_scene_path_is_a_url() {
+    // A base path with a URL scheme is fetched as a URL, where a decoded "#"
+    // or "?" would change the meaning of the reference. Such references keep
+    // their percent-encoding, and data URIs are never touched.
+    let fixture = TriangleFixture::new();
+    let mut document = fixture.document();
+    document["buffers"][0]["uri"] = json!("Box%20With%20Spaces%23.bin");
+    let fetcher = MemoryFetcher {
+        sources: Arc::new(BTreeMap::from([
+            (
+                memory_path("scene.gltf"),
+                serde_json::to_vec(&document).expect("fixture serializes"),
+            ),
+            (
+                memory_path("Box%20With%20Spaces%23.bin"),
+                fixture.bytes.clone(),
+            ),
+        ])),
+    };
+    let assets = Assets::with_fetcher(fetcher);
+    let asset = load(&assets, "scene.gltf")
+        .expect("a URL-style scene path resolves its buffer without decoding the reference");
+    assert_eq!(asset.mesh_count(), 1);
+
+    let embedded = assets_with([("embedded.gltf", fixture.document())]);
+    load(&embedded, "embedded.gltf").expect("data URIs keep working");
+}
+
+fn one_pixel_png() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(std::io::Cursor::new(&mut bytes), 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("PNG header writes");
+        writer
+            .write_image_data(&[255, 128, 64, 255])
+            .expect("PNG payload writes");
+    }
+    bytes
+}
+
 /// A triangle whose POSITION accessor has no bufferView: `count` positions
 /// start as zeros and sparse storage overrides elements 1 and 2.
 fn sparse_position_document(count: u64) -> Value {

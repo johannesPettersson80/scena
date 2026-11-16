@@ -49,6 +49,25 @@ the scene and renderer.
 For browser use, make sure your application serves model, buffer, and texture
 files from paths that the browser can fetch.
 
+Buffer and image URIs are RFC 3986 references, so a file called
+`Box With Spaces.bin` is referenced as `Box%20With%20Spaces.bin`. How a
+relative reference is resolved depends on how the asset itself is addressed:
+
+- **File-system path** (no URL scheme, native targets): the reference is
+  percent-decoded and then joined to the asset's directory, so
+  `Box%20With%20Spaces.bin` opens `Box With Spaces.bin` and `caf%C3%A9.png`
+  opens `café.png`. A `+` is a literal plus sign, never a space. A reference
+  whose escapes do not decode to UTF-8 is kept as written.
+- **URL** (the asset path contains `://`, and every path in the browser): the
+  reference keeps its encoding and is joined to the asset's base URL, because
+  decoding `%23` or `%3F` would turn part of the file name into a fragment or
+  a query.
+
+Data URIs and absolute URLs are passed through unchanged. A custom
+`AssetFetcher` receives exactly these resolved paths. A file whose name on disk
+contains a literal percent escape, such as `a%20b.bin`, has to be referenced as
+`a%2520b.bin`.
+
 `Assets::load_scene_with_report()` returns a stable
 `scena.asset_load_report.v1` JSON view through
 `AssetLoadReport<SceneAsset>::to_schema_json()`. The report includes fetched

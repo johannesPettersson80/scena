@@ -13,6 +13,7 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         &[
             "pub(super) fn external_buffer_paths",
             "resolve_relative_path",
+            "fn percent_decoded",
             "!uri.starts_with(\"data:\")",
             "::gltf::Gltf",
         ],
