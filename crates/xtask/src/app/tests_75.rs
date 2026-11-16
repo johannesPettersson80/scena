@@ -76,6 +76,9 @@ fn q07_doctor_rejects_noop_antialiasing_oracle_regression() {
         "scripts/run_windows_complete_hardware_proof.ps1",
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
+        "src/render/gpu/post/fxaa_resolve.wgsl",
+        "src/render/gpu/post/fxaa.rs",
+        "src/render/gpu/post/bloom_fxaa.rs",
     ] {
         let destination = fixture.join(relative);
         fs::create_dir_all(destination.parent().expect("fixture parent"))
@@ -88,6 +91,43 @@ fn q07_doctor_rejects_noop_antialiasing_oracle_regression() {
         findings.is_empty(),
         "current Q07 effect proof must satisfy doctor: {findings:?}"
     );
+
+    // The FXAA edge search and its proof must not be removed quietly.
+    for (relative, needle, replacement, consequence) in [
+        (
+            "tests/q07_antialiasing_effect.rs",
+            "fn legacy_cross_filter",
+            "fn unused_cross_filter",
+            "an FXAA proof that no longer compares against the cross filter",
+        ),
+        (
+            "src/render/gpu/post/fxaa_resolve.wgsl",
+            "run_turns_away",
+            "always_blend",
+            "an FXAA shader without the edge-end test",
+        ),
+        (
+            "src/render/gpu/post/bloom_fxaa.rs",
+            "include_str!(\"fxaa_resolve.wgsl\")",
+            "\"\"",
+            "a combined bloom + FXAA pass that stops sharing the edge search",
+        ),
+    ] {
+        let path = fixture.join(relative);
+        let source = fs::read_to_string(&path).expect("read Q07 FXAA source");
+        let mutated = source.replace(needle, replacement);
+        assert_ne!(source, mutated, "Q07 mutation must change {relative}");
+        fs::write(&path, mutated).expect("write Q07 FXAA mutation");
+        findings.clear();
+        check_q07_antialiasing_effect_contract(&fixture, &mut findings);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "Q07-ANTIALIASING-EFFECT"),
+            "doctor must reject {consequence}: {findings:?}"
+        );
+        fs::write(&path, source).expect("restore Q07 FXAA source");
+    }
 
     let native_oracle = fixture.join("tests/q07_antialiasing_effect.rs");
     let native_source = fs::read_to_string(&native_oracle).expect("read native Q07 oracle");

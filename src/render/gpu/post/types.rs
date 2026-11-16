@@ -93,6 +93,10 @@ pub(in crate::render) struct GpuPostSettings {
     /// True when ambient occlusion was already applied inside the colour
     /// pass, so the post chain must not darken the frame a second time.
     pub(super) ambient_occlusion_in_color_pass: bool,
+    /// Linear exposure scale the final blit applies. The post chain runs on
+    /// unexposed scene-linear radiance, so FXAA needs it to judge contrast as
+    /// the display will show it.
+    pub(super) display_exposure: f32,
 }
 
 impl GpuPostSettings {
@@ -115,12 +119,24 @@ impl GpuPostSettings {
             scene_linear_capture,
             resolution_scale: 1,
             ambient_occlusion_in_color_pass: false,
+            display_exposure: 1.0,
         }
     }
 
     /// Records the supersampling factor of the frame being rendered.
     pub(in crate::render) const fn with_resolution_scale(mut self, scale: u32) -> Self {
         self.resolution_scale = if scale == 0 { 1 } else { scale };
+        self
+    }
+
+    /// Records the exposure, in stops, that the final blit applies.
+    pub(in crate::render) fn with_exposure_ev(mut self, exposure_ev: f32) -> Self {
+        let scale = 2.0_f32.powf(exposure_ev);
+        self.display_exposure = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
         self
     }
 
@@ -186,14 +202,7 @@ impl GpuPostSettings {
     pub(in crate::render::gpu) const fn without_fxaa(self) -> Self {
         Self {
             anti_aliasing: AntiAliasing::None,
-            bloom: self.bloom,
-            ambient_occlusion: self.ambient_occlusion,
-            reflections: self.reflections,
-            depth_of_field: self.depth_of_field,
-            automatic_exposure: self.automatic_exposure,
-            scene_linear_capture: self.scene_linear_capture,
-            resolution_scale: self.resolution_scale,
-            ambient_occlusion_in_color_pass: self.ambient_occlusion_in_color_pass,
+            ..self
         }
     }
 
@@ -202,13 +211,7 @@ impl GpuPostSettings {
         Self {
             anti_aliasing: AntiAliasing::None,
             bloom: None,
-            ambient_occlusion: self.ambient_occlusion,
-            reflections: self.reflections,
-            depth_of_field: self.depth_of_field,
-            automatic_exposure: self.automatic_exposure,
-            scene_linear_capture: self.scene_linear_capture,
-            resolution_scale: self.resolution_scale,
-            ambient_occlusion_in_color_pass: self.ambient_occlusion_in_color_pass,
+            ..self
         }
     }
 }

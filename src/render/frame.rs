@@ -319,7 +319,8 @@ impl Renderer {
             self.auto_exposure.is_some(),
             self.scene_linear_capture_enabled,
         )
-        .with_resolution_scale(self.supersample_factor);
+        .with_resolution_scale(self.supersample_factor)
+        .with_exposure_ev(self.output.exposure_ev());
         #[cfg(not(target_arch = "wasm32"))]
         {
             let resolved_readback_mode = match readback_mode {

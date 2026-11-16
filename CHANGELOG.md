@@ -109,6 +109,14 @@ All notable user-facing changes are recorded here.
   8-bit sRGB, linear radiance and statistics. Anisotropy, iridescence and
   caustics are not simulated. `scena photo render --path-trace` delivers a
   photo's final frame this way; see `docs/rendering.md`.
+- `AntiAliasing::Fxaa` on GPU backends is now an edge search in the manner of
+  FXAA 3.11 instead of a five-tap average. It walks along each edge to find
+  where the current run of the staircase ends and blends by the distance to
+  that end, so a shallow edge comes out as a ramp, flat regions are untouched
+  and a one-pixel line no longer spreads into its neighbours. Contrast is
+  measured on exposed, display-referred luma because the pass runs before the
+  display transform. Edges in GPU frames rendered with FXAA change; the CPU
+  renderer's FXAA and its reference images are unchanged.
 
 ### Scene
 

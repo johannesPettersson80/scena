@@ -549,3 +549,518 @@ fn sha256_file(path: &Path) -> String {
     let digest = sha2::Sha256::digest(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
+
+// ---------------------------------------------------------------------------
+// FXAA edge-search proof.
+//
+// The oracle above accepts any filter that softens edges locally. These tests
+// add the properties that separate an edge-following filter from a local blur:
+// a shallow edge must come out as a straight ramp instead of a staircase, flat
+// regions must stay untouched, and a one-pixel line must stay a line.
+// ---------------------------------------------------------------------------
+
+/// Target pixel coordinates (x right, y down) of the fixture geometry. Corners
+/// sit off the pixel grid so no pixel centre lies on an edge.
+const FXAA_SHALLOW_EDGE: [(f32, f32); 2] = [(4.3, 78.4), (124.6, 92.7)];
+const FXAA_STEEP_WEDGE: [(f32, f32); 3] = [(4.3, 4.3), (36.4, 4.3), (4.3, 70.6)];
+const FXAA_DIAGONAL_WEDGE: [(f32, f32); 3] = [(44.3, 4.3), (100.4, 4.3), (44.3, 70.6)];
+/// Row and first/last column of the one-pixel horizontal line.
+const FXAA_LINE_ROW: u32 = 12;
+const FXAA_LINE_COLUMNS: (u32, u32) = (106, 123);
+/// Column and first/last row of the one-pixel vertical line.
+const FXAA_LINE_COLUMN: u32 = 114;
+const FXAA_LINE_ROWS: (u32, u32) = (24, 67);
+
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+struct FxaaQuality {
+    /// RMS distance in pixels between the apparent edge and a straight line.
+    shallow_edge_residual_px: f32,
+    steep_edge_residual_px: f32,
+    diagonal_edge_residual_px: f32,
+    /// Largest change in a pixel whose 5x5 neighbourhood is uniform.
+    flat_region_max_delta: u8,
+    /// Mean line luma and mean luma of the brighter adjacent row or column.
+    horizontal_line_luma: f32,
+    horizontal_line_halo_luma: f32,
+    vertical_line_luma: f32,
+    vertical_line_halo_luma: f32,
+}
+
+#[test]
+fn q07_gpu_fxaa_follows_edges_and_keeps_flat_regions_and_thin_lines() {
+    let Some(baseline) = render_fxaa_fixture(AntiAliasing::None) else {
+        eprintln!("skipping the FXAA edge-search proof: no GPU adapter is available");
+        return;
+    };
+    let fxaa = render_fxaa_fixture(AntiAliasing::Fxaa)
+        .expect("the adapter that rendered the baseline renders the FXAA frame");
+    let legacy = legacy_cross_filter(&baseline, WIDTH, HEIGHT);
+
+    let aliased = measure_fxaa_quality(&baseline, &baseline);
+    let old = measure_fxaa_quality(&baseline, &legacy);
+    let new = measure_fxaa_quality(&baseline, &fxaa);
+    eprintln!(
+        "FXAA edge-search proof\n  aliased: {aliased:?}\n  cross filter: {old:?}\n  fxaa: {new:?}"
+    );
+    write_fxaa_proof_artifacts(&baseline, &legacy, &fxaa, [aliased, old, new]);
+
+    evaluate_fxaa_quality(aliased, new)
+        .unwrap_or_else(|error| panic!("GPU FXAA failed the edge-search oracle: {error}"));
+    // Long runs are where a staircase is visible, and where following the
+    // edge beats averaging a pixel with its neighbours. On the steep and
+    // diagonal edges the runs are one to three pixels long: FXAA still has to
+    // beat the aliased frame there (the oracle above), but the cross filter's
+    // blur of every edge pixel scores lower on this one measure, at the cost
+    // the line contrast below shows.
+    assert!(
+        new.shallow_edge_residual_px * 2.0 < old.shallow_edge_residual_px,
+        "FXAA must straighten a shallow edge far better than the cross filter it replaced: \
+         fxaa {} px, cross filter {} px, aliased {} px",
+        new.shallow_edge_residual_px,
+        old.shallow_edge_residual_px,
+        aliased.shallow_edge_residual_px,
+    );
+    let line_contrast = |quality: FxaaQuality| {
+        (quality.horizontal_line_luma - quality.horizontal_line_halo_luma)
+            .min(quality.vertical_line_luma - quality.vertical_line_halo_luma)
+    };
+    assert!(
+        line_contrast(new) > line_contrast(old),
+        "FXAA must keep a one-pixel line crisper than the cross filter it replaced: \
+         fxaa {}, cross filter {}",
+        line_contrast(new),
+        line_contrast(old),
+    );
+
+    // The live frames must also satisfy the shared AA effect oracle.
+    evaluate_antialiasing_effect(
+        measure_edges(&baseline, WIDTH, HEIGHT),
+        measure_edges(&fxaa, WIDTH, HEIGHT),
+    )
+    .unwrap_or_else(|error| panic!("GPU FXAA failed the AA effect oracle: {error}"));
+}
+
+#[test]
+fn q07_fxaa_quality_oracle_rejects_noop_blur_and_cross_filter_mutations() {
+    let baseline = fxaa_fixture_reference(1);
+    let antialiased = fxaa_fixture_reference(4);
+    let aliased = measure_fxaa_quality(&baseline, &baseline);
+
+    evaluate_fxaa_quality(aliased, measure_fxaa_quality(&baseline, &antialiased))
+        .expect("an area-sampled render of the fixture satisfies the FXAA quality oracle");
+    for (name, mutation) in [
+        ("no_op", baseline.clone()),
+        (
+            "blur_everything",
+            box_blur_rgba8(&baseline, WIDTH, HEIGHT, 7),
+        ),
+        (
+            "cross_filter",
+            legacy_cross_filter(&baseline, WIDTH, HEIGHT),
+        ),
+    ] {
+        assert!(
+            evaluate_fxaa_quality(aliased, measure_fxaa_quality(&baseline, &mutation)).is_err(),
+            "the FXAA quality oracle must reject the {name} mutation"
+        );
+    }
+}
+
+fn evaluate_fxaa_quality(aliased: FxaaQuality, candidate: FxaaQuality) -> Result<(), String> {
+    if candidate.shallow_edge_residual_px * 2.0 > aliased.shallow_edge_residual_px {
+        return Err(format!(
+            "shallow edge still reads as a staircase: residual {} px against {} px aliased",
+            candidate.shallow_edge_residual_px, aliased.shallow_edge_residual_px
+        ));
+    }
+    for (name, residual, reference) in [
+        (
+            "steep",
+            candidate.steep_edge_residual_px,
+            aliased.steep_edge_residual_px,
+        ),
+        (
+            "diagonal",
+            candidate.diagonal_edge_residual_px,
+            aliased.diagonal_edge_residual_px,
+        ),
+    ] {
+        if residual > reference * 0.95 {
+            return Err(format!(
+                "{name} edge was not straightened: residual {residual} px against {reference} px aliased"
+            ));
+        }
+    }
+    if candidate.flat_region_max_delta > 2 {
+        return Err(format!(
+            "flat regions changed by up to {} of 255",
+            candidate.flat_region_max_delta
+        ));
+    }
+    for (name, line, halo) in [
+        (
+            "horizontal",
+            candidate.horizontal_line_luma,
+            candidate.horizontal_line_halo_luma,
+        ),
+        (
+            "vertical",
+            candidate.vertical_line_luma,
+            candidate.vertical_line_halo_luma,
+        ),
+    ] {
+        if line < 150.0 || line - halo < 110.0 {
+            return Err(format!(
+                "one-pixel {name} line was blurred: line luma {line}, adjacent luma {halo}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn measure_fxaa_quality(baseline: &[u8], candidate: &[u8]) -> FxaaQuality {
+    let coverage = |x: u32, y: u32| {
+        let offset = ((y * WIDTH + x) * 4) as usize;
+        0.2126 * srgb8_to_linear(candidate[offset])
+            + 0.7152 * srgb8_to_linear(candidate[offset + 1])
+            + 0.0722 * srgb8_to_linear(candidate[offset + 2])
+    };
+    let luma = |frame: &[u8], x: u32, y: u32| {
+        let offset = ((y * WIDTH + x) * 4) as usize;
+        (u16::from(frame[offset]) * 54
+            + u16::from(frame[offset + 1]) * 183
+            + u16::from(frame[offset + 2]) * 19)
+            / 256
+    };
+    // Apparent edge position per column or row: the covered length of the
+    // strip that crosses the edge. A straight edge gives a straight line.
+    // The wedge rows stop before the tips, where the two edges of a wedge
+    // come within a few pixels of each other and stop being one edge each.
+    let shallow = straight_line_residual(
+        (12..=116)
+            .map(|x| (70..=102).map(|y| coverage(x, y)).sum())
+            .collect(),
+    );
+    let steep = straight_line_residual(
+        (10..=56)
+            .map(|y| (0..=40).map(|x| coverage(x, y)).sum())
+            .collect(),
+    );
+    let diagonal = straight_line_residual(
+        (10..=56)
+            .map(|y| (41..=104).map(|x| coverage(x, y)).sum())
+            .collect(),
+    );
+
+    let mut flat_region_max_delta = 0_u8;
+    for y in 2..HEIGHT - 2 {
+        for x in 2..WIDTH - 2 {
+            let centre = luma(baseline, x, y);
+            let uniform = (y - 2..=y + 2)
+                .all(|ny| (x - 2..=x + 2).all(|nx| luma(baseline, nx, ny).abs_diff(centre) <= 2));
+            if uniform {
+                let offset = ((y * WIDTH + x) * 4) as usize;
+                for channel in 0..3 {
+                    flat_region_max_delta = flat_region_max_delta
+                        .max(baseline[offset + channel].abs_diff(candidate[offset + channel]));
+                }
+            }
+        }
+    }
+
+    let mean = |values: Vec<u16>| {
+        values.iter().map(|value| f32::from(*value)).sum::<f32>() / values.len() as f32
+    };
+    let horizontal_columns = FXAA_LINE_COLUMNS.0 + 4..=FXAA_LINE_COLUMNS.1 - 4;
+    let vertical_rows = FXAA_LINE_ROWS.0 + 4..=FXAA_LINE_ROWS.1 - 4;
+    FxaaQuality {
+        shallow_edge_residual_px: shallow,
+        steep_edge_residual_px: steep,
+        diagonal_edge_residual_px: diagonal,
+        flat_region_max_delta,
+        horizontal_line_luma: mean(
+            horizontal_columns
+                .clone()
+                .map(|x| luma(candidate, x, FXAA_LINE_ROW))
+                .collect(),
+        ),
+        horizontal_line_halo_luma: mean(
+            horizontal_columns
+                .map(|x| {
+                    luma(candidate, x, FXAA_LINE_ROW - 1).max(luma(candidate, x, FXAA_LINE_ROW + 1))
+                })
+                .collect(),
+        ),
+        vertical_line_luma: mean(
+            vertical_rows
+                .clone()
+                .map(|y| luma(candidate, FXAA_LINE_COLUMN, y))
+                .collect(),
+        ),
+        vertical_line_halo_luma: mean(
+            vertical_rows
+                .map(|y| {
+                    luma(candidate, FXAA_LINE_COLUMN - 1, y).max(luma(
+                        candidate,
+                        FXAA_LINE_COLUMN + 1,
+                        y,
+                    ))
+                })
+                .collect(),
+        ),
+    }
+}
+
+/// RMS distance between a sequence of positions and its least-squares line.
+fn straight_line_residual(positions: Vec<f32>) -> f32 {
+    let count = positions.len() as f32;
+    let mean_index = (count - 1.0) * 0.5;
+    let mean = positions.iter().sum::<f32>() / count;
+    let (mut covariance, mut variance) = (0.0_f32, 0.0_f32);
+    for (index, position) in positions.iter().enumerate() {
+        let offset = index as f32 - mean_index;
+        covariance += offset * (position - mean);
+        variance += offset * offset;
+    }
+    let slope = covariance / variance;
+    let squared = positions
+        .iter()
+        .enumerate()
+        .map(|(index, position)| {
+            let fitted = mean + slope * (index as f32 - mean_index);
+            (position - fitted) * (position - fitted)
+        })
+        .sum::<f32>();
+    (squared / count).sqrt()
+}
+
+fn srgb8_to_linear(channel: u8) -> f32 {
+    let encoded = f32::from(channel) / 255.0;
+    if encoded <= 0.04045 {
+        encoded / 12.92
+    } else {
+        ((encoded + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_to_srgb8(linear: f32) -> u8 {
+    let encoded = if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (encoded.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+/// The fixture as target-pixel polygons, shared by the GPU scene and the
+/// area-sampled reference.
+fn fxaa_fixture_polygons() -> Vec<Vec<(f32, f32)>> {
+    let [shallow_start, shallow_end] = FXAA_SHALLOW_EDGE;
+    let line_row = FXAA_LINE_ROW as f32;
+    let line_column = FXAA_LINE_COLUMN as f32;
+    vec![
+        vec![
+            shallow_start,
+            shallow_end,
+            (shallow_end.0, 123.6),
+            (shallow_start.0, 123.6),
+        ],
+        FXAA_STEEP_WEDGE.to_vec(),
+        FXAA_DIAGONAL_WEDGE.to_vec(),
+        // One-pixel lines: each covers exactly one row or column of centres.
+        vec![
+            (FXAA_LINE_COLUMNS.0 as f32, line_row + 0.2),
+            (FXAA_LINE_COLUMNS.1 as f32 + 1.0, line_row + 0.2),
+            (FXAA_LINE_COLUMNS.1 as f32 + 1.0, line_row + 0.8),
+            (FXAA_LINE_COLUMNS.0 as f32, line_row + 0.8),
+        ],
+        vec![
+            (line_column + 0.2, FXAA_LINE_ROWS.0 as f32),
+            (line_column + 0.8, FXAA_LINE_ROWS.0 as f32),
+            (line_column + 0.8, FXAA_LINE_ROWS.1 as f32 + 1.0),
+            (line_column + 0.2, FXAA_LINE_ROWS.1 as f32 + 1.0),
+        ],
+    ]
+}
+
+fn render_fxaa_fixture(anti_aliasing: AntiAliasing) -> Option<Vec<u8>> {
+    let mut renderer = Renderer::headless_gpu(WIDTH, HEIGHT).ok()?;
+    renderer.set_background_color(Color::BLACK);
+    renderer.set_tonemapper(scena::Tonemapper::Standard);
+    renderer.set_anti_aliasing(anti_aliasing);
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    // A 60 degree camera at sqrt(3) maps x and y in -1..1 of the z = 0 plane
+    // onto the whole target, so fixture pixels and world units line up.
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            scena::PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 1.732_050_8)),
+        )
+        .expect("FXAA fixture camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("FXAA fixture camera activates");
+    let world = |(x, y): (f32, f32)| Vertex {
+        position: Vec3::new(
+            x / (WIDTH as f32 * 0.5) - 1.0,
+            1.0 - y / (HEIGHT as f32 * 0.5),
+            0.0,
+        ),
+        color: Color::WHITE,
+    };
+    // The polygons wind clockwise on screen, so each fan triangle is emitted
+    // in reverse to face the camera.
+    let primitives = fxaa_fixture_polygons()
+        .into_iter()
+        .flat_map(|polygon| {
+            (1..polygon.len() - 1)
+                .map(|index| {
+                    Primitive::triangle([
+                        world(polygon[0]),
+                        world(polygon[index + 1]),
+                        world(polygon[index]),
+                    ])
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    scene
+        .add_renderable(scene.root(), primitives, Transform::default())
+        .expect("FXAA fixture inserts");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("FXAA fixture prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("FXAA fixture renders");
+    Some(renderer.frame_rgba8().to_vec())
+}
+
+/// CPU render of the fixture with `samples` x `samples` area samples a pixel.
+/// One sample reproduces the aliased frame; more give the ideal coverage.
+fn fxaa_fixture_reference(samples: u32) -> Vec<u8> {
+    let polygons = fxaa_fixture_polygons();
+    let inside = |polygon: &[(f32, f32)], x: f32, y: f32| {
+        let mut sign = 0.0_f32;
+        (0..polygon.len()).all(|index| {
+            let (ax, ay) = polygon[index];
+            let (bx, by) = polygon[(index + 1) % polygon.len()];
+            let cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+            if cross == 0.0 {
+                return true;
+            }
+            if sign == 0.0 {
+                sign = cross.signum();
+            }
+            cross.signum() == sign
+        })
+    };
+    let mut frame = vec![0; (WIDTH * HEIGHT * 4) as usize];
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let mut covered = 0;
+            for sy in 0..samples {
+                for sx in 0..samples {
+                    let px = x as f32 + (sx as f32 + 0.5) / samples as f32;
+                    let py = y as f32 + (sy as f32 + 0.5) / samples as f32;
+                    covered += u32::from(polygons.iter().any(|polygon| inside(polygon, px, py)));
+                }
+            }
+            let value = linear_to_srgb8(covered as f32 / (samples * samples) as f32);
+            let offset = ((y * WIDTH + x) * 4) as usize;
+            frame[offset..offset + 4].copy_from_slice(&[value, value, value, 255]);
+        }
+    }
+    frame
+}
+
+/// The five-tap cross average the GPU ran as "FXAA" before the edge search
+/// replaced it, reproduced on the CPU so the comparison stays reproducible.
+/// It averaged a pixel with its four neighbours, in linear light, wherever
+/// the pixel was the darkest or brightest of the five and the cross spanned
+/// a 16/255 luma contrast.
+fn legacy_cross_filter(frame: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let pixel = |x: u32, y: u32| {
+        let offset = ((y * width + x) * 4) as usize;
+        [
+            srgb8_to_linear(frame[offset]),
+            srgb8_to_linear(frame[offset + 1]),
+            srgb8_to_linear(frame[offset + 2]),
+        ]
+    };
+    let luma = |rgb: [f32; 3]| 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+    let mut output = frame.to_vec();
+    for y in 1..height - 1 {
+        for x in 1..width - 1 {
+            let centre = pixel(x, y);
+            let centre_luma = luma(centre);
+            let taps = [
+                pixel(x, y - 1),
+                pixel(x - 1, y),
+                centre,
+                pixel(x + 1, y),
+                pixel(x, y + 1),
+            ];
+            let lumas = taps.map(luma);
+            let min = lumas.iter().copied().fold(f32::INFINITY, f32::min);
+            let max = lumas.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            if max - min < 16.0 / 255.0 {
+                continue;
+            }
+            let brighter = lumas.iter().any(|tap| tap - centre_luma >= 16.0 / 255.0);
+            let darker = lumas.iter().any(|tap| centre_luma - tap >= 16.0 / 255.0);
+            let dark_edge = centre_luma - min <= 1.0 / 255.0 && brighter;
+            let light_edge = max - centre_luma <= 1.0 / 255.0 && darker;
+            if !dark_edge && !light_edge {
+                continue;
+            }
+            let offset = ((y * width + x) * 4) as usize;
+            for channel in 0..3 {
+                let linear = taps.iter().map(|tap| tap[channel]).sum::<f32>() / 5.0;
+                output[offset + channel] = linear_to_srgb8(linear);
+            }
+        }
+    }
+    output
+}
+
+fn write_fxaa_proof_artifacts(
+    baseline: &[u8],
+    legacy: &[u8],
+    fxaa: &[u8],
+    [aliased, old, new]: [FxaaQuality; 3],
+) {
+    fs::create_dir_all(ARTIFACT_DIR).expect("Q07 artifact directory creates");
+    for (name, frame) in [
+        ("fxaa-edge-search-none", baseline),
+        ("fxaa-edge-search-cross-filter", legacy),
+        ("fxaa-edge-search-fxaa", fxaa),
+    ] {
+        let mut bytes = format!("P6\n{WIDTH} {HEIGHT}\n255\n").into_bytes();
+        for pixel in frame.chunks_exact(4) {
+            bytes.extend_from_slice(&pixel[..3]);
+        }
+        fs::write(Path::new(ARTIFACT_DIR).join(format!("{name}.ppm")), bytes)
+            .expect("FXAA edge-search frame writes");
+    }
+    let report = serde_json::json!({
+        "schema": "scena.q07.fxaa_edge_search.v1",
+        "release_evidence": false,
+        "fixture": "fxaa-edge-search-v1",
+        "width": WIDTH,
+        "height": HEIGHT,
+        "aliased": aliased,
+        "cross_filter": old,
+        "fxaa": new,
+    });
+    fs::write(
+        Path::new(ARTIFACT_DIR).join("fxaa-edge-search.json"),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&report).expect("FXAA edge-search report serializes")
+        ),
+    )
+    .expect("FXAA edge-search report writes");
+}

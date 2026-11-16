@@ -305,7 +305,7 @@ pub(super) fn encode_chain(
                 0.0,
                 0.0,
                 0.0,
-                0.0,
+                settings.display_exposure,
                 0.0,
                 0.0,
                 0.0,
@@ -370,7 +370,7 @@ pub(super) fn encode_blit_to_view(
     );
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 pub(super) fn encode_fxaa_to_view(
     encoder: &mut wgpu::CommandEncoder,
     queue: &wgpu::Queue,
@@ -378,6 +378,7 @@ pub(super) fn encode_fxaa_to_view(
     output: PostChainOutput,
     target_view: &wgpu::TextureView,
     pipeline: &wgpu::RenderPipeline,
+    display_exposure: f32,
     draw_submissions: &mut u64,
 ) {
     write_uniform(
@@ -391,7 +392,7 @@ pub(super) fn encode_fxaa_to_view(
             0.0,
             0.0,
             0.0,
-            0.0,
+            display_exposure,
             0.0,
             0.0,
             1.0,
@@ -428,7 +429,7 @@ pub(super) fn encode_bloom_fxaa_to_view(
             srgb8_threshold_to_linear(inputs.config.threshold_srgb()),
             inputs.config.intensity(),
             inputs.config.radius_px() as f32,
-            0.0,
+            inputs.display_exposure,
             0.0,
             0.0,
             1.0,
@@ -457,5 +458,6 @@ pub(super) struct BloomFxaaToViewInputs<'a> {
     pub(super) target_view: &'a wgpu::TextureView,
     pub(super) pipeline: &'a wgpu::RenderPipeline,
     pub(super) config: PostBloomConfig,
+    pub(super) display_exposure: f32,
     pub(super) draw_submissions: &'a mut u64,
 }

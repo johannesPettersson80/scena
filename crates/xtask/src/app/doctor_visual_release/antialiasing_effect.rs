@@ -17,8 +17,42 @@ pub(crate) fn check_q07_antialiasing_effect_contract(root: &Path, findings: &mut
             "blur_everything",
             "select_release_commit",
             "std::env::var(\"GITHUB_SHA\").ok()",
+            // The edge-search proof: FXAA must straighten a shallow edge,
+            // leave flat regions alone and keep a one-pixel line, and the
+            // oracle must reject the cross filter FXAA replaced.
+            "q07_gpu_fxaa_follows_edges_and_keeps_flat_regions_and_thin_lines",
+            "q07_fxaa_quality_oracle_rejects_noop_blur_and_cross_filter_mutations",
+            "fn legacy_cross_filter",
+            "shallow_edge_residual_px",
+            "flat_region_max_delta",
         ],
     );
+    // GPU FXAA is an edge search, shared by the FXAA pass and the combined
+    // bloom + FXAA surface pass so the two cannot drift apart.
+    require_contains(
+        root,
+        findings,
+        "Q07-ANTIALIASING-EFFECT",
+        "src/render/gpu/post/fxaa_resolve.wgsl",
+        &[
+            "fn fxaa_resolve",
+            "FXAA_SEARCH_STEPS",
+            "run_turns_away",
+            "fn fxaa_display_weight",
+        ],
+    );
+    for owner in [
+        "src/render/gpu/post/fxaa.rs",
+        "src/render/gpu/post/bloom_fxaa.rs",
+    ] {
+        require_contains(
+            root,
+            findings,
+            "Q07-ANTIALIASING-EFFECT",
+            owner,
+            &["include_str!(\"fxaa_resolve.wgsl\")"],
+        );
+    }
     require_contains(
         root,
         findings,

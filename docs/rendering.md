@@ -530,6 +530,33 @@ renderer.set_anti_aliasing(scena::AntiAliasing::Fxaa);
 renderer.set_anti_aliasing(scena::AntiAliasing::Msaa4);
 ```
 
+On GPU backends (native, WebGPU and WebGL2) FXAA is an edge search in the
+manner of FXAA 3.11. A pixel is touched only where its neighbourhood shows a
+visible luma step. The filter then walks along the edge in both directions, up
+to 26 pixels, to find where the current run of the staircase ends, and blends
+the pixel with its neighbour across the edge by its distance to the nearer
+end. A second, weaker term softens single-pixel contrast. Flat regions come
+out exactly as rendered, and a one-pixel line stays one pixel wide, keeping
+about three fifths of its light, instead of spreading into the pixels beside
+it.
+
+The pass runs on scene-linear radiance before the display transform. It
+therefore measures contrast on exposed luminance, clamped to display white and
+taken to gamma 2.0, and it blends two values as the display will show them, so
+a highlight brighter than white cannot swamp its neighbour.
+
+Shallow edges, where a staircase is most visible, gain the most: the measured
+deviation of a 7 degree edge from a straight line falls by about three
+quarters. An edge near 45 degrees has runs of one or two pixels, and FXAA
+softens it only slightly. Use `Msaa4` or supersampling when those edges
+matter.
+
+The CPU renderer keeps its own FXAA: a 3x3 average on the encoded frame,
+applied where a pixel is the darkest or brightest of a contrasting
+neighbourhood. The CPU reference images pin it. `AntiAliasing::Fxaa` therefore
+produces different edge pixels on the CPU and GPU paths; render with
+`AntiAliasing::None` when the two are compared pixel for pixel.
+
 On the current WebGPU/WebGL2 WASM pipelines, automatic or profile-selected
 high quality degrades to FXAA and records `MultisampleFallback` with
 `fallback_applied:true`. Capability JSON reports color/depth sample matrices of
