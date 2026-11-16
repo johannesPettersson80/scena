@@ -50,11 +50,18 @@ impl GeometryDesc {
         &self.morph_targets
     }
 
+    /// Applies the weighted morph targets to the vertex positions and normals.
+    ///
+    /// A morphed normal is the authored normal plus every weighted normal
+    /// delta, normalized once. Normalizing after each target would rescale the
+    /// partial sum and make the result depend on the order of the targets. A
+    /// sum too short to normalize keeps the authored normal.
     pub fn morphed_vertices(&self, weights: &[f32]) -> Option<Vec<GeometryVertex>> {
         if self.morph_targets.is_empty() || !self.morph_weight_width_matches(weights) {
             return None;
         }
         let mut vertices = self.vertices.clone();
+        let mut normals_morphed = false;
         for (target, weight) in self.morph_targets.iter().zip(weights.iter().copied()) {
             for (vertex, delta) in vertices.iter_mut().zip(target.position_deltas()) {
                 vertex.position = Vec3::new(
@@ -64,16 +71,19 @@ impl GeometryDesc {
                 );
             }
             if let Some(normal_deltas) = target.normal_deltas() {
+                normals_morphed = true;
                 for (vertex, delta) in vertices.iter_mut().zip(normal_deltas) {
-                    vertex.normal = normalize_or(
-                        Vec3::new(
-                            vertex.normal.x + delta.x * weight,
-                            vertex.normal.y + delta.y * weight,
-                            vertex.normal.z + delta.z * weight,
-                        ),
-                        vertex.normal,
+                    vertex.normal = Vec3::new(
+                        vertex.normal.x + delta.x * weight,
+                        vertex.normal.y + delta.y * weight,
+                        vertex.normal.z + delta.z * weight,
                     );
                 }
+            }
+        }
+        if normals_morphed {
+            for (vertex, authored) in vertices.iter_mut().zip(&self.vertices) {
+                vertex.normal = normalize_or(vertex.normal, authored.normal);
             }
         }
         Some(vertices)
@@ -218,5 +228,69 @@ mod r04_tests {
             .morphed_vertices(&[1.0, 0.0])
             .expect("an exactly-sized weight vector still applies");
         assert_eq!(exact[0].position.x, 1.0);
+    }
+
+    fn normal_morph_geometry(targets: [Vec3; 2]) -> GeometryDesc {
+        GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![vertex(0.0), vertex(1.0), vertex(2.0)],
+            vec![0, 1, 2],
+        )
+        .expect("triangle geometry builds")
+        .with_morph_targets(
+            targets
+                .into_iter()
+                .map(|delta| {
+                    GeometryMorphTarget::new_with_normals(vec![Vec3::ZERO; 3], vec![delta; 3])
+                })
+                .collect(),
+        )
+        .expect("two normal morph targets attach")
+    }
+
+    fn assert_normal_near(actual: Vec3, expected: Vec3) {
+        assert!(
+            (actual - expected).length() < 1.0e-6,
+            "expected normal {expected:?}, got {actual:?}",
+        );
+    }
+
+    /// glTF defines the morphed normal as the base normal plus every weighted
+    /// delta. Only that sum is normalized: normalizing after each target
+    /// rescales the partial sum, which changes the direction and makes the
+    /// result depend on the order of the targets.
+    #[test]
+    fn morph_normals_sum_every_weighted_delta_before_normalizing_once() {
+        let toward_x = Vec3::new(1.0, 0.0, 0.0);
+        let toward_z = Vec3::new(0.0, 0.0, 1.0);
+        // Base normal +Y, plus both deltas at full weight: (1, 1, 1).
+        let expected = Vec3::new(1.0, 1.0, 1.0).normalize();
+
+        let forward = normal_morph_geometry([toward_x, toward_z])
+            .morphed_vertices(&[1.0, 1.0])
+            .expect("weights match the target count");
+        assert_normal_near(forward[0].normal, expected);
+
+        let reversed = normal_morph_geometry([toward_z, toward_x])
+            .morphed_vertices(&[1.0, 1.0])
+            .expect("weights match the target count");
+        assert_normal_near(reversed[0].normal, forward[0].normal);
+
+        // Base (0, 1, 0) + 0.5 * (1, 0, 0) + 2.0 * (0, 0, 1).
+        let weighted = normal_morph_geometry([toward_x, toward_z])
+            .morphed_vertices(&[0.5, 2.0])
+            .expect("weights match the target count");
+        assert_normal_near(weighted[0].normal, Vec3::new(0.5, 1.0, 2.0).normalize());
+    }
+
+    /// Deltas that cancel the base normal leave nothing to normalize; the
+    /// vertex keeps its authored normal instead of a zero or NaN vector.
+    #[test]
+    fn morph_normals_that_cancel_out_keep_the_authored_normal() {
+        let away = Vec3::new(0.0, -0.5, 0.0);
+        let morphed = normal_morph_geometry([away, away])
+            .morphed_vertices(&[1.0, 1.0])
+            .expect("weights match the target count");
+        assert_normal_near(morphed[0].normal, Vec3::new(0.0, 1.0, 0.0));
     }
 }

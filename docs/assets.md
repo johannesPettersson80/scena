@@ -306,6 +306,9 @@ asset-doctor finding.
 Morph import preserves target order even when a target omits POSITION, carries
 optional normal and tangent deltas into render preparation, and fans an animated
 weight channel out to every renderable primitive of a multi-primitive mesh.
+A morphed normal is the authored normal plus every weighted normal delta,
+normalized once after the sum, so it does not depend on the order of the
+targets; a sum too short to normalize keeps the authored normal.
 Normal-map sampling transforms tangent-space values through the morphed tangent
 frame before lighting.
 
