@@ -7,9 +7,11 @@ use crate::scene::recipe::{
     SceneRecipeDiagnosticV1, SceneRecipeLookAtTargetV1, SceneRecipeTransformV1,
 };
 use crate::scene::view_math::transform_aabb;
+use crate::scene::{ScenePlacementDiagnosticV1, WorldTransform};
 use crate::scene_host::SceneHostCore;
 use crate::{
-    NodeKey, SceneImport, Transform, Vec3, placement_center_transform, placement_ground_transform,
+    NodeKey, PlacementFrame, SceneImport, Transform, Vec3, placement_center_transform,
+    placement_ground_transform,
 };
 
 use super::super::{error_diagnostic, scene_host_error_diagnostic};
@@ -95,25 +97,28 @@ pub(super) fn transform_from_recipe(
                     })?
                 }
             };
-            let desired_world = Transform::at(vec3(*eye)).looking_at(target, vec3(*up));
-            local_from_world(host, context.parent, desired_world)
+            let space = AuthoringSpace::of(host, context.parent)?;
+            solved(space.frame.look_from(vec3(*eye), target, vec3(*up)))
         }
         SceneRecipeTransformV1::Center {} => {
             let bounds = require_bounds(context.current_bounds, "center")?;
-            let current_world = current_world_transform(host, context.parent)?;
-            let desired_world = placement_center_transform(bounds, current_world, Vec3::ZERO);
-            local_from_world(host, context.parent, desired_world)
+            AuthoringSpace::of(host, context.parent)?.moved(
+                |current| placement_center_transform(bounds, current, Vec3::ZERO),
+                |world| Vec3::ZERO - transform_aabb(bounds, world).center(),
+            )
         }
         SceneRecipeTransformV1::Ground { plane_y } => {
             let bounds = require_bounds(context.current_bounds, "ground")?;
-            let current_world = current_world_transform(host, context.parent)?;
-            let desired_world = placement_ground_transform(bounds, current_world, *plane_y as f32);
-            local_from_world(host, context.parent, desired_world)
+            let plane_y = *plane_y as f32;
+            AuthoringSpace::of(host, context.parent)?.moved(
+                |current| placement_ground_transform(bounds, current, plane_y),
+                |world| Vec3::new(0.0, plane_y - transform_aabb(bounds, world).min.y, 0.0),
+            )
         }
         SceneRecipeTransformV1::FitToSize { size } => {
             let bounds = require_bounds(context.current_bounds, "fit_to_size")?;
-            let current_world = current_world_transform(host, context.parent)?;
-            let current_bounds = transform_aabb(bounds, current_world);
+            let space = AuthoringSpace::of(host, context.parent)?;
+            let current_bounds = transform_aabb(bounds, space.world);
             let extent = current_bounds.max - current_bounds.min;
             let target = vec3(*size);
             let factors = [
@@ -133,11 +138,15 @@ pub(super) fn transform_from_recipe(
                 )));
             }
             let factor = factors.into_iter().min_by(f32::total_cmp).unwrap_or(1.0);
-            let desired_world = Transform {
-                scale: current_world.scale * factor,
-                ..current_world
-            };
-            local_from_world(host, context.parent, desired_world)
+            match space.exact {
+                Some(current) => space.local_for(Transform {
+                    scale: current.scale * factor,
+                    ..current
+                }),
+                // A uniform local scale scales the world bounds by the same
+                // factor whatever the parent does to them.
+                None => Ok(Transform::IDENTITY.with_uniform_scale(factor)),
+            }
         }
         SceneRecipeTransformV1::PlaceOn { target, offset } => {
             let bounds = require_bounds(context.current_bounds, "place_on")?;
@@ -168,8 +177,8 @@ pub(super) fn transform_from_recipe(
                         "target a renderable node with finite bounds",
                     ))
                 })?;
-            let current_world = current_world_transform(host, context.parent)?;
-            let source_bounds = transform_aabb(bounds, current_world);
+            let space = AuthoringSpace::of(host, context.parent)?;
+            let source_bounds = transform_aabb(bounds, space.world);
             let source_anchor = Vec3::new(
                 source_bounds.center().x,
                 source_bounds.min.y,
@@ -180,13 +189,17 @@ pub(super) fn transform_from_recipe(
                 target_bounds.max.y,
                 target_bounds.center().z,
             ) + vec3(*offset);
-            let desired_world = current_world
-                .with_translation(current_world.translation + target_anchor - source_anchor);
-            local_from_world(host, context.parent, desired_world)
+            space.moved(
+                |current| {
+                    current.with_translation(current.translation + target_anchor - source_anchor)
+                },
+                |_| target_anchor - source_anchor,
+            )
         }
         SceneRecipeTransformV1::AlignToAnchor { anchor } => {
-            let target_world = anchor_world_transform(host, context.imports, anchor)?;
-            local_from_world(host, context.parent, target_world)
+            let anchor_world = anchor_world_placement(host, context.imports, anchor)?;
+            let space = AuthoringSpace::of(host, context.parent)?;
+            solved(space.frame.fitted_to(anchor_world))
         }
     }
 }
@@ -241,47 +254,88 @@ fn require_bounds(bounds: Option<Aabb>, verb: &str) -> Result<Aabb, Box<SceneRec
     })
 }
 
-fn current_world_transform(
-    host: &SceneHostCore<DefaultAssetFetcher>,
-    parent: Option<NodeKey>,
-) -> Result<Transform, Box<SceneRecipeDiagnosticV1>> {
-    match parent {
-        Some(parent) => host.scene.world_transform(parent).ok_or_else(|| {
+/// The space a node is authored in: the exact world placement of its parent.
+///
+/// A node is authored at its parent's origin, unrotated and unscaled, and a
+/// placement verb then gives it a local transform. Under a parent that is
+/// exactly translation, rotation, and scale, the verbs keep the arithmetic
+/// recipes have always used. A sheared parent has no such description, so its
+/// verbs are solved against the matrix.
+struct AuthoringSpace {
+    frame: PlacementFrame,
+    world: WorldTransform,
+    /// The parent placement as one transform, when that is exact.
+    exact: Option<Transform>,
+    has_parent: bool,
+}
+
+impl AuthoringSpace {
+    fn of(
+        host: &SceneHostCore<DefaultAssetFetcher>,
+        parent: Option<NodeKey>,
+    ) -> Result<Self, Box<SceneRecipeDiagnosticV1>> {
+        let Some(parent) = parent else {
+            return Ok(Self {
+                frame: PlacementFrame::WORLD,
+                world: WorldTransform::IDENTITY,
+                exact: Some(Transform::IDENTITY),
+                has_parent: false,
+            });
+        };
+        let world = host.scene.resolved_world(parent).ok_or_else(|| {
             Box::new(error_diagnostic(
                 "$",
                 "unknown_node_ref",
                 "transform parent could not be resolved",
                 "declare parent nodes before their children",
             ))
-        }),
-        None => Ok(Transform::IDENTITY),
+        })?;
+        Ok(Self {
+            frame: PlacementFrame::from_world(world),
+            world,
+            exact: world.exact_trs(),
+            has_parent: true,
+        })
+    }
+
+    /// The local transform that gives the node the world transform `world`
+    /// under a parent that is exactly translation, rotation, and scale.
+    fn local_for(&self, world: Transform) -> Result<Transform, Box<SceneRecipeDiagnosticV1>> {
+        if !self.has_parent {
+            return Ok(world);
+        }
+        local_transform_from_parent(self.world.trs(), world).ok_or_else(non_invertible_parent)
+    }
+
+    /// Moves the node off its parent's origin. `world_transform` states the
+    /// move as a new world transform, for a parent that has one; `world_delta`
+    /// states it as an offset in the world, which a sheared parent carries
+    /// back into its own space exactly.
+    fn moved(
+        &self,
+        world_transform: impl FnOnce(Transform) -> Transform,
+        world_delta: impl FnOnce(WorldTransform) -> Vec3,
+    ) -> Result<Transform, Box<SceneRecipeDiagnosticV1>> {
+        match self.exact {
+            Some(current) => self.local_for(world_transform(current)),
+            None => solved(self.frame.moved_from_origin(world_delta(self.world))),
+        }
     }
 }
 
-fn local_from_world(
-    host: &SceneHostCore<DefaultAssetFetcher>,
-    parent: Option<NodeKey>,
-    world: Transform,
+fn solved(
+    placement: Result<Transform, Box<ScenePlacementDiagnosticV1>>,
 ) -> Result<Transform, Box<SceneRecipeDiagnosticV1>> {
-    let Some(parent) = parent else {
-        return Ok(world);
-    };
-    let parent_world = host.scene.world_transform(parent).ok_or_else(|| {
-        Box::new(error_diagnostic(
-            "$",
-            "unknown_node_ref",
-            "transform parent could not be resolved",
-            "declare parent nodes before their children",
-        ))
-    })?;
-    local_transform_from_parent(parent_world, world).ok_or_else(|| {
-        Box::new(error_diagnostic(
-            "$",
-            "non_invertible_parent_transform",
-            "parent transform has a non-finite or zero scale",
-            "use a parent transform with finite non-zero scale",
-        ))
-    })
+    placement.map_err(|_| non_invertible_parent())
+}
+
+fn non_invertible_parent() -> Box<SceneRecipeDiagnosticV1> {
+    Box::new(error_diagnostic(
+        "$",
+        "non_invertible_parent_transform",
+        "parent transform has a non-finite or zero scale",
+        "use a parent transform with finite non-zero scale",
+    ))
 }
 
 fn local_transform_from_parent(parent: Transform, world: Transform) -> Option<Transform> {
@@ -300,11 +354,13 @@ fn local_transform_from_parent(parent: Transform, world: Transform) -> Option<Tr
     })
 }
 
-fn anchor_world_transform(
+/// The exact world placement of an imported anchor frame: its host node's
+/// world matrix times the anchor's local transform.
+fn anchor_world_placement(
     host: &SceneHostCore<DefaultAssetFetcher>,
     imports: &BTreeMap<String, u64>,
     anchor: &str,
-) -> Result<Transform, Box<SceneRecipeDiagnosticV1>> {
+) -> Result<WorldTransform, Box<SceneRecipeDiagnosticV1>> {
     let (import_id, anchor_name) = anchor.split_once('.').ok_or_else(|| {
         Box::new(error_diagnostic(
             "$",
@@ -330,7 +386,7 @@ fn anchor_world_transform(
         ))
     })?;
     anchor_from_import(import, anchor_name).and_then(|anchor| {
-        let node_world = host.scene.world_transform(anchor.node()).ok_or_else(|| {
+        let node_world = host.scene.resolved_world(anchor.node()).ok_or_else(|| {
             Box::new(error_diagnostic(
                 "$",
                 "anchor_node_missing",
@@ -338,7 +394,7 @@ fn anchor_world_transform(
                 "target an anchor attached to a live import node",
             ))
         })?;
-        Ok(Transform::compose(node_world, anchor.transform()))
+        Ok(node_world.child(anchor.transform()))
     })
 }
 

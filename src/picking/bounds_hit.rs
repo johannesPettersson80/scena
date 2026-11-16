@@ -53,7 +53,7 @@ pub(super) fn pick_recorded_bounds(scene: &Scene, ray: Ray) -> Result<Option<Hit
                 node,
                 instance: instance.id(),
             };
-            let world = node_world.child(instance.transform());
+            let world = node_world.then(instance_set.placement(instance));
             best = nearest_hit(best, hit_bounds(target, bounds, world, ray));
         }
     }

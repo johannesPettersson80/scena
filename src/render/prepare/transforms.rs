@@ -1,5 +1,5 @@
 use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
-use crate::scene::{Transform, Vec3, WorldTransform};
+use crate::scene::{Vec3, WorldTransform};
 
 pub(super) const fn identity_matrix4() -> [f32; 16] {
     [
@@ -195,12 +195,6 @@ pub(in crate::render) fn normal_from_model_matrix(
     [
         x.x, x.y, x.z, 0.0, y.x, y.y, y.z, 0.0, z.x, z.y, z.z, 0.0, 0.0, 0.0, 0.0, 1.0,
     ]
-}
-
-/// Composes a node's world placement with a local TRS transform, such as one
-/// instance of an instance set.
-pub(super) fn compose_transform(parent: WorldTransform, child: Transform) -> WorldTransform {
-    parent.child(child)
 }
 
 pub(in crate::render) fn transform_position(

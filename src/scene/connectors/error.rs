@@ -56,6 +56,11 @@ pub enum ConnectionError {
         connector: Option<String>,
         coordinate_system: SourceCoordinateSystem,
     },
+    /// A connector, the node it is attached to, or the node the source would
+    /// hang under is scaled non-uniformly or sheared in the world. A rotated
+    /// node under a non-uniformly scaled ancestor is sheared even when its
+    /// own scale is uniform. Opt in with
+    /// [`ConnectOptions::allow_non_uniform_scale`](super::ConnectOptions::allow_non_uniform_scale).
     NonUniformScaleConnectionRisk {
         node: NodeKey,
     },

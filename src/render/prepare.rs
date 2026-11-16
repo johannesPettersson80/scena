@@ -38,7 +38,7 @@ pub(super) use self::stats::{
     PreparedDepthStats, PreparedEnvironmentStats, PreparedLightingStats,
     collect_depth_prepass_stats_iter, collect_environment_prepare_stats, collect_lighting_stats,
 };
-use self::transforms::{compose_transform, identity_matrix4, prepared_primitive};
+use self::transforms::{identity_matrix4, prepared_primitive};
 use self::types::{
     DeformationInputs, GeometryPrimitiveSource, PreparedScene, PrimitiveBakeParams, PrimitiveSinks,
     TransparentPrimitive,
@@ -426,7 +426,7 @@ pub(super) fn collect_prepared_primitives_profiled<F>(
                 .instances()
                 .filter(|instance| instance.visible())
             {
-                let instance_transform = compose_transform(node_transform, instance.transform());
+                let instance_transform = node_transform.then(instance_set.placement(instance));
                 let reflection_probe = selected_reflection_probe(
                     scene,
                     reflection_probes,
@@ -591,20 +591,19 @@ fn collect_prepared_instance_records(
         .map(|instance| {
             PreparedInstanceRecord::new(
                 instance.id(),
-                transforms::world_from_model_matrix(instance.transform(), Vec3::ZERO),
-                transforms::normal_from_model_matrix(instance.transform()),
+                transforms::world_from_model_matrix(instance_set.placement(instance), Vec3::ZERO),
+                transforms::normal_from_model_matrix(instance_set.placement(instance)),
                 draw_uniform_tint(multiply_tint(node_tint, instance.tint())),
             )
         })
         .collect()
 }
 
-/// Whether any visible instance mirrors the geometry relative to its set.
+/// Whether any visible instance cannot share the set's instanced draw,
+/// because it mirrors or shears the geometry relative to its set. The retained
+/// path calls this by the name of its first case.
 pub(super) fn instance_set_has_mirrored_instance(instance_set: &crate::scene::InstanceSet) -> bool {
-    instance_set
-        .instances()
-        .filter(|instance| instance.visible())
-        .any(|instance| crate::scene::WorldTransform::from(instance.transform()).is_mirrored())
+    instance_set.needs_per_instance_bake()
 }
 
 fn instance_set_key_for_node(

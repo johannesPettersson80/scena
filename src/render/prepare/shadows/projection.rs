@@ -22,7 +22,7 @@ use crate::geometry::{Aabb, GeometryDesc, GeometryTopology};
 use crate::scene::{NodeKey, Scene, Vec3, WorldTransform};
 
 use super::super::identity_matrix4;
-use super::super::transforms::{compose_transform, transform_position, transform_primitive};
+use super::super::transforms::{transform_position, transform_primitive};
 use super::DeformationInputs;
 use super::collection::shadow_vertices;
 use super::math::bounds_corners;
@@ -106,7 +106,7 @@ pub(in crate::render) fn collect_shadow_projection_groups<F>(
                 node,
                 &geometry,
                 DeformationInputs::default(),
-                compose_transform(node_transform, instance.transform()),
+                node_transform.then(instance_set.placement(instance)),
                 origin_shift,
             )?;
         }

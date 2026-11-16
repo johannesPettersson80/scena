@@ -62,7 +62,7 @@ pub(super) struct GeometryInstanceHitInput<'a> {
     pub(super) geometry: &'a GeometryDesc,
     pub(super) vertices: &'a [crate::geometry::GeometryVertex],
     pub(super) node_transform: WorldTransform,
-    pub(super) instance_transform: Transform,
+    pub(super) instance_transform: WorldTransform,
     pub(super) ray: Ray,
 }
 
@@ -82,7 +82,6 @@ pub(super) fn hit_geometry_instance<const PROFILE: bool>(
     if geometry.topology() != GeometryTopology::Triangles {
         return None;
     }
-    let instance_transform = WorldTransform::from(instance_transform);
     let mirrored = node_transform.is_mirrored() != instance_transform.is_mirrored();
     let node_local_ray = inverse_transform_ray(ray, node_transform)?;
     let local_ray = inverse_transform_ray(node_local_ray, instance_transform)?;

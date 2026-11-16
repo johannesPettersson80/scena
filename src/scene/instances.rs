@@ -1,9 +1,17 @@
+use std::collections::BTreeMap;
+
+use glam::Affine3A;
+
 use crate::assets::{GeometryHandle, MaterialHandle};
 use crate::diagnostics::LookupError;
 use crate::material::Color;
 
 use super::transforms::validate_transform;
 use super::{InstanceSetKey, NodeKey, NodeKind, Scene, Transform};
+
+mod placement;
+#[cfg(any(test, feature = "scene-host"))]
+mod sheared;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstanceId(u64);
@@ -22,6 +30,9 @@ pub struct InstanceSet {
     material: MaterialHandle,
     instances: Vec<Instance>,
     next_id: u64,
+    /// Exact local matrices of the instances whose placement shears. Every
+    /// other instance is placed by its `transform` alone.
+    sheared: BTreeMap<InstanceId, Affine3A>,
 }
 
 impl Scene {
@@ -86,10 +97,12 @@ impl Scene {
         transform: Transform,
     ) -> Result<(), LookupError> {
         let transform = validate_transform(transform)?;
-        if self
-            .instance_set_mut(instance_set)?
-            .set_transform(instance_set, instance, transform)?
-        {
+        let set = self.instance_set_mut(instance_set)?;
+        let moved = set.set_transform(instance_set, instance, transform)?;
+        // A transform is an exact placement, so it replaces any shear the
+        // instance was given before.
+        let unsheared = set.sheared.remove(&instance).is_some();
+        if moved || unsheared {
             self.transform_revision = self.transform_revision.saturating_add(1);
         }
         Ok(())
@@ -191,6 +204,13 @@ impl Instance {
         self.id
     }
 
+    /// The instance's transform in the space of its set's node.
+    ///
+    /// Instances added through this API are placed exactly by this
+    /// transform. An instanced scene import can place an instance with shear,
+    /// when it flattens a rotated node under a non-uniformly scaled one; this
+    /// is then the translation, rotation, and scale decomposition of that
+    /// placement, with the translation exact.
     pub const fn transform(self) -> Transform {
         self.transform
     }
@@ -211,6 +231,7 @@ impl InstanceSet {
             material,
             instances: Vec::new(),
             next_id: 1,
+            sheared: BTreeMap::new(),
         }
     }
 
@@ -303,12 +324,14 @@ impl InstanceSet {
             .instances
             .iter()
             .position(|candidate| candidate.id == instance)?;
+        self.sheared.remove(&instance);
         Some(self.instances.remove(index))
     }
 
     fn clear(&mut self) -> bool {
         let changed = !self.instances.is_empty();
         self.instances.clear();
+        self.sheared.clear();
         changed
     }
 

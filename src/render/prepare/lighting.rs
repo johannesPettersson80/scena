@@ -100,31 +100,31 @@ struct PreparedSpotLight {
 impl PreparedLights {
     pub(super) fn from_scene(scene: &Scene, origin_shift: Vec3) -> Self {
         let mut lights = Self::default();
-        for (_node, _light_key, light, transform) in scene.light_nodes() {
+        for (_node, _light_key, light, world) in scene.light_nodes() {
             match light {
                 Light::Directional(light) => lights.directional.push(PreparedDirectionalLight {
                     color: light.color(),
-                    direction: light_direction(transform),
+                    direction: light_direction(world),
                     illuminance_lux: light.illuminance_lux(),
                     casts_shadows: light.casts_shadows(),
                 }),
                 Light::Point(light) => lights.point.push(PreparedPointLight {
                     color: light.color(),
-                    position: subtract_vec3(transform.translation, origin_shift),
+                    position: subtract_vec3(world.translation(), origin_shift),
                     intensity_candela: light.intensity_candela(),
                     range: light.range(),
                 }),
                 Light::Spot(light) => lights.spot.push(PreparedSpotLight {
                     color: light.color(),
-                    position: subtract_vec3(transform.translation, origin_shift),
-                    direction: light_direction(transform),
+                    position: subtract_vec3(world.translation(), origin_shift),
+                    direction: light_direction(world),
                     intensity_candela: light.intensity_candela(),
                     range: light.range(),
                     inner_cone_cos: light.inner_cone_angle().radians().cos(),
                     outer_cone_cos: light.outer_cone_angle().radians().cos(),
                 }),
                 Light::Area(light) => {
-                    if let Some(prepared) = prepared_area_light(light, transform, origin_shift) {
+                    if let Some(prepared) = prepared_area_light(light, world, origin_shift) {
                         lights.area.push(prepared);
                     }
                 }
@@ -475,5 +475,7 @@ fn photographic_micro_surface(
     (normal, surface.strength() * 0.175)
 }
 
+#[cfg(test)]
+mod exact_placement_tests;
 #[cfg(test)]
 mod tests;

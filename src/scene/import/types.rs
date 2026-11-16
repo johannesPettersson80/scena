@@ -47,7 +47,7 @@ impl PartialEq for ImportAnchor {
             && self.node == other.node
             && self.placement_node == other.placement_node
             && self.transform == other.transform
-            && self.placement_transform == other.placement_transform
+            && self.placement == other.placement
             && self.tags == other.tags
             && self.label == other.label
     }
@@ -67,7 +67,7 @@ impl PartialEq for ImportConnector {
             && self.node == other.node
             && self.placement_node == other.placement_node
             && self.transform == other.transform
-            && self.placement_transform == other.placement_transform
+            && self.placement == other.placement
     }
 }
 

@@ -8,6 +8,7 @@ use self::types::{ImportBuild, ImportedNode};
 pub(super) use self::variants::MeshVariantRecord;
 use super::{
     ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, NodeKey, NodeKind, Scene, Transform,
+    WorldTransform,
 };
 use crate::animation::AnimationClip;
 use crate::assets::SceneAsset;
@@ -57,7 +58,8 @@ pub struct ImportAnchor {
     node: NodeKey,
     placement_node: NodeKey,
     transform: Transform,
-    placement_transform: Transform,
+    /// Exact placement of the anchor frame relative to `placement_node`.
+    placement: WorldTransform,
     tags: BTreeSet<String>,
     label: Option<String>,
     source_units: SourceUnits,
@@ -79,7 +81,8 @@ pub struct ImportConnector {
     node: NodeKey,
     placement_node: NodeKey,
     transform: Transform,
-    placement_transform: Transform,
+    /// Exact placement of the connector frame relative to `placement_node`.
+    placement: WorldTransform,
     source_units: SourceUnits,
     source_coordinate_system: SourceCoordinateSystem,
     live: Arc<AtomicBool>,

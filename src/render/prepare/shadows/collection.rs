@@ -4,7 +4,7 @@ use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
 use crate::scene::{NodeKey, Scene, Vec3, WorldTransform};
 
 use super::super::materials::render_material_slot;
-use super::super::transforms::{compose_transform, transform_position, transform_primitive};
+use super::super::transforms::{transform_position, transform_primitive};
 use super::DeformationInputs;
 use super::{ShadowOccluder, ShadowOccluderSet};
 
@@ -69,7 +69,7 @@ pub(super) fn collect_occluders<F>(
                 &mut occluders,
                 &geometry,
                 &vertices,
-                compose_transform(node_transform, instance.transform()),
+                node_transform.then(instance_set.placement(instance)),
                 origin_shift,
             );
         }

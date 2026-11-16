@@ -1,5 +1,5 @@
 use crate::material::Color;
-use crate::scene::{LabelBillboard, LabelDesc, NodeKey, Scene, Transform, Vec3};
+use crate::scene::{LabelBillboard, LabelDesc, NodeKey, Scene, Vec3, WorldTransform};
 use std::sync::Arc;
 
 use super::super::{RasterTarget, camera::CameraProjection};
@@ -17,11 +17,11 @@ pub(super) fn prepare_label_atlas(
     let mut builder = LabelAtlasBuilder::new(ATLAS_WIDTH);
     let solid = builder.insert(Arc::from([u8::MAX]), 1, 1);
     let mut quads = Vec::new();
-    for (node, _label_key, label, transform) in scene.label_nodes() {
+    for (node, _label_key, label, world) in scene.label_nodes() {
         prepare_label_billboard(
             node,
             label,
-            transform,
+            world,
             LabelPrepareInputs {
                 target,
                 camera_projection,
@@ -38,7 +38,7 @@ pub(super) fn prepare_label_atlas(
 fn prepare_label_billboard(
     node: NodeKey,
     label: &LabelDesc,
-    transform: Transform,
+    world: WorldTransform,
     inputs: LabelPrepareInputs<'_>,
     solid: AtlasRect,
     builder: &mut LabelAtlasBuilder,
@@ -46,11 +46,13 @@ fn prepare_label_billboard(
 ) {
     match label.billboard() {
         LabelBillboard::ScreenAligned => {
-            let world_anchor = transform.translation;
+            // The anchor is the node origin carried through the exact world
+            // matrix; the billboard itself faces the screen.
+            let world_anchor = world.translation();
             let shifted_anchor = Vec3::new(
-                transform.translation.x - inputs.origin_shift.x,
-                transform.translation.y - inputs.origin_shift.y,
-                transform.translation.z - inputs.origin_shift.z,
+                world_anchor.x - inputs.origin_shift.x,
+                world_anchor.y - inputs.origin_shift.y,
+                world_anchor.z - inputs.origin_shift.z,
             );
             if let Some(camera_projection) = inputs.camera_projection {
                 prepare_pixel_label_billboard(

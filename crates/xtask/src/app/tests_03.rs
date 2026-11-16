@@ -597,9 +597,9 @@ pub(crate) fn doctor_rejects_solid_kiss_docs_missing_gate_regression() {
 
 #[test]
 pub(crate) fn doctor_rejects_direct_light_shading_missing_world_transform_iter_regression() {
-    // ARCH-DIRECT-LIGHT-SHADING: scene.rs must expose the world-transform light
-    // iterator so direct-light shading uses composed world transforms instead of
-    // local node transforms.
+    // ARCH-DIRECT-LIGHT-SHADING: scene.rs must expose the world-placement light
+    // iterator so direct-light shading uses each light's exact world matrix
+    // instead of its local node transform.
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/direct-light-shading-stub");
     let scene_path = fixture_root.join("src/scene.rs");
@@ -613,15 +613,15 @@ pub(crate) fn doctor_rejects_direct_light_shading_missing_world_transform_iter_r
         "ARCH-DIRECT-LIGHT-SHADING",
         "src/scene.rs",
         &[
-            "impl Iterator<Item = (NodeKey, LightKey, Light, Transform)>",
-            "self.world_transform(node_key)",
+            "impl Iterator<Item = (NodeKey, LightKey, Light, WorldTransform)>",
+            "self.resolved_world(node_key)",
         ],
     );
 
     assert!(
         findings.iter().any(|finding| {
             finding.rule == "ARCH-DIRECT-LIGHT-SHADING"
-                && finding.message.contains("world_transform")
+                && finding.message.contains("resolved_world")
         }),
         "doctor must reject scene.rs that drops the world-transform light iteration \
          contract: {findings:?}",

@@ -37,7 +37,7 @@ pub(crate) fn check_m3a_import_runtime_contracts(root: &Path, findings: &mut Vec
             "InvalidAnchorExtras",
             "convert_marker_units(",
             "placement_node",
-            "placement_transform",
+            "placement: WorldTransform",
             "root_from_node",
             "convert_transform(source_node.transform())",
             "ImportDiagnosticOverlayKind::Origin",
@@ -103,7 +103,8 @@ pub(crate) fn check_m3a_import_runtime_contracts(root: &Path, findings: &mut Vec
         "src/scene/import/accessors.rs",
         &[
             "pub const fn placement_node",
-            "self.placement_transform",
+            "pub(crate) const fn connection_placement",
+            "self.placement.trs()",
             "pub fn channels(&self)",
             "pub const fn duration_seconds",
         ],

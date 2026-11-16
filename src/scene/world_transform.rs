@@ -14,6 +14,13 @@ use glam::{Affine3A, DVec3, Mat3, Mat3A, Vec3A};
 
 use super::math::{Mat4, Quat, Transform, Vec3};
 
+#[cfg(any(test, feature = "scene-host"))]
+mod fit;
+mod rigid;
+#[cfg(feature = "scene-host")]
+pub(crate) use fit::fit_local_transform;
+pub(crate) use rigid::aim_rotation;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct WorldTransform {
     /// Exact world-from-local affine matrix.

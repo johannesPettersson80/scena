@@ -42,7 +42,7 @@ impl Scene {
                         instance: Some(instance.id()),
                         geometry: instance_set.geometry(),
                         material: instance_set.material(),
-                        world: node_world.child(instance.transform()),
+                        world: node_world.then(instance_set.placement(instance)),
                     },
                 );
             }
@@ -82,7 +82,7 @@ impl Scene {
                         node,
                         instance: Some(instance.id()),
                         geometry: instance_set.geometry(),
-                        world: node_world.child(instance.transform()),
+                        world: node_world.then(instance_set.placement(instance)),
                     },
                 );
             }

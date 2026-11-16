@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::assets::{GeometryHandle, MaterialHandle, SceneAsset, SceneAssetMesh};
+use crate::scene::WorldTransform;
 use crate::{
     AssetFetcher, Color, InstanceId, InstanceSetKey, NodeKey, SceneHostInstanceEntryInspectionV1,
     SceneHostInstanceSetInspectionV1, Transform,
@@ -20,14 +21,21 @@ pub(super) struct HostInstanceEntry {
     pub(super) set_node: NodeKey,
     pub(super) set: InstanceSetKey,
     pub(super) instance: InstanceId,
+    /// The drawable's placement in its asset as translation, rotation, and
+    /// scale: the decomposition of `local_placement` when the asset shears it.
     pub(super) local_transform: Transform,
+    /// The drawable's exact placement in its asset.
+    pub(super) local_placement: WorldTransform,
 }
 
+/// One mesh of a flattened asset. Its placement is the exact matrix product
+/// of the asset hierarchy above it, so a rotated node under a non-uniformly
+/// scaled one keeps its shear.
 #[derive(Debug, Clone, PartialEq)]
 struct InstancedDrawable {
     geometry: GeometryHandle,
     material: MaterialHandle,
-    local_transform: Transform,
+    local_placement: WorldTransform,
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +44,7 @@ struct InstanceSetBuild {
     set: InstanceSetKey,
     geometry: GeometryHandle,
     material: MaterialHandle,
-    local_transforms: Vec<Transform>,
+    local_placements: Vec<WorldTransform>,
 }
 
 impl<F: AssetFetcher> SceneHostCore<F> {
@@ -64,7 +72,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             if let Some(build) = builds.iter_mut().find(|build| {
                 build.geometry == drawable.geometry && build.material == drawable.material
             }) {
-                build.local_transforms.push(drawable.local_transform);
+                build.local_placements.push(drawable.local_placement);
                 continue;
             }
             let (set_node, set) = self.scene.add_instance_set_node(
@@ -79,14 +87,14 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 set,
                 geometry: drawable.geometry,
                 material: drawable.material,
-                local_transforms: vec![drawable.local_transform],
+                local_placements: vec![drawable.local_placement],
             });
         }
 
         for build in &builds {
             self.scene.reserve_instances(
                 build.set,
-                count.saturating_mul(build.local_transforms.len()),
+                count.saturating_mul(build.local_placements.len()),
             )?;
         }
 
@@ -95,16 +103,17 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             let root_transform = Transform::IDENTITY;
             let mut entries = Vec::new();
             for build in &builds {
-                for local_transform in &build.local_transforms {
-                    let instance = self.scene.push_instance(
+                for local_placement in &build.local_placements {
+                    let instance = self.scene.push_instance_placement(
                         build.set,
-                        Transform::compose(root_transform, *local_transform),
+                        instance_placement(root_transform, *local_placement),
                     )?;
                     entries.push(HostInstanceEntry {
                         set_node: build.set_node,
                         set: build.set,
                         instance,
-                        local_transform: *local_transform,
+                        local_transform: local_placement.trs(),
+                        local_placement: *local_placement,
                     });
                 }
             }
@@ -144,10 +153,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             return Ok(());
         }
         for entry in &binding.entries {
-            self.scene.set_instance_transform(
+            self.scene.set_instance_placement(
                 entry.set,
                 entry.instance,
-                Transform::compose(transform, entry.local_transform),
+                instance_placement(transform, entry.local_placement),
             )?;
         }
         self.instance_binding_mut(handle)?.root_transform = transform;
@@ -329,21 +338,32 @@ fn collect_drawables(scene_asset: &SceneAsset) -> Vec<InstancedDrawable> {
 
     let mut drawables = Vec::new();
     for root in (0..scene_asset.nodes().len()).filter(|index| !child_indices.contains(index)) {
-        collect_node_drawables(scene_asset, root, Transform::IDENTITY, &mut drawables);
+        collect_node_drawables(scene_asset, root, WorldTransform::IDENTITY, &mut drawables);
     }
     drawables
+}
+
+/// Where an instance root at `root_transform` puts a drawable of its asset:
+/// the root transform times the drawable's exact placement. The product is
+/// sheared when the root scales non-uniformly and the drawable is rotated, or
+/// when the asset already shears the drawable.
+fn instance_placement(
+    root_transform: Transform,
+    local_placement: WorldTransform,
+) -> WorldTransform {
+    WorldTransform::from(root_transform).then(local_placement)
 }
 
 fn collect_node_drawables(
     scene_asset: &SceneAsset,
     node_index: usize,
-    parent_from_asset: Transform,
+    parent_from_asset: WorldTransform,
     drawables: &mut Vec<InstancedDrawable>,
 ) {
     let Some(node) = scene_asset.nodes().get(node_index) else {
         return;
     };
-    let node_from_asset = Transform::compose(parent_from_asset, node.transform());
+    let node_from_asset = parent_from_asset.child(node.transform());
     for mesh in node.meshes() {
         collect_mesh_drawables(mesh, node_from_asset, node.instance_transforms(), drawables);
     }
@@ -354,7 +374,7 @@ fn collect_node_drawables(
 
 fn collect_mesh_drawables(
     mesh: &SceneAssetMesh,
-    node_from_asset: Transform,
+    node_from_asset: WorldTransform,
     instance_transforms: &[Transform],
     drawables: &mut Vec<InstancedDrawable>,
 ) {
@@ -362,7 +382,7 @@ fn collect_mesh_drawables(
         drawables.push(InstancedDrawable {
             geometry: mesh.geometry(),
             material: mesh.material(),
-            local_transform: node_from_asset,
+            local_placement: node_from_asset,
         });
         return;
     }
@@ -370,7 +390,7 @@ fn collect_mesh_drawables(
         drawables.push(InstancedDrawable {
             geometry: mesh.geometry(),
             material: mesh.material(),
-            local_transform: Transform::compose(node_from_asset, *instance_transform),
+            local_placement: node_from_asset.child(*instance_transform),
         });
     }
 }

@@ -83,9 +83,12 @@ impl Scene {
         })
     }
 
+    /// Visible labels with their exact world placement. A label is anchored
+    /// at the world position of its node origin, which is exact for every
+    /// hierarchy; a screen-aligned billboard has no world orientation.
     pub(crate) fn label_nodes(
         &self,
-    ) -> impl Iterator<Item = (NodeKey, LabelKey, &LabelDesc, Transform)> + '_ {
+    ) -> impl Iterator<Item = (NodeKey, LabelKey, &LabelDesc, WorldTransform)> + '_ {
         self.nodes.iter().filter_map(|(node_key, node)| {
             let NodeKind::Label(label) = node.kind else {
                 return None;
@@ -94,15 +97,18 @@ impl Scene {
                 return None;
             }
             self.labels.get(label).and_then(|label_desc| {
-                self.world_transform(node_key)
-                    .map(|transform| (node_key, label, label_desc, transform))
+                self.resolved_world(node_key)
+                    .map(|world| (node_key, label, label_desc, world))
             })
         })
     }
 
+    /// Visible lights with their exact world placement. A light reads its
+    /// position and axis directions from the matrix; a node's scale never
+    /// resizes a light.
     pub(crate) fn light_nodes(
         &self,
-    ) -> impl Iterator<Item = (NodeKey, LightKey, Light, Transform)> + '_ {
+    ) -> impl Iterator<Item = (NodeKey, LightKey, Light, WorldTransform)> + '_ {
         self.nodes.iter().filter_map(|(node_key, node)| {
             let NodeKind::Light(light_key) = node.kind else {
                 return None;
@@ -111,8 +117,8 @@ impl Scene {
                 return None;
             }
             self.lights.get(light_key).copied().and_then(|light| {
-                self.world_transform(node_key)
-                    .map(|transform| (node_key, light_key, light, transform))
+                self.resolved_world(node_key)
+                    .map(|world| (node_key, light_key, light, world))
             })
         })
     }

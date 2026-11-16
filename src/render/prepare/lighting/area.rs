@@ -1,7 +1,7 @@
 use crate::material::Color;
-use crate::scene::{AreaLight, AreaLightShape, Transform, Vec3};
+use crate::scene::{AreaLight, AreaLightShape, Vec3, WorldTransform};
 
-use super::math::{normalize_or, rotate_vec3, subtract_vec3};
+use super::math::{light_axis_direction, normalize_or, rotate_vec3, subtract_vec3};
 
 pub(super) const AREA_LIGHT_SAMPLE_COUNT: usize = 16;
 const FRAC_1_SQRT_2: f32 = std::f32::consts::FRAC_1_SQRT_2;
@@ -74,9 +74,16 @@ pub(super) struct PreparedAreaLight {
     pub(super) shape: AreaLightShape,
 }
 
+/// Places an area light with the exact world matrix of its node.
+///
+/// A rectangle or disc lies in the plane its local X and Y axes span, so its
+/// two axes follow the matrix columns and stop being perpendicular when the
+/// hierarchy shears. Their lengths stay the authored size: a node's scale
+/// never resizes a light. A sphere has no orientation and keeps an
+/// orthonormal frame, which leaves it a sphere of its authored radius.
 pub(super) fn prepared_area_light(
     light: AreaLight,
-    transform: Transform,
+    world: WorldTransform,
     origin_shift: Vec3,
 ) -> Option<PreparedAreaLight> {
     let luminous_flux_lumens = light.luminous_flux_lumens();
@@ -84,12 +91,20 @@ pub(super) fn prepared_area_light(
         return None;
     }
     let shape = light.shape();
-    let right = rotate_vec3(transform.rotation, Vec3::X);
-    let up = rotate_vec3(transform.rotation, Vec3::Y);
+    let (right, up) = match shape {
+        AreaLightShape::Rect { .. } | AreaLightShape::Disc { .. } => (
+            light_axis_direction(world, Vec3::X),
+            light_axis_direction(world, Vec3::Y),
+        ),
+        AreaLightShape::Sphere { .. } => (
+            rotate_vec3(world.trs().rotation, Vec3::X),
+            rotate_vec3(world.trs().rotation, Vec3::Y),
+        ),
+    };
     let (axis_x, axis_y) = area_light_axes(shape, right, up);
     Some(PreparedAreaLight {
         color: light.color(),
-        position: subtract_vec3(transform.translation, origin_shift),
+        position: subtract_vec3(world.translation(), origin_shift),
         axis_x,
         axis_y,
         luminous_flux_lumens,

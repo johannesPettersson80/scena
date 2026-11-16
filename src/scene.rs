@@ -113,10 +113,10 @@ pub use measurements::{
 };
 pub use particles::{Particle, ParticleSet, ParticleSetError};
 pub use placement::{
-    PLACEMENT_VERBS, SCENE_PLACEMENT_RESULT_SCHEMA_V1, SCENE_RECIPE_PATCH_SCHEMA_V1,
-    ScenePlacementDiagnosticV1, ScenePlacementResultV1, ScenePlacementTargetV1,
-    SceneRecipePatchResultV1, SceneRecipePatchSuccessInputV1, SceneRecipeSemanticChangeV1,
-    placement_align_to_feature_transform, placement_center_transform,
+    PLACEMENT_VERBS, PlacementFrame, SCENE_PLACEMENT_RESULT_SCHEMA_V1,
+    SCENE_RECIPE_PATCH_SCHEMA_V1, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
+    ScenePlacementTargetV1, SceneRecipePatchResultV1, SceneRecipePatchSuccessInputV1,
+    SceneRecipeSemanticChangeV1, placement_align_to_feature_transform, placement_center_transform,
     placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
     placement_place_on_feature_transform,
 };
@@ -126,7 +126,9 @@ pub use reflection_probes::{
 };
 pub use resolved_cache::ResolvedSceneCacheStats;
 pub use skinning::SceneSkinBinding;
-pub(crate) use world_transform::{LocalFromWorld, WorldTransform, rotate_vec3};
+#[cfg(feature = "scene-host")]
+pub(crate) use world_transform::fit_local_transform;
+pub(crate) use world_transform::{LocalFromWorld, WorldTransform, aim_rotation, rotate_vec3};
 
 new_key_type! {
     pub struct NodeKey;

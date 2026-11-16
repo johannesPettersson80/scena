@@ -163,6 +163,13 @@ impl LightBuilder<'_> {
 
     /// Overrides the local transform. Light direction and position are derived from this
     /// node transform during render preparation.
+    ///
+    /// A light is placed by the exact world matrix of its node: its position
+    /// is the node origin, it shines along the node's -Z axis, and an area
+    /// light lies in the plane of the node's X and Y axes. Scale never changes
+    /// a light's size, range, or cone; only the directions of the axes are
+    /// read, so they follow the shear of a rotated light under a
+    /// non-uniformly scaled parent.
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = transform;
         self

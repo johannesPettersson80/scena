@@ -753,7 +753,7 @@ impl Scene {
                     .map(|instance| {
                         transform_aabb(
                             geometry.bounds(),
-                            space_from_node.child(instance.transform()),
+                            space_from_node.then(instance_set.placement(instance)),
                         )
                     })
                     .reduce(union_aabb)

@@ -30,12 +30,12 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         capture: &CaptureRgba8,
     ) -> BTreeMap<u64, CompositionLabelRegion> {
         let mut regions = BTreeMap::new();
-        for (node, _label_key, label, transform) in self.scene.label_nodes() {
+        for (node, _label_key, label, world) in self.scene.label_nodes() {
             if !self.scene.visible_for_active_camera(node) {
                 continue;
             }
             let Some(projected) =
-                crate::project_world_point_from_capture(capture, transform.translation)
+                crate::project_world_point_from_capture(capture, world.translation())
             else {
                 continue;
             };

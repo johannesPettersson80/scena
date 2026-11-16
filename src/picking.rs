@@ -4,9 +4,7 @@ use crate::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, TriangleBvh};
 use crate::material::MaterialKind;
-use crate::scene::{
-    Camera, CameraKey, InstanceId, NodeKey, Scene, Transform, Vec3, WorldTransform,
-};
+use crate::scene::{Camera, CameraKey, InstanceId, NodeKey, Scene, Vec3, WorldTransform};
 
 mod bounds_hit;
 mod geometry_hit;
@@ -318,7 +316,7 @@ fn raycast_scene_with_assets_impl<const PROFILE: bool, F>(
                     geometry: &geometry,
                     vertices: &vertices,
                     node_transform,
-                    instance_transform: instance.transform(),
+                    instance_transform: instance_set.placement(instance),
                     ray,
                 },
                 metrics,

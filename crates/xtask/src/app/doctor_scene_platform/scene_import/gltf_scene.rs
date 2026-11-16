@@ -182,7 +182,7 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         &[
             "scene.instance_set_nodes()",
             "labels::prepare_label_atlas",
-            "compose_transform",
+            "node_transform.then(instance_set.placement(instance))",
             "instance_set.geometry()",
             "instance_set.material()",
         ],

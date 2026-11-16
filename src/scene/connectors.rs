@@ -3,15 +3,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::import::{ImportAnchor, ImportConnector};
-use super::transforms::compose_transform;
 use super::{
-    AnchorFrame, ConnectorKey, NodeKey, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
+    AnchorFrame, ConnectorKey, NodeKey, PlacementFrame, Scene, SourceCoordinateSystem, SourceUnits,
+    Transform, Vec3, WorldTransform,
 };
 
 mod error;
 mod imports;
 mod locks;
 mod magnet;
+mod mating;
 mod metadata;
 mod options;
 mod parenting;
@@ -22,24 +23,26 @@ mod solving;
 mod validation;
 pub use error::ConnectionError;
 pub use magnet::{ConnectionMagnetPreview, ConnectionMagnetVisualCue};
+use mating::{MatingInputs, solve_mating};
 pub use metadata::{ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy};
 pub use options::{
     ConnectOptions, ConnectionAlignment, ConnectionParenting, ConnectionRequest, ConnectionRoll,
 };
 use parenting::node_is_descendant_of;
-use roll::roll_transform;
-use scale::preserve_source_scale;
-use solving::{effective_mate_offset, effective_roll, validate_snap_tolerance_for_apply};
+use solving::validate_snap_tolerance_for_apply;
 use validation::{
-    inverse_transform, validate_connector_handedness, validate_connector_host_prepared,
-    validate_connector_kinds, validate_connector_live, validate_connector_source_metadata,
-    validate_connector_transform, validate_node_transform, validate_transform_scale,
+    validate_connector_handedness, validate_connector_host_prepared, validate_connector_kinds,
+    validate_connector_live, validate_connector_source_metadata, validate_connector_transform,
+    validate_host_frame, validate_node_transform,
 };
 
 #[derive(Debug, Clone)]
 pub struct ConnectorFrame {
     node: NodeKey,
     local_transform: Transform,
+    /// The exact frame relative to `node`. It differs from `local_transform`
+    /// only for an imported connector that its asset shears.
+    local_placement: WorldTransform,
     name: Option<String>,
     kind: Option<String>,
     allowed_mates: BTreeSet<String>,
@@ -83,6 +86,7 @@ impl ConnectorFrame {
         Self {
             node,
             local_transform,
+            local_placement: WorldTransform::from(local_transform),
             name: None,
             kind: None,
             allowed_mates: BTreeSet::new(),
@@ -102,6 +106,7 @@ impl ConnectorFrame {
         let mut connector = Self::new(anchor.placement_node(), anchor.connection_transform())
             .named(anchor.name())
             .with_source_metadata(anchor.source_units(), anchor.source_coordinate_system());
+        connector.local_placement = anchor.connection_placement();
         connector.import_live = Some(anchor.live_flag());
         connector
     }
@@ -135,6 +140,7 @@ impl ConnectorFrame {
         if let Some(metadata) = connector.metadata() {
             frame = frame.with_metadata(metadata.clone());
         }
+        frame.local_placement = connector.connection_placement();
         frame.import_live = Some(connector.live_flag());
         frame
     }
@@ -145,6 +151,7 @@ impl ConnectorFrame {
         if let Some(name) = anchor.name() {
             frame = frame.named(name);
         }
+        frame.local_placement = anchor.local_placement();
         frame.import_live = anchor.live_flag();
         frame
     }
@@ -208,8 +215,20 @@ impl ConnectorFrame {
         self.node
     }
 
+    /// The frame relative to its node as translation, rotation, and scale.
+    ///
+    /// Exact for every frame built from a transform. An imported connector
+    /// below a rotated, non-uniformly scaled node of its asset is sheared;
+    /// this is then the decomposition of its frame, with the origin exact.
+    /// Connections and [`Self::local_frame`] use the exact frame.
     pub const fn local_transform(&self) -> Transform {
         self.local_transform
+    }
+
+    /// The exact frame relative to its node, for placement verbs such as
+    /// [`PlacementFrame::align_feature`].
+    pub const fn local_frame(&self) -> PlacementFrame {
+        PlacementFrame::from_world(self.local_placement)
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -406,18 +425,16 @@ impl Scene {
         validate_connector_transform(&source, options)?;
         validate_connector_transform(&target, options)?;
         validate_node_transform(source.node, source_node.transform, options)?;
-        // The solver mates rigid frames, so it works on the TRS view of each
-        // host and rejects mirrored or non-uniformly scaled ones below. The
-        // connector frames themselves are placed by the exact host matrix.
+        // Every frame is the exact world matrix of its node. Mirrored hosts
+        // are rejected, and so are non-uniformly scaled or sheared ones unless
+        // the caller opted in; `mating` states what is mated in that case.
         let target_host = self
             .resolved_world(target.node)
             .ok_or(ConnectionError::NodeNotFound(target.node))?;
         let source_host = self
             .resolved_world(source.node)
             .ok_or(ConnectionError::NodeNotFound(source.node))?;
-        let target_world = target_host.trs();
-        let source_current_world = source_host.trs();
-        validate_transform_scale(target.node, target_world, options)?;
+        validate_host_frame(target.node, target_host, options)?;
         let resolved_parent = match options.parenting() {
             ConnectionParenting::PreserveSourceParent => source_node.parent(),
             ConnectionParenting::ReparentSourceToTargetParent => target_node.parent(),
@@ -433,60 +450,34 @@ impl Scene {
                 });
             }
         }
-        let source_parent_world = resolved_parent
-            .and_then(|parent| self.world_transform(parent))
-            .unwrap_or(Transform::IDENTITY);
+        let source_parent = resolved_parent
+            .and_then(|parent| self.resolved_world(parent))
+            .unwrap_or(WorldTransform::IDENTITY);
         if let Some(parent) = resolved_parent {
-            validate_transform_scale(parent, source_parent_world, options)?;
+            validate_host_frame(parent, source_parent, options)?;
         }
-
-        let target_connector_world = target_host.child(target.local_transform).trs();
-        let source_current_connector = source_host.child(source.local_transform).trs();
-        let snap_distance = source_current_connector
-            .translation
-            .distance(target_connector_world.translation);
-        let mate_offset = effective_mate_offset(options, &source, &target);
-        let target_offset = compose_transform(target_connector_world, mate_offset);
-        let target_aligned = compose_transform(target_offset, options.alignment_transform());
-        let target_mated = compose_transform(
-            target_aligned,
-            roll_transform(
-                effective_roll(options, &source),
-                source_current_connector,
-                target_aligned,
-            ),
-        );
-        let source_connector_inverse =
-            inverse_transform(source.local_transform).ok_or_else(|| {
-                ConnectionError::DegenerateConnectorFrame {
-                    connector: source.name.clone(),
-                }
-            })?;
-        let desired_source_world = preserve_source_scale(
-            compose_transform(target_mated, source_connector_inverse),
-            source_current_world.scale,
-            source.local_transform,
-            target_mated.translation,
-        );
-        let parent_inverse = inverse_transform(source_parent_world).ok_or_else(|| {
-            ConnectionError::DegenerateConnectorFrame {
-                connector: source.name.clone(),
-            }
+        let mating = solve_mating(&MatingInputs {
+            source: &source,
+            target: &target,
+            options,
+            source_host,
+            target_host,
+            source_parent,
+            source_local: source_node.transform,
         })?;
-        let resolved_transform = compose_transform(parent_inverse, desired_source_world);
 
         Ok(ConnectionPreview {
             connection_line: ConnectionLineOverlay {
                 source: source.node,
                 target: target.node,
-                start: source_current_connector.translation,
-                end: target_mated.translation,
+                start: mating.source_origin,
+                end: mating.mated_origin,
             },
             source,
             target,
-            resolved_transform,
+            resolved_transform: mating.resolved_transform,
             resolved_parent,
-            snap_distance,
+            snap_distance: mating.snap_distance,
             warnings: vec![ConnectionWarning::SourceMoved],
         })
     }

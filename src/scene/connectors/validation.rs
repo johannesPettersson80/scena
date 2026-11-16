@@ -1,6 +1,7 @@
 use super::super::transforms::rotate_vec3;
 use super::super::{
     ConnectorKey, NodeKey, NodeKind, Quat, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
+    WorldTransform,
 };
 use super::{ConnectOptions, ConnectionError, ConnectorFrame};
 
@@ -112,6 +113,28 @@ pub(super) fn validate_connector_transform(
     connector: &ConnectorFrame,
     options: ConnectOptions,
 ) -> Result<(), ConnectionError> {
+    let placement = connector.local_placement;
+    if placement.exact_trs().is_none() {
+        // An imported connector that its asset shears: judge the matrix.
+        if placement.inverse().is_none() || placement.axis_lengths().min_element() <= f32::EPSILON {
+            return Err(ConnectionError::DegenerateConnectorFrame {
+                connector: connector.name.clone(),
+            });
+        }
+        if placement.is_mirrored() {
+            return Err(ConnectionError::FlippedConnection {
+                connector: connector.name.clone(),
+                node: None,
+            });
+        }
+        let similarity = placement.is_shear_free() && placement.has_uniform_axis_lengths();
+        if !similarity && !options.allow_non_uniform_scale {
+            return Err(ConnectionError::NonUniformScaleConnectionRisk {
+                node: connector.node,
+            });
+        }
+        return Ok(());
+    }
     if !is_valid_scale(connector.local_transform.scale)
         || !is_valid_rotation(connector.local_transform.rotation)
     {
@@ -156,6 +179,40 @@ pub(super) fn validate_transform_scale(
         });
     }
     if !options.allow_non_uniform_scale && !is_uniform_scale(transform.scale) {
+        return Err(ConnectionError::NonUniformScaleConnectionRisk { node });
+    }
+    Ok(())
+}
+
+/// Judges the exact world placement of a node that hosts a connector or
+/// will parent the moved source.
+///
+/// A placement that is exactly translation, rotation, and scale is judged by
+/// its scale, as before. A sheared placement has no such scale: it is
+/// degenerate when the matrix cannot be inverted, flipped when it mirrors,
+/// and a non-uniform scale risk whenever it shears or stretches its axes
+/// unequally, because shear is what a non-uniformly scaled ancestor does to a
+/// rotated node. Shear is checked on the matrix itself, so a sheared host
+/// whose axes happen to have equal lengths is not mistaken for a uniform one.
+pub(super) fn validate_host_frame(
+    node: NodeKey,
+    world: WorldTransform,
+    options: ConnectOptions,
+) -> Result<(), ConnectionError> {
+    if let Some(transform) = world.exact_trs() {
+        return validate_transform_scale(node, transform, options);
+    }
+    if world.inverse().is_none() || world.axis_lengths().min_element() <= f32::EPSILON {
+        return Err(ConnectionError::DegenerateConnectorFrame { connector: None });
+    }
+    if world.is_mirrored() {
+        return Err(ConnectionError::FlippedConnection {
+            connector: None,
+            node: Some(node),
+        });
+    }
+    let similarity = world.is_shear_free() && world.has_uniform_axis_lengths();
+    if !similarity && !options.allow_non_uniform_scale {
         return Err(ConnectionError::NonUniformScaleConnectionRisk { node });
     }
     Ok(())

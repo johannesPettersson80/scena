@@ -23,8 +23,8 @@ impl Scene {
 
     pub(super) fn visible_label_anchor_bounds_world(&self) -> Option<Aabb> {
         self.label_nodes()
-            .map(|(_node, _label, _desc, transform)| {
-                Aabb::new(transform.translation, transform.translation)
+            .map(|(_node, _label, _desc, world)| {
+                Aabb::new(world.translation(), world.translation())
             })
             .reduce(union_aabb)
     }
@@ -172,7 +172,7 @@ impl Scene {
                     .map(|instance| {
                         transform_aabb(
                             geometry.bounds(),
-                            node_transform.child(instance.transform()),
+                            node_transform.then(instance_set.placement(instance)),
                         )
                     })
                     .reduce(union_aabb)

@@ -52,5 +52,11 @@ import-local ownership and the same converted node hierarchy.
   the renderer has explicit front-face winding and normal correction proof.
 - Negative-determinant connector or node transforms fail with
   `ConnectionError::FlippedConnection`.
+- Connectors on non-uniformly scaled or sheared nodes fail with
+  `ConnectionError::NonUniformScaleConnectionRisk`. A rotated node under a
+  non-uniformly scaled one is sheared even when its own scale is uniform.
+  `ConnectOptions::allow_non_uniform_scale(true)` opts in; the connection then
+  mates the rigid frames of the two connectors, with the origins and the +X
+  mating axes exact.
 
 Use `examples/coordinate_connector_repair.rs` as the repair pattern.

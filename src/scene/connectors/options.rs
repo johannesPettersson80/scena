@@ -74,6 +74,17 @@ impl ConnectOptions {
         self.mate_offset.translation.x
     }
 
+    /// Allows connectors on non-uniformly scaled or sheared nodes.
+    ///
+    /// By default such a connection fails with
+    /// [`ConnectionError::NonUniformScaleConnectionRisk`](super::ConnectionError::NonUniformScaleConnectionRisk),
+    /// because the frame of a rotated connector under non-uniform scale is
+    /// sheared and cannot be mated as a whole. With the opt-in, the rigid
+    /// frames of the two connectors are mated, each read from its exact world
+    /// matrix: the origins and the +X mating axes coincide exactly, and the +Y
+    /// axes agree once each is made perpendicular to its mating axis. The
+    /// source node keeps its local scale. The skew of a sheared connector's Y
+    /// and Z axes is the part that is not matched.
     pub const fn allow_non_uniform_scale(mut self, allow: bool) -> Self {
         self.allow_non_uniform_scale = allow;
         self

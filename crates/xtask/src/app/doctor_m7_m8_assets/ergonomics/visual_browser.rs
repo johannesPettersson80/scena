@@ -7,7 +7,7 @@ pub(crate) fn check_m7_visual_browser_contracts(root: &Path, findings: &mut Vec<
         "ERGONOMICS-M7",
         "src/scene/render_nodes.rs",
         &[
-            "self.world_transform(node_key)",
+            "self.resolved_world(node_key)",
             "map(|(_node, renderable, transform)| (renderable, transform))",
             "map(|transform| (node_key, renderable, transform))",
         ],
@@ -27,10 +27,10 @@ pub(crate) fn check_m7_visual_browser_contracts(root: &Path, findings: &mut Vec<
         &[
             ".resolved_world(key)",
             "map(|transform| (key, mesh, transform))",
-            "self.world_transform(node_key)",
+            "self.resolved_world(node_key)",
             "map(|transform| (node_key, instance_set, transform))",
-            "map(|transform| (node_key, label, label_desc, transform))",
-            "map(|transform| (node_key, light_key, light, transform))",
+            "map(|world| (node_key, label, label_desc, world))",
+            "map(|world| (node_key, light_key, light, world))",
         ],
     );
     forbid_contains(

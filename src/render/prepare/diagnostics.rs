@@ -210,7 +210,7 @@ pub(in crate::render) fn collect_asset_camera_visibility_diagnostics<F>(
             continue;
         };
         for instance in instance_set.instances() {
-            let transform = node_transform.child(instance.transform());
+            let transform = node_transform.then(instance_set.placement(instance));
             for corner in aabb_corners(geometry.bounds()) {
                 collect_visibility_sample(
                     transform.transform_point(corner),

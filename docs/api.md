@@ -382,6 +382,8 @@ Additive public API changes in Unreleased:
 - `Scene::world_matrix`, `SceneNodeInspection::world_matrix`,
   `SceneDrawInspection::world_matrix`, and the re-exported `Mat4`
 - `LookupError::PickRequiresAssets` and `SceneAssetMesh::topology`
+- `PlacementFrame`, `Scene::placement_frame`, and `ConnectorFrame::local_frame`
+  for placement verbs solved against the exact world matrix of a node's parent
 - `ScreenSpaceAmbientOcclusionConfig::contact` and
   `ScreenSpaceAmbientOcclusionConfig::MAX_RADIUS_PX`; the accepted radius
   rises from 12 to 96 output pixels
@@ -645,7 +647,12 @@ Release 1.7 adds explicit host-owned instanced imports. Native callers use
 handle is an instance-root handle, not a scene node. The standard transform,
 visibility, tint, remove, and pick APIs accept these handles. Other node-tree
 APIs continue to reject them with structured host errors. Per-instance tint is
-opaque-only in this release.
+opaque-only in this release. An instanced import draws an asset exactly where
+the regular import draws it, including an asset whose nodes shear each other
+and an instance root with non-uniform scale. A set that holds such a sheared
+instance is baked per instance instead of drawn as one instanced draw, and
+`Instance::transform` then reports the decomposition of the instance's exact
+placement.
 Release 1.7 also adds post-processing controls, world-space stroke rendering,
 SceneHost animation playback, and presentation transitions. Browser and native
 hosts explicitly call `advance(delta_seconds)` once per frame to step active
@@ -1059,13 +1066,37 @@ old behavior.
 A node's place in the world is an affine matrix, not a `Transform`. A rotated
 child of a non-uniformly scaled parent is sheared, and translation, rotation,
 and scale cannot express shear. `Scene::world_matrix(node)` returns the exact
-matrix that rendering, picking, bounds, framing, and skinning use.
+matrix that rendering, lights, labels, picking, bounds, framing, skinning,
+connections, and instanced imports use.
 `Scene::world_transform(node)` returns its translation/rotation/scale
 decomposition: the translation is always exact, and the whole value is exact
 whenever no ancestor combines non-uniform scale with a rotated descendant.
 `Transform::compose` multiplies scale component by component, so it carries the
 same limit; hierarchies of translation, rotation, and uniform scale are
 unaffected.
+
+Some consumers need more structure than a matrix has. Each states what it keeps
+when the matrix is sheared:
+
+- A light takes its position and the directions of its axes from the matrix. A
+  node's scale never changes a light's size, range, or cone, so a rectangle or
+  disc light under a sheared node keeps its authored edge lengths and becomes a
+  parallelogram or an ellipse in the plane its local X and Y axes span. A
+  light whose hierarchy mirrors it through its own forward axis shines the
+  mirrored way.
+- A label is anchored at the world position of its node origin.
+- `PlacementFrame` solves placement verbs in the exact frame of a node's
+  parent and returns the node's new local transform. Moving and uniformly
+  scaling a node are exact under any invertible parent. Turning a node keeps
+  its position and the aimed axis exact and brings the second axis as close as
+  a rotation can. The free `placement_*_transform` functions take one
+  `Transform` and are exact for top-level nodes and shear-free hierarchies.
+- A connection refuses a sheared or non-uniformly scaled connector with
+  `ConnectionError::NonUniformScaleConnectionRisk` unless
+  `ConnectOptions::allow_non_uniform_scale(true)` opts in. It then mates the
+  rigid frames of the two connectors: the origins and the +X mating axes
+  exactly, and the +Y axes once each is made perpendicular to its mating axis.
+  The source node keeps its local scale.
 
 ## Typed handles
 

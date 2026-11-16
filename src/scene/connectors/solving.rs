@@ -60,6 +60,7 @@ impl PartialEq for ConnectorFrame {
     fn eq(&self, other: &Self) -> bool {
         self.node == other.node
             && self.local_transform == other.local_transform
+            && self.local_placement == other.local_placement
             && self.name == other.name
             && self.kind == other.kind
             && self.allowed_mates == other.allowed_mates

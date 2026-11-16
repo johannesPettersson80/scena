@@ -4,7 +4,7 @@ use super::{
     SourceCoordinateSystem, SourceUnits,
 };
 use crate::animation::AnimationClipKey;
-use crate::scene::{NodeKey, Transform};
+use crate::scene::{NodeKey, Transform, WorldTransform};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -47,8 +47,15 @@ impl ImportAnchor {
         self.source_coordinate_system
     }
 
+    /// The anchor frame relative to its placement node as translation,
+    /// rotation, and scale: exact unless the asset shears the anchor.
     pub(crate) fn connection_transform(&self) -> Transform {
-        self.placement_transform
+        self.placement.trs()
+    }
+
+    /// The exact anchor frame relative to its placement node.
+    pub(crate) const fn connection_placement(&self) -> WorldTransform {
+        self.placement
     }
 
     pub(crate) fn live_flag(&self) -> Arc<AtomicBool> {
@@ -113,8 +120,15 @@ impl ImportConnector {
         self.source_coordinate_system
     }
 
+    /// The connector frame relative to its placement node as translation,
+    /// rotation, and scale: exact unless the asset shears the connector.
     pub(crate) fn connection_transform(&self) -> Transform {
-        self.placement_transform
+        self.placement.trs()
+    }
+
+    /// The exact connector frame relative to its placement node.
+    pub(crate) const fn connection_placement(&self) -> WorldTransform {
+        self.placement
     }
 
     pub(crate) fn live_flag(&self) -> Arc<AtomicBool> {

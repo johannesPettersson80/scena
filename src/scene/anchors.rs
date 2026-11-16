@@ -5,12 +5,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use super::import::ImportAnchor;
 use super::{
     AnchorKey, ConnectionError, NodeKey, Scene, SourceCoordinateSystem, SourceUnits, Transform,
+    WorldTransform,
 };
 
 #[derive(Debug, Clone)]
 pub struct AnchorFrame {
     node: NodeKey,
     local_transform: Transform,
+    /// The exact frame relative to `node`. It differs from `local_transform`
+    /// only for an imported anchor that its asset shears.
+    local_placement: WorldTransform,
     name: Option<String>,
     source_units: SourceUnits,
     source_coordinate_system: SourceCoordinateSystem,
@@ -23,6 +27,7 @@ impl PartialEq for AnchorFrame {
     fn eq(&self, other: &Self) -> bool {
         self.node == other.node
             && self.local_transform == other.local_transform
+            && self.local_placement == other.local_placement
             && self.name == other.name
             && self.source_units == other.source_units
             && self.source_coordinate_system == other.source_coordinate_system
@@ -36,6 +41,7 @@ impl AnchorFrame {
         Self {
             node,
             local_transform,
+            local_placement: WorldTransform::from(local_transform),
             name: None,
             source_units: SourceUnits::Meters,
             source_coordinate_system: SourceCoordinateSystem::GltfYUpRightHanded,
@@ -47,6 +53,7 @@ impl AnchorFrame {
 
     pub fn from_import_anchor(anchor: &ImportAnchor) -> Self {
         let mut frame = Self::new(anchor.placement_node(), anchor.connection_transform())
+            .with_local_placement(anchor.connection_placement())
             .named(anchor.name())
             .with_source_units(anchor.source_units())
             .with_source_coordinate_system(anchor.source_coordinate_system());
@@ -88,12 +95,27 @@ impl AnchorFrame {
         self
     }
 
+    const fn with_local_placement(mut self, placement: WorldTransform) -> Self {
+        self.local_placement = placement;
+        self
+    }
+
     pub const fn node(&self) -> NodeKey {
         self.node
     }
 
+    /// The frame relative to its node as translation, rotation, and scale.
+    ///
+    /// Exact for every frame built from a transform. An imported anchor
+    /// below a rotated, non-uniformly scaled node of its asset is sheared;
+    /// this is then the decomposition of its frame, with the origin exact,
+    /// and connections use the exact frame instead.
     pub const fn local_transform(&self) -> Transform {
         self.local_transform
+    }
+
+    pub(crate) const fn local_placement(&self) -> WorldTransform {
+        self.local_placement
     }
 
     pub fn name(&self) -> Option<&str> {

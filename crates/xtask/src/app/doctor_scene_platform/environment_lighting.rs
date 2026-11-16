@@ -432,9 +432,9 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
         "ARCH-DIRECT-LIGHT-SHADING",
         "src/scene/render_nodes.rs",
         &[
-            "impl Iterator<Item = (NodeKey, LightKey, Light, Transform)>",
-            "self.world_transform(node_key)",
-            "map(|transform| (node_key, light_key, light, transform))",
+            "impl Iterator<Item = (NodeKey, LightKey, Light, WorldTransform)>",
+            "self.resolved_world(node_key)",
+            "map(|world| (node_key, light_key, light, world))",
         ],
     );
     require_contains(
@@ -483,7 +483,7 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
             "input.emissive_texture",
             "material.metallic_factor()",
             "material.roughness_factor()",
-            "light_direction(transform)",
+            "light_direction(world)",
             "light.illuminance_lux()",
             "light.intensity_candela()",
             "spot_cone_attenuation",

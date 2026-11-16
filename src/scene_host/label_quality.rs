@@ -26,14 +26,14 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             return Vec::new();
         }
         let mut targets = Vec::new();
-        for (node, _label_key, label, transform) in self.scene.label_nodes() {
+        for (node, _label_key, label, world) in self.scene.label_nodes() {
             if !self.scene.visible_for_active_camera(node) {
                 continue;
             }
             let LabelBillboard::ScreenAligned = label.billboard();
             let Ok(Some(projected)) = self.scene.project_world_point(
                 self.active_camera,
-                transform.translation,
+                world.translation(),
                 width,
                 height,
             ) else {

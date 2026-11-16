@@ -7,9 +7,13 @@ use super::recipe::SceneRecipeTransformV1;
 use super::view_math::transform_aabb;
 use super::{Transform, Vec3};
 
+mod frame;
 mod results;
 mod serialization;
+mod sizing;
+pub use frame::PlacementFrame;
 use serialization::{deserialize_transform_option, serialize_transform_option};
+use sizing::fit_to_size_factor;
 
 pub const SCENE_PLACEMENT_RESULT_SCHEMA_V1: &str = "scena.placement_result.v1";
 pub const SCENE_RECIPE_PATCH_SCHEMA_V1: &str = "scena.recipe_patch.v1";
@@ -312,6 +316,14 @@ impl SceneRecipePatchResultV1 {
     }
 }
 
+/// Moves `current`, a node's world transform, so its world bounds are
+/// centred on `target`.
+///
+/// This and the other `placement_*_transform` functions take one
+/// [`Transform`], so they are exact for a top-level node and for a hierarchy
+/// without shear. For a node under a parent, [`PlacementFrame`] solves the
+/// same verbs against the parent's exact world matrix and returns the node's
+/// local transform.
 pub fn placement_center_transform(bounds: Aabb, current: Transform, target: Vec3) -> Transform {
     let world_bounds = transform_aabb(bounds, current);
     current.with_translation(current.translation + (target - world_bounds.center()))
@@ -401,49 +413,7 @@ pub fn placement_fit_to_size_transform(
     min_size: Option<f32>,
     max_size: Option<f32>,
 ) -> Result<Transform, Box<ScenePlacementDiagnosticV1>> {
-    let world_bounds = transform_aabb(bounds, current);
-    let extent = world_bounds.max - world_bounds.min;
-    let current_size = extent.x.max(extent.y).max(extent.z);
-    if !current_size.is_finite() || current_size <= f32::EPSILON {
-        return Err(Box::new(ScenePlacementDiagnosticV1::new(
-            "invalid_bounds",
-            "$.imports[].uri",
-            "import bounds must have finite non-zero extent for fit_to_size",
-            "use an asset with renderable bounds or choose center/ground instead",
-        )));
-    }
-
-    if min_size.is_none() && max_size.is_none() {
-        return Err(Box::new(ScenePlacementDiagnosticV1::new(
-            "invalid_size_range",
-            "$.verb.fit_to_size",
-            "fit_to_size requires --min-size, --max-size, or both",
-            "pass a target size range for fit_to_size",
-        )));
-    }
-    if min_size.is_some_and(|value| !value.is_finite() || value < 0.0)
-        || max_size.is_some_and(|value| !value.is_finite() || value <= 0.0)
-        || min_size
-            .zip(max_size)
-            .is_some_and(|(min_size, max_size)| max_size < min_size)
-    {
-        return Err(Box::new(ScenePlacementDiagnosticV1::new(
-            "invalid_size_range",
-            "$.verb.fit_to_size",
-            "fit_to_size requires finite non-negative min and positive max with max >= min",
-            "pass --min-size and/or --max-size with a valid positive range",
-        )));
-    }
-
-    let min_size = min_size.unwrap_or(0.0);
-    let max_size = max_size.unwrap_or(f32::INFINITY);
-    let scale_factor = if current_size > max_size {
-        max_size / current_size
-    } else if current_size < min_size {
-        min_size / current_size
-    } else {
-        1.0
-    };
+    let scale_factor = fit_to_size_factor(transform_aabb(bounds, current), min_size, max_size)?;
     Ok(Transform {
         scale: current.scale * scale_factor,
         ..current
