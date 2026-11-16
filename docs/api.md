@@ -366,6 +366,7 @@ Additive public API changes in Unreleased:
   to runtime-scoped set/instance identity
 - `Scene::world_matrix`, `SceneNodeInspection::world_matrix`,
   `SceneDrawInspection::world_matrix`, and the re-exported `Mat4`
+- `LookupError::PickRequiresAssets` and `SceneAssetMesh::topology`
 
 Additive public API changes in 1.7.0:
 
@@ -1188,6 +1189,19 @@ winding of a mirrored (negative-determinant) transform is restored so the normal
 keeps pointing out of the front face. A singular transform is permitted as scene
 state, but any triangle it collapses to zero area is not hittable. Invalid
 deformation data returns `LookupError::InvalidSkinBinding`.
+
+`Scene::pick`, `Scene::pick_pointer`, `Scene::pick_and_select`, and
+`Scene::pick_and_hover` take no `Assets`. They intersect `add_renderable`
+primitives triangle by triangle, and they are **bounds-accurate** for mesh and
+instance-set nodes: a scene holds handles, not geometry, so these picks
+intersect the local bounds the scene recorded for each node (when a glTF scene
+is instantiated, and whenever `Renderer::prepare_with_assets` runs), carried
+through the node's world matrix. A bounds hit lies on the bounds, not the
+surface, and has no `Hit::normal`. A plain pick never reports a visible
+asset-backed node as a miss: when such a node has no usable recorded bounds
+(never prepared or imported, geometry or material handle changed since, or the
+node is morphed or skinned) it returns `LookupError::PickRequiresAssets`.
+`Scene::pick_with_assets` is the **triangle-accurate** pick.
 
 Static triangle geometry owns a clone-shared, deterministic model-space BVH.
 Picking inverse-transforms one world ray into mesh/instance local space, rejects

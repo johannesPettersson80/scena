@@ -204,7 +204,7 @@ renderer.render_active(&scene)?;
 If the scene changes:
 
 ```rust
-scene.node_mut(node).set_transform(new_transform);
+scene.set_transform(node, new_transform)?;
 renderer.prepare_with_assets(&mut scene, &assets)?;
 renderer.render_active(&scene)?;
 ```

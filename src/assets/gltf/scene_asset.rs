@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
-use crate::geometry::Aabb;
+use crate::geometry::{Aabb, GeometryTopology};
 use crate::scene::view_math::{transform_aabb, union_aabb};
 use crate::scene::{Light, SourceCoordinateSystem, SourceUnits, Transform, WorldTransform};
 use serde::{Deserialize, Serialize};
@@ -82,6 +82,7 @@ pub struct SceneAssetMesh {
     pub(in crate::assets::gltf) geometry: GeometryHandle,
     pub(in crate::assets::gltf) material: MaterialHandle,
     pub(in crate::assets::gltf) bounds: Aabb,
+    pub(in crate::assets::gltf) topology: GeometryTopology,
     pub(in crate::assets::gltf) uses_vertex_colors: bool,
     pub(in crate::assets::gltf) morph_weights: Vec<f32>,
     pub(in crate::assets::gltf) material_variant_bindings: Vec<MaterialVariantBinding>,
@@ -403,6 +404,11 @@ impl SceneAssetMesh {
 
     pub const fn bounds(&self) -> Aabb {
         self.bounds
+    }
+
+    /// Whether the primitive is triangle or line geometry.
+    pub const fn topology(&self) -> GeometryTopology {
+        self.topology
     }
 
     pub const fn uses_vertex_colors(&self) -> bool {

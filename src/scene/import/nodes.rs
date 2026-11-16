@@ -121,6 +121,7 @@ impl Scene {
             ([mesh], _) => {
                 let node = self.insert_node(parent, mesh_node_kind(mesh), transform);
                 if let Ok(node) = node {
+                    self.record_imported_pick_bounds(node, mesh);
                     self.set_initial_morph_weights(node, mesh.morph_weights());
                     if let Some(skin) = skin {
                         build.pending_skin_bindings.push(PendingSkinBinding {
@@ -147,6 +148,7 @@ impl Scene {
                             .insert_node(parent, mesh_node_kind(mesh), Transform::IDENTITY)
                             .expect("multi-primitive parent was inserted by this scene");
                         self.node_bounds.insert(child, mesh.bounds());
+                        self.record_imported_pick_bounds(child, mesh);
                         self.set_initial_morph_weights(child, mesh.morph_weights());
                         if let Some(skin) = skin {
                             build.pending_skin_bindings.push(PendingSkinBinding {

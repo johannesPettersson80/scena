@@ -134,6 +134,7 @@ impl Scene {
             NodeKind::Empty | NodeKind::Renderable(_) | NodeKind::Mesh(_) | NodeKind::Model(_) => {}
         }
         self.node_bounds.remove(&node);
+        self.forget_pick_bounds(node);
         self.mesh_lods.remove(&node);
         self.morph_weights.remove(&node);
         self.skin_bindings.remove(&node);

@@ -89,6 +89,7 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::InvalidCameraProjection { .. }
         | LookupError::GeometryNotFound { .. }
         | LookupError::InvalidSkinBinding { .. }
+        | LookupError::PickRequiresAssets { .. }
         | LookupError::CameraNotFound(_)
         | LookupError::ClippingPlaneNotFound(_)
         | LookupError::InstanceSetNotFound(_)

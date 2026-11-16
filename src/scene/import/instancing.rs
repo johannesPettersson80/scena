@@ -69,6 +69,7 @@ impl Scene {
                 _ => None,
             })
             .expect("inserted instance set node is present in this scene");
+        self.record_imported_pick_bounds(node, mesh);
         (node, instance_set)
     }
 

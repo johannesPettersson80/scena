@@ -8,8 +8,10 @@ use crate::scene::{
     Camera, CameraKey, InstanceId, NodeKey, Scene, Transform, Vec3, WorldTransform,
 };
 
+mod bounds_hit;
 mod geometry_hit;
 mod math;
+use bounds_hit::pick_recorded_bounds;
 use geometry_hit::{GeometryInstanceHitInput, hit_geometry, hit_geometry_instance, hit_triangle};
 
 use math::{
@@ -43,25 +45,33 @@ pub enum HitTarget {
     Instance { node: NodeKey, instance: InstanceId },
 }
 
-/// A nearest ray/triangle intersection in the current rendered scene pose.
+/// The nearest hit of a pick, in the current rendered scene pose.
 ///
 /// `distance` is measured in world-space units along the normalized camera ray,
-/// and `world_position` is `ray_origin + ray_direction * distance`. `normal` is
-/// the normalized geometric normal of the triangle as it is rendered: the node's
-/// exact world matrix is applied before intersection, shear included, and the
-/// winding of a mirrored (negative-determinant) transform is restored so the
+/// and `world_position` is `ray_origin + ray_direction * distance`.
+///
+/// A triangle-accurate hit (any hit from
+/// [`Scene::pick_with_assets`](crate::Scene::pick_with_assets), and a hit on a
+/// renderable primitive from any pick) reports `normal`, the normalized
+/// geometric normal of the triangle as it is rendered. The node's exact world
+/// matrix is applied before intersection, shear included, and the winding of a
+/// mirrored (negative-determinant) transform is restored, so the
 /// normal keeps pointing out of the front face. Triangles collapsed by a
 /// singular transform are not hittable.
+///
+/// A bounds-accurate hit (a mesh or instance-set node reached by a pick that
+/// takes no `Assets`, such as [`Scene::pick`](crate::Scene::pick)) lies on the
+/// node's recorded bounds rather than on its surface and has no `normal`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {
-    /// The scene node or concrete instance whose triangle was intersected.
+    /// The scene node or concrete instance that was hit.
     pub target: HitTarget,
     /// World-space distance from the camera-ray origin to the intersection.
     pub distance: f32,
     /// World-space intersection position.
     pub world_position: Vec3,
-    /// Normalized geometric normal of the rendered front face, or `None` for a
-    /// degenerate face.
+    /// Normalized geometric normal of the rendered front face. `None` for a
+    /// degenerate face and for a bounds-accurate hit.
     pub normal: Option<Vec3>,
 }
 
@@ -184,7 +194,8 @@ pub(crate) fn pick_scene(
     let ray = camera_ray(scene, camera, cursor, viewport)?;
     let mut metrics = PickingMetrics::default();
 
-    Ok(pick_renderables::<false>(scene, ray, &mut metrics))
+    let renderables = pick_renderables::<false>(scene, ray, &mut metrics);
+    Ok(nearest_hit(renderables, pick_recorded_bounds(scene, ray)?))
 }
 
 pub(crate) fn pick_scene_with_assets<F>(

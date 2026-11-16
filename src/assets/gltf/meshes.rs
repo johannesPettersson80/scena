@@ -331,6 +331,7 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         geometry,
         material,
         bounds,
+        topology,
         uses_vertex_colors,
         morph_weights: mesh_weights.to_vec(),
         material_variant_bindings,

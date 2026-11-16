@@ -494,6 +494,15 @@ pub enum LookupError {
         joint_count: usize,
         inverse_bind_count: usize,
     },
+    /// A pick that takes no `Assets` reached a visible mesh or instance-set
+    /// node whose geometry the scene cannot bound: no local bounds were
+    /// recorded for its current geometry and material at import or at the
+    /// last prepare, or the node is morphed or skinned and has left them.
+    /// Returned instead of `Ok(None)` so an asset-backed node is never
+    /// silently reported as a miss.
+    PickRequiresAssets {
+        node: NodeKey,
+    },
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
     InstanceSetNotFound(InstanceSetKey),

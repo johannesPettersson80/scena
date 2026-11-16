@@ -376,6 +376,9 @@ impl LookupError {
             Self::InvalidSkinBinding { .. } => {
                 "provide exactly one inverse bind matrix for each joint in the skin binding"
             }
+            Self::PickRequiresAssets { .. } => {
+                "call Scene::pick_with_assets (or pick_and_select_with_assets / pick_and_hover_with_assets) with the Assets store that owns the geometry; alternatively call Renderer::prepare_with_assets first so plain picks can use the bounds it records for undeformed meshes"
+            }
             Self::CameraNotFound(_) => "use a CameraKey created by this Scene",
             Self::ClippingPlaneNotFound(_) => "use a ClippingPlaneKey created by this Scene",
             Self::InstanceSetNotFound(_) => "use an InstanceSetKey created by this Scene",

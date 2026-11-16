@@ -176,6 +176,7 @@ as preparing again after stale renderer state.
 | Missing named node or anchor | inspect imported names and paths |
 | Removing the scene root | remove child nodes instead; the root is the permanent scene anchor |
 | `LookupError::InvalidTransform` | provide only finite translation, rotation, and scale components; the rejected mutation is an atomic no-op |
+| `LookupError::PickRequiresAssets` | a pick that takes no `Assets` (`Scene::pick`, `pick_pointer`, `pick_and_select`, `pick_and_hover`) reached a visible mesh or instance-set node it cannot bound; call `Scene::pick_with_assets` (triangle-accurate), or call `Renderer::prepare_with_assets` first so plain picks can use the recorded bounds of undeformed meshes (bounds-accurate) |
 | Stale host node handle | refresh the handle through import path, tag lookup, picking, or inspection |
 | Stale host import handle | instantiate or load the asset again, then resolve fresh roots and node handles |
 | Wrong SceneHost handle namespace | pass the handle back to the API family that created it; do not pass import, instance-root, or animation handles to node/import/animation-only APIs interchangeably |

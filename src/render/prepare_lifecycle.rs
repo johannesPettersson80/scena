@@ -175,6 +175,8 @@ impl Renderer {
             scene, target,
         ));
         if let Some(assets) = assets {
+            // Picks that take no `Assets` see mesh nodes through these bounds.
+            scene.record_pick_bounds(assets);
             diagnostics.extend(prepare::collect_asset_camera_visibility_diagnostics(
                 scene, target, assets,
             ));

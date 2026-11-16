@@ -120,6 +120,10 @@ impl fmt::Display for LookupError {
                 formatter,
                 "skin binding has {joint_count} joints but {inverse_bind_count} inverse bind matrices"
             ),
+            Self::PickRequiresAssets { node } => write!(
+                formatter,
+                "node {node:?} is visible asset-backed geometry with no usable recorded bounds, so a pick without Assets cannot tell whether the cursor is on it; use Scene::pick_with_assets"
+            ),
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")

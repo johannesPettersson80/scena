@@ -2029,16 +2029,14 @@ fn m7_pick_with_assets_hits_direct_mesh_without_legacy_renderable() {
     let camera = scene.add_default_camera().expect("camera inserts");
     let viewport = scena::Viewport::new(96, 96, 1.0).expect("viewport is valid");
 
-    assert!(
-        scene
-            .pick(
-                camera,
-                scena::CursorPosition::physical(48.0, 48.0),
-                viewport,
-            )
-            .expect("legacy renderable picking still succeeds")
-            .is_none(),
-        "plain pick only covers legacy renderable primitives and must not pretend direct assets are pickable"
+    assert_eq!(
+        scene.pick(
+            camera,
+            scena::CursorPosition::physical(48.0, 48.0),
+            viewport,
+        ),
+        Err(scena::LookupError::PickRequiresAssets { node: mesh }),
+        "plain pick cannot read an unprepared mesh without Assets and must say so instead of reporting a miss"
     );
 
     let hit = scene
@@ -3403,8 +3401,21 @@ fn m7_controls_picking_units_camera_masks_and_static_batching_are_product_shaped
             > 2.5
     );
 
+    // The batched mesh has not been prepared, so a pick that takes no `Assets`
+    // cannot tell whether the pointer is on it. It says so instead of
+    // reporting only the triangle, and leaves the selection alone.
+    assert_eq!(
+        scene.pick_and_select(camera, 32.0, 32.0, 64, 64, 1.0),
+        Err(scena::LookupError::PickRequiresAssets { node: batched_node }),
+        "a plain pick must not skip an unprepared mesh"
+    );
+    assert_eq!(scene.interaction().hover(), None);
+    assert_eq!(scene.interaction().primary_selection(), None);
+
+    let viewport = scena::Viewport::new(64, 64, 1.0).expect("viewport is valid");
+    let center = scena::CursorPosition::physical(32.0, 32.0);
     let hit = scene
-        .pick_and_select(camera, 32.0, 32.0, 64, 64, 1.0)
+        .pick_and_select_with_assets(camera, center, viewport, &assets)
         .expect("one-flow picking succeeds")
         .expect("center pointer hits triangle");
     assert!(matches!(hit.target(), scena::HitTarget::Node(_)));
@@ -3415,7 +3426,7 @@ fn m7_controls_picking_units_camera_masks_and_static_batching_are_product_shaped
     scene.set_primary_selection_target(Some(hit.target()));
     assert_eq!(scene.interaction().primary_selection(), Some(hit.target()));
     scene
-        .pick_and_hover(camera, 32.0, 32.0, 64, 64, 1.0)
+        .pick_and_hover_with_assets(camera, center, viewport, &assets)
         .expect("hover picking succeeds")
         .expect("center pointer hits triangle");
     assert_eq!(scene.interaction().hover(), Some(hit.target()));

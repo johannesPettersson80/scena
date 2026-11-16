@@ -77,6 +77,7 @@ impl Scene {
             retired_connectors: self.retired_connectors.clone(),
             connection_locked_nodes: self.connection_locked_nodes.clone(),
             node_bounds: self.node_bounds.clone(),
+            pick_bounds: self.pick_bounds.clone(),
             section_box: self.section_box.clone(),
             mesh_lods: self.mesh_lods.clone(),
             morph_weights: self.morph_weights.clone(),

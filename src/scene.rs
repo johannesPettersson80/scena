@@ -43,6 +43,7 @@ mod morphs;
 mod origin;
 mod overlay_ownership;
 mod particles;
+mod pick_bounds;
 mod picking;
 mod placement;
 pub mod recipe;
@@ -162,6 +163,7 @@ pub struct Scene {
     retired_connectors: BTreeMap<ConnectorKey, Option<String>>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
+    pick_bounds: BTreeMap<NodeKey, pick_bounds::RecordedPickBounds>,
     section_box: Option<clipping::SceneSectionBoxState>,
     mesh_lods: BTreeMap<NodeKey, Vec<MeshLodLevel>>,
     morph_weights: BTreeMap<NodeKey, Vec<f32>>,
@@ -251,6 +253,7 @@ impl Scene {
             retired_connectors: BTreeMap::new(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),
+            pick_bounds: BTreeMap::new(),
             section_box: None,
             mesh_lods: BTreeMap::new(),
             morph_weights: BTreeMap::new(),
