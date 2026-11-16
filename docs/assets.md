@@ -119,7 +119,11 @@ before it allocates it:
   indices of strips, fans, and loops, flat normals (one vertex per triangle
   corner in every stream), default line normals, the zero deltas of morph
   targets that omit `POSITION`, and the per-keyframe vectors of morph-weight
-  animation.
+  animation;
+- with the `meshopt` feature, every decompressed `EXT_meshopt_compression`
+  buffer view counts `count` times `byteStride`, because that size is declared
+  in JSON too and several views may decode the same compressed bytes. This is
+  in addition to the per-view limit of 256 MiB.
 
 A reservation that would exceed the budget fails with the stream's name, its
 size, and the running total, and nothing is allocated for it. Hosts that load
@@ -129,7 +133,9 @@ models raise it.
 Buffers are checked before any accessor is read. Every `bufferView` must lie
 inside its buffer's declared `byteLength`, and every buffer source (GLB chunk,
 external file, or data URI) must provide at least that many bytes, so a view
-or accessor can never address bytes that do not exist.
+or accessor can never address bytes that do not exist. The same holds for a
+compressed view: it is decoded into its own byte range, which therefore has to
+exist before decoding starts.
 
 The node limits apply to the whole document, not only the selected scene. Import,
 `SceneAsset::bounds`, `Scene::instantiate`, and

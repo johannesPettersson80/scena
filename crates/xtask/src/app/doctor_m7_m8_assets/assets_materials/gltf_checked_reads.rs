@@ -101,6 +101,24 @@ pub(crate) fn check_gltf_checked_accessor_reads(root: &Path, findings: &mut Vec<
         "src/assets/gltf/validation.rs",
         &["$.bufferViews[{index}] byte range"],
     );
+    // Decompressed views declare their size in JSON like a sparse accessor.
+    require_contains(
+        root,
+        findings,
+        RULE,
+        "src/assets/gltf/meshopt.rs",
+        &["buffers.charge_accessor_bytes("],
+    );
+    require_rust_test_functions(
+        root,
+        findings,
+        RULE,
+        "tests/m8_assets_materials_ecosystem.rs",
+        &[
+            "m8_meshopt_decompressed_views_count_against_the_accessor_byte_budget",
+            "m8_meshopt_malformed_buffer_views_fail_with_structured_errors",
+        ],
+    );
     require_rust_test_functions(
         root,
         findings,

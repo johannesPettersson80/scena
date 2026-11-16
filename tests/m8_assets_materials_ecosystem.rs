@@ -4240,7 +4240,7 @@ fn m8_meshopt_malformed_buffer_views_fail_with_structured_errors() {
         ),
         (
             "bad byte length",
-            meshopt_malformed_triangle_gltf("byteLength", "999"),
+            meshopt_malformed_triangle_gltf("byteLength", "40"),
         ),
         (
             "bad stride",
@@ -4275,6 +4275,62 @@ fn m8_meshopt_malformed_buffer_views_fail_with_structured_errors() {
             "{case} should fail at the meshopt decoder boundary, got {error:?}",
         );
     }
+
+    // A compressed view is decoded into its own byte range of the fallback
+    // buffer. A range outside that buffer is rejected before anything is
+    // decoded: growing the buffer to reach it would let one offset decide how
+    // much memory the load takes.
+    for (case, field, value) in [
+        ("view offset", "viewByteOffset", "999"),
+        ("view length", "viewByteLength", "999"),
+        (
+            "view offset of one tebibyte",
+            "viewByteOffset",
+            "1099511627776",
+        ),
+    ] {
+        let path = format!("memory://meshopt-outside-{case}.gltf");
+        let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+            AssetPath::from(path.as_str()),
+            meshopt_malformed_triangle_gltf(field, value).into_bytes(),
+        )]));
+        let error = pollster::block_on(assets.load_scene(path))
+            .expect_err("a compressed view outside its buffer must fail");
+        assert!(
+            matches!(error, AssetError::Parse { ref reason, .. }
+                if reason.contains("$.bufferViews[0] byte range")
+                    && reason.contains("exceeds buffer 0 byteLength 42")),
+            "{case} should be rejected by the bufferView bounds check, got {error:?}",
+        );
+    }
+}
+
+#[cfg(feature = "meshopt")]
+#[test]
+fn m8_meshopt_decompressed_views_count_against_the_accessor_byte_budget() {
+    // A compressed view declares its decoded size in JSON, and several views
+    // may decode the same few compressed bytes. The decoded bytes therefore
+    // come out of the same per-import budget as decoded accessors: 36 bytes of
+    // positions fit a 40-byte budget, the 6 bytes of indices after them do not.
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://meshopt-budget.gltf"),
+        meshopt_compressed_triangle_gltf().into_bytes(),
+    )]));
+    pollster::block_on(assets.load_scene("memory://meshopt-budget.gltf"))
+        .expect("the default budget admits the compressed triangle");
+
+    let error = pollster::block_on(assets.load_scene_with_options(
+        "memory://meshopt-budget.gltf",
+        AssetLoadOptions::default().with_max_accessor_bytes(40),
+    ))
+    .expect_err("decompressed views must count against the accessor byte budget");
+    assert!(
+        matches!(error, AssetError::PolicyViolation { ref reason, .. }
+            if reason.contains("EXT_meshopt_compression view 1")
+                && reason.contains("42 bytes")
+                && reason.contains("max_accessor_bytes 40")),
+        "the budget must run out while decompressing the second view, got {error:?}",
+    );
 }
 
 #[cfg(feature = "meshopt")]
@@ -5917,11 +5973,41 @@ fn meshopt_malformed_triangle_gltf(field: &str, value: &str) -> String {
                 1,
             );
         }
+        // The compressed range inside the source buffer.
         "byteOffset" => {
-            gltf = gltf.replacen(r#""byteOffset": 0,"#, r#""byteOffset": 999,"#, 2);
+            gltf = gltf.replacen(
+                r#""buffer": 1,
+                        "byteOffset": 0,"#,
+                &format!(
+                    r#""buffer": 1,
+                        "byteOffset": {value},"#
+                ),
+                1,
+            );
         }
+        // A view that stays inside its buffer but no longer matches the
+        // decoded size of `count * byteStride`.
         "byteLength" => {
-            gltf = gltf.replacen(r#""byteLength": 36"#, r#""byteLength": 999"#, 1);
+            gltf = gltf.replacen(
+                r#""byteLength": 36"#,
+                &format!(r#""byteLength": {value}"#),
+                1,
+            );
+        }
+        // The view's own range inside the fallback buffer.
+        "viewByteOffset" => {
+            gltf = gltf.replacen(
+                r#""byteOffset": 0,"#,
+                &format!(r#""byteOffset": {value},"#),
+                1,
+            );
+        }
+        "viewByteLength" => {
+            gltf = gltf.replacen(
+                r#""byteLength": 36"#,
+                &format!(r#""byteLength": {value}"#),
+                1,
+            );
         }
         "byteStride" => {
             gltf = gltf.replacen(r#""byteStride": 12,"#, r#""byteStride": 3,"#, 1);

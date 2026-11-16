@@ -12,7 +12,9 @@ fn checked_reads_fixture(name: &str) -> PathBuf {
         "src/assets/gltf/buffers.rs",
         "src/assets/gltf/validation.rs",
         "src/assets/gltf/skins.rs",
+        "src/assets/gltf/meshopt.rs",
         "tests/gltf_import_hardening.rs",
+        "tests/m8_assets_materials_ecosystem.rs",
     ] {
         let destination = fixture_root.join(relative);
         fs::create_dir_all(destination.parent().expect("fixture file has parent"))

@@ -126,6 +126,16 @@ impl MeshoptBufferView {
             "decoded meshopt byte length",
         )?;
         self.validate_decode_budget(path, view_index, decoded_len)?;
+        // The decoded size is declared in JSON and several views may decode
+        // the same compressed bytes, so the per-view limit above does not
+        // bound a whole import. Decoded views are reserved from the same
+        // budget as decoded accessors before they are allocated.
+        buffers.charge_accessor_bytes(
+            path,
+            &format!("EXT_meshopt_compression view {view_index}"),
+            self.count,
+            self.byte_stride,
+        )?;
         let Some(source_buffer) = buffers.raw_buffer(self.buffer) else {
             return Err(parse_error(
                 path,

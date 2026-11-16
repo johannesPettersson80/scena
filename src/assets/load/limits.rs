@@ -13,7 +13,8 @@ pub(crate) const DEFAULT_MAX_NODE_COUNT: usize = 1_000_000;
 /// Bytes one import may materialize from accessors: 1 GiB.
 ///
 /// Every decoded stream counts with its in-memory element size each time it
-/// is read, and so does the per-vertex data the importer derives from it. A
+/// is read, and so do the per-vertex data the importer derives from it and
+/// every decompressed `EXT_meshopt_compression` buffer view. A
 /// zero-initialised sparse accessor is not backed by file bytes at all, so
 /// without this budget its `count` alone would decide how much is allocated.
 pub(crate) const DEFAULT_MAX_ACCESSOR_BYTES: u64 = 1 << 30;

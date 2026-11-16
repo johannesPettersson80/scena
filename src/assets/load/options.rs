@@ -143,8 +143,11 @@ impl AssetLoadOptions {
     /// it is read, so an accessor shared by several primitives counts once per
     /// primitive, and so does the per-vertex data the importer derives: flat
     /// normals, generated indices, converted strips and fans, and the zero
-    /// deltas of morph targets that omit `POSITION`. The default is 1 GiB. A
-    /// stream that would exceed the budget fails with
+    /// deltas of morph targets that omit `POSITION`. Decompressed
+    /// `EXT_meshopt_compression` buffer views count as well. The default is
+    /// 1 GiB.
+    ///
+    /// A stream that would exceed the budget fails with
     /// [`crate::AssetError::PolicyViolation`] before it is allocated, which is
     /// what keeps a zero-initialised sparse accessor with a huge `count` from
     /// deciding how much memory a load takes.
