@@ -88,8 +88,8 @@ pub(super) fn place_authored_feature(
         .scene
         .world_transform(source_frame.node())
         .unwrap_or(source_import.transform);
-    let target_feature = match feature_world_transform(runtime, &target_frame, "target") {
-        Ok(transform) => transform,
+    let target_feature = match feature_world_frame(runtime, &target_frame, "target") {
+        Ok(frame) => frame,
         Err(diagnostic) => {
             return scena::ScenePlacementResultV1::failure(
                 source_import.id.clone(),
@@ -98,16 +98,20 @@ pub(super) fn place_authored_feature(
             );
         }
     };
+    // An import sits directly under the scene root, so its world transform is
+    // its own and is solved for in the world frame. The target feature may
+    // hang below scaled and rotated nodes of its asset, so it is described
+    // by its exact world frame rather than by one composed transform.
     let transform = if align_orientation {
-        scena::placement_align_to_feature_transform(
+        scena::PlacementFrame::WORLD.align_feature(
             source_current,
-            source_frame.local_transform(),
+            source_frame.local_frame(),
             target_feature,
         )
     } else {
-        scena::placement_place_on_feature_transform(
+        scena::PlacementFrame::WORLD.place_feature_on(
             source_current,
-            source_frame.local_transform(),
+            source_frame.local_frame(),
             target_feature,
         )
     };
@@ -169,15 +173,15 @@ fn authored_feature_frame(
     }
 }
 
-fn feature_world_transform(
+fn feature_world_frame(
     runtime: &PlacementRuntime,
     frame: &scena::ConnectorFrame,
     role: &str,
-) -> Result<scena::Transform, Box<scena::ScenePlacementDiagnosticV1>> {
+) -> Result<scena::PlacementFrame, Box<scena::ScenePlacementDiagnosticV1>> {
     runtime
         .scene
-        .world_transform(frame.node())
-        .map(|node_world| scena::Transform::compose(node_world, frame.local_transform()))
+        .placement_frame(frame.node())
+        .map(|node_world| node_world.child_frame(frame.local_frame()))
         .ok_or_else(|| {
             Box::new(scena::ScenePlacementDiagnosticV1::new(
                 "authored_feature_node_missing",

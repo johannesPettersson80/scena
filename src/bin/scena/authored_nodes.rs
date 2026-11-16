@@ -26,15 +26,16 @@ pub(super) fn run_authored_node_placement(
         let result = scena::ScenePlacementResultV1::failure_for_target(target, verb, diagnostic);
         return json_outcome(&result, 1, "failed to serialize placement result");
     };
-    let current_world = match recipe_node_world_transform(&recipe, node_index) {
-        Ok(transform) => transform,
+    let placed = match recipe_node_placement(&recipe, node_index) {
+        Ok(placed) => placed,
         Err(diagnostic) => {
             let result =
                 scena::ScenePlacementResultV1::failure_for_target(target, verb, *diagnostic);
             return json_outcome(&result, 1, "failed to serialize placement result");
         }
     };
-    let desired_world = match verb.as_str() {
+    let RecipeNodePlacement { frame, local } = placed;
+    let local_transform = match verb.as_str() {
         "center" | "ground" | "fit_to_size" => {
             let bounds = match recipe_node_local_bounds(&recipe, node_index) {
                 Ok(bounds) => bounds,
@@ -48,31 +49,13 @@ pub(super) fn run_authored_node_placement(
                 }
             };
             match verb.as_str() {
-                "center" => Ok(scena::placement_center_transform(
-                    bounds,
-                    current_world,
-                    args.target.unwrap_or(scena::Vec3::ZERO),
-                )),
-                "ground" => Ok(scena::placement_ground_transform(
-                    bounds,
-                    current_world,
-                    args.ground_y.unwrap_or(0.0),
-                )),
-                _ => scena::placement_fit_to_size_transform(
-                    bounds,
-                    current_world,
-                    args.min_size,
-                    args.max_size,
-                ),
+                "center" => frame.center(bounds, local, args.target.unwrap_or(scena::Vec3::ZERO)),
+                "ground" => frame.ground(bounds, local, args.ground_y.unwrap_or(0.0)),
+                _ => frame.fit_to_size(bounds, local, args.min_size, args.max_size),
             }
         }
-        "look_at" => authored_node_look_at_target(args, &recipe, &verb).and_then(|point| {
-            scena::placement_look_at_transform(
-                current_world,
-                point,
-                args.up.unwrap_or(scena::Vec3::Y),
-            )
-        }),
+        "look_at" => authored_node_look_at_target(args, &recipe, &verb)
+            .and_then(|point| frame.look_at(local, point, args.up.unwrap_or(scena::Vec3::Y))),
         _ => Err(Box::new(
             scena::ScenePlacementDiagnosticV1::new(
                 "unknown_verb",
@@ -83,19 +66,12 @@ pub(super) fn run_authored_node_placement(
             .with_suggestion("center"),
         )),
     };
-    let desired_world = match desired_world {
+    let local_transform = match local_transform {
         Ok(transform) => transform,
         Err(diagnostic) => {
+            let diagnostic = parent_scale_diagnostic(&recipe, node_index, *diagnostic);
             let result =
-                scena::ScenePlacementResultV1::failure_for_target(target, verb, *diagnostic);
-            return json_outcome(&result, 1, "failed to serialize placement result");
-        }
-    };
-    let local_transform = match recipe_node_local_from_world(&recipe, node_index, desired_world) {
-        Ok(transform) => transform,
-        Err(diagnostic) => {
-            let result =
-                scena::ScenePlacementResultV1::failure_for_target(target, verb, *diagnostic);
+                scena::ScenePlacementResultV1::failure_for_target(target, verb, diagnostic);
             return json_outcome(&result, 1, "failed to serialize placement result");
         }
     };
@@ -164,40 +140,52 @@ fn recipe_node_local_transform(
         })
 }
 
-fn recipe_node_world_transform(
-    recipe: &scena::SceneRecipeV1,
-    node_index: usize,
-) -> Result<scena::Transform, Box<scena::ScenePlacementDiagnosticV1>> {
-    let local = recipe_node_local_transform(recipe, node_index)?;
-    let Some(parent_id) = recipe.nodes[node_index].parent.as_deref() else {
-        return Ok(local);
-    };
-    let Some(parent_index) = recipe.nodes.iter().position(|node| node.id == parent_id) else {
-        return Err(Box::new(scena::ScenePlacementDiagnosticV1::new(
-            "unknown_parent",
-            format!("$.nodes[{node_index}].parent"),
-            format!("parent node '{parent_id}' was not found"),
-            "validate the recipe before placement",
-        )));
-    };
-    Ok(scena::Transform::compose(
-        recipe_node_world_transform(recipe, parent_index)?,
-        local,
-    ))
+/// A recipe node's local transform and the exact world frame of its parent
+/// chain, which a placement verb solves in.
+struct RecipeNodePlacement {
+    frame: scena::PlacementFrame,
+    local: scena::Transform,
 }
 
-fn recipe_node_local_from_world(
+fn recipe_node_placement(
     recipe: &scena::SceneRecipeV1,
     node_index: usize,
-    world: scena::Transform,
-) -> Result<scena::Transform, Box<scena::ScenePlacementDiagnosticV1>> {
-    let Some(parent_id) = recipe.nodes[node_index].parent.as_deref() else {
-        return Ok(world);
+) -> Result<RecipeNodePlacement, Box<scena::ScenePlacementDiagnosticV1>> {
+    let local = recipe_node_local_transform(recipe, node_index)?;
+    let frame = match recipe_node_parent_index(recipe, node_index)? {
+        Some(parent_index) => recipe_node_frame(recipe, parent_index)?,
+        None => scena::PlacementFrame::WORLD,
     };
-    let parent_index = recipe
+    Ok(RecipeNodePlacement { frame, local })
+}
+
+/// The exact world frame of a recipe node: the matrix product of the local
+/// transforms from its topmost ancestor down, so a rotated node under a
+/// non-uniformly scaled ancestor keeps its shear.
+fn recipe_node_frame(
+    recipe: &scena::SceneRecipeV1,
+    node_index: usize,
+) -> Result<scena::PlacementFrame, Box<scena::ScenePlacementDiagnosticV1>> {
+    let local = recipe_node_local_transform(recipe, node_index)?;
+    let parent = match recipe_node_parent_index(recipe, node_index)? {
+        Some(parent_index) => recipe_node_frame(recipe, parent_index)?,
+        None => scena::PlacementFrame::WORLD,
+    };
+    Ok(parent.child(local))
+}
+
+fn recipe_node_parent_index(
+    recipe: &scena::SceneRecipeV1,
+    node_index: usize,
+) -> Result<Option<usize>, Box<scena::ScenePlacementDiagnosticV1>> {
+    let Some(parent_id) = recipe.nodes[node_index].parent.as_deref() else {
+        return Ok(None);
+    };
+    recipe
         .nodes
         .iter()
         .position(|node| node.id == parent_id)
+        .map(Some)
         .ok_or_else(|| {
             Box::new(scena::ScenePlacementDiagnosticV1::new(
                 "unknown_parent",
@@ -205,22 +193,28 @@ fn recipe_node_local_from_world(
                 format!("parent node '{parent_id}' was not found"),
                 "validate the recipe before placement",
             ))
-        })?;
-    let parent = recipe_node_world_transform(recipe, parent_index)?;
-    if !parent.scale.is_finite() || parent.scale.abs().min_element() <= f32::EPSILON {
-        return Err(Box::new(scena::ScenePlacementDiagnosticV1::new(
-            "non_invertible_parent_transform",
-            format!("$.nodes[{parent_index}].transform.scale"),
-            "parent scale must be finite and non-zero to place a child node",
-            "use a finite non-zero parent scale",
-        )));
+        })
+}
+
+/// Points a frame that could not be inverted at the parent node whose scale
+/// collapses it.
+fn parent_scale_diagnostic(
+    recipe: &scena::SceneRecipeV1,
+    node_index: usize,
+    diagnostic: scena::ScenePlacementDiagnosticV1,
+) -> scena::ScenePlacementDiagnosticV1 {
+    if diagnostic.code != "non_invertible_parent_transform" {
+        return diagnostic;
     }
-    let inverse_rotation = parent.rotation.normalize().inverse();
-    Ok(scena::Transform {
-        translation: (inverse_rotation * (world.translation - parent.translation)) / parent.scale,
-        rotation: (inverse_rotation * world.rotation).normalize(),
-        scale: world.scale / parent.scale,
-    })
+    let Ok(Some(parent_index)) = recipe_node_parent_index(recipe, node_index) else {
+        return diagnostic;
+    };
+    scena::ScenePlacementDiagnosticV1::new(
+        "non_invertible_parent_transform",
+        format!("$.nodes[{parent_index}].transform.scale"),
+        "parent scale must be finite and non-zero to place a child node",
+        "use a finite non-zero parent scale",
+    )
 }
 
 fn recipe_node_local_bounds(
