@@ -2673,8 +2673,7 @@ provenance value. Warnings are typed and currently include
 `external_image_missing`, `external_buffer_missing`, `computed_flat_normals`,
 `degenerate_triangle_normals`, `skin_influences_truncated`,
 `skin_vertices_unweighted`, `invalid_material_variant_mapping`, and
-`texture_downscaled`. Consumers must tolerate warning kinds they do not know:
-new kinds are additive in v1. `requested_options`
+`texture_downscaled`. `requested_options`
 records the semantic policy of this call; `cache_entry_options` records the
 policy that produced reused evidence. They differ only for a compatible cache
 hit whose retained warnings and fetched-byte total prove the active request was

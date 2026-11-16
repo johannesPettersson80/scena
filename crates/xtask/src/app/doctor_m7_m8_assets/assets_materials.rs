@@ -20,6 +20,7 @@ mod c10_cache_policy;
 mod c14_semantics;
 mod c15_marker_transforms;
 mod gltf_checked_reads;
+mod gltf_conformance;
 pub(crate) use c03_texture::check_c03_texture_contracts;
 pub(crate) use c04_deformation::check_c04_deformation_contracts;
 pub(crate) use c05_units::check_c05_unit_contracts;
@@ -29,6 +30,7 @@ pub(crate) use c10_cache_policy::check_c10_cache_policy_contract;
 pub(crate) use c14_semantics::check_c14_gltf_semantic_contract;
 pub(crate) use c15_marker_transforms::check_c15_marker_transform_contract;
 pub(crate) use gltf_checked_reads::check_gltf_checked_accessor_reads;
+pub(crate) use gltf_conformance::check_gltf_import_conformance;
 pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
     check_c03_texture_contracts(root, findings);
     check_c04_deformation_contracts(root, findings);
@@ -39,6 +41,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
     check_c14_gltf_semantic_contract(root, findings);
     check_c15_marker_transform_contract(root, findings);
     check_gltf_checked_accessor_reads(root, findings);
+    check_gltf_import_conformance(root, findings);
     check_texture_baseline_contracts(root, findings);
     check_m8_instancing_contracts(root, findings);
     check_clearcoat_material_contracts(root, findings);

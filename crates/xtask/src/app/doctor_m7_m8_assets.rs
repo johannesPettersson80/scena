@@ -27,7 +27,7 @@ pub(crate) use assets_materials::{
     check_c08_animation_basis_contract, check_c09_transactional_reload_contract,
     check_c10_cache_policy_contract, check_c14_gltf_semantic_contract,
     check_c15_marker_transform_contract, check_gltf_checked_accessor_reads,
-    check_m8_assets_materials_contracts,
+    check_gltf_import_conformance, check_m8_assets_materials_contracts,
 };
 pub(crate) use ergonomics::check_m7_ergonomics_contracts;
 pub(crate) use manifest_helpers::{
