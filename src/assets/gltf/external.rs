@@ -10,12 +10,14 @@ use ::gltf::image::Source as ImageSource;
 use crate::diagnostics::AssetError;
 
 use super::super::AssetPath;
+use super::super::load::GltfImportLimits;
 
 pub(super) fn external_buffer_paths(
     path: &AssetPath,
     bytes: &[u8],
+    limits: &GltfImportLimits,
 ) -> Result<Vec<(usize, AssetPath, usize)>, AssetError> {
-    let gltf = open_gltf(path, bytes)?;
+    let gltf = open_gltf(path, bytes, limits)?;
     Ok(gltf
         .document
         .buffers()
@@ -33,8 +35,9 @@ pub(super) fn external_buffer_paths(
 pub(super) fn external_image_paths(
     path: &AssetPath,
     bytes: &[u8],
+    limits: &GltfImportLimits,
 ) -> Result<Vec<AssetPath>, AssetError> {
-    let gltf = open_gltf(path, bytes)?;
+    let gltf = open_gltf(path, bytes, limits)?;
     Ok(gltf
         .document
         .images()
@@ -47,8 +50,12 @@ pub(super) fn external_image_paths(
         .collect())
 }
 
-pub(super) fn open_gltf(path: &AssetPath, bytes: &[u8]) -> Result<Gltf, AssetError> {
-    super::open_gltf_with_massage(path, bytes)
+pub(super) fn open_gltf(
+    path: &AssetPath,
+    bytes: &[u8],
+    limits: &GltfImportLimits,
+) -> Result<Gltf, AssetError> {
+    super::open_gltf_with_massage(path, bytes, limits)
 }
 
 pub(super) fn resolve_relative_path(base: &AssetPath, uri: &str) -> AssetPath {

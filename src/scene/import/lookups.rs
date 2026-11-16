@@ -395,23 +395,26 @@ fn path_segments(path: &str) -> Option<Vec<String>> {
     Some(segments)
 }
 
+/// Lists every named node below `parent` by its slash-separated path.
+///
+/// The hierarchy is walked with an explicit work list, so its depth never
+/// becomes call-stack depth.
 fn append_addressable_paths(
     parent: Option<NodeKey>,
     prefix: &str,
     children_by_parent: &BTreeMap<Option<NodeKey>, Vec<(String, NodeKey)>>,
     paths: &mut BTreeMap<String, NodeKey>,
 ) {
-    let Some(children) = children_by_parent.get(&parent) else {
-        return;
-    };
-    for (name, node) in children {
-        let path = if prefix.is_empty() {
-            format!("/{name}")
-        } else {
-            format!("{prefix}/{name}")
+    let mut pending = vec![(parent, prefix.to_owned())];
+    while let Some((parent, prefix)) = pending.pop() {
+        let Some(children) = children_by_parent.get(&parent) else {
+            continue;
         };
-        paths.insert(path.clone(), *node);
-        append_addressable_paths(Some(*node), &path, children_by_parent, paths);
+        for (name, node) in children {
+            let path = format!("{prefix}/{name}");
+            paths.insert(path.clone(), *node);
+            pending.push((Some(*node), path));
+        }
     }
 }
 

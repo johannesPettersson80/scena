@@ -51,9 +51,18 @@ pub(crate) fn check_c09_transactional_reload_contract(root: &Path, findings: &mu
             ".with_strict_textures(true)",
             ".with_strict_external_resources(true)",
             "TextureCacheUpdatePolicy::ReplaceChangedSource",
-            "storage.texture_cache_update_policy = previous_policy",
+            "GltfImportPolicy {",
             "storage.replace_cached_scene(",
         ],
+    );
+    // The reload texture policy is scoped to the import transaction. Assigning
+    // it on the shared storage would let an interrupted reload leave it behind.
+    forbid_contains(
+        root,
+        findings,
+        RULE,
+        "src/assets/scene_loading.rs",
+        &["storage.texture_cache_update_policy ="],
     );
     require_contains(
         root,
@@ -74,8 +83,26 @@ pub(crate) fn check_c09_transactional_reload_contract(root: &Path, findings: &mu
         "src/assets/gltf.rs",
         &[
             "let mut transaction = storage.clone();",
+            "transaction.texture_cache_update_policy = policy.texture_cache_update_policy;",
+            "transaction.texture_cache_update_policy = storage.texture_cache_update_policy;",
             "*storage = transaction;",
         ],
+    );
+    // A panic under the storage lock must not disable the store for later
+    // callers; the transaction above is what makes recovering the guard sound.
+    require_contains(
+        root,
+        findings,
+        RULE,
+        "src/assets.rs",
+        &["self.storage.clear_poison();", "poisoned.into_inner()"],
+    );
+    forbid_contains(
+        root,
+        findings,
+        RULE,
+        "src/assets.rs",
+        &["asset storage mutex should not be poisoned"],
     );
     require_contains(
         root,

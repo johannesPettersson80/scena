@@ -1,5 +1,6 @@
 use super::external_resources::{ExternalResourceFetchInputs, fetch_scene_external_resources};
 use super::fetch::AssetFetcher;
+use super::gltf::GltfImportPolicy;
 use super::load::{
     self, AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport,
     AssetLoadTelemetry, AssetReloadError, check_cancelled,
@@ -42,12 +43,12 @@ impl<F: AssetFetcher> Assets<F> {
         let options = AssetLoadOptions::default();
         let scene = {
             let mut storage = self.storage();
-            let mut scene = SceneAsset::from_gltf_bytes(
-                path.clone(),
-                bytes,
-                options.gltf_scene(),
-                &mut storage,
-            )?;
+            let policy = GltfImportPolicy {
+                scene_selection: options.gltf_scene(),
+                texture_cache_update_policy: storage.texture_cache_update_policy,
+                limits: options.gltf_limits(),
+            };
+            let mut scene = SceneAsset::from_gltf_bytes(path.clone(), bytes, policy, &mut storage)?;
             if self.retain_policy == RetainPolicy::Always {
                 scene = scene.with_retained_source_bytes(bytes);
             }
@@ -167,7 +168,8 @@ impl<F: AssetFetcher> Assets<F> {
 
         let reload_options = AssetLoadOptions::default()
             .with_strict_textures(true)
-            .with_strict_external_resources(true);
+            .with_strict_external_resources(true)
+            .with_gltf_limits(scene.import_limits());
         let reload_options = match scene.selected_gltf_scene() {
             Some(selected) if selected.selection == "explicit_name" => {
                 reload_options.with_gltf_scene_name(selected.name.clone().unwrap_or_default())
@@ -201,18 +203,14 @@ impl<F: AssetFetcher> Assets<F> {
                     });
                 };
                 let mut storage = self.storage();
-                let previous_policy = storage.texture_cache_update_policy;
-                storage.texture_cache_update_policy =
-                    TextureCacheUpdatePolicy::ReplaceChangedSource;
-                let result = SceneAsset::from_gltf_bytes(
-                    path.clone(),
-                    bytes,
-                    reload_options.gltf_scene(),
-                    &mut storage,
-                )
-                .map(|scene| scene.with_retained_source_bytes(bytes));
-                storage.texture_cache_update_policy = previous_policy;
-                (result?, storage.telemetry_for_path(&path))
+                let policy = GltfImportPolicy {
+                    scene_selection: reload_options.gltf_scene(),
+                    texture_cache_update_policy: TextureCacheUpdatePolicy::ReplaceChangedSource,
+                    limits: reload_options.gltf_limits(),
+                };
+                let scene = SceneAsset::from_gltf_bytes(path.clone(), bytes, policy, &mut storage)?
+                    .with_retained_source_bytes(bytes);
+                (scene, storage.telemetry_for_path(&path))
             }
             Err(error) => return Err(error),
         };
@@ -394,8 +392,9 @@ impl<F: AssetFetcher> Assets<F> {
             },
         );
         check_cancelled(&path, control)?;
-        let external_paths = SceneAsset::external_buffer_paths(&path, &bytes)?;
-        let external_image_paths = SceneAsset::external_image_paths(&path, &bytes)?;
+        let limits = options.gltf_limits();
+        let external_paths = SceneAsset::external_buffer_paths(&path, &bytes, &limits)?;
+        let external_image_paths = SceneAsset::external_image_paths(&path, &bytes, &limits)?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_asset_step("external URI discovery", step_start);
@@ -421,28 +420,24 @@ impl<F: AssetFetcher> Assets<F> {
         check_cancelled(&path, control)?;
         let scene = {
             let mut storage = self.storage();
-            let previous_policy = storage.texture_cache_update_policy;
-            storage.texture_cache_update_policy = texture_cache_update_policy;
-            let scene_result =
+            let policy = GltfImportPolicy {
+                scene_selection: options.gltf_scene(),
+                texture_cache_update_policy,
+                limits: options.gltf_limits(),
+            };
+            let mut scene =
                 if external_resources.buffers.is_empty() && external_resources.images.is_empty() {
-                    SceneAsset::from_gltf_bytes(
-                        path.clone(),
-                        &bytes,
-                        options.gltf_scene(),
-                        &mut storage,
-                    )
+                    SceneAsset::from_gltf_bytes(path.clone(), &bytes, policy, &mut storage)
                 } else {
                     SceneAsset::from_gltf_bytes_with_external_resources(
                         path.clone(),
                         &bytes,
                         &external_resources.buffers,
                         &external_resources.images,
-                        options.gltf_scene(),
+                        policy,
                         &mut storage,
                     )
-                };
-            storage.texture_cache_update_policy = previous_policy;
-            let mut scene = scene_result?;
+                }?;
             if self.retain_policy == RetainPolicy::Always {
                 scene = scene.with_retained_source_bytes(&bytes);
             }

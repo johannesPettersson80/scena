@@ -1,13 +1,12 @@
-//! Stage C2: glTF animation parsing now uses the `gltf` crate's typed
-//! `animation::Channel::reader()` so input/output accessor walking is
-//! delegated to the gltf-crate util module (no hand-rolled component
-//! reading).
+//! glTF animation parsing. The `gltf` crate supplies the typed document
+//! model; sampler input and output accessors are decoded through the checked
+//! accessor reader so an unexpected component type is a structured error
+//! rather than an `unreachable!()` inside the upstream channel reader.
 
 use ::gltf::Document;
-use ::gltf::accessor::Dimensions;
+use ::gltf::accessor::{Accessor, DataType, Dimensions};
 use ::gltf::animation::Interpolation as GltfInterpolation;
 use ::gltf::animation::Property as GltfProperty;
-use ::gltf::animation::util::ReadOutputs;
 
 use crate::animation::{
     AnimationInterpolation, AnimationOutput, AnimationSourceChannel, AnimationSourceClip,
@@ -19,6 +18,9 @@ use crate::scene::Quat;
 
 use super::SceneAssetClip;
 use super::buffers::ResolvedGltfBuffers;
+use super::typed_accessors::{
+    accessor_error, normalize_i8, normalize_i16, normalize_u8, normalize_u16, typed_accessor_iter,
+};
 
 pub(super) fn parse_gltf_clips(
     path: &AssetPath,
@@ -97,32 +99,31 @@ fn parse_channel(
         GltfInterpolation::CubicSpline => AnimationInterpolation::CubicSpline,
     };
 
-    let reader = channel.reader(|buffer| buffers.reader_buffer(buffer.index()));
-    let inputs = reader.read_inputs().ok_or_else(|| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: "animation sampler input accessor failed to resolve".to_string(),
-    })?;
-    let input_seconds: Vec<f32> = inputs.collect();
-
-    let outputs = reader.read_outputs().ok_or_else(|| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: "animation sampler output accessor failed to resolve".to_string(),
-    })?;
-    let output = match outputs {
-        ReadOutputs::Translations(translations) => {
-            AnimationOutput::Vec3(translations.map(crate::scene::Vec3::from_array).collect())
-        }
-        ReadOutputs::Scales(scales) => {
-            AnimationOutput::Vec3(scales.map(crate::scene::Vec3::from_array).collect())
-        }
-        ReadOutputs::Rotations(rotations) => AnimationOutput::Quat(
-            rotations
-                .into_f32()
+    let streams = ChannelStreams {
+        path,
+        buffers,
+        clip_index,
+        channel_index,
+    };
+    let input_seconds = streams.read_input_seconds(&sampler.input())?;
+    let output_accessor = sampler.output();
+    let output = match target_property {
+        AnimationTarget::Translation | AnimationTarget::Scale => AnimationOutput::Vec3(
+            streams
+                .read_output_vec3(&output_accessor)?
+                .into_iter()
+                .map(crate::scene::Vec3::from_array)
+                .collect(),
+        ),
+        AnimationTarget::Rotation => AnimationOutput::Quat(
+            streams
+                .read_output_rotations(&output_accessor)?
+                .into_iter()
                 .map(|values| Quat::from_xyzw(values[0], values[1], values[2], values[3]))
                 .collect(),
         ),
-        ReadOutputs::MorphTargetWeights(weights) => {
-            let raw: Vec<f32> = weights.into_f32().collect();
+        AnimationTarget::Weights => {
+            let raw = streams.read_output_weights(&output_accessor)?;
             let target_counts = target_node_ref
                 .mesh()
                 .map(|mesh| {
@@ -156,6 +157,105 @@ fn parse_channel(
         output,
         interpolation,
     ))
+}
+
+/// Decodes one channel's sampler accessors, naming the clip and channel in
+/// every error. The output accessor's dimensions are validated by the caller.
+struct ChannelStreams<'a> {
+    path: &'a AssetPath,
+    buffers: &'a ResolvedGltfBuffers,
+    clip_index: usize,
+    channel_index: usize,
+}
+
+impl ChannelStreams<'_> {
+    fn label(&self, stream: &str) -> String {
+        format!(
+            "animation {} channel {} sampler {stream}",
+            self.clip_index, self.channel_index
+        )
+    }
+
+    fn read_input_seconds(&self, accessor: &Accessor<'_>) -> Result<Vec<f32>, AssetError> {
+        let label = self.label("input");
+        if accessor.data_type() != DataType::F32 || accessor.dimensions() != Dimensions::Scalar {
+            return Err(accessor_error(
+                self.path,
+                &label,
+                format!(
+                    "must use FLOAT SCALAR keyframe times, found {:?} {:?}",
+                    accessor.data_type(),
+                    accessor.dimensions()
+                ),
+            ));
+        }
+        Ok(typed_accessor_iter::<f32>(self.path, self.buffers, accessor, &label)?.collect())
+    }
+
+    fn read_output_vec3(&self, accessor: &Accessor<'_>) -> Result<Vec<[f32; 3]>, AssetError> {
+        let label = self.label("output");
+        if accessor.data_type() != DataType::F32 {
+            return Err(accessor_error(
+                self.path,
+                &label,
+                format!(
+                    "must use FLOAT components for translation and scale, found {:?}",
+                    accessor.data_type()
+                ),
+            ));
+        }
+        Ok(typed_accessor_iter::<[f32; 3]>(self.path, self.buffers, accessor, &label)?.collect())
+    }
+
+    /// Integer rotation keys are normalized per the glTF animation rules.
+    fn read_output_rotations(&self, accessor: &Accessor<'_>) -> Result<Vec<[f32; 4]>, AssetError> {
+        let label = self.label("output");
+        macro_rules! read_quat {
+            ($component:ty, $convert:expr) => {
+                typed_accessor_iter::<[$component; 4]>(self.path, self.buffers, accessor, &label)?
+                    .map(|value| value.map($convert))
+                    .collect()
+            };
+        }
+        Ok(match accessor.data_type() {
+            DataType::F32 => read_quat!(f32, std::convert::identity),
+            DataType::I8 => read_quat!(i8, normalize_i8),
+            DataType::U8 => read_quat!(u8, normalize_u8),
+            DataType::I16 => read_quat!(i16, normalize_i16),
+            DataType::U16 => read_quat!(u16, normalize_u16),
+            DataType::U32 => return Err(self.unsigned_int_output(&label, "rotation")),
+        })
+    }
+
+    /// Integer morph-weight keys are normalized per the glTF animation rules.
+    fn read_output_weights(&self, accessor: &Accessor<'_>) -> Result<Vec<f32>, AssetError> {
+        let label = self.label("output");
+        macro_rules! read_weights {
+            ($component:ty, $convert:expr) => {
+                typed_accessor_iter::<$component>(self.path, self.buffers, accessor, &label)?
+                    .map($convert)
+                    .collect()
+            };
+        }
+        Ok(match accessor.data_type() {
+            DataType::F32 => read_weights!(f32, std::convert::identity),
+            DataType::I8 => read_weights!(i8, normalize_i8),
+            DataType::U8 => read_weights!(u8, normalize_u8),
+            DataType::I16 => read_weights!(i16, normalize_i16),
+            DataType::U16 => read_weights!(u16, normalize_u16),
+            DataType::U32 => return Err(self.unsigned_int_output(&label, "weights")),
+        })
+    }
+
+    fn unsigned_int_output(&self, label: &str, property: &str) -> AssetError {
+        accessor_error(
+            self.path,
+            label,
+            format!(
+                "must use FLOAT or normalized BYTE/UNSIGNED_BYTE/SHORT/UNSIGNED_SHORT components for {property}, found UNSIGNED_INT"
+            ),
+        )
+    }
 }
 
 struct WeightChannelSpec<'a> {

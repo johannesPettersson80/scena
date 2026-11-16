@@ -8,9 +8,11 @@ use crate::diagnostics::AssetError;
 use super::{AssetPath, AssetProvenance, SceneAsset, SceneAssetGeometrySummary, SelectedGltfScene};
 
 mod fallback;
+mod limits;
 mod options;
 mod warnings;
 pub use fallback::{AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1};
+pub(crate) use limits::GltfImportLimits;
 pub use options::{AssetLoadOptions, GltfSceneSelection};
 pub use warnings::{AssetLoadWarning, AssetLoadWarningV1};
 

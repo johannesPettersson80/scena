@@ -1,4 +1,4 @@
-use ::gltf::accessor::{DataType, Dimensions, Iter as AccessorIter};
+use ::gltf::accessor::{DataType, Dimensions};
 use ::gltf::{Accessor, Document, Node};
 use serde_json::Value;
 
@@ -7,6 +7,7 @@ use crate::scene::{Quat, Transform, Vec3};
 
 use super::AssetPath;
 use super::buffers::ResolvedGltfBuffers;
+use super::typed_accessors::{normalize_i8, normalize_i16, typed_accessor_iter};
 
 const EXTENSION: &str = "EXT_mesh_gpu_instancing";
 
@@ -92,14 +93,8 @@ fn read_optional_vec3_attribute(
             format!("{EXTENSION} {semantic} accessor must be FLOAT VEC3"),
         ));
     }
-    let get_buffer = |buffer: ::gltf::Buffer<'_>| buffers.reader_buffer(buffer.index());
-    let values = AccessorIter::<[f32; 3]>::new(accessor, get_buffer)
-        .ok_or_else(|| {
-            parse_error(
-                path,
-                format!("{EXTENSION} {semantic} accessor is unreadable"),
-            )
-        })?
+    let label = format!("{EXTENSION} {semantic}");
+    let values = typed_accessor_iter::<[f32; 3]>(path, buffers, &accessor, &label)?
         .map(Vec3::from_array)
         .collect();
     Ok(Some(values))
@@ -121,45 +116,16 @@ fn read_optional_rotation_attribute(
             format!("{EXTENSION} ROTATION accessor must be VEC4"),
         ));
     }
-    let get_buffer = |buffer: ::gltf::Buffer<'_>| buffers.reader_buffer(buffer.index());
+    let label = format!("{EXTENSION} ROTATION");
     let rotations = match (accessor.data_type(), accessor.normalized()) {
-        (DataType::F32, _) => AccessorIter::<[f32; 4]>::new(accessor, get_buffer)
-            .ok_or_else(|| {
-                parse_error(path, format!("{EXTENSION} ROTATION accessor is unreadable"))
-            })?
+        (DataType::F32, _) => typed_accessor_iter::<[f32; 4]>(path, buffers, &accessor, &label)?
             .map(|values| quat_from_xyzw(path, values))
             .collect::<Result<Vec<_>, _>>()?,
-        (DataType::I8, true) => AccessorIter::<[i8; 4]>::new(accessor, get_buffer)
-            .ok_or_else(|| {
-                parse_error(path, format!("{EXTENSION} ROTATION accessor is unreadable"))
-            })?
-            .map(|values| {
-                quat_from_xyzw(
-                    path,
-                    [
-                        normalize_i8(values[0]),
-                        normalize_i8(values[1]),
-                        normalize_i8(values[2]),
-                        normalize_i8(values[3]),
-                    ],
-                )
-            })
+        (DataType::I8, true) => typed_accessor_iter::<[i8; 4]>(path, buffers, &accessor, &label)?
+            .map(|values| quat_from_xyzw(path, values.map(normalize_i8)))
             .collect::<Result<Vec<_>, _>>()?,
-        (DataType::I16, true) => AccessorIter::<[i16; 4]>::new(accessor, get_buffer)
-            .ok_or_else(|| {
-                parse_error(path, format!("{EXTENSION} ROTATION accessor is unreadable"))
-            })?
-            .map(|values| {
-                quat_from_xyzw(
-                    path,
-                    [
-                        normalize_i16(values[0]),
-                        normalize_i16(values[1]),
-                        normalize_i16(values[2]),
-                        normalize_i16(values[3]),
-                    ],
-                )
-            })
+        (DataType::I16, true) => typed_accessor_iter::<[i16; 4]>(path, buffers, &accessor, &label)?
+            .map(|values| quat_from_xyzw(path, values.map(normalize_i16)))
             .collect::<Result<Vec<_>, _>>()?,
         _ => {
             return Err(parse_error(
@@ -242,14 +208,6 @@ fn quat_from_xyzw(path: &AssetPath, values: [f32; 4]) -> Result<Quat, AssetError
         ));
     }
     Ok(rotation.normalize())
-}
-
-fn normalize_i8(value: i8) -> f32 {
-    (value as f32 / 127.0).max(-1.0)
-}
-
-fn normalize_i16(value: i16) -> f32 {
-    (value as f32 / 32767.0).max(-1.0)
 }
 
 fn node_label(node: &Node<'_>) -> String {

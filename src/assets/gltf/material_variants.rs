@@ -162,8 +162,8 @@ mod tests {
         use crate::assets::AssetPath;
         let bytes = serde_json::to_vec(&value).expect("json serializes");
         let path = AssetPath::from("memory:test");
-        let gltf =
-            super::super::open_gltf_with_massage(&path, &bytes).expect("json parses as gltf");
+        let gltf = super::super::open_gltf_with_massage(&path, &bytes, &Default::default())
+            .expect("json parses as gltf");
         gltf.document
     }
 

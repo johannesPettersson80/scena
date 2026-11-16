@@ -56,8 +56,8 @@ pub(crate) fn check_c14_gltf_semantic_contract(root: &Path, findings: &mut Vec<F
         RULE,
         "src/assets/gltf/meshes.rs",
         &[
-            ".read_joints(1)",
-            ".read_weights(1)",
+            "read_joints(source, primitive, 1)",
+            "read_weights(source, primitive, 1)",
             "AssetLoadWarning::ComputedFlatNormals",
             "AssetLoadWarning::SkinInfluencesTruncated",
             "reject_skin_sets_above_one",

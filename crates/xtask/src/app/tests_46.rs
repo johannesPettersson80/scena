@@ -6,6 +6,7 @@ fn c09_doctor_rejects_reload_that_uses_the_immutable_texture_policy() {
     let fixture_root = root.join("target/xtask-doctor-regressions/c09-transactional-reload");
     let _ = fs::remove_dir_all(&fixture_root);
     for relative in [
+        "src/assets.rs",
         "src/assets/texture.rs",
         "src/assets/texture_reload.rs",
         "src/assets/scene_loading.rs",

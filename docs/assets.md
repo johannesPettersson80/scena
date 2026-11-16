@@ -68,8 +68,32 @@ external buffers should fail loading instead of producing warnings, and
 `AssetLoadOptions::with_strict_textures(true)` when missing external images
 should fail instead of producing texture warnings. Use
 `with_fetch_byte_limit(n)` to cap the combined scene and external-resource bytes
-for one load. These are the complete semantic scene-load options in this
-release: both strictness flags and the byte limit affect cache eligibility.
+for one load. Both strictness flags and the byte limit affect cache
+eligibility, and so do the structural import limits below.
+
+### Import limits
+
+A glTF document is checked against structural limits before any node is
+imported, so a small hostile file cannot demand an unbounded amount of work.
+Exceeding one fails the load with `AssetError::PolicyViolation`, which reports
+the measured value, the limit, and the option that raises it.
+
+| Limit | Default | Option |
+|---|---|---|
+| Node depth: nodes on the longest root-to-leaf chain (a root has depth 1) | 1,024 | `AssetLoadOptions::with_max_node_depth` |
+| Node count: nodes declared by the document | 1,000,000 | `AssetLoadOptions::with_max_node_count` |
+
+The limits apply to the whole document, not only the selected scene. Import,
+`SceneAsset::bounds`, `Scene::instantiate`, and
+`SceneImport::addressable_node_paths` walk the hierarchy with explicit work
+lists, so a raised depth limit costs heap memory rather than call-stack depth.
+Other scene traversals still recurse per level, which is why the default depth
+stays conservative.
+
+The limits are part of the cache decision: an entry admitted under looser
+limits never satisfies a request with stricter ones, while an entry admitted
+under stricter limits is reusable. `Assets::reload_scene` validates the
+replacement against the limits the original asset was loaded with.
 
 The scene cache never keys on a path alone. An exact option match is reusable;
 an entry produced under different options is reusable only when its retained
@@ -187,6 +211,34 @@ an explicit `KHR_mesh_quantization` declaration. Stride and sparse overrides
 are honored, decoded values must be finite, and malformed, truncated, or
 overflowing byte ranges fail with a semantic-specific asset error instead of
 panicking, zero-filling, or being treated as an absent stream.
+
+Every other stream is decoded with the same rule: the layouts glTF 2.0 and
+`KHR_mesh_quantization` define are accepted, and anything else is an
+`AssetError::Parse` that names the mesh, primitive, and attribute.
+
+| Stream | Accepted layouts |
+|---|---|
+| `TEXCOORD_0` | VEC2 of FLOAT or normalized UNSIGNED_BYTE/UNSIGNED_SHORT; with `KHR_mesh_quantization` also BYTE/SHORT (normalized or not) and non-normalized UNSIGNED_BYTE/UNSIGNED_SHORT |
+| `COLOR_0` | VEC3 or VEC4 of FLOAT or normalized UNSIGNED_BYTE/UNSIGNED_SHORT |
+| `JOINTS_0`, `JOINTS_1` | VEC4 of UNSIGNED_BYTE or UNSIGNED_SHORT |
+| `WEIGHTS_0`, `WEIGHTS_1` | VEC4 of FLOAT or normalized UNSIGNED_BYTE/UNSIGNED_SHORT |
+| indices | SCALAR of UNSIGNED_BYTE, UNSIGNED_SHORT, or UNSIGNED_INT |
+| skin `inverseBindMatrices` | MAT4 of FLOAT |
+| animation sampler input | SCALAR of FLOAT |
+| animation translation/scale output | VEC3 of FLOAT |
+| animation rotation/weights output | FLOAT, or BYTE/UNSIGNED_BYTE/SHORT/UNSIGNED_SHORT decoded as normalized |
+
+A normalized integer is divided by its type maximum; a non-normalized
+quantized `TEXCOORD_0` value keeps its integer magnitude, because the
+dequantization scale belongs to `KHR_texture_transform`. An accessor that is
+read must declare `count` of at least 1, sparse storage must override at least
+one element, and a declared `inverseBindMatrices` accessor that cannot be read
+is an error rather than an identity fallback.
+
+A failed load never disables the store. Import runs against a private copy of
+the asset storage that is committed only after the whole document parsed, so
+neither an error nor a panic inside a decoder publishes partial geometry,
+materials, or textures, and later calls on the same `Assets` keep working.
 
 Triangle primitives that omit `NORMAL` use glTF flat shading. Scena computes
 the geometric face normal and splits indexed geometry into one vertex per

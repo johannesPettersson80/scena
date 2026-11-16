@@ -68,6 +68,11 @@ impl AssetStorage {
             if key.options().gltf_scene() != requested.gltf_scene() {
                 return None;
             }
+            // An entry admitted under looser structural limits has not been
+            // shown to satisfy stricter ones.
+            if !key.options().gltf_limits().within(&requested.gltf_limits()) {
+                return None;
+            }
             let telemetry = self.scene_load_telemetry.get(key)?.clone();
             telemetry
                 .satisfies(&requested)

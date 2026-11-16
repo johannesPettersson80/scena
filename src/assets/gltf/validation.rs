@@ -1,13 +1,16 @@
-use std::collections::VecDeque;
-
 use serde_json::Value;
 
 use crate::diagnostics::AssetError;
 
 use super::super::AssetPath;
+use super::super::load::GltfImportLimits;
 
 mod accessors;
 use accessors::{validate_accessor_storage_range, validate_sparse_accessor_storage_ranges};
+mod images;
+use images::{validate_images, validate_material_texture_refs, validate_textures};
+mod nodes;
+use nodes::{NodeReferenceCounts, validate_node_graph};
 mod support;
 use support::{array_len, parse_error, required_index, values};
 
@@ -20,6 +23,7 @@ pub(super) struct ExtensionDeclarations {
 pub(super) fn validate_document_structure(
     path: &AssetPath,
     bytes: &[u8],
+    limits: &GltfImportLimits,
 ) -> Result<(), AssetError> {
     let json_bytes = gltf_json_bytes(path, bytes)?;
     let root = serde_json::from_slice::<Value>(json_bytes)
@@ -41,7 +45,13 @@ pub(super) fn validate_document_structure(
     let textures = array_len(root.get("textures"));
     let scenes = array_len(root.get("scenes"));
 
-    validate_node_graph(path, root.get("nodes"), nodes, meshes, skins, cameras)?;
+    let node_references = NodeReferenceCounts {
+        nodes,
+        meshes,
+        skins,
+        cameras,
+    };
+    validate_node_graph(path, root.get("nodes"), node_references, limits)?;
     validate_meshes(path, root.get("meshes"), accessors, materials)?;
     validate_accessors(path, root.get("accessors"), root.get("bufferViews"))?;
     validate_buffer_views(path, root.get("bufferViews"), buffers)?;
@@ -52,81 +62,6 @@ pub(super) fn validate_document_structure(
     validate_animations(path, root.get("animations"), nodes, accessors)?;
     validate_scenes(path, root.get("scenes"), nodes)?;
     validate_index(path, root.get("scene"), "$.scene", scenes)?;
-    Ok(())
-}
-
-fn validate_material_texture_refs(
-    path: &AssetPath,
-    value: Option<&Value>,
-    texture_count: usize,
-) -> Result<(), AssetError> {
-    let Some(materials) = value.and_then(Value::as_array) else {
-        return Ok(());
-    };
-    for (material_index, material) in materials.iter().enumerate() {
-        let material_name = material.get("name").and_then(Value::as_str);
-        validate_texture_slots_recursive(
-            path,
-            material_index,
-            material_name,
-            material,
-            texture_count,
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_texture_slots_recursive(
-    path: &AssetPath,
-    material_index: usize,
-    material_name: Option<&str>,
-    value: &Value,
-    texture_count: usize,
-) -> Result<(), AssetError> {
-    match value {
-        Value::Object(object) => {
-            for (key, child) in object {
-                if key.ends_with("Texture")
-                    && let Some(texture_index) = child.get("index").and_then(Value::as_u64)
-                    && usize::try_from(texture_index).map_or(true, |index| index >= texture_count)
-                {
-                    return Err(AssetError::MissingTexture {
-                        path: path.as_str().to_owned(),
-                        material_slot: key.clone(),
-                        texture_index: usize::try_from(texture_index).unwrap_or(usize::MAX),
-                        context: Box::new(crate::diagnostics::MissingTextureDetails {
-                            material_index: Some(material_index),
-                            material_name: material_name.map(str::to_owned),
-                            image_source: None,
-                            reason: format!(
-                                "texture index {texture_index} is outside the document texture table of length {texture_count}"
-                            ),
-                        }),
-                        help: "export the referenced image or remove the broken material slot",
-                    });
-                }
-                validate_texture_slots_recursive(
-                    path,
-                    material_index,
-                    material_name,
-                    child,
-                    texture_count,
-                )?;
-            }
-        }
-        Value::Array(values) => {
-            for child in values {
-                validate_texture_slots_recursive(
-                    path,
-                    material_index,
-                    material_name,
-                    child,
-                    texture_count,
-                )?;
-            }
-        }
-        _ => {}
-    }
     Ok(())
 }
 
@@ -172,84 +107,6 @@ fn gltf_json_bytes<'a>(path: &AssetPath, bytes: &'a [u8]) -> Result<&'a [u8], As
     bytes
         .get(20..20_usize.saturating_add(chunk_len))
         .ok_or_else(|| parse_error(path, "GLB JSON chunk exceeds the container length"))
-}
-
-fn validate_node_graph(
-    path: &AssetPath,
-    value: Option<&Value>,
-    node_count: usize,
-    mesh_count: usize,
-    skin_count: usize,
-    camera_count: usize,
-) -> Result<(), AssetError> {
-    let Some(nodes) = value.and_then(Value::as_array) else {
-        return Ok(());
-    };
-    let mut indegree = vec![0_usize; node_count];
-    let mut edges = vec![Vec::new(); node_count];
-    for (node_index, node) in nodes.iter().enumerate() {
-        let Some(node) = node.as_object() else {
-            continue;
-        };
-        validate_index(
-            path,
-            node.get("mesh"),
-            &format!("$.nodes[{node_index}].mesh"),
-            mesh_count,
-        )?;
-        validate_index(
-            path,
-            node.get("skin"),
-            &format!("$.nodes[{node_index}].skin"),
-            skin_count,
-        )?;
-        validate_index(
-            path,
-            node.get("camera"),
-            &format!("$.nodes[{node_index}].camera"),
-            camera_count,
-        )?;
-        let Some(children) = node.get("children").and_then(Value::as_array) else {
-            continue;
-        };
-        for (child_offset, child) in children.iter().enumerate() {
-            let child_path = format!("$.nodes[{node_index}].children[{child_offset}]");
-            let child = required_index(path, child, &child_path, node_count)?;
-            indegree[child] += 1;
-            if indegree[child] > 1 {
-                return Err(parse_error(
-                    path,
-                    format!(
-                        "{child_path} gives node {child} multiple parents; glTF nodes must form a tree/forest, not a DAG"
-                    ),
-                ));
-            }
-            edges[node_index].push(child);
-        }
-    }
-
-    let mut ready = indegree
-        .iter()
-        .enumerate()
-        .filter_map(|(index, degree)| (*degree == 0).then_some(index))
-        .collect::<VecDeque<_>>();
-    let mut visited = 0_usize;
-    while let Some(node) = ready.pop_front() {
-        visited += 1;
-        for child in &edges[node] {
-            indegree[*child] -= 1;
-            if indegree[*child] == 0 {
-                ready.push_back(*child);
-            }
-        }
-    }
-    if visited != node_count {
-        return Err(parse_error(
-            path,
-            "$.nodes contains a cycle; glTF node graphs must be acyclic",
-        ));
-    }
-    Ok(())
 }
 
 fn validate_meshes(
@@ -353,45 +210,6 @@ fn validate_buffer_views(
             view.get("buffer"),
             &format!("$.bufferViews[{index}].buffer"),
             buffer_count,
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_textures(
-    path: &AssetPath,
-    value: Option<&Value>,
-    image_count: usize,
-    sampler_count: usize,
-) -> Result<(), AssetError> {
-    for (index, texture) in values(value).enumerate() {
-        validate_index(
-            path,
-            texture.get("source"),
-            &format!("$.textures[{index}].source"),
-            image_count,
-        )?;
-        validate_index(
-            path,
-            texture.get("sampler"),
-            &format!("$.textures[{index}].sampler"),
-            sampler_count,
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_images(
-    path: &AssetPath,
-    value: Option<&Value>,
-    buffer_view_count: usize,
-) -> Result<(), AssetError> {
-    for (index, image) in values(value).enumerate() {
-        validate_index(
-            path,
-            image.get("bufferView"),
-            &format!("$.images[{index}].bufferView"),
-            buffer_view_count,
         )?;
     }
     Ok(())

@@ -435,6 +435,10 @@ Transform mutation invariant:
 - `AssetLoadOptions::with_strict_external_resources` for referenced buffers and
   `AssetLoadOptions::with_strict_textures` for referenced images, plus
   `AssetLoadOptions::with_fetch_byte_limit` for the combined source-byte budget
+- `AssetLoadOptions::with_max_node_depth` and
+  `AssetLoadOptions::with_max_node_count` for the structural glTF import limits
+  (defaults 1,024 and 1,000,000), with `max_node_depth` and `max_node_count`
+  returning the limit in effect
 - `AssetProvenance` and `AssetDerivative`
 - `SceneAsset::provenance`
 - `TextureDesc::provenance`

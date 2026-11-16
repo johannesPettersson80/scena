@@ -35,7 +35,11 @@ use self::scene_selection::selected_scene_roots;
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
 use self::textures::parse_textures;
-use super::{AssetLoadWarning, AssetPath, AssetProvenance, AssetStorage, GltfSceneSelection};
+use super::load::GltfImportLimits;
+use super::{
+    AssetLoadWarning, AssetPath, AssetProvenance, AssetStorage, GltfSceneSelection,
+    TextureCacheUpdatePolicy,
+};
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn gltf_now_ms() -> f64 {
@@ -72,7 +76,10 @@ mod scene_asset;
 mod scene_selection;
 mod skins;
 mod textures;
+#[cfg(test)]
+mod transaction_tests;
 mod transform;
+mod typed_accessors;
 mod validation;
 
 struct GltfDocumentInput<'a> {
@@ -82,13 +89,22 @@ struct GltfDocumentInput<'a> {
     provenance: AssetProvenance,
     declarations: validation::ExtensionDeclarations,
     raw_material_variant_material_indices: &'a material_variants::RawMaterialVariantMaterialIndices,
+    limits: GltfImportLimits,
+}
+
+/// Per-import policy that is decided by the caller rather than the document.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct GltfImportPolicy<'a> {
+    pub(super) scene_selection: &'a GltfSceneSelection,
+    pub(super) texture_cache_update_policy: TextureCacheUpdatePolicy,
+    pub(super) limits: GltfImportLimits,
 }
 
 impl SceneAsset {
     pub(super) fn from_gltf_bytes(
         path: AssetPath,
         bytes: &[u8],
-        scene_selection: &GltfSceneSelection,
+        policy: GltfImportPolicy<'_>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         Self::from_gltf_bytes_with_external_resources(
@@ -96,7 +112,7 @@ impl SceneAsset {
             bytes,
             &BTreeMap::new(),
             &BTreeMap::new(),
-            scene_selection,
+            policy,
             storage,
         )
     }
@@ -106,7 +122,7 @@ impl SceneAsset {
         bytes: &[u8],
         external_buffers: &BTreeMap<usize, Vec<u8>>,
         external_images: &BTreeMap<AssetPath, Vec<u8>>,
-        scene_selection: &GltfSceneSelection,
+        policy: GltfImportPolicy<'_>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -114,7 +130,7 @@ impl SceneAsset {
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let mut step_start = total_start;
 
-        let (gltf, declarations) = open_gltf_with_declarations(&path, bytes)?;
+        let (gltf, declarations) = open_gltf_with_declarations(&path, bytes, &policy.limits)?;
         let raw_material_variant_material_indices =
             material_variants::raw_material_variant_material_indices(bytes);
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -123,7 +139,14 @@ impl SceneAsset {
         }
         let blob = gltf.blob.clone();
         let provenance = gltf_asset_provenance(path.clone(), bytes, &gltf);
+        // The import mutates a private copy and replaces the caller's storage
+        // only after the whole document parsed. An error or a panic part-way
+        // through therefore publishes nothing, which is also what makes
+        // recovering a poisoned storage lock sound. The texture policy is
+        // scoped to the copy for the same reason: it never reaches the shared
+        // storage, so an interrupted reload cannot leave it behind.
         let mut transaction = storage.clone();
+        transaction.texture_cache_update_policy = policy.texture_cache_update_policy;
         let scene = Self::from_gltf_document(
             &path,
             &gltf,
@@ -134,10 +157,14 @@ impl SceneAsset {
                 provenance,
                 declarations,
                 raw_material_variant_material_indices: &raw_material_variant_material_indices,
+                limits: policy.limits,
             },
-            scene_selection,
+            policy.scene_selection,
             &mut transaction,
         )?;
+        #[cfg(test)]
+        transaction_tests::failpoint_before_commit();
+        transaction.texture_cache_update_policy = storage.texture_cache_update_policy;
         *storage = transaction;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
@@ -150,15 +177,17 @@ impl SceneAsset {
     pub(super) fn external_buffer_paths(
         path: &AssetPath,
         bytes: &[u8],
+        limits: &GltfImportLimits,
     ) -> Result<Vec<(usize, AssetPath, usize)>, AssetError> {
-        external_buffer_paths(path, bytes)
+        external_buffer_paths(path, bytes, limits)
     }
 
     pub(super) fn external_image_paths(
         path: &AssetPath,
         bytes: &[u8],
+        limits: &GltfImportLimits,
     ) -> Result<Vec<AssetPath>, AssetError> {
-        external_image_paths(path, bytes)
+        external_image_paths(path, bytes, limits)
     }
 
     fn from_gltf_document(
@@ -175,6 +204,7 @@ impl SceneAsset {
             provenance,
             declarations,
             raw_material_variant_material_indices,
+            limits,
         } = input;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let total_start = gltf_now_ms();
@@ -288,6 +318,7 @@ impl SceneAsset {
                 material_fallbacks,
                 load_warnings,
                 provenance,
+                import_limits: limits,
                 retained_source_bytes: None,
             }),
         })
@@ -397,15 +428,20 @@ pub(super) fn has_glb_magic(bytes: &[u8]) -> bool {
 /// pre-existing tolerance for animations that omit `channels`/`samplers`
 /// arrays — the gltf crate's strict serde derive would otherwise reject
 /// those fixtures even though the spec considers them malformed.
-pub(super) fn open_gltf_with_massage(path: &AssetPath, bytes: &[u8]) -> Result<Gltf, AssetError> {
-    open_gltf_with_declarations(path, bytes).map(|(gltf, _)| gltf)
+pub(super) fn open_gltf_with_massage(
+    path: &AssetPath,
+    bytes: &[u8],
+    limits: &GltfImportLimits,
+) -> Result<Gltf, AssetError> {
+    open_gltf_with_declarations(path, bytes, limits).map(|(gltf, _)| gltf)
 }
 
 fn open_gltf_with_declarations(
     path: &AssetPath,
     bytes: &[u8],
+    limits: &GltfImportLimits,
 ) -> Result<(Gltf, validation::ExtensionDeclarations), AssetError> {
-    validation::validate_document_structure(path, bytes)?;
+    validation::validate_document_structure(path, bytes, limits)?;
     let declarations = validation::extension_declarations(path, bytes)?;
     for extension in &declarations.required {
         if !is_v1_required_gltf_extension(extension) {

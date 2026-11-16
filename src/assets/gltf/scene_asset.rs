@@ -11,6 +11,7 @@ use super::{
     GltfExtensionDiagnostic, MaterialVariantBinding, SceneAssetAnchor, SceneAssetConnector,
     SceneAssetSkin,
 };
+use crate::assets::load::GltfImportLimits;
 use crate::assets::{
     AssetLoadWarning, AssetMaterialFallback, AssetPath, AssetProvenance, GeometryHandle,
     MaterialHandle,
@@ -59,6 +60,7 @@ pub(in crate::assets::gltf) struct SceneAssetData {
     pub(in crate::assets::gltf) material_fallbacks: Vec<AssetMaterialFallback>,
     pub(in crate::assets::gltf) load_warnings: Vec<AssetLoadWarning>,
     pub(in crate::assets::gltf) provenance: AssetProvenance,
+    pub(in crate::assets::gltf) import_limits: GltfImportLimits,
     pub(in crate::assets::gltf) retained_source_bytes: Option<Arc<[u8]>>,
 }
 
@@ -114,6 +116,7 @@ impl SceneAsset {
                 material_fallbacks: Vec::new(),
                 load_warnings: Vec::new(),
                 provenance: AssetProvenance::new("memory:empty"),
+                import_limits: GltfImportLimits::default(),
                 retained_source_bytes: None,
             }),
         }
@@ -139,12 +142,39 @@ impl SceneAsset {
         self.inner.nodes.iter().map(|node| node.meshes.len()).sum()
     }
 
+    /// Bounds of every mesh in the selected scene, in asset space.
+    ///
+    /// The hierarchy is walked with an explicit work list, so its depth never
+    /// becomes call-stack depth.
     pub fn bounds(&self) -> Option<Aabb> {
-        let roots = self.root_indices();
-        roots
+        let mut pending = self
+            .root_indices()
             .into_iter()
-            .filter_map(|root| self.node_bounds_in_asset_space(root, Transform::IDENTITY))
-            .reduce(union_aabb)
+            .rev()
+            .map(|root| (root, Transform::IDENTITY))
+            .collect::<Vec<_>>();
+        let mut bounds = None::<Aabb>;
+        while let Some((node_index, asset_from_parent)) = pending.pop() {
+            let Some(node) = self.inner.nodes.get(node_index) else {
+                continue;
+            };
+            let asset_from_node = Transform::compose(asset_from_parent, node.transform);
+            let mesh_bounds = node
+                .meshes
+                .iter()
+                .filter_map(|mesh| mesh_bounds_in_node_space(mesh, &node.instance_transforms))
+                .map(|mesh_bounds| transform_aabb(mesh_bounds, asset_from_node));
+            for mesh_bounds in mesh_bounds {
+                bounds = Some(bounds.map_or(mesh_bounds, |bounds| union_aabb(bounds, mesh_bounds)));
+            }
+            pending.extend(
+                node.children
+                    .iter()
+                    .rev()
+                    .map(|child| (*child, asset_from_node)),
+            );
+        }
+        bounds
     }
 
     pub fn geometry_summary(&self) -> SceneAssetGeometrySummary {
@@ -211,6 +241,12 @@ impl SceneAsset {
             .map(|bytes| bytes.len())
     }
 
+    /// The structural limits this asset was admitted under. Reload validates
+    /// the replacement against the same limits.
+    pub(in crate::assets) fn import_limits(&self) -> GltfImportLimits {
+        self.inner.import_limits
+    }
+
     pub(in crate::assets) fn retained_source_bytes(&self) -> Option<&[u8]> {
         self.inner.retained_source_bytes.as_deref()
     }
@@ -275,29 +311,6 @@ impl SceneAsset {
 
     pub(crate) fn root_indices(&self) -> Vec<usize> {
         self.inner.roots.clone()
-    }
-
-    fn node_bounds_in_asset_space(
-        &self,
-        node_index: usize,
-        asset_from_parent: Transform,
-    ) -> Option<Aabb> {
-        let node = self.inner.nodes.get(node_index)?;
-        let asset_from_node = Transform::compose(asset_from_parent, node.transform);
-        let mut bounds = node
-            .meshes
-            .iter()
-            .filter_map(|mesh| mesh_bounds_in_node_space(mesh, &node.instance_transforms))
-            .map(|bounds| transform_aabb(bounds, asset_from_node))
-            .reduce(union_aabb);
-
-        for child in &node.children {
-            if let Some(child_bounds) = self.node_bounds_in_asset_space(*child, asset_from_node) {
-                bounds =
-                    Some(bounds.map_or(child_bounds, |bounds| union_aabb(bounds, child_bounds)));
-            }
-        }
-        bounds
     }
 
     fn source_units_summary(&self) -> Vec<SourceUnits> {

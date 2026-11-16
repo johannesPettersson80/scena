@@ -163,6 +163,9 @@ as preparing again after stale renderer state.
 | Missing asset file | fix path or fetcher configuration |
 | Missing external glTF buffer or image | inspect `scena.asset_load_report.v1` warnings; serve the referenced resource or enable strict external-resource loading to fail closed |
 | Missing glTF `NORMAL` | valid nondegenerate triangles load with flat normals and a `computed_flat_normals` report row; repair the named degenerate triangle or author normals when loading fails |
+| glTF accessor uses an unexpected component type, dimension, or `count` 0 | read the mesh/primitive/attribute (or skin / animation channel) named by `AssetError::Parse` and re-export that stream in a layout glTF 2.0 or `KHR_mesh_quantization` defines; see the stream table in `docs/assets.md` |
+| glTF node hierarchy is deeper than 1,024 levels or declares more than 1,000,000 nodes | flatten or split the asset, or raise the limit named by `AssetError::PolicyViolation` with `AssetLoadOptions::with_max_node_depth` / `with_max_node_count` for a trusted asset |
+| glTF image has neither `uri` nor `bufferView`, or a `bufferView` without `mimeType` | repair the `$.images[n]` entry named by `AssetError::Parse` |
 | glTF texture requests `texCoord` 1 or higher | export that texture against `TEXCOORD_0`; Scena rejects the material slot/path instead of silently sampling UV0 |
 | glTF skin has more than four nonzero influences | inspect `skin_influences_truncated`, or author at most four influences per vertex for exact cross-tool parity; sets 0 and 1 are combined before selection |
 | Selected glTF joint index exceeds the bound skin | correct `JOINTS_0/1` or the node's skin joint list; prepare reports the selected index and available binding width |

@@ -1,10 +1,12 @@
-//! Stage C2: glTF mesh / primitive parsing now uses the `gltf` crate's
-//! typed `Primitive::reader()` so all attribute / index / morph-target
-//! reading is delegated to the gltf-crate util module.
+//! glTF mesh / primitive parsing. The `gltf` crate supplies the document
+//! model; every attribute, index, and morph-target stream is decoded by the
+//! checked readers in `accessors` and `attribute_streams`, which validate the
+//! accessor layout before any byte is read.
 
 use ::gltf::Document;
 use ::gltf::Primitive;
 use ::gltf::accessor::Accessor;
+use ::gltf::accessor::Item as AccessorItem;
 use ::gltf::accessor::Iter as AccessorIter;
 use ::gltf::accessor::{DataType, Dimensions};
 use ::gltf::mesh::{Mode, Semantic};
@@ -19,13 +21,18 @@ use super::super::{
 };
 use super::SceneAssetMesh;
 use super::buffers::ResolvedGltfBuffers;
+use super::typed_accessors::{
+    accessor_error, normalize_i8, normalize_i16, normalize_u8, normalize_u16, typed_accessor_iter,
+};
 
 mod accessors;
+mod attribute_streams;
 mod flat_normals;
 use accessors::{
-    Vec3Encoding, joint_indices, read_tangent_attribute, read_vec3_accessor, read_vec3_attribute,
-    reject_skin_sets_above_one, validate_skin_weight_accessor,
+    PrimitiveSource, Vec3Encoding, read_tangent_attribute, read_vec3_accessor, read_vec3_attribute,
+    reject_skin_sets_above_one,
 };
+use attribute_streams::{read_colors, read_indices, read_joints, read_tex_coords, read_weights};
 mod skin_influences;
 
 pub(super) fn parse_meshes(
@@ -99,18 +106,21 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         load_warnings,
         mesh_quantization_declared,
     } = inputs;
-    let reader = primitive.reader(|buffer| buffers.reader_buffer(buffer.index()));
-    let positions = read_vec3_attribute(
+    let source = PrimitiveSource {
         path,
-        primitive,
         buffers,
-        &Semantic::Positions,
+        mesh_index,
+        primitive_index,
         mesh_quantization_declared,
-    )?
-    .ok_or_else(|| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: "glTF primitive is missing POSITION attribute".to_string(),
-    })?;
+    };
+    let positions = read_vec3_attribute(source, primitive, &Semantic::Positions)?.ok_or_else(
+        || AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: format!(
+                "glTF mesh {mesh_index} primitive {primitive_index} is missing POSITION attribute"
+            ),
+        },
+    )?;
     let topology = match primitive.mode() {
         Mode::Triangles => GeometryTopology::Triangles,
         Mode::Lines => GeometryTopology::Lines,
@@ -121,46 +131,23 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             });
         }
     };
-    let mut normals = read_vec3_attribute(
-        path,
-        primitive,
-        buffers,
-        &Semantic::Normals,
-        mesh_quantization_declared,
-    )?;
+    let mut normals = read_vec3_attribute(source, primitive, &Semantic::Normals)?;
     if topology == GeometryTopology::Lines && normals.is_none() {
         normals = Some(vec![Vec3::Y; positions.len()]);
     }
-    let vertex_colors: Option<Vec<Color>> = reader.read_colors(0).map(|colors| {
-        colors
-            .into_rgba_f32()
-            .map(|rgba| Color::from_linear_rgba(rgba[0], rgba[1], rgba[2], rgba[3]))
-            .collect()
-    });
-    let tex_coords0: Option<Vec<[f32; 2]>> = reader
-        .read_tex_coords(0)
-        .map(|tex| tex.into_f32().collect());
-    let tangents = read_tangent_attribute(path, primitive, buffers, mesh_quantization_declared)?;
-    reject_skin_sets_above_one(path, primitive)?;
-    validate_skin_weight_accessor(path, primitive, 0)?;
-    validate_skin_weight_accessor(path, primitive, 1)?;
+    let vertex_colors: Option<Vec<Color>> = read_colors(source, primitive, 0)?;
+    let tex_coords0: Option<Vec<[f32; 2]>> = read_tex_coords(source, primitive, 0)?;
+    let tangents = read_tangent_attribute(source, primitive)?;
+    reject_skin_sets_above_one(source, primitive)?;
     let skin = skin_influences::resolve(
         path,
         skin_influences::SkinSet {
-            joints: reader
-                .read_joints(0)
-                .map(|joints| joints.into_u16().map(joint_indices).collect::<Vec<_>>()),
-            weights: reader
-                .read_weights(0)
-                .map(|weights| weights.into_f32().collect::<Vec<_>>()),
+            joints: read_joints(source, primitive, 0)?,
+            weights: read_weights(source, primitive, 0)?,
         },
         skin_influences::SkinSet {
-            joints: reader
-                .read_joints(1)
-                .map(|joints| joints.into_u16().map(joint_indices).collect::<Vec<_>>()),
-            weights: reader
-                .read_weights(1)
-                .map(|weights| weights.into_f32().collect::<Vec<_>>()),
+            joints: read_joints(source, primitive, 1)?,
+            weights: read_weights(source, primitive, 1)?,
         },
     )?;
     if skin.truncated_vertices > 0 {
@@ -181,12 +168,10 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
         .map(|(target_index, target)| {
             let position_deltas = match target.positions() {
                 Some(accessor) => read_vec3_accessor(
-                    path,
-                    buffers,
+                    source,
                     accessor,
                     &format!("morph target {target_index} POSITION"),
                     Vec3Encoding::Position,
-                    mesh_quantization_declared,
                 )?,
                 None => vec![Vec3::ZERO; vertex_count],
             };
@@ -194,12 +179,10 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
                 .normals()
                 .map(|accessor| {
                     read_vec3_accessor(
-                        path,
-                        buffers,
+                        source,
                         accessor,
                         &format!("morph target {target_index} NORMAL"),
                         Vec3Encoding::SignedUnit,
-                        mesh_quantization_declared,
                     )
                 })
                 .transpose()?;
@@ -207,12 +190,10 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
                 .tangents()
                 .map(|accessor| {
                     read_vec3_accessor(
-                        path,
-                        buffers,
+                        source,
                         accessor,
                         &format!("morph target {target_index} TANGENT"),
                         Vec3Encoding::SignedUnit,
-                        mesh_quantization_declared,
                     )
                 })
                 .transpose()?;
@@ -223,10 +204,10 @@ fn parse_primitive(inputs: PrimitiveParseInputs<'_>) -> Result<SceneAssetMesh, A
             ))
         })
         .collect::<Result<Vec<_>, AssetError>>()?;
-    let indices: Vec<u32> = reader
-        .read_indices()
-        .map(|reader| reader.into_u32().collect())
-        .unwrap_or_else(|| (0..positions.len() as u32).collect());
+    let indices: Vec<u32> = match read_indices(source, primitive)? {
+        Some(indices) => indices,
+        None => (0..positions.len() as u32).collect(),
+    };
     let computed_flat_normals = normals.is_none();
     let source_triangle_count = indices.len() / 3;
     let flat_normals::ResolvedPrimitiveStreams {

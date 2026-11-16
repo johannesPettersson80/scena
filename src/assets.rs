@@ -547,12 +547,20 @@ impl<F> Assets<F> {
         Ok(self.insert_environment(desc))
     }
 
+    /// Locks the asset storage, recovering the guard if an earlier holder
+    /// panicked.
+    ///
+    /// A poisoned lock must not turn one failed load into a permanently broken
+    /// store. Recovery is sound because a glTF import mutates a private copy
+    /// of the storage and commits it only after the whole document parsed, so
+    /// the state behind a poisoned lock is still the last committed state.
     fn storage(&self) -> MutexGuard<'_, AssetStorage> {
         self.storage_lock_acquisitions
             .fetch_add(1, Ordering::Relaxed);
-        self.storage
-            .lock()
-            .expect("asset storage mutex should not be poisoned")
+        self.storage.lock().unwrap_or_else(|poisoned| {
+            self.storage.clear_poison();
+            poisoned.into_inner()
+        })
     }
 
     fn cached_texture_if_decoded(&self, cache_key: &TextureCacheKey) -> Option<TextureHandle> {
