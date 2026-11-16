@@ -1,10 +1,18 @@
+// scena.bloom_fxaa.wgsl
+//
+// Combined bloom + FXAA for a surface path that has one pass to spend. The
+// edge search is fxaa_resolve.wgsl, shared with the FXAA pass; the threshold
+// and blur width are bloom_kernel.wgsl, shared with the bloom passes.
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
 };
 
 struct PostUniform {
+    // .z = linear luminance threshold, .w = bloom intensity.
     viewport: vec4<f32>,
+    // .x = bloom radius in target pixels, .y = display exposure scale,
+    // .z = bloom knee as a share of the threshold.
     config: vec4<f32>,
     white_balance: vec4<f32>,
 };
@@ -14,6 +22,11 @@ var source_texture: texture_2d<f32>;
 
 @group(0) @binding(1)
 var<uniform> post: PostUniform;
+
+// Taps on the bloom disc, beside the centre tap.
+const BLOOM_DISC_TAPS: i32 = 48;
+// Angle between successive taps of the spiral, in radians.
+const BLOOM_GOLDEN_ANGLE: f32 = 2.39996323;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
@@ -29,8 +42,6 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
     return out;
 }
 
-// The edge search lives in fxaa_resolve.wgsl, shared with the FXAA pass. It
-// reads the display exposure from `post.config.y`.
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let dims = vec2<i32>(textureDimensions(source_texture));
@@ -40,46 +51,30 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return finalize_post_output(vec4<f32>(base.rgb + bloom, base.a));
 }
 
+// Single-pass stand-in for the two bloom passes: Gaussian-weighted taps on a
+// golden-angle spiral that covers the disc evenly out to three standard
+// deviations, so the halo has no preferred axis. The taps are point samples,
+// which leaves an emitter smaller than their spacing visible as separate
+// copies; the two-pass blur in bloom.wgsl has no such limit.
 fn bloom_energy(coord: vec2<i32>, dims: vec2<i32>) -> vec3<f32> {
-    let threshold = post.viewport.z;
+    let sigma = bloom_sigma();
     let intensity = clamp(post.viewport.w, 0.0, 1.0);
-    let radius = i32(clamp(post.config.x, 0.0, 12.0));
-    if radius <= 0 || intensity <= 0.0 {
+    if sigma <= 0.0 || intensity <= 0.0 {
         return vec3<f32>(0.0);
     }
-
-    let near_radius = max(1, radius / 2);
-    let offsets = array<vec2<i32>, 9>(
-        vec2<i32>(0, 0),
-        vec2<i32>(-near_radius, 0),
-        vec2<i32>(near_radius, 0),
-        vec2<i32>(0, -near_radius),
-        vec2<i32>(0, near_radius),
-        vec2<i32>(-radius, 0),
-        vec2<i32>(radius, 0),
-        vec2<i32>(0, -radius),
-        vec2<i32>(0, radius),
-    );
-
-    var sum = vec3<f32>(0.0);
-    var sample_count = 0.0;
-    for (var index = 0u; index < 9u; index = index + 1u) {
-        let sample_coord = coord + offsets[index];
-        if sample_coord.x < 0 || sample_coord.y < 0 || sample_coord.x >= dims.x || sample_coord.y >= dims.y {
+    var sum = bloom_bright(textureLoad(source_texture, coord, 0).rgb);
+    var weight_sum = 1.0;
+    for (var tap = 0; tap < BLOOM_DISC_TAPS; tap = tap + 1) {
+        let distance = 3.0 * sigma * sqrt((f32(tap) + 0.5) / f32(BLOOM_DISC_TAPS));
+        let angle = f32(tap) * BLOOM_GOLDEN_ANGLE;
+        let offset = vec2<f32>(cos(angle), sin(angle)) * distance;
+        let sample_coord = coord + vec2<i32>(round(offset));
+        if any(sample_coord < vec2<i32>(0)) || any(sample_coord >= dims) {
             continue;
         }
-        let sample = textureLoad(source_texture, sample_coord, 0);
-        if luma(sample.rgb) >= threshold {
-            sum = sum + sample.rgb;
-        }
-        sample_count = sample_count + 1.0;
+        let weight = bloom_weight(distance, sigma);
+        sum = sum + bloom_bright(textureLoad(source_texture, sample_coord, 0).rgb) * weight;
+        weight_sum = weight_sum + weight;
     }
-    if sample_count <= 0.0 || all(sum == vec3<f32>(0.0)) {
-        return vec3<f32>(0.0);
-    }
-    return (sum / sample_count) * intensity;
-}
-
-fn luma(rgb: vec3<f32>) -> f32 {
-    return dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
+    return sum / weight_sum * intensity;
 }

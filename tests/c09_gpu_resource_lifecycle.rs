@@ -489,7 +489,10 @@ fn output_resource_changes_require_prepare_and_stats_are_complete_before_render_
         // The ambient-occlusion compute passes add six buffers (three
         // visibility buffers, three uniforms), two pipelines, three bind
         // groups and one shader module to the post and overlay owners.
-        (18, 27, 11, 22, 13, 10),
+        // Bloom owns two pipelines, the bright pass with the horizontal blur
+        // and the vertical blur that is added to the frame, built from one
+        // shader module.
+        (18, 27, 11, 23, 13, 10),
         "MSAA4 + post + ambient occlusion + command-ordered uniform staging + depth-color + overlay owners are additive and exact while inactive shadow resources stay absent"
     );
     assert!(

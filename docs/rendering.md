@@ -498,8 +498,28 @@ Subtle postprocess bloom is opt-in:
 renderer.set_bloom(Some(scena::PostBloomConfig::subtle()));
 ```
 
-The bloom pass samples linear RGB from sRGB post intermediates before FXAA and
-is reported through `RendererStats::bloom_passes`.
+Bloom takes the light of pixels brighter than a threshold, blurs it and adds
+it back onto the frame, in scene-linear light before FXAA and the display
+transform. `PostBloomConfig::new(threshold_srgb, intensity, radius_px)` sets
+the luminance threshold as an sRGB byte, the strength of the added light and
+how far it spreads, up to 12 pixels. A frame with no pixel above the threshold
+comes out unchanged. The stage is reported through
+`RendererStats::bloom_passes`.
+
+GPU backends (native, WebGPU and WebGL2) blur with a Gaussian in two
+one-dimensional passes, so a small emitter gains a round halo that falls off
+steadily with distance. The Gaussian has the variance of a box filter reaching
+`radius_px` each way and is cut off at three standard deviations, at most 22
+pixels. The threshold has a soft knee: a pixel's contribution rises smoothly
+from nothing at the threshold to its whole colour at `threshold * (1 + knee)`
+in linear light. The knee defaults to 0.5; `PostBloomConfig::with_knee` sets
+it, and 0 is a hard cut. Cost grows with the radius: `subtle()` reads 13 texels
+a pixel in each pass, the largest radius 45.
+
+The CPU renderer keeps a box blur of the same radius with a hard threshold,
+which the CPU reference images pin. Its halo is square at the corners and
+starts abruptly at the threshold; the two agree on how far a highlight spreads
+and on its total energy above the knee.
 
 Depth of field is opt-in for product and documentation hero shots:
 

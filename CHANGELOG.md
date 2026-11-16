@@ -117,6 +117,13 @@ All notable user-facing changes are recorded here.
   measured on exposed, display-referred luma because the pass runs before the
   display transform. Edges in GPU frames rendered with FXAA change; the CPU
   renderer's FXAA and its reference images are unchanged.
+- Bloom on GPU backends is a separable Gaussian with a soft-knee threshold
+  instead of nine taps on a plus. A small emitter gains a round halo that
+  falls off steadily, where it used to gain copies of itself along the axes.
+  `PostBloomConfig::with_knee` sets the knee, which defaults to 0.5; a frame
+  with nothing above the threshold is still unchanged. The stage now runs two
+  passes and owns two pipelines. The CPU renderer keeps its box blur and hard
+  threshold.
 
 ### Scene
 

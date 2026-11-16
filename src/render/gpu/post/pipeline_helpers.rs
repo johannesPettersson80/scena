@@ -117,6 +117,14 @@ pub(super) fn view(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::T
     }
 }
 
+pub(super) fn texture(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::Texture {
+    match slot {
+        PostTextureSlot::Scene => &resources.scene_texture,
+        PostTextureSlot::Ping => &resources.ping_texture,
+        PostTextureSlot::Pong => &resources.pong_texture,
+    }
+}
+
 pub(super) fn bind_group(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::BindGroup {
     match slot {
         PostTextureSlot::Scene => &resources.texture_bind_groups[0],

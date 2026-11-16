@@ -4,12 +4,16 @@ use crate::render::gpu::shader_manifest::{ShaderVariantId, variant_for_srgb_targ
 pub(in crate::render::gpu) const LINEAR_TARGET_SHADER: &str = concat!(
     include_str!("bloom_fxaa.wgsl"),
     "\n",
+    include_str!("bloom_kernel.wgsl"),
+    "\n",
     include_str!("fxaa_resolve.wgsl"),
     "\n",
     include_str!("post_output_linear.wgsl")
 );
 pub(in crate::render::gpu) const SRGB_BYTE_TARGET_SHADER: &str = concat!(
     include_str!("bloom_fxaa.wgsl"),
+    "\n",
+    include_str!("bloom_kernel.wgsl"),
     "\n",
     include_str!("fxaa_resolve.wgsl"),
     "\n",

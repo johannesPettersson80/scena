@@ -259,7 +259,10 @@ pub(in crate::render::gpu) struct PostResources {
     pub(in crate::render::gpu) surface_bloom_fxaa_pipeline: Option<wgpu::RenderPipeline>,
     pub(in crate::render::gpu) fxaa_pipeline: wgpu::RenderPipeline,
     pub(in crate::render::gpu) ssr_pipeline: wgpu::RenderPipeline,
+    /// Bright pass with the horizontal blur.
     pub(in crate::render::gpu) bloom_pipeline: wgpu::RenderPipeline,
+    /// Vertical blur, added onto the frame.
+    pub(in crate::render::gpu) bloom_composite_pipeline: wgpu::RenderPipeline,
     pub(in crate::render::gpu) ssao_pipeline: wgpu::RenderPipeline,
     pub(in crate::render::gpu) depth_of_field_pipeline: wgpu::RenderPipeline,
 }

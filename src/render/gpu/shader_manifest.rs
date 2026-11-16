@@ -30,6 +30,7 @@ const ALPHA_MASK: &[&str] = &[
     "fs_shadow",
 ];
 const TRIANGLE: &[&str] = &["vs_main", "fs_main", "fs_semantic"];
+const BLOOM: &[&str] = &["vs_main", "fs_main", "fs_composite"];
 const AMBIENT_OCCLUSION: &[&str] = &["cs_occlusion", "cs_blur"];
 
 macro_rules! define_shader_variants {
@@ -105,7 +106,7 @@ define_shader_variants! {
         NativeWebGpu, ["ambient_occlusion", "depth"]
     ),
     PostBloom => (
-        "post.bloom", super::post::BLOOM_SHADER, VF,
+        "post.bloom", super::post::BLOOM_SHADER, BLOOM,
         NativeWebGpu, ["post", "bloom"]
     ),
     PostSsao => (

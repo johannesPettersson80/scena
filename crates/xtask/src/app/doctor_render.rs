@@ -3,6 +3,7 @@ mod diagnostics_stats_world;
 mod material_reflection;
 mod movement;
 mod photographic_output;
+mod post_effects;
 mod primitive_winding;
 mod quality;
 mod quality_composition;

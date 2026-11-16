@@ -213,7 +213,8 @@ pub(in crate::render::gpu) fn create_resources(
     let (fxaa_pipeline, surface_fxaa_pipeline) =
         fxaa::create_pipelines(device, &texture_pipeline_layout, surface_format);
     let ssr_pipeline = ssr::create_pipeline(device, &texture_pipeline_layout);
-    let bloom_pipeline = bloom::create_pipeline(device, &texture_pipeline_layout);
+    let (bloom_pipeline, bloom_composite_pipeline) =
+        bloom::create_pipelines(device, &texture_pipeline_layout);
     let ssao_pipeline = ssao::create_pipeline(device, &depth_pipeline_layout);
     let depth_of_field_pipeline = dof::create_pipeline(device, &depth_pipeline_layout);
 
@@ -241,6 +242,7 @@ pub(in crate::render::gpu) fn create_resources(
         fxaa_pipeline,
         ssr_pipeline,
         bloom_pipeline,
+        bloom_composite_pipeline,
         ssao_pipeline,
         depth_of_field_pipeline,
     }
@@ -252,9 +254,12 @@ pub(in crate::render::gpu) fn resource_stats(resources: &PostResources) -> GpuRe
         + u64::from(resources.readback_blit_pipeline.is_some())
         + u64::from(resources.surface_fxaa_pipeline.is_some())
         + u64::from(resources.surface_bloom_fxaa_pipeline.is_some());
-    let pipelines = mesh_pipelines + optional_surface_pipelines + 6;
+    // Blit, FXAA, reflections, ambient occlusion, depth of field and the two
+    // bloom pipelines.
+    let pipelines = mesh_pipelines + optional_surface_pipelines + 7;
     // The mesh pipelines share the device-owned triangle module. The FXAA
-    // target and optional surface pipelines share one post shader module.
+    // target and optional surface pipelines share one post shader module, and
+    // so do the two bloom pipelines.
     let shader_modules =
         optional_surface_pipelines + 6 - u64::from(resources.surface_fxaa_pipeline.is_some());
     GpuResourceStats {
@@ -302,9 +307,12 @@ fn create_post_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: POST_COLOR_FORMAT,
+        // COPY_DST lets bloom copy the scene into a scratch target before it
+        // adds the blurred highlights.
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_SRC,
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

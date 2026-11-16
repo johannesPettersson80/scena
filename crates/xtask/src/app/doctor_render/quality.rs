@@ -409,6 +409,7 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
         ],
     );
     super::quality_composition::check_scene_composition_quality_contracts(root, findings);
+    super::post_effects::check_post_effect_quality_contracts(root, findings);
     check_label_atlas_replaced_cell_primitives(root, findings);
 }
 

@@ -24,8 +24,13 @@ fn post_chain_preserves_scene_linear_hdr_until_final_display_transform() {
             && !ssao_shader.contains("texture_depth_2d"),
         "SSAO must sample the packed depth-color target so the shared depth path compiles on WebGL2"
     );
+    // Bloom is two one-dimensional Gaussian passes with a fixed upper bound
+    // on taps, not a two-dimensional window that grows with the square of the
+    // radius.
     assert!(
-        bloom_shader.contains("array<vec2<i32>, 9>")
+        bloom_shader.contains("const BLOOM_MAX_REACH: i32 = 22;")
+            && bloom_shader.contains("min(i32(ceil(3.0 * sigma)), BLOOM_MAX_REACH)")
+            && bloom_shader.contains("fn fs_composite")
             && !bloom_shader.contains("min(source.rgb + bloom, vec3<f32>(1.0))")
             && blit_shader.contains("apply_tonemapper")
             && blit_shader.contains("hdr.rgb * post.config.x")

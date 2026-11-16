@@ -32,7 +32,7 @@ pub(super) use dof::SHADER as DOF_SHADER;
 pub(super) use fxaa::{
     LINEAR_TARGET_SHADER as FXAA_LINEAR_SHADER, SRGB_BYTE_TARGET_SHADER as FXAA_SRGB_BYTE_SHADER,
 };
-use pipeline_helpers::{bind_group, depth_bind_group, view, write_uniform};
+use pipeline_helpers::{bind_group, depth_bind_group, texture, view, write_uniform};
 #[allow(unused_imports)]
 pub(super) use pipeline_helpers::{
     create_post_pipeline, create_post_pipeline_with_shader, create_post_shader,
@@ -273,7 +273,7 @@ pub(super) fn encode_chain(
                 config.intensity(),
                 config.radius_px() as f32,
                 0.0,
-                0.0,
+                config.knee(),
                 0.0,
                 0.0,
                 0.0,
@@ -281,15 +281,9 @@ pub(super) fn encode_chain(
                 0.0,
             ],
         );
-        bloom::encode(
-            encoder,
-            &resources.bloom_pipeline,
-            bind_group(resources, current),
-            view(resources, next),
-            draw_submissions,
-        );
-        current = next;
-        next = next.alternate();
+        // Both bloom passes read the uniform written above.
+        current = bloom::encode(encoder, resources, current, draw_submissions);
+        next = current.alternate();
         counts.bloom = 1;
     }
 
@@ -430,7 +424,7 @@ pub(super) fn encode_bloom_fxaa_to_view(
             inputs.config.intensity(),
             inputs.config.radius_px() as f32,
             inputs.display_exposure,
-            0.0,
+            inputs.config.knee(),
             0.0,
             1.0,
             1.0,

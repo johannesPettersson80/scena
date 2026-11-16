@@ -218,19 +218,34 @@ impl Default for OrderIndependentTransparencyConfig {
     }
 }
 
+/// Bloom: light from pixels brighter than a threshold, blurred and added
+/// back onto the frame.
+///
+/// `threshold_srgb` is the luminance, as an sRGB byte, at or below which a
+/// pixel contributes nothing. `intensity` scales the blurred light, and
+/// `radius_px` is how far it spreads, up to 12 pixels.
+///
+/// GPU backends blur with a Gaussian and raise the contribution smoothly
+/// across the knee. The CPU renderer keeps a box blur with a hard threshold;
+/// see `docs/rendering.md`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PostBloomConfig {
     threshold_srgb: u8,
     intensity: f32,
     radius_px: u8,
+    knee: f32,
 }
 
 impl PostBloomConfig {
+    /// Knee used unless [`PostBloomConfig::with_knee`] sets another.
+    pub const DEFAULT_KNEE: f32 = 0.5;
+
     pub const fn subtle() -> Self {
         Self {
             threshold_srgb: 208,
             intensity: 0.28,
             radius_px: 3,
+            knee: Self::DEFAULT_KNEE,
         }
     }
 
@@ -243,7 +258,21 @@ impl PostBloomConfig {
                 0.0
             },
             radius_px: radius_px.min(12),
+            knee: Self::DEFAULT_KNEE,
         }
+    }
+
+    /// Sets the width of the soft knee as a share of the threshold, from 0
+    /// (a hard cut) to 1. A pixel's contribution rises smoothly from nothing
+    /// at the threshold to its whole colour at `threshold * (1 + knee)`, in
+    /// linear light. GPU backends only.
+    pub fn with_knee(mut self, knee: f32) -> Self {
+        self.knee = if knee.is_finite() {
+            knee.clamp(0.0, 1.0)
+        } else {
+            Self::DEFAULT_KNEE
+        };
+        self
     }
 
     pub const fn threshold_srgb(self) -> u8 {
@@ -256,6 +285,10 @@ impl PostBloomConfig {
 
     pub const fn radius_px(self) -> u8 {
         self.radius_px
+    }
+
+    pub const fn knee(self) -> f32 {
+        self.knee
     }
 }
 
