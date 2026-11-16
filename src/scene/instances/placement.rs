@@ -23,6 +23,12 @@ impl InstanceSet {
         }
     }
 
+    /// Whether any instance, shown or hidden, is placed by an exact matrix
+    /// instead of by its `Transform` alone.
+    pub(crate) fn has_exact_placements(&self) -> bool {
+        !self.sheared.is_empty()
+    }
+
     /// Whether any visible instance cannot share the set's instanced draw.
     ///
     /// An instance that mirrors the geometry relative to its set would be

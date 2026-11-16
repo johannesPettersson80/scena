@@ -46,7 +46,7 @@ impl PreparedView {
 }
 
 /// Where the content of a scene is: the local transform of every node except
-/// cameras that carry nothing, and of every instance.
+/// cameras that carry nothing, and the local placement of every instance.
 ///
 /// World placement follows from these and from the hierarchy, and a hierarchy
 /// change bumps the scene's structure revision, which invalidates a template
@@ -61,8 +61,8 @@ pub(in crate::render) struct ContentPlacement {
 impl ContentPlacement {
     pub(in crate::render) fn of(scene: &Scene) -> Self {
         let mut bits = Vec::new();
-        visit_content_transforms(scene, |transform| {
-            bits.extend(transform_bits(transform));
+        visit_content_placements(scene, |placement| {
+            bits.extend_from_slice(placement);
             true
         });
         Self { bits }
@@ -72,10 +72,9 @@ impl ContentPlacement {
     /// it. Compares in place, without building a second placement.
     pub(in crate::render) fn matches(&self, scene: &Scene) -> bool {
         let mut remaining = self.bits.as_slice();
-        let same_prefix = visit_content_transforms(scene, |transform| {
-            let bits = transform_bits(transform);
-            match remaining.split_at_checked(bits.len()) {
-                Some((recorded, rest)) if recorded == bits => {
+        let same_prefix = visit_content_placements(scene, |placement| {
+            match remaining.split_at_checked(placement.len()) {
+                Some((recorded, rest)) if recorded == placement => {
                     remaining = rest;
                     true
                 }
@@ -86,9 +85,10 @@ impl ContentPlacement {
     }
 }
 
-/// Calls `visit` with the local transform of every content node and instance,
-/// in scene order, until it returns `false`. Returns whether it never did.
-fn visit_content_transforms(scene: &Scene, mut visit: impl FnMut(Transform) -> bool) -> bool {
+/// Calls `visit` with the bits of the local placement of every content node
+/// and instance, in scene order, until it returns `false`. Returns whether it
+/// never did.
+fn visit_content_placements(scene: &Scene, mut visit: impl FnMut(&[u32]) -> bool) -> bool {
     for (key, transform) in scene.node_transforms() {
         let Some(node) = scene.node(key) else {
             continue;
@@ -97,19 +97,30 @@ fn visit_content_transforms(scene: &Scene, mut visit: impl FnMut(Transform) -> b
             // A camera with nothing parented to it is the view, not content.
             NodeKind::Camera(_) if node.children().is_empty() => continue,
             NodeKind::InstanceSet(set) => {
-                let instances = scene
-                    .instance_set(*set)
-                    .into_iter()
-                    .flat_map(|set| set.instances());
-                for instance in instances {
-                    if !visit(instance.transform()) {
-                        return false;
+                if let Some(set) = scene.instance_set(*set) {
+                    // An instance placed by an exact matrix can move while
+                    // the `Transform` that matrix decomposes to stays put.
+                    let exact = set.has_exact_placements();
+                    for instance in set.instances() {
+                        if !visit(&transform_bits(instance.transform())) {
+                            return false;
+                        }
+                        if exact
+                            && !visit(
+                                &set.placement(instance)
+                                    .matrix()
+                                    .to_cols_array()
+                                    .map(f32::to_bits),
+                            )
+                        {
+                            return false;
+                        }
                     }
                 }
             }
             _ => {}
         }
-        if !visit(transform) {
+        if !visit(&transform_bits(transform)) {
             return false;
         }
     }
