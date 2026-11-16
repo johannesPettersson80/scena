@@ -58,8 +58,11 @@ rgba_hash = "fnv1a64:42bab7c2034cc9d1"
 name = "default-cube"
 max_abs_diff = 0
 # CPU split-sum IBL contributes real cubemap-derived irradiance to diffuse
-# PBR surfaces under the Khronos PBR Neutral output stage.
-center_rgba = [204, 208, 214, 255]
+# PBR surfaces under the Khronos PBR Neutral output stage. Diffuse irradiance
+# is directional (order-2 spherical harmonics of the environment), so the
+# camera-facing face reads slightly brighter than the environment mean that
+# the previous reference [204, 208, 214] encoded.
+center_rgba = [207, 212, 219, 255]
 corner_rgba = [0, 0, 0, 255]
 nonblack_pixels = 81
-rgba_hash = "fnv1a64:d9579a5c21edcb68"
+rgba_hash = "fnv1a64:572f31e8184102b1"

@@ -604,10 +604,11 @@ fn renderer_environment_is_structural_and_validated_during_prepare() {
     renderer.render(&scene, camera).expect("scene renders");
     // Diffuse IBL uses prepared irradiance instead of raw normal-direction
     // cubemap radiance, so the default environment converges to a softer
-    // neutral grey on fully white diffuse material.
+    // neutral grey on fully white diffuse material. The irradiance is the
+    // environment's order-2 spherical harmonics evaluated toward the normal.
     assert_pixel_close(
         center_pixel(renderer.frame_rgba8(), 4, 4),
-        [196, 201, 207, 255],
+        [200, 204, 211, 255],
         2,
         "default-environment + white PBR converges to roughly equal-luminance \
          tonemapped grey across channels",

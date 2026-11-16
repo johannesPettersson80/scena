@@ -373,9 +373,11 @@ fn validate_nonblack(frame: &[u8], width: u32, height: u32) {
 fn validate_default_cube_luminance_and_silhouette(frame: &[u8], width: u32, height: u32) {
     // CPU split-sum IBL contributes real cubemap-derived irradiance to a
     // fully-white diffuse cube and the output stage is Khronos PBR Neutral.
+    // The irradiance is evaluated toward the face normal, not averaged over
+    // the whole environment.
     assert_eq!(
         pixel_at(frame, width, width / 2, height / 2),
-        [204, 208, 214, 255]
+        [207, 212, 219, 255]
     );
     assert_eq!(pixel_at(frame, width, 0, 0), [0, 0, 0, 255]);
     assert_eq!(
