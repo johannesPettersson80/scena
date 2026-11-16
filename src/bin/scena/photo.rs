@@ -45,7 +45,7 @@ const CAMERA_BEHAVIOR_MAX_EXPOSURE_EV: f32 = 8.0;
 // fixed base keeps its zero-config product-photo output near the established
 // bright studio anchor before the single bounded exposure correction runs.
 const FINAL_PHOTO_BASE_EXPOSURE_EV: f32 = 0.25;
-const DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV: f32 = 0.75;
+const DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV: f32 = 1.5;
 const CAMERA_BEHAVIOR_MAX_ATTEMPTS: usize = 6;
 const CAMERA_BEHAVIOR_FOCUS_DELIVERY_MAX_ATTEMPTS: usize = 6;
 const FINAL_DARK_MATERIAL_LIGHTING_MAX_RETRIES: usize = 1;
@@ -264,6 +264,8 @@ struct PhotoReportInput<'a> {
     quality_execution: Value,
     quality_analysis: Value,
     artifacts: PhotoArtifactPaths,
+    /// Tone curve of the delivered frame, which exposure suggestions invert.
+    tonemapper: scena::Tonemapper,
 }
 
 #[derive(Debug, Clone)]
@@ -610,7 +612,8 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
                 let next_ev = if args.optimize {
                     corrected_focus_delivery_exposure_ev(current_ev, final_metrics)
                 } else {
-                    bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, final_metrics)
+                    let tonemapper = host.renderer().tonemapper();
+                    traced_default_exposure_ev(current_ev, final_metrics, tonemapper)
                 };
                 let Some(next_ev) = next_ev.filter(|next| (next - current_ev).abs() > f32::EPSILON)
                 else {
@@ -701,8 +704,12 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
 
     let focus_report =
         camera_behavior_focus_report(&subject, subject_bounds, visible_focus.as_ref(), &capture);
-    let exposure_report =
-        camera_behavior_exposure_report(&selected.final_candidate, &capture, args.optimize);
+    let exposure_report = camera_behavior_exposure_report(
+        &selected.final_candidate,
+        &capture,
+        args.optimize,
+        host.renderer().tonemapper(),
+    );
     let subject_observation =
         camera_behavior_subject_observation(&subject, &selected.final_candidate, &capture);
     let capability_report = host.renderer().capability_report();
@@ -780,6 +787,7 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
             capture_descriptor_path: path_for_json(&descriptor_path),
             emitted_recipe_path: args.emit_recipe.as_deref().map(path_for_json),
         },
+        tonemapper: host.renderer().tonemapper(),
     });
     // Present only for a traced delivery; its absence means the frame was
     // rasterized.
@@ -1204,8 +1212,11 @@ pub(crate) fn render_camera_behavior_candidates(
 
         if !optimize {
             if attempt == 0
-                && let Some(next_ev) =
-                    bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, metrics)
+                && let Some(next_ev) = bounded_default_exposure_ev(
+                    FINAL_PHOTO_BASE_EXPOSURE_EV,
+                    metrics,
+                    host.renderer().tonemapper(),
+                )
             {
                 host.renderer_mut().clear_auto_exposure();
                 host.renderer_mut().set_exposure_ev(next_ev);
@@ -1608,6 +1619,44 @@ fn apply_synthetic_contact_shadow_policy(
     Ok(())
 }
 
+/// Stops of exposure that take a subject whose mean reads `measured_srgb8`
+/// to `target_srgb8` in a frame displayed through `tonemapper`.
+///
+/// Exposure scales scene light, while the metric is a display code value
+/// behind the tone curve and the sRGB transfer. Both code values are traced
+/// back to the scene light that displays as them. A plain ratio of code
+/// values asks for about two thirds of the stops a filmic curve needs and
+/// less than half of what a neutral one needs, so a single correction made
+/// with it stops short of its target.
+fn exposure_stops_to_reach(
+    tonemapper: scena::Tonemapper,
+    target_srgb8: f64,
+    measured_srgb8: f64,
+) -> f64 {
+    let scene_light = |code: f64| {
+        let encoded = (code / 255.0).clamp(1.0 / 255.0, 1.0);
+        let displayed = if encoded <= 0.04045 {
+            encoded / 12.92
+        } else {
+            ((encoded + 0.055) / 1.055).powf(2.4)
+        } as f32;
+        // Every curve rises with scene light, so the level that displays
+        // as this value is found by halving an interval.
+        let (mut low, mut high) = (0.0_f32, 64.0_f32);
+        for _ in 0..48 {
+            let middle = 0.5 * (low + high);
+            let grey = scena::Color::from_linear_rgb(middle, middle, middle);
+            if tonemapper.tone_map(grey, 0.0).r < displayed {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        f64::from(0.5 * (low + high)).max(1.0e-9)
+    };
+    (scene_light(target_srgb8) / scene_light(measured_srgb8)).log2()
+}
+
 fn corrected_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32> {
     if metrics.sample_count == 0 || !metrics.mean_luminance_srgb8.is_finite() {
         return None;
@@ -1628,11 +1677,15 @@ fn corrected_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32
         let clip_ratio =
             metrics.high_clip_fraction / CAMERA_BEHAVIOR_MAX_HIGH_CLIP.max(f64::EPSILON);
         -(0.5 * clip_ratio.log2()).clamp(0.25, 1.5)
-    } else if dark_product_is_readable(metrics) {
+    } else if dark_product_is_readable(metrics)
+        && metrics.mean_luminance_srgb8 >= CAMERA_BEHAVIOR_MIN_MEAN_LUMA
+    {
         // A deliberately dark, structured material is correctly exposed in
         // this range. Chasing the generic subject target would turn charcoal,
         // black paint, and dark rubber gray while consuming highlight
-        // headroom on adjacent metal.
+        // headroom on adjacent metal. This holds only once the subject as a
+        // whole is in band: a readable dark part must not stop the correction
+        // of a subject that is still underexposed.
         return None;
     } else if metrics.mean_luminance_srgb8 < CAMERA_BEHAVIOR_TARGET_MEAN_LUMA
         && metrics.high_clip_fraction >= CAMERA_BEHAVIOR_HIGHLIGHT_LIMITED_MIN_CLIP
@@ -1673,7 +1726,11 @@ fn corrected_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32
     ))
 }
 
-fn bounded_default_exposure_ev(base_ev: f32, metrics: SubjectMetrics) -> Option<f32> {
+fn bounded_default_exposure_ev(
+    base_ev: f32,
+    metrics: SubjectMetrics,
+    tonemapper: scena::Tonemapper,
+) -> Option<f32> {
     if metrics.sample_count == 0 || !metrics.mean_luminance_srgb8.is_finite() {
         return None;
     }
@@ -1682,7 +1739,12 @@ fn bounded_default_exposure_ev(base_ev: f32, metrics: SubjectMetrics) -> Option<
             metrics.high_clip_fraction / CAMERA_BEHAVIOR_MAX_HIGH_CLIP.max(f64::EPSILON);
         -(0.5 * clip_ratio.log2()).clamp(0.25, 1.5)
     } else {
-        (CAMERA_BEHAVIOR_TARGET_MEAN_LUMA / metrics.mean_luminance_srgb8.max(1.0)).log2()
+        // The default path corrects once, so this one estimate has to land.
+        exposure_stops_to_reach(
+            tonemapper,
+            CAMERA_BEHAVIOR_TARGET_MEAN_LUMA,
+            metrics.mean_luminance_srgb8,
+        )
     };
     if correction.abs() <= 0.03 && metrics.low_clip_fraction <= CAMERA_BEHAVIOR_MAX_LOW_CLIP {
         return None;
@@ -1693,6 +1755,40 @@ fn bounded_default_exposure_ev(base_ev: f32, metrics: SubjectMetrics) -> Option<
             DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV,
         );
     ((bounded - base_ev).abs() > f32::EPSILON).then_some(bounded)
+}
+
+/// Exposure for a traced frame on the default path: the reach the rasterized
+/// frame gets around the base exposure, measured on the traced pixels.
+/// Developing a traced frame again costs no tracing, so the estimate is
+/// refined from the current exposure until the subject's mean is in band.
+fn traced_default_exposure_ev(
+    current_ev: f32,
+    metrics: SubjectMetrics,
+    tonemapper: scena::Tonemapper,
+) -> Option<f32> {
+    if metrics.sample_count == 0 || !metrics.mean_luminance_srgb8.is_finite() {
+        return None;
+    }
+    let correction = if metrics.high_clip_fraction > CAMERA_BEHAVIOR_MAX_HIGH_CLIP {
+        let clip_ratio =
+            metrics.high_clip_fraction / CAMERA_BEHAVIOR_MAX_HIGH_CLIP.max(f64::EPSILON);
+        -(0.5 * clip_ratio.log2()).clamp(0.25, 1.5)
+    } else if (CAMERA_BEHAVIOR_MIN_MEAN_LUMA..=CAMERA_BEHAVIOR_MAX_MEAN_LUMA)
+        .contains(&metrics.mean_luminance_srgb8)
+    {
+        return None;
+    } else {
+        exposure_stops_to_reach(
+            tonemapper,
+            CAMERA_BEHAVIOR_TARGET_MEAN_LUMA,
+            metrics.mean_luminance_srgb8,
+        )
+    };
+    let next_ev = (current_ev + correction as f32).clamp(
+        FINAL_PHOTO_BASE_EXPOSURE_EV - DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV,
+        FINAL_PHOTO_BASE_EXPOSURE_EV + DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV,
+    );
+    ((next_ev - current_ev).abs() > 0.01).then_some(next_ev)
 }
 
 fn corrected_focus_delivery_exposure_ev(current_ev: f32, metrics: SubjectMetrics) -> Option<f32> {
@@ -1909,6 +2005,7 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
         quality_execution,
         quality_analysis,
         artifacts,
+        tonemapper,
     } = input;
     let failure_codes = selected
         .failure_codes
@@ -1943,7 +2040,7 @@ fn photo_report(input: PhotoReportInput<'_>) -> Value {
         } else {
             "deterministic_one_shot"
         },
-        "retry": retry_json(candidates, args.optimize),
+        "retry": retry_json(candidates, args.optimize, tonemapper),
         "work_metrics": photo_work_metrics(
             args,
             planning,
@@ -2100,12 +2197,13 @@ fn camera_behavior_exposure_report(
     candidate: &PhotoCandidate,
     capture: &scena::CaptureRgba8,
     optimize: bool,
+    tonemapper: scena::Tonemapper,
 ) -> scena::ExposureReportV1 {
     let metrics = candidate.metrics;
     let suggested_ev = if optimize {
         corrected_exposure_ev(candidate.exposure_ev, metrics)
     } else {
-        bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, metrics)
+        bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, metrics, tonemapper)
     };
     let suggested_compensation_ev = suggested_ev
         .map(|next_ev| next_ev - candidate.exposure_ev)
@@ -2294,7 +2392,11 @@ fn render_focused_delivery(
         let next_ev = if optimize {
             corrected_focus_delivery_exposure_ev(selected.final_candidate.exposure_ev, metrics)
         } else {
-            bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, metrics)
+            bounded_default_exposure_ev(
+                FINAL_PHOTO_BASE_EXPOSURE_EV,
+                metrics,
+                host.renderer().tonemapper(),
+            )
         };
         let Some(next_ev) = next_ev else {
             break;
@@ -2469,7 +2571,11 @@ fn shaded_selection_json(selection: &ShadedCandidateSelection) -> Value {
     })
 }
 
-fn retry_json(candidates: &[PhotoCandidate], optimize: bool) -> Value {
+fn retry_json(
+    candidates: &[PhotoCandidate],
+    optimize: bool,
+    tonemapper: scena::Tonemapper,
+) -> Value {
     let max_attempts = if optimize {
         CAMERA_BEHAVIOR_MAX_ATTEMPTS
     } else {
@@ -2504,16 +2610,15 @@ fn retry_json(candidates: &[PhotoCandidate], optimize: bool) -> Value {
                     },
                 );
             }
-            bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, candidate.metrics).map(
-                |next_ev| {
+            bounded_default_exposure_ev(FINAL_PHOTO_BASE_EXPOSURE_EV, candidate.metrics, tonemapper)
+                .map(|next_ev| {
                     json!({
                         "source_candidate_id": candidate.id,
                         "kind": "exposure_compensation_ev",
                         "delta_ev": next_ev - FINAL_PHOTO_BASE_EXPOSURE_EV,
                         "next_exposure_ev": next_ev,
                     })
-                },
-            )
+                })
         });
     let retry_input = if candidates.len() > 1 {
         candidates.get(1).map(|candidate| {
@@ -5211,11 +5316,12 @@ mod tests {
         let mut clipped = sane_camera_subject();
         clipped.high_clip_fraction = 0.12;
         let base_ev = FINAL_PHOTO_BASE_EXPOSURE_EV;
-        let next_ev = bounded_default_exposure_ev(base_ev, clipped)
+        let curve = scena::Tonemapper::Aces;
+        let next_ev = bounded_default_exposure_ev(base_ev, clipped, curve)
             .expect("a severely clipped subject requests one correction");
         assert!(
             (next_ev - (base_ev - DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV)).abs() < 1.0e-6,
-            "the default correction must stop at one -0.75 EV step: base={base_ev} next={next_ev}"
+            "the default correction must stop at its one bounded step: base={base_ev} next={next_ev}"
         );
 
         let mut goodhart_frame = sane_camera_subject();
@@ -5230,7 +5336,7 @@ mod tests {
             camera_behavior_failure_codes(goodhart_frame).contains(&"subject_luminance_below_min"),
             "a readable dark patch must not rubber-stamp an underexposed complete subject"
         );
-        let corrected_goodhart = bounded_default_exposure_ev(base_ev, goodhart_frame)
+        let corrected_goodhart = bounded_default_exposure_ev(base_ev, goodhart_frame, curve)
             .expect("the one-shot default must brighten an underexposed complete subject");
         assert!(
             corrected_goodhart > base_ev,
@@ -5854,6 +5960,120 @@ mod tests {
     }
 
     #[test]
+    fn the_default_exposure_step_inverts_the_tone_curve() {
+        use scena::Tonemapper::{Aces, PbrNeutral, Standard};
+        for curve in [Aces, PbrNeutral, Standard] {
+            assert!(exposure_stops_to_reach(curve, 90.0, 90.0).abs() < 1.0e-4);
+            // Going there and back is no change whatever the curve.
+            let round_trip = exposure_stops_to_reach(curve, 90.0, 51.0)
+                + exposure_stops_to_reach(curve, 51.0, 90.0);
+            assert!(round_trip.abs() < 1.0e-4, "{curve:?}: {round_trip}");
+        }
+        // Without a tone curve the display is the scene light, sRGB encoded:
+        // code 51 is 3.3 % and code 90 is 10.3 %, 1.64 stops apart.
+        let plain = exposure_stops_to_reach(Standard, 90.0, 51.0);
+        assert!((plain - 1.64).abs() < 0.03, "plain {plain}");
+        // A filmic curve is steeper than that in the shadows, so the same
+        // rise in code value needs fewer stops, yet more than the ratio of
+        // the code values suggests.
+        let filmic = exposure_stops_to_reach(Aces, 90.0, 51.0);
+        let code_ratio = (90.0_f64 / 51.0).log2();
+        assert!(
+            filmic < plain && filmic > 1.2 * code_ratio,
+            "filmic {filmic}, code ratio {code_ratio}"
+        );
+
+        // Measured on the valve manifold: 0.75 EV took its mean from 43.91
+        // to 64.75 through the filmic curve. The estimate for that rise must
+        // agree with what the renderer did.
+        let predicted = exposure_stops_to_reach(Aces, 64.75, 43.91);
+        assert!(
+            (predicted - 0.75).abs() < 0.12,
+            "predicted {predicted} stops for a measured 0.75"
+        );
+
+        // The default path corrects once, so that one step has to arrive.
+        let base_ev = FINAL_PHOTO_BASE_EXPOSURE_EV;
+        let mut valve = sane_camera_subject();
+        valve.mean_luminance_srgb8 = 43.91;
+        let next_ev = bounded_default_exposure_ev(base_ev, valve, Aces)
+            .expect("an underexposed subject requests a correction");
+        let step = next_ev - base_ev;
+        assert!(
+            step > 1.1 && step < DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV,
+            "the single default step must cover the measured gap: {step} EV"
+        );
+        let mut black_body = sane_camera_subject();
+        black_body.mean_luminance_srgb8 = 6.75;
+        assert_eq!(
+            bounded_default_exposure_ev(base_ev, black_body, Aces),
+            Some(base_ev + DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV),
+            "the default step stays bounded however dark the subject measures"
+        );
+    }
+
+    #[test]
+    fn a_readable_dark_part_does_not_hold_an_underexposed_subject() {
+        // The valve manifold under --optimize: a cast-iron body covering a
+        // tenth of the subject measures readable while the whole subject sits
+        // just under the accepted band.
+        let mut mixed = sane_camera_subject();
+        mixed.mean_luminance_srgb8 = 77.42;
+        mixed.dark_material_mean_luminance_srgb8 = Some(23.62);
+        mixed.dark_material_coverage = 0.107;
+        mixed.low_clip_fraction = 0.091;
+        mixed.luminance_stddev_srgb8 = 56.8;
+        mixed.luminance_range_srgb8 = 255.0;
+        assert!(dark_product_is_readable(mixed));
+        assert!(camera_behavior_failure_codes(mixed).contains(&"subject_luminance_below_min"));
+        let next_ev = corrected_exposure_ev(0.805, mixed)
+            .expect("an underexposed subject keeps correcting past a readable dark part");
+        assert!(
+            next_ev > 0.805 + 0.15 && next_ev < 0.805 + 0.5,
+            "next EV {next_ev}"
+        );
+
+        // Once the subject is in band the dark part is left as dark as it is.
+        mixed.mean_luminance_srgb8 = 84.0;
+        assert!(camera_behavior_failure_codes(mixed).is_empty());
+        assert!(corrected_exposure_ev(1.2, mixed).is_none());
+    }
+
+    #[test]
+    fn a_traced_frame_is_exposed_from_where_it_stands() {
+        let curve = scena::Tonemapper::Aces;
+        let base_ev = FINAL_PHOTO_BASE_EXPOSURE_EV;
+        // The rasterized loop left the exposure at 1.0 and the traced frame
+        // reads darker: the correction goes up from 1.0, not from the base.
+        let mut dim = sane_camera_subject();
+        dim.mean_luminance_srgb8 = 62.0;
+        let next_ev =
+            traced_default_exposure_ev(1.0, dim, curve).expect("a dim frame is corrected");
+        assert!(next_ev > 1.3, "next EV {next_ev}");
+        assert!(next_ev <= base_ev + DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV);
+        // In band there is nothing to do, and the reach is the default path's.
+        dim.mean_luminance_srgb8 = 88.0;
+        assert_eq!(traced_default_exposure_ev(1.4, dim, curve), None);
+        dim.mean_luminance_srgb8 = 6.0;
+        assert_eq!(
+            traced_default_exposure_ev(1.0, dim, curve),
+            Some(base_ev + DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV)
+        );
+        assert_eq!(
+            traced_default_exposure_ev(
+                base_ev + DEFAULT_PHOTO_MAX_EXPOSURE_CORRECTION_EV,
+                dim,
+                curve
+            ),
+            None,
+            "at the end of its reach the controller stops"
+        );
+        // Clipped highlights come down whatever the mean says.
+        dim.high_clip_fraction = 0.04;
+        assert!(traced_default_exposure_ev(1.0, dim, curve).expect("clipping is corrected") < 1.0);
+    }
+
+    #[test]
     fn camera_behavior_retry_policy_is_bounded_camera_and_exposure_loop() {
         assert_eq!(CAMERA_BEHAVIOR_MAX_ATTEMPTS, 6);
         assert_eq!(CAMERA_BEHAVIOR_FOCUS_DELIVERY_MAX_ATTEMPTS, 6);
@@ -5944,7 +6164,7 @@ mod tests {
             failure_codes: Vec::new(),
             adjustment: Some("exposure_delta"),
         };
-        let report = retry_json(&[first, second], true);
+        let report = retry_json(&[first, second], true, scena::Tonemapper::Aces);
         assert_eq!(report["policy"]["max_attempts"], 6);
         assert_eq!(report["policy"]["max_retries"], 5);
         assert_eq!(
@@ -6095,7 +6315,7 @@ mod tests {
                 },
             })
             .collect::<Vec<_>>();
-        let report = retry_json(&candidates, true);
+        let report = retry_json(&candidates, true, scena::Tonemapper::Aces);
         assert_eq!(report["policy"]["max_attempts"], 6);
         assert_eq!(report["attempts"], 6);
         assert_eq!(report["retry_used"], true);

@@ -25,12 +25,8 @@ pub(super) struct OutputTransform {
 
 impl OutputTransform {
     pub(super) fn post_color(self, color: Color) -> Color {
-        let color = self.white_balance.apply(color);
-        match self.tonemapper {
-            Tonemapper::Aces => aces_tonemap(color, self.exposure_ev),
-            Tonemapper::PbrNeutral => pbr_neutral_tonemap(color, self.exposure_ev),
-            Tonemapper::Standard => apply_exposure(color, self.exposure_ev),
-        }
+        self.tonemapper
+            .tone_map(self.white_balance.apply(color), self.exposure_ev)
     }
 
     pub(super) fn encode_rgba8(self, color: Color) -> [u8; 4] {
@@ -119,6 +115,35 @@ pub enum Tonemapper {
     Standard,
     #[default]
     PbrNeutral,
+}
+
+impl Tonemapper {
+    /// Maps a linear scene colour to the linear display colour the renderer
+    /// produces at `exposure_ev`, before sRGB encoding.
+    ///
+    /// This is the renderer's own tone curve, exposed so that code which
+    /// meters a rendered frame can reason about what a change of exposure
+    /// will do to it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Color, Tonemapper};
+    ///
+    /// let grey = Color::from_linear_rgb(0.18, 0.18, 0.18);
+    /// let one_stop_up = Tonemapper::Standard.tone_map(grey, 1.0);
+    /// assert!((one_stop_up.r - 0.36).abs() < 1.0e-6);
+    /// // A filmic curve rolls highlights off instead of clipping them.
+    /// let bright = Color::from_linear_rgb(4.0, 4.0, 4.0);
+    /// assert!(Tonemapper::Aces.tone_map(bright, 0.0).r < 1.0);
+    /// ```
+    pub fn tone_map(self, color: Color, exposure_ev: f32) -> Color {
+        match self {
+            Self::Aces => aces_tonemap(color, exposure_ev),
+            Self::PbrNeutral => pbr_neutral_tonemap(color, exposure_ev),
+            Self::Standard => apply_exposure(color, exposure_ev),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -171,7 +171,7 @@ impl TraceScene {
                     vertices: geometry.vertices(),
                     deformed: false,
                     morph_weights: None,
-                    world: world.child(instance.transform()),
+                    world: world.then(set.placement(instance)),
                     material,
                     tint: multiply_tint(node_tint, instance.tint()),
                 })?;

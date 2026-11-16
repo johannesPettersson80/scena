@@ -67,7 +67,7 @@ pub(crate) fn parse_count(flag: &str, value: &str, limit: u32) -> Result<u32, Cl
 
 /// Exposure corrections tried on a traced frame before it is delivered. The
 /// frame is developed again from its radiance each time, not traced again.
-pub(crate) const EXPOSURE_MAX_ATTEMPTS: usize = 4;
+pub(crate) const EXPOSURE_MAX_ATTEMPTS: usize = 6;
 
 /// The traced frame and the account of it that goes into the report.
 pub(crate) struct PathTracedDelivery {

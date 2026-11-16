@@ -76,6 +76,31 @@ All notable user-facing changes are recorded here.
   new arm.
 - A glTF node with both a mesh and a `KHR_lights_punctual` light imports
   both; the light becomes a child of the mesh node.
+- Lights are placed by the exact world matrix of their node. A rectangle or
+  disc area light under a rotated node below a non-uniformly scaled one
+  follows the sheared axes with its authored edge lengths, on the CPU and GPU
+  renderers; a sphere light stays a sphere, and scale still never resizes a
+  light. A light whose hierarchy mirrors it through its own forward axis now
+  shines the mirrored way.
+- Connections mate through the exact world frames of their connectors. A
+  sheared connector is refused with
+  `ConnectionError::NonUniformScaleConnectionRisk`, also when its sheared axes
+  have equal lengths. With `ConnectOptions::allow_non_uniform_scale(true)` the
+  rigid frames are mated, origins and +X mating axes exactly, where the solver
+  previously used an approximate decomposition or failed with
+  `DegenerateConnectorFrame`. Imported anchors and connectors keep their exact
+  frame.
+- Add `PlacementFrame`, `Scene::placement_frame` and
+  `ConnectorFrame::local_frame`: placement verbs solved against the exact
+  world matrix of a node's parent. Recipe `center`, `ground`, `fit_to_size`,
+  `place_on`, `look_at` and `align_to_anchor` use it, so a node under a
+  sheared parent lands where the verb says. `scena place --node` and
+  `scena place --import` solve against the same exact frames.
+- Instanced scene imports draw, bound and pick an asset exactly where the
+  regular import does, including assets whose nodes shear each other and
+  instance roots with non-uniform scale. A set holding a sheared instance is
+  baked per instance, and `Instance::transform` reports the decomposition of
+  that instance's placement.
 
 ### Assets
 
