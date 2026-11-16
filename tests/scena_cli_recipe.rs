@@ -11275,8 +11275,11 @@ fn scena_recipe_render_verify_checks_contact_shadow_grounding_on_cpu_and_gpu() {
             ("missing", None, false, "contact_shadow_missing"),
             (
                 "present",
+                // The block floats 0.16 world units above the floor, about
+                // 8 px at this framing. Occlusion only reaches geometry
+                // inside its radius, so the radius has to span that gap.
                 Some(json!({
-                    "radius_px": 4,
+                    "radius_px": 8,
                     "intensity": 0.8,
                     "depth_threshold": 0.0
                 })),
