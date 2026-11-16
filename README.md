@@ -128,6 +128,14 @@ cost of render time. The same renderer is available to Rust code as
 `Renderer::path_trace`; see
 [Path-traced stills](docs/rendering.md#path-traced-stills).
 
+Traced stills also draw surface detail: edges are rounded enough to catch a
+highlight, and each material gets the finish of how such a part is made
+(cast grain, the orange peel of paint, machining marks, wear on edges, dirt
+in recesses), generated from the surface itself with no textures to
+download. A model can state its finishes, as
+`demo/samples/gate-valve/gate_valve_dn100.glb` does; otherwise they are
+inferred. See [Surface detail](docs/rendering.md#surface-detail).
+
 For a GLB with several handmade material slots, bind each visible source
 material independently:
 

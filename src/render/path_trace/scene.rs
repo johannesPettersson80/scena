@@ -300,6 +300,12 @@ impl<F> Builder<'_, F> {
             .then(|| model_tangents(&source))
             .flatten();
         let colors = geometry.authored_vertex_colors();
+        // Generated photographic textures repeat at a physical size, as the
+        // rasterizer maps them.
+        let uv_scale = self.materials[source.material as usize]
+            .tile_size_m
+            .and_then(|tile| geometry.photographic_texture_uv_scale(world.trs().scale, tile))
+            .unwrap_or([1.0, 1.0]);
         let mirrored = world.is_mirrored();
         let corner = |triangle: usize, corner: usize| -> Result<usize, PathTraceError> {
             let slot = triangle * 3 + corner;
@@ -358,7 +364,10 @@ impl<F> Builder<'_, F> {
                         normal
                     }
                 }),
-                uvs: corners.map(|index| geometry.tex_coord0_or_default(index)),
+                uvs: corners.map(|index| {
+                    let uv = geometry.tex_coord0_or_default(index);
+                    [uv[0] * uv_scale[0], uv[1] * uv_scale[1]]
+                }),
                 object,
                 tangents,
                 colors,

@@ -74,6 +74,7 @@ mod nodes;
 mod scene_asset;
 mod scene_selection;
 mod skins;
+mod surface_finish;
 mod textures;
 #[cfg(test)]
 mod transaction_tests;

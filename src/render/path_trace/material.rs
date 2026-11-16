@@ -132,6 +132,9 @@ pub(super) struct TraceMaterial {
     sheen_color: Vec3,
     sheen_roughness: f32,
     pub(super) finish: Option<SurfaceFinish>,
+    /// Physical size of one tile of generated textures, which sets how
+    /// often they repeat across a mesh.
+    pub(super) tile_size_m: Option<f32>,
 }
 
 /// Collects decoded textures, sharing one copy per handle and colour space.
@@ -230,6 +233,7 @@ impl TraceMaterial {
             sheen_color: rgb(desc.sheen_color_factor()),
             sheen_roughness: desc.sheen_roughness_factor(),
             finish: desc.surface_finish(),
+            tile_size_m: desc.photographic_surface_tile_size_m(),
         }
     }
 
@@ -310,6 +314,7 @@ impl TraceMaterial {
             sheen_color: Vec3::ZERO,
             sheen_roughness: 0.5,
             finish: None,
+            tile_size_m: None,
         }
     }
 

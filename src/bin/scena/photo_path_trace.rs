@@ -20,6 +20,7 @@ pub(crate) struct PhotoPathTraceFlags {
     pub(crate) samples: Option<u32>,
     pub(crate) bounces: Option<u32>,
     pub(crate) no_denoise: bool,
+    pub(crate) no_surface_detail: bool,
 }
 
 /// Settings of a requested path-traced delivery.
@@ -28,6 +29,7 @@ pub(crate) struct PhotoPathTraceArgs {
     pub(crate) samples: u32,
     pub(crate) bounces: u32,
     pub(crate) denoise: bool,
+    pub(crate) surface_detail: bool,
 }
 
 impl PhotoPathTraceFlags {
@@ -40,6 +42,7 @@ impl PhotoPathTraceFlags {
                 (self.samples.is_some(), "--samples"),
                 (self.bounces.is_some(), "--bounces"),
                 (self.no_denoise, "--no-denoise"),
+                (self.no_surface_detail, "--no-surface-detail"),
             ];
             return match stray.iter().find(|(given, _)| *given) {
                 Some((_, flag)) => {
@@ -52,6 +55,7 @@ impl PhotoPathTraceFlags {
             samples: self.samples.unwrap_or(DEFAULT_SAMPLES),
             bounces: self.bounces.unwrap_or(DEFAULT_BOUNCES),
             denoise: !self.no_denoise,
+            surface_detail: !self.no_surface_detail,
         }))
     }
 }
@@ -75,22 +79,43 @@ pub(crate) struct PathTracedDelivery {
     pub(crate) report: Value,
 }
 
+/// Share of the subject's radius to which the edges of its parts are
+/// rounded where the model states no finish of its own: 0.6 mm on a subject
+/// 30 cm across, about the break a machinist leaves on an edge.
+const EDGE_RADIUS_SHARE: f32 = 0.004;
+
+/// Edge radius, in metres, for a subject with these world bounds.
+pub(crate) fn subject_edge_radius_m(bounds: Option<scena::Aabb>) -> f32 {
+    bounds.map_or(0.0, |bounds| {
+        let radius = bounds.bounding_sphere_radius() * EDGE_RADIUS_SHARE;
+        if radius.is_finite() {
+            radius.clamp(0.0, scena::PathTraceOptions::MAX_EDGE_RADIUS_M)
+        } else {
+            0.0
+        }
+    })
+}
+
 /// Traces the host's scene as it stands, through its active camera.
 ///
 /// `stand_in_shadows` are the blended decals the rasterized photo places
 /// under a subject to ground it. Traced light casts that shadow itself, so
-/// the trace leaves them out.
+/// the trace leaves them out. `edge_radius_m` rounds the edges of parts
+/// whose material has no finish.
 pub(crate) fn deliver<F: scena::AssetFetcher>(
     host: &scena::SceneHostCore<F>,
     stand_in_shadows: &[u64],
     args: PhotoPathTraceArgs,
+    edge_radius_m: f32,
 ) -> Result<PathTracedDelivery, CliFailure> {
     let failure =
         |error: &dyn std::fmt::Display| CliFailure::new(CliErrorKind::Runtime, error.to_string());
     let options = scena::PathTraceOptions::new()
         .with_samples_per_pixel(args.samples)
         .with_max_bounces(args.bounces)
-        .with_denoise(args.denoise);
+        .with_denoise(args.denoise)
+        .with_surface_detail(args.surface_detail)
+        .with_edge_radius_m(edge_radius_m);
     let started = std::time::Instant::now();
     let traced = host.path_trace(&options, stand_in_shadows);
     let elapsed = started.elapsed();
@@ -108,6 +133,12 @@ pub(crate) fn deliver<F: scena::AssetFetcher>(
         "textures": stats.textures,
         "environment_resolution": stats.environment_resolution,
         "hidden_stand_in_shadow_nodes": stand_in_shadows.len(),
+        "surface_detail": {
+            "enabled": args.surface_detail,
+            "edge_radius_m": if args.surface_detail { edge_radius_m } else { 0.0 },
+            "finished_surfaces": stats.finished_surfaces,
+            "rounded_surfaces": stats.rounded_surfaces,
+        },
         "skipped": {
             "stroke_nodes": stats.skipped_stroke_nodes,
             "label_nodes": stats.skipped_label_nodes,
@@ -153,6 +184,7 @@ mod tests {
                 samples: DEFAULT_SAMPLES,
                 bounces: DEFAULT_BOUNCES,
                 denoise: true,
+                surface_detail: true,
             }))
         );
         let tuned = PhotoPathTraceFlags {
@@ -160,6 +192,7 @@ mod tests {
             samples: Some(512),
             bounces: Some(4),
             no_denoise: true,
+            no_surface_detail: true,
         };
         assert_eq!(
             tuned.resolve(),
@@ -167,7 +200,46 @@ mod tests {
                 samples: 512,
                 bounces: 4,
                 denoise: false,
+                surface_detail: false,
             }))
+        );
+        let stray = PhotoPathTraceFlags {
+            no_surface_detail: true,
+            ..PhotoPathTraceFlags::default()
+        };
+        let error = stray
+            .resolve()
+            .expect_err("--no-surface-detail alone is a usage error");
+        assert!(
+            error
+                .to_string()
+                .contains("--no-surface-detail requires --path-trace"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn edges_are_rounded_to_a_share_of_the_subject() {
+        assert_eq!(subject_edge_radius_m(None), 0.0);
+        let cube = scena::Aabb {
+            min: scena::Vec3::splat(-0.15),
+            max: scena::Vec3::splat(0.15),
+        };
+        let radius = subject_edge_radius_m(Some(cube));
+        // The bounding sphere of a 30 cm cube has a radius of about 26 cm.
+        assert!((radius - 0.001_04).abs() < 2.0e-5, "{radius}");
+        let endless = scena::Aabb {
+            min: scena::Vec3::splat(f32::NEG_INFINITY),
+            max: scena::Vec3::splat(f32::INFINITY),
+        };
+        assert_eq!(subject_edge_radius_m(Some(endless)), 0.0);
+        let vast = scena::Aabb {
+            min: scena::Vec3::splat(-1.0e6),
+            max: scena::Vec3::splat(1.0e6),
+        };
+        assert_eq!(
+            subject_edge_radius_m(Some(vast)),
+            scena::PathTraceOptions::MAX_EDGE_RADIUS_M
         );
     }
 

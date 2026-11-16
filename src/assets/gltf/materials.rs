@@ -21,6 +21,7 @@ use super::material_extensions::{
 use super::material_fallbacks::{
     MaterialFallbackSinks, TextureSlotFallbackRequest, texture_slot_with_fallback,
 };
+use super::surface_finish::parse_surface_finish;
 use super::textures::IndexedGltfTextures;
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -452,6 +453,9 @@ pub(super) fn parse_materials(
                 };
                 if material.double_sided() {
                     desc = desc.with_double_sided(true);
+                }
+                if let Some(finish) = parse_surface_finish(path, material_index, &material)? {
+                    desc = desc.with_surface_finish(finish);
                 }
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {

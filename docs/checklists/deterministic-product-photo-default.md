@@ -60,6 +60,14 @@ The existing optimizer may remain only as explicit advanced behavior.
     old metric-driven lighting solver remains available only with
     `--optimize`.
   - skipped: no optimizer visual retuning and no new light model.
+  - 2026-11-16 amendment: the bound is now `+/-1.5 EV` and the one correction
+    is computed by inverting the frame's tone curve instead of taking the
+    ratio of sRGB code values, which stopped about a third short under ACES.
+    Still one measurement, one correction, two renders. Measured with
+    `scena photo render <subject.glb> --gpu` on lavapipe at 1280x840: valve
+    manifold `1.538 EV`, subject mean `82.82`, passed (before: `1.0 EV`,
+    `64.75`, `subject_luminance_below_min`); travel mug `0.911 EV`, subject
+    mean `86.45` (before: `0.754 EV`, `80.65`).
 
 - [x] **3. Make acceptance fail closed without controlling the image**
   - Quality metrics may accept or reject the delivered frame with named

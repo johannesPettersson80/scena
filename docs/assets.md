@@ -208,6 +208,34 @@ import options and diagnostics for:
 
 See [Units, axes, and handedness](guides/units-axes-handedness.md).
 
+## Surface finish
+
+glTF has no way to say how a part was manufactured, so a material states it in
+its `extras`, next to scena's other annotations:
+
+```json
+{ "name": "body", "extras": { "scena": { "surface_finish": "cast_metal" } } }
+```
+
+or, to set more than the kind:
+
+```json
+{ "extras": { "scena": { "surface_finish": {
+    "kind": "painted_metal", "scale": 1.5, "relief": 0.8, "wear": 0.3,
+    "grime": 0.4, "edge_radius_m": 0.002, "axis": [1, 0, 0], "seed": 7
+} } } }
+```
+
+`kind` is one of `polished_metal`, `satin_metal`, `brushed_metal`,
+`machined_metal`, `cast_metal`, `painted_metal`, `powder_coated_metal`,
+`molded_plastic`, `clearcoat_plastic`, `rubber` and `fabric`. The other
+settings are optional and mean what they do on `SurfaceFinish`; see "Surface
+detail" in [Rendering](rendering.md). The import puts the finish on the
+`MaterialDesc`, and the path tracer draws it. A finish that names no known
+kind, has a setting out of range or carries an unknown setting fails the load
+with its `materials[n].extras.scena.surface_finish` path; it is never
+silently dropped. A material without the annotation has no finish.
+
 ## Anchors and connectors
 
 Anchors and connectors let assets describe intended placement points without

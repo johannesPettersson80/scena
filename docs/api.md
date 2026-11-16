@@ -78,14 +78,23 @@ Additive public API changes in Unreleased:
   `to_png_bytes()`, `write_png()`). `PathTraceOptions` (`new()`, `preview()`,
   `production()`, `with_samples_per_pixel`, `with_max_bounces`,
   `with_denoise`, `with_seed`, `with_radiance_clamp`,
-  `with_directional_light_angular_radius`, `with_environment_resolution`)
-  sets quality, `PathTraceStats` describes what was traced and what was left
+  `with_directional_light_angular_radius`, `with_environment_resolution`,
+  `with_surface_detail`, `with_edge_radius_m`) sets quality, `PathTraceStats` describes what was traced and what was left
   out, and `PathTraceError` (`#[non_exhaustive]`) reports a missing camera,
   geometry, material or environment, an unusable camera, a model node, or a
   scene over the triangle limit. See "Path-traced stills" in
   [Rendering](rendering.md).
+- `SurfaceFinish` (`new(kind)`, `with_scale`, `with_relief`, `with_wear`,
+  `with_grime`, `with_edge_radius_m`, `with_axis`, `with_seed`) states how a
+  part was made, and `MaterialDesc::with_surface_finish`,
+  `surface_finish()` and `without_surface_finish()` attach it to a material.
+  The path tracer draws it; see "Surface detail" in
+  [Rendering](rendering.md). glTF materials state it in
+  `extras.scena.surface_finish`.
 - `scena photo render` accepts `--path-trace`, `--samples <n>`,
-  `--bounces <n>` and `--no-denoise`.
+  `--bounces <n>`, `--no-denoise` and `--no-surface-detail`.
+- `Tonemapper::tone_map` maps a linear scene colour to the linear display
+  colour the renderer produces at a given exposure.
 
 - `scena photo plan <asset-or-recipe>` and
   `scena photo render <asset-or-recipe>` CLI workflows for bounded

@@ -601,10 +601,87 @@ What is simulated:
   near and far planes. With depth of field configured, rays leave a lens of
   the configured focal length and f-stop, which gives true defocus blur.
 
+- **Surface finish and rounded edges.** See "Surface detail" below.
+
 The layers conserve energy: no combination of base, sheen and clearcoat
 reflects more light than it receives at any view angle. This makes sheen
 slightly brighter face-on and darker at grazing angles than the rasterizer's
 constant sheen weight.
+
+### Surface detail
+
+A material's roughness says how sharp its reflections are on average. What
+makes a rendered part read as a manufactured object lies between that average
+and the shape of the part: the grain of a casting, the orange peel of paint,
+the marks a lathe leaves, an edge that is slightly rounded and catches the
+light, paint worn off corners, dirt in recesses. The path tracer adds these
+from two settings.
+
+**`SurfaceFinish`** is a material attribute that states how the part was
+made:
+
+```rust
+use scena::{Color, MaterialDesc, PhotographicSurfaceKind, SurfaceFinish};
+
+let cast_iron = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(70, 72, 76), 1.0, 0.6)
+    .with_surface_finish(
+        SurfaceFinish::new(PhotographicSurfaceKind::CastMetal)
+            .with_wear(0.2)
+            .with_grime(0.4),
+    );
+```
+
+The kinds are those of `PhotographicSurfaceKind`: polished, satin, brushed,
+machined and cast metal, painted and powder-coated metal, molded and
+clearcoat plastic, rubber and fabric. Each brings its own relief, patches of
+duller and glossier surface, slight tone variation and edge radius. The
+settings are:
+
+| Setting | Effect |
+|---|---|
+| `with_scale(f)` | Multiplies every feature size. `1.0` is the real size in a scene measured in metres. |
+| `with_relief(f)` | Multiplies the depth of the bumps; `0.0` keeps gloss and tone variation only. |
+| `with_wear(0..=1)` | Wears the finish off outward edges: coatings wear through to bare metal, bare metal is burnished, plastic and rubber scuff paler. |
+| `with_grime(0..=1)` | Darkens and dulls places that nearby surfaces shelter. |
+| `with_edge_radius_m(r)` | Rounds the part's edges to this radius; `0.0` keeps them sharp. Without it the kind's typical radius is used (0.2 mm machined, 1.5 mm cast), times the scale. |
+| `with_axis(v)` | Direction of brushing, or the axis a machined part was turned about, in the mesh's own space. Turning leaves rings on a face and hoops on a cylinder, about the mesh's origin. |
+| `with_seed(n)` | Another instance of the same random pattern. |
+
+A finish is generated in three dimensions from the position on the surface,
+in the mesh's own frame. It needs no texture coordinates, has no seams and
+never tiles, and it stays put when the mesh is moved, rotated or scaled.
+Relief finer than a pixel of the image is not drawn; it widens the highlight
+instead, which is what a camera sees. Brushing and turning marks finer than a
+pixel still stretch the highlight across the marks only.
+
+A glTF material states its finish in `extras.scena.surface_finish`, as a kind
+name or an object with the settings above; see [Assets](assets.md).
+
+**Rounded edges** are a shading effect. At each point it shades, the tracer
+looks at the surface of the same mesh within the edge radius and uses the
+average normal it finds. On a flat or smoothly curved surface that changes
+nothing. Next to an edge the normal leans towards the neighbouring face, so
+the edge catches the thin highlight a real one does, and an inside corner
+shades as a fillet. Overlapping solids inside one mesh blend where they meet,
+which makes a body built from primitives read as one casting. Different
+meshes keep a crisp line between them, as separate parts do. The silhouette
+keeps its corners, and light that reaches the rounded strip from behind the
+face it lies on is not gathered, so a rounded edge is slightly darker than a
+modelled bevel when lit only from the far side.
+
+`PathTraceOptions::with_edge_radius_m` rounds the edges of materials that have
+no finish, and `with_surface_detail(false)` traces the bare mesh with plain
+materials. `PathTraceStats` reports `finished_surfaces` and
+`rounded_surfaces`.
+
+Surface detail is applied where the image shows a surface, directly or in a
+mirror or through glass, not to the light a surface bounces onto others. The
+rasterizer does not draw a `SurfaceFinish`; under `scena photo render` it
+keeps the generated texture maps it had.
+
+`demo/samples/gate-valve/gate_valve_dn100.glb` is a flanged gate valve whose
+materials all state their finish; `scripts/generate_gate_valve_demo_asset.js`
+builds it from its dimensions.
 
 Limits to know about:
 
@@ -642,7 +719,8 @@ display.
 
 The `scena` CLI delivers a photo this way with
 `scena photo render <asset> --out <png> --report <json> --path-trace`.
-`--samples <n>`, `--bounces <n>` and `--no-denoise` tune it. The camera,
+`--samples <n>`, `--bounces <n>`, `--no-denoise` and `--no-surface-detail`
+tune it. The camera,
 exposure, focus and lighting are still chosen by the rasterized
 camera-behavior loop; the delivered frame is then traced from that scene and
 the quality policy is evaluated on the traced pixels. The report gains a

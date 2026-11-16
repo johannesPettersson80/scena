@@ -590,7 +590,12 @@ fn run_photo_render_command(args: &[String]) -> Result<CliOutcome, CliFailure> {
     let path_trace_report = match args.path_trace {
         Some(path_trace) => {
             let stand_in_shadows = &shaded_selection.surroundings_report.contact_shadow_nodes;
-            let mut delivery = photo_path_trace::deliver(&host, stand_in_shadows, path_trace)?;
+            let edge_radius_m = photo_path_trace::subject_edge_radius_m(
+                host.nodes_world_bounds(&subject.root_handles)
+                    .map_err(runtime_failure)?,
+            );
+            let mut delivery =
+                photo_path_trace::deliver(&host, stand_in_shadows, path_trace, edge_radius_m)?;
             // Traced light is blocked by the set the subject stands in, which
             // the rasterizer's environment light is not, so the exposure the
             // loop chose for the rasterized frame is re-metered on this one.
@@ -4603,6 +4608,10 @@ impl PhotoRenderArgs {
                     path_trace.no_denoise = true;
                     index += 1;
                 }
+                "--no-surface-detail" => {
+                    path_trace.no_surface_detail = true;
+                    index += 1;
+                }
                 "--report" => {
                     report = Some(PathBuf::from(flag_value(args, index, "--report")?));
                     index += 2;
@@ -4866,11 +4875,11 @@ fn runtime_failure(error: impl std::fmt::Display) -> CliFailure {
 }
 
 fn photo_usage() -> &'static str {
-    "usage: scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...; scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json> [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--max-imports <n>] [--allow-root <directory>]...; scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise] [--no-surface-detail]] [--max-imports <n>] [--allow-root <directory>]..."
 }
 
 fn photo_render_usage() -> &'static str {
-    "usage: scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]] [--max-imports <n>] [--allow-root <directory>]..."
+    "usage: scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png> --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>] [--width <px>] [--height <px>] [--gpu] [--optimize] [--path-trace [--samples <n>] [--bounces <n>] [--no-denoise] [--no-surface-detail]] [--max-imports <n>] [--allow-root <directory>]..."
 }
 
 fn photo_plan_usage() -> &'static str {

@@ -7,6 +7,7 @@ use crate::{
 };
 
 mod asset_health;
+mod finish;
 
 use asset_health::{
     append_component_layout_issues, material_values_are_physical, transform_bounds,
@@ -407,6 +408,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                             .expect("generated photographic material has a physical tile"),
                     )
                     .with_photographic_micro_surface(0.0, micro_scale_m);
+                let material = finish::give(material, surface_kind, subject_radius);
                 let material = self.assets.create_material(material);
                 self.scene.set_mesh_material(node, material)?;
                 report.micro_surface_materials += 1;

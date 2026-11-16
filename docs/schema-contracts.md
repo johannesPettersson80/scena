@@ -1771,7 +1771,7 @@ are `null` rather than fabricated.
 `scena.photo_render_result.v1` is emitted by
 `scena photo render <asset-or-recipe> [--intent camera-behavior] --out <png>
 --report <json> [--emit-recipe <recipe.json>] [--subject import:<id>|node:<id>]
-[--path-trace [--samples <n>] [--bounces <n>] [--no-denoise]]`. It is the stdout command
+[--path-trace [--samples <n>] [--bounces <n>] [--no-denoise] [--no-surface-detail]]`. It is the stdout command
 envelope for the bounded camera-behavior easy path. On success it reports
 `ok:true`, the normalized intent, emitted PNG/report/descriptor paths, optional
 emitted recipe path, the selected candidate, subject quality metrics, and any
@@ -1801,10 +1801,17 @@ evaluated on the traced pixels, the selected candidate's `adjustment` is
 `hidden_stand_in_shadow_nodes` (the blended contact-shadow decals the
 rasterized photo uses, hidden because traced light casts that shadow itself),
 `skipped` counts for stroke, label and particle nodes and degenerate
-triangles, and `elapsed_ms`. In the envelope `path_trace` is `null` for a
+triangles, `surface_detail` (`enabled`, the `edge_radius_m` given to parts
+without a finish of their own, and the counts of `finished_surfaces` and
+`rounded_surfaces`), and `elapsed_ms`. A traced photo gives every material
+without authored surface textures the finish inferred from its metalness,
+roughness and clearcoat, sized to the subject, and rounds edges to 0.4 % of
+the subject's radius; a finish stated in the model is kept as stated, and
+`--no-surface-detail` traces the plain materials on the bare mesh. In the envelope `path_trace` is `null` for a
 rasterized photo; the report omits it. The composited planar ground
-reflection is not applied to a traced frame. `--samples`, `--bounces` and
-`--no-denoise` without `--path-trace` are usage errors.
+reflection is not applied to a traced frame. `--samples`, `--bounces`,
+`--no-denoise` and `--no-surface-detail` without `--path-trace` are usage
+errors.
 
 `scena.photo_plan.v1` is emitted by
 `scena photo plan <asset-or-recipe> [--intent camera-behavior] --out <plan.json>`.
