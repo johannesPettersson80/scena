@@ -94,6 +94,7 @@ fn sheen_lobe(outgoing: Vec3, incoming: Vec3, half: Vec3, alpha: f32) -> f32 {
 /// integration and compares. Entries above 1 mark views where the lobe alone
 /// would reflect more than it receives.
 #[rustfmt::skip]
+#[allow(clippy::approx_constant, reason = "tabulated albedo; one entry happens to read like log10(2)")]
 const SHEEN_ALBEDO: [[f32; SHEEN_TABLE]; SHEEN_TABLE] = [
     [2.6932, 1.0882, 0.4630, 0.1901, 0.0731, 0.0257, 0.0081, 0.0022, 0.0005, 0.0001, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000],
     [2.2268, 1.1000, 0.5779, 0.3010, 0.1519, 0.0732, 0.0332, 0.0139, 0.0053, 0.0018, 0.0005, 0.0001, 0.0000, 0.0000, 0.0000, 0.0000],
