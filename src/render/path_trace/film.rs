@@ -252,12 +252,16 @@ mod tests {
     fn rows_come_back_in_order_whatever_the_number_of_workers() {
         let expected: Vec<usize> = (0..37).map(|row| row * row).collect();
         assert_eq!(for_rows(37, |row| row * row), expected);
-        // Inside a worker the same call runs serially and must agree.
-        let single = rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .expect("pool builds");
-        assert_eq!(single.install(|| for_rows(37, |row| row * row)), expected);
+        // Inside a worker the same call runs serially and must agree. The
+        // worker pool exists only on native targets.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let single = rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .expect("pool builds");
+            assert_eq!(single.install(|| for_rows(37, |row| row * row)), expected);
+        }
         assert!(for_rows(0, |row| row).is_empty());
     }
 
