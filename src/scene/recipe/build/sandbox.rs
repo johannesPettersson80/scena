@@ -46,6 +46,7 @@ impl RecipeBuildPolicy {
     /// An import that lies inside the allowed roots can still name files
     /// outside them, by an absolute path or by climbing out with `..`. Such a
     /// file is held to the same scheme and root rules as the import itself.
+    #[cfg(feature = "scene-host")]
     pub(crate) fn validate_import_dependency(
         &self,
         dependency: &str,

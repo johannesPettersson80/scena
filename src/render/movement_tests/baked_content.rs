@@ -52,11 +52,19 @@ fn a_section_box_needs_new_caps_only_when_content_moves() {
     }
 }
 
-/// Pixels that are far more red than green or blue.
+/// Pixels that are clearly more red than green or blue.
+///
+/// A probe this bright tone-maps to a pale red, about `[253, 150, 150]`, so
+/// the margin is a difference rather than a ratio. A ratio only matched the
+/// darker, more saturated pixels that anti-aliasing leaves along the box's
+/// outline, which made the count a measure of the anti-aliasing filter.
 fn strongly_red_pixels(frame: &[u8]) -> usize {
     frame
         .chunks_exact(4)
-        .filter(|pixel| pixel[0] > 96 && pixel[0] / 3 > pixel[1] && pixel[0] / 3 > pixel[2])
+        .filter(|pixel| {
+            let clear_of = |other: u8| u16::from(pixel[0]) > u16::from(other) + 60;
+            pixel[0] > 96 && clear_of(pixel[1]) && clear_of(pixel[2])
+        })
         .count()
 }
 

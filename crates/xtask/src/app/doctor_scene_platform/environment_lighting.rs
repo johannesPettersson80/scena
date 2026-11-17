@@ -488,7 +488,7 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
             "lights.has_direct_lights() || environment.is_active()",
             "fn surface_punctual_lighting(",
             "PbrMaterial::new",
-            "Surface::new(pbr_material, normal, view)",
+            "Surface::new(opaque_material, normal, view)",
             "surface_direct_light(s, incoming, radiance, 1.0)",
             "surface_direct_light(s, incoming, radiance, 0.0)",
             ".with_ior(material.ior())",
@@ -514,10 +514,7 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
         findings,
         "ARCH-DIRECT-LIGHT-SHADING",
         "src/render/prepare/lighting/lobes.rs",
-        &[
-            "dispersion_light_contribution",
-            "transmission_volume_light_contribution",
-        ],
+        &["dispersion_light_contribution"],
     );
     require_contains(
         root,
