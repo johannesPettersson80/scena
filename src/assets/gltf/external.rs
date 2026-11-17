@@ -84,10 +84,26 @@ pub(super) fn resolve_relative_path(base: &AssetPath, uri: &str) -> AssetPath {
     if reference.starts_with('/') {
         return AssetPath::from(reference.into_owned());
     }
-    let Some((directory, _file)) = base.as_str().rsplit_once('/') else {
+    let backslash_separates = !base_is_url && cfg!(windows);
+    let Some(directory) = base_directory(base.as_str(), backslash_separates) else {
         return AssetPath::from(reference.into_owned());
     };
     AssetPath::from(format!("{directory}/{reference}"))
+}
+
+/// The directory part of `base`, without its trailing separator.
+///
+/// A Windows file path separates directories with `\` as well as `/`, and a
+/// path built with `Path::join` mixes both, so on Windows the last of either
+/// ends the directory. Elsewhere, and in every URL, only `/` does: `\` is an
+/// ordinary file-name character there.
+fn base_directory(base: &str, backslash_separates: bool) -> Option<&str> {
+    let end = if backslash_separates {
+        base.rfind(['/', '\\'])
+    } else {
+        base.rfind('/')
+    }?;
+    Some(&base[..end])
 }
 
 /// Percent-decodes a URI reference. Escapes that do not form valid UTF-8
@@ -126,6 +142,26 @@ mod tests {
             resolved("models/scene.gltf", "100%25.bin"),
             "models/100%.bin"
         );
+    }
+
+    #[test]
+    fn windows_paths_keep_their_directory_when_either_separator_ends_it() {
+        let joined = r"D:\work\target/gltf-import/percent encoded uris\Box With Spaces.gltf";
+        assert_eq!(
+            base_directory(joined, true),
+            Some(r"D:\work\target/gltf-import/percent encoded uris"),
+        );
+        assert_eq!(
+            base_directory(r"C:\models\scene.gltf", true),
+            Some(r"C:\models")
+        );
+        assert_eq!(base_directory("scene.gltf", true), None);
+        // Where `\` is a file-name character only `/` ends the directory.
+        assert_eq!(
+            base_directory(r"models/odd\name.gltf", false),
+            Some("models")
+        );
+        assert_eq!(base_directory(r"C:\models\scene.gltf", false), None);
     }
 
     #[test]
