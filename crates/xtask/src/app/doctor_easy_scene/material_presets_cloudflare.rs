@@ -530,8 +530,11 @@ fn require_json_f64(artifact: &Value, pointer: &str, expected: f64, findings: &m
 }
 
 fn material_delta_threshold(thresholds: &str, preset: &str) -> Option<f32> {
+    // The Cloudflare proof is the WebGL2 surface, so its own limit comes first.
+    let surface_key = format!("live_webgl2_chromium.{preset}.delta_e2000_max");
     let preset_key = format!("{preset}.delta_e2000_max");
-    parse_threshold_value(thresholds, &preset_key)
+    parse_threshold_value(thresholds, &surface_key)
+        .or_else(|| parse_threshold_value(thresholds, &preset_key))
         .or_else(|| parse_threshold_value(thresholds, "global.reference_delta_e2000_max"))
 }
 

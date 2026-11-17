@@ -30,6 +30,24 @@ const REQUIRED_PRESETS: &[&str] = &[
 
 const REQUIRED_THRESHOLD_FLOORS: &[(&str, ThresholdBound)] = &[
     ("matte.delta_e2000_max", ThresholdBound::Max(5.0)),
+    // WebGL2 limits that differ from the base budget, capped so they cannot
+    // creep; the thresholds file records why each exists.
+    (
+        "live_webgl2_chromium.matte.delta_e2000_max",
+        ThresholdBound::Max(11.5),
+    ),
+    (
+        "live_webgl2_chromium.clear_glass.delta_e2000_max",
+        ThresholdBound::Max(33.5),
+    ),
+    (
+        "live_webgl2_chromium.leather.local_texture_variance_min",
+        ThresholdBound::Min(0.005),
+    ),
+    (
+        "live_webgl2_chromium.satin.sheen_width_min",
+        ThresholdBound::Min(0.015),
+    ),
     ("plastic.delta_e2000_max", ThresholdBound::Max(11.0)),
     ("metal.delta_e2000_max", ThresholdBound::Max(20.0)),
     ("rough_metal.delta_e2000_max", ThresholdBound::Max(16.0)),
