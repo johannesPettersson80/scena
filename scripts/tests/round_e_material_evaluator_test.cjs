@@ -128,7 +128,7 @@ const thresholds = {
   "live_webgpu_chromium.brushed_steel": { anisotropy_aspect_ratio_ibl: 1.15 },
   "live_webgpu_chromium.leather": { local_texture_variance_min: 0.003 },
   "live_webgpu_chromium.rubber": { local_texture_variance_min: 0.004 },
-  "live_webgpu_chromium.satin": { sheen_width_min: 0.08 },
+  "live_webgpu_chromium.satin": { sheen_width_min: 0.015 },
 };
 
 function evaluate(tiles, surface = "synthetic-contract") {
@@ -203,5 +203,10 @@ assertFailsOnlyIntendedFamily(
   (tiles) => { tiles.leather = subject([150, 72, 28]); },
   "leather_texture_variance",
 );
+assertFailsOnlyIntendedFamily(
+  "removed sheen",
+  (tiles) => { tiles.satin = subject([85, 20, 80]); },
+  "satin_sheen_width",
+);
 
-console.log("round-e shared material evaluator: good fixture and six mutations passed");
+console.log("round-e shared material evaluator: good fixture and seven mutations passed");

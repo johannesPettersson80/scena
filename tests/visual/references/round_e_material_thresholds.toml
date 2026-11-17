@@ -94,5 +94,10 @@ local_texture_variance_min = 0.003
 [live_webgpu_chromium.rubber]
 local_texture_variance_min = 0.004
 
+# The layered surface model gives WebGPU the same energy-compensated Charlie
+# sheen as the CPU renderer. The required Chromium lane measures 0.027 for it
+# (the CPU lane measures 0.015); the old 0.08 floor was set for the previous
+# additive sheen lobe, which measured 0.109. 0.015 matches the CPU floor and
+# still rejects the zero-signal satin mutation.
 [live_webgpu_chromium.satin]
-sheen_width_min = 0.08
+sheen_width_min = 0.015
