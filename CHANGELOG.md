@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-17
+
 ### Rendering
 
 - Rework GPU shading around one layered surface model shared by the native
