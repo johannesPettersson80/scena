@@ -2651,6 +2651,20 @@ fn scene_recipe_build_policy_holds_what_an_import_pulls_in_to_the_allowed_roots(
         );
     }
     build(&contained).expect("a buffer inside the allowed roots builds");
+
+    // A reference to a file that does not exist brings nothing in. The
+    // loader reports the missing texture; the policy has nothing to refuse.
+    let missing_texture = allowed.join("missing-texture.gltf");
+    let mut with_image: serde_json::Value =
+        serde_json::from_str(&model("inside.bin")).expect("model parses");
+    with_image["images"] = json!([{ "uri": "../outside/not-there.png" }]);
+    with_image["textures"] = json!([{ "source": 0 }]);
+    with_image["materials"] = json!([{
+        "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } }
+    }]);
+    with_image["meshes"][0]["primitives"][0]["material"] = json!(0);
+    fs::write(&missing_texture, with_image.to_string()).expect("model");
+    build(&missing_texture).expect("a missing external texture is not a policy violation");
     fs::remove_dir_all(&root).expect("temporary directory is removed");
 }
 

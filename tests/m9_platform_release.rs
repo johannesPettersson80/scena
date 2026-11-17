@@ -3258,8 +3258,7 @@ fn m9_pf03_release_scale_prepared_storage_artifact() {
     let geometry = assets.create_geometry(tangent_benchmark_geometry(TRIANGLE_COUNT, false));
     let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
     let mut scene = tangent_benchmark_scene(geometry, material, false);
-    let mut renderer = Renderer::headless(1, 1).expect("PF03 renderer creates");
-    let samples = measure_profiled_prepares(&mut renderer, &mut scene, &assets, SAMPLE_COUNT);
+    let samples = measure_cold_profiled_prepares(&mut scene, &assets, SAMPLE_COUNT);
     let metrics = samples.metrics;
     assert_eq!(metrics.prepared_triangle_count, TRIANGLE_COUNT as u64);
     assert_eq!(metrics.prepared_model_vertex_buffer_count, 1);
@@ -3711,24 +3710,17 @@ fn benchmark_profiled_tangent_workload(
     let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
     let mut static_scene = tangent_benchmark_scene(static_geometry, material, false);
     let mut deformed_scene = tangent_benchmark_scene(deformed_geometry, material, true);
-    let mut static_renderer = Renderer::headless(1, 1).expect("static tangent renderer creates");
-    let mut deformed_renderer =
-        Renderer::headless(1, 1).expect("deformed tangent renderer creates");
-    let static_cold = static_renderer
+    // The first prepare of the static mesh generates its tangents and fills
+    // the cache in `Assets`. Every later sample bakes on a renderer that has
+    // not seen the scene, so the static samples measure a bake that finds the
+    // tangents cached and the deformed samples one that must generate them.
+    let static_cold = Renderer::headless(1, 1)
+        .expect("static tangent renderer creates")
         .prepare_with_assets_profiled(&mut static_scene, &assets)
         .expect("cold static tangent prepare succeeds");
-    let static_samples = measure_profiled_prepares(
-        &mut static_renderer,
-        &mut static_scene,
-        &assets,
-        sample_count,
-    );
-    let deformed_samples = measure_profiled_prepares(
-        &mut deformed_renderer,
-        &mut deformed_scene,
-        &assets,
-        sample_count,
-    );
+    let static_samples = measure_cold_profiled_prepares(&mut static_scene, &assets, sample_count);
+    let deformed_samples =
+        measure_cold_profiled_prepares(&mut deformed_scene, &assets, sample_count);
     let release_scale = triangle_count == 33_334 && sample_count >= BENCHMARK_SAMPLE_COUNT;
 
     serde_json::json!({
@@ -3840,57 +3832,32 @@ struct ProfiledPrepareSamples {
     metrics: scena::PrepareWorkMetrics,
 }
 
-fn measure_profiled_prepares<F>(
-    renderer: &mut Renderer,
+/// Samples profiled prepares, each on a renderer that has never seen the
+/// scene.
+///
+/// A renderer keeps what it prepared. Preparing an unchanged scene again
+/// bakes nothing, and shadow visibility is cached across prepares whose light
+/// and occluder signatures are unchanged, which is what makes the
+/// camera-behavior loop affordable. Sampling a bake or shadow workload on one
+/// reused renderer therefore measures those caches and reports zero baked
+/// triangles and `shadow_rays: 0` - numbers that would be published as bake
+/// and intersection cost while describing the opposite. The cost of the work
+/// is a cold-path property, so it is measured on the cold path.
+fn measure_cold_profiled_prepares<F>(
     scene: &mut Scene,
     assets: &Assets<F>,
     sample_count: usize,
-) -> ProfiledPrepareSamples {
-    renderer
-        .prepare_with_assets_profiled(scene, assets)
-        .expect("profiled prepare warmup succeeds");
-    let mut duration_ms = Vec::with_capacity(sample_count);
-    let mut allocation_counts = Vec::with_capacity(sample_count);
-    let mut allocated_bytes = Vec::with_capacity(sample_count);
-    let mut expected_metrics = None;
-    for _ in 0..sample_count {
-        start_allocation_counting();
-        let start = Instant::now();
-        let result = renderer.prepare_with_assets_profiled(scene, assets);
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
-        stop_allocation_counting();
-        let metrics = result.expect("profiled tangent prepare succeeds");
-        if let Some(expected) = expected_metrics {
-            assert_eq!(
-                metrics, expected,
-                "profiled prepare counters must be deterministic"
-            );
-        } else {
-            expected_metrics = Some(metrics);
-        }
-        duration_ms.push(elapsed_ms);
-        allocation_counts.push(allocation_count());
-        allocated_bytes.push(allocation_bytes());
-    }
-    ProfiledPrepareSamples {
-        duration_ms,
-        allocation_counts,
-        allocation_bytes: allocated_bytes,
-        metrics: expected_metrics.expect("profiled prepare records metrics"),
-    }
+) -> ProfiledPrepareSamples
+where
+    F: scena::AssetFetcher,
+{
+    measure_cold_profiled_prepares_at((1, 1), scene, assets, sample_count)
 }
 
-/// Same sampling contract as `measure_profiled_prepares`, but each sample runs
-/// on a renderer that has never seen this scene.
-///
-/// The renderer caches shadow visibility across prepares whose light and
-/// occluder signatures are unchanged, which is what makes the camera-behavior
-/// loop affordable. A warm prepare therefore casts **no** shadow rays, so
-/// sampling a shadow workload on one reused renderer measures cache hits and
-/// reports `shadow_rays: 0` - numbers that would be published as shadow
-/// intersection cost while describing the opposite. Scaling is a cold-path
-/// property, so it is measured on the cold path.
-fn measure_cold_profiled_prepares<F>(
+/// [`measure_cold_profiled_prepares`] on renderers with a `size` target, for
+/// workloads whose bake depends on how large a triangle is on screen.
+fn measure_cold_profiled_prepares_at<F>(
+    size: (u32, u32),
     scene: &mut Scene,
     assets: &Assets<F>,
     sample_count: usize,
@@ -3904,7 +3871,7 @@ where
     // them and the counters differ between otherwise identical samples. Only the
     // renderer-owned shadow visibility cache is meant to be cold here.
     {
-        let mut warmup = Renderer::headless(1, 1).expect("cold shadow warmup renderer creates");
+        let mut warmup = Renderer::headless(size.0, size.1).expect("cold warmup renderer creates");
         warmup
             .prepare_with_assets_profiled(scene, assets)
             .expect("cold shadow warmup prepare succeeds");
@@ -3914,7 +3881,8 @@ where
     let mut allocated_bytes = Vec::with_capacity(sample_count);
     let mut expected_metrics = None;
     for _ in 0..sample_count {
-        let mut renderer = Renderer::headless(1, 1).expect("cold shadow renderer creates");
+        let mut renderer =
+            Renderer::headless(size.0, size.1).expect("cold sample renderer creates");
         start_allocation_counting();
         let start = Instant::now();
         let result = renderer.prepare_with_assets_profiled(scene, assets);
@@ -4081,10 +4049,8 @@ fn benchmark_profiled_cpu_texture_bake_workload(sample_count: usize) -> serde_js
     .expect("CPU texture-bake inline PNG loads");
     let nonqualifying_material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
     let mut nonqualifying_scene = texture_bake_benchmark_scene(geometry, nonqualifying_material);
-    let mut nonqualifying_renderer =
-        Renderer::headless(256, 256).expect("nonqualifying CPU texture-bake renderer creates");
-    let nonqualifying = measure_profiled_prepares(
-        &mut nonqualifying_renderer,
+    let nonqualifying = measure_cold_profiled_prepares_at(
+        (256, 256),
         &mut nonqualifying_scene,
         &assets,
         sample_count,
@@ -4093,9 +4059,8 @@ fn benchmark_profiled_cpu_texture_bake_workload(sample_count: usize) -> serde_js
     for (role, material) in cpu_texture_bake_role_materials(albedo) {
         let material = assets.create_material(material);
         let mut scene = texture_bake_benchmark_scene(geometry, material);
-        let mut renderer =
-            Renderer::headless(256, 256).expect("texture-role CPU bake renderer creates");
-        let measured = measure_profiled_prepares(&mut renderer, &mut scene, &assets, sample_count);
+        let measured =
+            measure_cold_profiled_prepares_at((256, 256), &mut scene, &assets, sample_count);
         texture_roles.insert(
             role.to_string(),
             serde_json::json!({

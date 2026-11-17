@@ -73,7 +73,13 @@ pub(super) fn asset_policy_diagnostics(
     // The import's own path was checked before it was loaded. What it pulls
     // in is only known afterwards, and is held to the same rules: a model
     // inside the allowed roots must not bring in files from outside them.
-    for resource in report.external_resources() {
+    // Only files that were read count. A reference to a file that is not
+    // there brought nothing in, and the loader already reports it.
+    let fetched = report
+        .external_resources()
+        .iter()
+        .filter(|resource| resource.status == crate::AssetExternalResourceStatus::Fetched);
+    for resource in fetched {
         if let Err(diagnostic) =
             policy.validate_import_dependency(resource.path.as_str(), format!("{import_path}.uri"))
         {
