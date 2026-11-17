@@ -38,7 +38,7 @@ not depend on local-only generated files.
 - Content: 13 meshes, 51,420 triangles, positions and normals only (no
   texture coordinates and no textures). Every material states its finish in
   `extras.scena.surface_finish`.
-- SHA-256: `feeef48905fc34e22039200db466cde2b1c44baecc19ba563136b00281aded3c`
+- SHA-256: `a478880d8b23a4a4852bd6e8bf652b27935646debfcbba2a64b989a714bcc0f7`
 - Size: 1,898,544 bytes
 - Demo role: subject for path-traced stills with surface detail.
 
