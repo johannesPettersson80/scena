@@ -14,7 +14,9 @@
 //! A model whose materials state a surface finish, as the gate valve's do,
 //! is traced with it. `--plain` traces the bare mesh and plain materials
 //! instead, and `--edge-radius-mm <mm>` rounds the edges of parts that have
-//! no finish.
+//! no finish. `--target <x,y,z>` aims the camera at another point of the
+//! subject, `--zoom <factor>` moves it closer and `--view <x,y,z>` sets the
+//! direction it looks from.
 
 use std::f32::consts::FRAC_PI_2;
 
@@ -57,10 +59,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let center = (bounds.min + bounds.max) * 0.5;
     let radius = (bounds.max - bounds.min).length() * 0.5;
+    let vector = |flag: &str| {
+        let parts: Vec<f32> = option(flag)?
+            .split(',')
+            .filter_map(|part| part.trim().parse().ok())
+            .collect();
+        (parts.len() == 3).then(|| Vec3::new(parts[0], parts[1], parts[2]))
+    };
+    let zoom = option("--zoom")
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|zoom| zoom.is_finite() && *zoom > 0.0)
+        .unwrap_or(1.0);
 
     // The camera looks slightly down at the subject from the front right,
     // from as close as keeps every corner of its bounds in frame.
-    let view = Vec3::new(0.55, 0.32, 1.0).normalize();
+    let view = vector("--view")
+        .unwrap_or(Vec3::new(0.55, 0.32, 1.0))
+        .normalize();
     let right = Vec3::Y.cross(view).normalize();
     let up = view.cross(right);
     let field_of_view = Angle::from_degrees(26.0);
@@ -79,8 +94,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 + offset.dot(view)
         })
         .fold(0.0_f32, f32::max)
-        * 1.12;
-    let eye = center + view * distance;
+        * 1.12
+        / zoom;
+    let aim = vector("--target").unwrap_or(center);
+    let eye = aim + view * distance;
     let camera = scene.add_perspective_camera(
         scene.root(),
         PerspectiveCamera {
@@ -89,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             near: distance * 0.05,
             far: distance * 40.0,
         },
-        Transform::at(eye).looking_at(center, Vec3::Y),
+        Transform::at(eye).looking_at(aim, Vec3::Y),
     )?;
     scene.set_active_camera(camera)?;
 
