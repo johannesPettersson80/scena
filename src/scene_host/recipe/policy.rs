@@ -70,6 +70,27 @@ pub(super) fn asset_policy_diagnostics(
         ));
     }
 
+    // The import's own path was checked before it was loaded. What it pulls
+    // in is only known afterwards, and is held to the same rules: a model
+    // inside the allowed roots must not bring in files from outside them.
+    for resource in report.external_resources() {
+        if let Err(diagnostic) =
+            policy.validate_import_dependency(resource.path.as_str(), format!("{import_path}.uri"))
+        {
+            let mut diagnostic = *diagnostic;
+            diagnostic.message = format!(
+                "the import references the external {} '{}', which the policy does not allow: {}",
+                match resource.kind {
+                    crate::AssetExternalResourceKind::Buffer => "buffer",
+                    crate::AssetExternalResourceKind::Image => "image",
+                },
+                resource.path.as_str(),
+                diagnostic.message
+            );
+            diagnostics.push(diagnostic);
+        }
+    }
+
     let asset = report.asset();
     let node_count = asset.node_count();
     if node_count > policy.max_nodes() {

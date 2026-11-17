@@ -1417,7 +1417,10 @@ guarantee. The host owns migrations, domain persistence, undo, and history.
 Schema versioning and deliberate additive fields are the extension mechanism.
 Caller-authored recipe IDs are stable for recipe-local build and patch
 correlation, not runtime handles or application-persistence identities. URI
-access remains constrained by the operator-owned build policy and allowed roots.
+access remains constrained by the operator-owned build policy and allowed roots,
+and so are the external buffers and images an imported glTF references: one
+that lies outside the policy fails the build with `policy_violation` at the
+import's `uri`.
 
 The current v1 recipe slice supports:
 

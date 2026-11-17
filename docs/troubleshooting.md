@@ -122,6 +122,12 @@ diagnostics. Check the normalized URI, `required` flag, and `allowed_roots`
 before changing recipe content. `--syntax-only` deliberately does not establish
 that render-time resources are available.
 
+The policy also covers what an import pulls in. A glTF inside the allowed
+roots that names an external buffer or image outside them, by an absolute
+path or with `..`, fails the build with `policy_violation` at the import's
+`uri`, and the message names the file. Move the file under an allowed root
+next to the model, or authorize its directory.
+
 If the normalized URI is intentionally in an external model library, do not
 move the file or disable the sandbox. Inspect and then reuse a narrow operator
 root:

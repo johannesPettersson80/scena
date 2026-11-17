@@ -2581,6 +2581,81 @@ fn scene_recipe_build_policy_rejects_fail_open_path_sandboxes() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scene_recipe_build_policy_holds_what_an_import_pulls_in_to_the_allowed_roots() {
+    // A model inside the allowed root whose buffer lies outside it.
+    let root = std::env::temp_dir().join(format!(
+        "scena-recipe-dependency-sandbox-{}",
+        std::process::id()
+    ));
+    let (allowed, outside) = (root.join("allowed"), root.join("outside"));
+    fs::create_dir_all(&allowed).expect("allowed directory");
+    fs::create_dir_all(&outside).expect("outside directory");
+    let triangle: Vec<u8> = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect();
+    fs::write(outside.join("secret.bin"), &triangle).expect("outside buffer");
+    fs::write(allowed.join("inside.bin"), &triangle).expect("inside buffer");
+    let model = |buffer_uri: &str| {
+        json!({
+            "asset": { "version": "2.0" },
+            "scene": 0,
+            "scenes": [{ "nodes": [0] }],
+            "nodes": [{ "mesh": 0 }],
+            "meshes": [{ "primitives": [{ "attributes": { "POSITION": 0 } }] }],
+            "accessors": [{
+                "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+                "min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 0.0]
+            }],
+            "bufferViews": [{ "buffer": 0, "byteLength": 36 }],
+            "buffers": [{ "uri": buffer_uri, "byteLength": 36 }]
+        })
+        .to_string()
+    };
+    let escaping_by_parent = allowed.join("climbs.gltf");
+    fs::write(&escaping_by_parent, model("../outside/secret.bin")).expect("model");
+    let escaping_by_absolute_path = allowed.join("absolute.gltf");
+    let secret = outside.join("secret.bin");
+    fs::write(
+        &escaping_by_absolute_path,
+        model(secret.to_str().expect("utf-8 temp path")),
+    )
+    .expect("model");
+    let contained = allowed.join("contained.gltf");
+    fs::write(&contained, model("inside.bin")).expect("model");
+
+    let build = |model: &Path| {
+        let recipe = json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [{ "id": "part", "uri": model.to_str().expect("utf-8 temp path") }]
+        })
+        .to_string();
+        pollster::block_on(scena::SceneHostCore::build_recipe_json(
+            "tests/assets/policy.recipe.json",
+            &recipe,
+            scena::RecipeBuildPolicy::testing().with_allowed_roots([allowed.clone()]),
+        ))
+    };
+    for escaping in [&escaping_by_parent, &escaping_by_absolute_path] {
+        let report = build(escaping).expect_err("a buffer outside the allowed roots is refused");
+        assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
+        let message = &report
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "policy_violation")
+            .expect("the violation is reported")
+            .message;
+        assert!(
+            message.contains("external buffer") && message.contains("secret.bin"),
+            "{message}"
+        );
+    }
+    build(&contained).expect("a buffer inside the allowed roots builds");
+    fs::remove_dir_all(&root).expect("temporary directory is removed");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scene_recipe_build_skips_only_explicit_optional_imports() {
     let recipe = serde_json::to_string_pretty(&json!({
         "schema": "scena.scene_recipe.v1",

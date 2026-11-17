@@ -155,6 +155,11 @@ All notable user-facing changes are recorded here.
 
 ### Assets
 
+- Recipe builds hold what an import pulls in to the build policy. A glTF
+  inside the allowed roots could name an external buffer or image outside
+  them, by an absolute path or with `..`, and the build read it. Such an
+  import now fails with `policy_violation`, naming the file. Imports whose
+  external files lie inside the allowed roots are unaffected.
 - glTF materials can state a surface finish in `extras.scena.surface_finish`;
   see "Surface finish" in `docs/assets.md`. A finish that is present but
   invalid fails the load with its path.

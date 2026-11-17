@@ -40,6 +40,26 @@ impl RecipeBuildPolicy {
         self.validate_local_path(&resolved, diagnostic_path)
     }
 
+    /// Checks a file that an import pulled in, such as the external buffer
+    /// or image of a glTF, against the policy.
+    ///
+    /// An import that lies inside the allowed roots can still name files
+    /// outside them, by an absolute path or by climbing out with `..`. Such a
+    /// file is held to the same scheme and root rules as the import itself.
+    pub(crate) fn validate_import_dependency(
+        &self,
+        dependency: &str,
+        diagnostic_path: impl Into<String>,
+    ) -> Result<(), Box<SceneRecipeDiagnosticV1>> {
+        if dependency.starts_with("data:") {
+            return Ok(());
+        }
+        // The loader has already resolved the dependency against the import,
+        // so there is no recipe path left to resolve it against.
+        self.resolve_import_uri("", dependency, diagnostic_path)
+            .map(drop)
+    }
+
     fn validate_local_path(
         &self,
         resolved: &str,
