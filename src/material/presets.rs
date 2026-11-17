@@ -234,7 +234,10 @@ impl MaterialDesc {
     /// Frosted glass preset backed by blend mode plus rough transmission, IOR, and volume metadata.
     ///
     /// GPU backends use the shared scene-color transmission path with
-    /// roughness-driven blur where supported. This is not a caustics model.
+    /// roughness-driven blur where supported. The roughness is chosen so that
+    /// what lies close behind the glass stays readable as a soft blur; a fully
+    /// rough surface would wash it out to a flat plate. This is not a caustics
+    /// model.
     ///
     /// # Examples
     ///
@@ -247,10 +250,10 @@ impl MaterialDesc {
     /// ```
     pub const fn frosted_glass(tint: Color) -> Self {
         let base_color = Color::from_linear_rgba(tint.r, tint.g, tint.b, 0.88);
-        Self::pbr_metallic_roughness(base_color, 0.0, 1.0)
+        Self::pbr_metallic_roughness(base_color, 0.0, 0.35)
             .with_alpha_mode(AlphaMode::Blend)
             .with_double_sided(true)
-            .with_transmission_factor(0.45)
+            .with_transmission_factor(0.85)
             .with_ior(1.45)
             .with_thickness_factor(0.12)
             .with_attenuation_distance(1.25)

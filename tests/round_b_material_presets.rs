@@ -97,8 +97,8 @@ fn expanded_material_presets_use_only_backed_material_lanes() {
     let frosted_glass = MaterialDesc::frosted_glass(Color::COOL_WHITE);
     assert_eq!(frosted_glass.alpha_mode(), AlphaMode::Blend);
     assert!(frosted_glass.double_sided());
-    assert_close(frosted_glass.roughness_factor(), 1.0);
-    assert_close(frosted_glass.transmission_factor(), 0.45);
+    assert_close(frosted_glass.roughness_factor(), 0.35);
+    assert_close(frosted_glass.transmission_factor(), 0.85);
     assert_close(frosted_glass.ior(), 1.45);
     assert_close(frosted_glass.thickness_factor(), 0.12);
     assert_color_close(frosted_glass.attenuation_color(), Color::COOL_WHITE);
@@ -126,7 +126,8 @@ fn real_world_material_shortcuts_keep_neighbor_presets_distinct() {
     let clear = MaterialDesc::clear_glass(Color::CYAN);
     let frosted = MaterialDesc::frosted_glass(Color::COOL_WHITE);
     assert!(
-        frosted.roughness_factor() >= 0.92 && frosted.transmission_factor() <= 0.55,
+        frosted.roughness_factor() >= clear.roughness_factor() + 0.30
+            && frosted.transmission_factor() < clear.transmission_factor(),
         "frosted glass must be materially rougher and less directly transmissive than clear glass"
     );
     assert!(

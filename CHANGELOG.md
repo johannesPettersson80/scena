@@ -140,6 +140,10 @@ All notable user-facing changes are recorded here.
   shows only its reflections, and it shades double-sided glass on the
   visible side only. See `docs/rendering.md` for the limits of the
   screen-space model.
+- `MaterialDesc::frosted_glass` is retuned for physically composed glass:
+  roughness 0.35 instead of 1.0 and transmission 0.85 instead of 0.45. With
+  the old values the new glass model rendered an opaque white plate; what
+  lies close behind frosted glass now shows through as a soft blur.
 
 ### Scene
 

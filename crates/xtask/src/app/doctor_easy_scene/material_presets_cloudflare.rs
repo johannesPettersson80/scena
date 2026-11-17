@@ -344,12 +344,13 @@ fn validate_cloudflare_hard_material_metrics(
         "local_texture_variance_min",
         findings,
     );
-    require_metric_min(
+    require_surface_metric_min(
         artifact,
         thresholds,
+        "live_webgl2_chromium",
         "satin",
         "sheen_width",
-        "satin.sheen_width_min",
+        "sheen_width_min",
         findings,
     );
     require_metric_min(
