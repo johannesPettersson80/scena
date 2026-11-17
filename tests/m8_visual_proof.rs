@@ -960,21 +960,34 @@ fn render_khr_material_feature_cases() -> Vec<KhrMaterialFeatureCase> {
             min_changed_pixel_fraction: 0.20,
             min_direction_metric: 10.0,
         },
+        // In front of a white wall: the volume tints and dims the light it
+        // transmits, and the empty background would give it none.
         KhrMaterialFeatureCase {
             name: "transmission-volume",
-            control: render(
+            control: render_backlit_material_box(
                 "q02-transmission-control",
+                &assets,
                 transmission_base
                     .clone()
                     .with_transmission_texture(transmission_off),
-                0.0,
-            ),
-            enabled: render(
+                "q02-khr-feature-source-frame",
+            )
+            .rgba,
+            enabled: render_backlit_material_box(
                 "q02-transmission-enabled",
+                &assets,
                 transmission_base.with_transmission_texture(transmission_on),
-                0.0,
-            ),
-            region: common_region,
+                "q02-khr-feature-source-frame",
+            )
+            .rgba,
+            // Inside the front face: the wall around the box is the same in
+            // both frames and would only dilute the changed-pixel share.
+            region: FeatureRegion {
+                x: 98,
+                y: 110,
+                width: 60,
+                height: 50,
+            },
             direction: FeatureDirection::BlueDominantDarkening,
             min_effect_rmse: 30.0,
             min_changed_pixel_fraction: 0.50,
@@ -1202,20 +1215,16 @@ fn render_transmission_volume_material_feature() -> VisualArtifact {
         .with_attenuation_color(Color::from_linear_rgb(0.08, 0.35, 1.0));
     let off = base.clone().with_transmission_texture(blocked_texture);
     let on = base.with_transmission_texture(transmission_texture);
-    let mut left = render_material_box(
+    let mut left = render_backlit_material_box(
         "m8-transmission-volume-left",
         &assets,
         off,
-        None,
-        true,
         "transmission-volume-before",
     );
-    let right = render_material_box(
+    let right = render_backlit_material_box(
         "m8-transmission-volume-right",
         &assets,
         on,
-        None,
-        true,
         "transmission-volume-after",
     );
 
@@ -1232,6 +1241,44 @@ fn render_transmission_volume_material_feature() -> VisualArtifact {
         b"generated-rust-scene:m8-transmission-volume-material-feature:transmission-volume-before-after",
     ));
     left
+}
+
+/// Renders the lit material box in front of an unlit white wall that fills the
+/// frame. A transmissive material needs light behind it to show its volume:
+/// in front of the empty background, glass shows only its reflections.
+fn render_backlit_material_box<F>(
+    name: &'static str,
+    assets: &Assets<F>,
+    material: MaterialDesc,
+    proof_class: &'static str,
+) -> VisualArtifact {
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.55));
+    let material = assets.create_material(material);
+    let wall = assets.create_geometry(GeometryDesc::box_xyz(6.0, 6.0, 0.1));
+    let wall_material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::ZERO))
+        .add()
+        .expect("mesh inserts");
+    scene
+        .mesh(wall, wall_material)
+        .transform(Transform::at(Vec3::new(0.0, 0.0, -1.5)))
+        .add()
+        .expect("backdrop inserts");
+    scene
+        .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
+        .add()
+        .expect("light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let environment = Some(assets.default_environment());
+    let mut artifact = render_scene_with_assets(name, scene, camera, assets, environment);
+    artifact.proof_class = proof_class;
+    artifact.source_hash = Some(fnv1a64_hex(
+        format!("generated-rust-scene:{name}:{proof_class}").as_bytes(),
+    ));
+    artifact
 }
 
 fn render_material_box<F>(

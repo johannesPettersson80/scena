@@ -80,6 +80,18 @@ fn draw_projected_physical_transmission_cpu(
     }
     let inverse_area = area.recip();
     let mut pixels_encoded = 0_u64;
+    // World units per model unit along each model axis: the material
+    // thickness is authored in model units.
+    let world_from_model = primitive.world_from_model();
+    let column_length = |column: usize| {
+        Vec3::new(
+            world_from_model[column * 4],
+            world_from_model[column * 4 + 1],
+            world_from_model[column * 4 + 2],
+        )
+        .length()
+    };
+    let model_scale = Vec3::new(column_length(0), column_length(1), column_length(2));
 
     for y in min_y..=max_y {
         for x in min_x..=max_x {
@@ -108,7 +120,8 @@ fn draw_projected_physical_transmission_cpu(
                 continue;
             }
 
-            let surface_color = multiply_color(mix_color(vertices, weights), primitive.tint());
+            let tint = primitive.tint();
+            let surface_color = multiply_color(mix_color(vertices, weights), tint);
             let normal = cpu_geometry::weighted_vec3(
                 [
                     a.attributes.normal,
@@ -119,16 +132,24 @@ fn draw_projected_physical_transmission_cpu(
             );
             let view = camera.camera_position() - position;
             let target = cpu_frame.target;
+            let base_color = transmission.base_color();
             let transmitted = physical_transmission_color(
                 transmission,
                 PhysicalTransmissionInputs {
                     frag_coord: [px, py],
                     viewport: [target.width as f32, target.height as f32],
+                    position,
                     normal,
                     view,
-                    tint: Vec3::new(surface_color.r, surface_color.g, surface_color.b),
+                    model_scale,
+                    tint: Vec3::new(
+                        base_color.x * tint.r,
+                        base_color.y * tint.g,
+                        base_color.z * tint.b,
+                    ),
                     surface_rgb: Vec3::new(surface_color.r, surface_color.g, surface_color.b),
                 },
+                |world| scene_color_uv(camera, target, world),
                 |uv| sample_post_scene_color(scene_color_frame, target, uv),
             );
             let final_color =
@@ -141,9 +162,29 @@ fn draw_projected_physical_transmission_cpu(
     pixels_encoded
 }
 
+/// Scene-colour texture coordinates of a world position, or `None` outside
+/// the view volume. The CPU rasterizer spreads clip space over
+/// `0..=width - 1` pixels and samples pixel `x` at `x + 0.5`, so the same
+/// mapping is used here: a surface point then reads the pixel it covers.
+fn scene_color_uv(
+    camera: &super::camera::CameraProjection,
+    target: RasterTarget,
+    world: Vec3,
+) -> Option<[f32; 2]> {
+    let projected = camera.project(world)?;
+    let (width, height) = (target.width as f32, target.height as f32);
+    Some([
+        (projected.ndc_x * 0.5 + 0.5) * (width - 1.0) / width,
+        (0.5 - projected.ndc_y * 0.5) * (height - 1.0) / height,
+    ])
+}
+
+/// Bilinear read of the scene colour with clamp-to-edge addressing. Texel
+/// centres sit at half-integer pixel coordinates, as on the GPU, so the
+/// coordinates of a fragment read exactly the pixel behind it.
 fn sample_post_scene_color(frame: &[Color], target: RasterTarget, uv: [f32; 2]) -> Vec3 {
-    let x = uv[0].clamp(0.0, 1.0) * target.width.saturating_sub(1) as f32;
-    let y = uv[1].clamp(0.0, 1.0) * target.height.saturating_sub(1) as f32;
+    let x = (uv[0] * target.width as f32 - 0.5).clamp(0.0, target.width.saturating_sub(1) as f32);
+    let y = (uv[1] * target.height as f32 - 0.5).clamp(0.0, target.height.saturating_sub(1) as f32);
     let x0 = x.floor() as u32;
     let y0 = y.floor() as u32;
     let x1 = x0.saturating_add(1).min(target.width.saturating_sub(1));

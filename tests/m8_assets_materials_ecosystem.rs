@@ -3123,10 +3123,14 @@ fn m8_headless_gpu_transmission_volume_ibl_capability_when_available() {
         return;
     }
 
+    // The environment's blue radiance is 1.0. The glass reflects its Fresnel
+    // share of the environment at full strength, so a much brighter one
+    // saturates the blue channel of both panes and hides the tint of the
+    // transmitted light that this test measures.
     let environment_path = AssetPath::from("memory://gpu-transmission-ibl-blue_2x1.hdr");
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         environment_path.clone(),
-        tiny_radiance_hdr_rgbe(2, 1, &[[16, 32, 255, 132], [16, 32, 255, 132]]),
+        tiny_radiance_hdr_rgbe(2, 1, &[[16, 32, 255, 128], [16, 32, 255, 128]]),
     )]));
     let environment = pollster::block_on(assets.load_environment(environment_path.as_str()))
         .expect("HDR environment loads");
@@ -3592,9 +3596,11 @@ fn m8_dispersion_factor_affects_cpu_preview_pixels() {
 #[test]
 fn m8_transmission_volume_textures_affect_cpu_preview_pixels() {
     let blocked =
-        render_center_rgb_for_transmission_volume_textures([0, 0, 0, 255], [0, 255, 0, 255]);
-    let blue_glass =
-        render_center_rgb_for_transmission_volume_textures([255, 0, 0, 255], [0, 255, 0, 255]);
+        render_backlit_face_rgb_for_transmission_volume_textures([0, 0, 0, 255], [0, 255, 0, 255]);
+    let blue_glass = render_backlit_face_rgb_for_transmission_volume_textures(
+        [255, 0, 0, 255],
+        [0, 255, 0, 255],
+    );
 
     assert!(
         rgb_distance_u8(blocked, blue_glass) > 120,
@@ -3607,6 +3613,50 @@ fn m8_transmission_volume_textures_affect_cpu_preview_pixels() {
     assert!(
         blue_glass[2] > blue_glass[0] + 12 && blue_glass[2] > blue_glass[1] + 6,
         "volume attenuation color should tint transmitted glass toward blue: {blue_glass:?}",
+    );
+}
+
+#[test]
+fn m8_glass_in_front_of_nothing_transmits_nothing_in_the_cpu_preview() {
+    let assets = Assets::new();
+    let glass = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
+        .with_transmission_factor(1.0)
+        .with_ior(1.7)
+        .with_thickness_factor(2.0)
+        .with_attenuation_distance(1.0)
+        .with_attenuation_color(Color::from_linear_rgb(0.08, 0.35, 1.0));
+    let frame = render_frame_with_assets(&assets, glass);
+    let face = sample_rgb(&frame, 48, 48, OFF_HIGHLIGHT_FACE.0, OFF_HIGHLIGHT_FACE.1);
+
+    assert!(
+        rgb_sum(face) < 120,
+        "glass with only the black clear colour behind it has nothing to transmit: the volume \
+         must not glow in its attenuation colour, and the face shows just its weak Fresnel \
+         reflection of the studio: {face:?}",
+    );
+}
+
+#[test]
+fn m8_double_sided_glass_shades_only_its_visible_side_in_the_cpu_preview() {
+    let assets = Assets::new();
+    let glass = |double_sided: bool| {
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
+            .with_transmission_factor(1.0)
+            .with_ior(1.5)
+            .with_double_sided(double_sided)
+    };
+    let face = |double_sided: bool| {
+        let frame = render_frame_with_assets(&assets, glass(double_sided));
+        sample_rgb(&frame, 48, 48, OFF_HIGHLIGHT_FACE.0, OFF_HIGHLIGHT_FACE.1)
+    };
+    let single_sided = face(false);
+    let double_sided = face(true);
+
+    assert!(
+        rgb_distance_u8(single_sided, double_sided) <= 6,
+        "a camera-facing glass face must look the same whether or not the material is \
+         double-sided; shading the hidden side too reflects the whole studio at full strength \
+         and veils the glass: single_sided={single_sided:?} double_sided={double_sided:?}",
     );
 }
 
@@ -5104,7 +5154,16 @@ fn render_center_rgb_for_dispersion_factor(dispersion: f32) -> [u8; 3] {
     )
 }
 
-fn render_center_rgb_for_transmission_volume_textures(
+/// A front-face pixel of the 0.75 block below and left of the frame centre.
+///
+/// The centre itself holds the mirror highlight of the studio, which a glass
+/// surface keeps at full strength whatever it transmits, so it cannot tell an
+/// opaque block from a transmitting one.
+const OFF_HIGHLIGHT_FACE: (u32, u32) = (18, 30);
+
+/// Renders the block in front of an unlit white backdrop, so the volume has
+/// light to transmit and absorb, and samples [`OFF_HIGHLIGHT_FACE`].
+fn render_backlit_face_rgb_for_transmission_volume_textures(
     transmission_pixel: [u8; 4],
     thickness_pixel: [u8; 4],
 ) -> [u8; 3] {
@@ -5125,7 +5184,7 @@ fn render_center_rgb_for_transmission_volume_textures(
     let thickness =
         pollster::block_on(assets.load_texture(thickness_uri, TextureColorSpace::Linear))
             .expect("thickness texture loads");
-    render_center_rgb_with_assets(
+    let frame = render_frame_with_backdrop(
         &assets,
         MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
             .with_transmission_factor(1.0)
@@ -5135,7 +5194,9 @@ fn render_center_rgb_for_transmission_volume_textures(
             .with_thickness_texture(thickness)
             .with_attenuation_distance(1.0)
             .with_attenuation_color(Color::from_linear_rgb(0.08, 0.35, 1.0)),
-    )
+        Some(Color::WHITE),
+    );
+    sample_rgb(&frame, 48, 48, OFF_HIGHLIGHT_FACE.0, OFF_HIGHLIGHT_FACE.1)
 }
 
 fn dominant_rgb_channel(value: [u8; 3]) -> usize {
@@ -5174,6 +5235,16 @@ fn render_max_luminance_with_assets(assets: &Assets, material: MaterialDesc) -> 
 }
 
 fn render_frame_with_assets(assets: &Assets, material: MaterialDesc) -> Vec<u8> {
+    render_frame_with_backdrop(assets, material, None)
+}
+
+/// Renders the block, optionally in front of an unlit wall of `backdrop`
+/// colour that fills the frame behind it.
+fn render_frame_with_backdrop(
+    assets: &Assets,
+    material: MaterialDesc,
+    backdrop: Option<Color>,
+) -> Vec<u8> {
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.75, 0.75, 0.75));
     let material = assets.create_material(material);
     let mut scene = Scene::new();
@@ -5182,6 +5253,15 @@ fn render_frame_with_assets(assets: &Assets, material: MaterialDesc) -> Vec<u8> 
         .transform(Transform::at(Vec3::ZERO))
         .add()
         .expect("mesh inserts");
+    if let Some(backdrop) = backdrop {
+        let wall = assets.create_geometry(GeometryDesc::box_xyz(6.0, 6.0, 0.1));
+        let wall_material = assets.create_material(MaterialDesc::unlit(backdrop));
+        scene
+            .mesh(wall, wall_material)
+            .transform(Transform::at(Vec3::new(0.0, 0.0, -1.5)))
+            .add()
+            .expect("backdrop inserts");
+    }
     scene
         .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
         .add()

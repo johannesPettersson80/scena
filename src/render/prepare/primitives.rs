@@ -362,11 +362,6 @@ fn append_triangle_primitives(
                 } else {
                     1.0
                 };
-                let thickness_texture = if textured_thickness {
-                    thickness_texture_sample(source.textures, source.material, corner.uv)
-                } else {
-                    1.0
-                };
                 let shade_with_normal = |normal, clearcoat_normal| {
                     material_color(
                         source.material,
@@ -390,7 +385,6 @@ fn append_triangle_primitives(
                             iridescence_texture,
                             iridescence_thickness_texture,
                             transmission_texture,
-                            thickness_texture,
                             environment: params
                                 .reflection_probe
                                 .as_ref()
@@ -403,8 +397,13 @@ fn append_triangle_primitives(
                     )
                 };
                 let lit = shade_with_normal(normal, clearcoat_normal);
+                // Glass shades its visible side only, as the GPU does: the
+                // hidden side reflects the environment at full Fresnel
+                // strength, and the transmission pass adds the surface colour
+                // to the scene seen through it instead of blending it down.
                 let lit = if source.material.double_sided()
                     && matches!(source.material.kind(), MaterialKind::PbrMetallicRoughness)
+                    && !transmissive
                 {
                     brighter_color(lit, shade_with_normal(-normal, -clearcoat_normal))
                 } else {

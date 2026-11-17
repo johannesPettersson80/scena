@@ -562,7 +562,10 @@ fn shade_fragment(in: VertexOut, front_facing: bool) -> vec4<f32> {
         var surface: Surface;
         surface.base = base.rgb;
         surface.metallic = metallic;
-        surface.diffuse_color = base.rgb * (1.0 - metallic);
+        // Light a transmissive dielectric passes on is not scattered back as
+        // diffuse; the transmission term adds what arrives from behind.
+        let opaque_share = 1.0 - transmitted_share(metallic);
+        surface.diffuse_color = base.rgb * ((1.0 - metallic) * opaque_share);
         surface.f0 = mix(vec3<f32>(f0_from_ior(material.transmission_factors.y)), base.rgb, metallic);
         surface.f90 = 1.0;
         surface.roughness = roughness;
@@ -610,7 +613,7 @@ fn shade_fragment(in: VertexOut, front_facing: bool) -> vec4<f32> {
         surface.dispersion = dispersion_factor;
         surface.dispersion_f0 = dispersion_f0_from_ior(dispersion_ior, dispersion_factor);
         coat_attenuation = surface.clearcoat_attenuation;
-        shaded_rgb = base.rgb * (occlusion_applied * ambient_visibility);
+        shaded_rgb = base.rgb * (occlusion_applied * ambient_visibility * opaque_share);
         // Lights without a shadow map have no other occlusion: the screen
         // visibility stands in for the soft shadow a fill light would cast.
         let direct = surface_punctual_lighting(
@@ -645,9 +648,11 @@ fn shade_fragment(in: VertexOut, front_facing: bool) -> vec4<f32> {
     );
     let transmitted = physical_transmission_color(
         in.position.xy,
+        in.world_position,
         normal,
         view,
         base.rgb,
+        metallic,
         roughness,
         output_rgb,
     );

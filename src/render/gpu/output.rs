@@ -821,21 +821,45 @@ mod tests {
                     && shader.contains("let thickness = max(material.transmission_factors.z, 0.0);")
                     && shader.contains("let view_dir = normalize(view);")
                     && shader.contains("let normal_dir = normalize(normal);")
-                    && shader.contains("let refracted = refract(-view_dir, normal_dir, 1.0 / ior);")
-                    && shader.contains("let thickness_scale = 0.004 + min(thickness, 1.0) * 0.028;")
-                    && shader.contains("let blur_px = roughness * roughness * 48.0;")
-                    && shader.contains("let refraction_mix = clamp(0.58 + roughness * 0.40 + rim_fresnel * 0.10, 0.58, 0.96);")
-                    && shader.contains("let refracted_blurred =")
-                    && shader.contains("let rim_fresnel = pow(1.0 - n_dot_v, 5.0);")
-                    && shader.contains("let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);")
-                    && shader.contains("let tint_strength = clamp(transmission * 0.035, 0.0, 0.035);")
-                    && shader.contains("return vec4<f32>(mix(transmitted, reflected, reflection_weight), 1.0);")
                     && shader.contains(
-                        "textureSample(transmission_color_texture, transmission_color_sampler"
+                        "let fresnel = fresnel_schlick(n_dot_v, vec3<f32>(f0_from_ior(ior))).x;"
+                    )
+                    && shader.contains(
+                        "let ray = refract(-view_dir, normal_dir, 1.0 / ior) * thickness * model_scale;"
+                    )
+                    && shader.contains(
+                        "let exit_clip = camera.clip_from_world * vec4<f32>(world_position + ray, 1.0);"
+                    )
+                    && shader.contains("let spread = roughness * clamp(ior * 2.0 - 2.0, 0.0, 1.0);")
+                    && shader.contains("const SCENE_BLUR_TAPS: i32 = 16;")
+                    && shader.contains(
+                        "volume_transmittance(length(ray), material.attenuation_color.rgb, material.transmission_factors.w)"
+                    )
+                    && shader.contains(
+                        "return vec4<f32>(surface_rgb + transmitted * ((1.0 - fresnel) * transmission), 1.0);"
+                    )
+                    && shader.contains("let opaque_share = 1.0 - transmitted_share(metallic);")
+                    && shader.contains(
+                        "textureSampleLevel(transmission_color_texture, transmission_color_sampler"
                     ),
-                "{name} shader must sample opaque scene color with IOR/thickness refraction \
-                 and roughness blur; alpha-blend-only glass is not enough for Round E material proof"
+                "{name} shader must split reflection from transmission by the IOR's Fresnel term, \
+                 read the scene colour at the projected exit point of the refracted ray, blur it by \
+                 roughness and absorb along the path; alpha-blend-only glass is not enough for \
+                 Round E material proof"
             );
+            // The hand-tuned mixing terms this replaced must not come back.
+            for hand_tuned in [
+                "thickness_scale",
+                "refraction_mix",
+                "reflection_weight",
+                "rim_fresnel",
+                "tint_strength",
+            ] {
+                assert!(
+                    !shader.contains(hand_tuned),
+                    "{name} shader must not reintroduce the hand-tuned `{hand_tuned}` term"
+                );
+            }
         }
     }
 

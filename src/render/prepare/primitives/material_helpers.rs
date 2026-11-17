@@ -152,6 +152,8 @@ pub(super) fn material_transmission(
         attenuation_color: material.attenuation_color(),
         attenuation_distance: material.attenuation_distance(),
         roughness: material.roughness_factor(),
+        metallic: material.metallic_factor(),
+        base_color: material.base_color(),
     })
 }
 

@@ -124,6 +124,20 @@ All notable user-facing changes are recorded here.
   with nothing above the threshold is still unchanged. The stage now runs two
   passes and owns two pipelines. The CPU renderer keeps its box blur and hard
   threshold.
+- Glass is composed on physical terms in the CPU renderer and in the native
+  and WebGL2 shaders. Reflection follows Schlick's Fresnel from the index of
+  refraction. The scene behind is read where the refracted ray leaves the
+  material after travelling `thickness_factor` in model units, blurred by a
+  16-tap disc sized by roughness and index of refraction, absorbed along the
+  path and tinted by the base colour. The hand-tuned rim, mix and offset
+  constants are gone. Expect every transmissive material to look different:
+  refraction is as strong as the thickness says, the base colour tints
+  transmitted light fully instead of by 3.5 %, highlights on glass keep their
+  full strength, and metals do not transmit. The CPU renderer no longer adds
+  a glow in the attenuation colour, so glass in front of an empty background
+  shows only its reflections, and it shades double-sided glass on the
+  visible side only. See `docs/rendering.md` for the limits of the
+  screen-space model.
 
 ### Scene
 

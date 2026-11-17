@@ -63,6 +63,10 @@ pub(crate) fn check_material_reflection_quality_contracts(
             "red_volume_rgb",
             "transmission_volume_ibl_rgb",
             "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS",
+            // CPU glass: no glow without light behind it, and no veil from
+            // shading the hidden side of a double-sided surface.
+            "m8_glass_in_front_of_nothing_transmits_nothing_in_the_cpu_preview",
+            "m8_double_sided_glass_shades_only_its_visible_side_in_the_cpu_preview",
         ],
     );
     require_contains(
@@ -77,6 +81,17 @@ pub(crate) fn check_material_reflection_quality_contracts(
             "fn refract_vec3",
             "volume_transmittance_matches_beer_lambert_probe",
             "scene_color_transmission_uses_refraction_volume_and_reflection_terms",
+            // The physical model: Fresnel split from the IOR, the scene read
+            // at the projected exit point of the refracted ray, a blur disc
+            // sized by roughness and IOR, absorption along the path.
+            "schlick_fresnel(f0_from_ior(material.ior), n_dot_v)",
+            "project(input.position + ray)",
+            "const SCENE_BLUR_TAPS: u32 = 16;",
+            "fresnel_from_the_ior_splits_reflection_and_transmission",
+            "thin_walled_glass_samples_the_scene_straight_through",
+            "thick_glass_reads_the_scene_at_the_projected_exit_point_of_the_refracted_ray",
+            "thickness_is_in_model_units_and_follows_the_model_scale",
+            "roughness_blurs_the_scene_with_a_disc_sized_by_roughness_and_ior",
         ],
     );
     require_contains(
@@ -134,13 +149,35 @@ pub(crate) fn check_material_reflection_quality_contracts(
         "src/render/gpu/surface_effects.wgsl",
         &[
             "fn physical_transmission_color",
-            "volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w)",
-            "textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv",
+            "fresnel_schlick(n_dot_v, vec3<f32>(f0_from_ior(ior))).x",
+            "refract(-view_dir, normal_dir, 1.0 / ior) * thickness * model_scale",
+            "camera.clip_from_world * vec4<f32>(world_position + ray, 1.0)",
+            "volume_transmittance(length(ray), material.attenuation_color.rgb, material.transmission_factors.w)",
+            "textureSampleLevel(transmission_color_texture, transmission_color_sampler, uv + offset, 0.0)",
+            "const SCENE_BLUR_TAPS: i32 = 16;",
             "fn screen_space_material_reflection",
             "camera.color_management.z",
             "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv",
         ],
     );
+    for source in [
+        "src/render/gpu/surface_effects.wgsl",
+        "src/render/physical_transmission.rs",
+    ] {
+        forbid_contains(
+            root,
+            findings,
+            "ARCH-RENDER-QUALITY",
+            source,
+            &[
+                "thickness_scale",
+                "refraction_mix",
+                "reflection_weight",
+                "rim_fresnel",
+                "tint_strength",
+            ],
+        );
+    }
     require_contains(
         root,
         findings,

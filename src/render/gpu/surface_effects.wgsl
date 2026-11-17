@@ -3,52 +3,106 @@
 // Screen-space material effects and area-light sampling shared by the
 // texture-array and texture-2D triangle shaders.
 
+// Taps in the disc that blurs the scene colour behind rough glass. Keep in
+// step with `SCENE_BLUR_TAPS` in `physical_transmission.rs`.
+const SCENE_BLUR_TAPS: i32 = 16;
+// Angle between successive taps of the spiral, in radians.
+const SCENE_BLUR_GOLDEN_ANGLE: f32 = 2.39996323;
+// Largest blur radius the disc resolves, as a share of the viewport height.
+const SCENE_BLUR_MAX_RADIUS: f32 = 0.03;
+
+// Radius in pixels of the blur that a lobe of the given spread needs. This is
+// the Khronos glTF Sample Viewer's mapping: it reads the scene colour at
+// level of detail `log2(width) * spread`, whose texels span `width^spread`
+// pixels.
+fn scene_blur_radius_px(spread: f32, viewport: vec2<f32>) -> f32 {
+    let footprint = pow(viewport.x, clamp(spread, 0.0, 1.0));
+    return min(0.5 * (footprint - 1.0), SCENE_BLUR_MAX_RADIUS * viewport.y);
+}
+
+// Scene colour around `uv`, blurred by a Gaussian-weighted disc of the given
+// radius. The taps follow a golden-angle spiral, which covers the disc
+// evenly, rotated per pixel by interleaved gradient noise so that
+// under-sampling shows as fine grain instead of copies of the scene. A zero
+// radius collapses every tap onto `uv`.
+fn blurred_scene_color(uv: vec2<f32>, radius_px: f32, frag_coord: vec2<f32>, viewport: vec2<f32>) -> vec3<f32> {
+    let noise = fract(52.9829189 * fract(frag_coord.x * 0.06711056 + frag_coord.y * 0.00583715));
+    let rotation = 6.28318531 * noise;
+    var sum = vec3<f32>(0.0);
+    var weight_sum = 0.0;
+    for (var tap = 0; tap < SCENE_BLUR_TAPS; tap = tap + 1) {
+        let distance = sqrt((f32(tap) + 0.5) / f32(SCENE_BLUR_TAPS));
+        let angle = f32(tap) * SCENE_BLUR_GOLDEN_ANGLE + rotation;
+        // Standard deviation of half the disc radius.
+        let weight = exp(-2.0 * distance * distance);
+        let offset = vec2<f32>(cos(angle), sin(angle)) * (distance * radius_px) / viewport;
+        sum += textureSampleLevel(transmission_color_texture, transmission_color_sampler, uv + offset, 0.0).rgb * weight;
+        weight_sum += weight;
+    }
+    return sum / weight_sum;
+}
+
+// Share of the light entering the surface that passes through it instead of
+// scattering back as diffuse. Only the dielectric part of a material
+// transmits.
+fn transmitted_share(metallic: f32) -> f32 {
+    return clamp(material.transmission_factors.x, 0.0, 1.0) * (1.0 - clamp(metallic, 0.0, 1.0));
+}
+
+// Colour of a transmissive surface point. Fresnel reflectance from the index
+// of refraction decides how much light passes through. That light is the
+// scene colour seen along the refracted ray: the view direction is refracted
+// at the surface and travels the material thickness to an exit point, and the
+// scene colour is read where that point lands on screen, as the Khronos glTF
+// Sample Viewer does. Roughness blurs it, the volume absorbs along the path,
+// and the base colour tints it. `surface_rgb` is the light the surface itself
+// sends to the viewer; its diffuse lobe already excludes the transmitted
+// share.
 fn physical_transmission_color(
     frag_coord: vec2<f32>,
+    world_position: vec3<f32>,
     normal: vec3<f32>,
     view: vec3<f32>,
     tint: vec3<f32>,
+    metallic: f32,
     roughness: f32,
     surface_rgb: vec3<f32>,
 ) -> vec4<f32> {
-    let transmission = clamp(material.transmission_factors.x, 0.0, 1.0);
+    let transmission = transmitted_share(metallic);
     if transmission <= 0.001 {
         return vec4<f32>(0.0);
     }
     let viewport = max(camera.viewport_near_far.xy, vec2<f32>(1.0, 1.0));
-    let uv = clamp(frag_coord / viewport, vec2<f32>(0.001), vec2<f32>(0.999));
     let ior = max(material.transmission_factors.y, 1.01);
     let thickness = max(material.transmission_factors.z, 0.0);
     let view_dir = normalize(view);
     let normal_dir = normalize(normal);
-    let n_dot_v = max(dot(normal_dir, view_dir), 0.0);
-    let rim_fresnel = pow(1.0 - n_dot_v, 5.0);
-    let refracted = refract(-view_dir, normal_dir, 1.0 / ior);
-    let thickness_scale = 0.004 + min(thickness, 1.0) * 0.028;
-    let refracted_uv = clamp(
-        uv + vec2<f32>(refracted.x, -refracted.y) * thickness_scale * transmission,
-        vec2<f32>(0.001),
-        vec2<f32>(0.999),
+    let n_dot_v = clamp(dot(normal_dir, view_dir), 0.0, 1.0);
+    let fresnel = fresnel_schlick(n_dot_v, vec3<f32>(f0_from_ior(ior))).x;
+
+    // The thickness is in model units; the model matrix columns give the
+    // world length of each.
+    let model_scale = vec3<f32>(
+        length(draw.world_from_model[0].xyz),
+        length(draw.world_from_model[1].xyz),
+        length(draw.world_from_model[2].xyz),
     );
-    let texel = 1.0 / viewport;
-    let blur_px = roughness * roughness * 48.0;
-    let blur = texel * blur_px;
-    let straight = textureSample(transmission_color_texture, transmission_color_sampler, uv).rgb;
-    let refracted_center = textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv).rgb;
-    let refracted_blurred =
-        refracted_center * 0.36 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv + vec2<f32>(blur.x, 0.0)).rgb * 0.16 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(blur.x, 0.0)).rgb * 0.16 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv + vec2<f32>(0.0, blur.y)).rgb * 0.16 +
-        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(0.0, blur.y)).rgb * 0.16;
-    let refraction_mix = clamp(0.58 + roughness * 0.40 + rim_fresnel * 0.10, 0.58, 0.96);
-    let scene_color = mix(straight, refracted_blurred, refraction_mix);
-    let tint_strength = clamp(transmission * 0.035, 0.0, 0.035);
-    let volume_tint = volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w);
-    let transmitted = scene_color * volume_tint * mix(vec3<f32>(1.0), tint, tint_strength);
-    let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);
-    let reflected = surface_rgb * volume_tint * (1.08 + rim_fresnel * 0.72);
-    return vec4<f32>(mix(transmitted, reflected, reflection_weight), 1.0);
+    let ray = refract(-view_dir, normal_dir, 1.0 / ior) * thickness * model_scale;
+    let exit_clip = camera.clip_from_world * vec4<f32>(world_position + ray, 1.0);
+    var refracted_uv = frag_coord / viewport;
+    if exit_clip.w > 0.0 {
+        refracted_uv = exit_clip.xy / exit_clip.w * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+    }
+    let spread = roughness * clamp(ior * 2.0 - 2.0, 0.0, 1.0);
+    let scene_color = blurred_scene_color(
+        refracted_uv,
+        scene_blur_radius_px(spread, viewport),
+        frag_coord,
+        viewport,
+    );
+    let absorption = volume_transmittance(length(ray), material.attenuation_color.rgb, material.transmission_factors.w);
+    let transmitted = scene_color * absorption * tint;
+    return vec4<f32>(surface_rgb + transmitted * ((1.0 - fresnel) * transmission), 1.0);
 }
 
 fn screen_space_material_reflection(

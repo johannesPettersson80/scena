@@ -3,6 +3,7 @@ use super::pbr_contract::{
     punctual_intensity_candela, roughness_or_min, spot_cone_attenuation, surface_direct_light,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
+use crate::render::physical_transmission::transmitted_share;
 use crate::scene::{Light, Scene, Vec3};
 
 use super::environment::PreparedEnvironmentLighting;
@@ -48,7 +49,6 @@ pub(super) struct MaterialShadingInput {
     pub(super) iridescence_texture: f32,
     pub(super) iridescence_thickness_texture: f32,
     pub(super) transmission_texture: f32,
-    pub(super) thickness_texture: f32,
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
     pub(super) area_shadow_factor: f32,
@@ -259,7 +259,20 @@ pub(super) fn material_color(
                     base.a,
                 )
             } else {
-                base
+                // Without lights the albedo stands in for the diffuse lobe,
+                // so a transmissive material shows only its opaque share.
+                let opaque_share = 1.0
+                    - transmitted_share(
+                        material.transmission_factor(),
+                        input.transmission_texture,
+                        material.metallic_factor() * input.metallic_roughness_texture.0,
+                    );
+                Color::from_linear_rgba(
+                    base.r * opaque_share,
+                    base.g * opaque_share,
+                    base.b * opaque_share,
+                    base.a,
+                )
             }
         }
         MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge => base,
@@ -278,7 +291,7 @@ pub(super) fn material_color(
 }
 
 /// Builds the layered surface of one shaded vertex, together with the
-/// dispersion and transmission-volume lobes the surface model does not own.
+/// dispersion lobe the surface model does not own.
 fn material_surface(
     material: &MaterialDesc,
     base: Color,
@@ -301,6 +314,16 @@ fn material_surface(
         material.roughness_factor() * input.metallic_roughness_texture.1 + micro_roughness,
     );
     let pbr_material = PbrMaterial::new(base_rgb, metallic, roughness);
+    // Light that a transmissive dielectric passes on is not scattered back as
+    // diffuse, so the surface keeps only the opaque share of the base colour.
+    // Without transmission the share is exactly one.
+    let opaque_share = 1.0
+        - transmitted_share(
+            material.transmission_factor(),
+            input.transmission_texture,
+            metallic,
+        );
+    let opaque_material = PbrMaterial::new(base_rgb * opaque_share, metallic, roughness);
     let sheen_color_factor = material.sheen_color_factor();
     let sheen_color = Vec3::new(
         sheen_color_factor.r * input.sheen_color_texture.r,
@@ -313,7 +336,7 @@ fn material_surface(
         + material.iridescence_thickness_maximum_nm() * iridescence_thickness_mix;
     // The index of refraction comes first: the iridescence layer is built from
     // the reflectance it sets.
-    let surface = Surface::new(pbr_material, normal, view)
+    let surface = Surface::new(opaque_material, normal, view)
         .with_ior(material.ior())
         .with_anisotropy(
             material.anisotropy_strength_factor() * input.anisotropy_texture.z,
@@ -336,22 +359,13 @@ fn material_surface(
             material.clearcoat_roughness_factor() * input.clearcoat_roughness_texture,
             normalize_or(input.clearcoat_normal, normal),
         );
-    let attenuation_color = material.attenuation_color();
     let lobes = VolumeLobes {
         pbr_material,
         normal,
         view,
+        opaque_material,
         dispersion_factor: material.dispersion_factor(),
-        transmission_factor: material.transmission_factor() * input.transmission_texture,
         ior: material.ior(),
-        thickness_factor: material.thickness_factor(),
-        thickness_texture: input.thickness_texture,
-        attenuation_color: Vec3::new(
-            attenuation_color.r,
-            attenuation_color.g,
-            attenuation_color.b,
-        ),
-        attenuation_distance: material.attenuation_distance(),
     };
     (surface, lobes)
 }
@@ -436,7 +450,7 @@ fn surface_area_light(
         input.position,
         s.normal,
         s.view,
-        lobes.pbr_material,
+        lobes.opaque_material,
         shadow_factor,
     );
     // The coat sits above the LTC lobe too. Without a coat the factor is

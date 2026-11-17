@@ -17,8 +17,6 @@ mod sheen;
 pub(super) use sheen::sheen_environment_brdf;
 mod surface;
 pub(super) use surface::{Surface, surface_direct_light};
-mod transmission;
-pub(super) use transmission::transmission_volume_light_contribution;
 
 pub(super) const DIELECTRIC_F0: f32 = pbr_brdf::DIELECTRIC_F0;
 /// The glTF default index of refraction, whose reflectance is [`DIELECTRIC_F0`].

@@ -331,15 +331,64 @@ Optional glTF `KHR_materials_dispersion` factors are parsed into
 the factor as a channel-spread specular approximation. Required dispersion
 assets still report degraded status until approved backend proof and full
 transmission/volume glass behavior are promoted.
-Scalar physical-glass controls are supported on the GPU path: positive
-`transmission_factor` materials render through the scene-color transmission pass,
-and `ior`, `thickness_factor`, `attenuation_distance`, and
-`attenuation_color` affect refraction and volume tint when an opaque scene color
-exists behind the glass. `transmission_texture` and `thickness_texture` are not
-bound by the GPU/WebGL2 material texture layout yet; scene recipes reject those
-slots, and the Rust GPU prepare path fails closed instead of silently dropping
-them. Use scalar volume fields for portable recipe-authored glass until the
-texture-binding budget is expanded or packed.
+Physical glass is drawn by the CPU renderer and by the native and WebGL2 GPU
+shaders with one formulation. A material with a positive `transmission_factor`
+is drawn after the opaque scene, in a transmission pass that reads the colour
+of the opaque scene behind it:
+
+- **Fresnel.** The share of light the surface reflects follows Schlick's
+  approximation with `F0 = ((ior - 1) / (ior + 1))^2`, at the angle between
+  the view direction and the normal. The surface's own light, its highlights
+  and its reflection of the environment, is added in full. The light from
+  behind is weighted by `1 - F`.
+- **Refraction.** The view direction is refracted at the surface by the index
+  of refraction and travels `thickness_factor` to an exit point. The scene
+  colour is read where that point lands on screen, as in the Khronos glTF
+  Sample Viewer. Thickness is in model units and follows the scale of the
+  model matrix. A thickness of zero is a thin wall that reads the scene
+  straight through.
+- **Roughness.** The scene colour is blurred by a disc whose radius grows with
+  roughness and with the index of refraction: half of
+  `width^(roughness * clamp(2 * ior - 2, 0, 1))` pixels, the footprint the
+  Sample Viewer reaches through a mip level. The disc has 16 Gaussian-weighted
+  taps on a golden-angle spiral, rotated per pixel, and its radius is capped
+  at 3 % of the viewport height. Beyond that the taps would be too sparse, so
+  very rough glass is blurred less than the formula asks for.
+- **Volume.** The volume absorbs along the length of the refracted path by
+  Beer-Lambert with `attenuation_color` and `attenuation_distance`, and the
+  base colour tints what passes.
+- **Share.** `transmission_factor * (1 - metallic)` of the light entering the
+  surface is transmitted. The diffuse lobe keeps the rest, so a fully
+  transmissive dielectric has no diffuse colour of its own.
+
+This is a screen-space model with known limits. The ray is refracted once, on
+entry, so a solid sphere bends the scene like the front half of a lens. The
+scene colour holds opaque surfaces only: glass shows neither other glass nor
+blended surfaces behind it. A ray that leaves the frame reads the nearest edge
+pixel. Glass with nothing behind it transmits the clear colour, so in front of
+black it shows only its reflections. Light focused through glass is not
+simulated. `Renderer::path_trace` has none of these limits.
+
+The renderers differ in where they evaluate the inputs.
+`tests/transmission_parity.rs` holds the CPU and GPU renders of four glass
+panes, over the pane interior, to a root-mean-square difference of at most
+0.075 and a mean channel difference of at most 16 of 255.
+
+- The CPU renderer bakes surface light at mesh vertices, so a highlight on
+  glass is only as fine as the mesh. Its pixel grid sits half a pixel from the
+  GPU's, which moves fine refracted detail by up to one pixel.
+- The CPU renderer tints transmitted light by the base colour factor. The GPU
+  shaders tint by the full base colour, including its texture and vertex
+  colour.
+- The CPU renderer reads `transmission_texture` and `thickness_texture`,
+  averaged per triangle. The GPU/WebGL2 material texture layout does not bind
+  them yet; scene recipes reject those slots, and the Rust GPU prepare path
+  fails closed instead of silently dropping them. Use scalar volume fields for
+  portable recipe-authored glass until the texture-binding budget is expanded
+  or packed.
+- On GPU-instanced meshes the thickness follows the scale of the draw's model
+  matrix but not a per-instance scale.
+- Double-sided glass is shaded on its visible side only in every renderer.
 
 ## Environment
 
