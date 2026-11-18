@@ -743,8 +743,8 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
     );
     assert!(
         sidecar_rs.contains("SIDECAR_FILE_SUFFIX")
-            && sidecar_rs.contains("SCENA_ENV_PF_V2")
-            && sidecar_rs.contains("const SIDECAR_VERSION: u32 = 2")
+            && sidecar_rs.contains("SCENA_ENV_PF_V3")
+            && sidecar_rs.contains("const SIDECAR_VERSION: u32 = 3")
             && sidecar_rs.contains("EnvironmentSidecarHeader")
             && sidecar_rs.contains("bytemuck")
             && sidecar_rs.contains("source_sha256"),

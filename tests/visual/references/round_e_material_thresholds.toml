@@ -75,34 +75,36 @@ local_texture_variance_min = 0.006
 [live_cpu_headless.satin]
 sheen_width_min = 0.015
 
-# WebGL2 uses browser-cropped, foreground-normalized tiles. Eroding five pixels
-# from the live leather mask removes silhouette/edge contrast. Under the
-# layered surface model the darker, sheen-dimmed leather leaves a measured
-# interior texture variance of 0.006 (0.011 before); the 0.005 floor still
-# rejects the zero-variance known-bad mutation without treating edges as
-# texture.
-[live_webgl2_chromium.leather]
-local_texture_variance_min = 0.005
-
 # The layered surface model's energy-compensated Charlie sheen measures 0.020
 # on WebGL2 (0.234 for the previous additive lobe), in line with the CPU and
 # WebGPU lanes; satin's reference delta improved from 4.57 to 2.46.
 [live_webgl2_chromium.satin]
 sheen_width_min = 0.015
 
-# scena maps the equirectangular studio environment 90 degrees about +Y from
-# model-viewer/three.js: the brightest softbox lies along scena's +Z (toward
-# the proof camera) but along three.js's +X. A single average diffuse colour
-# hid that; directional spherical-harmonics diffuse lights the camera-facing
-# side of the matte sphere from the softbox, so it measures 10.741 against the
-# reference (4.649 before). Clear glass shows the brighter scene behind it,
-# 32.415 (31.313 before). The base budgets above stay; these WebGL2 limits are
+# scena maps equirectangular environments as three.js does, so the WebGL2
+# tiles are lit from the same side as the model-viewer references. Matte, the
+# tile that shows the environment's direction most plainly, measures 6.720
+# against its reference (10.741 under the earlier mapping, which turned the
+# studio 90 degrees about +Y); clear glass measures 32.090 (32.415). Leather
+# now faces the studio's darker side and measures 8.365 (6.881). The
+# remaining difference is the shading model's directional diffuse and sheen,
+# not orientation. The base budgets above stay; these WebGL2 limits are
 # capped in tests/round_e_material_contract.rs.
 [live_webgl2_chromium.matte]
-delta_e2000_max = 11.50
+delta_e2000_max = 7.25
 
 [live_webgl2_chromium.clear_glass]
-delta_e2000_max = 33.50
+delta_e2000_max = 32.60
+
+# WebGL2 uses browser-cropped, foreground-normalized tiles. Eroding five pixels
+# from the live leather mask removes silhouette/edge contrast. Under the
+# layered surface model the darker, sheen-dimmed leather leaves a measured
+# interior texture variance of 0.007 (0.011 before the layered model); the
+# 0.005 floor still rejects the zero-variance known-bad mutation without
+# treating edges as texture.
+[live_webgl2_chromium.leather]
+local_texture_variance_min = 0.005
+delta_e2000_max = 8.90
 
 # WebGPU uses renderer-owned RGBA8 readback from the required Chromium lane.
 # These floors reflect its derivative/sample footprint while remaining above

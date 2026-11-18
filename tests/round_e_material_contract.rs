@@ -34,11 +34,15 @@ const REQUIRED_THRESHOLD_FLOORS: &[(&str, ThresholdBound)] = &[
     // creep; the thresholds file records why each exists.
     (
         "live_webgl2_chromium.matte.delta_e2000_max",
-        ThresholdBound::Max(11.5),
+        ThresholdBound::Max(7.25),
     ),
     (
         "live_webgl2_chromium.clear_glass.delta_e2000_max",
-        ThresholdBound::Max(33.5),
+        ThresholdBound::Max(32.6),
+    ),
+    (
+        "live_webgl2_chromium.leather.delta_e2000_max",
+        ThresholdBound::Max(8.9),
     ),
     (
         "live_webgl2_chromium.leather.local_texture_variance_min",

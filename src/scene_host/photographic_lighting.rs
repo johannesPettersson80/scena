@@ -11,6 +11,14 @@ use solver::{
 pub const PHOTOGRAPHIC_LIGHTING_REPORT_SCHEMA_V1: &str = "scena.photographic_lighting_report.v1";
 pub(super) const GENERATED_LIGHT_TAG: &str = "scena_generated_photographic_light";
 
+/// Turns the bundled studio so its key softbox keeps the place relative to the
+/// camera that the photographic offsets below were tuned for. Equirectangular
+/// images are mapped as three.js maps them, which places every feature of the
+/// image 90 degrees about +Y from scena's earlier mapping; an environment
+/// rotation adds its angle to each feature's azimuth, so 90 degrees restores
+/// the tuned placement.
+const BUNDLED_STUDIO_KEY_ALIGNMENT_DEGREES: f32 = 90.0;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PhotographicLightingReportV1 {
     pub schema: String,
@@ -209,8 +217,11 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 - material.reflective_fraction * 0.08)
                 .clamp(0.72, 1.18);
             let camera_azimuth = view.front.x.atan2(view.front.z).to_degrees();
-            let base_rotation =
-                (camera_azimuth + 18.0 + material.reflective_fraction * 54.0).rem_euclid(360.0);
+            let base_rotation = (camera_azimuth
+                + 18.0
+                + material.reflective_fraction * 54.0
+                + BUNDLED_STUDIO_KEY_ALIGNMENT_DEGREES)
+                .rem_euclid(360.0);
             environment.intensity =
                 (base_intensity * adjustment.environment_intensity_scale).clamp(0.0, 16.0);
             environment.rotation_y_degrees =

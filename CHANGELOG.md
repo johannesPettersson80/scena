@@ -4,6 +4,22 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Rendering
+
+- Map equirectangular HDR environments as three.js, model-viewer and the
+  Khronos glTF Sample Viewer do: the centre of the image now lies along +X and
+  +Z sits at its right quarter. scena previously placed the centre along +Z,
+  which turned every equirectangular environment 90 degrees about +Y, so an
+  HDR lit a glTF scene from a different side than in those viewers. Scenes
+  lit by an equirectangular HDR, the bundled `Studio` preset among them, are
+  lit from a new side; to keep an earlier look, add 90 degrees to the
+  environment's Y rotation. Photographic rendering's automatic lighting keeps
+  its studio placement relative to the camera.
+- Environment prefilter sidecars move to format version 3. A version 2
+  `.prefilter.bin` was baked in the old orientation and is now rejected with a
+  warning, so the environment is baked at load instead; regenerate it with
+  `cargo run -p xtask -- prerender-environment <input.hdr>`.
+
 ## [1.11.0] - 2026-11-17
 
 ### Rendering

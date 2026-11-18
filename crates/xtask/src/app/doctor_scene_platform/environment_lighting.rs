@@ -252,9 +252,10 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         "ARCH-ENV-IBL-PREP",
         "src/assets/environment_sidecar.rs",
         &[
-            "SCENA_ENV_PF_V2",
-            "const SIDECAR_VERSION: u32 = 2",
+            "SCENA_ENV_PF_V3",
+            "const SIDECAR_VERSION: u32 = 3",
             "legacy_v1_sidecar_is_rejected_after_khronos_baker_change",
+            "v2_sidecar_is_rejected_after_the_equirectangular_orientation_change",
         ],
     );
     require_contains(

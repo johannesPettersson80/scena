@@ -4,8 +4,11 @@ use super::AssetPath;
 use crate::diagnostics::AssetError;
 
 pub const SIDECAR_FILE_SUFFIX: &str = ".prefilter.bin";
-const SIDECAR_MAGIC: [u8; 16] = *b"SCENA_ENV_PF_V2\0";
-const SIDECAR_VERSION: u32 = 2;
+// Version 3: equirectangular sources are mapped as three.js maps them, with
+// the image centre along +X. A version 2 sidecar was baked 90 degrees about
+// +Y from that and must be rebuilt, not reused.
+const SIDECAR_MAGIC: [u8; 16] = *b"SCENA_ENV_PF_V3\0";
+const SIDECAR_VERSION: u32 = 3;
 const SIDE_CAR_FACE_COUNT: usize = 6;
 const RGBA_CHANNELS: usize = 4;
 
@@ -461,6 +464,37 @@ mod tests {
             reason.contains("invalid sidecar magic")
                 || reason.contains("unsupported sidecar version"),
             "legacy sidecar rejection must be explicit, got {reason}"
+        );
+    }
+
+    #[test]
+    fn v2_sidecar_is_rejected_after_the_equirectangular_orientation_change() {
+        let mips = vec![std::array::from_fn(|face| vec![face as f32; 4 * 4 * 4])];
+        let source_sha = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b";
+        let sidecar = EnvironmentPrefilterSidecar::new(
+            EnvironmentSidecarProfile::InteractiveWebGl2,
+            source_sha,
+            4,
+            mips,
+            vec![0.25; 8],
+            2,
+            [0.1, 0.2, 0.3],
+        )
+        .expect("sidecar builds");
+        let mut v2_bytes = sidecar.to_bytes();
+        v2_bytes[..16].copy_from_slice(b"SCENA_ENV_PF_V2\0");
+        v2_bytes[16..20].copy_from_slice(&2_u32.to_le_bytes());
+
+        let error = EnvironmentPrefilterSidecar::parse("rotated.hdr.prefilter.bin", &v2_bytes)
+            .expect_err("a sidecar baked in the old orientation must not be reused");
+
+        let AssetError::Parse { reason, .. } = error else {
+            panic!("v2 sidecar should fail with a parse error");
+        };
+        assert!(
+            reason.contains("invalid sidecar magic")
+                || reason.contains("unsupported sidecar version"),
+            "v2 sidecar rejection must be explicit, got {reason}"
         );
     }
 }
