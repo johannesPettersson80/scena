@@ -12,10 +12,11 @@ use super::environment_hdr::DecodedEquirectangular;
 /// `longitude` runs around Y; `latitude` runs from -π/2 (south pole) to
 /// +π/2 (north pole). UV (0,0) is top-left of the equirect image.
 ///
-/// Equirect convention: image centre column (u=0.5) maps to looking-forward
-/// direction (+Z). +X is the LEFT-quarter of the image (u=0.25), +Z is the
-/// centre (u=0.5), -X is the RIGHT-quarter (u=0.75), -Z wraps at u=0/u=1.
-/// Matches glTF/WebGPU's +Y-up, +Z-forward coordinate convention.
+/// Equirect convention: the image centre column (u=0.5) maps to +X, +Z lies
+/// at the right quarter (u=0.75), -Z at the left quarter (u=0.25), and -X at
+/// the seam (u=0/u=1). This is three.js's `equirectUv` mapping, which
+/// model-viewer and the Khronos glTF Sample Viewer share, so an HDR lights a
+/// glTF scene from the same side in scena as in those viewers.
 pub(super) fn sample_equirectangular(
     equirect: &DecodedEquirectangular,
     direction: Vec3,
@@ -34,7 +35,7 @@ pub(super) fn sample_equirectangular(
     let dz = direction.z * inv;
     let longitude = dz.atan2(dx);
     let latitude = dy.clamp(-1.0, 1.0).asin();
-    let u = (longitude / (2.0 * std::f32::consts::PI)) + 0.25;
+    let u = (longitude / (2.0 * std::f32::consts::PI)) + 0.5;
     let u = ((u % 1.0) + 1.0) % 1.0;
     let v = 0.5 - latitude / std::f32::consts::PI;
     let fx = u * equirect.width as f32 - 0.5;
@@ -64,4 +65,43 @@ fn fetch_equirect_pixel(equirect: &DecodedEquirectangular, x: i32, y: i32) -> [f
     let clamped_y = y.clamp(0, height - 1);
     let index = (clamped_y * width + wrapped_x) as usize;
     equirect.pixels[index]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An 8x4 image whose red channel is the square of the column number, so
+    /// a sample tells which pair of columns it was filtered from.
+    fn numbered_columns() -> DecodedEquirectangular {
+        let (width, height) = (8, 4);
+        DecodedEquirectangular {
+            width,
+            height,
+            pixels: (0..width * height)
+                .map(|index| [((index % width) * (index % width)) as f32, 0.0, 0.0])
+                .collect(),
+        }
+    }
+
+    fn assert_columns(direction: Vec3, left: u32, right: u32) {
+        let sample = sample_equirectangular(&numbered_columns(), direction)[0];
+        let expected = ((left * left + right * right) as f32) / 2.0;
+        assert!(
+            (sample - expected).abs() < 1.0e-3,
+            "{direction:?} sampled {sample}, expected halfway between columns {left} and {right}",
+        );
+    }
+
+    #[test]
+    fn directions_map_to_columns_as_in_three_js() {
+        // u = atan2(z, x) / 2pi + 0.5, as three.js's `equirectUv`.
+        // +X is the centre of the image.
+        assert_columns(Vec3::new(1.0, 0.0, 0.0), 3, 4);
+        // +Z is the right quarter, -Z the left quarter.
+        assert_columns(Vec3::new(0.0, 0.0, 1.0), 5, 6);
+        assert_columns(Vec3::new(0.0, 0.0, -1.0), 1, 2);
+        // -X is the seam, between the last column and the first.
+        assert_columns(Vec3::new(-1.0, 0.0, 0.0), 7, 0);
+    }
 }
