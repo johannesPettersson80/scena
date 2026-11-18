@@ -241,7 +241,7 @@ fn pixel_luma(rgba: &[u8], width: u32, x: u32, y: u32) -> f32 {
 #[test]
 fn hdr_environment_produces_per_pixel_cubemap_radiance() {
     // Synthetic equirectangular HDR: 16×8 image, bright at the centre
-    // column (which maps to forward (+Z) direction), dim elsewhere.
+    // column, dim elsewhere. As in three.js, the centre column maps to +X.
     // RGBE encoding: bright = (255, 255, 255, 133) ≈ linear 32x white;
     // dim = (32, 32, 32, 128) ≈ linear 0.125 white.
     let mut pixels = vec![[32_u8, 32, 32, 128]; 16 * 8];
@@ -250,7 +250,7 @@ fn hdr_environment_produces_per_pixel_cubemap_radiance() {
         pixels[y * 16 + centre_column] = [255, 255, 255, 133];
     }
     let bytes = uncompressed_radiance_hdr(16, 8, &pixels);
-    let path = AssetPath::from("memory://rle-fixture/forward-bright.hdr");
+    let path = AssetPath::from("memory://rle-fixture/centre-bright.hdr");
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(path.clone(), bytes)]));
     let environment =
         pollster::block_on(assets.load_environment(path.as_str())).expect("synthetic HDR loads");
@@ -262,22 +262,25 @@ fn hdr_environment_produces_per_pixel_cubemap_radiance() {
         .expect("HDR environment produces cubemap faces");
     let face_pixels = faces.build_face_pixels_rgba32f();
 
-    // Face index 4 = +Z. Centre pixel should be bright; +X, -X, -Z faces
-    // should be dim by comparison.
+    // Face index 0 = +X. Its centre pixel should be bright; the -X, +Z and
+    // -Z faces should be dim by comparison.
     let face_res = faces.resolution() as usize;
     let centre = (face_res / 2 * face_res + face_res / 2) * 4;
-    let pz_centre = face_pixels[4][centre];
+    let px_centre = face_pixels[0][centre];
     let nx_centre = face_pixels[1][centre];
+    let pz_centre = face_pixels[4][centre];
     let nz_centre = face_pixels[5][centre];
-    eprintln!("+Z centre={pz_centre}, -X centre={nx_centre}, -Z centre={nz_centre}");
-    assert!(
-        pz_centre > 5.0,
-        "+Z face centre should sample the bright forward-direction radiance, got {pz_centre}"
+    eprintln!(
+        "+X centre={px_centre}, -X centre={nx_centre}, +Z centre={pz_centre}, -Z centre={nz_centre}"
     );
     assert!(
-        pz_centre > nx_centre * 4.0 && pz_centre > nz_centre * 4.0,
-        "+Z face must be much brighter than side/back faces (\
-         pz={pz_centre} nx={nx_centre} nz={nz_centre})"
+        px_centre > 5.0,
+        "+X face centre should sample the bright centre-column radiance, got {px_centre}"
+    );
+    assert!(
+        px_centre > nx_centre * 4.0 && px_centre > pz_centre * 4.0 && px_centre > nz_centre * 4.0,
+        "+X face must be much brighter than the other horizontal faces (\
+         px={px_centre} nx={nx_centre} pz={pz_centre} nz={nz_centre})"
     );
 }
 
