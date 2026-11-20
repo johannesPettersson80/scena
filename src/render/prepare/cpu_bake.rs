@@ -1,4 +1,4 @@
-use crate::material::{Color, MaterialDesc};
+use crate::material::{Color, MaterialDesc, MaterialKind};
 use crate::scene::Vec3;
 
 use super::super::camera::CameraProjection;
@@ -74,6 +74,56 @@ pub(super) fn bounded_gpu_subdivisions(
         .unwrap_or(1)
         .max(1);
     requested.min(children_per_source.isqrt() as u32).max(1)
+}
+
+/// The roughness at and above which a surface's reflection and highlight vary
+/// slowly enough across a triangle for its corners to carry them.
+const GLOSSY_SUBDIVISION_ROUGHNESS_MAX: f32 = 0.5;
+/// Screen pixels per subdivided edge for a mirror; rougher surfaces use
+/// proportionally longer edges, up to `GLOSSY_ROUGH_PIXELS_PER_SUBDIVISION`.
+const GLOSSY_MIRROR_PIXELS_PER_SUBDIVISION: f32 = 2.0;
+const GLOSSY_ROUGH_PIXELS_PER_SUBDIVISION: f32 = 8.0;
+const GLOSSY_SUBDIVISION_HARD_CAP: u32 = 24;
+
+/// Subdivisions for a lit surface whose reflection or highlight is sharp.
+///
+/// The CPU renderer shades the corners of each triangle and interpolates
+/// between them. A textured material is already subdivided to its size on
+/// screen; an untextured glossy one was not, so a chrome sphere reflected the
+/// environment as a polygon per source triangle and its highlights followed
+/// the tessellation. A smooth base layer or a smooth clearcoat is subdivided
+/// to a few screen pixels per edge, finer the smoother it is.
+pub(super) fn glossy_reflection_subdivisions(
+    material: &MaterialDesc,
+    backend_shaded_material: bool,
+    raster_edge_pixels: f32,
+    screen_space_scale: f32,
+) -> u32 {
+    if backend_shaded_material
+        || !matches!(material.kind(), MaterialKind::PbrMetallicRoughness)
+        || !raster_edge_pixels.is_finite()
+        || raster_edge_pixels <= 0.0
+    {
+        return 1;
+    }
+    let mut roughness = material.roughness_factor();
+    if material.clearcoat_factor() > 0.0 {
+        roughness = roughness.min(material.clearcoat_roughness_factor());
+    }
+    if !roughness.is_finite() || roughness >= GLOSSY_SUBDIVISION_ROUGHNESS_MAX {
+        return 1;
+    }
+    let smoothness = (roughness.max(0.0) / GLOSSY_SUBDIVISION_ROUGHNESS_MAX).clamp(0.0, 1.0);
+    let pixels_per_subdivision = GLOSSY_MIRROR_PIXELS_PER_SUBDIVISION
+        + (GLOSSY_ROUGH_PIXELS_PER_SUBDIVISION - GLOSSY_MIRROR_PIXELS_PER_SUBDIVISION) * smoothness;
+    let logical_scale = if screen_space_scale.is_finite() {
+        screen_space_scale.max(1.0)
+    } else {
+        1.0
+    };
+    (raster_edge_pixels / logical_scale / pixels_per_subdivision)
+        .ceil()
+        .clamp(1.0, GLOSSY_SUBDIVISION_HARD_CAP as f32) as u32
 }
 
 pub(super) fn cpu_texture_subdivisions(
@@ -590,5 +640,56 @@ mod pf08_tests {
             area_shadow_visibility: 1.0,
             ambient_visibility: 1.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod glossy_subdivision_tests {
+    use super::*;
+
+    #[test]
+    fn glossy_surfaces_are_subdivided_finer_the_smoother_they_are() {
+        let mirror = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 1.0, 0.0);
+        let glossy = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 1.0, 0.25);
+        let rough = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 1.0, 0.5);
+        // Two pixels per edge for a mirror, five at roughness 0.25.
+        assert_eq!(
+            glossy_reflection_subdivisions(&mirror, false, 20.0, 1.0),
+            10
+        );
+        assert_eq!(glossy_reflection_subdivisions(&glossy, false, 20.0, 1.0), 4);
+        assert_eq!(glossy_reflection_subdivisions(&rough, false, 20.0, 1.0), 1);
+        // Supersampled frames count logical pixels, as area shadows do.
+        assert_eq!(
+            glossy_reflection_subdivisions(&mirror, false, 40.0, 2.0),
+            10
+        );
+        assert_eq!(
+            glossy_reflection_subdivisions(&mirror, false, 10_000.0, 1.0),
+            GLOSSY_SUBDIVISION_HARD_CAP
+        );
+    }
+
+    #[test]
+    fn only_cpu_shaded_lit_glossy_surfaces_are_subdivided() {
+        let mirror = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 1.0, 0.0);
+        assert_eq!(glossy_reflection_subdivisions(&mirror, true, 20.0, 1.0), 1);
+        assert_eq!(
+            glossy_reflection_subdivisions(&MaterialDesc::unlit(Color::WHITE), false, 20.0, 1.0),
+            1
+        );
+        assert_eq!(glossy_reflection_subdivisions(&mirror, false, 0.0, 1.0), 1);
+        assert_eq!(
+            glossy_reflection_subdivisions(&mirror, false, f32::NAN, 1.0),
+            1
+        );
+        // A smooth clearcoat over a rough base is glossy too.
+        let coated = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.9)
+            .with_clearcoat_factor(1.0)
+            .with_clearcoat_roughness_factor(0.0);
+        assert_eq!(
+            glossy_reflection_subdivisions(&coated, false, 20.0, 1.0),
+            10
+        );
     }
 }

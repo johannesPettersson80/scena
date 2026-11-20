@@ -12,8 +12,8 @@ use crate::scene::Vec3;
 use super::cpu_bake::{
     CpuBakeCorner, area_shadow_subdivisions_for_scale, baked_ambient_visibility_profiled,
     baked_area_shadow_visibility_profiled, baked_shadow_visibility_profiled,
-    bounded_gpu_subdivisions, cpu_texture_subdivisions, push_material_pass_primitive,
-    subdivided_cpu_corners,
+    bounded_gpu_subdivisions, cpu_texture_subdivisions, glossy_reflection_subdivisions,
+    push_material_pass_primitive, subdivided_cpu_corners,
 };
 use super::lighting::{MaterialShadingInput, material_color};
 use super::materials::{
@@ -474,6 +474,12 @@ fn append_triangle_primitives(
         )
         .max(area_shadow_subdivisions_for_scale(
             params.lights.has_area_lights() || params.baked_ambient_occlusion.is_some(),
+            screen_edge_pixels,
+            params.screen_space_scale,
+        ))
+        .max(glossy_reflection_subdivisions(
+            source.material,
+            backend_shaded_material,
             screen_edge_pixels,
             params.screen_space_scale,
         ));
