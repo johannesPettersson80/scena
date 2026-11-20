@@ -3586,11 +3586,17 @@ fn m8_dispersion_factor_affects_cpu_preview_pixels() {
     let off = render_center_rgb_for_dispersion_factor(0.0);
     let on = render_center_rgb_for_dispersion_factor(1.0);
 
-    assert_ne!(
-        dominant_rgb_channel(off),
-        dominant_rgb_channel(on),
+    // Dispersion splits the channels apart. Which channel ends up brightest
+    // depends on what the pixel reflects: the centre holds the studio's
+    // near-white highlight, so the spread between channels is what tells.
+    assert!(
+        channel_spread(on) >= channel_spread(off) + 10,
         "dispersion must separate the visible channel response instead of being silently ignored: off={off:?} on={on:?}",
     );
+}
+
+fn channel_spread(value: [u8; 3]) -> u8 {
+    value.iter().max().copied().unwrap_or(0) - value.iter().min().copied().unwrap_or(0)
 }
 
 #[test]
