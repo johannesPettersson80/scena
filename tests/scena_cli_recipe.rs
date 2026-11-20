@@ -3459,6 +3459,17 @@ fn write_chrome_ibl_recipe(dir: &Path, name: &str, roughness: f64) -> (PathBuf, 
     (recipe_path, png_path)
 }
 
+// The panel and its camera are turned 90 degrees about +Y from a panel at
+// -12 degrees viewed from +Z. That keeps the part of the studio the panel
+// reflects the same as when the test was written, before equirectangular
+// environments were mapped as three.js maps them: a smooth stretch of the
+// studio rather than a softbox edge, where the CPU renderer's coarser
+// environment cube would differ from the GPU's in shape, not in roughness.
+#[cfg(feature = "scene-host")]
+const CHROME_PANEL_YAW_DEGREES: f64 = 78.0;
+#[cfg(feature = "scene-host")]
+const CHROME_PANEL_EYE: [f64; 3] = [2.4, 0.0, 0.0];
+
 #[cfg(feature = "scene-host")]
 fn write_chrome_ibl_panel_recipe(dir: &Path, name: &str, roughness: f64) -> (PathBuf, PathBuf) {
     let recipe_path = dir.join(format!("{name}.recipe.json"));
@@ -3494,7 +3505,7 @@ fn write_chrome_ibl_panel_recipe(dir: &Path, name: &str, roughness: f64) -> (Pat
                     "material": "chrome_mat",
                     "transform": {
                         "kind": "trs",
-                        "rotation_degrees": [0.0, -12.0, 0.0]
+                        "rotation_degrees": [0.0, CHROME_PANEL_YAW_DEGREES, 0.0]
                     }
                 }
             ],
@@ -3517,7 +3528,7 @@ fn write_chrome_ibl_panel_recipe(dir: &Path, name: &str, roughness: f64) -> (Pat
                 "fov_degrees": 30.0,
                 "transform": {
                     "kind": "look_at",
-                    "eye": [0.0, 0.0, 2.4],
+                    "eye": CHROME_PANEL_EYE,
                     "target": "chrome_panel"
                 }
             }],
