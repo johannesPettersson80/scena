@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-20
+
 ### Rendering
 
 - Map equirectangular HDR environments as three.js, model-viewer and the
@@ -19,6 +21,15 @@ All notable user-facing changes are recorded here.
   `.prefilter.bin` was baked in the old orientation and is now rejected with a
   warning, so the environment is baked at load instead; regenerate it with
   `cargo run -p xtask -- prerender-environment <input.hdr>`.
+- The CPU renderer subdivides the triangles of glossy surfaces on screen. It
+  shades triangle corners and interpolates between them, and only textured
+  materials were subdivided, so an untextured chrome or glossy surface
+  reflected the environment as one polygon per source triangle and its
+  highlights followed the tessellation. A base layer or clearcoat smoother
+  than roughness 0.5 is now subdivided to between two (mirror) and eight
+  screen pixels per edge. CPU renders of smooth untextured metals and
+  plastics change: reflections and highlights follow the surface, and match
+  the GPU renderer closely.
 
 ## [1.11.0] - 2026-11-17
 

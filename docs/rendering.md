@@ -229,7 +229,9 @@ Both renderers apply these rules to direct lights and to image-based lighting.
 A material that uses no layer and keeps the default index of refraction renders
 on the CPU exactly as it did before the layers existed;
 `tests/cpu_core_material_bytes.rs` pins those bytes against the last commit
-without the layered model.
+without the layered model. One of its scenes, a glossy cube and chrome sphere,
+is re-pinned since glossy triangles are subdivided on screen; the test records
+both frames.
 
 `tests/layered_material_parity.rs` renders a sphere per layer on both
 renderers under one directional light and the default environment and

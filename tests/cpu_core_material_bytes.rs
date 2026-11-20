@@ -8,7 +8,8 @@
 //! existed, because approved reference images depend on those bytes. Each scene
 //! below was rendered by commit 4da02d2, the last commit before the layered
 //! model, built into its own target directory; the SHA-256 of that frame is the
-//! pin.
+//! pin. A scene whose frame a later, deliberate CPU change moved records that
+//! change and the frame it produced alongside the original pin.
 
 use std::fs::{self, File};
 use std::io::BufWriter;
@@ -36,7 +37,17 @@ struct CoreScene {
     name: &'static str,
     /// SHA-256 of the RGBA8 frame commit 4da02d2 rendered.
     frame_sha256_at_4da02d2: &'static str,
+    /// A later, deliberate CPU change that moved this frame, and the SHA-256
+    /// of the frame since. The layered surface model is not such a change.
+    repinned: Option<(&'static str, &'static str)>,
     render: fn() -> Vec<u8>,
+}
+
+impl CoreScene {
+    fn expected(&self) -> (&'static str, &'static str) {
+        self.repinned
+            .unwrap_or(("commit 4da02d2", self.frame_sha256_at_4da02d2))
+    }
 }
 
 fn core_scenes() -> [CoreScene; 4] {
@@ -44,21 +55,31 @@ fn core_scenes() -> [CoreScene; 4] {
         CoreScene {
             name: "sphere-directional-environment",
             frame_sha256_at_4da02d2: "99bfa83b995768d453a2e402637ea4c16b1a7a09920cdcb1e36f45e6f095455c",
+            repinned: None,
             render: render_sphere_directional_environment,
         },
         CoreScene {
             name: "metal-studio-fxaa",
             frame_sha256_at_4da02d2: "c1a746171b79d03f72280c145fea82b978e65d6557878d67460bb94c11579144",
+            repinned: None,
             render: render_metal_studio_fxaa,
         },
         CoreScene {
             name: "point-spot-area",
             frame_sha256_at_4da02d2: "2a5aa1243fc6d5a42f89f1ba1d7c9a5746f4624985ce187dea19a372340f0820",
+            // Its roughness 0.3 cube and 0.22 chrome sphere are glossy, so
+            // their triangles are subdivided on screen and their highlights
+            // follow the surface instead of the tessellation.
+            repinned: Some((
+                "glossy CPU subdivision",
+                "a1b5e1d257b227d4041217ed86c880db803265ddb7554565da084c0636a38225",
+            )),
             render: render_point_spot_area,
         },
         CoreScene {
             name: "emissive-double-sided",
             frame_sha256_at_4da02d2: "fc9e9ec0727e2c0ebd50b56194c3eeca63c042dd69da2e994103082be1f52661",
+            repinned: None,
             render: render_emissive_double_sided,
         },
     ]
@@ -85,12 +106,13 @@ fn core_materials_render_the_bytes_they_rendered_before_the_layered_surface_mode
             scene.name
         );
         let actual = sha256_hex(&frame);
-        if actual != scene.frame_sha256_at_4da02d2 {
+        let (pinned_by, expected) = scene.expected();
+        if actual != expected {
             let path = format!("{ARTIFACT_DIR}/{}.png", scene.name);
             write_png(Path::new(&path), &frame);
             mismatches.push(format!(
-                "{}: rendered {actual}, commit 4da02d2 rendered {} (frame written to {path})",
-                scene.name, scene.frame_sha256_at_4da02d2
+                "{}: rendered {actual}, {pinned_by} rendered {expected} (frame written to {path})",
+                scene.name
             ));
         }
     }
